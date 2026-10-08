@@ -390,6 +390,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let start = self.offset;
             let mut end = start;
             let mut closed = false;
+            let mut escaped = false;
             let mut characters = self.input[start..].char_indices();
             while let Some((at, character)) = self
                 .ctx
@@ -398,6 +399,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 end = start + at;
                 if character == '"' {
                     if self.input[end + 1..].starts_with('"') {
+                        escaped = true;
                         self.ctx
                             .next_charged(&mut characters, "scan SLDPRT quoted parameter token")?;
                         end += 2;
@@ -415,7 +417,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             }
             self.offset = end + 1;
             let identifier =
-                super::ExpressionIdentifier::quoted(self.ctx, self.input, start - 1, self.offset)?
+                super::ExpressionIdentifier::quoted(self.ctx, self.input, start - 1, self.offset, escaped)?
                     .ok_or(ExpressionFailure::NoValue)?;
             return Ok(Token::Quoted(identifier.value));
         }

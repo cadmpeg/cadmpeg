@@ -1306,12 +1306,13 @@ pub(super) struct ExpressionIdentifier<'a, 'ctx> {
 }
 
 impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
-    /// The token spanning `start..end`, which must be a quoted run around a nonempty name.
+    /// The token spanning `start..end`, with escape presence from the token scan.
     fn quoted(
         ctx: &'ctx DecodeContext<'_>,
         expression: &'a str,
         start: usize,
         end: usize,
+        escaped: bool,
     ) -> Result<Option<Self>, CodecError> {
         let Some(raw) = expression.get(start..end) else {
             return Ok(None);
@@ -1322,11 +1323,10 @@ impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
         let Some(inner) = raw
             .strip_prefix('"')
             .and_then(|inner| inner.strip_suffix('"'))
-            .filter(|inner| !inner.is_empty())
         else {
             return Ok(None);
         };
-        let value = if ctx.contains_text(inner, "\"\"", "unescape SLDPRT parameter identifier")? {
+        let value = if escaped {
             let mut skip_quote = false;
             let (value, reservation) = ctx.collect_scoped_text(
                 ctx.admit_iter(inner, "scan SLDPRT parameter quote escapes")?
@@ -1436,11 +1436,13 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
     while let Some((start, character)) = ctx.next_charged(&mut characters, OPERATION)? {
         if character == '"' {
             let mut closed = None;
+            let mut escaped = false;
             while let Some((at, character)) = ctx.next_charged(&mut characters, OPERATION)? {
                 if character != '"' {
                     continue;
                 }
                 if expression[at + 1..].starts_with('"') {
+                    escaped = true;
                     ctx.next_charged(&mut characters, OPERATION)?;
                 } else {
                     closed = Some(at + 1);
@@ -1450,7 +1452,10 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
             let Some(end) = closed else {
                 return Ok((None, storage));
             };
-            if let Some(identifier) = ExpressionIdentifier::quoted(ctx, expression, start, end)? {
+            if end == start + 2 {
+                continue;
+            }
+            if let Some(identifier) = ExpressionIdentifier::quoted(ctx, expression, start, end, escaped)? {
                 ctx.push_scoped_vec(
                     &mut storage,
                     &mut identifiers,
