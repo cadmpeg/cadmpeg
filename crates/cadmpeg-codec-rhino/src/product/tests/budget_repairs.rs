@@ -38,7 +38,7 @@ fn native_product_staging_is_materialized_and_serialized_output_is_retained() {
                 policy.limits.max_retained_bytes = cap;
             }
             let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-            install(&ctx, &scan, &mut CadIr::empty())
+            install(&ctx, &scan, &mut CadIr::empty()).map(drop)
         });
     }
     let mut ir = CadIr::empty();
@@ -80,7 +80,7 @@ fn native_occurrence_and_external_staging_use_materialized_storage() {
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_materialized_bytes = cap;
                     let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-                    install(&ctx, &scan, &mut CadIr::empty())
+                    install(&ctx, &scan, &mut CadIr::empty()).map(drop)
                 },
             );
         }

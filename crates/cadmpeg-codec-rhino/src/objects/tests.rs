@@ -1475,6 +1475,59 @@ fn retained_class_userdata_refuses_collection_limit_without_affecting_scan_only(
 }
 
 #[test]
+fn scoped_class_userdata_uses_materialized_storage_and_keeps_diagnostics_retained() {
+    let archive = ArchiveVersion::V8;
+    let userdata = crate::test_support::test_dump::class_userdata(
+        archive,
+        [2; 16],
+        [3; 16],
+        "source.3dm",
+        false,
+    );
+    let wrapper = crate::test_support::test_dump::class_wrapper_with_userdata(
+        archive,
+        [1; 16],
+        &[],
+        &userdata,
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
+        .expect("root bytes admitted");
+    let (class, staged) = crate::objects::parse_class_wrapper_with_scoped_userdata(
+        &ctx,
+        &wrapper,
+        0..wrapper.len(),
+        archive,
+        &mut Diagnostics::new(),
+    )
+    .expect("descriptor staging does not use retained bytes");
+    assert_eq!(class.class_uuid, Uuid::from_wire([1; 16]));
+    assert_eq!(staged.len(), 1);
+    drop(staged);
+
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
+        .expect("root bytes admitted");
+    let error = crate::objects::parse_class_wrapper_with_scoped_userdata(
+        &ctx,
+        &wrapper,
+        0..wrapper.len(),
+        archive,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("temporary descriptor backing exceeds the materialized limit");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && refusal.operation == "Rhino class userdata"
+    ));
+}
+
+#[test]
 fn uuid_list_uses_an_anonymous_versioned_chunk() {
     let archive = ArchiveVersion::V5;
     let mut body = 1_i32.to_le_bytes().to_vec();

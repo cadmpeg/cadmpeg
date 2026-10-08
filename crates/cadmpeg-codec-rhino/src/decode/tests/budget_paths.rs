@@ -87,7 +87,7 @@ fn brep_c2_cache_leaves_retention_for_output_knots() {
     .expect("validate Brep");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "Rhino Brep pcurve knots",
+        "Rhino Brep pcurve output",
         |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -114,6 +114,7 @@ fn brep_c2_cache_leaves_retention_for_output_knots() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "Rhino Brep pcurve output"
             && limit.used == 0)
     );
 }

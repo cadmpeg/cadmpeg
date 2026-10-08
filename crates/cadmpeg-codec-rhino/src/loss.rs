@@ -23,6 +23,182 @@ use cadmpeg_ir::report::{
     Severity,
 };
 
+/// A vector whose backing storage is temporary while its values can be moved
+/// into a retained report or document.
+#[derive(Debug)]
+pub(crate) struct ScratchVec<'ctx, T> {
+    values: Vec<T>,
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'ctx>,
+    value_storages: Vec<(usize, cadmpeg_core::decode::ScopedReservation<'ctx>)>,
+    /// Shared vector-backing reservation; keep it last so it drops after both vectors.
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx, T> ScratchVec<'ctx, T> {
+    pub(crate) fn new(
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            values: Vec::new(),
+            ctx,
+            value_storages: Vec::new(),
+            storage: ctx.reserve_scoped(0, operation)?,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_test_values(self) -> Vec<T> {
+        self.values
+    }
+
+    pub(crate) fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.storage.with_storage(|| {
+            ctx.reserve_capacity(&mut self.values, 1, operation)?;
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })?;
+        ctx.charge_collection_items(1, operation)?;
+        self.values.push(value);
+        Ok(())
+    }
+
+    pub(crate) fn push_with_storage_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        make: impl FnOnce() -> Result<T, cadmpeg_core::CodecError>,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let mut value_storage = self.ctx.reserve_scoped(0, operation)?;
+        let value = value_storage.with_storage(make)?;
+        self.storage.with_storage(|| {
+            ctx.reserve_capacity(&mut self.values, 1, operation)?;
+            ctx.reserve_capacity(&mut self.value_storages, 1, operation)
+        })?;
+        ctx.charge_collection_items(1, operation)?;
+        let index = self.values.len();
+        self.values.push(value);
+        self.value_storages.push((index, value_storage));
+        Ok(())
+    }
+}
+
+impl<'ctx> ScratchVec<'ctx, LossNote> {
+    /// Moves retained notes and promotes scoped notes into retained output.
+    /// It releases all source storage when this method returns.
+    pub(crate) fn append_admitted(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        destination: &mut impl AdmittedVec<LossNote>,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let Self {
+            values,
+            value_storages,
+            storage,
+            ctx: _,
+        } = self;
+        let mut value_storages = value_storages.into_iter().peekable();
+        let mut source = values.into_iter().enumerate();
+        while let Some((index, note)) =
+            ctx.find_map(&mut source, |value| Ok::<_, cadmpeg_core::CodecError>(Some(value)), operation)?
+        {
+            let scoped_storage = match value_storages.peek() {
+                Some((stored_index, _)) if *stored_index == index => {
+                    value_storages.next().map(|(_, storage)| storage)
+                }
+                _ => None,
+            };
+            if let Some(scoped_storage) = scoped_storage {
+                let promoted = note
+                    .try_clone_for_decode(ctx, operation)
+                    .and_then(|promoted| destination.push_admitted(ctx, promoted, operation));
+                drop(note);
+                drop(scoped_storage);
+                promoted?;
+            } else {
+                destination.push_admitted(ctx, note, operation)?;
+            }
+        }
+        drop(source);
+        drop(value_storages);
+        drop(storage);
+        Ok(())
+    }
+}
+
+impl<T> std::ops::Deref for ScratchVec<'_, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+/// Admits a pushed value into either retained output or scoped staging.
+pub(crate) trait AdmittedVec<T> {
+    fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError>;
+
+    fn push_with_storage_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        make: impl FnOnce() -> Result<T, cadmpeg_core::CodecError>,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError>;
+
+}
+
+impl<T> AdmittedVec<T> for Vec<T> {
+    fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.push_vec(self, value, operation)
+    }
+
+    fn push_with_storage_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        make: impl FnOnce() -> Result<T, cadmpeg_core::CodecError>,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.push_admitted(ctx, make()?, operation)
+    }
+
+}
+
+impl<T> AdmittedVec<T> for ScratchVec<'_, T> {
+    fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ScratchVec::push_admitted(self, ctx, value, operation)
+    }
+
+    fn push_with_storage_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        make: impl FnOnce() -> Result<T, cadmpeg_core::CodecError>,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ScratchVec::push_with_storage_admitted(self, ctx, make, operation)
+    }
+
+}
+
 /// One decode diagnostic: its message and, when the producer knows it, its code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RhinoDiagnostic {
@@ -74,6 +250,7 @@ impl Diagnostics {
         });
     }
 
+    #[cfg(test)]
     pub(crate) fn messages<'a>(
         &'a self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -84,8 +261,18 @@ impl Diagnostics {
     }
 
     /// Places `earlier` ahead of the diagnostics already recorded.
-    pub(crate) fn prepend(&mut self, earlier: Self) {
-        self.0.splice(0..0, earlier.0);
+    pub(crate) fn prepend_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut earlier: Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.append_vec(
+            &mut earlier.0,
+            &mut self.0,
+            "Rhino prepended diagnostic moves",
+        )?;
+        std::mem::swap(&mut self.0, &mut earlier.0);
+        Ok(())
     }
 
     pub(crate) fn truncate(&mut self, len: usize) {
@@ -108,13 +295,71 @@ impl Diagnostics {
         other: Self,
         prefix: std::fmt::Arguments<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for diagnostic in ctx.admit_iter(other.0, "Rhino prefixed diagnostic traversal")? {
+        ctx.fold(
+            &other.0,
+            (),
+            |(), diagnostic| {
             self.push_coded_admitted(
                 ctx,
                 diagnostic.code,
                 format_args!("{prefix}: {}", diagnostic.message),
             )?;
+            Ok(())
+            },
+            "Rhino prefixed diagnostic traversal",
+        )
+    }
+
+    /// Copies scratch diagnostics into retained report storage after their
+    /// producing storage scopes are no longer active.
+    pub(crate) fn append_prefixed_scoped_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        source: ScratchDiagnostics<'_>,
+        prefix: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let ScratchDiagnostics { values, storage, ctx: _ } = source;
+        let mut values = values.into_iter();
+        while let Some((diagnostic, value_storage)) =
+            ctx.find_map(&mut values, |value| Ok::<_, cadmpeg_core::CodecError>(Some(value)), "Rhino scoped diagnostic traversal")?
+        {
+            let copied = self.push_coded_admitted(
+                ctx,
+                diagnostic.code,
+                format_args!("{prefix}: {}", diagnostic.message),
+            );
+            drop(diagnostic);
+            drop(value_storage);
+            copied?;
         }
+        drop(values);
+        drop(storage);
+        Ok(())
+    }
+
+    /// Promotes scratch diagnostics without changing their message text.
+    pub(crate) fn append_scoped_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        source: ScratchDiagnostics<'_>,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let ScratchDiagnostics { values, storage, ctx: _ } = source;
+        let mut values = values.into_iter();
+        while let Some((diagnostic, value_storage)) =
+            ctx.find_map(&mut values, |value| Ok::<_, cadmpeg_core::CodecError>(Some(value)), operation)?
+        {
+            let copied = self.push_coded_admitted(
+                ctx,
+                diagnostic.code,
+                format_args!("{}", diagnostic.message),
+            );
+            drop(diagnostic);
+            drop(value_storage);
+            copied?;
+        }
+        drop(values);
+        drop(storage);
         Ok(())
     }
 
@@ -124,15 +369,20 @@ impl Diagnostics {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         other: &Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
-        for diagnostic in ctx.admit_iter(&other.0[..], "Rhino extend cloned admitted traversal")? {
-            self.0.push(RhinoDiagnostic {
-                code: diagnostic.code,
-                message: ctx
-                    .copy_retained_text(&diagnostic.message, "Rhino diagnostic copy text")?,
-            });
-        }
-        Ok(())
+        ctx.fold(
+            &other.0,
+            (),
+            |(), diagnostic| {
+                ctx.reserve_vec(&mut self.0, 1, "Rhino diagnostic copies")?;
+                self.0.push(RhinoDiagnostic {
+                    code: diagnostic.code,
+                    message: ctx
+                        .copy_retained_text(&diagnostic.message, "Rhino diagnostic copy text")?,
+                });
+                Ok(())
+            },
+            "Rhino extend cloned admitted traversal",
+        )
     }
 }
 
@@ -144,11 +394,140 @@ impl std::ops::Deref for Diagnostics {
     }
 }
 
+/// Temporary diagnostics whose message and vector storage stay scoped until
+/// the parent result succeeds or is discarded.
+#[derive(Debug)]
+pub(crate) struct ScratchDiagnostics<'ctx> {
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'ctx>,
+    values: Vec<(
+        RhinoDiagnostic,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
+    /// Vector-backing reservation; keep it last so it drops after `values`.
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> ScratchDiagnostics<'ctx> {
+    pub(crate) fn new(
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            values: Vec::new(),
+            ctx,
+            storage: ctx.reserve_scoped(0, operation)?,
+        })
+    }
+
+    pub(crate) fn push_coded_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        code: impl Into<Option<RhinoLossCode>>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let code = code.into();
+        let mut value_storage = self.ctx.reserve_scoped(0, "Rhino scoped diagnostic message")?;
+        let message = value_storage.with_storage(|| {
+            ctx.format_retained(message, "Rhino diagnostic message")
+        })?;
+        self.storage.with_storage(|| {
+            ctx.reserve_capacity(&mut self.values, 1, "Rhino scoped diagnostics")
+        })?;
+        ctx.charge_collection_items(1, "Rhino scoped diagnostics")?;
+        self.values.push((
+            RhinoDiagnostic { code, message },
+            value_storage,
+        ));
+        Ok(())
+    }
+
+    /// Copies child diagnostics into this parent scratch collection. A failed
+    /// parent can then drop all merged messages and their storage together.
+    pub(crate) fn append_prefixed_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        source: Self,
+        prefix: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let Self { values, storage, ctx: _ } = source;
+        let mut values = values.into_iter();
+        while let Some((diagnostic, source_storage)) =
+            ctx.find_map(&mut values, |value| Ok::<_, cadmpeg_core::CodecError>(Some(value)), "Rhino scoped diagnostic traversal")?
+        {
+            let copied = self.push_coded_admitted(
+                ctx,
+                diagnostic.code,
+                format_args!("{prefix}: {}", diagnostic.message),
+            );
+            drop(diagnostic);
+            drop(source_storage);
+            copied?;
+        }
+        drop(values);
+        drop(storage);
+        Ok(())
+    }
+}
+
 impl std::ops::Deref for RhinoDiagnostic {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
         &self.message
+    }
+}
+
+/// Diagnostic destination shared by retained and scratch parser paths.
+pub(crate) trait DiagnosticSink {
+    fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError>;
+
+    fn push_coded_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        code: impl Into<Option<RhinoLossCode>>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError>;
+}
+
+impl DiagnosticSink for Diagnostics {
+    fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        Diagnostics::push_admitted(self, ctx, message)
+    }
+
+    fn push_coded_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        code: impl Into<Option<RhinoLossCode>>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        Diagnostics::push_coded_admitted(self, ctx, code, message)
+    }
+}
+
+impl DiagnosticSink for ScratchDiagnostics<'_> {
+    fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ScratchDiagnostics::push_coded_admitted(self, ctx, None, message)
+    }
+
+    fn push_coded_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        code: impl Into<Option<RhinoLossCode>>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ScratchDiagnostics::push_coded_admitted(self, ctx, code, message)
     }
 }
 
@@ -498,6 +877,105 @@ impl RhinoLossCode {
 mod tests {
     use super::RhinoLossCode;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn failed_scoped_scratch_value_releases_its_storage() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 4;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let mut values = super::ScratchVec::<String>::new(&ctx, "scratch values")
+            .expect("scratch vector reservation");
+        let error = values
+            .push_with_storage_admitted(
+                &ctx,
+                || {
+                    ctx.copy_retained_text("four", "scratch field")?;
+                    Err(cadmpeg_core::CodecError::malformed("injected failure"))
+                },
+                "scratch values",
+            )
+            .expect_err("failed value is not inserted");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        assert!(ctx.reserve_scoped(4, "released scratch field").is_ok());
+    }
+
+    #[test]
+    fn scratch_loss_transfer_stops_at_the_first_unadmitted_note() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let mut source = super::ScratchVec::new(&ctx, "source notes")
+            .expect("scratch vector reservation");
+        for message in ["first", "second"] {
+            source
+                .push_admitted(
+                    &ctx,
+                    RhinoLossCode::PresentationRecordDropped.note(message.to_owned()),
+                    "source notes",
+                )
+                .expect("source note slot");
+        }
+        let mut destination = Vec::new();
+        let error = source
+            .append_admitted(&ctx, &mut destination, "loss note traversal")
+            .expect_err("second source step exceeds the work limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "loss note traversal"
+        ));
+        assert_eq!(destination.len(), 1);
+        assert_eq!(destination[0].message, "first");
+    }
+
+    #[test]
+    fn diagnostic_copy_stops_at_the_first_unadmitted_source() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let mut source = super::Diagnostics::new();
+        source.push("");
+        source.push("");
+        let mut destination = super::Diagnostics::new();
+        let error = destination
+            .extend_cloned_admitted(&ctx, &source)
+            .expect_err("second source step exceeds the work limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino extend cloned admitted traversal"
+        ));
+        assert_eq!(destination.len(), 1);
+    }
+
+    #[test]
+    fn prefixed_diagnostic_copy_stops_at_the_first_unadmitted_source() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 5;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let mut source = super::Diagnostics::new();
+        source.push("");
+        source.push("");
+        let mut destination = super::Diagnostics::new();
+        let error = destination
+            .append_prefixed_admitted(&ctx, source, format_args!(""))
+            .expect_err("second source step exceeds the work limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.operation == "Rhino prefixed diagnostic traversal"
+        ));
+        assert_eq!(destination.len(), 1);
+        assert_eq!(destination[0].message, ": ");
+    }
 
     #[test]
     fn diagnostic_copy_refuses_collection_limit() {

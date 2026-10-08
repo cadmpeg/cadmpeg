@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded hatch payload decoding.
 
-use crate::loss::Diagnostics;
+use crate::loss::{Diagnostics, ScratchVec};
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
@@ -110,6 +110,16 @@ pub(crate) struct Hatch {
     pub(crate) basepoint: [FiniteReal; 2],
     pub(crate) gradient: Option<Gradient>,
     pub(crate) warnings: Diagnostics,
+}
+
+/// Scratch produced while applying native hatch userdata.
+///
+/// Keep this value alive until the caller consumes errors and serializes any
+/// selected gradient. The guards track the temporary source buffers that hold
+/// those values.
+pub(crate) struct HatchUserdataInstall<'ctx> {
+    pub(crate) errors: ScratchVec<'ctx, String>,
+    pub(crate) _gradient_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
 fn refused(
@@ -322,44 +332,74 @@ pub(crate) fn decode(
     })
 }
 
-pub(crate) fn apply_userdata(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(crate) fn apply_userdata<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     userdata: &[UserdataDescriptor],
     scale: MillimeterScale,
     archive: ArchiveVersion,
     hatch: &mut Hatch,
-) -> Result<Result<(), Vec<GeometryError>>, CodecError> {
+) -> Result<HatchUserdataInstall<'ctx>, CodecError> {
     let mut last_basepoint = None;
-    let mut errors = Vec::new();
+    let mut errors = ScratchVec::new(ctx, "Rhino hatch userdata error Vec")?;
+    let mut gradient_storage = None;
     let mut first_gradient = None;
-    for extra in ctx
-        .admit_iter(userdata, "Rhino apply userdata traversal")?
-        .filter_map(UserdataDescriptor::known)
-        .filter(|value| value.class_uuid == V5_HATCH_EXTRA && value.item_uuid == V5_HATCH_EXTRA)
-    {
-        match parse_userdata(data, extra, archive, scale) {
+    let mut descriptors = userdata.iter();
+    for _ in 0..userdata.len() {
+        let descriptor = ctx
+            .next_charged(&mut descriptors, "Rhino apply userdata traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino hatch userdata source ended early"))?;
+        let Some(extra) = UserdataDescriptor::known(descriptor) else {
+            continue;
+        };
+        if extra.class_uuid != V5_HATCH_EXTRA || extra.item_uuid != V5_HATCH_EXTRA {
+            continue;
+        }
+        let mut storage = ctx.reserve_scoped(0, "Rhino hatch extra parse")?;
+        let parsed = storage.with_storage(|| {
+            Ok::<_, CodecError>(parse_userdata(data, extra, archive, scale))
+        })?;
+        match parsed {
             Ok(basepoint) => last_basepoint = Some(basepoint),
             Err(GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
-                ctx.reserve_vec(&mut errors, 1, "Rhino hatch userdata errors")?;
-                errors.push(error);
+                errors.push_with_storage_admitted(
+                    ctx,
+                    || ctx.format_retained(format_args!("{error}"), "Rhino hatch userdata error"),
+                    "Rhino hatch userdata errors",
+                )?;
             }
         }
     }
-    for extra in ctx
-        .admit_iter(userdata, "Rhino apply userdata traversal")?
-        .filter_map(UserdataDescriptor::known)
-        .filter(|value| value.class_uuid == GRADIENT_COLOR_DATA)
-    {
-        match parse_gradient_userdata(ctx, data, extra, scale, archive) {
+    let mut descriptors = userdata.iter();
+    for _ in 0..userdata.len() {
+        let descriptor = ctx
+            .next_charged(&mut descriptors, "Rhino apply userdata traversal")?
+            .ok_or_else(|| CodecError::malformed("Rhino hatch userdata source ended early"))?;
+        let Some(extra) = UserdataDescriptor::known(descriptor) else {
+            continue;
+        };
+        if extra.class_uuid != GRADIENT_COLOR_DATA {
+            continue;
+        }
+        let mut storage = ctx.reserve_scoped(0, "Rhino gradient userdata")?;
+        let parsed = storage.with_storage(|| {
+            Ok::<_, CodecError>(parse_gradient_userdata(ctx, data, extra, scale, archive))
+        })?;
+        match parsed {
             Ok(gradient) => {
-                first_gradient.get_or_insert(gradient);
+                if first_gradient.is_none() {
+                    first_gradient = Some(gradient);
+                    gradient_storage = Some(storage);
+                }
             }
             Err(GeometryError::Codec(error)) => return Err(error),
             Err(error) => {
-                ctx.reserve_vec(&mut errors, 1, "Rhino hatch userdata errors")?;
-                errors.push(error);
+                errors.push_with_storage_admitted(
+                    ctx,
+                    || ctx.format_retained(format_args!("{error}"), "Rhino hatch userdata error"),
+                    "Rhino hatch userdata errors",
+                )?;
             }
         }
     }
@@ -369,10 +409,9 @@ pub(crate) fn apply_userdata(
     if let Some(gradient) = first_gradient {
         hatch.gradient = Some(gradient);
     }
-    Ok(if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
+    Ok(HatchUserdataInstall {
+        errors,
+        _gradient_storage: gradient_storage,
     })
 }
 
@@ -741,7 +780,7 @@ pub(crate) mod tests {
                 save_context: None,
                 payload_range: 0..extra.len(),
             });
-            apply_userdata(
+            let install = apply_userdata(
                 &ctx,
                 &extra,
                 std::slice::from_ref(&descriptor),
@@ -749,8 +788,8 @@ pub(crate) mod tests {
                 ArchiveVersion::V5,
                 &mut hatch,
             )
-            .expect("userdata resources admitted")
-            .expect("hatch extra");
+            .expect("userdata resources admitted");
+            assert!(install.errors.is_empty());
             assert_eq!(hatch.basepoint.map(FiniteReal::get), [20.0, 30.0]);
 
             let mut wrong_item_descriptor = descriptor.clone();
@@ -767,7 +806,7 @@ pub(crate) mod tests {
                 ArchiveVersion::V5,
             )
             .expect("hatch");
-            apply_userdata(
+            let install = apply_userdata(
                 &ctx,
                 &extra,
                 std::slice::from_ref(&wrong_item_descriptor),
@@ -775,8 +814,8 @@ pub(crate) mod tests {
                 ArchiveVersion::V5,
                 &mut wrong_item_hatch,
             )
-            .expect("userdata resources admitted")
-            .expect("wrong hatch-extra item UUID is ignored");
+            .expect("userdata resources admitted");
+            assert!(install.errors.is_empty());
             assert_eq!(wrong_item_hatch.basepoint.map(FiniteReal::get), [0.0, 0.0]);
 
             let mut second_body = Vec::new();
@@ -802,7 +841,7 @@ pub(crate) mod tests {
             };
             *range = second_start..combined.len();
             *payload_range = second_start..combined.len();
-            apply_userdata(
+            let install = apply_userdata(
                 &ctx,
                 &combined,
                 &[descriptor, second_descriptor],
@@ -810,8 +849,8 @@ pub(crate) mod tests {
                 ArchiveVersion::V5,
                 &mut hatch,
             )
-            .expect("userdata resources admitted")
-            .expect("duplicate hatch extensions");
+            .expect("userdata resources admitted");
+            assert!(install.errors.is_empty());
             assert_eq!(hatch.basepoint.map(FiniteReal::get), [40.0, 50.0]);
         });
     }
@@ -856,7 +895,7 @@ pub(crate) mod tests {
                 ArchiveVersion::V8,
             )
             .expect("hatch");
-            apply_userdata(
+            let install = apply_userdata(
                 &ctx,
                 &payload,
                 &[gradient_descriptor(&payload)],
@@ -864,8 +903,8 @@ pub(crate) mod tests {
                 ArchiveVersion::V8,
                 &mut hatch,
             )
-            .expect("userdata resources admitted")
-            .expect("gradient userdata");
+            .expect("userdata resources admitted");
+            assert!(install.errors.is_empty());
             let gradient = hatch.gradient.expect("gradient");
             assert_eq!(gradient.kind, GradientKind::Linear);
             assert_eq!(gradient.start.map(FiniteReal::get), [2.0, 4.0, 6.0]);
@@ -935,7 +974,7 @@ pub(crate) mod tests {
                 ArchiveVersion::V8,
             )
             .expect("hatch");
-            assert!(apply_userdata(
+            let install = apply_userdata(
                 &ctx,
                 &payload,
                 &[gradient_descriptor(&payload)],
@@ -943,8 +982,8 @@ pub(crate) mod tests {
                 ArchiveVersion::V8,
                 &mut hatch,
             )
-            .expect("userdata resources admitted")
-            .is_err());
+            .expect("userdata resources admitted");
+            assert!(!install.errors.is_empty());
             assert!(hatch.gradient.is_none());
         });
     }
@@ -1005,7 +1044,9 @@ pub(crate) mod tests {
                     ArchiveVersion::V8,
                     &mut hatch,
                 )
-                .map(|result| result.expect("valid gradient userdata"))
+                .map(|result| {
+                    assert!(result.errors.is_empty());
+                })
             });
         }
     }

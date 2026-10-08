@@ -41,6 +41,10 @@ fn view_staging_stays_materialized_through_native_install() {
             ResourceDimension::MaterializedBytes,
             "Rhino view list records",
         ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "Rhino view child typecode",
+        ),
         (ResourceDimension::RetainedBytes, "serialize native record"),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
@@ -52,12 +56,13 @@ fn view_staging_stays_materialized_through_native_install() {
                 policy.limits.max_retained_bytes = cap;
             }
             let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-            super::super::install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
+            super::super::install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty()).map(drop)
         });
     }
     let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let service_context = cadmpeg_test_support::service_decode_context();
     let installed = super::super::install(
-        &cadmpeg_test_support::service_decode_context(),
+        &service_context,
         &scan,
         &mut ir,
     )

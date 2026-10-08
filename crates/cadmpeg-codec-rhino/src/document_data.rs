@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino document properties, selectors, previews, and setting identities.
 
-use crate::loss::Diagnostics;
+use crate::loss::{Diagnostics, ScratchVec};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -594,11 +594,11 @@ fn retained_sha256(
 ///
 /// The returned records are complete settings records whose payload was not
 /// admitted by a registered owner.
-pub(crate) fn install(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(crate) fn install<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<NativeInstall, CodecError> {
+) -> Result<NativeInstall<'ctx>, CodecError> {
     let properties = &scan.metadata.properties;
     let (
         (revisions, notes, applications, document_settings, previews, mut setting_records),
@@ -741,8 +741,8 @@ pub(crate) fn install(
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
     let mut renders = Vec::new();
-    let mut losses = Vec::new();
-    let mut opaque_records = Vec::new();
+    let mut losses = ScratchVec::new(ctx, "Rhino document setting loss Vec")?;
+    let mut opaque_records = ScratchVec::new(ctx, "Rhino document source Vec")?;
     let mut render_settings_seen = false;
     for table in ctx.admit_iter(&scan.tables[..], "Rhino install traversal")? {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
@@ -760,16 +760,21 @@ pub(crate) fn install(
                     record.range.start,
                     binding.label()
                 ), "Rhino unit-binding setting message"))?;
-                ctx.reserve_vec(&mut losses, 1, "Rhino document setting losses")?;
-                losses
-                    .push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(
+                losses.push_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::PresentationRecordDropped.note(
                         ctx.copy_retained_text(&message, "Rhino unit-binding loss message")?,
-                    ));
-                ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
-                opaque_records.push(OpaqueRecord {
-                    table_typecode: table.typecode,
-                    record: record.clone(),
-                });
+                    ),
+                    "Rhino document setting losses",
+                )?;
+                opaque_records.push_admitted(
+                    ctx,
+                    OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    },
+                    "Rhino opaque setting records",
+                )?;
                 native_storage.with_storage(|| {
                     ctx.reserve_vec(&mut setting_records, 1, "Rhino retained setting records")?;
                     setting_records.push(SettingRecord {
@@ -864,15 +869,14 @@ pub(crate) fn install(
                         render_userdata(ctx, scan.data, record, scan.archive)
                     }) {
                         Ok(_) => {
-                            ctx.reserve_vec(
-                                &mut opaque_records,
-                                1,
+                            opaque_records.push_admitted(
+                                ctx,
+                                OpaqueRecord {
+                                    table_typecode: table.typecode,
+                                    record: record.clone(),
+                                },
                                 "Rhino opaque setting records",
                             )?;
-                            opaque_records.push(OpaqueRecord {
-                                table_typecode: table.typecode,
-                                record: record.clone(),
-                            });
                             continue;
                         }
                         Err(FramingError::Resource(limit)) => {
@@ -881,11 +885,14 @@ pub(crate) fn install(
                         Err(error) => Err(error),
                     }
                 } else {
-                    ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
-                    opaque_records.push(OpaqueRecord {
-                        table_typecode: table.typecode,
-                        record: record.clone(),
-                    });
+                    opaque_records.push_admitted(
+                        ctx,
+                        OpaqueRecord {
+                            table_typecode: table.typecode,
+                            record: record.clone(),
+                        },
+                        "Rhino opaque setting records",
+                    )?;
                     continue;
                 }
             } else {
@@ -895,11 +902,14 @@ pub(crate) fn install(
                 if let FramingError::Resource(limit) = &error {
                     return Err(CodecError::ResourceLimit(*limit));
                 }
-                ctx.reserve_vec(&mut opaque_records, 1, "Rhino opaque setting records")?;
-                opaque_records.push(OpaqueRecord {
-                    table_typecode: table.typecode,
-                    record: record.clone(),
-                });
+                opaque_records.push_admitted(
+                    ctx,
+                    OpaqueRecord {
+                        table_typecode: table.typecode,
+                        record: record.clone(),
+                    },
+                    "Rhino opaque setting records",
+                )?;
                 native_storage.with_storage(|| {
                     ctx.reserve_vec(&mut setting_records, 1, "Rhino retained setting records")?;
                     setting_records.push(SettingRecord {

@@ -648,6 +648,26 @@ pub(crate) enum ChecksumStatus {
     Mismatch { expected: u32, actual: u32 },
 }
 
+/// Scalar description of a checksum mismatch, formatted only at its admitted
+/// diagnostic destination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ChecksumNote {
+    pub(crate) offset: usize,
+    pub(crate) typecode: u32,
+    pub(crate) expected: u32,
+    pub(crate) actual: u32,
+}
+
+impl fmt::Display for ChecksumNote {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "CRC mismatch at offset {} for typecode {:#x}: expected {:#x}, got {:#x}",
+            self.offset, self.typecode, self.expected, self.actual
+        )
+    }
+}
+
 /// Computes the augmented non-reflected V1 CRC-CCITT variant.
 pub(crate) fn crc16(
     ctx: &DecodeContext<'_>,
@@ -670,12 +690,12 @@ pub(crate) fn crc16(
 }
 
 /// Checks a chunk and records an integrity diagnostic for a checksum mismatch.
-pub(crate) fn warn_checksum(
+pub(crate) fn warn_checksum<D: crate::loss::DiagnosticSink>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     label: &str,
-    warnings: &mut crate::loss::Diagnostics,
+    warnings: &mut D,
 ) -> Result<(), FramingError> {
     if matches!(
         verify_checksum(ctx, data, chunk)?,

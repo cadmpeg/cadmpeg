@@ -1,10 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::c2_curve_to_nurbs_join;
+use super::super::c2_curve_to_nurbs_join_scoped;
 use super::{
     decoded_nurbs, finite_parameter, line_nurbs, with_collection_limit, with_expand_bytes,
     Diagnostics, NurbsCurve, Point3,
 };
+
+fn c2_curve_to_nurbs_join(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curve: crate::curves::DecodedCurve,
+    offset: usize,
+) -> Result<(NurbsCurve, Vec<String>), crate::curves::GeometryError> {
+    let mut result_storage = ctx.reserve_scoped(0, "test C2 result")?;
+    let mut scratch = crate::loss::ScratchDiagnostics::new(ctx, "test C2 diagnostics")?;
+    let joined = c2_curve_to_nurbs_join_scoped(
+        ctx,
+        curve,
+        offset,
+        &mut result_storage,
+        &mut scratch,
+    );
+    let joined = match joined {
+        Ok(joined) => joined,
+        Err(error) => {
+            drop(scratch);
+            drop(result_storage);
+            return Err(error);
+        }
+    };
+    let mut warnings = Diagnostics::new();
+    warnings.append_prefixed_scoped_admitted(ctx, scratch, format_args!("C2"))?;
+    let messages = warnings
+        .messages(ctx)?
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    result_storage.commit()?;
+    Ok((joined, messages))
+}
 
 #[test]
 fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
@@ -22,11 +54,10 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
         end_parameter: finite_parameter(40.0),
         warnings: Diagnostics::new(),
     };
-    let merged = with_expand_bytes(&[], |expand| {
+    let (merged, warnings) = with_expand_bytes(&[], |expand| {
         c2_curve_to_nurbs_join(expand.ctx(), compound, 0)
     })
-    .expect("merge")
-    .curve;
+    .expect("merge");
     assert_eq!(
         merged.knots().as_slice(),
         vec![10.0, 10.0, 20.0, 40.0, 40.0]
@@ -34,6 +65,8 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
     assert_eq!(merged.control_points().len(), 3);
     assert_eq!(merged.pole_rows().weights(), Some(vec![2.0, 1.0, 1.0]));
     assert!(!merged.periodic());
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].contains("polycurve join moved endpoints"));
 }
 
 #[test]
@@ -77,9 +110,10 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
         end_parameter: finite_parameter(9.0),
         warnings: Diagnostics::new(),
     };
-    let merged = with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
-        .expect("nested merge")
-        .curve;
+    let (merged, _) = with_expand_bytes(&[], |expand| {
+        c2_curve_to_nurbs_join(expand.ctx(), outer, 0)
+    })
+    .expect("nested merge");
     assert_eq!(merged.knots().as_slice(), vec![5.0, 5.0, 7.0, 9.0, 9.0]);
 }
 
@@ -110,11 +144,10 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         end_parameter: finite_parameter(2.0),
         warnings: Diagnostics::new(),
     };
-    let merged = with_expand_bytes(&[], |expand| {
+    let (merged, _) = with_expand_bytes(&[], |expand| {
         c2_curve_to_nurbs_join(expand.ctx(), compound, 0)
     })
-    .expect("degree elevation")
-    .curve;
+    .expect("degree elevation");
     assert_eq!(merged.degree(), 2);
     assert_eq!(merged.control_points().len(), 5);
     assert_eq!(
@@ -156,6 +189,38 @@ fn c2_join_rejects_first_child_without_charging_unused_suffix() {
     assert!(error
         .to_string()
         .contains("C2 child has no parameter-space representation"));
+    assert!(ctx.resource_refusal().is_none());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn c2_invalid_first_domain_returns_before_suffix_admission() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let compound = crate::curves::DecodedCurve::Compound {
+        children: vec![
+            (
+                finite_parameter(2.0),
+                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+            ),
+            (
+                finite_parameter(1.0),
+                decoded_nurbs(line_nurbs(1.0, 2.0, false)),
+            ),
+        ],
+        end_parameter: finite_parameter(3.0),
+        warnings: Diagnostics::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = c2_curve_to_nurbs_join(&ctx, compound, 0)
+        .err()
+        .expect("the first domain is invalid before its child is decoded");
+    assert!(matches!(error, crate::curves::GeometryError::Malformed(_)));
+    assert!(error
+        .to_string()
+        .contains("C2 polycurve segment domain is invalid"));
     assert!(ctx.resource_refusal().is_none());
     ctx.finish_session().unwrap();
 }

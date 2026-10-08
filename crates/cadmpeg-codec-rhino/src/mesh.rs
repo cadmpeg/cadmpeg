@@ -2594,24 +2594,42 @@ mod tests {
             .expect("one n-gon fits service limits"),
             Some(1)
         );
-        let checksum_body = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false)
-            .expect("bounded userdata chunk")
-            .body();
-        // One range validation and every direct checksum byte precede records.
-        let checksum_work = 1 + u64::try_from(checksum_body.len()).expect("fixture length fits");
-        for (work_limit, operation) in [
-            (checksum_work, "Rhino V4V5 mesh ngon records"),
-            (checksum_work + 6, "Rhino V4V5 mesh ngon indices"),
+        for operation in [
+            "Rhino V4V5 mesh ngon records",
+            "Rhino V4V5 mesh ngon indices",
         ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = work_limit;
-            let refused = with_expand_policy(&bytes, policy, |expand| {
-                read_v4v5_ngon_userdata(expand.ctx(), &bytes, extra, ArchiveVersion::V5, 3, 1)
-                    .expect_err("n-gon work exceeds the configured limit")
-            });
+            let refused = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                        .expect("fixture source fits service limits");
+                    match read_v4v5_ngon_userdata(
+                        &ctx,
+                        &bytes,
+                        extra,
+                        ArchiveVersion::V5,
+                        3,
+                        1,
+                    ) {
+                        Err(GeometryError::Codec(error)) => {
+                            assert_eq!(ctx.resource_refusal(), match error {
+                                cadmpeg_core::CodecError::ResourceLimit(refusal) => Some(refusal),
+                                _ => None,
+                            });
+                            Err::<(), _>(error)
+                        }
+                        Ok(_) => panic!("n-gon work boundary was not reached"),
+                        Err(error) => panic!("unexpected n-gon refusal: {error:?}"),
+                    }
+                },
+            );
             assert!(matches!(
                 refused,
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                cadmpeg_core::CodecError::ResourceLimit(refusal)
                     if refusal.operation == operation
             ));
         }

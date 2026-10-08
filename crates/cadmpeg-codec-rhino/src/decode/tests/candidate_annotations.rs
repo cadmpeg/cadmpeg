@@ -240,7 +240,10 @@ fn candidate_source_link_grammar_failure_preserves_admission_classification() {
             .unknown_links_mut(0)
             .unwrap()
             .1
-            .push("invalid".into());
+            .extend(["zz-invalid".into(), "z-invalid".into()]);
+        assert!(context
+            .append_link(0, "rhino:test:curve#generated")
+            .unwrap());
         let before = context.session.document().clone();
         let Err(CandidateError::Admission(message)) = context.validate_candidate(|_, _| ()) else {
             panic!("source link grammar remains an admission failure");
@@ -248,6 +251,18 @@ fn candidate_source_link_grammar_failure_preserves_admission_classification() {
         let expected =
             cadmpeg_ir::NativeUnknownRecord::try_from(&context.session.unknowns()[0]).unwrap_err();
         assert_eq!(message, expected.to_string());
+        let first_error = cadmpeg_ir::ids::Identity::new("z-invalid").unwrap_err();
+        let later_error = cadmpeg_ir::ids::Identity::new("zz-invalid").unwrap_err();
+        assert!(message.contains(&first_error.to_string()));
+        assert!(!message.contains(&later_error.to_string()));
+        assert_eq!(
+            context.unknown(0).unwrap().links(),
+            [
+                "rhino:test:curve#generated",
+                "z-invalid",
+                "zz-invalid"
+            ]
+        );
         assert_eq!(context.session.document(), &before);
     });
 }
@@ -266,7 +281,6 @@ fn source_link_insertion_preserves_work_refusal_before_mutation() {
         "test:source:unknown#owner",
         &mut links,
         "test:model:point#earlier",
-        None,
     ) else {
         panic!("comparison work must refuse");
     };

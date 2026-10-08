@@ -2449,12 +2449,16 @@ fn checksum_warning(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
-) -> Result<Option<String>, FramingError> {
+) -> Result<Option<crate::chunks::ChecksumNote>, FramingError> {
     match crate::chunks::verify_checksum(ctx, data, chunk)? {
-        crate::chunks::ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
-            "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
-            chunk.header_start, chunk.typecode
-        ))),
+        crate::chunks::ChecksumStatus::Mismatch { expected, actual } => {
+            Ok(Some(crate::chunks::ChecksumNote {
+                offset: chunk.header_start,
+                typecode: chunk.typecode,
+                expected,
+                actual,
+            }))
+        }
         _ => Ok(None),
     }
 }
@@ -2464,13 +2468,17 @@ fn checksum_warning_excluding(
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
-) -> Result<Option<String>, FramingError> {
+) -> Result<Option<crate::chunks::ChecksumNote>, FramingError> {
     let ranges = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
     match crate::chunks::verify_checksum_ranges(ctx, data, chunk, &ranges)? {
-        crate::chunks::ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
-            "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
-            chunk.header_start, chunk.typecode
-        ))),
+        crate::chunks::ChecksumStatus::Mismatch { expected, actual } => {
+            Ok(Some(crate::chunks::ChecksumNote {
+                offset: chunk.header_start,
+                typecode: chunk.typecode,
+                expected,
+                actual,
+            }))
+        }
         _ => Ok(None),
     }
 }

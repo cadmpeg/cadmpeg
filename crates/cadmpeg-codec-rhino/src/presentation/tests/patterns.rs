@@ -649,8 +649,9 @@ fn linetype_install_retains_model_distances_without_physical_units() {
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete linetype document");
         let mut ir = CadIr::empty();
+        let service_context = cadmpeg_test_support::service_decode_context();
         let installed = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &service_context,
             &scan,
             &mut ir,
         )
@@ -699,8 +700,9 @@ fn hatch_install_retains_document_distances_without_physical_units() {
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
+        let service_context = cadmpeg_test_support::service_decode_context();
         let installed = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &service_context,
             &scan,
             &mut ir,
         )
@@ -759,6 +761,39 @@ fn installed_linetype_refuses_collection_limit() {
 }
 
 #[test]
+fn installed_linetype_staging_refuses_materialized_limit() {
+    let archive = ArchiveVersion::V8;
+    let unit = crate::test_support::test_dump::units_record(archive, 2);
+    let bytes = crate::test_support::test_dump::minimal_document(
+        "80",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[unit]),
+            crate::test_support::test_dump::table(
+                archive,
+                LINETYPE_TABLE,
+                &[modern_linetype_record(archive, false)],
+            ),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes.clone()).expect("complete pattern document");
+
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino linetype ID",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+            install(&ctx, &scan, &mut CadIr::empty()).map(drop)
+        },
+    );
+}
+
+#[test]
 fn installed_hatch_refuses_collection_limit() {
     assert!(
         matches!(pattern_install_collection_refusal(HATCH_PATTERN_TABLE, legacy_hatch_pattern_record(ArchiveVersion::V8), 4), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino hatch patterns")
@@ -804,8 +839,9 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
+        let service_context = cadmpeg_test_support::service_decode_context();
         let installed = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &service_context,
             &scan,
             &mut ir,
         )

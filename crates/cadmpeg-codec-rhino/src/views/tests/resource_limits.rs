@@ -32,8 +32,9 @@ fn view_id_refuses_materialized_limit_and_losses_remain_retained() {
     );
     let archive = ArchiveVersion::V5;
     let (bytes, record) = one_end_marker_view(archive);
+    let service_context = cadmpeg_test_support::service_decode_context();
     let admitted = {
-        let context = &cadmpeg_test_support::service_decode_context();
+        let context = &service_context;
         let mut staging = context
             .reserve_scoped(0, "Rhino test view staging")
             .unwrap();

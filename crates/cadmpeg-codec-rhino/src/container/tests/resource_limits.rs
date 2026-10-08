@@ -116,7 +116,7 @@ fn assert_scan_descriptor_refusal(bytes: &[u8], operation: &str) {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("fixture");
-        match crate::container::scan(&ctx, bytes) {
+        match crate::container::scan(&ctx, bytes).map(drop) {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
                 assert_eq!(
                     limit.dimension,
