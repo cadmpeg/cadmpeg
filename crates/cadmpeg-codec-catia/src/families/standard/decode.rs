@@ -639,9 +639,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             ctx,
             annotations,
             &surface.id,
-            "geometry",
-            "catia_annotation_field",
-        )?;
+            "geometry",)?;
     }
     let seam_count = seams.len();
     for (edge_index, curve_index, geometry, parameter_range) in
@@ -663,16 +661,12 @@ fn bind_consolidated_revolution_faces_and_seams(
             ctx,
             annotations,
             &curve.id,
-            "geometry",
-            "catia_annotation_field",
-        )?;
+            "geometry",)?;
         crate::resource::derived_annotation(
             ctx,
             annotations,
             &edge.id,
-            "param_range",
-            "catia_annotation_field",
-        )?;
+            "param_range",)?;
     }
     Ok((bound_surfaces, seam_count))
 }
@@ -3368,7 +3362,7 @@ fn try_decode_standard_population(
                     0,
                     "profile_curve",
                     Exactness::Derived));
-                admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &directrix_id, "geometry", "catia_annotation_field"));
+                admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &directrix_id, "geometry"));
                 if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves") {
                     return Some(Err(error));
                 }
@@ -3493,7 +3487,7 @@ fn try_decode_standard_population(
             0,
             "vertex_05_08_01",
             Exactness::ByteExact));
-        admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &vertex_id, "point", "catia_annotation_field"));
+        admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &vertex_id, "point"));
         if let Err(error) = admission.reserve_entity(&mut ir.model.vertices, "catia_family_emit_vertices") {
             return Some(Err(error));
         }
@@ -5038,9 +5032,7 @@ fn attach_standard_faces(
                 ctx,
                 annotations,
                 &face_id,
-                field,
-                "catia_annotation_field",
-            )?;
+                field,)?;
         }
         ctx.push_vec(
             &mut face_ids,
@@ -5076,16 +5068,12 @@ fn attach_standard_faces(
         ctx,
         annotations,
         &body_id,
-        "kind",
-        "catia_annotation_field",
-    )?;
+        "kind",)?;
     crate::resource::derived_annotation(
         ctx,
         annotations,
         &body_id,
-        "regions",
-        "catia_annotation_field",
-    )?;
+        "regions",)?;
     let mut body_regions = Vec::new();
     ctx.push_vec(
         &mut body_regions,
@@ -5115,16 +5103,12 @@ fn attach_standard_faces(
         ctx,
         annotations,
         &region_id,
-        "body",
-        "catia_annotation_field",
-    )?;
+        "body",)?;
     crate::resource::derived_annotation(
         ctx,
         annotations,
         &region_id,
-        "shells",
-        "catia_annotation_field",
-    )?;
+        "shells",)?;
     let mut region_shells = Vec::new();
     ctx.push_vec(
         &mut region_shells,
@@ -5150,16 +5134,12 @@ fn attach_standard_faces(
         ctx,
         annotations,
         &shell_id,
-        "region",
-        "catia_annotation_field",
-    )?;
+        "region",)?;
     crate::resource::derived_annotation(
         ctx,
         annotations,
         &shell_id,
-        "faces",
-        "catia_annotation_field",
-    )?;
+        "faces",)?;
     admission.reserve_entity(&mut ir.model.shells, "catia_standard_model_shells")?;
     ir.model.shells.push(
         Shell::with_faces(shell_id, region_id, face_ids)
@@ -5239,9 +5219,7 @@ fn partition_standard_face_components(
         ctx,
         annotations,
         &body_id,
-        "regions",
-        "catia_annotation_field",
-    )?;
+        "regions",)?;
 
     for (component, faces) in ctx
         .admit_iter(components, "catia_standard_iteration")?
@@ -5279,9 +5257,7 @@ fn partition_standard_face_components(
                 ctx,
                 annotations,
                 &face.id,
-                "shell",
-                "catia_annotation_field",
-            )?;
+                "shell",)?;
         }
         if component == 0 {
             let Some(region_index) = ctx.position_by(
@@ -5343,9 +5319,7 @@ fn partition_standard_face_components(
                 ctx,
                 annotations,
                 &region_id,
-                field,
-                "catia_annotation_field",
-            )?;
+                field,)?;
         }
         admission.reserve_entity(&mut ir.model.regions, "catia_standard_partition_regions")?;
         ir.model.regions.push(Region {
@@ -5358,9 +5332,7 @@ fn partition_standard_face_components(
                 ctx,
                 annotations,
                 &shell_id,
-                field,
-                "catia_annotation_field",
-            )?;
+                field,)?;
         }
         admission.reserve_entity(&mut ir.model.shells, "catia_standard_partition_shells")?;
         ir.model
@@ -8296,32 +8268,24 @@ fn emit_standard_topology(
                 ctx,
                 annotations,
                 &id,
-                "curve",
-                "catia_annotation_field",
-            )?;
+                "curve",)?;
         }
         crate::resource::derived_annotation(
             ctx,
             annotations,
             &id,
-            "start",
-            "catia_annotation_field",
-        )?;
+            "start",)?;
         crate::resource::derived_annotation(
             ctx,
             annotations,
             &id,
-            "end",
-            "catia_annotation_field",
-        )?;
+            "end",)?;
         if param_range.is_some() {
             crate::resource::derived_annotation(
                 ctx,
                 annotations,
                 &id,
-                "param_range",
-                "catia_annotation_field",
-            )?;
+                "param_range",)?;
         }
         admission.reserve_entity(&mut ir.model.edges, "catia_standard_model_edges")?;
         ir.model.edges.push(Edge {
@@ -8484,7 +8448,7 @@ refusal)?
                         u64_from_index(support.pos),
                         "derived_surface_parameter_curve",
                         Exactness::Derived)?;
-                    crate::resource::derived_annotation(ctx, annotations, &id, "geometry", "catia_annotation_field")?;
+                    crate::resource::derived_annotation(ctx, annotations, &id, "geometry")?;
                     admission.reserve_entity(&mut ir.model.pcurves, "catia_standard_model_pcurves")?;
                     ir.model.pcurves.push(Pcurve {
                         id: id.try_clone_for_decode(ctx, "catia_standard_pcurve_id_copy")?,
@@ -8524,18 +8488,14 @@ refusal)?
                         ctx,
                         annotations,
                         &id,
-                        field,
-                        "catia_annotation_field",
-                    )?;
+                        field,)?;
                 }
                 if pcurve_id.is_some() {
                     crate::resource::derived_annotation(
                         ctx,
                         annotations,
                         &id,
-                        "pcurves",
-                        "catia_annotation_field",
-                    )?;
+                        "pcurves",)?;
                 }
                 let pcurve_use = pcurve_id
                     .map(|(pcurve, range)| {
@@ -8596,31 +8556,23 @@ refusal)?
                 ctx,
                 annotations,
                 &loop_id,
-                "face",
-                "catia_annotation_field",
-            )?;
+                "face",)?;
             crate::resource::derived_annotation(
                 ctx,
                 annotations,
                 &loop_id,
-                "coedges",
-                "catia_annotation_field",
-            )?;
+                "coedges",)?;
             crate::resource::derived_annotation(
                 ctx,
                 annotations,
                 &loop_id,
-                "vertex_uses",
-                "catia_annotation_field",
-            )?;
+                "vertex_uses",)?;
             if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified {
                 crate::resource::derived_annotation(
                     ctx,
                     annotations,
                     &loop_id,
-                    "boundary_role",
-                    "catia_annotation_field",
-                )?;
+                    "boundary_role",)?;
             }
             admission.reserve_entity(&mut ir.model.loops, "catia_standard_model_loops")?;
             ir.model.loops.push(Loop {
@@ -11016,9 +10968,7 @@ fn bind_standard_a5_owner_surfaces(
             ctx,
             annotations,
             &ir.model.surfaces[surface].id,
-            "geometry",
-            "catia_annotation_field",
-        )?;
+            "geometry",)?;
         bound += 1;
     }
     Ok(bound)

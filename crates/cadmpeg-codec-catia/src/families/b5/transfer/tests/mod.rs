@@ -48,9 +48,7 @@ fn b5_derived_field_admits_both_exactness_entries() {
             ctx,
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             "catia:b5:vertex#0",
-            "point",
-            "catia_b5_vertex_annotation",
-        )
+            "point",)
     });
     assert!(operations.contains("collect source exactness entities"));
 
@@ -60,9 +58,7 @@ fn b5_derived_field_admits_both_exactness_entries() {
             ctx,
             &mut annotations,
             "catia:b5:vertex#0",
-            "point",
-            "catia_b5_vertex_annotation",
-        )?;
+            "point",)?;
         Ok::<_, cadmpeg_core::CodecError>(annotations.build())
     })
     .expect("service budget admits the field note");

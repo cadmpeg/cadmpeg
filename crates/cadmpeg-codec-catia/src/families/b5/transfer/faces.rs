@@ -529,9 +529,7 @@ pub(super) fn emit_faces(
             admission.context(),
             annotations,
             body_id.as_str(),
-            field,
-            "catia_b5_body_annotation",
-        )?;
+            field,)?;
     }
     let mut body_regions = Vec::new();
     for id in admission
@@ -582,9 +580,7 @@ pub(super) fn emit_faces(
                 admission.context(),
                 annotations,
                 region_id.as_str(),
-                field,
-                "catia_b5_region_annotation",
-            )?;
+                field,)?;
         }
         let region_record_id =
             region_id.try_clone_for_decode(admission.context(), "catia_b5_region_record_id")?;
@@ -617,9 +613,7 @@ pub(super) fn emit_faces(
                 admission.context(),
                 annotations,
                 shell_id.as_str(),
-                field,
-                "catia_b5_shell_annotation",
-            )?;
+                field,)?;
         }
         let mut shell_faces = Vec::new();
         for face in admission
@@ -700,9 +694,7 @@ pub(super) fn emit_faces(
                 admission.context(),
                 annotations,
                 face_id.as_str(),
-                field,
-                "catia_b5_face_annotation",
-            )?;
+                field,)?;
         }
         let face_record_id =
             face_id.try_clone_for_decode(admission.context(), "catia_b5_face_record_id")?;
@@ -804,18 +796,14 @@ pub(super) fn emit_faces(
                     admission.context(),
                     annotations,
                     loop_id.as_str(),
-                    field,
-                    "catia_b5_loop_annotation",
-                )?;
+                    field,)?;
             }
             if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified {
                 crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     loop_id.as_str(),
-                    "boundary_role",
-                    "catia_b5_loop_annotation",
-                )?;
+                    "boundary_role",)?;
             }
             let Ok(ring) =
                 cadmpeg_ir::topology::LoopRing::new(admission.context(), coedge_ids, vertex_uses)
@@ -851,9 +839,7 @@ pub(super) fn emit_faces(
                         admission.context(),
                         annotations,
                         id.as_str(),
-                        field,
-                        "catia_b5_coedge_annotation",
-                    )?;
+                        field,)?;
                 }
                 let arena_index = ir.model.coedges.len();
                 admission.context().push_btree_group(

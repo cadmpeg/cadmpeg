@@ -2111,7 +2111,7 @@ pub(super) fn append_freeform_surface_pools(
                 &distinct_knots,
                 &points,
                 &first,
-                &second,
+                &second, cadmpeg_ir::units::FiniteVector::new,
             )?
         };
         let Some((knots, control_points)) = solution else {
@@ -3504,9 +3504,7 @@ fn append_resolved_consolidated_surface_curves(
                             admission.context(),
                             annotations,
                             &surface.id,
-                            "geometry",
-                            "catia_annotation_field",
-                        )?;
+                            "geometry",)?;
                         binding_counts.standard_face_surfaces += 1;
                         bound_new_standard_surface = true;
                     }
@@ -3620,9 +3618,7 @@ fn append_resolved_consolidated_surface_curves(
                         admission.context(),
                         annotations,
                         &ir.model.coedges[coedge_index].id,
-                        "pcurves",
-                        "catia_annotation_field",
-                    )?;
+                        "pcurves",)?;
                 }
             }
             ir.model.edges[edge_index].set_param_range(Some(
@@ -3643,16 +3639,12 @@ fn append_resolved_consolidated_surface_curves(
                 admission.context(),
                 annotations,
                 &procedural.id,
-                "curve",
-                "catia_annotation_field",
-            )?;
+                "curve",)?;
             crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 &procedural.id,
-                "definition",
-                "catia_annotation_field",
-            )?;
+                "definition",)?;
         } else {
             let curve_id = crate::resource::compose_index_id(
                 admission.context(),
@@ -3700,16 +3692,12 @@ fn append_resolved_consolidated_surface_curves(
                 admission.context(),
                 annotations,
                 &procedural_id,
-                "curve",
-                "catia_annotation_field",
-            )?;
+                "curve",)?;
             crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 &procedural_id,
-                "definition",
-                "catia_annotation_field",
-            )?;
+                "definition",)?;
             admission.charge()?;
             let _attached = ir.model.add_procedural_curve(
                 admission.context(),

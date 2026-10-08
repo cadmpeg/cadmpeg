@@ -90,11 +90,7 @@ impl A8KnotLane {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         degree: u32,
     ) -> Result<Option<u32>, cadmpeg_core::CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.multiplicities.len()),
-            "catia_a8_pole_count_scan",
-        )?;
-        Ok(pole_count(&self.multiplicities, degree))
+        pole_count(ctx, &self.multiplicities, degree)
     }
 }
 
