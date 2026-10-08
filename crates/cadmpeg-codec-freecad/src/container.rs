@@ -117,11 +117,7 @@ pub(crate) fn scan<'a, 'c>(
     }
     let document_view = archive.open(ctx, "Document.xml")?;
     let document_bytes = document_view.window();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(document_bytes.len()),
-        "FCStd Document.xml lexical admission",
-    )?;
-    if let Some((node_count, object_count)) = xml_envelope_counts(document_bytes) {
+    if let Some((node_count, object_count)) = xml_envelope_counts(ctx, document_bytes)? {
         ctx.charge_entities(object_count, "admit FCStd document objects")?;
         ctx.charge_collection_items(node_count, "FCStd Document.xml node tree")?;
     }
@@ -421,7 +417,13 @@ fn unique_section<'a, 'input>(
 // This allocation-free lexical pass admits the XML tree and direct object
 // declarations before roxmltree constructs any nodes. Syntax errors remain
 // owned by the complete XML parser.
-pub(crate) fn xml_envelope_counts(bytes: &[u8]) -> Option<(u64, u64)> {
+pub(crate) fn xml_envelope_counts(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<(u64, u64)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut offset = 0;
     let mut depth = 0_usize;
     // Include the document node. Count lexical text and markup nodes as an upper
@@ -430,12 +432,22 @@ pub(crate) fn xml_envelope_counts(bytes: &[u8]) -> Option<(u64, u64)> {
     let mut objects = 0_u64;
     let mut envelope = None;
     while offset < bytes.len() {
-        if bytes[offset] != b'<' {
-            let next = bytes[offset..]
-                .iter()
-                .position(|byte| *byte == b'<')
-                .map_or(bytes.len(), |delta| offset + delta);
-            nodes = nodes.checked_add(1)?;
+        let Some(&byte) = ctx.next_charged(
+            &mut bytes[offset..].iter(),
+            "FCStd Document.xml lexical dispatch",
+        )? else {
+            break;
+        };
+        if byte != b'<' {
+            let next = ctx.position_by(
+                &bytes[offset + 1..],
+                |byte| Ok(*byte == b'<'),
+                "FCStd Document.xml lexical text",
+            )?.map_or(bytes.len(), |delta| offset + 1 + delta);
+            let Some(count) = nodes.checked_add(1) else {
+                return Ok(None);
+            };
+            nodes = count;
             offset = next;
             continue;
         }
@@ -448,43 +460,65 @@ pub(crate) fn xml_envelope_counts(bytes: &[u8]) -> Option<(u64, u64)> {
         .into_iter()
         .find(|(prefix, _)| rest.starts_with(prefix))
         {
-            nodes = nodes.checked_add(1)?;
+            let Some(count) = nodes.checked_add(1) else {
+                return Ok(None);
+            };
+            nodes = count;
             let tail = &rest[prefix.len()..];
-            let end = tail
-                .windows(suffix.len())
-                .position(|window| window == suffix)?;
+            let Some(end) = ctx.position_by(
+                tail.windows(suffix.len()),
+                |window| Ok(window == suffix),
+                "FCStd Document.xml lexical markup suffix",
+            )? else {
+                return Ok(None);
+            };
             offset += prefix.len() + end + suffix.len();
             continue;
         }
         if rest.starts_with(b"<!") {
-            nodes = nodes.checked_add(1)?;
-            offset = scan_tag_end(bytes, offset + 2)? + 1;
+            let Some(count) = nodes.checked_add(1) else {
+                return Ok(None);
+            };
+            nodes = count;
+            let Some((end, _)) = scan_tag_end(ctx, bytes, offset + 2)? else {
+                return Ok(None);
+            };
+            offset = end + 1;
             continue;
         }
         let closing = rest.get(1) == Some(&b'/');
         let name_start = offset + if closing { 2 } else { 1 };
-        let mut name_end = name_start;
-        while let Some(byte) = bytes.get(name_end) {
-            if byte.is_ascii_whitespace() || *byte == b'/' || *byte == b'>' {
-                break;
-            }
-            name_end += 1;
-        }
+        let mut local_name_start = name_start;
+        let name_end = ctx.position_by(
+            bytes[name_start..].iter().enumerate(),
+            |(index, byte)| {
+                if *byte == b':' {
+                    local_name_start = name_start + index + 1;
+                }
+                Ok(byte.is_ascii_whitespace() || matches!(*byte, b'/' | b'>'))
+            },
+            "FCStd Document.xml lexical tag name",
+        )?.map_or(bytes.len(), |delta| name_start + delta);
         if name_end == name_start {
-            return None;
+            return Ok(None);
         }
-        let end = scan_tag_end(bytes, name_end)?;
-        let name = bytes[name_start..name_end]
-            .rsplit(|byte| *byte == b':')
-            .next()
-            .unwrap_or(&bytes[name_start..name_end]);
+        let Some((end, self_closing)) = scan_tag_end(ctx, bytes, name_end)? else {
+            return Ok(None);
+        };
+        let name = &bytes[local_name_start..name_end];
         if closing {
-            depth = depth.checked_sub(1)?;
+            let Some(next_depth) = depth.checked_sub(1) else {
+                return Ok(None);
+            };
+            depth = next_depth;
             if depth == 1 {
                 envelope = None;
             }
         } else {
-            nodes = nodes.checked_add(1)?;
+            let Some(count) = nodes.checked_add(1) else {
+                return Ok(None);
+            };
+            nodes = count;
             if depth == 1 && (name == b"Objects" || name == b"Features") {
                 envelope = Some(if name == b"Objects" {
                     b"Object".as_slice()
@@ -492,35 +526,47 @@ pub(crate) fn xml_envelope_counts(bytes: &[u8]) -> Option<(u64, u64)> {
                     b"Feature".as_slice()
                 });
             } else if depth == 2 && envelope == Some(name) {
-                objects = objects.checked_add(1)?;
+                let Some(count) = objects.checked_add(1) else {
+                    return Ok(None);
+                };
+                objects = count;
             }
-            let self_closing = bytes[name_end..end]
-                .iter()
-                .rev()
-                .find(|byte| !byte.is_ascii_whitespace())
-                == Some(&b'/');
             if !self_closing {
-                depth = depth.checked_add(1)?;
+                let Some(next_depth) = depth.checked_add(1) else {
+                    return Ok(None);
+                };
+                depth = next_depth;
             } else if depth == 1 {
                 envelope = None;
             }
         }
         offset = end + 1;
     }
-    (depth == 0).then_some((nodes, objects))
+    Ok((depth == 0).then_some((nodes, objects)))
 }
 
-fn scan_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
+fn scan_tag_end(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+) -> Result<Option<(usize, bool)>, CodecError> {
     let mut quote = None;
-    for (offset, &byte) in bytes.iter().enumerate().skip(start) {
+    let mut last_nonspace = None;
+    let end = ctx.position_by(&bytes[start..], |&byte| {
+        if quote.is_none() && byte == b'>' {
+            return Ok(true);
+        }
+        if !byte.is_ascii_whitespace() {
+            last_nonspace = Some(byte);
+        }
         match (quote, byte) {
             (None, b'\'' | b'"') => quote = Some(byte),
             (Some(open), close) if open == close => quote = None,
-            (None, b'>') => return Some(offset),
             _ => {}
         }
-    }
-    None
+        Ok(false)
+    }, "FCStd Document.xml lexical tag tail")?;
+    Ok(end.map(|offset| (start + offset, last_nonspace == Some(b'/'))))
 }
 
 /// Reads the document facts from `Document.xml` and returns its admitted tree

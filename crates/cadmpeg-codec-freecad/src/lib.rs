@@ -535,11 +535,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             annotation.object.as_str(),
             "FreeCAD validation object index",
         )? {
-            Some(object) => ctx.equal(
-                object.type_name.as_str(),
-                annotation.kind.as_str(),
-                "FreeCAD validation annotation kind",
-            )?,
+            Some(object) => object.type_name == annotation.kind.as_str(),
             None => false,
         };
         if !kind_matches
@@ -643,11 +639,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     drop((extension_names, extension_types, extension_storage));
     let document_owner = native::native_id("document", "0");
     for property in ctx.admit_iter(&properties, "FreeCAD validation properties")? {
-        if !ctx.equal(
-            property.owner.as_str(),
-            document_owner.as_str(),
-            "FreeCAD validation property owner",
-        )? && !has(&object_ids, &property.owner)?
+        if property.owner != document_owner && !has(&object_ids, &property.owner)?
             && !has(&extension_ids, &property.owner)?
         {
             push_finding(
@@ -662,11 +654,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             let Some(target) = link.as_ref().and_then(native::LinkTarget::object) else {
                 continue;
             };
-            if ctx.starts_with(
-                target,
-                "fcstd:native:object#",
-                "FreeCAD validation link target",
-            )? && !has(&object_ids, target)?
+            if target.starts_with("fcstd:native:object#") && !has(&object_ids, target)?
             {
                 push_finding(
                     ctx,
@@ -1198,11 +1186,10 @@ impl CodecBackend for FcstdCodec {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
         if !prefix.starts_with(b"PK\x03\x04") {
             return Ok(Confidence::No);
         }
@@ -1578,12 +1565,13 @@ fn bind_gui_entry_references<'g>(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "FCStd GUI entry references";
     let (entry_index, _entry_index_storage) = ctx.unique_index(
-        ctx.admit_iter(&*entry_records, OPERATION)?
+        entry_records.iter()
             .enumerate()
             .map(|(index, entry)| (entry.name(), index)),
         OPERATION,
     )?;
     let mut bound_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut addition_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut bound = HashSet::new();
     let mut additions = Vec::new();
     let mut bind = |names: &'g [String], owner: &'g str| -> Result<(), CodecError> {
@@ -1597,7 +1585,7 @@ fn bind_gui_entry_references<'g>(
                 .with_storage(|| ctx.insert_hash_set(&mut bound, (index, owner), OPERATION))?
             {
                 ctx.push_scoped_vec(
-                    &mut bound_storage,
+                    &mut addition_storage,
                     &mut additions,
                     (index, owner),
                     OPERATION,
@@ -1615,6 +1603,9 @@ fn bind_gui_entry_references<'g>(
         }
     }
     drop(entry_index);
+    drop(_entry_index_storage);
+    drop(bound);
+    drop(bound_storage);
     for (index, owner) in ctx.admit_iter(additions, OPERATION)? {
         entry_records[index].push_reference(ctx, owner)?;
     }

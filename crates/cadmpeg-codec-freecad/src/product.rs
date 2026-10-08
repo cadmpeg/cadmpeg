@@ -246,6 +246,12 @@ pub(crate) fn transfer_neutral(
     payloads: &[ShapePayloadRecord],
     bodies: &[Body],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if records.is_empty() && joints.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
     let mut storage = ctx.reserve_scoped(0, "fcstd neutral product lookups")?;
     let record_by_object = storage.with_storage(|| product_record_index(ctx, records))?;
     let mut component_objects = Vec::new();
@@ -337,6 +343,9 @@ pub(crate) fn transfer_neutral(
         "fcstd product component name sort",
     )?;
     ctx.dedup_vec(&mut component_objects, "fcstd product component name dedup")?;
+    if records.is_empty() && component_objects.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
 
     let (properties_by_owner, _owner_storage) = ctx.collect_scoped_btree_groups(
         properties
@@ -558,60 +567,67 @@ pub(crate) fn transfer_neutral(
     }
 
     let mut object_by_id = HashMap::new();
-    for object in ctx.admit_iter(objects, "fcstd product source objects")? {
-        storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut object_by_id,
-                object.id().as_str(),
-                object,
-                "fcstd product object index",
-            )
-        })?;
-    }
-    let mut property_owner = HashMap::new();
-    for property in ctx.admit_iter(properties, "fcstd product source properties")? {
-        storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut property_owner,
-                property.id.as_str(),
-                property.owner.as_str(),
-                "fcstd product property owners",
-            )
-        })?;
-    }
-    let mut body_owners = BTreeMap::new();
-    for payload in ctx.admit_iter(payloads, "fcstd product shape payloads")? {
-        if let Some(owner) = ctx.get_hash_map(
-            &property_owner,
-            payload.property.as_str(),
-            "fcstd product payload owner",
-        )? {
-            let prefix = storage
-                .with_storage(|| crate::native::model_id_charged(ctx, "body", &payload.id, ""))?;
+    if !component_objects.is_empty() {
+        for object in ctx.admit_iter(objects, "fcstd product source objects")? {
             storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut body_owners,
-                    prefix,
-                    *owner,
-                    "fcstd product body owners",
+                ctx.insert_hash_map(
+                    &mut object_by_id,
+                    object.id().as_str(),
+                    object,
+                    "fcstd product object index",
                 )
             })?;
         }
     }
+    let mut body_storage = ctx.reserve_scoped(0, "fcstd product owner bodies")?;
     let mut bodies_by_owner = BTreeMap::new();
-    if !component_objects.is_empty() {
+    if !component_objects.is_empty() && !bodies.is_empty() {
+        let mut body_lookup_storage = ctx.reserve_scoped(0, "fcstd product body owner lookups")?;
+        let mut property_owner = HashMap::new();
+        for property in ctx.admit_iter(properties, "fcstd product source properties")? {
+            body_lookup_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut property_owner,
+                    property.id.as_str(),
+                    property.owner.as_str(),
+                    "fcstd product property owners",
+                )
+            })?;
+        }
+        let mut body_owners = BTreeMap::new();
+        for payload in ctx.admit_iter(payloads, "fcstd product shape payloads")? {
+            if let Some(owner) = ctx.get_hash_map(
+                &property_owner,
+                payload.property.as_str(),
+                "fcstd product payload owner",
+            )? {
+                let prefix = body_lookup_storage
+                    .with_storage(|| crate::native::model_id_charged(ctx, "body", &payload.id, ""))?;
+                body_lookup_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut body_owners,
+                        prefix,
+                        *owner,
+                        "fcstd product body owners",
+                    )
+                })?;
+            }
+        }
         for body in ctx.admit_iter(bodies, "fcstd product source bodies")? {
             // The child label is one encoded segment after the payload key.
-            let Some((parent, _)) =
-                ctx.rsplit_once(body.id.as_str(), ":", "fcstd product body payload prefix")?
+            let Some(separator) = ctx.rposition_by(
+                body.id.as_str().as_bytes(),
+                |byte| Ok(*byte == b':'),
+                "fcstd product body payload prefix",
+            )?
             else {
                 continue;
             };
-            let prefix = &body.id.as_str()[..=parent.len()];
+            let prefix = &body.id.as_str()[..=separator];
             if let Some(&owner) =
                 ctx.get_btree_map(&body_owners, prefix, "fcstd product body owner lookup")?
             {
-                storage.with_storage(|| {
+                body_storage.with_storage(|| {
                     ctx.push_btree_group(
                         &mut bodies_by_owner,
                         owner,
@@ -1576,7 +1592,7 @@ pub(crate) fn product_cycle_nodes<'a>(
         for target in ctx
             .admit_iter(node.members(), "fcstd product cycle members")?
             .map(String::as_str)
-            .chain(node.prototype())
+            .chain(node.prototype().filter(|_| node.external_document().is_none()))
         {
             if ctx.contains_key_btree_map(&nodes, target, "fcstd product cycle target lookup")? {
                 storage.with_storage(|| {

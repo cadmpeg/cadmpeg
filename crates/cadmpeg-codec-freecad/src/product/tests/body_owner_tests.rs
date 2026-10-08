@@ -125,3 +125,41 @@ fn body_owner_index_lookup_is_admitted() {
         },
     );
 }
+
+#[test]
+fn product_body_prefix_is_scoped_for_an_actual_body_consumer() {
+    let record = super::resource_product_container();
+    let property = property(&record.object, "Shape");
+    let payload = payload(&property, "shape:a.brp");
+    let body = body(&payload, "1");
+    crate::test_support::materialized_refusal_at("FreeCAD model identity", |ctx| {
+        super::super::transfer_neutral(
+            ctx,
+            std::slice::from_ref(&record),
+            &[],
+            &[],
+            std::slice::from_ref(&property),
+            std::slice::from_ref(&payload),
+            std::slice::from_ref(&body),
+        )
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        let (definitions, occurrences) = super::super::transfer_neutral(
+            ctx,
+            std::slice::from_ref(&record),
+            &[],
+            &[],
+            std::slice::from_ref(&property),
+            std::slice::from_ref(&payload),
+            std::slice::from_ref(&body),
+        ).expect("body association");
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].bodies, [body.id.clone()]);
+        assert_eq!(occurrences.len(), 1);
+        assert!(matches!(
+            &occurrences[0].prototype,
+            cadmpeg_ir::products::PrototypeReference::Local { definition }
+                if definition == &definitions[0].id,
+        ));
+    });
+}

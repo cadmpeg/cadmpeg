@@ -11,6 +11,49 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
+#[test]
+fn external_prototype_name_does_not_create_a_local_product_cycle() {
+    use crate::native::{ExternalDocument, LinkArray, LinkOccurrence, ProductNode, ProductNodeRecord};
+
+    let assembly = "fcstd:native:object#Assembly";
+    let occurrence = "fcstd:native:object#Occurrence";
+    let mut link = ProductNodeRecord {
+        id: "fcstd:native:product#Occurrence".into(),
+        object: occurrence.into(),
+        node: ProductNode::Occurrence(Box::new(LinkOccurrence {
+            members: Vec::new(),
+            prototype: Some(assembly.into()),
+            external_document: Some(ExternalDocument::File(
+                "other.FCStd".try_into().expect("external path"),
+            )),
+            local_transform: None,
+            placement_property: None,
+            array: LinkArray::try_new(None, Vec::new(), Vec::new(), Vec::new(), Vec::new())
+                .expect("scalar link array"),
+            link_transform: None,
+            linked_subelements: Vec::new(),
+            claim_child: None,
+            copy_on_change: None,
+            scale: None,
+        })),
+    };
+    with_service_context(&[], |ctx| {
+        let records = [super::node(assembly, &[occurrence]), link.clone()];
+        assert!(product_cycle_nodes(ctx, &records).expect("external prototype").is_empty());
+    });
+    let ProductNode::Occurrence(value) = &mut link.node else {
+        unreachable!("occurrence fixture")
+    };
+    value.external_document = None;
+    with_service_context(&[], |ctx| {
+        let records = [super::node(assembly, &[occurrence]), link];
+        assert_eq!(
+            product_cycle_nodes(ctx, &records).expect("local prototype"),
+            std::collections::BTreeSet::from([assembly, occurrence]),
+        );
+    });
+}
+
 fn property(name: &str, type_name: &str, xml: &str) -> PropertyRecord {
     let document = roxmltree::Document::parse(xml).expect("test XML");
     let values = document

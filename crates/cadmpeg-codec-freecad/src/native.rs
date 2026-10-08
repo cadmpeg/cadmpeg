@@ -262,14 +262,49 @@ pub(crate) fn id_key_charged<'text>(
     operation: &'static str,
 ) -> Result<&'text str, CodecError> {
     Ok(ctx
-        .split_once(id, "#", operation)?
-        .map_or(id, |(_, key)| key))
+        .position_by(id.as_bytes(), |byte| Ok(*byte == b'#'), operation)?
+        .map_or(id, |separator| &id[separator + 1..]))
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::{model_id, native_child_id, native_id};
+
+    #[test]
+    fn native_identity_key_search_stops_before_a_large_tail() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        const PREFIX: &str = "fcstd:native:object#";
+        let tail = "unvisited".repeat(8192);
+        let id = format!("{PREFIX}{tail}");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(PREFIX.len());
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let key = super::id_key_charged(&ctx, &id, "identity key search").expect("separator");
+        assert_eq!(key, tail);
+        assert_eq!(key.as_ptr(), id[PREFIX.len()..].as_ptr());
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+
+    #[test]
+    fn native_identity_key_fallback_keeps_borrow_and_original_refusal() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let id = "identity_without_a_separator";
+        crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], "identity key search", |ctx| {
+            let result = super::id_key_charged(ctx, id, "identity key search");
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result
+        });
+        crate::test_support::with_service_context(&[], |ctx| {
+            let key = super::id_key_charged(ctx, id, "identity key search").expect("fallback");
+            assert_eq!(key, id);
+            assert_eq!(key.as_ptr(), id.as_ptr());
+        });
+    }
 
     #[test]
     fn entries_check_names_identities_references_and_charge_cached_digest() {
