@@ -397,7 +397,10 @@ fn deferred_wake_refusal(operation: &'static str) -> CodecError {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let mut waiting = HashMap::from([(1, vec![2])]);
+    let mut waiting = super::super::DeferredDependencies {
+        waiting_on: HashMap::from([(1, vec![2])]),
+        remaining: HashMap::from([(2, 1)]),
+    };
     super::super::wake_deferred_dependents(1, &mut waiting, &mut VecDeque::new(), &ctx, operation)
         .expect_err("wake queue exceeds the limit")
 }
@@ -675,4 +678,34 @@ fn composite_segment_scratch_is_scoped_and_released() {
     // The first segment admits the vector capacity; releasing it frees the whole allowance.
     run(refusal.used + refusal.additional)
         .expect("scratch needs no retained bytes and releases its reservation");
+}
+
+
+#[test]
+fn deferred_composite_wakes_only_after_all_missing_edges() {
+    crate::test_support::with_service_context(b"dependency graph", |_, ctx| {
+        let mut waiting = super::super::DeferredDependencies::default();
+        let mut queue = VecDeque::new();
+        let mut storage = ctx.reserve_scoped(0, "test deferred storage").expect("scope");
+        storage.with_storage(|| -> Result<(), CodecError> {
+            for dependency in 1..=20 {
+                waiting.register(ctx, dependency, 100, "test groups", "test members")?;
+            }
+            // Repeated segments preserve their separate edges without an early wake.
+            waiting.register(ctx, 20, 100, "test groups", "test members")?;
+            for dependency in 1..20 {
+                super::super::wake_deferred_dependents(
+                    dependency, &mut waiting, &mut queue, ctx, "test queue",
+                )?;
+                assert!(queue.is_empty());
+            }
+            super::super::wake_deferred_dependents(
+                20, &mut waiting, &mut queue, ctx, "test queue",
+            )?;
+            assert_eq!(queue, VecDeque::from([100]));
+            assert!(waiting.waiting_on.is_empty());
+            assert!(waiting.remaining.is_empty());
+            Ok(())
+        }).expect("resolve dependency graph");
+    });
 }
