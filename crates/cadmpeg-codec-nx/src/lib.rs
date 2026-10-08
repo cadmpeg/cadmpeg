@@ -150,18 +150,20 @@ impl CodecBackend for NxCodec {
         });
         Ok(match admitted {
             Ok(_) => Vec::new(),
+            Err(cadmpeg_ir::native::NativeConvertError::Resource(
+                error @ CodecError::ResourceLimit(_),
+            )) => return Err(error),
             Err(error) => {
-                if let Some(limit) = ctx.resource_refusal() {
-                    return Err(CodecError::ResourceLimit(limit));
-                }
                 let message =
                     ctx.format_retained(format_args!("{error}"), "NX native validation message")?;
-                vec![cadmpeg_ir::report::check::Finding {
+                let mut findings = ctx.collection_vec(1, "NX native validation findings")?;
+                findings.push(cadmpeg_ir::report::check::Finding {
                     check: cadmpeg_ir::report::check::Check::NativeLinks,
                     severity: cadmpeg_ir::report::Severity::Error,
                     message,
                     entity: None,
-                }]
+                });
+                findings
             }
         })
     }
@@ -172,10 +174,6 @@ impl CodecBackend for NxCodec {
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
         if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(ctx, prefix)? {
             Ok(Confidence::High)
         } else {

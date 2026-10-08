@@ -33,7 +33,7 @@ fn jt_int32_cdp2_refuses_counted_vector_at_caller_limit() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                        && limit.operation == "nx JT decoded vector"
+                        && limit.operation == "JT bitlength values"
             ));
         },
     );
@@ -56,7 +56,7 @@ fn jt_int32_cdp2_refuses_retained_vector_at_caller_limit() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                        && limit.operation == "nx JT decoded vector"
+                        && limit.operation == "JT bitlength values"
             ));
         },
     );
@@ -99,7 +99,7 @@ fn jt_int32_cdp2_refuses_symbol_work_at_caller_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && limit.operation == "decode JT bitlength symbols"
-                && limit.additional == 2
+                && limit.additional == 1
     ));
 }
 
@@ -175,7 +175,7 @@ fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<super::ProbabilityEntr
         |ctx| {
             super::parse_probability_context(ctx, bytes)
                 .expect("service decode budget")
-                .map(|(entries, length, _reservation)| (entries, length))
+                .map(|(entries, length)| (entries.values, length))
         },
     )
 }
@@ -365,7 +365,7 @@ fn jt_int32_cdp2_refuses_scoped_probability_table_at_caller_limit() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "nx JT decoded vector"
+                        && limit.operation == "JT probability entries"
             ));
         },
     );
@@ -677,7 +677,7 @@ fn jt_coordinate_array_refuses_scoped_component_storage() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "nx JT decoded vector"
+                        && limit.operation == "JT coordinate array"
             ));
         },
     );
@@ -1047,15 +1047,15 @@ fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
     }
     crate::test_support::with_decode_context_over(
         &packet,
-        // The final two-bit delta follows the header and all 128 six-bit cycles.
-        |policy| policy.limits.max_work_units = u64::from(bit_len) - 2,
+        // One run visit and three delta visits per cycle precede the final delta.
+        |policy| policy.limits.max_work_units = 1 + 128 * 3,
         |ctx| {
             let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "decode JT bit field"
-                    && limit.additional == 2)
+                    && limit.operation == "read JT bitlength deltas"
+                    && limit.additional == 1)
             );
         },
     );
@@ -1063,33 +1063,22 @@ fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
 }
 
 #[test]
-fn msb_bit_range_refusal_precedes_read() {
+fn msb_fixed_bit_range_needs_no_decode_admission() {
     let bytes = [0xa5];
     crate::test_support::with_decode_context_over(
         &bytes,
         |policy| policy.limits.max_work_units = 3,
         |ctx| {
             let mut bits = super::MsbBitReader::new(&bytes);
-            let error = bits.read(ctx, 4).unwrap_err();
-            assert!(
-                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "decode JT bit field" && limit.additional == 4)
-            );
-            assert_eq!(bits.bit, 0);
-            assert_eq!(
-                ctx.resource_refusal(),
-                match error {
-                    cadmpeg_core::CodecError::ResourceLimit(limit) => Some(limit),
-                    _ => unreachable!(),
-                }
-            );
+            assert_eq!(bits.read(4), Some(10));
+            assert_eq!(bits.bit, 4);
+            assert_eq!(ctx.resource_refusal(), None);
         },
     );
 }
 
 #[test]
-fn code_bit_range_refusal_precedes_read() {
+fn code_fixed_bit_range_needs_no_decode_admission() {
     let bytes = [0, 0, 0, 0];
     crate::test_support::with_decode_context_over(
         &bytes,
@@ -1100,26 +1089,15 @@ fn code_bit_range_refusal_precedes_read() {
                 bit_len: 32,
                 bit: 0,
             };
-            let error = bits.read(ctx, 4).unwrap_err();
-            assert!(
-                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "decode JT bit field" && limit.additional == 4)
-            );
-            assert_eq!(bits.bit, 0);
-            assert_eq!(
-                ctx.resource_refusal(),
-                match error {
-                    cadmpeg_core::CodecError::ResourceLimit(limit) => Some(limit),
-                    _ => unreachable!(),
-                }
-            );
+            assert_eq!(bits.read(4), Some(0));
+            assert_eq!(bits.bit, 4);
+            assert_eq!(ctx.resource_refusal(), None);
         },
     );
 }
 
 #[test]
-fn signed_code_bit_range_refusal_propagates() {
+fn signed_fixed_bit_range_needs_no_decode_admission() {
     let bytes = [0xff; 4];
     crate::test_support::with_decode_context_over(
         &bytes,
@@ -1130,13 +1108,9 @@ fn signed_code_bit_range_refusal_propagates() {
                 bit_len: 32,
                 bit: 0,
             };
-            let error = bits.read_signed(ctx, 4).unwrap_err();
-            assert!(
-                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "decode JT bit field" && limit.additional == 4)
-            );
-            assert_eq!(bits.bit, 0);
+            assert_eq!(bits.read_signed(4), Some(-1));
+            assert_eq!(bits.bit, 4);
+            assert_eq!(ctx.resource_refusal(), None);
         },
     );
 }
