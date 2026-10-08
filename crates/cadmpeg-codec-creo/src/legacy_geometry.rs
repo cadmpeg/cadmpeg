@@ -476,7 +476,10 @@ fn curve_pcurve(
         else {
             return Ok(None);
         };
-        let start = remaining.saturating_sub(index_from_u32(run.count));
+        let width = remaining.min(index_from_u32(run.count));
+        let Some(start) = remaining.checked_sub(width) else {
+            return Ok(None);
+        };
         last[start..remaining].fill(run.value.value());
         remaining = start;
     }
