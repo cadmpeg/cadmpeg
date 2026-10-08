@@ -233,3 +233,69 @@ fn configuration_design_base_features_use_scoped_storage() {
         run_design,
     );
 }
+
+#[test]
+fn unassigned_configuration_design_skips_base_features_and_clears_states() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 4096;
+    policy.limits.max_work_units = 4096;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = model();
+    ir.model.features[0].name = Some("x".repeat(8192));
+    let features = ir.model.features.clone();
+    super::super::project_configuration_design_states(&ctx, &mut ir, &[], &[], &[], None).unwrap();
+    assert_eq!(ir.model.features, features);
+    assert!(ir.model.configurations[0].feature_states.is_empty());
+    assert!(ir.model.configurations[0].parameter_values.is_empty());
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn configuration_parameter_metadata_uses_scoped_storage() {
+    let mut owner = crate::history::tests::feature("owner", Some("1"), 0);
+    owner
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Width"), "1".into());
+    owner.dimension_properties.insert(
+        "Width".into(),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("Metadata"),
+            "x".repeat(32 * 1024),
+        )]),
+    );
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![owner],
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The configuration keeps an integer and its identity, not the metadata text.
+    policy.limits.max_retained_bytes = 16 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model
+        .configurations
+        .push(design_configuration("values", 0, Some(0), None));
+    super::super::project_configuration_design_states(
+        &ctx,
+        &mut ir,
+        &histories,
+        &[feature_input_lane("lane", Some("0"))],
+        &[],
+        None,
+    )
+    .unwrap();
+    let values = &ir.model.configurations[0].parameter_values;
+    assert_eq!(values.len(), 1);
+    assert_eq!(
+        values.values().next(),
+        Some(&cadmpeg_ir::features::ParameterValue::Integer(1))
+    );
+    assert!(ctx.resource_refusal().is_none());
+}

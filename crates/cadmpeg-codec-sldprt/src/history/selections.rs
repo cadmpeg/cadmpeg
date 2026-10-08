@@ -898,11 +898,19 @@ fn history_feature_sources<'a>(
                     ctx.next_charged(&mut lanes, "resolve SLDPRT topology source candidates")?
                 {
                     if index == lane_names.len() {
-                        let names = crate::resolved_features::scalars::ObjectNames::new(ctx, lane)?;
+                        let names = ctx.unique_index(
+                            lane.names.iter().map(|name| (name.value.as_str(), name)),
+                            "index SLDPRT object names by text",
+                        )?;
                         ctx.push_scoped_vec(&mut name_storage, &mut lane_names, names, OPERATION)?;
                     }
-                    let Some(candidate) = lane_names[index]
-                        .of(ctx, feature)?
+                    let Some(candidate) = ctx
+                        .get_hash_map(
+                            &lane_names[index].0,
+                            feature.name.as_str(),
+                            "find SLDPRT object name by text",
+                        )?
+                        .and_then(Option::as_ref)
                         .and_then(|name| name.object_id?.value())
                     else {
                         continue;
@@ -1187,6 +1195,47 @@ mod source_index_tests {
         assert_eq!(source("repeated"), None);
         assert_eq!(source("conflict"), None);
         assert_eq!(source("explicit"), Some(15));
+    }
+
+    #[test]
+    fn missing_source_resolution_builds_only_the_text_index() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let mut lane = feature_input_lane("lane", None);
+        lane.names.push(FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(10),
+            value: "named".into(),
+        });
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature("named", None, 0)],
+        }];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "index SLDPRT object names by id",
+            None,
+        );
+        let sources = history_feature_sources(&ctx, &histories, &[lane]).unwrap();
+        assert_eq!(
+            sources
+                .get("named")
+                .copied()
+                .flatten()
+                .map(super::FeatureSourceId::value),
+            Some(10)
+        );
+        assert!(ctx.resource_refusal().is_none());
     }
 
     #[test]

@@ -285,6 +285,20 @@ pub(crate) fn project_configuration_design_states(
     pmi_dimensions: &[crate::records::PmiDimension],
     form_padding: Option<usize>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    for configuration in ctx.admit_iter(
+        &mut ir.model.configurations,
+        "scan SLDPRT configuration lane assignments",
+    )? {
+        configuration.parameter_values.clear();
+        configuration.feature_states.clear();
+    }
+    let (lane_assignments, _lane_assignments_storage) = ctx
+        .with_scoped_storage("SLDPRT configuration lane assignments", || {
+            configuration_lane_assignments(ctx, &ir.model.configurations, lanes)
+        })?;
+    if lane_assignments.is_empty() {
+        return Ok(());
+    }
     let (resolved_base_features, _base_storage) =
         ctx.with_scoped_storage("SLDPRT configuration base features", || {
             let mut resolved_base_features = copy_configuration_features(ctx, &ir.model.features)?;
@@ -312,17 +326,6 @@ pub(crate) fn project_configuration_design_states(
             Ok::<_, cadmpeg_core::CodecError>(resolved_base_features)
         })?;
     let base_definitions = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
-    for configuration in ctx.admit_iter(
-        &mut ir.model.configurations,
-        "scan SLDPRT configuration lane assignments",
-    )? {
-        configuration.parameter_values.clear();
-        configuration.feature_states.clear();
-    }
-    let (lane_assignments, _lane_assignments_storage) = ctx
-        .with_scoped_storage("SLDPRT configuration lane assignments", || {
-            configuration_lane_assignments(ctx, &ir.model.configurations, lanes)
-        })?;
     for (configuration_index, lane_index) in ctx
         .admit_iter(
             &lane_assignments,
@@ -363,18 +366,23 @@ pub(crate) fn project_configuration_design_states(
                     )?;
                     Ok::<_, cadmpeg_core::CodecError>(projection)
                 })?;
+            let (parameters, _parameter_storage) = ctx
+                .with_scoped_storage("SLDPRT configuration projected parameters", || {
+                    project_parameters(ctx, &projection)
+                })?;
             let mut parameter_values = BTreeMap::new();
-            for parameter in ctx.admit_iter(
-                project_parameters(ctx, &projection)?,
-                "collect SLDPRT configuration values",
-            )? {
-                let Some(value) = parameter.value else {
+            for parameter in ctx.admit_iter(&parameters, "collect SLDPRT configuration values")? {
+                let Some(value) = &parameter.value else {
                     continue;
                 };
                 ctx.insert_btree_map(
                     &mut parameter_values,
-                    parameter.id,
-                    value,
+                    parameter.id.try_clone_for_decode(
+                        ctx,
+                        "retain SLDPRT configuration parameter identity",
+                    )?,
+                    value
+                        .try_clone_for_decode(ctx, "retain SLDPRT configuration parameter value")?,
                     "collect SLDPRT configuration values",
                 )?;
             }
