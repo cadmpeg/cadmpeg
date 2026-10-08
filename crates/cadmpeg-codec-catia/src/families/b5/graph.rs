@@ -1317,6 +1317,7 @@ fn parse_from_records_with_class21(
             "catia_b5_opaque_surfaces",
         )?;
     }
+    let mut external_grids = crate::families::a5a8::records::A8ExternalGridSites::default();
     for frame in ctx.admit_iter(frames, "catia_b5_class21_candidate_frame_scan")? {
         let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
             ctx,
@@ -1324,6 +1325,7 @@ fn parse_from_records_with_class21(
             frame.start,
             frame.end,
             frame.object_id,
+            &mut external_grids,
             refusal,
         )?
         else {
@@ -2320,7 +2322,7 @@ fn object_stream_pcurve_candidate(
     ctx: &DecodeContext<'_>,
     jet: &crate::families::a5a8::records::A8Pcurve,
 ) -> Result<Option<B5Pcurve>, CodecError> {
-    let Some((_, control_points)) = jet.bspline(ctx, false)? else {
+    let Some((_, control_points)) = jet.bspline(ctx)? else {
         return Ok(None);
     };
     Ok(Some(B5Pcurve {
@@ -2848,6 +2850,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
     let mut scratch = ctx.reserve_scoped(0, "catia_b5_targeted_surface_index")?;
     let resolved = scratch.with_storage(|| {
         let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
+        let mut external_grids = crate::families::a5a8::records::A8ExternalGridSites::default();
         for frame in ctx.admit_iter(frames, "catia_b5_targeted_surface_frame_scan")? {
             let Some(surface) =
                 crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
@@ -2856,6 +2859,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
                     frame.start,
                     frame.end,
                     frame.object_id,
+                    &mut external_grids,
                     refusal,
                 )?
             else {
