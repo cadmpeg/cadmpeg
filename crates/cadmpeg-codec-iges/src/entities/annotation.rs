@@ -68,9 +68,51 @@ impl<'ctx, 'policy> AnnotationValidation<'ctx, 'policy> {
         entries: &BTreeMap<u32, &DirectoryEntry>,
         global_table: GlobalTable,
     ) -> Result<bool, CodecError> {
-        if let Some(valid) = self.primary.get(&entry.sequence) {
-            return Ok(*valid);
+        if let Some(valid) = self.cached_primary(entry.sequence)? {
+            return Ok(valid);
         }
+        self.validate_primary(entry, record, entries, global_table)
+    }
+
+    fn primary_from_records(
+        &mut self,
+        sequence: u32,
+        entry: &DirectoryEntry,
+        entries: &BTreeMap<u32, &DirectoryEntry>,
+        records: &BTreeMap<u32, &ParameterRecord>,
+        global_table: GlobalTable,
+    ) -> Result<bool, CodecError> {
+        if let Some(valid) = self.cached_primary(entry.sequence)? {
+            return Ok(valid);
+        }
+        let Some(record) = self.ctx.get_btree_map(
+            records,
+            &sequence,
+            "iges annotation child Parameter Data lookup",
+        )? else {
+            return Ok(false);
+        };
+        self.validate_primary(entry, record, entries, global_table)
+    }
+
+    fn cached_primary(&self, sequence: u32) -> Result<Option<bool>, CodecError> {
+        Ok(self
+            .ctx
+            .get_btree_map(
+                &self.primary,
+                &sequence,
+                "iges annotation primary validation cache lookup",
+            )?
+            .copied())
+    }
+
+    fn validate_primary(
+        &mut self,
+        entry: &DirectoryEntry,
+        record: &ParameterRecord,
+        entries: &BTreeMap<u32, &DirectoryEntry>,
+        global_table: GlobalTable,
+    ) -> Result<bool, CodecError> {
         let valid = match entry.entity_type {
             212 => general_note_valid_for_global_table(
                 record,
@@ -94,10 +136,25 @@ impl<'ctx, 'policy> AnnotationValidation<'ctx, 'policy> {
         Ok(valid)
     }
 
-    fn width_sum(&mut self, note: &ParameterRecord) -> Result<Option<i64>, CodecError> {
-        if let Some(total) = self.width_sums.get(&note.directory_sequence) {
+    fn width_sum_from_records(
+        &mut self,
+        sequence: u32,
+        records: &BTreeMap<u32, &ParameterRecord>,
+    ) -> Result<Option<i64>, CodecError> {
+        if let Some(total) = self.ctx.get_btree_map(
+            &self.width_sums,
+            &sequence,
+            "iges annotation width cache lookup",
+        )? {
             return Ok(*total);
         }
+        let Some(note) = self.ctx.get_btree_map(
+            records,
+            &sequence,
+            "iges flag note width source lookup",
+        )? else {
+            return Ok(None);
+        };
         let mut total = Some(0_i64);
         if let Some(strings) = note.count(1) {
             let mut offsets = 0..strings;
@@ -118,7 +175,7 @@ impl<'ctx, 'policy> AnnotationValidation<'ctx, 'policy> {
         self.storage.with_storage(|| {
             self.ctx.insert_btree_map(
                 &mut self.width_sums,
-                note.directory_sequence,
+                sequence,
                 total,
                 "iges annotation width sum cache",
             )
@@ -143,50 +200,98 @@ fn sectioned_area_pattern_plane(
     Some((point, normal))
 }
 
-fn sectioned_area_curve_coplanar<'ir, 'ctx>(
-    (ir, cached_index): (
-        &'ir CadIr,
-        &mut Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'ir>>,
-    ),
-    sequence: u32,
-    pattern_plane: (Point3, Vector3),
-    resolution: f64,
-    ctx: &'ctx DecodeContext<'_>,
-) -> Result<bool, CodecError> {
-    if !resolution.is_finite() || resolution < 0.0 {
-        return Ok(false);
+type SectionCoplanarityKey = (u32, [u64; 7]);
+
+struct SectionedAreaGeometryCache<'ctx, 'ir> {
+    ir: &'ir CadIr,
+    index: Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'ir>>,
+    proofs: BTreeMap<SectionCoplanarityKey, bool>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
+    fn new(ir: &'ir CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            ir,
+            index: None,
+            proofs: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "iges section coplanarity cache scratch")?,
+        })
     }
-    if cached_index.is_none() {
-        *cached_index = Some(ModelIndex::new_model_only(ir, ctx)?);
+
+    fn curve_coplanar(
+        &mut self,
+        sequence: u32,
+        pattern_plane: (Point3, Vector3),
+        resolution: f64,
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        if !resolution.is_finite() || resolution < 0.0 {
+            return Ok(false);
+        }
+        let (point, normal) = pattern_plane;
+        let key = (
+            sequence,
+            [
+                point.x.to_bits(),
+                point.y.to_bits(),
+                point.z.to_bits(),
+                normal.x.to_bits(),
+                normal.y.to_bits(),
+                normal.z.to_bits(),
+                resolution.to_bits(),
+            ],
+        );
+        if let Some(coplanar) = ctx.get_btree_map(
+            &self.proofs,
+            &key,
+            "iges section coplanarity proof lookup",
+        )? {
+            return Ok(*coplanar);
+        }
+        if self.index.is_none() {
+            self.index = Some(ModelIndex::new_model_only(self.ir, ctx)?);
+        }
+        let Some(index) = self.index.as_ref() else {
+            return Ok(false);
+        };
+        let identity = Transform::identity();
+        let mut active_storage = ctx.reserve_scoped(0, "iges section curve scratch")?;
+        let mut active = BTreeSet::new();
+        let curve_id = active_storage
+            .with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx))?;
+        let coplanar = if let Some(curve) = index.curves(curve_id.as_str(), ctx)? {
+            if let Some(geometry) = curve.geometry.solved() {
+                active_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut active, curve_id, "iges section active curves")
+                })?;
+                active_storage.with_storage(|| {
+                    curve_geometry_coplanar(
+                        geometry,
+                        index,
+                        identity,
+                        pattern_plane,
+                        resolution,
+                        &mut active,
+                        ctx,
+                    )
+                })?
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        self.storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut self.proofs,
+                key,
+                coplanar,
+                "iges section coplanarity proof cache",
+            )
+        })?;
+        Ok(coplanar)
     }
-    let Some(index) = cached_index.as_ref() else {
-        return Ok(false);
-    };
-    let identity = Transform::identity();
-    let mut active_storage = ctx.reserve_scoped(0, "iges section curve scratch")?;
-    let mut active = BTreeSet::new();
-    let curve_id = active_storage
-        .with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx))?;
-    let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
-        return Ok(false);
-    };
-    let Some(geometry) = curve.geometry.solved() else {
-        return Ok(false);
-    };
-    active_storage.with_storage(|| {
-        ctx.insert_btree_set(&mut active, curve_id, "iges section active curves")
-    })?;
-    active_storage.with_storage(|| {
-        curve_geometry_coplanar(
-            geometry,
-            index,
-            identity,
-            pattern_plane,
-            resolution,
-            &mut active,
-            ctx,
-        )
-    })
 }
 
 /// Maps a directory entry's type and form to its annotation kind, or `None`
@@ -323,7 +428,8 @@ fn general_note_valid_for_global_table(
                                 font,
                                 entries,
                                 global_table,
-                            ) && general_note_text_valid_for_global_table(
+                                ctx,
+                            )? && general_note_text_valid_for_global_table(
                                 text,
                                 font,
                                 global_table,
@@ -464,7 +570,7 @@ fn new_general_note_valid(
                             }
                     })
                     && fixed.is_some_and(fixed_or_variable_valid);
-                Ok(metrics_valid
+                let character_set_prefix_valid = metrics_valid
                     && record.number_or(start + 4, 0.0).is_some()
                     && record.number_or(start + 6, 0.0).is_some_and(|value| {
                         value.is_finite() && (0.0..=std::f64::consts::TAU).contains(&value)
@@ -480,9 +586,13 @@ fn new_general_note_valid(
                             .number_or(field, 0.0)
                             .is_some_and(|value| value.is_finite() && value >= 0.0)
                     })
-                    && font_style.is_some_and(new_general_note_font_valid)
-                    && character_set
-                        .is_some_and(|value| new_general_note_charset_valid(value, entries))
+                    && font_style.is_some_and(new_general_note_font_valid);
+                let character_set_valid = character_set_prefix_valid
+                    && match character_set {
+                        Some(value) => new_general_note_charset_valid(value, entries, ctx)?,
+                        None => false,
+                    };
+                Ok(character_set_valid
                     && record
                         .number_or(start + 12, std::f64::consts::FRAC_PI_2)
                         .is_some()
@@ -541,12 +651,18 @@ fn pointer(
     record: &ParameterRecord,
     index: usize,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> Option<u32> {
-    record
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<u32>, CodecError> {
+    let Some(sequence) = record
         .integer(index)
         .and_then(|value| u32::try_from(value).ok())
         .filter(|sequence| sequence % 2 == 1)
-        .filter(|sequence| entries.contains_key(sequence))
+    else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .contains_key_btree_map(entries, &sequence, "iges annotation directory pointer lookup")?
+        .then_some(sequence))
 }
 
 fn child_valid(
@@ -558,7 +674,11 @@ fn child_valid(
     global_table: GlobalTable,
     validation: &mut AnnotationValidation<'_, '_>,
 ) -> Result<bool, CodecError> {
-    let Some(entry) = entries.get(&sequence) else {
+    let Some(entry) = validation.ctx.get_btree_map(
+        entries,
+        &sequence,
+        "iges annotation child Directory lookup",
+    )? else {
         return Ok(false);
     };
     if entry.entity_type != entity_type
@@ -568,10 +688,7 @@ fn child_valid(
     {
         return Ok(false);
     }
-    let Some(record) = records.get(&sequence) else {
-        return Ok(false);
-    };
-    validation.primary(entry, record, entries, global_table)
+    validation.primary_from_records(sequence, entry, entries, records, global_table)
 }
 
 fn general_note_child_valid(
@@ -602,7 +719,7 @@ fn general_symbol_note_valid(
 ) -> Result<bool, CodecError> {
     Ok(match record.integer(1) {
         Some(0) => form == 0 && !matches!(global_table, GlobalTable::V4_0),
-        Some(_) => pointer(record, 1, entries)
+        Some(_) => pointer(record, 1, entries, validation.ctx)?
             .map(|sequence| -> Result<bool, CodecError> {
                 general_note_child_valid(sequence, entries, records, global_table, validation)
             })
@@ -623,22 +740,45 @@ fn dimension_enclosure_type_allowed(
 
 fn dimension_children_valid(
     parent: &DirectoryEntry,
-    mut children: impl Iterator<Item = u32>,
+    mut children: impl Iterator<Item = Result<Option<u32>, CodecError>>,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> bool {
-    let Some(first_transform) = children
-        .next()
-        .and_then(|sequence| entries.get(&sequence))
-        .map(|entry| entry.transform)
-    else {
-        return false;
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let first_transform = loop {
+        let Some(sequence) = children.next() else {
+            return Ok(false);
+        };
+        let Some(sequence) = sequence? else {
+            continue;
+        };
+        let Some(entry) = ctx.get_btree_map(
+            entries,
+            &sequence,
+            "iges annotation child transform lookup",
+        )? else {
+            return Ok(false);
+        };
+        break entry.transform;
     };
-    (parent.transform == 0 || first_transform == 0)
-        && children.all(|sequence| {
-            entries
-                .get(&sequence)
-                .is_some_and(|entry| entry.transform == first_transform)
-        })
+    if parent.transform != 0 && first_transform != 0 {
+        return Ok(false);
+    }
+    for sequence in children {
+        let Some(sequence) = sequence? else {
+            continue;
+        };
+        let Some(entry) = ctx.get_btree_map(
+            entries,
+            &sequence,
+            "iges annotation child transform lookup",
+        )? else {
+            return Ok(false);
+        };
+        if entry.transform != first_transform {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn witness_valid(record: &ParameterRecord, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
@@ -672,7 +812,8 @@ fn dimension_valid(
     global_table: GlobalTable,
     validation: &mut AnnotationValidation<'_, '_>,
 ) -> Result<bool, CodecError> {
-    let note = pointer(record, 1, entries);
+    let ctx = validation.ctx;
+    let note = pointer(record, 1, entries, ctx)?;
     let note_valid = note
         .map(|sequence| -> Result<bool, CodecError> {
             general_note_child_valid(sequence, entries, records, global_table, validation)
@@ -682,14 +823,14 @@ fn dimension_valid(
     let fields_valid = match (entry.entity_type, entry.form) {
         (202, 0) => {
             let witnesses = [record.integer(2), record.integer(3)];
-            let leaders = [pointer(record, 7, entries), pointer(record, 8, entries)];
+            let leaders = [pointer(record, 7, entries, ctx)?, pointer(record, 8, entries, ctx)?];
             let witnesses_valid = witnesses.iter().enumerate().try_fold(
                 true,
                 |valid, (offset, raw)| -> Result<bool, CodecError> {
                     Ok(valid
                         && match raw {
                             Some(0) => true,
-                            Some(_) => pointer(record, 2 + offset, entries)
+                            Some(_) => pointer(record, 2 + offset, entries, ctx)?
                                 .map(|sequence| -> Result<bool, CodecError> {
                                     child_valid(
                                         sequence,
@@ -737,9 +878,25 @@ fn dimension_valid(
                 && leaders_valid
         }
         (204, 0) => {
-            let curves = [pointer(record, 2, entries), pointer(record, 3, entries)];
-            let curve_entries =
-                curves.map(|curve| curve.and_then(|sequence| entries.get(&sequence).copied()));
+            let curves = [pointer(record, 2, entries, ctx)?, pointer(record, 3, entries, ctx)?];
+            let curve_entries = [
+                match curves[0] {
+                    Some(sequence) => ctx.get_btree_map(
+                        entries,
+                        &sequence,
+                        "iges annotation dimension curve lookup",
+                    )?.copied(),
+                    None => None,
+                },
+                match curves[1] {
+                    Some(sequence) => ctx.get_btree_map(
+                        entries,
+                        &sequence,
+                        "iges annotation dimension curve lookup",
+                    )?.copied(),
+                    None => None,
+                },
+            ];
             let curves_valid = curve_entries[0].is_some_and(|curve| {
                 parameterized_curve_type(curve)
                     && curve.status.is_physically_dependent()
@@ -755,7 +912,7 @@ fn dimension_valid(
                 }),
                 None => false,
             };
-            let leaders = [pointer(record, 4, entries), pointer(record, 5, entries)];
+            let leaders = [pointer(record, 4, entries, ctx)?, pointer(record, 5, entries, ctx)?];
             let leaders_valid =
                 leaders
                     .iter()
@@ -782,7 +939,7 @@ fn dimension_valid(
                     Ok(valid
                         && match record.integer(index) {
                             Some(0) => true,
-                            Some(_) => pointer(record, index, entries)
+                            Some(_) => pointer(record, index, entries, ctx)?
                                 .map(|sequence| -> Result<bool, CodecError> {
                                     child_valid(
                                         sequence,
@@ -802,8 +959,8 @@ fn dimension_valid(
             exact_parameter_count(record, 8) && curves_valid && leaders_valid && witnesses_valid
         }
         (206, 0) => {
-            let first = pointer(record, 2, entries);
-            let second = pointer(record, 3, entries);
+            let first = pointer(record, 2, entries, ctx)?;
+            let second = pointer(record, 3, entries, ctx)?;
             let leaders_valid = first
                 .map(|sequence| -> Result<bool, CodecError> {
                     child_valid(
@@ -841,7 +998,7 @@ fn dimension_valid(
                 && (4..=5).all(|index| finite(record, index))
         }
         (216, 0..=2) => {
-            let leaders = [pointer(record, 2, entries), pointer(record, 3, entries)];
+            let leaders = [pointer(record, 2, entries, ctx)?, pointer(record, 3, entries, ctx)?];
             let witnesses = [record.integer(4), record.integer(5)];
             let leaders_valid =
                 leaders
@@ -870,7 +1027,7 @@ fn dimension_valid(
                     Ok(valid
                         && match raw {
                             Some(0) => true,
-                            Some(_) => pointer(record, 4 + offset, entries)
+                            Some(_) => pointer(record, 4 + offset, entries, ctx)?
                                 .map(|sequence| -> Result<bool, CodecError> {
                                     child_valid(
                                         sequence,
@@ -891,7 +1048,7 @@ fn dimension_valid(
             exact_parameter_count(record, 6) && leaders_valid && witnesses_valid
         }
         (218, 0) => {
-            let ordinate = pointer(record, 2, entries);
+            let ordinate = pointer(record, 2, entries, ctx)?;
             let valid = ordinate
                 .map(|sequence| -> Result<bool, CodecError> {
                     Ok(child_valid(
@@ -917,8 +1074,8 @@ fn dimension_valid(
             exact_parameter_count(record, 3) && valid
         }
         (218, 1) => {
-            let witness = pointer(record, 2, entries);
-            let leader = pointer(record, 3, entries);
+            let witness = pointer(record, 2, entries, ctx)?;
+            let leader = pointer(record, 3, entries, ctx)?;
             let valid = witness
                 .map(|sequence| -> Result<bool, CodecError> {
                     child_valid(
@@ -950,9 +1107,9 @@ fn dimension_valid(
             exact_parameter_count(record, 4) && valid
         }
         (220, 0) => {
-            let leader = pointer(record, 2, entries);
+            let leader = pointer(record, 2, entries, ctx)?;
             let enclosure_raw = record.integer(3);
-            let enclosure = pointer(record, 3, entries);
+            let enclosure = pointer(record, 3, entries, ctx)?;
             let leader_valid = leader
                 .map(|sequence| -> Result<bool, CodecError> {
                     Ok(child_valid(
@@ -963,28 +1120,42 @@ fn dimension_valid(
                         records,
                         global_table,
                         validation,
-                    )? && records.get(&sequence).and_then(|record| record.integer(1)) == Some(3))
+                    )? && ctx
+                        .get_btree_map(
+                            records,
+                            &sequence,
+                            "iges annotation dimension leader lookup",
+                        )?
+                        .and_then(|record| record.integer(1))
+                        == Some(3))
                 })
                 .transpose()?
                 .unwrap_or(false);
             let enclosure_valid = match enclosure_raw {
                 Some(0) => true,
-                Some(_) => enclosure.is_some_and(|sequence| {
-                    entries.get(&sequence).is_some_and(|entry| {
+                Some(_) => match enclosure {
+                    Some(sequence) => ctx
+                        .get_btree_map(
+                            entries,
+                            &sequence,
+                            "iges annotation enclosure lookup",
+                        )?
+                        .is_some_and(|entry| {
                         dimension_enclosure_type_allowed(
                             entry.entity_type,
                             entry.form,
                             global_table,
                         ) && entry.status.is_physically_dependent()
                             && entry.status.use_flag(global_table) == Some(UseFlag::Annotation)
-                    })
-                }),
+                        }),
+                    None => false,
+                },
                 None => false,
             };
             exact_parameter_count(record, 4) && leader_valid && enclosure_valid
         }
         (222, 0..=1) => {
-            let first = pointer(record, 2, entries);
+            let first = pointer(record, 2, entries, ctx)?;
             let first_valid = first
                 .map(|sequence| -> Result<bool, CodecError> {
                     child_valid(
@@ -1002,7 +1173,8 @@ fn dimension_valid(
             let center_valid = finite(record, 3) && finite(record, 4);
             let second_raw = (entry.form == 1).then(|| record.integer(5)).flatten();
             let second = (entry.form == 1)
-                .then(|| pointer(record, 5, entries))
+                .then(|| pointer(record, 5, entries, ctx))
+                .transpose()?
                 .flatten();
             let second_valid = entry.form == 0
                 || match second_raw {
@@ -1039,12 +1211,17 @@ fn dimension_valid(
         (222, 1) => &[2, 5],
         _ => &[],
     };
-    let children = note.into_iter().chain(
-        child_indexes
-            .iter()
-            .filter_map(|index| pointer(record, *index, entries)),
-    );
-    Ok(note_valid && fields_valid && dimension_children_valid(entry, children, entries))
+    let children = note
+        .into_iter()
+        .map(|sequence| Ok::<_, CodecError>(Some(sequence)))
+        .chain(
+            child_indexes
+                .iter()
+                .map(|index| pointer(record, *index, entries, ctx)),
+        );
+    Ok(note_valid
+        && fields_valid
+        && dimension_children_valid(entry, children, entries, ctx)?)
 }
 
 fn flag_or_label_valid(
@@ -1061,7 +1238,7 @@ fn flag_or_label_valid(
     } else {
         (1, 2, 3)
     };
-    let note = pointer(record, note_index, entries);
+    let note = pointer(record, note_index, entries, ctx)?;
     let note_valid = note
         .map(|sequence| -> Result<bool, CodecError> {
             general_note_child_valid(sequence, entries, records, global_table, validation)
@@ -1074,7 +1251,7 @@ fn flag_or_label_valid(
             ctx.all_by(
                 0..count,
                 |offset| {
-                    Ok(pointer(record, leader_start + offset, entries)
+                    Ok(pointer(record, leader_start + offset, entries, ctx)?
                         .map(|sequence| -> Result<bool, CodecError> {
                             child_valid(
                                 sequence,
@@ -1097,10 +1274,11 @@ fn flag_or_label_valid(
     let shape_valid = if entry.entity_type == 208 {
         count.is_some_and(|count| exact_parameter_count(record, 7 + count))
             && (1..=4).all(|index| finite(record, index))
-            && if let Some(note) = note.and_then(|sequence| records.get(&sequence)) {
-                validation.width_sum(note)?.is_some_and(|total| total <= 10)
-            } else {
-                false
+            && match note {
+                Some(sequence) => validation
+                    .width_sum_from_records(sequence, records)?
+                    .is_some_and(|total| total <= 10),
+                None => false,
             }
     } else {
         count.is_some_and(|count| count > 0 && exact_parameter_count(record, 3 + count))
@@ -1125,14 +1303,19 @@ fn general_symbol_valid(
     let geometry_valid = ctx.all_by(
         0..geometry_count,
         |offset| {
-            Ok(
-                pointer(record, 3 + offset, entries).is_some_and(|sequence| {
-                    entries.get(&sequence).is_some_and(|target| {
-                        target.status.is_physically_dependent()
-                            && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
-                    })
-                }),
-            )
+            let Some(sequence) = pointer(record, 3 + offset, entries, ctx)? else {
+                return Ok(false);
+            };
+            Ok(ctx
+                .get_btree_map(
+                    entries,
+                    &sequence,
+                    "iges annotation symbol geometry lookup",
+                )?
+                .is_some_and(|target| {
+                    target.status.is_physically_dependent()
+                        && target.status.use_flag(global_table) == Some(UseFlag::Annotation)
+                }))
         },
         "iges annotation validation traversal",
     )?;
@@ -1143,7 +1326,7 @@ fn general_symbol_valid(
     let leaders_valid = ctx.all_by(
         0..leader_count,
         |offset| {
-            Ok(pointer(record, leader_count_index + 1 + offset, entries)
+            Ok(pointer(record, leader_count_index + 1 + offset, entries, ctx)?
                 .map(|sequence| -> Result<bool, CodecError> {
                     child_valid(
                         sequence,
@@ -1209,11 +1392,8 @@ struct SectionedAreaContext {
     resolution: f64,
 }
 
-fn sectioned_area_valid<'ir, 'ctx>(
-    (ir, cached_index): (
-        &'ir CadIr,
-        &mut Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'ir>>,
-    ),
+fn sectioned_area_valid<'ctx>(
+    geometry: &mut SectionedAreaGeometryCache<'ctx, '_>,
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     form: i64,
@@ -1231,17 +1411,16 @@ fn sectioned_area_valid<'ir, 'ctx>(
     }
     let boundary_sequence = match record.integer(1) {
         Some(0) if form == 1 => Some(None),
-        Some(_) => pointer(record, 1, entries).map(Some),
+        Some(_) => pointer(record, 1, entries, ctx)?.map(Some),
         None => None,
     };
-    let boundary_valid = boundary_sequence.is_some_and(|sequence| {
-        sequence.is_none_or(|sequence| {
-            entries
-                .get(&sequence)
-                .copied()
-                .is_some_and(section_boundary_type)
-        })
-    });
+    let boundary_valid = match boundary_sequence {
+        Some(Some(sequence)) => ctx
+            .get_btree_map(entries, &sequence, "iges section boundary lookup")?
+            .is_some_and(|entry| section_boundary_type(*entry)),
+        Some(None) => true,
+        None => false,
+    };
     let Some(island_count) = record.count(8) else {
         return Ok(false);
     };
@@ -1251,13 +1430,12 @@ fn sectioned_area_valid<'ir, 'ctx>(
     let islands_valid = ctx.all_by(
         0..island_count,
         |offset| {
-            Ok(
-                pointer(record, 9 + offset, entries).is_some_and(|sequence| {
-                    entries
-                        .get(&sequence)
-                        .is_some_and(|entry| section_boundary_type(entry))
-                }),
-            )
+            let Some(sequence) = pointer(record, 9 + offset, entries, ctx)? else {
+                return Ok(false);
+            };
+            Ok(ctx
+                .get_btree_map(entries, &sequence, "iges section island boundary lookup")?
+                .is_some_and(|entry| section_boundary_type(entry)))
         },
         "iges annotation validation traversal",
     )?;
@@ -1267,13 +1445,9 @@ fn sectioned_area_valid<'ir, 'ctx>(
         sectioned_area_pattern_plane(record, transform, length_factor)
     {
         let boundary_coplanar = match boundary_sequence {
-            Some(Some(sequence)) => sectioned_area_curve_coplanar(
-                (ir, cached_index),
-                sequence,
-                pattern_plane,
-                resolution,
-                ctx,
-            )?,
+            Some(Some(sequence)) => {
+                geometry.curve_coplanar(sequence, pattern_plane, resolution, ctx)?
+            }
             Some(None) => true,
             None => false,
         };
@@ -1281,16 +1455,10 @@ fn sectioned_area_valid<'ir, 'ctx>(
             && ctx.all_by(
                 0..island_count,
                 |offset| {
-                    let Some(sequence) = pointer(record, 9 + offset, entries) else {
+                    let Some(sequence) = pointer(record, 9 + offset, entries, ctx)? else {
                         return Ok(false);
                     };
-                    sectioned_area_curve_coplanar(
-                        (ir, cached_index),
-                        sequence,
-                        pattern_plane,
-                        resolution,
-                        ctx,
-                    )
+                    geometry.curve_coplanar(sequence, pattern_plane, resolution, ctx)
                 },
                 "iges section island reference traversal",
             )?
@@ -1331,7 +1499,7 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut validation = AnnotationValidation::new(ctx)?;
-    let mut section_index = None;
+    let mut section_geometry = SectionedAreaGeometryCache::new(ir, ctx)?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -1339,8 +1507,12 @@ pub(super) fn project(
         .admit_iter(directory, "iges annotation directory traversal")?
         .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
     {
-        let valid = records
-            .get(&entry.sequence)
+        let valid = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges annotation Parameter Data lookup",
+            )?
             .map(|record| -> Result<bool, CodecError> {
                 let mut transform_storage =
                     ctx.reserve_scoped(0, "iges annotation transform scratch")?;
@@ -1407,7 +1579,7 @@ pub(super) fn project(
                             AnnotationKind::SectionedArea => {
                                 if let Some(transform) = resolved_transform {
                                     sectioned_area_valid(
-                                        (ir, &mut section_index),
+                                        &mut section_geometry,
                                         record,
                                         entries,
                                         entry.form,
