@@ -641,12 +641,12 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             let mut flips =
                 self.ctx
                     .alloc_filled(constraints.len(), None, "catia_selection_flips")?;
+            let mut stack = Vec::new();
             for root in ctx.admit_iter(0..constraints.len(), "catia_selection_flips")? {
                 if flips[root].is_some() {
                     continue;
                 }
                 flips[root] = Some(false);
-                let mut stack = Vec::new();
                 self.ctx
                     .push_vec(&mut stack, root, "catia_selection_orientation_stack")?;
                 while let Some(node) = self.ctx.next_charged(
