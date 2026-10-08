@@ -401,12 +401,14 @@ fn inspect_parsed_exchange(
             "step_inspect_entries",
         )?;
     }
-    let identifiers = exchange.joined_schema_identifiers(ctx)?;
-    let schema = if identifiers.is_empty() {
-        "unspecified".into()
-    } else {
-        identifiers
-    };
+    let (schema, _schema_storage) = ctx.with_scoped_storage("STEP inspect schema text storage", || {
+        let identifiers = exchange.joined_schema_identifiers(ctx)?;
+        if identifiers.is_empty() {
+            ctx.copy_retained_text("unspecified", "STEP inspect unspecified schema text")
+        } else {
+            Ok(identifiers)
+        }
+    })?;
     let dialect = matched.dialect();
     let mut notes = Vec::new();
     ctx.push_vec(
@@ -490,18 +492,17 @@ fn inspect_zip(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<ContainerSummary, CodecError> {
-    let archive::OpenedRoot {
-        archive,
-        view: root_view,
-        data_start: root_data_offset,
-    } = archive::open_root(ctx, root)?;
+    let opened = archive::open_root(ctx, root)?;
+    let archive = &opened.archive;
+    let root_view = opened.view;
+    let root_data_offset = opened.data_start;
     let root_bytes = root_view.window();
     refuse_alternate_encoding(ctx, root_bytes)?;
     if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
     let mut parsed = parse::parse_scoped(root_bytes, ctx, "STEP inspect parsed graph storage")?;
-    let resource_notes = archive::root_reference_notes(ctx, &archive, &parsed.exchange);
+    let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange);
     let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut parsed.exchange, &parsed.diagnostics)?;
     let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
@@ -592,13 +593,12 @@ fn decode_zip(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<Decoded, CodecError> {
-    let archive::OpenedRoot {
-        archive,
-        view: root_view,
-        data_start: root_data_offset,
-    } = archive::open_root(ctx, root)?;
+    let opened = archive::open_root(ctx, root)?;
+    let archive = &opened.archive;
+    let root_view = opened.view;
+    let root_data_offset = opened.data_start;
     let parsed = parse::parse_scoped(root_view.window(), ctx, "STEP ZIP parsed graph storage")?;
-    let resource_notes = archive::root_reference_notes(ctx, &archive, &parsed.exchange)?;
+    let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange)?;
     let entry_count = archive.entries().len();
     let mut decoded = reader::decode_exchange(
         root_view.window(),
@@ -1023,6 +1023,16 @@ mod tests {
                 })
             });
         }
+    }
+
+    #[test]
+    fn inspection_schema_note_keeps_all_declared_identifiers_in_order() {
+        let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','CUSTOM_SCHEMA'));ENDSEC;DATA('main',('AP242'));ENDSEC;END-ISO-10303-21;";
+        crate::test_support::with_service_context(source, |source, ctx| {
+            let inspected = super::inspect_exchange(&StepCodec::default(), ctx,
+                cadmpeg_core::decode::View::over_retained(source)).expect("named section and multiple schemas");
+            assert!(inspected.notes.iter().any(|note| note.starts_with("schema AP242,CUSTOM_SCHEMA; dialect ")));
+        });
     }
 
     #[test]
