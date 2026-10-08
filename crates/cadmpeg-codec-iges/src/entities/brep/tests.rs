@@ -27,6 +27,75 @@ use crate::IgesCodec;
 const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;
 
 #[test]
+fn shared_brep_definitions_do_not_reindex_generated_edges() {
+    let bytes = explicit_tetrahedron_solid_file();
+    crate::test_support::with_service_context(&bytes, |ctx| {
+        let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
+        let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
+        let (mut directory, quarantined) =
+            crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
+        assert!(quarantined.is_empty());
+        let mut parameters = crate::parameter::assemble_with_context(
+            &scan, &directory, &quarantined, &global, ctx,
+        ).unwrap();
+        // Both solids use the same shell, faces, loops, and six source curves.
+        let mut second = directory.iter().find(|entry| entry.sequence == 55).unwrap().clone();
+        assert_eq!(second.entity_type, 186);
+        second.sequence = 57;
+        directory.push(second);
+        let mut second = parameters.records.iter()
+            .find(|record| record.directory_sequence == 55).unwrap().clone();
+        second.directory_sequence = 57;
+        parameters.records.push(second);
+        let mut ir = CadIr::empty();
+        let projection = super::super::geometry::project_geometry(
+            &mut ir, &directory, &parameters.records,
+            &parameters.trailing_pointer_analysis,
+            &global.length_context().unwrap(), ctx,
+        ).unwrap();
+        assert!(projection.losses.is_empty(), "{:#?}", projection.losses);
+        for sequence in [55, 57] {
+            let id = format!("iges:model:body#D{sequence}");
+            assert!(ir.model.bodies.iter().any(|body| body.id.as_str() == id));
+            assert!(projection.decoded.contains(&sequence));
+            let prefix = format!("iges:model:edge#D{sequence}:");
+            assert_eq!(ir.model.edges.iter().filter(|edge| edge.id.as_str().starts_with(&prefix)).count(), 6);
+        }
+        ir.finalize(ctx).unwrap();
+        let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    });
+}
+
+#[test]
+fn brep_lookup_refusals_reach_decode() {
+    let bytes = explicit_tetrahedron_solid_file();
+    for operation in [
+        "iges B-rep parameter lookup",
+        "iges B-rep vertex-list lookup",
+        "iges B-rep edge-list lookup",
+        "iges B-rep loop lookup",
+        "iges B-rep face lookup",
+        "iges B-rep shell lookup",
+        "iges B-rep topology vertex lookup",
+        "iges B-rep topology edge lookup",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
+                    policy, ..DecodeOptions::default()
+                }).map_err(|failure| match failure {
+                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+            },
+        );
+    }
+}
+
+#[test]
 fn brep_surface_endpoint_keeps_evaluator_resource_refusal() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
@@ -244,6 +313,32 @@ fn brep_projected_pcurve_uses_refuse_before_both_vector_allocations() {
         super::project_pcurve_uses(&mut candidate, &uses, resolved(), None, &stem, &ctx).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(candidate.model().pcurves.len(), 1);
+}
+
+#[test]
+fn invalid_first_brep_pcurve_range_does_not_admit_the_tail() {
+    const COUNT: usize = 2_000;
+    let uses = vec![(false, 7_u32); COUNT];
+    let line = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0), Point2::new(1.0, 0.0),
+        ).unwrap(),
+    );
+    let mut resolved = vec![(line, [0.0, 1.0]); COUNT];
+    resolved[0].1 = [f64::NAN, 1.0];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut candidate = ModelDraft::new();
+    let result = super::project_pcurve_uses(
+        &mut candidate, &uses, resolved, None, &crate::ids::Stem::directory(9_u32), &ctx,
+    );
+    assert!(matches!(result, Err(super::PcurveProjectionError::Invalid(
+        cadmpeg_ir::geometry::pcurve::PcurveMetadata::NON_FINITE_PARAMETER_RANGE
+    ))));
+    assert!(candidate.model().pcurves.is_empty());
+    ctx.finish_session().unwrap();
 }
 
 #[test]
