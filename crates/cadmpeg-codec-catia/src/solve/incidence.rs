@@ -2768,7 +2768,7 @@ fn advance_compact_boundary_domains<'storage, 'a>(
     {
         let mut next = Vec::new();
         let mut signature_storage = ctx.reserve_scoped(0, "catia_compact_boundary_signatures")?;
-        let mut signatures = HashSet::new();
+        let mut signatures = HashMap::new();
         let mut charged_steps = states.into_iter();
         while let Some((state, oriented_edges)) =
             ctx.next_charged(&mut charged_steps, "catia_compact_boundary_states")?
@@ -2820,25 +2820,39 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                     if !budget.charge_by(work) {
                         return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
                     }
-                    let mut oriented_signature = ctx.collection_vec(
-                        next_oriented.len(),
-                        "catia_compact_boundary_oriented_signature",
+                    let (signature, key_storage) = ctx.with_scoped_storage(
+                        "catia_compact_boundary_signature_key",
+                        || -> Result<_, CodecError> {
+                            let mut oriented_signature = ctx.collection_vec(
+                                next_oriented.len(),
+                                "catia_compact_boundary_oriented_signature",
+                            )?;
+                            oriented_signature.extend(next_oriented.iter().copied());
+                            ctx.sort_unstable_by(
+                                &mut oriented_signature,
+                                |value| value,
+                                Ord::cmp,
+                                "catia_compact_boundary_oriented_signature_sort",
+                            )?;
+                            Ok((candidate.signature_charged(ctx)?, oriented_signature))
+                        },
                     )?;
-                    oriented_signature.extend(next_oriented.iter().copied());
-                    ctx.sort_unstable_by(
-                        &mut oriented_signature,
-                        |value| value,
-                        Ord::cmp,
-                        "catia_compact_boundary_oriented_signature_sort",
-                    )?;
-                    let signature = candidate.signature_charged(ctx)?;
-                    if signature_storage.with_storage(|| {
-                        ctx.insert_hash_set(
-                            &mut signatures,
-                            (signature, oriented_signature),
-                            "catia_compact_boundary_signatures",
+                    let inserted = signature_storage.with_storage(|| {
+                        Ok::<_, CodecError>(
+                            match ctx.entry_hash_map(
+                                &mut signatures,
+                                signature,
+                                "catia_compact_boundary_signatures",
+                            )? {
+                                std::collections::hash_map::Entry::Vacant(entry) => {
+                                    entry.insert(key_storage);
+                                    true
+                                }
+                                std::collections::hash_map::Entry::Occupied(_) => false,
+                            },
                         )
-                    })? {
+                    })?;
+                    if inserted {
                         ctx.push_vec(
                             &mut next,
                             (candidate, next_oriented),
