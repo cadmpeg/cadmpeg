@@ -124,9 +124,16 @@ impl CodecBackend for CreoCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(ctx, root.window())?;
-        let classification = dialect::classify(ctx, &scan)?;
-        container::summarize(ctx, &scan, classification)
+        let (scan, scan_storage) = ctx.with_scoped_storage("creo container scan storage", || {
+            container::scan_bytes(ctx, root.window())
+        })?;
+        let summary = (|| {
+            let classification = dialect::classify(ctx, &scan)?;
+            container::summarize(ctx, &scan, classification)
+        })();
+        drop(scan);
+        drop(scan_storage);
+        summary
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
