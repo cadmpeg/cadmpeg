@@ -954,14 +954,10 @@ fn derivable_candidates(
             released.push(position);
         }
     }
-    loop {
-        let Some(position) = ctx.next_charged(
-            &mut std::iter::from_fn(|| released.pop()),
-            "catia_formula_released_candidate_visits",
-        )?
-        else {
-            break;
-        };
+    while let Some(position) = ctx.next_charged(
+        &mut std::iter::from_fn(|| released.pop()),
+        "catia_formula_released_candidate_visits",
+    )? {
         derivable[position] = true;
         let start = ctx.partition_point(&edges, |edge| Ok(edge.0 < position), OPERATION)?;
         let end = ctx.partition_point(&edges, |edge| Ok(edge.0 <= position), OPERATION)?;
@@ -1869,13 +1865,13 @@ fn outer_container_in_scope(
     binding: Option<&crate::native::CatiaOuterContainerBinding>,
     modeling_scope: LegacyModelingScope<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "catia_legacy_container_scope_match";
     let LegacyModelingScope::Container(modeling) = modeling_scope else {
         return Ok(matches!(modeling_scope, LegacyModelingScope::Unbounded));
     };
     let Some(binding) = binding else {
         return Ok(false);
     };
-    const OPERATION: &str = "catia_legacy_container_scope_match";
     Ok(binding.data_offset == modeling.data_offset
         && binding.ordinal == modeling.ordinal
         && ctx.equal_bytes(
@@ -1991,6 +1987,7 @@ impl<'run, 'ctx> LegacyTypeResolver<'run, 'ctx> {
 }
 
 /// A legacy value whose type may come from its bound evaluation name.
+#[derive(Clone, Copy)]
 struct LegacyIntrinsicValue<'a> {
     entity_id: u32,
     value_offset: u64,
@@ -2194,7 +2191,7 @@ fn merge_formula_parameter_candidate<'ctx>(
     if !formula_parameter_candidates_agree(ctx, existing, &candidate)? {
         match (existing_output, candidate_output) {
             (true, true) => {}
-            (true, false) | (false, false) => {
+            (_, false) => {
                 let conflict = scratch.with_storage(|| {
                     candidate
                         .parameter
@@ -2262,6 +2259,7 @@ fn merge_formula_parameter_candidate<'ctx>(
 }
 
 /// The relation, expression and output entities of one relation program.
+#[derive(Clone, Copy)]
 struct RelationProgramEntities<'a> {
     relation: &'a crate::native::entity_record::CatiaEntityRecord,
     expression: &'a crate::native::entity_record::CatiaEntityRecord,

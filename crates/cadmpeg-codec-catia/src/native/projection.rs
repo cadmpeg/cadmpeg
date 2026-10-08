@@ -363,6 +363,7 @@ pub(crate) fn consolidated_edge_runs(
     nodes: &[CatiaConsolidatedEdgeNode],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<CatiaConsolidatedEdgeRun>, CodecError> {
+    const LOOKUP: &str = "catia_native_edge_run_lookups";
     let mut lookup_storage = ctx.reserve_scoped(0, "CATIA native edge run lookup")?;
     let mut pcurve_ids = HashMap::new();
     for pcurve in ctx.admit_iter(pcurves, "catia_native_edge_run_pcurve_visits")? {
@@ -417,7 +418,6 @@ pub(crate) fn consolidated_edge_runs(
             .pcurves
             .each_ref()
             .map(|pcurve| u64_from_index(pcurve.pos));
-        const LOOKUP: &str = "catia_native_edge_run_lookups";
         let resolved = ctx.get_hash_map(&resolved, &run.edge.pcurves[0].pos, LOOKUP)?;
         let Some(node) =
             ctx.get_hash_map(&nodes_by_offset, &u64_from_index(run.node.pos), LOOKUP)?
@@ -1176,7 +1176,7 @@ pub(crate) fn value_schema_selections(
 impl CatiaValueBlock {
     pub(super) fn from_parts(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        block: value_block::ValueBlock,
+        block: &value_block::ValueBlock,
         catalog: &CatiaCatalog,
         object_graph: Option<&CatiaObjectGraph>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
