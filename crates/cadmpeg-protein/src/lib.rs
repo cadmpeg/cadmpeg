@@ -94,6 +94,13 @@ enum ValueLayout {
     TextureUri,
 }
 
+#[derive(Clone, Copy)]
+enum SchemaCarrier {
+    Reference,
+    TextureUri,
+    Scalar(ValueCarrier),
+}
+
 #[derive(Clone, Debug)]
 enum Property {
     Reference {
@@ -451,19 +458,6 @@ where
                 if node.has_tag_name("PropertyAlias") {
                     continue;
                 }
-                if admission.xml_attribute(node, "readonly", "Protein readonly attribute search")?
-                    == Some("true")
-                {
-                    continue;
-                }
-                if admission.xml_attribute(
-                    node,
-                    "definitionIteratorData",
-                    "Protein definition attribute search",
-                )? == Some("true")
-                {
-                    continue;
-                }
                 let Some(property) = schema_property(admission, node)? else {
                     continue;
                 };
@@ -514,50 +508,55 @@ fn schema_property<A: ProteinAdmission>(
 where
     CodecError: From<A::Error>,
 {
-    let multiple = admission.xml_attribute(
-        node,
-        "allowmultiplevalues",
-        "Protein multiple-values attribute search",
-    )? == Some("true");
-    let connectable = admission
-        .xml_attribute(
-            node,
-            "allowconnectedassets",
-            "Protein connected-assets attribute search",
-        )?
-        .is_some();
+    admission.work(0, "Protein schema property")?;
     let carrier = match node.tag_name().name() {
-        "Reference" => return Ok(Some(Property::Reference { multiple })),
-        "TextureURI" => {
-            return Ok(Some(Property::Value {
-                layout: ValueLayout::TextureUri,
-                connectable,
-            }));
-        }
-        "Boolean" => ValueCarrier::Boolean,
-        "Integer" | "Choice" => ValueCarrier::Integer,
-        "Float" => {
-            if admission
-                .xml_attribute(node, "unit", "Protein unit attribute search")?
-                .is_some()
-            {
-                ValueCarrier::UnitFloat
-            } else {
-                ValueCarrier::Float
-            }
-        }
-        "Distance" => ValueCarrier::Distance,
-        "String" | "Uuid" | "URL" => ValueCarrier::String,
-        "Color" => ValueCarrier::Color,
+        "Reference" => SchemaCarrier::Reference,
+        "TextureURI" => SchemaCarrier::TextureUri,
+        "Boolean" => SchemaCarrier::Scalar(ValueCarrier::Boolean),
+        "Integer" | "Choice" => SchemaCarrier::Scalar(ValueCarrier::Integer),
+        "Float" => SchemaCarrier::Scalar(ValueCarrier::Float),
+        "Distance" => SchemaCarrier::Scalar(ValueCarrier::Distance),
+        "String" | "Uuid" | "URL" => SchemaCarrier::Scalar(ValueCarrier::String),
+        "Color" => SchemaCarrier::Scalar(ValueCarrier::Color),
         _ => return Ok(None),
     };
-    Ok(Some(Property::Value {
-        layout: if multiple {
-            ValueLayout::Multiple(carrier)
-        } else {
-            ValueLayout::Single(carrier)
+    if admission.xml_attribute(node, "readonly", "Protein readonly attribute search")?
+        == Some("true")
+        || admission.xml_attribute(
+            node,
+            "definitionIteratorData",
+            "Protein definition attribute search",
+        )? == Some("true")
+    {
+        return Ok(None);
+    }
+    let multiple = || {
+        admission.xml_attribute(node, "allowmultiplevalues", "Protein multiple-values attribute search")
+            .map(|value| value == Some("true"))
+    };
+    let connectable = || {
+        admission.xml_attribute(node, "allowconnectedassets", "Protein connected-assets attribute search")
+            .map(|value| value.is_some())
+    };
+    Ok(Some(match carrier {
+        SchemaCarrier::Reference => Property::Reference { multiple: multiple()? },
+        SchemaCarrier::TextureUri => Property::Value {
+            layout: ValueLayout::TextureUri,
+            connectable: connectable()?,
         },
-        connectable,
+        SchemaCarrier::Scalar(mut carrier) => {
+            let multiple = multiple()?;
+            let connectable = connectable()?;
+            if matches!(carrier, ValueCarrier::Float)
+                && admission.xml_attribute(node, "unit", "Protein unit attribute search")?.is_some()
+            {
+                carrier = ValueCarrier::UnitFloat;
+            }
+            Property::Value {
+                layout: if multiple { ValueLayout::Multiple(carrier) } else { ValueLayout::Single(carrier) },
+                connectable,
+            }
+        },
     }))
 }
 
@@ -1268,6 +1267,54 @@ mod tests {
             panic!("expected work refusal")
         };
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+    }
+
+    #[test]
+    fn unsupported_schema_tags_skip_all_attribute_searches() {
+        let xml = format!("<Unsupported {}='value' allowmultiplevalues='true' allowconnectedassets='single'/>", "attribute".repeat(256));
+        let document = roxmltree::Document::parse(&xml).expect("fixture XML");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+        assert!(super::schema_property(&ctx, document.root_element())
+            .expect("unrecognized tag uses only the fixed carrier grammar").is_none());
+        assert!(ctx.resource_refusal().is_none());
+        let original = ctx.charge_work(1, "fixture refusal").expect_err("zero work");
+        let error = super::schema_property(&ctx, document.root_element())
+            .expect_err("a skipped tag still preserves the original refusal");
+        assert!(matches!((original, error), (CodecError::ResourceLimit(original), CodecError::ResourceLimit(actual)) if actual == original));
+    }
+
+    #[test]
+    fn schema_carrier_modifiers_preserve_selected_layouts() {
+        use super::{Property, ValueLayout};
+        let cases = [
+            "<Reference allowmultiplevalues='true' allowconnectedassets='single'/>",
+            "<TextureURI allowmultiplevalues='true' allowconnectedassets='single'/>",
+            "<Float unit='length' allowmultiplevalues='true' allowconnectedassets='single'/>",
+            "<Boolean readonly='true' allowmultiplevalues='true'/>",
+            "<Distance definitionIteratorData='true'/>",
+            "<Color/>",
+        ];
+        for (case, xml) in cases.into_iter().enumerate() {
+            let document = roxmltree::Document::parse(xml).expect("fixture XML");
+            with_service_context(&[], |ctx| {
+                let property = super::schema_property(ctx, document.root_element()).expect("carrier");
+                let standard = super::schema_property(super::admission::StandardAdmission, document.root_element()).expect("standard carrier");
+                assert_eq!(format!("{property:?}"), format!("{standard:?}"));
+                match case {
+                    0 => assert!(matches!(property, Some(Property::Reference { multiple: true }))),
+                    1 => assert!(matches!(property, Some(Property::Value { layout: ValueLayout::TextureUri, connectable: true }))),
+                    2 => assert!(matches!(property, Some(Property::Value { layout: ValueLayout::Multiple(ValueCarrier::UnitFloat), connectable: true }))),
+                    3 | 4 => assert!(property.is_none()),
+                    5 => assert!(matches!(property, Some(Property::Value { layout: ValueLayout::Single(ValueCarrier::Color), connectable: false }))),
+                    _ => unreachable!(),
+                }
+            });
+        }
     }
 
     #[test]
