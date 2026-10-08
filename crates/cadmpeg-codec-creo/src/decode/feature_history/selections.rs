@@ -206,10 +206,9 @@ pub(in super::super) fn generated_curve_edge_refs(
     }
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in ctx.admit_iter(rows, "creo curve topology rows")? {
-        local_storage.with_storage(|| {
-            ctx.admit_btree_entry(&counts, &row.id, "creo generated curve count nodes")
-        })?;
-        let count = counts.entry(row.id).or_default();
+        let count = local_storage.with_storage(|| {
+            ctx.entry_btree_map(&mut counts, row.id, "creo generated curve count nodes")
+        })?.or_default();
         *count = count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("creo generated curve row counts", u64::MAX, u64::MAX)
         })?;
@@ -281,10 +280,9 @@ pub(in super::super) fn feature_result_edge_ids(
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut counts = BTreeMap::<u32, usize>::new();
     for row in ctx.admit_iter(rows, "creo curve topology rows")? {
-        local_storage.with_storage(|| {
-            ctx.admit_btree_entry(&counts, &row.id, "creo feature result edge count nodes")
-        })?;
-        let count = counts.entry(row.id).or_default();
+        let count = local_storage.with_storage(|| {
+            ctx.entry_btree_map(&mut counts, row.id, "creo feature result edge count nodes")
+        })?.or_default();
         *count = count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("creo feature result edge row counts", u64::MAX, u64::MAX)
         })?;
