@@ -3721,6 +3721,26 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
     current_reverse_incidence_endpoint_offsets_in(ctx, payload, curve, &index)
 }
 
+pub(super) fn current_reverse_incidence_endpoint_offsets_cached<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+    cache: &std::cell::OnceCell<(ReverseIncidenceIndex<'a>, ScopedReservation<'ctx>)>,
+) -> Result<Option<[u64; 2]>, CodecError> {
+    if reverse_incidence_curve_index(payload, curve).is_none() {
+        return Ok(None);
+    }
+    let (index, _) = match cache.get() {
+        Some(index) => index,
+        None => {
+            let built = ReverseIncidenceIndex::new(ctx, payload, markers)?;
+            cache.get_or_init(|| built)
+        }
+    };
+    current_reverse_incidence_endpoint_offsets_in(ctx, payload, curve, index)
+}
+
 fn reverse_incidence_curve_index(payload: &[u8], curve: &SketchInputEntity) -> Option<u16> {
     let offset = usize::try_from(curve.offset()).ok()?;
     let curve_index = u16::try_from(curve.object_index()?).ok()?;

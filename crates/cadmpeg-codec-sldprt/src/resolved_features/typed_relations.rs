@@ -3609,19 +3609,38 @@ fn is_legacy_terminal_indexed_profile_line(payload: &[u8], curve: &SketchInputEn
     true
 }
 
+#[cfg(test)]
 pub(super) fn legacy_terminal_indexed_profile_line(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Result<bool, CodecError> {
+    let index = std::cell::OnceCell::new();
+    legacy_terminal_indexed_profile_line_cached(ctx, payload, curve, markers, &index)
+}
+
+pub(super) fn legacy_terminal_indexed_profile_line_cached<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+    cache: &std::cell::OnceCell<(LegacyTerminalLines<'a>, ScopedReservation<'ctx>)>,
+) -> Result<bool, CodecError> {
     if !is_legacy_terminal_indexed_profile_line(payload, curve) {
         return Ok(false);
     }
-    let (index, _storage) = LegacyTerminalLines::new(ctx, payload, markers)?;
-    legacy_terminal_indexed_profile_line_in(ctx, payload, curve, &index)
+    let (index, _) = match cache.get() {
+        Some(index) => index,
+        None => {
+            let built = LegacyTerminalLines::new(ctx, payload, markers)?;
+            cache.get_or_init(|| built)
+        },
+    };
+    legacy_terminal_indexed_profile_line_lookup(ctx, curve, index)
 }
 
+#[cfg(test)]
 pub(super) fn legacy_terminal_indexed_profile_line_in(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -3631,6 +3650,14 @@ pub(super) fn legacy_terminal_indexed_profile_line_in(
     if !is_legacy_terminal_indexed_profile_line(payload, curve) {
         return Ok(false);
     }
+    legacy_terminal_indexed_profile_line_lookup(ctx, curve, index)
+}
+
+fn legacy_terminal_indexed_profile_line_lookup(
+    ctx: &DecodeContext<'_>,
+    curve: &SketchInputEntity,
+    index: &LegacyTerminalLines<'_>,
+) -> Result<bool, CodecError> {
     Ok(ctx
         .get_hash_map(
             &index.first_by_feature,
