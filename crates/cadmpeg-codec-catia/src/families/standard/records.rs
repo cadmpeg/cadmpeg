@@ -978,10 +978,7 @@ fn standard_curve_support_has_predecessor(
     let Some(candidates) = brep.get(first..start) else {
         return Err(ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX));
     };
-    for (relative, &byte) in ctx
-        .admit_iter(candidates, "catia_standard_iteration")?
-        .enumerate()
-    {
+    for (relative, &byte) in candidates.iter().enumerate() {
         let Some(candidate) = first.checked_add(relative) else {
             return Err(ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX));
         };
@@ -1178,21 +1175,14 @@ mod tests {
     use super::axis_from_xy;
 
     #[test]
-    fn curve_predecessor_byte_scan_propagates_caller_work_refusal() {
+    fn curve_predecessor_fixed_window_needs_no_work_admission() {
         let bytes = [0, 0x60];
-        assert!(!crate::test_support::with_service_context(|ctx| {
-            super::standard_curve_support_has_predecessor(ctx, &bytes, 1, 1)
-        })
-        .expect("service resource budget"));
         crate::test_support::with_work_limit(0, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) =
-                super::standard_curve_support_has_predecessor(ctx, &bytes, 1, 1)
-                    .expect_err("predecessor bytes require admission")
-            else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_standard_iteration");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
+            assert!(
+                !super::standard_curve_support_has_predecessor(ctx, &bytes, 1, 1)
+                    .expect("fixed window")
+            );
+            assert!(ctx.resource_refusal().is_none());
         });
     }
 
