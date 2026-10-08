@@ -580,11 +580,15 @@ fn expanded_knots(
         multiplicities.len()
     };
 
+    let mut storage = ctx.reserve_scoped(0, "expand Parasolid knots")?;
     let mut out = Vec::new();
-    for (value, &multiplicity) in ctx
-        .admit_iter(&values[..scan_count], "scan Parasolid knot values")?
-        .zip(&multiplicities[..scan_count])
-    {
+    let mut pairs = values[..scan_count].iter().zip(&multiplicities[..scan_count]);
+    while pairs.len() != 0 {
+        let Some((value, &multiplicity)) =
+            ctx.next_charged(&mut pairs, "scan Parasolid knot values")?
+        else {
+            break;
+        };
         if multiplicity == 0 {
             continue;
         }
@@ -601,9 +605,12 @@ fn expanded_knots(
             0..usize::from(multiplicity),
             "emit Parasolid expanded knots",
         )? {
-            ctx.push_vec(&mut out, *value, "expand Parasolid knots")?;
+            storage.with_storage(|| {
+                ctx.push_vec(&mut out, *value, "expand Parasolid knots")
+            })?;
         }
     }
+    storage.commit()?;
     Ok(Some(out))
 }
 
