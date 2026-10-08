@@ -381,7 +381,7 @@ pub(crate) fn entity_graph(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<(Vec<FeatureEntity>, Vec<FeatureEntityReference>), CodecError> {
-    let Some(root) = psb::token_at(payload, 0) else {
+    let Some(root) = psb::token_at(ctx, payload, 0)? else {
         return Ok((Vec::new(), Vec::new()));
     };
     // The root name ends one byte before the record ends, at its NUL.
@@ -398,7 +398,7 @@ pub(crate) fn entity_graph(
     }
     let mut entities = Vec::new();
     let mut offset = 0;
-    while let Some(token) = psb::token_at(payload, offset) {
+    while let Some(token) = psb::token_at(ctx, payload, offset)? {
         offset += token.length;
         if token.kind != psb::TokenKind::NamedRecord || token.length < 3 {
             continue;
@@ -426,7 +426,7 @@ pub(crate) fn entity_graph(
     let mut references = Vec::new();
     let mut next_entity = 0;
     let mut offset = 0;
-    while let Some(token) = psb::token_at(payload, offset) {
+    while let Some(token) = psb::token_at(ctx, payload, offset)? {
         offset += token.length;
         if token.kind == psb::TokenKind::NamedRecord {
             source = entities.get(next_entity).map(|entity| entity.entity_id);
