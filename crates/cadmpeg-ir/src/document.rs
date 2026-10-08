@@ -273,7 +273,16 @@ impl Serialize for ProceduralSurfaceWire<'_> {
                 self.procedural.id
             ))
         })?;
-        ProceduralSurfaceRow::new(owner.clone(), self.procedural).serialize(serializer)
+        let bounds = self.procedural.record_bounds();
+        let mut state = serializer
+            .serialize_struct("ProceduralSurfaceRow", 3 + usize::from(bounds.is_some()))?;
+        state.serialize_field("id", &self.procedural.id)?;
+        state.serialize_field("surface", owner)?;
+        state.serialize_field("definition", self.procedural.definition())?;
+        if let Some(bounds) = bounds {
+            state.serialize_field("record_bounds", &bounds)?;
+        }
+        state.end()
     }
 }
 
@@ -293,7 +302,11 @@ impl Serialize for ProceduralCurveWire<'_> {
                 self.procedural.id
             ))
         })?;
-        ProceduralCurveRow::new(owner.clone(), self.procedural).serialize(serializer)
+        let mut state = serializer.serialize_struct("ProceduralCurveRow", 3)?;
+        state.serialize_field("id", &self.procedural.id)?;
+        state.serialize_field("curve", owner)?;
+        state.serialize_field("definition", self.procedural.definition())?;
+        state.end()
     }
 }
 
@@ -1047,31 +1060,12 @@ struct ProceduralSurfaceRows<'a>(&'a [ProceduralSurface], &'a [Option<&'a Surfac
 
 impl Serialize for ProceduralSurfaceRows<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        struct Row<'a> {
-            owner: &'a SurfaceId,
-            procedural: &'a ProceduralSurface,
-        }
-        impl Serialize for Row<'_> {
-            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                let mut state = serializer.serialize_struct("ProceduralSurfaceRow", 4)?;
-                state.serialize_field("id", &self.procedural.id)?;
-                state.serialize_field("surface", self.owner)?;
-                state.serialize_field("definition", self.procedural.definition())?;
-                if let Some(bounds) = self.procedural.record_bounds() {
-                    state.serialize_field("record_bounds", &bounds)?;
-                }
-                state.end()
-            }
-        }
         let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
         for (procedural, owner) in self.0.iter().zip(self.1) {
-            let owner = owner.ok_or_else(|| {
-                serde::ser::Error::custom(format_args!(
-                    "procedural surface {} has no unique owning surface",
-                    procedural.id
-                ))
+            sequence.serialize_element(&ProceduralSurfaceWire {
+                owner: *owner,
+                procedural,
             })?;
-            sequence.serialize_element(&Row { owner, procedural })?;
         }
         sequence.end()
     }
@@ -1081,28 +1075,12 @@ struct ProceduralCurveRows<'a>(&'a [ProceduralCurve], &'a [Option<&'a CurveId>])
 
 impl Serialize for ProceduralCurveRows<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        struct Row<'a> {
-            owner: &'a CurveId,
-            procedural: &'a ProceduralCurve,
-        }
-        impl Serialize for Row<'_> {
-            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                let mut state = serializer.serialize_struct("ProceduralCurveRow", 3)?;
-                state.serialize_field("id", &self.procedural.id)?;
-                state.serialize_field("curve", self.owner)?;
-                state.serialize_field("definition", self.procedural.definition())?;
-                state.end()
-            }
-        }
         let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
         for (procedural, owner) in self.0.iter().zip(self.1) {
-            let owner = owner.ok_or_else(|| {
-                serde::ser::Error::custom(format_args!(
-                    "procedural curve {} has no unique owning curve",
-                    procedural.id
-                ))
+            sequence.serialize_element(&ProceduralCurveWire {
+                owner: *owner,
+                procedural,
             })?;
-            sequence.serialize_element(&Row { owner, procedural })?;
         }
         sequence.end()
     }
