@@ -6158,6 +6158,7 @@ fn definition_chain_value(
     suffix_value: Option<&CatiaEntitySuffixValue>,
     suffix_schema_selection: Option<&CatiaEntitySuffixSchemaSelection>,
 ) -> Result<Option<CatiaDefinitionChainValue>, CodecError> {
+    const OPERATION: &str = "catia_native_definition_chain_selector";
     if lead != 2
         || !matches!(
             value_fields,
@@ -6184,7 +6185,6 @@ fn definition_chain_value(
     let CatiaEntitySuffixPayload::SchemaSelected { .. } = &suffix_value.payload else {
         return Ok(None);
     };
-    const OPERATION: &str = "catia_native_definition_chain_selector";
     if !ctx.equal_bytes(
         suffix_schema_selection.entry.as_bytes(),
         selector_entry.as_bytes(),
@@ -6231,17 +6231,11 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         }
     };
     let mut at = 0;
-    let Some((prefix0, width0)) = atom(at) else {
-        return None;
-    };
+    let (prefix0, width0) = atom(at)?;
     at += usize::from(width0);
-    let Some((prefix1, width1)) = atom(at) else {
-        return None;
-    };
+    let (prefix1, width1) = atom(at)?;
     at += usize::from(width1);
-    let Some((prefix2, width2)) = atom(at) else {
-        return None;
-    };
+    let (prefix2, width2) = atom(at)?;
     at += usize::from(width2);
     let prefix_atoms = [prefix0, prefix1, prefix2];
     let prefix_atom_widths = [width0, width1, width2];
@@ -6813,6 +6807,7 @@ fn schema_configuration_record(
     value_schema_selections: &[CatiaEntityValueSchemaSelection],
     references: &CatiaEntityReferenceIndex<'_>,
 ) -> Result<Option<CatiaSchemaConfigurationRecord>, CodecError> {
+    const OPERATION: &str = "catia_native_configuration_selection_visits";
     if object.entity_id() != Some(entity_id)
         || object.lead != 0x12
         || object.owner_entity_id().is_none()
@@ -6833,7 +6828,6 @@ fn schema_configuration_record(
     else {
         return Ok(None);
     };
-    const OPERATION: &str = "catia_native_configuration_selection_visits";
     let matches =
         |selection: &CatiaEntityValueSchemaSelection| Ok(selection.ordinal == *schema_ordinal);
     let Some(index) = ctx.position_by(value_schema_selections, matches, OPERATION)? else {
@@ -8931,10 +8925,10 @@ impl<'run, 'ctx> LegacyEvaluatedValueNames<'run, 'ctx> {
         let mut names =
             HashMap::<u32, (&CatiaLegacyTextField, Option<&CatiaLegacyTextField>)>::new();
         for field in ctx.admit_iter(fields, "catia_native_legacy_value_name_visits")? {
-            if !field
+            if field
                 .role
                 .as_ref()
-                .is_some_and(|role| role.field_code == Some(0x1200))
+                .is_none_or(|role| role.field_code != Some(0x1200))
             {
                 continue;
             }
@@ -10228,7 +10222,7 @@ fn zero_entity_endpoint_locus_candidates(
     )?;
     for (index, candidate) in ctx
         .admit_iter(
-            &candidates,
+            candidates,
             "catia_native_zero_endpoint_locus_candidate_visits",
         )?
         .enumerate()

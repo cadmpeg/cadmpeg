@@ -211,7 +211,7 @@ fn object_population_selection_refuses_before_indexing_runs() {
                     .checked_add(error.additional)
                     .expect("bounded fixture");
             }
-            Ok(_) => panic!("selection admitted before its index limit"),
+            Ok(()) => panic!("selection admitted before its index limit"),
             Err(error) => panic!("unexpected selection refusal: {error}"),
         }
     }
@@ -1967,7 +1967,7 @@ fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
     let refused = crate::test_support::with_work_refusal("IR strict knot order", |ctx| {
         let result = parse_a8_class21_pcurve(ctx, 7, &payload);
         if let Err(CodecError::ResourceLimit(limit)) = &result {
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
         }
         result
     });

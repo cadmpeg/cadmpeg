@@ -269,14 +269,10 @@ fn unresolved_carrier_ids<'a>(
                 .with_storage(|| ctx.push_back(&mut frontier, owner, "catia_carrier_frontier"))?;
         }
     }
-    loop {
-        let Some(carrier) = ctx.next_charged(
-            &mut std::iter::from_fn(|| frontier.pop_front()),
-            "catia_carrier_resolution_work",
-        )?
-        else {
-            break;
-        };
+    while let Some(carrier) = ctx.next_charged(
+        &mut std::iter::from_fn(|| frontier.pop_front()),
+        "catia_carrier_resolution_work",
+    )? {
         if !storage.with_storage(|| {
             ctx.insert_hash_set(&mut resolved, carrier, "catia_resolved_carrier_ids")
         })? {
@@ -1965,7 +1961,7 @@ mod route_tests {
                     },
                 )
                 .expect("exact surface"),
-            )
+            );
         });
         ir.model.surfaces.push(Surface {
             id: support.clone(),
@@ -2045,7 +2041,7 @@ mod route_tests {
         )
         .expect("cyclic offset");
         root.edit_definition(|definition| {
-            *definition = ProceduralSurfaceDefinition::Offset(offset)
+            *definition = ProceduralSurfaceDefinition::Offset(offset);
         });
         let unresolved = crate::test_support::with_service_context(|ctx| {
             super::unresolved_carrier_ids(ctx, &ir)

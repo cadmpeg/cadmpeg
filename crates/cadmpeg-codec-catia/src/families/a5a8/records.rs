@@ -409,10 +409,7 @@ fn object_stream_frames<'a>(
                 }
                 return None;
             }
-            let Some(frame) = object_stream_frame(data, pos).filter(|frame| frame.end <= limit)
-            else {
-                return None;
-            };
+            let frame = object_stream_frame(data, pos).filter(|frame| frame.end <= limit)?;
             match frame.family {
                 0xa8 if child_end.is_none() => {
                     child_end = Some(frame.end);
@@ -3277,7 +3274,7 @@ fn a8_surface_from_parsed(
             ctx,
             result,
             refusal,
-            format_args!("a8 NURBS surface record #{} at byte {}", object_id, pos),
+            format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
         ),
         None => Ok(None),
     }
@@ -3369,13 +3366,20 @@ fn a5_knots(
         5 if distinct.len() >= 2 => (6u32, 3u32),
         _ => return Ok(None),
     };
+    let (Ok(endpoint_width), Ok(interior_width), Ok(degree_width)) = (
+        usize::try_from(endpoint),
+        usize::try_from(interior),
+        usize::try_from(degree),
+    ) else {
+        return Err(ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX));
+    };
     let expanded_count = distinct
         .len()
         .checked_sub(2)
-        .and_then(|middle| middle.checked_mul(interior as usize))
-        .and_then(|middle| middle.checked_add(2 * endpoint as usize))
+        .and_then(|middle| middle.checked_mul(interior_width))
+        .and_then(|middle| middle.checked_add(2 * endpoint_width))
         .ok_or_else(|| ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX))?;
-    let Some(count) = expanded_count.checked_sub(degree as usize + 1) else {
+    let Some(count) = expanded_count.checked_sub(degree_width + 1) else {
         return Ok(None);
     };
     let count = u32::try_from(count)
