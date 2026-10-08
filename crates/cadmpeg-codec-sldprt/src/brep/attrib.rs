@@ -775,8 +775,20 @@ mod tests {
     fn attribute_conflict_does_not_resolve_unrequested_tail() {
         use super::{IntegerList, PayloadRuns};
         let lists = std::collections::BTreeMap::from([
-            (300, Some(IntegerList { values: [9, 0, 0, 0, 0, 0, 0], len: 1 })),
-            (301, Some(IntegerList { values: [8, 0, 0, 0, 0, 0, 0], len: 1 })),
+            (
+                300,
+                Some(IntegerList {
+                    values: [9, 0, 0, 0, 0, 0, 0],
+                    len: 1,
+                }),
+            ),
+            (
+                301,
+                Some(IntegerList {
+                    values: [8, 0, 0, 0, 0, 0, 0],
+                    len: 1,
+                }),
+            ),
         ]);
         let mut bytes = vec![1, 44, 1, 45];
         for _ in 0..4096 {

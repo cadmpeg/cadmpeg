@@ -1658,24 +1658,25 @@ pub(crate) fn decode_bodies(
             let typed_face_offsets = stream_storage.with_storage(|| {
                 selected_typed_face_offsets(ctx, stream_typed_facts, typed_bridge_attrs.as_ref())
             })?;
-            index_storage.with_storage(|| carriers.merge_missing(ctx, scan_carriers(ctx, body)?))?;
+            index_storage
+                .with_storage(|| carriers.merge_missing(ctx, scan_carriers(ctx, body)?))?;
             let curve_attrs = stream_storage.with_storage(|| carriers.curve_attrs(ctx))?;
             index_storage.with_storage(|| {
-            if is_deltas {
-                topology::scan_deltas_with_curve_attrs_excluding(
-                    ctx,
-                    body,
-                    &curve_attrs,
-                    &typed_face_offsets,
-                )
-            } else {
-                topology::scan_with_curve_attrs_excluding(
-                    ctx,
-                    body,
-                    &curve_attrs,
-                    &typed_face_offsets,
-                )
-            }
+                if is_deltas {
+                    topology::scan_deltas_with_curve_attrs_excluding(
+                        ctx,
+                        body,
+                        &curve_attrs,
+                        &typed_face_offsets,
+                    )
+                } else {
+                    topology::scan_with_curve_attrs_excluding(
+                        ctx,
+                        body,
+                        &curve_attrs,
+                        &typed_face_offsets,
+                    )
+                }
             })?
         };
         let mut scanned_facts =

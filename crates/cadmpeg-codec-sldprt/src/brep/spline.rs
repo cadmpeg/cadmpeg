@@ -62,14 +62,20 @@ impl<'ctx, T> FramedArray<'ctx, T> {
                 })
             })?;
             let Some(values) = values else {
-                return Err(cadmpeg_core::CodecError::malformed("bounded Parasolid array lost a cell"));
+                return Err(cadmpeg_core::CodecError::malformed(
+                    "bounded Parasolid array lost a cell",
+                ));
             };
             if self.values.set((values, storage)).is_err() {
-                return Err(cadmpeg_core::CodecError::malformed("Parasolid array initialized twice"));
+                return Err(cadmpeg_core::CodecError::malformed(
+                    "Parasolid array initialized twice",
+                ));
             }
         }
         let Some((values, _storage)) = self.values.get() else {
-            return Err(cadmpeg_core::CodecError::malformed("Parasolid array cache is absent"));
+            return Err(cadmpeg_core::CodecError::malformed(
+                "Parasolid array cache is absent",
+            ));
         };
         Ok(values.as_slice())
     }
@@ -296,7 +302,14 @@ fn scan_arrays<'ctx>(
             ctx.insert_btree_map(
                 &mut arrays.u16s,
                 attr,
-                FramedArray { span: ArraySpan { start: values_at, count }, operation: "decode Parasolid integer array values", values: OnceCell::new() },
+                FramedArray {
+                    span: ArraySpan {
+                        start: values_at,
+                        count,
+                    },
+                    operation: "decode Parasolid integer array values",
+                    values: OnceCell::new(),
+                },
                 "collect Parasolid integer arrays",
             )?;
         } else {
@@ -317,7 +330,14 @@ fn scan_arrays<'ctx>(
             ctx.insert_btree_map(
                 &mut arrays.f64s,
                 attr,
-                FramedArray { span: ArraySpan { start: values_at, count }, operation: "decode Parasolid scalar array values", values: OnceCell::new() },
+                FramedArray {
+                    span: ArraySpan {
+                        start: values_at,
+                        count,
+                    },
+                    operation: "decode Parasolid scalar array values",
+                    values: OnceCell::new(),
+                },
                 "collect Parasolid scalar arrays",
             )?;
         }
@@ -348,12 +368,7 @@ where
     if let Some(array) = ctx.get_btree_map(framed, &attr, OPERATION)? {
         if exact_count.is_none_or(|count| array.span.count == count) {
             let values = array.read(ctx, &read)?;
-            ctx.push_scoped_vec(
-                storage,
-                &mut candidates,
-                Cow::Borrowed(values),
-                OPERATION,
-            )?;
+            ctx.push_scoped_vec(storage, &mut candidates, Cow::Borrowed(values), OPERATION)?;
         }
     }
     let Some(arrays) = ctx.get_btree_map(compact, &attr, OPERATION)? else {
@@ -387,8 +402,10 @@ where
         };
         if !ctx.any_by(
             &candidates,
-            |candidate| Ok(candidate.len() == values.len()
-                && ctx.equal(candidate.as_ref(), values.as_slice(), OPERATION)?),
+            |candidate| {
+                Ok(candidate.len() == values.len()
+                    && ctx.equal(candidate.as_ref(), values.as_slice(), OPERATION)?)
+            },
             OPERATION,
         )? {
             ctx.push_scoped_vec(storage, &mut candidates, Cow::Owned(values), OPERATION)?;
@@ -1138,36 +1155,50 @@ pub(crate) fn scan_curve_carriers(
     let mut wrappers = Vec::new();
     let mut required_attrs = BTreeSet::new();
     {
-    let mut descriptor_storage = ctx.reserve_scoped(0, "hold Parasolid wrapper descriptors")?;
-    let mut descriptors = None;
-    let starts = 0..bytes.len().checked_sub(6).map_or(0, |end| end);
-    for off in ctx.admit_iter(starts, "scan Parasolid curve wrappers")? {
-        if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
-            continue;
+        let mut descriptor_storage = ctx.reserve_scoped(0, "hold Parasolid wrapper descriptors")?;
+        let mut descriptors = None;
+        let starts = 0..bytes.len().checked_sub(6).map_or(0, |end| end);
+        for off in ctx.admit_iter(starts, "scan Parasolid curve wrappers")? {
+            if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
+                continue;
+            }
+            let mut p = off + 2;
+            if bytes.get(p) == Some(&0xff) {
+                p += 1;
+            }
+            let Some(attr) = View::u16_be_at(bytes, p) else {
+                continue;
+            };
+            if descriptors.is_none() {
+                descriptors =
+                    Some(descriptor_storage.with_storage(|| scan_curve_descriptors(ctx, bytes))?);
+            }
+            let Some(descriptors) = &descriptors else {
+                continue;
+            };
+            let Some(descriptor) = curve_descriptor(ctx, bytes, p, descriptors)? else {
+                continue;
+            };
+            for reference in [
+                descriptor.control_attr,
+                descriptor.multiplicity_attr,
+                descriptor.knot_attr,
+            ] {
+                scratch.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut required_attrs,
+                        reference,
+                        "collect Parasolid curve array references",
+                    )
+                })?;
+            }
+            ctx.push_scoped_vec(
+                &mut scratch,
+                &mut wrappers,
+                (off, attr, *descriptor),
+                "collect Parasolid curve wrappers",
+            )?;
         }
-        let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) {
-            p += 1;
-        }
-        let Some(attr) = View::u16_be_at(bytes, p) else {
-            continue;
-        };
-        if descriptors.is_none() {
-            descriptors = Some(descriptor_storage.with_storage(|| scan_curve_descriptors(ctx, bytes))?);
-        }
-        let Some(descriptors) = &descriptors else {
-            continue;
-        };
-        let Some(descriptor) = curve_descriptor(ctx, bytes, p, descriptors)? else {
-            continue;
-        };
-        for reference in [descriptor.control_attr, descriptor.multiplicity_attr, descriptor.knot_attr] {
-            scratch.with_storage(|| ctx.insert_btree_set(
-                &mut required_attrs, reference, "collect Parasolid curve array references",
-            ))?;
-        }
-        ctx.push_scoped_vec(&mut scratch, &mut wrappers, (off, attr, *descriptor), "collect Parasolid curve wrappers")?;
-    }
     }
     if wrappers.is_empty() {
         return Ok(BTreeMap::new());
@@ -1184,7 +1215,9 @@ pub(crate) fn scan_curve_carriers(
         else {
             continue;
         };
-        let Some(expected_control_values) = descriptor.control_count.checked_mul(descriptor.dimension) else {
+        let Some(expected_control_values) =
+            descriptor.control_count.checked_mul(descriptor.dimension)
+        else {
             continue;
         };
         if control_array.span.count != expected_control_values {
@@ -1444,51 +1477,63 @@ pub(crate) fn scan_surface_carriers(
     let mut required_attrs = BTreeSet::new();
     let mut wrappers = Vec::new();
     {
-    let mut descriptor_storage = ctx.reserve_scoped(0, "hold Parasolid wrapper descriptors")?;
-    let mut descriptors = None;
-    let starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
-    for off in ctx.admit_iter(starts, "scan Parasolid surface wrappers")? {
-        if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
-            continue;
+        let mut descriptor_storage = ctx.reserve_scoped(0, "hold Parasolid wrapper descriptors")?;
+        let mut descriptors = None;
+        let starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
+        for off in ctx.admit_iter(starts, "scan Parasolid surface wrappers")? {
+            if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
+                continue;
+            }
+            let mut p = off + 2;
+            if bytes.get(p) == Some(&0xff) {
+                p += 1;
+            }
+            let Some(attr) = View::u16_be_at(bytes, p) else {
+                continue;
+            };
+            let Some(descriptor_at) = p.checked_add(17) else {
+                continue;
+            };
+            let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
+                continue;
+            };
+            if descriptors.is_none() {
+                descriptors =
+                    Some(descriptor_storage.with_storage(|| scan_surface_descriptors(ctx, bytes))?);
+            }
+            let Some(descriptors) = &descriptors else {
+                continue;
+            };
+            let Some(descriptor) = ctx.get_btree_map(
+                descriptors,
+                &descriptor_attr,
+                "find Parasolid surface descriptors",
+            )?
+            else {
+                continue;
+            };
+            for &reference in &descriptor.refs {
+                scratch.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut required_attrs,
+                        reference,
+                        "collect Parasolid surface array references",
+                    )
+                })?;
+            }
+            ctx.push_scoped_vec(
+                &mut scratch,
+                &mut wrappers,
+                (off, attr, *descriptor),
+                "collect Parasolid surface wrappers",
+            )?;
         }
-        let mut p = off + 2;
-        if bytes.get(p) == Some(&0xff) {
-            p += 1;
-        }
-        let Some(attr) = View::u16_be_at(bytes, p) else {
-            continue;
-        };
-        let Some(descriptor_at) = p.checked_add(17) else {
-            continue;
-        };
-        let Some(descriptor_attr) = View::u16_be_at(bytes, descriptor_at) else {
-            continue;
-        };
-        if descriptors.is_none() {
-            descriptors = Some(descriptor_storage.with_storage(|| scan_surface_descriptors(ctx, bytes))?);
-        }
-        let Some(descriptors) = &descriptors else {
-            continue;
-        };
-        let Some(descriptor) = ctx.get_btree_map(
-            descriptors,
-            &descriptor_attr,
-            "find Parasolid surface descriptors",
-        )? else {
-            continue;
-        };
-        for &reference in &descriptor.refs {
-            scratch.with_storage(|| ctx.insert_btree_set(
-                &mut required_attrs, reference, "collect Parasolid surface array references",
-            ))?;
-        }
-        ctx.push_scoped_vec(&mut scratch, &mut wrappers, (off, attr, *descriptor), "collect Parasolid surface wrappers")?;
-    }
     }
     if wrappers.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let arrays = scratch.with_storage(|| scan_arrays(ctx, bytes, Some(&required_attrs), Some(&required_attrs)))?;
+    let arrays = scratch
+        .with_storage(|| scan_arrays(ctx, bytes, Some(&required_attrs), Some(&required_attrs)))?;
     let mut out = BTreeMap::new();
     for (off, attr, descriptor) in ctx.admit_iter(wrappers, "decode Parasolid surface wrappers")? {
         // The first carrier of an attribute is kept; a later wrapper is not built.
@@ -1621,9 +1666,12 @@ pub(crate) fn scan_surface_carriers(
         let valid = ctx.all_by(
             control.chunks(row_width.get()),
             |row| {
-                let mut points = ctx.vector_storage(descriptor.v_count, "decode Parasolid surface poles")?;
+                let mut points =
+                    ctx.vector_storage(descriptor.v_count, "decode Parasolid surface poles")?;
                 let mut weights = if descriptor.rational {
-                    Some(ctx.vector_storage(descriptor.v_count, "decode Parasolid surface weights")?)
+                    Some(
+                        ctx.vector_storage(descriptor.v_count, "decode Parasolid surface weights")?,
+                    )
                 } else {
                     None
                 };
@@ -1632,12 +1680,18 @@ pub(crate) fn scan_surface_carriers(
                     |pole| {
                         let weight = if descriptor.rational { pole[3] } else { 1.0 };
                         // A pole holds three or four values.
-                        if pole.iter().any(|value| !value.is_finite()) || weight.abs() <= f64::EPSILON {
+                        if pole.iter().any(|value| !value.is_finite())
+                            || weight.abs() <= f64::EPSILON
+                        {
                             return Ok(false);
                         }
                         ctx.push_vec(
                             &mut points,
-                            Point3::new(pole[0] / weight * LEN_TO_MM, pole[1] / weight * LEN_TO_MM, pole[2] / weight * LEN_TO_MM),
+                            Point3::new(
+                                pole[0] / weight * LEN_TO_MM,
+                                pole[1] / weight * LEN_TO_MM,
+                                pole[2] / weight * LEN_TO_MM,
+                            ),
                             "decode Parasolid surface poles",
                         )?;
                         if let Some(values) = &mut weights {
@@ -1649,7 +1703,11 @@ pub(crate) fn scan_surface_carriers(
                 )? {
                     return Ok(false);
                 }
-                ctx.push_vec(&mut pole_rows, points, "partition Parasolid surface pole rows")?;
+                ctx.push_vec(
+                    &mut pole_rows,
+                    points,
+                    "partition Parasolid surface pole rows",
+                )?;
                 if let (Some(rows), Some(weights)) = (&mut weight_rows, weights) {
                     ctx.push_vec(rows, weights, "partition Parasolid surface weight rows")?;
                 }
@@ -1747,8 +1805,12 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut refusals = Vec::new();
-        assert!(scan_curve_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
-        assert!(scan_surface_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
+        assert!(scan_curve_carriers(&ctx, &bytes, &mut refusals)
+            .unwrap()
+            .is_empty());
+        assert!(scan_surface_carriers(&ctx, &bytes, &mut refusals)
+            .unwrap()
+            .is_empty());
         assert!(refusals.is_empty());
         ctx.finish_session().unwrap();
     }
@@ -1761,10 +1823,16 @@ mod tests {
             } else {
                 crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10)
             };
-            let operation = if curve { "collect Parasolid curve carriers" } else { "collect Parasolid surface carriers" };
+            let operation = if curve {
+                "collect Parasolid curve carriers"
+            } else {
+                "collect Parasolid surface carriers"
+            };
             let refusal = |bytes: &[u8]| {
                 let error = cadmpeg_test_support::refusal::resource_limit_at(
-                    ResourceDimension::CollectionItems, operation, |cap| {
+                    ResourceDimension::CollectionItems,
+                    operation,
+                    |cap| {
                         let arena = DecodeArena::new();
                         let mut policy = DecodePolicy::service();
                         policy.limits.max_collection_items = cap;
@@ -1777,11 +1845,14 @@ mod tests {
                         }
                     },
                 );
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("carrier insertion refusal"); };
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                    panic!("carrier insertion refusal");
+                };
                 limit
             };
             let original = refusal(&bytes);
-            let mut prefix = crate::test_support::parasolid::f64_array(0x2d, 65000, &vec![0.25; 4096]);
+            let mut prefix =
+                crate::test_support::parasolid::f64_array(0x2d, 65000, &vec![0.25; 4096]);
             prefix.extend(bytes);
             bytes = prefix;
             let extended = refusal(&bytes);
@@ -1794,32 +1865,55 @@ mod tests {
     fn surface_pole_traversal_charges_rows_and_poles_once() {
         let valid = crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10);
         let control = crate::test_support::parasolid::f64_array(
-            0x2d, 182, &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
+            0x2d,
+            182,
+            &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
         );
-        let start = valid.windows(control.len()).position(|bytes| bytes == control).unwrap();
+        let start = valid
+            .windows(control.len())
+            .position(|bytes| bytes == control)
+            .unwrap();
         let mut invalid = valid.clone();
-        let values_at = super::array_body(&invalid, start, 0x2d).unwrap() + crate::layout::bspline_array_header::LEN;
+        let values_at = super::array_body(&invalid, start, 0x2d).unwrap()
+            + crate::layout::bspline_array_header::LEN;
         invalid[values_at..values_at + 8].copy_from_slice(&f64::NAN.to_be_bytes());
-        let mut zero_weight = crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10);
-        let control_at = (0..zero_weight.len()).find_map(|off| {
-            let body = super::array_body(&zero_weight, off, 0x2d)?;
-            (cadmpeg_core::decode::View::u16_be_at(&zero_weight, body + crate::layout::bspline_array_header::ATTR) == Some(182))
+        let mut zero_weight =
+            crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10);
+        let control_at = (0..zero_weight.len())
+            .find_map(|off| {
+                let body = super::array_body(&zero_weight, off, 0x2d)?;
+                (cadmpeg_core::decode::View::u16_be_at(
+                    &zero_weight,
+                    body + crate::layout::bspline_array_header::ATTR,
+                ) == Some(182))
                 .then_some(body + crate::layout::bspline_array_header::LEN)
-        }).unwrap();
+            })
+            .unwrap();
         zero_weight[control_at + 24..control_at + 32].copy_from_slice(&0.0_f64.to_be_bytes());
         for bytes in [&valid, &zero_weight] {
-            for operation in ["scan Parasolid surface poles", "scan Parasolid surface row poles"] {
+            for operation in [
+                "scan Parasolid surface poles",
+                "scan Parasolid surface row poles",
+            ] {
                 let error = crate::test_support::work_refusal_at(operation, |ctx| {
                     scan_surface_carriers(ctx, bytes, &mut Vec::new())
                 });
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.operation == operation && limit.additional == 1));
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.operation == operation && limit.additional == 1)
+                );
             }
         }
         let ctx = cadmpeg_test_support::service_decode_context();
-        assert!(scan_surface_carriers(&ctx, &invalid, &mut Vec::new()).unwrap().is_empty());
-        assert!(scan_surface_carriers(&ctx, &zero_weight, &mut Vec::new()).unwrap().is_empty());
-        assert!(scan_surface_carriers(&ctx, &valid, &mut Vec::new()).unwrap().contains_key(&180));
+        assert!(scan_surface_carriers(&ctx, &invalid, &mut Vec::new())
+            .unwrap()
+            .is_empty());
+        assert!(scan_surface_carriers(&ctx, &zero_weight, &mut Vec::new())
+            .unwrap()
+            .is_empty());
+        assert!(scan_surface_carriers(&ctx, &valid, &mut Vec::new())
+            .unwrap()
+            .contains_key(&180));
     }
 
     #[test]
@@ -1831,21 +1925,36 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 4096;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let (arrays, nodes) = ctx.with_scoped_storage("test framed array index", || {
-            scan_arrays(&ctx, &bytes, None, None)
-        }).unwrap();
+        let (arrays, nodes) = ctx
+            .with_scoped_storage("test framed array index", || {
+                scan_arrays(&ctx, &bytes, None, None)
+            })
+            .unwrap();
         let array = arrays.f64s.get(&12).unwrap();
         assert!(array.values.get().is_none());
-        assert_eq!(array.read(&ctx, |at| View::f64_be_at(&bytes, at)).unwrap(), [0.0, 1.0, 2.0]);
+        assert_eq!(
+            array.read(&ctx, |at| View::f64_be_at(&bytes, at)).unwrap(),
+            [0.0, 1.0, 2.0]
+        );
         {
             let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                ResourceDimension::WorkUnits, "decode Parasolid scalar array values", None,
+                ResourceDimension::WorkUnits,
+                "decode Parasolid scalar array values",
+                None,
             );
-            assert_eq!(array.read(&ctx, |at| View::f64_be_at(&bytes, at)).unwrap(), [0.0, 1.0, 2.0]);
+            assert_eq!(
+                array.read(&ctx, |at| View::f64_be_at(&bytes, at)).unwrap(),
+                [0.0, 1.0, 2.0]
+            );
         }
         drop(arrays);
         drop(nodes);
-        let released = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released framed values").unwrap();
+        let released = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "test released framed values",
+            )
+            .unwrap();
         drop(released);
         ctx.finish_session().unwrap();
     }
@@ -1854,9 +1963,16 @@ mod tests {
     fn duplicate_curve_wrapper_does_not_read_its_unused_large_payload() {
         let mut bytes = crate::test_support::parasolid::nurbs_curve_carrier(170, 171);
         let mut duplicate = crate::test_support::parasolid::nurbs_curve_carrier(170, 400);
-        let control = crate::test_support::parasolid::f64_array(0x2d, 401, &[0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 1.0, 0.0, 0.0]);
-        let at = duplicate.windows(control.len()).position(|window| window == control).unwrap();
-        let unused = crate::test_support::parasolid::f64_array(0x2d, 401, &vec![0.25; 131072]);
+        let control = crate::test_support::parasolid::f64_array(
+            0x2d,
+            401,
+            &[0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 1.0, 0.0, 0.0],
+        );
+        let at = duplicate
+            .windows(control.len())
+            .position(|window| window == control)
+            .unwrap();
+        let unused = crate::test_support::parasolid::f64_array(0x2d, 401, &vec![0.25; 131_072]);
         duplicate.splice(at..at + control.len(), unused);
         bytes.extend(duplicate);
         let arena = DecodeArena::new();
@@ -1905,10 +2021,14 @@ mod tests {
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
                 let arrays = scan_arrays(&ctx, &bytes, None, None)?;
-                let Some(array) = ctx.get_btree_map(&arrays.f64s, &12, "test framed array lookup")? else {
+                let Some(array) =
+                    ctx.get_btree_map(&arrays.f64s, &12, "test framed array lookup")?
+                else {
                     panic!("framed array is present");
                 };
-                array.read(&ctx, |at| View::f64_be_at(&bytes, at)).map(|values| values.len())
+                array
+                    .read(&ctx, |at| View::f64_be_at(&bytes, at))
+                    .map(<[f64]>::len)
             },
         );
         assert!(matches!(error,
@@ -1924,7 +2044,10 @@ mod tests {
                 .expect("service scan")
                 .f64s
                 .get(&12)
-                .map(|array| array.read(&ctx, |at| View::f64_be_at(&bytes, at)).expect("service values").len()),
+                .map(|array| array
+                    .read(&ctx, |at| View::f64_be_at(&bytes, at))
+                    .expect("service values")
+                    .len()),
             Some(3)
         );
     }
@@ -1942,10 +2065,14 @@ mod tests {
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
                 let arrays = scan_arrays(&ctx, &bytes, None, None)?;
-                let Some(array) = ctx.get_btree_map(&arrays.u16s, &12, "test framed array lookup")? else {
+                let Some(array) =
+                    ctx.get_btree_map(&arrays.u16s, &12, "test framed array lookup")?
+                else {
                     panic!("framed array is present");
                 };
-                array.read(&ctx, |at| View::u16_be_at(&bytes, at)).map(|values| values.len())
+                array
+                    .read(&ctx, |at| View::u16_be_at(&bytes, at))
+                    .map(<[u16]>::len)
             },
         );
         assert!(matches!(error,
@@ -2035,7 +2162,8 @@ mod tests {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
                 scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             },
         );
@@ -2055,7 +2183,8 @@ mod tests {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
                 scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             },
         );
@@ -2075,7 +2204,8 @@ mod tests {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
                 scan_curve_carriers(&ctx, &bytes, &mut Vec::new())
             },
         );
