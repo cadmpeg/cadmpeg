@@ -780,7 +780,7 @@ fn transition_limit_error(operation: &'static str, dependency_route: bool) {
                 super::surface_transition_dependencies(
                     ctx,
                     17,
-                    &[table.clone()],
+                    std::slice::from_ref(&table),
                     &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
                 )
                 .map(|_| ())
@@ -788,7 +788,7 @@ fn transition_limit_error(operation: &'static str, dependency_route: bool) {
                 super::feature_surface_transitions(
                     ctx,
                     17,
-                    &[table.clone()],
+                    std::slice::from_ref(&table),
                     &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
                 )
                 .map(|_| ())

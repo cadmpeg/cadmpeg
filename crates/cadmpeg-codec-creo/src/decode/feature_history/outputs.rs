@@ -107,7 +107,7 @@ pub(super) fn feature_output_bodies_with_history<'ir, 'ctx>(
             .unwrap_or(&[]);
         for body in ctx.admit_iter(bodies, "creo generated surface body references")? {
             if !ctx.contains(&outputs, *body, "creo feature output body lookup")? {
-                let body = copy_body_id(ctx, *body)?;
+                let body = copy_body_id(ctx, body)?;
                 ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
                 outputs.push(body);
             }

@@ -1226,7 +1226,7 @@ pub(in super::super) fn unbounded_feature_plane_definition(
 ) -> Result<Option<IrFeatureDefinition>, cadmpeg_core::CodecError> {
     let Some(row) = crate::decode::uniqueness::exactly_one_by(
         ctx,
-        &*scan.surfaces.rows,
+        &scan.surfaces.rows,
         |row| Ok(row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane),
         "creo unbounded feature plane rows",
     )?

@@ -175,7 +175,7 @@ fn history_link_refuses_dependency_vector_before_growth() {
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
-            link_feature_sketch_history(&ctx, &scan, &mut ir).map(|_| ())
+            link_feature_sketch_history(&ctx, &scan, &mut ir)
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
@@ -494,7 +494,7 @@ fn ordered_binding_limit_error(operation: &'static str) {
                 ctx,
                 &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
                 17,
-                &[table.clone()],
+                std::slice::from_ref(&table),
                 &order,
                 [9],
                 crate::surface::SurfaceKind::TorusOrSphere,

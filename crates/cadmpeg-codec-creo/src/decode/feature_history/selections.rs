@@ -140,38 +140,36 @@ pub(in super::super) fn feature_edge_selection(
             ctx.push_vec(&mut edges, edge, "creo selected edge identities")?;
         }
         Ok(Some(EdgeSelection::Resolved { edges, native }))
+    } else if any_model_edge_present {
+        // A typed generated selection names one result namespace. A roster
+        // that mixes current B-rep edges with absent edges has no neutral
+        // mixed identity, so retain the exact native selection.
+        Ok(Some(EdgeSelection::Native(native)))
     } else {
-        if any_model_edge_present {
-            // A typed generated selection names one result namespace. A roster
-            // that mixes current B-rep edges with absent edges has no neutral
-            // mixed identity, so retain the exact native selection.
-            Ok(Some(EdgeSelection::Native(native)))
+        let mut lookup_storage =
+            ctx.reserve_scoped(0, "creo generated edge selection lookup")?;
+        let result_edge_ids = lookup_storage.with_storage(|| {
+            feature_result_edge_ids_by_feature(ctx, &scan.curves.topology_rows)
+        })?;
+        let available_features =
+            lookup_storage.with_storage(|| model_feature_ids(ctx, scan))?;
+        if let Some(edges) = generated_curve_edge_refs(
+            ctx,
+            ids,
+            &scan.curves.topology_rows,
+            &available_features,
+            &result_edge_ids,
+        )? {
+            Ok(Some(
+                EdgeSelection::generated(
+                    edges,
+                    ctx.copy_retained_text(&native, "creo generated edge selection native")?,
+                    ctx,
+                )?
+                .unwrap_or(EdgeSelection::Native(native)),
+            ))
         } else {
-            let mut lookup_storage =
-                ctx.reserve_scoped(0, "creo generated edge selection lookup")?;
-            let result_edge_ids = lookup_storage.with_storage(|| {
-                feature_result_edge_ids_by_feature(ctx, &scan.curves.topology_rows)
-            })?;
-            let available_features =
-                lookup_storage.with_storage(|| model_feature_ids(ctx, scan))?;
-            if let Some(edges) = generated_curve_edge_refs(
-                ctx,
-                ids,
-                &scan.curves.topology_rows,
-                &available_features,
-                &result_edge_ids,
-            )? {
-                Ok(Some(
-                    EdgeSelection::generated(
-                        edges,
-                        ctx.copy_retained_text(&native, "creo generated edge selection native")?,
-                        ctx,
-                    )?
-                    .unwrap_or(EdgeSelection::Native(native)),
-                ))
-            } else {
-                Ok(Some(EdgeSelection::Native(native)))
-            }
+            Ok(Some(EdgeSelection::Native(native)))
         }
     }
 }

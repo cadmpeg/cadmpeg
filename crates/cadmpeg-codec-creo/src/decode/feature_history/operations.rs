@@ -93,8 +93,8 @@ mod tests {
             assert!(rows.get(7).is_none());
             assert!(rows.get(8).is_none());
             assert!(std::ptr::eq(
-                rows.get(9).expect("unique operation"),
-                &scan.features.operations[1]
+                std::ptr::from_ref(rows.get(9).expect("unique operation")),
+                std::ptr::from_ref(&scan.features.operations[1])
             ));
             assert_eq!(feature_recipe(ctx, &scan, 7)?, None);
             assert_eq!(

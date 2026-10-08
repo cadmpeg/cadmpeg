@@ -271,6 +271,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
     Ok(dependencies)
 }
 
+#[cfg(test)]
 pub(in super::super) fn feature_entity_dependencies(
     ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
@@ -442,6 +443,7 @@ pub(super) fn surface_merge_quilt_state_offset(
     Ok(offset)
 }
 
+#[cfg(test)]
 pub(in super::super) fn surface_merge_entity_dependencies(
     ctx: &DecodeContext<'_>,
     affected_ids: &[crate::feature::rows::FeatureAffectedIds],
