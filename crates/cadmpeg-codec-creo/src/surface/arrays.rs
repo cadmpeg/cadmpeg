@@ -103,16 +103,22 @@ impl<Shape> Scalars<Shape> {
         let mut complete = true;
         let mut increasing = true;
         let mut previous = None;
-        if !ctx.all_by(&values, |value| {
-            complete &= value.is_some();
-            increasing &= match (previous, *value) {
-                (Some(previous), Some(value)) => previous < value,
-                (None, Some(_)) => true,
-                (_, None) => false,
-            };
-            previous = *value;
-            Ok(value.is_none_or(|value| FiniteReal::new(value).is_some()))
-        }, "creo scalar array validation")? { return Ok(None); }
+        if !ctx.all_by(
+            &values,
+            |value| {
+                complete &= value.is_some();
+                increasing &= match (previous, *value) {
+                    (Some(previous), Some(value)) => previous < value,
+                    (None, Some(_)) => true,
+                    (_, None) => false,
+                };
+                previous = *value;
+                Ok(value.is_none_or(|value| FiniteReal::new(value).is_some()))
+            },
+            "creo scalar array validation",
+        )? {
+            return Ok(None);
+        }
         Ok(Some(Self {
             shape: extent.shape,
             values: FiniteScalarSlots(values),
@@ -132,16 +138,22 @@ impl<Shape> Scalars<Shape> {
         let mut complete = true;
         let mut increasing = true;
         let mut previous = None;
-        if ctx.any_by(&slots, |(value, _)| {
-            complete &= value.is_some();
-            increasing &= match (previous, *value) {
-                (Some(previous), Some(value)) => previous < value,
-                (None, Some(_)) => true,
-                (_, None) => false,
-            };
-            previous = *value;
-            Ok(value.is_some_and(|value| FiniteReal::new(value).is_none()))
-        }, "creo scalar array validation")? { return Ok(None); }
+        if ctx.any_by(
+            &slots,
+            |(value, _)| {
+                complete &= value.is_some();
+                increasing &= match (previous, *value) {
+                    (Some(previous), Some(value)) => previous < value,
+                    (None, Some(_)) => true,
+                    (_, None) => false,
+                };
+                previous = *value;
+                Ok(value.is_some_and(|value| FiniteReal::new(value).is_none()))
+            },
+            "creo scalar array validation",
+        )? {
+            return Ok(None);
+        }
         let mut values = ctx.collection_vec(slots.len(), "creo scalar array values")?;
         let mut tokens = ctx.collection_vec(slots.len(), "creo scalar array tokens")?;
         for (value, token) in ctx.admit_iter(slots, "creo scalar array filling")? {
@@ -161,8 +173,13 @@ impl<Shape> Scalars<Shape> {
         if values.len() != self.values.0.len() {
             return None;
         }
-        let extent = ScalarExtent { shape: (), len: values.len() };
-        let Some(array) = crate::decode::with_test_decode_ctx(|ctx| Scalars::from_values(ctx, extent, values)).ok()? else { return None; };
+        let extent = ScalarExtent {
+            shape: (),
+            len: values.len(),
+        };
+        let array =
+            crate::decode::with_test_decode_ctx(|ctx| Scalars::from_values(ctx, extent, values))
+                .ok()??;
         self.values = array.values;
         self.complete = array.complete;
         self.increasing = array.increasing;
@@ -170,11 +187,17 @@ impl<Shape> Scalars<Shape> {
         Some(())
     }
     pub(super) fn copy_retained(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError>
-    where Shape: Copy {
-        let values = ctx.collect_retained_vec(self.values.0.iter().copied(), "creo retained scalar array values")?;
+    where
+        Shape: Copy,
+    {
+        let values = ctx.collect_retained_vec(
+            self.values.0.iter().copied(),
+            "creo retained scalar array values",
+        )?;
         let tokens = match &self.tokens {
             Some(source) => {
-                let mut tokens = ctx.collection_vec(source.len(), "creo retained scalar array tokens")?;
+                let mut tokens =
+                    ctx.collection_vec(source.len(), "creo retained scalar array tokens")?;
                 for token in ctx.admit_iter(source, "creo retained scalar token traversal")? {
                     tokens.push(ctx.copy_retained(token, "creo retained scalar token bytes")?);
                 }
@@ -182,11 +205,20 @@ impl<Shape> Scalars<Shape> {
             }
             None => None,
         };
-        Ok(Self { shape: self.shape, values: FiniteScalarSlots(values), tokens,
-            complete: self.complete, increasing: self.increasing })
+        Ok(Self {
+            shape: self.shape,
+            values: FiniteScalarSlots(values),
+            tokens,
+            complete: self.complete,
+            increasing: self.increasing,
+        })
     }
-    pub(crate) fn is_complete(&self) -> bool { self.complete }
-    pub(crate) fn is_strictly_increasing(&self) -> bool { self.complete && self.increasing }
+    pub(crate) fn is_complete(&self) -> bool {
+        self.complete
+    }
+    pub(crate) fn is_strictly_increasing(&self) -> bool {
+        self.complete && self.increasing
+    }
     pub(crate) fn values(&self) -> &[Option<f64>] {
         &self.values.0
     }
@@ -252,7 +284,9 @@ mod tests {
         let extent = DimensionedScalars::extent(2, 2).expect("shape");
         assert_eq!(extent.len(), 4);
         let error = crate::test_support::last_refusal_at(
-            &[0; 4], ResourceDimension::CollectionItems, "creo scalar array values",
+            &[0; 4],
+            ResourceDimension::CollectionItems,
+            "creo scalar array values",
             |ctx| DimensionedScalars::from_tokens(ctx, extent, vec![(None, Vec::new()); 4]),
         );
         assert!(

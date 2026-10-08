@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Per-layout readers for positional cylinder frames.
 
-use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::PositiveLength;
 
 use super::{
     type24_round_edge_separator_end, type24_round_edge_shell_end, PositionalCylinderFrame,
@@ -42,7 +42,9 @@ pub(super) fn decode_positional_cylinder_frame(
         decode_compact_axis_aligned_cylinder_frame(body, cache),
         decode_directrix_lane_axis_aligned_cylinder_frame(body, cache),
     ];
-    Ok(unique_positional_cylinder_frame(candidates.into_iter().flatten()))
+    Ok(unique_positional_cylinder_frame(
+        candidates.into_iter().flatten(),
+    ))
 }
 
 pub(super) fn decode_selector_corner_interval_cylinder_frame(
@@ -847,14 +849,15 @@ fn decode_local_system_cylinder_frame(
         cursor = next;
     }
     let (radius_start, radius) = unique_terminal_positive_scalar(body, cursor)?;
-    let slots =
-        crate::decode::uniqueness::exactly_one((cursor.max(radius_start.saturating_sub(12 * 9))..radius_start).filter_map(|start| {
+    let slots = crate::decode::uniqueness::exactly_one(
+        (cursor.max(radius_start.saturating_sub(12 * 9))..radius_start).filter_map(|start| {
             scalar::decode_positional_plane_local_system_slots(
                 body.get(start..radius_start)?,
                 cache,
             )
             .map(cadmpeg_ir::units::FiniteVector::get)
-        }))?;
+        }),
+    )?;
     let length = envelope[0];
     let scale = envelope
         .iter()
@@ -1368,12 +1371,15 @@ pub(super) fn decode_local_system_suffix_cylinder_frame(
 }
 
 pub(super) fn decode_compound_local_system_cylinder_frame(
-    ctx: &DecodeContext<'_>, body: &[u8],
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<PositionalCylinderFrame>, CodecError> {
     let mut candidate = None;
     let mut offsets = 1..body.len();
-    while let Some(radius_start) = ctx.next_charged(&mut offsets, "creo compound cylinder radius search")? {
+    while let Some(radius_start) =
+        ctx.next_charged(&mut offsets, "creo compound cylinder radius search")?
+    {
         let Some((radius, radius_end)) =
             scalar::decode_tabulated_cylinder_first_coordinate(body, radius_start, cache)
                 .or_else(|| scalar::decode(body, radius_start))
@@ -1401,7 +1407,9 @@ pub(super) fn decode_compound_local_system_cylinder_frame(
             candidate = Some((slots.get(), radius));
         }
     }
-    let Some((slots, radius)) = candidate else { return Ok(None); };
+    let Some((slots, radius)) = candidate else {
+        return Ok(None);
+    };
     Ok(cylinder_frame_from_local_system(&slots, radius))
 }
 
@@ -1443,20 +1451,24 @@ fn decode_zero_support_cylinder_origin_radius(
 ) -> Option<([f64; 3], f64)> {
     let (radius_start, radius) = unique_terminal_positive_scalar(body, start)?;
     let origin = crate::decode::uniqueness::exactly_one(
-        ((start + zero_support.len()).max(radius_start.saturating_sub(3 * 9))..radius_start).filter_map(|origin_start| {
-            (body.get(origin_start - zero_support.len()..origin_start) == Some(zero_support)).then(
-                || decode_positional_cylinder_origin(body, origin_start, radius_start, cache),
-            )?
-        }),
+        ((start + zero_support.len()).max(radius_start.saturating_sub(3 * 9))..radius_start)
+            .filter_map(|origin_start| {
+                (body.get(origin_start - zero_support.len()..origin_start) == Some(zero_support))
+                    .then(|| {
+                        decode_positional_cylinder_origin(body, origin_start, radius_start, cache)
+                    })?
+            }),
     )?;
     Some((origin, radius))
 }
 
 pub(super) fn unique_terminal_positive_scalar(body: &[u8], start: usize) -> Option<(usize, f64)> {
-    crate::decode::uniqueness::exactly_one((start.max(body.len().saturating_sub(9))..body.len()).filter_map(|offset| {
-        let (value, end) = scalar::decode(body, offset)?;
-        (end == body.len() && value.is_finite() && value > 0.0).then_some((offset, value))
-    }))
+    crate::decode::uniqueness::exactly_one(
+        (start.max(body.len().saturating_sub(9))..body.len()).filter_map(|offset| {
+            let (value, end) = scalar::decode(body, offset)?;
+            (end == body.len() && value.is_finite() && value > 0.0).then_some((offset, value))
+        }),
+    )
 }
 
 fn decode_positional_cylinder_origin(

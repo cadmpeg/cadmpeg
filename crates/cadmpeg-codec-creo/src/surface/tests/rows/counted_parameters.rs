@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::scalar;
 use super::counted_parameter_scalar_slots;
+use crate::scalar;
 use crate::surface::SurfaceNamedValue;
 
 #[test]
@@ -23,14 +23,21 @@ fn counted_parameters_expand_compact_zero_runs() {
 
 #[test]
 fn counted_parameter_slots_refuse_collection_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
-    let error = crate::test_support::last_refusal_at(&[0], cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo_counted_parameter_slots", |ctx| { crate::surface::counted_parameter_scalar_slots(
-        ctx,
-        &[0xe4],
-        1,
-        &scalar::ScalarCache::default(),
-    ) });
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo_counted_parameter_slots",
+        |ctx| {
+            crate::surface::counted_parameter_scalar_slots(
+                ctx,
+                &[0xe4],
+                1,
+                &scalar::ScalarCache::default(),
+            )
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -69,7 +76,16 @@ fn counted_parameter_initial_tree_entry_refuses_before_insert() {
         counted_parameter_scalar_slots(&body, 1, &scalar::ScalarCache::default()),
         Some(vec![(Some(1.0), vec![0xe4])])
     );
-    let error = counted_slot_error(&body, 1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo counted parameter initial state"), |cap| Err::<(), _>(counted_slot_error(&body, 1, cap, u64::MAX))), u64::MAX);
+    let error = counted_slot_error(
+        &body,
+        1,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo counted parameter initial state"),
+            |cap| Err::<(), _>(counted_slot_error(&body, 1, cap, u64::MAX)),
+        ),
+        u64::MAX,
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -96,13 +112,18 @@ fn counted_parameter_token_bytes_refuse_before_copy() {
     ));
 }
 
-
-
-
-
 #[test]
 fn counted_parameter_next_tree_entry_refuses_before_insert() {
-    let error = counted_slot_error(&[0xe4], 1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo counted parameter state entries"), |cap| Err::<(), _>(counted_slot_error(&[0xe4], 1, cap, u64::MAX))), u64::MAX);
+    let error = counted_slot_error(
+        &[0xe4],
+        1,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo counted parameter state entries"),
+            |cap| Err::<(), _>(counted_slot_error(&[0xe4], 1, cap, u64::MAX)),
+        ),
+        u64::MAX,
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -117,7 +138,6 @@ fn counted_parameter_zero_run_preserves_expanded_slots() {
         counted_parameter_scalar_slots(&body, 2, &scalar::ScalarCache::default()),
         Some(vec![(Some(0.0), vec![0xe5]), (Some(0.0), vec![])])
     );
-
 }
 
 #[test]
@@ -127,7 +147,6 @@ fn counted_parameter_branch_preserves_scalar_tokens() {
         counted_parameter_scalar_slots(&body, 2, &scalar::ScalarCache::default()),
         Some(vec![(Some(1.0), vec![0xe4]), (Some(0.0), vec![0x18])])
     );
-
 }
 
 #[test]
@@ -171,7 +190,6 @@ fn counted_parameters_require_exact_zero_run_cardinality() {
         None
     );
 }
-
 
 #[test]
 fn u_params_refuses_collection_limit_before_allocating_slots() {
@@ -341,7 +359,6 @@ fn counted_surface_arrays_share_the_collection_item_limit() {
     }
 }
 
-
 fn last_limit_before_counted_scalar_array(payload: &[u8]) -> u64 {
     use cadmpeg_core::decode::ResourceDimension;
     let error = crate::test_support::last_refusal_at(
@@ -361,4 +378,3 @@ fn last_limit_before_counted_scalar_array(payload: &[u8]) -> u64 {
     };
     refusal.limit
 }
-

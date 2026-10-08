@@ -5,8 +5,8 @@ use crate::surface::{
 
 fn record(values: [f64; 12]) -> SurfacePrototypeRecord {
     SurfacePrototypeRecord::new_for_test(
-SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
-vec![SurfaceNamedParameter {
+        SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+        vec![SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
@@ -20,16 +20,14 @@ vec![SurfaceNamedParameter {
             offset: 0,
             value_offset: 0,
         }],
-0,
-)
+        0,
+    )
 }
 
 fn tabulated_cylinder_record(values: Vec<Option<f64>>) -> SurfacePrototypeRecord {
     SurfacePrototypeRecord::new_for_test(
-SurfacePrototypeFamily::Extrusion(
-            crate::surface::ExtrusionLabel::TabulatedCylinder,
-        ),
-vec![SurfaceNamedParameter {
+        SurfacePrototypeFamily::Extrusion(crate::surface::ExtrusionLabel::TabulatedCylinder),
+        vec![SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
@@ -41,8 +39,8 @@ vec![SurfaceNamedParameter {
             offset: 0,
             value_offset: 0,
         }],
-0,
-)
+        0,
+    )
 }
 
 #[test]

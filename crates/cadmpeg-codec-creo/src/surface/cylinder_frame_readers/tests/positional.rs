@@ -7,8 +7,8 @@ use super::parameter_records;
 use crate::scalar;
 use crate::surface::cylinder_frame_readers::{
     decode_directrix_lane_axis_aligned_cylinder_frame, decode_local_system_suffix_cylinder_frame,
-    decode_positional_cylinder_frame as checked_decode_positional_cylinder_frame, unique_positional_cylinder_frame,
-    unique_terminal_positive_scalar,
+    decode_positional_cylinder_frame as checked_decode_positional_cylinder_frame,
+    unique_positional_cylinder_frame, unique_terminal_positive_scalar,
 };
 use crate::surface::PositionalCylinderFrame;
 
@@ -804,6 +804,12 @@ fn terminal_positive_scalar_requires_a_unique_boundary() {
     assert!(unique_terminal_positive_scalar(&ambiguous, 0).is_none());
 }
 
-fn decode_positional_cylinder_frame(body: &[u8], cache: &scalar::ScalarCache) -> Option<crate::surface::PositionalCylinderFrame> {
-    crate::decode::with_test_decode_ctx(|ctx| checked_decode_positional_cylinder_frame(ctx, body, cache)).expect("cylinder fixture admission")
+fn decode_positional_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        checked_decode_positional_cylinder_frame(ctx, body, cache)
+    })
+    .expect("cylinder fixture admission")
 }

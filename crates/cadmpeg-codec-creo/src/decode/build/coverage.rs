@@ -993,7 +993,9 @@ pub(super) fn torus_parameter_coverage(
     };
     Ok(TorusParameterCoverage {
         radius_overrides: rows()?.try_fold(0usize, |count, (record, _)| {
-            Ok::<_, cadmpeg_core::CodecError>(count + usize::from(record.torus_radius_overrides_checked(ctx)?.is_some()))
+            Ok::<_, cadmpeg_core::CodecError>(
+                count + usize::from(record.torus_radius_overrides_checked(ctx)?.is_some()),
+            )
         })?,
         replayed_minor_radii: rows()?.try_fold(0usize, |count, (record, row)| {
             let replayed = replayed_torus_minor_radius(ctx, scan, row, record)?.is_some();
@@ -1006,7 +1008,9 @@ pub(super) fn torus_parameter_coverage(
             })
         })?,
         outline_extents: rows()?.try_fold(0usize, |count, (record, _)| {
-            Ok::<_, cadmpeg_core::CodecError>(count + usize::from(record.torus_outline_frame_checked(ctx)?.is_some()))
+            Ok::<_, cadmpeg_core::CodecError>(
+                count + usize::from(record.torus_outline_frame_checked(ctx)?.is_some()),
+            )
         })?,
         five_coordinate_envelopes: rows()?
             .filter(|(record, _)| record.type26_five_coordinate_envelope().is_some())

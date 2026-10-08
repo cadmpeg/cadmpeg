@@ -466,8 +466,10 @@ fn simple_drilled_hole_corner_envelopes(
                 .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         })
         .map(|row| -> Result<Option<[[f64; 3]; 2]>, CodecError> {
-            let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else { return Ok(None); };
-    record.type24_terminal_corner_envelope_checked(ctx)
+            let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
+                return Ok(None);
+            };
+            record.type24_terminal_corner_envelope_checked(ctx)
         });
     let Some(first) = envelopes.next() else {
         return Ok(None);

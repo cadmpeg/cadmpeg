@@ -118,7 +118,11 @@ fn face_component_validation_stops_at_first_invalid_pair() {
         "creo face component validation work",
         |ctx| super::super::FaceComponent::new(ctx, vec![2, 1, 3, 4, 5], vec![1]),
     );
-    let (cadmpeg_core::CodecError::ResourceLimit(short), cadmpeg_core::CodecError::ResourceLimit(long)) = (short, long) else {
+    let (
+        cadmpeg_core::CodecError::ResourceLimit(short),
+        cadmpeg_core::CodecError::ResourceLimit(long),
+    ) = (short, long)
+    else {
         panic!("work refusals");
     };
     assert_eq!(short.used, long.used);
