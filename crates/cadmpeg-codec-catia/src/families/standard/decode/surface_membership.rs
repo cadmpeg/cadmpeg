@@ -348,10 +348,10 @@ mod tests {
                 .expect_err("pole work refuses");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, "catia surface control bounds");
-        // The two pole rows of the control net are admitted before the first visit.
+        // Only the first control-net row is admitted before its first pole.
         assert_eq!(
             (original.limit, original.used, original.additional),
-            (0, 0, 2)
+            (0, 0, 1)
         );
         assert_eq!(ctx.resource_refusal(), Some(original));
     }
