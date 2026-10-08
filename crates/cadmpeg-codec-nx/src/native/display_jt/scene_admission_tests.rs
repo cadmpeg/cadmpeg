@@ -112,20 +112,20 @@ fn display_jt_partition_name_refuses_before_utf16_allocation() {
         |ctx| {
             let error = super::parse_jt9_partition_node_body(ctx, &body)
                 .err()
-                .expect("retained refusal");
+                .expect("candidate storage refusal");
             assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 1
+                if limit.dimension == ResourceDimension::MaterializedBytes && limit.additional == 1
                     && limit.operation == "retain DisplayJT partition name"));
             crate::test_support::with_decode_context_over(
                 &[],
                 |policy| {
                     policy.limits.max_retained_bytes = 1;
-                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_materialized_bytes = 1;
                 },
                 |service| {
                     assert_eq!(
                         super::parse_jt9_partition_node_body(service, &body)
-                            .expect("exact retained budget")
+                            .expect("exact candidate and retained budgets")
                             .expect("complete partition")
                             .file_name,
                         "x"

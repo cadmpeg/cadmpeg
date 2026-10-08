@@ -62,23 +62,10 @@ fn refused_at(
             let CodecError::ResourceLimit(limit) = error else {
                 panic!("expected resource refusal");
             };
+            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
             (limit.dimension, limit.operation.to_string())
         })
     })
-}
-
-#[test]
-fn display_jt_version_refuses_before_string_copy() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 79;
-    };
-    assert_eq!(
-        refused_at(adjust_policy),
-        (
-            ResourceDimension::RetainedBytes,
-            "retain DisplayJT version text".to_string()
-        )
-    );
 }
 
 #[test]
@@ -98,14 +85,13 @@ fn display_jt_toc_count_refuses_before_vector_reservation() {
 #[test]
 fn display_jt_toc_storage_refuses_before_vector_reservation() {
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 80
-            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
             - 1;
     };
     assert_eq!(
         refused_at(adjust_policy),
         (
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "admit DisplayJT toc entries".to_string()
         )
     );
@@ -128,15 +114,14 @@ fn display_jt_toc_entity_refuses_before_identity_allocation() {
 #[test]
 fn display_jt_toc_identity_refuses_before_format_allocation() {
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 80
-            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
-            + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-0".len())
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+            + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-row-0-0".len())
             - 1;
     };
     assert_eq!(
         refused_at(adjust_policy),
         (
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "retain DisplayJT toc identity".to_string()
         )
     );
@@ -159,16 +144,15 @@ fn display_jt_document_entity_refuses_before_identity_allocation() {
 #[test]
 fn display_jt_document_identity_refuses_before_format_allocation() {
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 80
-            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
-            + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-0".len())
-            + cadmpeg_core::decode::u64_from_index("nx:display-jt:document#0".len())
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+            + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-row-0-0".len())
+            + cadmpeg_core::decode::u64_from_index("nx:display-jt:document#0-row-0".len())
             - 1;
     };
     assert_eq!(
         refused_at(adjust_policy),
         (
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "retain DisplayJT document identity".to_string()
         )
     );
@@ -177,17 +161,16 @@ fn display_jt_document_identity_refuses_before_format_allocation() {
 #[test]
 fn display_jt_document_index_reference_refuses_before_clone() {
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 80
-            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
-            + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-0".len())
-            + cadmpeg_core::decode::u64_from_index("nx:display-jt:document#0".len())
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+            + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-row-0-0".len())
+            + cadmpeg_core::decode::u64_from_index("nx:display-jt:document#0-row-0".len())
             + cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0-row-0".len())
             - 1;
     };
     assert_eq!(
         refused_at(adjust_policy),
         (
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "retain DisplayJT document index reference".to_string()
         )
     );
@@ -196,21 +179,62 @@ fn display_jt_document_index_reference_refuses_before_clone() {
 #[test]
 fn display_jt_document_storage_refuses_before_vector_reservation() {
     let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 80
-            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
-            + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-0".len())
-            + cadmpeg_core::decode::u64_from_index("nx:display-jt:document#0".len())
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+            + cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#0-row-0-0".len())
+            + cadmpeg_core::decode::u64_from_index("nx:display-jt:document#0-row-0".len())
             + cadmpeg_core::decode::u64_from_index("nx:display-jt:index#0-row-0".len())
-            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtDocument>())
+            + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::DisplayJtDocument>())
             - 1;
     };
     assert_eq!(
         refused_at(adjust_policy),
         (
-            ResourceDimension::RetainedBytes,
+            ResourceDimension::MaterializedBytes,
             "admit DisplayJT document".to_string()
         )
     );
+}
+
+
+#[test]
+fn display_jt_inline_version_fits_exact_document_retention() {
+    // The 80 version bytes are inline in each admitted document slot. There
+    // is no separate version String. The TOC has one exact slot; the outer
+    // document vector has four slots and three owned identity strings.
+    let bytes = cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<super::DisplayJtTocEntry>()
+            + 4 * std::mem::size_of::<super::DisplayJtDocument>()
+            + "nx:display-jt:toc-entry#0-row-0-0".len()
+            + "nx:display-jt:document#0-row-0".len()
+            + "nx:display-jt:index#0-row-0".len(),
+    );
+    let container = one_document();
+    crate::test_support::with_decode_context(|index_ctx| {
+        let indices = super::display_jt_indices(index_ctx, &container).unwrap();
+        for cap in [bytes - 1, bytes] {
+            crate::test_support::with_decode_context_over(&[], |policy| {
+                policy.limits.max_retained_bytes = cap;
+            }, |ctx| {
+                let result = super::display_jt_documents(ctx, &container, &indices);
+                if cap == bytes {
+                    let documents = result.expect("the exact final document fits");
+                    assert_eq!(documents.len(), 1);
+                    assert_eq!(documents[0].toc_entries[0].segment_offset, 137);
+                    assert_eq!(documents[0].version.as_str(), format!("{:<80}", "Version 9.4 JT"));
+                    assert!(ctx.resource_refusal().is_none());
+                } else {
+                    let Err(CodecError::ResourceLimit(limit)) = result else {
+                        panic!("one byte below final storage must refuse");
+                    };
+                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                    assert_eq!(limit.operation, "DisplayJT document candidates");
+                    assert_eq!(limit.used, 0);
+                    assert_eq!(limit.additional, bytes);
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                }
+            });
+        }
+    });
 }
 
 #[test]

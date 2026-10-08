@@ -3678,16 +3678,11 @@ pub(super) fn display_jt_initial_face_degree_symbols(
             let Some((_, _, _, _, representation)) = parse_jt9_tri_strip_lod_header(body) else {
                 return Ok(None);
             };
-            let Some((residuals, packet_byte_len)) =
+            let Some((degrees, packet_byte_len)) =
                 crate::jt::decode_int32_cdp2(ctx, representation, 0)?
             else {
                 return Ok(None);
             };
-            let degrees = crate::jt::unpack_predictor_residuals(
-                ctx,
-                &residuals,
-                crate::jt::Predictor::Null,
-            )?;
             let Some(packet) = representation.get(..packet_byte_len) else {
                 return Ok(None);
             };
@@ -3831,19 +3826,35 @@ pub(super) fn display_jt_topology_packet_sequences(
             else {
                 return Ok(None);
             };
-            let values = match crate::jt::decode_int32_cdp2(ctx, packet, 0)? {
-                Some((residuals, decoded_byte_len)) if decoded_byte_len == packet.len() => {
+            let mut residual_storage = ctx.reserve_scoped(0, "nx JT topology residuals")?;
+            let decoded = residual_storage
+                .with_storage(|| crate::jt::decode_int32_cdp2(ctx, packet, 0))?;
+            let values = match (decoded, residual_storage) {
+                (Some((residuals_candidate, decoded_byte_len)), storage) if decoded_byte_len == packet.len() => {
+                    let residuals = residuals_candidate;
                     let predictor = match role {
                         TopologyPacketRole::VertexFlags | TopologyPacketRole::SplitFaceSymbols => {
                             crate::jt::Predictor::Lag1
                         }
                         _ => crate::jt::Predictor::Null,
                     };
-                    Some(crate::jt::unpack_predictor_residuals(
-                        ctx, &residuals, predictor,
-                    )?)
+                    if predictor == crate::jt::Predictor::Null {
+                        storage.commit()?;
+                        Some(residuals)
+                    } else {
+                        let values = crate::jt::unpack_predictor_residuals(
+                            ctx, &residuals, predictor,
+                        )?;
+                        drop(residuals);
+                        drop(storage);
+                        Some(values)
+                    }
                 }
-                _ => None,
+                (decoded, storage) => {
+                    drop(decoded);
+                    drop(storage);
+                    None
+                }
             };
             ctx.reserve_vec(&mut packets, 1, "nx JT topology packets")?;
             packets.push(DisplayJtTopologyPacket {
