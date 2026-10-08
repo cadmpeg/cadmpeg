@@ -10,19 +10,13 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_core::decode::u64_from_index;
-
 use crate::history::active_brep_face_matches_source;
-use crate::history::bind_historical_entity_versions;
-use crate::history::bind_snapshot_revision_ids;
+
 use crate::history::body_revision_without_topology_change;
 use crate::history::combine_recipe_family_tool_slots;
 use crate::history::grouped_reference_face_candidate;
 use crate::history::historical_body_slot;
-use crate::history::historical_record_archive;
-use crate::history::historical_transition;
-use crate::history::insert_only_active_record_count;
-use crate::history::materialize_record_table;
+
 use crate::history::pattern_combine_tool_slots;
 use crate::history::profile_face_group_cardinality_candidates;
 use crate::history::selection::bind_edge_identity_history;
@@ -34,24 +28,15 @@ use crate::history::singleton_revised_input_body_across_state_chain;
 use crate::history::stable_ref;
 use crate::history::TopologyStableBodyRevision;
 use crate::history_records::{
-    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
-    AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding,
-    AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
-    AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
+    AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta,
+    AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
+    AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 use std::collections::{HashMap, HashSet};
 
-fn with_history_decode_context<T>(
-    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    f(&ctx)
-}
+use crate::history::test_support::with_history_decode_context;
 
 #[test]
 fn entity_selection_face_proofs_preserve_history_namespaces() {
@@ -634,7 +619,15 @@ fn pattern_combine_tool_slots_refuse_collection_limit() {
 #[test]
 fn combine_recipe_tool_index_refuses_collection_limit() {
     let result = with_combine_collection_limit(0, |ctx| {
-        combine_recipe_family_tool_slots(ctx, ("f3d:design", 1), &[1], 1, 0, &[], &[])
+        combine_recipe_family_tool_slots(
+            ctx,
+            ("f3d:design", 1),
+            &[1],
+            1,
+            0,
+            &crate::history::scope_operand_index(&[]),
+            &crate::history::body_recipe_index(&[]),
+        )
     });
     assert!(matches!(
         result,
@@ -646,7 +639,13 @@ fn combine_recipe_tool_index_refuses_collection_limit() {
 fn combine_historical_rows_refuse_collection_limit() {
     let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combine").unwrap();
     let result = with_combine_collection_limit(0, |ctx| {
-        super::super::combine_historical_rows(ctx, &feature, 1, vec![2], vec!["native".into()])
+        crate::history::combine_historical_rows(
+            ctx,
+            &feature,
+            1,
+            vec![2],
+            vec!["native".into()].into_iter().map(Ok),
+        )
     });
     assert!(matches!(
         result,
@@ -782,8 +781,8 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                 &[1, 2, 3, 4],
                 317,
                 1,
-                &operands,
-                &recipes
+                &crate::history::scope_operand_index(&operands),
+                &crate::history::body_recipe_index(&recipes)
             )
             .unwrap(),
             Some(vec![5, 6, 7, 8])
@@ -802,8 +801,8 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
             &[1, 2, 3, 4],
             317,
             1,
-            &operands,
-            &recipes,
+            &crate::history::scope_operand_index(&operands),
+            &crate::history::body_recipe_index(&recipes),
         )
         .unwrap())
         .is_none()
@@ -825,8 +824,8 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
             &[1, 2, 3, 4],
             317,
             1,
-            &operands,
-            &duplicate_selector,
+            &crate::history::scope_operand_index(&operands),
+            &crate::history::body_recipe_index(&duplicate_selector),
         )
         .unwrap())
         .is_none()
@@ -922,7 +921,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
 fn combine_external_tools_refuse_collection_limit() {
     let scope = combine_external_scope();
     let result = with_combine_collection_limit(0, |ctx| {
-        super::super::combine_external_local_tools(ctx, &scope)
+        crate::history::combine_external_local_tools(ctx, &scope)
     });
     assert!(matches!(
         result,
@@ -942,11 +941,11 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         }
     };
     let mut scope = combine_external_scope();
-    let BodySelection::Local { bodies, native } =
-        with_history_decode_context(|ctx| super::super::combine_external_local_tools(ctx, &scope))
-            .unwrap()
-            .expect("complete local tool identity")
-    else {
+    let BodySelection::Local { bodies, native } = with_history_decode_context(|ctx| {
+        crate::history::combine_external_local_tools(ctx, &scope)
+    })
+    .unwrap()
+    .expect("complete local tool identity") else {
         panic!("local body selection");
     };
     assert_eq!(bodies.len(), 2);
@@ -959,9 +958,11 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .tools
         .additional[0] = tool(13, 500);
     assert!(
-        with_history_decode_context(|ctx| super::super::combine_external_local_tools(ctx, &scope))
-            .unwrap()
-            .is_none()
+        with_history_decode_context(|ctx| crate::history::combine_external_local_tools(
+            ctx, &scope
+        ))
+        .unwrap()
+        .is_none()
     );
 }
 
@@ -989,745 +990,6 @@ fn active_brep_face_namespace_accepts_default_or_matching_named_source() {
         )
         .unwrap());
     });
-}
-
-#[test]
-fn historical_transition_separates_membership_and_revision_changes() {
-    let state = |state_id, versions: &[(i64, i64)], topology| AsmDeltaState {
-        id: format!("state-{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: versions
-            .iter()
-            .map(|&(entity_ref, record_ref)| AsmEntityVersion {
-                entity_ref,
-                record_ref,
-            })
-            .collect(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
-        transition: None,
-    };
-    let previous = state(
-        10,
-        &[(1, 10), (4, 40), (8, 80)],
-        AsmHistoricalTopology {
-            bodies: vec![1],
-            faces: vec![4],
-            edges: vec![8],
-            ..AsmHistoricalTopology::default()
-        },
-    );
-    let current = state(
-        11,
-        &[(1, 11), (2, 2), (4, 40), (7, 70)],
-        AsmHistoricalTopology {
-            bodies: vec![1, 2],
-            faces: vec![4],
-            edges: vec![7],
-            ..AsmHistoricalTopology::default()
-        },
-    );
-
-    let transition = with_history_decode_context(|ctx| {
-        historical_transition(ctx, &current, Some(&previous))
-            .unwrap()
-            .unwrap()
-    });
-    assert_eq!(transition.previous_state_id, Some(10));
-    assert_eq!(transition.topology.bodies.inserted, [2]);
-    assert_eq!(transition.topology.bodies.updated, [1]);
-    assert!(transition.topology.faces.updated.is_empty());
-    assert_eq!(transition.topology.edges.inserted, [7]);
-    assert_eq!(transition.topology.edges.deleted, [8]);
-    assert_eq!(transition.records.updated, [1]);
-}
-
-#[test]
-fn snapshot_ordinals_bind_the_sorted_revision_interval() {
-    let history_id = "history".to_string();
-    let state_id = "state".to_string();
-    let board_id = "board".to_string();
-    let mut state = AsmDeltaState {
-        id: state_id.clone(),
-        parent: history_id,
-        byte_offset: 0,
-        state_id: 1,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 0,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: vec![AsmBulletinBoard {
-            id: board_id.clone(),
-            parent: state_id.clone(),
-            byte_offset: 0,
-            owner_ref: 0,
-            number: 2,
-            changes: [7, 5, 6]
-                .into_iter()
-                .enumerate()
-                .map(|(index, old_ref)| AsmEntityChange {
-                    id: format!("change-{index}"),
-                    parent: board_id.clone(),
-                    byte_offset: u64_from_index(index),
-                    kind: AsmEntityChangeKind::Update {
-                        old: old_ref,
-                        new: i64::try_from(index).expect("fixture value fits i64"),
-                    },
-                })
-                .collect(),
-        }],
-        records: (0..3)
-            .map(|index| AsmHistoryRecord {
-                id: format!("record-{index}"),
-                parent: state_id.clone(),
-                revision_id: None,
-                byte_offset: index,
-                framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                    index,
-                    name: "edge".into(),
-                    entity_references: Vec::new(),
-                },
-                raw_bytes: vec![0x11],
-            })
-            .collect(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
-        transition: None,
-    };
-
-    with_history_decode_context(|ctx| {
-        bind_snapshot_revision_ids(ctx, std::slice::from_mut(&mut state)).unwrap()
-    });
-
-    assert_eq!(
-        state
-            .records
-            .iter()
-            .map(|record| record.revision_id)
-            .collect::<Vec<_>>(),
-        [Some(5), Some(6), Some(7)]
-    );
-}
-
-fn snapshot_revision_scan_state() -> AsmDeltaState {
-    let state_id = "snapshot-state".to_string();
-    let board_id = "snapshot-board".to_string();
-    AsmDeltaState {
-        id: state_id.clone(),
-        parent: "snapshot-history".into(),
-        byte_offset: 0,
-        state_id: 1,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 0,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: vec![AsmBulletinBoard {
-            id: board_id.clone(),
-            parent: state_id.clone(),
-            byte_offset: 0,
-            owner_ref: 0,
-            number: 1,
-            changes: vec![AsmEntityChange {
-                id: "snapshot-change".into(),
-                parent: board_id,
-                byte_offset: 0,
-                kind: AsmEntityChangeKind::Delete { old: 1 },
-            }],
-        }],
-        records: vec![AsmHistoryRecord {
-            id: "snapshot-record".into(),
-            parent: state_id,
-            revision_id: None,
-            byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                index: 0,
-                name: "edge".into(),
-                entity_references: Vec::new(),
-            },
-            raw_bytes: vec![0x11],
-        }],
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
-        transition: None,
-    }
-}
-
-#[test]
-fn snapshot_revision_source_scans_refuse_work() {
-    for operation in [
-        "scan F3D snapshot reference states",
-        "scan F3D snapshot reference boards",
-        "scan F3D snapshot reference changes",
-        "scan F3D snapshot record states",
-        "scan F3D snapshot records",
-    ] {
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            operation,
-            0,
-            |ctx| {
-                let mut state = snapshot_revision_scan_state();
-                bind_snapshot_revision_ids(ctx, std::slice::from_mut(&mut state))
-            },
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-        ));
-    }
-}
-
-#[test]
-fn insert_only_history_uses_the_active_record_table_as_revisions() {
-    let state = |node_index, next_ref, inserted: &[i64]| {
-        let state_id = format!("state-{node_index}");
-        let board_id = format!("board-{node_index}");
-        AsmDeltaState {
-            id: state_id.clone(),
-            parent: "history".into(),
-            byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
-            state_id: 10 - node_index,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: (node_index > 0).then_some(node_index - 1),
-            next_ref,
-            node_index,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: vec![AsmBulletinBoard {
-                id: board_id.clone(),
-                parent: state_id.clone(),
-                byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
-                owner_ref: 0,
-                number: 2,
-                changes: inserted
-                    .iter()
-                    .enumerate()
-                    .map(|(index, new_ref)| AsmEntityChange {
-                        id: format!("change-{node_index}-{index}"),
-                        parent: board_id.clone(),
-                        byte_offset: u64_from_index(index),
-                        kind: AsmEntityChangeKind::Insert { new: *new_ref },
-                    })
-                    .collect(),
-            }],
-            records: vec![AsmHistoryRecord {
-                id: format!("record-{node_index}"),
-                parent: state_id,
-                revision_id: None,
-                byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
-                framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                    index: 0,
-                    name: "End-of-ASM-History-Section".into(),
-                    entity_references: Vec::new(),
-                },
-                raw_bytes: vec![0x11],
-            }],
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Absent,
-            transition: None,
-        }
-    };
-    let mut states = vec![
-        state(0, Some(1), &[1]),
-        state(1, Some(2), &[2]),
-        state(2, None, &[3]),
-    ];
-
-    with_history_decode_context(|ctx| {
-        assert_eq!(
-            insert_only_active_record_count(ctx, &states).unwrap(),
-            Some(4)
-        );
-        bind_historical_entity_versions(ctx, &mut states).unwrap();
-    });
-
-    assert_eq!(
-        states
-            .iter()
-            .map(|state| state.entity_versions.len())
-            .collect::<Vec<_>>(),
-        [4, 3, 2]
-    );
-    assert_eq!(
-        states[1].entity_versions,
-        [
-            AsmEntityVersion {
-                entity_ref: 0,
-                record_ref: 0,
-            },
-            AsmEntityVersion {
-                entity_ref: 2,
-                record_ref: 2,
-            },
-            AsmEntityVersion {
-                entity_ref: 3,
-                record_ref: 3,
-            },
-        ]
-    );
-}
-
-#[test]
-fn insert_only_history_rejects_gaps_and_updates() {
-    let mut state = AsmDeltaState {
-        id: "state".into(),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id: 1,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 0,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: vec![AsmHistoryRecord {
-            id: "record".into(),
-            parent: "state".into(),
-            revision_id: None,
-            byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                index: 0,
-                name: "End-of-ASM-History-Section".into(),
-                entity_references: Vec::new(),
-            },
-            raw_bytes: vec![0x11],
-        }],
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
-        transition: None,
-    };
-    let board = AsmBulletinBoard {
-        id: "board".into(),
-        parent: state.id.clone(),
-        byte_offset: 0,
-        owner_ref: 0,
-        number: 2,
-        changes: vec![
-            AsmEntityChange {
-                id: "gap-a".into(),
-                parent: "board".into(),
-                byte_offset: 0,
-                kind: AsmEntityChangeKind::Insert { new: 1 },
-            },
-            AsmEntityChange {
-                id: "gap-b".into(),
-                parent: "board".into(),
-                byte_offset: 0,
-                kind: AsmEntityChangeKind::Insert { new: 3 },
-            },
-        ],
-    };
-    state.bulletin_boards.push(board);
-    with_history_decode_context(|ctx| {
-        assert_eq!(
-            insert_only_active_record_count(ctx, &[state.clone()]).unwrap(),
-            None
-        )
-    });
-    state.bulletin_boards[0].changes[1].kind = AsmEntityChangeKind::Update { old: 2, new: 3 };
-    with_history_decode_context(|ctx| {
-        assert_eq!(
-            insert_only_active_record_count(ctx, &[state]).unwrap(),
-            None
-        )
-    });
-}
-
-#[test]
-fn materialized_record_table_normalizes_revision_references() {
-    let mut archived_bytes = vec![0x0d, 4];
-    archived_bytes.extend_from_slice(b"edge");
-    archived_bytes.push(0x0c);
-    archived_bytes.extend_from_slice(&2i64.to_le_bytes());
-    archived_bytes.push(0x11);
-    let state_id = "state".to_string();
-    let board_id = "board".to_string();
-    let state = AsmDeltaState {
-        id: state_id.clone(),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id: 1,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 0,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: vec![AsmBulletinBoard {
-            id: board_id.clone(),
-            parent: state_id.clone(),
-            byte_offset: 0,
-            owner_ref: 0,
-            number: 2,
-            changes: vec![AsmEntityChange {
-                id: "change".into(),
-                parent: board_id,
-                byte_offset: 0,
-                kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
-            }],
-        }],
-        records: vec![AsmHistoryRecord {
-            id: "record".into(),
-            parent: state_id,
-            revision_id: Some(2),
-            byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                index: 0,
-                name: "edge".into(),
-                entity_references: vec![2],
-            },
-            raw_bytes: archived_bytes.clone(),
-        }],
-        entity_versions: vec![
-            AsmEntityVersion {
-                entity_ref: 0,
-                record_ref: 0,
-            },
-            AsmEntityVersion {
-                entity_ref: 1,
-                record_ref: 2,
-            },
-        ],
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
-        transition: None,
-    };
-    let active = ["asmheader", "edge"]
-        .into_iter()
-        .enumerate()
-        .map(|(index, name)| cadmpeg_asm::sab::Record {
-            index,
-            name: name.into(),
-
-            tokens: Vec::new().into(),
-            offset: 0,
-            len: 0,
-        })
-        .collect::<Vec<_>>();
-
-    let [framed]: [_; 1] = cadmpeg_asm::test_support::sab::frame(
-        &archived_bytes,
-        0,
-        archived_bytes.len(),
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-    )
-    .expect("archived record frames")
-    .try_into()
-    .expect("one archived record");
-    with_history_decode_context(|ctx| {
-        let archive = historical_record_archive(
-            ctx,
-            std::slice::from_ref(&state),
-            &active,
-            std::collections::BTreeMap::from([(2, framed)]),
-        )
-        .expect("history archive budget")
-        .expect("complete historical record archive");
-        let table = materialize_record_table(ctx, &state, &archive)
-            .expect("historical table budget")
-            .expect("complete historical RecordTable");
-
-        assert_eq!(table.records.len(), 2);
-        assert_eq!(table.records[1].index, 1);
-        assert_eq!(&*table.records[1].tokens, [cadmpeg_asm::sab::Token::Ref(1)]);
-    });
-}
-
-#[test]
-fn qualified_history_marker_remains_an_archived_record() {
-    let mut archived_bytes = Vec::new();
-    for part in ["End", "of", "ASM", "History"] {
-        archived_bytes.extend_from_slice(&[0x0e, u8::try_from(part.len()).unwrap()]);
-        archived_bytes.extend_from_slice(part.as_bytes());
-    }
-    archived_bytes.extend_from_slice(&[0x0d, 7]);
-    archived_bytes.extend_from_slice(b"Section");
-    archived_bytes.extend_from_slice(&[0x0d, 4]);
-    archived_bytes.extend_from_slice(b"body");
-    archived_bytes.push(0x0c);
-    archived_bytes.extend_from_slice(&2i64.to_le_bytes());
-    archived_bytes.push(0x11);
-    let state_id = "state".to_string();
-    let board_id = "board".to_string();
-    let state = AsmDeltaState {
-        id: state_id.clone(),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id: 1,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: 0,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: vec![AsmBulletinBoard {
-            id: board_id.clone(),
-            parent: state_id.clone(),
-            byte_offset: 0,
-            owner_ref: 0,
-            number: 2,
-            changes: vec![AsmEntityChange {
-                id: "change".into(),
-                parent: board_id,
-                byte_offset: 0,
-                kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
-            }],
-        }],
-        records: vec![AsmHistoryRecord {
-            id: "record".into(),
-            parent: state_id,
-            revision_id: Some(2),
-            byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                index: 0,
-                name: "End-of-ASM-History-Section".into(),
-                entity_references: vec![2],
-            },
-            raw_bytes: archived_bytes.clone(),
-        }],
-        entity_versions: vec![
-            AsmEntityVersion {
-                entity_ref: 0,
-                record_ref: 0,
-            },
-            AsmEntityVersion {
-                entity_ref: 1,
-                record_ref: 2,
-            },
-        ],
-        topology_cache: crate::history_records::AsmTopologyCache::Absent,
-        transition: None,
-    };
-    let active = ["asmheader", "body"]
-        .into_iter()
-        .enumerate()
-        .map(|(index, name)| cadmpeg_asm::sab::Record {
-            index,
-            name: name.into(),
-
-            tokens: Vec::new().into(),
-            offset: 0,
-            len: 0,
-        })
-        .collect::<Vec<_>>();
-
-    let [framed]: [_; 1] = cadmpeg_asm::test_support::sab::frame(
-        &archived_bytes,
-        0,
-        archived_bytes.len(),
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-    )
-    .expect("archived record frames")
-    .try_into()
-    .expect("one archived record");
-    with_history_decode_context(|ctx| {
-        let archive = historical_record_archive(
-            ctx,
-            std::slice::from_ref(&state),
-            &active,
-            std::collections::BTreeMap::from([(2, framed)]),
-        )
-        .expect("history archive budget")
-        .expect("qualified history marker is an archived record");
-        let record = archive
-            .records
-            .get(&2)
-            .expect("marker revision is retained");
-        assert_eq!(record.name, "End-of-ASM-History-Section");
-        assert_eq!(record.index, 1);
-        assert!(record.tokens.contains(&cadmpeg_asm::sab::Token::Ref(1)));
-    });
-}
-
-fn reverse_history_state_fixture() -> Vec<AsmDeltaState> {
-    let state = |node_index, previous_ref, next_ref, old_ref, new_ref| {
-        let board_id = format!("board-{node_index}");
-        AsmDeltaState {
-            id: format!("state-{node_index}"),
-            parent: "history".into(),
-            byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
-            state_id: 10 - node_index,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref,
-            next_ref,
-            node_index,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: vec![AsmBulletinBoard {
-                id: board_id.clone(),
-                parent: format!("state-{node_index}"),
-                byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
-                owner_ref: 0,
-                number: 2,
-                changes: vec![AsmEntityChange {
-                    id: format!("change-{node_index}"),
-                    parent: board_id,
-                    byte_offset: u64::try_from(node_index)
-                        .expect("fixture reference is nonnegative"),
-                    kind: match (old_ref, new_ref) {
-                        (Some(old), Some(new)) => AsmEntityChangeKind::Update { old, new },
-                        (None, Some(new)) => AsmEntityChangeKind::Insert { new },
-                        (Some(old), None) => AsmEntityChangeKind::Delete { old },
-                        (None, None) => unreachable!(),
-                    },
-                }],
-            }],
-            records: Vec::new(),
-            entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Absent,
-            transition: None,
-        }
-    };
-    let mut states = vec![
-        state(0, None, Some(1), Some(3), Some(1)),
-        state(1, Some(0), Some(2), Some(4), Some(1)),
-        state(2, Some(1), Some(3), None, Some(2)),
-        state(3, Some(2), None, None, Some(1)),
-    ];
-    states[0].records = [3, 4]
-        .map(|revision_id| AsmHistoryRecord {
-            id: format!("record-{revision_id}"),
-            parent: states[0].id.clone(),
-            revision_id: Some(revision_id),
-            byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                index: u64::try_from(revision_id).expect("fixture reference is nonnegative") - 3,
-                name: "edge".into(),
-                entity_references: Vec::new(),
-            },
-            raw_bytes: vec![0x11],
-        })
-        .into();
-
-    states
-}
-
-fn reverse_history_delete_fixture() -> Vec<AsmDeltaState> {
-    let mut states = reverse_history_state_fixture();
-    states[0].bulletin_boards[0].changes[0].kind = AsmEntityChangeKind::Delete { old: 4 };
-    states
-}
-
-#[test]
-fn reverse_history_builds_complete_entity_version_maps() {
-    let mut states = reverse_history_state_fixture();
-
-    with_history_decode_context(|ctx| bind_historical_entity_versions(ctx, &mut states).unwrap());
-
-    assert_eq!(
-        states
-            .iter()
-            .map(|state| state.entity_versions.len())
-            .collect::<Vec<_>>(),
-        [3, 3, 3, 2]
-    );
-    assert_eq!(
-        states[1].entity_versions,
-        [
-            AsmEntityVersion {
-                entity_ref: 0,
-                record_ref: 0,
-            },
-            AsmEntityVersion {
-                entity_ref: 1,
-                record_ref: 3,
-            },
-            AsmEntityVersion {
-                entity_ref: 2,
-                record_ref: 2,
-            },
-        ]
-    );
-    assert_eq!(states[2].entity_versions[1].record_ref, 4);
-}
-
-#[test]
-fn reverse_history_update_revision_search_propagates_work_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let operation = "find archived F3D revision for update";
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        operation,
-        0,
-        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_state_fixture()),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-    ));
-}
-
-#[test]
-fn reverse_history_delete_revision_search_propagates_work_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let operation = "find archived F3D revision for delete";
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        operation,
-        0,
-        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_delete_fixture()),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-    ));
-}
-
-#[test]
-fn reverse_history_update_key_comparison_propagates_work_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let operation = "update F3D historical version";
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        operation,
-        0,
-        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_state_fixture()),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-    ));
-}
-
-#[test]
-fn reverse_history_delete_insertion_propagates_collection_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let operation = "restore F3D historical version";
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::CollectionItems,
-        operation,
-        0,
-        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_delete_fixture()),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-    ));
 }
 
 #[test]
@@ -1826,7 +1088,11 @@ fn profile_candidate_limit_case(
 
 #[test]
 fn profile_preceding_faces_refuse_collection_limit() {
-    let error = profile_candidate_limit_case(0).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D profile candidate faces",
+        profile_candidate_limit_case,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D profile candidate faces")
@@ -1835,7 +1101,11 @@ fn profile_preceding_faces_refuse_collection_limit() {
 
 #[test]
 fn profile_face_carriers_refuse_collection_limit() {
-    let error = profile_candidate_limit_case(1).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D profile face carriers",
+        profile_candidate_limit_case,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D profile face carriers")
@@ -1844,7 +1114,11 @@ fn profile_face_carriers_refuse_collection_limit() {
 
 #[test]
 fn profile_carrier_faces_refuse_collection_limit() {
-    let error = profile_candidate_limit_case(2).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D profile carrier faces",
+        profile_candidate_limit_case,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D profile carrier faces")
@@ -1958,3 +1232,93 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 mod combine_external_limits;
 mod extrude_profile;
 mod grouped_reference_face_candidate;
+
+#[test]
+fn missing_external_combine_tool_releases_identity_prefix() {
+    let mut scope = combine_external_scope();
+    scope.combine_operation_mut().unwrap().tools.additional[0].external_identity = None;
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(crate::history::combine_external_local_tools(&ctx, &scope)
+        .unwrap()
+        .is_none());
+}
+
+fn unproved_combine_tool_work(feature_id: &cadmpeg_ir::features::FeatureId, state_id: &str) -> u64 {
+    let scope = combine_external_scope();
+    let feature = crate::history::test_support::base_feature();
+    let mut history = crate::history::test_support::one_state_history();
+    history.states[0].id = state_id.to_owned();
+    let inputs = crate::history::FeatureBodySelectionInputs {
+        scopes: &[],
+        groups: &[],
+        body_recipe_operands: &[],
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &[],
+        bodies: &[],
+        regions: &[],
+        shells: &[],
+    };
+    let operation = "measure rejected F3D Combine work";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let index = crate::history::BodySelectionIndex::new(&inputs);
+            let tools = crate::history::combine_history_tools(
+                ctx,
+                crate::history::CombineHistoryTools {
+                    feature_id,
+                    scope: &scope,
+                    state: &history.states[0],
+                    previous_state_id: 1,
+                    target_body: 2,
+                    dependencies: &feature.dependencies,
+                    pattern_bodies: &Default::default(),
+                },
+                &index,
+            )?;
+            assert!(tools.is_none());
+            ctx.charge_work(1, operation)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected a work measurement refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    limit.used
+}
+
+#[test]
+fn unproved_combine_tools_skip_output_identity_encoding() {
+    let short = crate::history::test_support::base_feature().id;
+    let long =
+        cadmpeg_ir::features::FeatureId::mint(format!("test:model:feature#{}", "a".repeat(4096)))
+            .unwrap();
+    assert_eq!(
+        unproved_combine_tool_work(&short, "state"),
+        unproved_combine_tool_work(&long, "state")
+    );
+}
+
+#[test]
+fn unproved_combine_tools_skip_source_identity_scan() {
+    let feature_id = crate::history::test_support::base_feature().id;
+    let short = "f3d:asset/Breps.BlobParts/BREP.x.smbh:asm-delta-state#1";
+    let long = format!(
+        "f3d:asset/Breps.BlobParts/BREP.{}.smbh:asm-delta-state#1",
+        "x".repeat(4096)
+    );
+    assert_eq!(
+        unproved_combine_tool_work(&feature_id, short),
+        unproved_combine_tool_work(&feature_id, &long)
+    );
+}

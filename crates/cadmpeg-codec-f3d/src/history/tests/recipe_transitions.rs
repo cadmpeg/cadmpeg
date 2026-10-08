@@ -3,8 +3,7 @@
 
 use crate::history::{
     bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
-    complete_table_binding_budget_exceeded, historical_brep_source,
-    select_legacy_extrude_face_candidate, LegacyFaceResolution,
+    historical_brep_source, select_legacy_extrude_face_candidate, LegacyFaceResolution,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -586,29 +585,6 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());
     assert!(rejected[0].resolved_face_slots.is_empty());
-}
-
-#[test]
-fn history_binding_budget_charges_materialized_state_tables() {
-    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
-    limits.max_materialized_bytes = 1920;
-    assert!(!complete_table_binding_budget_exceeded([5, 5], &limits));
-    assert!(complete_table_binding_budget_exceeded([10, 1], &limits));
-    assert!(complete_table_binding_budget_exceeded(
-        [usize::MAX, 1],
-        &limits,
-    ));
-
-    let desktop = cadmpeg_core::decode::ResourceLimits::desktop();
-    let service = cadmpeg_core::decode::ResourceLimits::service();
-    assert!(!complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &desktop,
-    ));
-    assert!(complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &service,
-    ));
 }
 
 #[test]
@@ -1323,14 +1299,17 @@ fn face_selection_scope_identity_comparison_propagates_work_refusal() {
         |ctx| {
             let mut selection =
                 FaceSelection::Native("f3d:Design/OtherStream.dat:group#100".into());
-            crate::history::selection::bind_face_selection(
-                ctx,
-                &mut selection,
-                &scope,
-                &[],
-                &[],
-                &[],
-            )
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &[],
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_face_selection(ctx, &mut selection, &scope, &index, &[])
         },
     );
     assert!(matches!(
@@ -1340,7 +1319,7 @@ fn face_selection_scope_identity_comparison_propagates_work_refusal() {
 }
 
 #[test]
-fn face_selection_group_identity_search_propagates_work_refusal() {
+fn face_selection_group_index_propagates_work_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::features::FaceSelection;
 
@@ -1351,21 +1330,24 @@ fn face_selection_group_identity_search_propagates_work_refusal() {
         DesignOperandRole::ROLE_0X10,
         Vec::new(),
     )];
-    let operation = "compare F3D face selection group identity";
+    let operation = "index F3D operand groups";
     let error = crate::test_support::resource_refusal_at(
         ResourceDimension::WorkUnits,
         operation,
         0,
         |ctx| {
             let mut selection = FaceSelection::Native(group_id.into());
-            crate::history::selection::bind_face_selection(
-                ctx,
-                &mut selection,
-                &scope,
-                &groups,
-                &[],
-                &[],
-            )
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_face_selection(ctx, &mut selection, &scope, &index, &[])
         },
     );
     assert!(matches!(
@@ -1396,14 +1378,17 @@ fn face_selection_group_member_scan_propagates_work_refusal() {
         0,
         |ctx| {
             let mut selection = FaceSelection::Native(group_id.into());
-            crate::history::selection::bind_face_selection(
-                ctx,
-                &mut selection,
-                &scope,
-                &groups,
-                &[],
-                &[],
-            )
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
+            crate::history::selection::bind_face_selection(ctx, &mut selection, &scope, &index, &[])
         },
     );
     assert!(matches!(
@@ -1413,7 +1398,7 @@ fn face_selection_group_member_scan_propagates_work_refusal() {
 }
 
 #[test]
-fn body_recipe_face_selection_group_identity_propagates_work_refusal() {
+fn body_recipe_face_selection_group_index_propagates_work_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::features::{FaceSelection, FeatureId};
 
@@ -1425,21 +1410,30 @@ fn body_recipe_face_selection_group_identity_propagates_work_refusal() {
         Vec::new(),
     )];
     let feature_id = FeatureId::mint("f3d:test:feature#42").unwrap();
-    let operation = "compare F3D body recipe face selection group identity";
+    let operation = "index F3D operand groups";
     let error = crate::test_support::resource_refusal_at(
         ResourceDimension::WorkUnits,
         operation,
         0,
         |ctx| {
             let mut selection = FaceSelection::Native(group_id.into());
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &[],
+                    histories: &[],
+                },
+            );
             crate::history::selection::bind_body_recipe_face_selection(
                 ctx,
                 &mut selection,
                 &feature_id,
                 1,
                 &scope,
-                &groups,
-                &[],
+                &index,
             )
         },
     );
@@ -1509,14 +1503,23 @@ fn body_recipe_face_selection_slot_scan_propagates_work_refusal() {
         0,
         |ctx| {
             let mut selection = FaceSelection::Native(group_id.into());
+            let index = crate::history::FaceSelectionIndex::new(
+                crate::history::FeatureFaceSelectionInputs {
+                    scopes: &[],
+                    groups: &groups,
+                    operands: &[],
+                    entity_operands: &[],
+                    body_recipe_operands: &operands,
+                    histories: &[],
+                },
+            );
             crate::history::selection::bind_body_recipe_face_selection(
                 ctx,
                 &mut selection,
                 &feature_id,
                 1,
                 &scope,
-                &groups,
-                &operands,
+                &index,
             )
         },
     );
@@ -1524,4 +1527,87 @@ fn body_recipe_face_selection_slot_scan_propagates_work_refusal() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
+}
+
+#[test]
+fn missing_face_member_releases_copied_identity_prefix() {
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::face::DesignFaceOperand;
+    use cadmpeg_ir::features::FaceSelection;
+    let scope = face_selection_scope();
+    let group_id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [face_selection_group(
+        group_id,
+        DesignOperandRole::ROLE_0X10,
+        vec![
+            crate::records::identity::Located {
+                value: 200,
+                offset: 1010,
+            },
+            crate::records::identity::Located {
+                value: 201,
+                offset: 1021,
+            },
+        ],
+    )];
+    let face_id = cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#7").unwrap();
+    let operand =
+        DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
+            id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
+            scope_record_index: 42,
+            scope_reference_ordinal: 3,
+            group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
+                group_record_index: 100,
+                group_member_ordinal: 0,
+            }),
+            record_index: 200,
+            byte_offset: 1200,
+            class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                .unwrap(),
+            paired_byte_offset: 1300,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
+            recipe_record_index: 203,
+            recipe_record_byte_offset: 1400,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
+            recipe_prefix_offset: 1411,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::Face,
+            recipe_program_offset: 1420,
+            recipe_program: Vec::new(),
+
+            recipe_nodes: Vec::new(),
+            candidate_faces: vec![face_id.clone()],
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: vec![face_id.clone()],
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: Vec::new(),
+            resolved_active_face: None,
+            next_record_index: 204,
+            next_byte_offset: 1500,
+        })
+        .unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut selection = FaceSelection::Native(group_id.into());
+    let index =
+        crate::history::FaceSelectionIndex::new(crate::history::FeatureFaceSelectionInputs {
+            scopes: &[],
+            groups: &groups,
+            operands: std::slice::from_ref(&operand),
+            entity_operands: &[],
+            body_recipe_operands: &[],
+            histories: &[],
+        });
+    crate::history::selection::bind_face_selection(&ctx, &mut selection, &scope, &index, &[])
+        .unwrap();
+    assert_eq!(selection, FaceSelection::Native(group_id.into()));
 }

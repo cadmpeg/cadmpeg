@@ -2,7 +2,7 @@
 //! Treatment candidate behavior over historical topology.
 #![allow(clippy::unwrap_used)]
 
-use crate::history::{treatment_edge_candidates, treatment_radius_candidates};
+use crate::history::{topology::treatment_edge_candidates, topology::treatment_radius_candidates};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalRelation,
     AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
@@ -96,7 +96,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
     assert_eq!(candidates[0].edge_slot, 17);
     assert_eq!(candidates[0].radius.get(), 3.0);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| treatment_edge_candidates(
+        crate::test_support::with_decode_context(|ctx| treatment_edge_candidates::<true>(
             ctx,
             None,
             &[20],
@@ -124,7 +124,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         .is_empty()
     );
     assert!(
-        crate::test_support::with_decode_context(|ctx| treatment_edge_candidates(
+        crate::test_support::with_decode_context(|ctx| treatment_edge_candidates::<true>(
             ctx,
             None,
             &[20],
