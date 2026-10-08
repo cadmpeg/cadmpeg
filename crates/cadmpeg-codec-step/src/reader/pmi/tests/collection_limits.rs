@@ -969,3 +969,97 @@ fn record_measure_angle_containment_preserves_refusal() {
         },
     );
 }
+
+#[test]
+fn measure_quantity_length_prefix_does_not_scan_name_suffix() {
+    let value = crate::parse::Value::Typed(
+        format!("LENGTH{}", "X".repeat(4096)),
+        Box::new(crate::parse::Value::Integer(7)),
+    );
+    let mut policy = DecodePolicy::service();
+    // The matching first window is one visited work item. A full scan of this
+    // 4,102-byte name plus the six-byte pattern would exceed this cap.
+    policy.limits.max_work_units = 1;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let quantity = super::super::measure_quantity(&value, ctx)
+            .expect("length prefix fits the work limit");
+        assert!(matches!(quantity, Some(cadmpeg_ir::pmi::PmiQuantity::Length)));
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn typed_measure_length_prefix_does_not_scan_name_suffix() {
+    let source = format!("{HEADER}#1=ITEM();{TAIL}");
+    let (exchange, _) = crate::test_support::with_service_context(
+        source.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("measure exchange");
+    let value = crate::parse::Value::Typed(
+        format!("LENGTH{}", "X".repeat(4096)),
+        Box::new(crate::parse::Value::Integer(7)),
+    );
+    let mut policy = DecodePolicy::service();
+    // measure_inner visits the first matching window once. A full scan of this
+    // 4,102-byte name plus the six-byte pattern would exceed this cap.
+    policy.limits.max_work_units = 1;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut losses = Vec::new();
+        let reports = std::cell::RefCell::new(
+            ctx.reserve_scoped(0, "report fixture").expect("report scope"),
+        );
+        let mut measurements = super::super::MeasureContext {
+            length_scale: 1.0,
+            angle_scale: 1.0,
+            graph_limit: 64,
+            losses: (&mut losses, &reports),
+        };
+        let result = super::super::measure(&value, &exchange, &mut measurements, ctx)
+            .expect("typed length prefix fits the work limit");
+        assert_eq!(
+            result,
+            Some(
+                cadmpeg_ir::pmi::PmiValue::new(7.0, cadmpeg_ir::pmi::PmiQuantity::Length)
+                    .expect("finite measure"),
+            )
+        );
+        assert!(ctx.resource_refusal().is_none());
+        assert!(losses.is_empty());
+    });
+}
+
+#[test]
+fn record_measure_length_prefix_does_not_scan_name_suffix() {
+    let source = format!("{HEADER}#1=LENGTH{}();{TAIL}", "X".repeat(4096));
+    let (exchange, _) = crate::test_support::with_service_context(
+        source.as_bytes(),
+        crate::parse::parse_inner,
+    )
+    .expect("long measure record exchange");
+    let value = crate::parse::Value::Reference(1);
+    let mut policy = DecodePolicy::service();
+    // The one-record path uses 696 work for active-set insertion, 240 for its
+    // removal, 8 for the record lookup, 9 for three one-partial queries, and 2
+    // for the classifier's partial and first name-window visits: 955 total.
+    // The cap admits that route; the old 4,108-unit full-name-plus-pattern
+    // scan cannot fit.
+    policy.limits.max_work_units = 2048;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let mut losses = Vec::new();
+        let reports = std::cell::RefCell::new(
+            ctx.reserve_scoped(0, "report fixture").expect("report scope"),
+        );
+        let mut measurements = super::super::MeasureContext {
+            length_scale: 1.0,
+            angle_scale: 1.0,
+            graph_limit: 64,
+            losses: (&mut losses, &reports),
+        };
+        let result = super::super::measure(&value, &exchange, &mut measurements, ctx)
+            .expect("record length prefix fits the work limit");
+        assert!(result.is_none());
+        assert_eq!(losses.len(), 1, "length classification keeps unit loss");
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
