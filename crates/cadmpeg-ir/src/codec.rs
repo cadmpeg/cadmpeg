@@ -449,17 +449,25 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             limits: options.limits,
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
-        let result = self.inspect_impl(&ctx, root);
+        let result = self.inspect_impl(&ctx, root).and_then(|result| {
+            if !ctx.equal_bytes(
+                result.format().as_bytes(),
+                C::FORMAT.as_str().as_bytes(),
+                "inspect format comparison",
+            )? {
+                return Err(CodecError::WrongFormat(ctx.format_retained(
+                    format_args!(
+                        "codec {:?} inspected a {:?} container",
+                        C::FORMAT.as_str(),
+                        result.format()
+                    ),
+                    "inspect format refusal",
+                )?));
+            }
+            Ok(result)
+        });
         ctx.finish_session()?;
-        let result = result?;
-        if result.format() != C::FORMAT.as_str() {
-            return Err(CodecError::WrongFormat(format!(
-                "codec {:?} inspected a {:?} container",
-                C::FORMAT.as_str(),
-                result.format()
-            )));
-        }
-        Ok(result)
+        result
     }
 
     fn decode(
@@ -483,7 +491,11 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     ) -> Result<DecodeResult, DecodeFailure> {
         let decoded = self.decode_impl(ctx, root)?;
         let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, ctx)?;
-        if result.report().format() != C::FORMAT.as_str() {
+        if !ctx.equal_bytes(
+            result.report().format().as_bytes(),
+            C::FORMAT.as_str().as_bytes(),
+            "decode format comparison",
+        )? {
             return Err(CodecError::WrongFormat(ctx.format_retained(
                 format_args!(
                     "codec {:?} decoded a {:?} document",
@@ -497,16 +509,12 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
         let strict_loss_index =
             if options.policy.mode == DecodeMode::Strict && !options.container_only {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(result.report().losses.len()),
+                ctx.position_by(
+                    &result.report().losses,
+                    |loss| Ok(loss.strict_consequence() == StrictConsequence::Reject),
                     "decode strict loss scan",
-                )?;
-                result
-                    .report()
-                    .losses
-                    .iter()
-                    .position(|loss| loss.strict_consequence() == StrictConsequence::Reject)
-                    .map(RejectingLossIndex)
+                )?
+                .map(RejectingLossIndex)
             } else {
                 None
             };

@@ -172,6 +172,40 @@ pub struct ValidationReport {
 }
 
 impl ValidationReport {
+    /// Counts error and blocking findings after admitting the full traversal.
+    pub fn error_count_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        Ok(ctx
+            .admit_iter(&self.findings, "decode report error count")?
+            .filter(|finding| finding.severity >= Severity::Error)
+            .count())
+    }
+
+    /// Counts warning findings after admitting the full traversal.
+    pub fn warning_count_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        Ok(ctx
+            .admit_iter(&self.findings, "decode report warning count")?
+            .filter(|finding| finding.severity == Severity::Warning)
+            .count())
+    }
+
+    /// Stops at the first error or blocking finding.
+    pub fn is_ok_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(!ctx.any_by(
+            &self.findings,
+            |finding| Ok(finding.severity >= Severity::Error),
+            "decode report error search",
+        )?)
+    }
+
     /// Number of findings at or above [`Severity::Error`].
     pub fn error_count(&self) -> usize {
         self.findings
@@ -208,5 +242,70 @@ mod tests {
             <Check as DecodeCost>::FIXED_BYTES,
             Some(u64::try_from(std::mem::size_of::<Check>()).expect("test size fits"))
         );
+    }
+    #[test]
+    fn decode_report_counts_and_search_admit_their_sources() {
+        use super::{Finding, ValidationReport};
+        use crate::report::Severity;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let report = ValidationReport {
+            entity_counts: std::collections::BTreeMap::new(),
+            findings: [
+                Severity::Error,
+                Severity::Warning,
+                Severity::Blocking,
+                Severity::Info,
+            ]
+            .into_iter()
+            .map(|severity| Finding {
+                check: Check::Identity,
+                severity,
+                message: String::new(),
+                entity: None,
+            })
+            .collect(),
+            losses: Vec::new(),
+        };
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert_eq!(
+            report.error_count_for_decode(&ctx).unwrap(),
+            report.error_count()
+        );
+        assert_eq!(
+            report.warning_count_for_decode(&ctx).unwrap(),
+            report.warning_count()
+        );
+        assert_eq!(report.is_ok_for_decode(&ctx).unwrap(), report.is_ok());
+        for operation in [
+            "decode report error count",
+            "decode report warning count",
+            "decode report error search",
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    match operation {
+                        "decode report error count" => {
+                            report.error_count_for_decode(&ctx).map(|_| ())
+                        }
+                        "decode report warning count" => {
+                            report.warning_count_for_decode(&ctx).map(|_| ())
+                        }
+                        _ => report.is_ok_for_decode(&ctx).map(|_| ()),
+                    }
+                },
+            );
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(!report.is_ok_for_decode(&ctx).unwrap());
+        ctx.finish_session().unwrap();
     }
 }
