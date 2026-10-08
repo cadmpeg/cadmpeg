@@ -150,14 +150,10 @@ impl SpatialIndex {
             0usize,
             "catia_boundary_index_tasks",
         )?;
-        loop {
-            let Some(node) = ctx.next_charged(
-                &mut std::iter::from_fn(|| tasks.pop()),
-                "catia_boundary_index_build",
-            )?
-            else {
-                break;
-            };
+        while let Some(node) = ctx.next_charged(
+            &mut std::iter::from_fn(|| tasks.pop()),
+            "catia_boundary_index_build",
+        )? {
             let range = index.nodes[node].range.clone();
             let mut bounds = index.items[range.start].0;
             for (item, _) in

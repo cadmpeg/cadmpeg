@@ -863,14 +863,10 @@ where
                 })?;
             }
         }
-        loop {
-            let Some(source_start) = ctx.next_charged(
-                &mut std::iter::from_fn(|| frontier.pop_front()),
-                "catia_spanning_record_lookup",
-            )?
-            else {
-                break;
-            };
+        while let Some(source_start) = ctx.next_charged(
+            &mut std::iter::from_fn(|| frontier.pop_front()),
+            "catia_spanning_record_lookup",
+        )? {
             if ctx.contains_hash_set(&record_starts, &source_start, "catia_record_start_lookup")? {
                 continue;
             }

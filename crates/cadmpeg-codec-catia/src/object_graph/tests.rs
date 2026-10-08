@@ -1911,7 +1911,8 @@ fn final_terminator_suffix_is_scanned_once_for_nonfinal_fe_atoms() {
     let mut bytes = vec![0xfe; 4096];
     bytes.extend([0x82, 0xfe]);
     let payload = crate::test_support::with_work_limit(
-        4 * (std::mem::size_of::<super::PayloadField>() as u64 + 2) * bytes.len() as u64,
+        4 * (cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::PayloadField>()) + 2)
+            * cadmpeg_core::decode::u64_from_index(bytes.len()),
         |ctx| super::decode_payload(ctx, &bytes),
     )
     .expect("linear payload walk fits")

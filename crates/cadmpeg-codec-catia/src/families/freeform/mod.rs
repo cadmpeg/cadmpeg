@@ -2167,7 +2167,7 @@ pub(super) fn append_freeform_surface_pools(
         for second_limit in [false, true] {
             let Some(curve) = crate::families::a5a8::records::rolling_ball_limit_curve(
                 admission.context(),
-                &jet,
+                jet,
                 second_limit,
                 refusal,
             )?
@@ -4218,7 +4218,7 @@ fn append_a8_rolling_ball_pools(
         .admit_iter(&jets, "catia_freeform_a8_jets")?
     {
         let Some(definition) =
-            crate::families::a5a8::records::rolling_ball_jet_definition(admission.context(), &jet)?
+            crate::families::a5a8::records::rolling_ball_jet_definition(admission.context(), jet)?
         else {
             continue;
         };
@@ -4694,7 +4694,7 @@ mod tests {
             crate::test_support::with_service_context(|ctx| parse_from_records(
                 ctx,
                 &[],
-                &[record.clone(), record],
+                &[record, record],
                 &[],
                 false,
                 &mut crate::nurbs::LaneRefusals::new()

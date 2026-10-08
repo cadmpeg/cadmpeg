@@ -1570,7 +1570,7 @@ fn legacy_relation_evaluation<'a>(
         };
         if !ctx.any_by(
             symbols,
-            |(_, symbol)| Ok(legacy_symbol_matches_input(ctx, symbol, &input.parameter)?),
+            |(_, symbol)| legacy_symbol_matches_input(ctx, symbol, &input.parameter),
             "catia_legacy_formula_symbol_visits",
         )? {
             return Ok(None);
@@ -1803,6 +1803,7 @@ impl<'run, 'ctx> LegacyTypeResolver<'run, 'ctx> {
 }
 
 /// A legacy value whose type may come from its bound evaluation name.
+#[derive(Clone, Copy)]
 struct LegacyIntrinsicValue<'a> {
     entity_id: u32,
     value_offset: u64,
@@ -1996,7 +1997,7 @@ fn merge_formula_parameter_candidate(
     if !formula_parameter_candidates_agree(ctx, existing, &candidate)? {
         match (existing_output, candidate_output) {
             (true, true) => {}
-            (true, false) | (false, false) => {
+            (_, false) => {
                 insert_formula_conflict(ctx, scratch, conflicting_inputs, candidate.parameter.id)?;
             }
             (false, true) => {
@@ -2035,6 +2036,7 @@ fn merge_formula_parameter_candidate(
 }
 
 /// The relation, expression and output entities of one relation program.
+#[derive(Clone, Copy)]
 struct RelationProgramEntities<'a> {
     relation: &'a crate::native::entity_record::CatiaEntityRecord,
     expression: &'a crate::native::entity_record::CatiaEntityRecord,
@@ -5032,9 +5034,10 @@ mod parser_tests {
             ("İ", false, "i\u{0307}"),
             ("ß", true, "SS"),
         ] {
-            let result = crate::test_support::with_retained_limit(expected.len() as u64, |ctx| {
-                super::cased_text(ctx, source, upper)
-            })
+            let result = crate::test_support::with_retained_limit(
+                cadmpeg_core::decode::u64_from_index(expected.len()),
+                |ctx| super::cased_text(ctx, source, upper),
+            )
             .expect("only final case bytes are retained");
             assert_eq!(result, expected);
             assert!(
