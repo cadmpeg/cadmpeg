@@ -7,7 +7,9 @@ use crate::test_support::test_owned::{
     owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
 };
 use crate::test_support::test_surface_fixtures::bounded_plane_entity_file;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{
@@ -636,8 +638,21 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<std::collections::BTreeMap<_, _>>();
+    let directory_entries =
+        u64::try_from(directory.len()).expect("directory length fits work units");
+    let directory_search_work = directory_entries
+        .checked_mul(
+            u64::try_from(std::mem::size_of::<u32>()).expect("u32 size fits work units"),
+        )
+        .and_then(|work| work.checked_mul(3))
+        .expect("three directory searches fit work units");
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 10_000;
+    // The former 10,000-unit cap covers the fixture's directory/index and
+    // geometric proof work. The 20,000 loop calls are bounded by one-key
+    // 60-byte cache searches; the two later misses cost 60 and 120. Each of
+    // the three proof misses checks one u32 directory key, with at most one
+    // comparison per directory entry.
+    policy.limits.max_work_units = 10_000 + 20_000 * 60 + 60 + 2 * 60 + directory_search_work;
     crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
         let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
         let plane = super::super::plane_carrier(&index, 1, ctx)
@@ -688,6 +703,72 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
         ));
         assert_eq!(proofs.proven.len(), 2);
     });
+    let run_cache_lookup = |work_cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work_cap;
+        crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
+            let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+            let plane = super::super::plane_carrier(&index, 1, ctx)?.unwrap();
+            let mut proofs = super::super::PlaneBoundaryProofs {
+                proven: std::collections::BTreeMap::new(),
+                storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
+            };
+            super::super::plane_boundary_edge(
+                &index,
+                plane,
+                3,
+                &entries,
+                0.001,
+                ctx,
+                &mut proofs,
+            )
+            .map(|_| ())
+            .map_err(|error| {
+                error
+                    .message()
+                    .expect_err("initial plane boundary proof must succeed")
+            })?;
+            super::super::plane_boundary_edge(
+                &index,
+                plane,
+                3,
+                &entries,
+                0.001,
+                ctx,
+                &mut proofs,
+            )
+            .map(|_| ())
+            .map_err(|error| {
+                error
+                    .message()
+                    .expect_err("plane boundary proof cache lookup is the tested boundary")
+            })
+        })
+    };
+    let operation = "iges plane boundary proof cache lookup";
+    let probed = {
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, Some(60));
+        run_cache_lookup(u64::MAX)
+    };
+    let limit = match probed {
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+        Err(error) => panic!("unexpected refusal while probing {operation}: {error:?}"),
+        Ok(()) => panic!("missing proof-cache lookup work charge"),
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, operation);
+    assert_eq!(limit.additional, 60);
+    let need = limit
+        .used
+        .checked_add(limit.additional)
+        .expect("proof-cache lookup work need fits");
+    assert!(matches!(
+        run_cache_lookup(need - 1),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref replay))
+            if replay.dimension == ResourceDimension::WorkUnits
+                && replay.operation == operation
+                && replay.used + replay.additional == need
+    ));
     cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
         "iges plane boundary proof cache",

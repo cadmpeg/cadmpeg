@@ -43,7 +43,11 @@ impl<'text, 'budget> PropertyTextIndex<'text, 'budget> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<PropertyTextId, CodecError> {
-        if let Some(id) = self.records.get(&sequence) {
+        if let Some(id) = ctx.get_btree_map(
+            &self.records,
+            &sequence,
+            "iges property text record lookup",
+        )? {
             return Ok(*id);
         }
         let id = if let Some(id) = ctx.get_btree_map(&self.values, text, operation)? {
@@ -115,9 +119,9 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     sequence: u32,
     visited: &mut BTreeSet<u32>,
     ctx: &DecodeContext<'_>,
-    successors: impl Fn(u32) -> I,
+    successors: impl Fn(u32) -> Result<I, CodecError>,
 ) -> Result<bool, CodecError> {
-    if visited.contains(&sequence) {
+    if ctx.contains_btree_set(visited, &sequence, "iges cycle visited lookup")? {
         return Ok(false);
     }
     let mut search_storage = ctx.reserve_scoped(0, "IGES directed cycle search")?;
@@ -129,11 +133,11 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
         ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")?
     {
         if expanded {
-            active.remove(&current);
+            ctx.remove_btree_set(&mut active, &current, "iges cycle active removal")?;
             ctx.insert_btree_set(visited, current, "iges cycle visited")?;
             continue;
         }
-        if visited.contains(&current) {
+        if ctx.contains_btree_set(visited, &current, "iges cycle visited lookup")? {
             continue;
         }
         if !search_storage
@@ -143,12 +147,12 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
         }
         search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
         stack.push((current, true));
-        let mut targets = successors(current).rev();
+        let mut targets = successors(current)?.rev();
         while let Some(target) = ctx.next_charged(&mut targets, "iges cycle work")? {
-            if active.contains(&target) {
+            if ctx.contains_btree_set(&active, &target, "iges cycle active lookup")? {
                 return Ok(true);
             }
-            if !visited.contains(&target) {
+            if !ctx.contains_btree_set(visited, &target, "iges cycle visited lookup")? {
                 search_storage
                     .with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
                 stack.push((target, false));
