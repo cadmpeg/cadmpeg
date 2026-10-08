@@ -565,12 +565,12 @@ pub(crate) fn sync_changed_feature_scalars(
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ParameterValue;
 
-    for lane in lanes {
-        let names_by_id = lane
-            .names
-            .iter()
-            .map(|name| (name.id.as_str(), name.value.as_str()))
-            .collect::<HashMap<_, _>>();
+    if changed.is_empty() {
+        return Ok(());
+    }
+    const OPERATION: &str = "synchronize SLDPRT changed scalars";
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        let mut lane_storage = ctx.reserve_scoped(0, OPERATION)?;
         let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for history in ctx.admit_iter(histories, "index SLDPRT scalar update features")? {
@@ -578,11 +578,13 @@ pub(crate) fn sync_changed_feature_scalars(
                 ctx.admit_iter(&history.features, "index SLDPRT scalar update features")?
             {
                 if let Some(name) = object_names.of(ctx, feature)? {
-                    ctx.push_vec(
-                        &mut starts,
-                        (name.offset, feature),
-                        "index SLDPRT scalar update features",
-                    )?;
+                    lane_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut starts,
+                            (name.offset, feature),
+                            "index SLDPRT scalar update features",
+                        )
+                    })?;
                 }
             }
         }
@@ -592,38 +594,84 @@ pub(crate) fn sync_changed_feature_scalars(
             Ord::cmp,
             "sldprt feature name starts sort",
         )?;
+        let mut scalars_by_name = None;
         let mut updates = Vec::<(usize, f64)>::new();
-        for (index, &(start, feature)) in starts.iter().enumerate() {
+        for (index, &(start, feature)) in ctx.admit_iter(&starts, OPERATION)?.enumerate() {
             let end = starts.get(index + 1).map(|(offset, _)| *offset);
-            for (name, expression) in &feature.parameters {
-                if !changed.contains(&(feature.id.clone(), name.clone())) {
+            for (name, expression) in ctx.admit_iter(&feature.parameters, OPERATION)? {
+                let (key, _key_storage) = ctx.with_scoped_storage(OPERATION, || {
+                    Ok::<_, CodecError>((
+                        ctx.copy_retained_text(&feature.id, OPERATION)?,
+                        name.try_clone_for_decode(ctx, OPERATION)?,
+                    ))
+                })?;
+                if !ctx.contains_hash_set(changed, &key, OPERATION)? {
                     continue;
                 }
-                let candidates = lane.scalars.iter().enumerate().try_fold(
-                    Vec::new(),
-                    |mut candidates, (scalar_index, scalar)| -> Result<_, CodecError> {
-                        if scalar_owned_by_feature(ctx, scalar, &feature.id, start, end)?
-                            && names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
+                let scalars_by_name = match &mut scalars_by_name {
+                    Some(index) => index,
+                    slot @ None => {
+                        let (names_by_id, _names_storage) =
+                            ctx.with_scoped_storage(OPERATION, || {
+                                ctx.collect_hash_map(
+                                    lane.names
+                                        .iter()
+                                        .map(|name| (name.id.as_str(), name.value.as_str())),
+                                    OPERATION,
+                                )
+                            })?;
+                        let mut index = HashMap::new();
+                        for (scalar_index, scalar) in
+                            ctx.admit_iter(&lane.scalars, OPERATION)?.enumerate()
                         {
-                            candidates.push((scalar_index, scalar));
+                            let Some(value) =
+                                ctx.get_hash_map(&names_by_id, scalar.name.as_str(), OPERATION)?
+                            else {
+                                continue;
+                            };
+                            lane_storage.with_storage(|| {
+                                ctx.push_hash_group(
+                                    &mut index,
+                                    *value,
+                                    scalar_index,
+                                    OPERATION,
+                                    OPERATION,
+                                )
+                            })?;
                         }
-                        Ok(candidates)
-                    },
-                )?;
-                let driving = candidates
-                    .iter()
-                    .filter(|(_, scalar)| scalar.role == FeatureInputScalarRole::Driving)
-                    .copied()
-                    .collect::<Vec<_>>();
-                let candidates = if driving.is_empty() {
-                    candidates
-                        .into_iter()
-                        .filter(|(_, scalar)| scalar.role == FeatureInputScalarRole::Native)
-                        .collect::<Vec<_>>()
-                } else {
-                    driving
+                        slot.insert(index)
+                    }
                 };
-                let [(scalar_index, _)] = candidates.as_slice() else {
+                let mut driving = None;
+                let mut native = None;
+                let mut driving_count = 0usize;
+                let mut native_count = 0usize;
+                let matching = ctx
+                    .get_hash_map(scalars_by_name, name.as_str(), OPERATION)?
+                    .map_or(&[][..], Vec::as_slice);
+                for &scalar_index in ctx.admit_iter(matching, OPERATION)? {
+                    let scalar = &lane.scalars[scalar_index];
+                    if !scalar_owned_by_feature(ctx, scalar, &feature.id, start, end)? {
+                        continue;
+                    }
+                    match scalar.role {
+                        FeatureInputScalarRole::Driving => {
+                            driving = Some(scalar_index);
+                            driving_count += 1;
+                        }
+                        FeatureInputScalarRole::Native => {
+                            native = Some(scalar_index);
+                            native_count += 1;
+                        }
+                        _ => {}
+                    }
+                }
+                let scalar_index = match (driving_count, native_count) {
+                    (1, _) => driving,
+                    (0, 1) => native,
+                    _ => None,
+                };
+                let Some(scalar_index) = scalar_index else {
                     continue;
                 };
                 let value = match crate::history::parameters::parse_native_parameter_literal(
@@ -637,10 +685,12 @@ pub(crate) fn sync_changed_feature_scalars(
                     Some(ParameterValue::Real(value)) => value.get(),
                     _ => continue,
                 };
-                updates.push((*scalar_index, value));
+                lane_storage.with_storage(|| {
+                    ctx.push_vec(&mut updates, (scalar_index, value), OPERATION)
+                })?;
             }
         }
-        for (scalar_index, value) in updates {
+        for (scalar_index, value) in ctx.admit_iter(updates, OPERATION)? {
             let scalar = &mut lane.scalars[scalar_index];
             let offset = usize::try_from(scalar.offset).map_err(|_| {
                 cadmpeg_core::CodecError::Malformed(
