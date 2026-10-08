@@ -8,6 +8,7 @@ use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
+use cadmpeg_core::decode::tree::AdmittedXml;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
@@ -74,7 +75,7 @@ pub(crate) fn has_document_markers(
 }
 
 /// Fully scanned container used by inspection and decode.
-pub(crate) struct Scan<'a> {
+pub(crate) struct Scan<'a, 'ctx> {
     /// Recoverable container metadata diagnostics.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Container summary entries.
@@ -83,6 +84,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) document: DocumentFacts,
     /// Declared persistence schema version, owned by the source declaration.
     pub(crate) schema_version: String,
+    /// One admitted persistence tree shared by all document readers.
+    pub(crate) document_xml: AdmittedXml<'a, 'ctx>,
     /// Exact physical archive partition.
     pub(crate) ledger: Vec<ArchiveSpan>,
     /// Bounded physical payloads that could not be opened.
@@ -104,7 +107,10 @@ pub(crate) struct UnreadableEntry {
 }
 
 /// Scan an archive through the session resource budget.
-pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+pub(crate) fn scan<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<Scan<'a, 'ctx>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(archive.entries().len()),
@@ -130,7 +136,8 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         ctx.charge_collection_items(node_count, "FCStd Document.xml node tree")?;
     }
     let mut losses = Vec::new();
-    let (document, schema_version) = parse_document(ctx, document_bytes, &mut losses)?;
+    let document_xml = admit_document(ctx, document_bytes)?;
+    let (document, schema_version) = parse_document(ctx, document_xml.document(), &mut losses)?;
     let mut data = BTreeMap::new();
     let mut unreadable_entries = Vec::new();
     for file in archive.entries() {
@@ -212,6 +219,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         entries: archive.container_entries(ctx, classify)?,
         document,
         schema_version,
+        document_xml,
         unreadable_entries,
         ledger,
         data,
@@ -220,7 +228,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
 
 pub(crate) fn entry_records(
     ctx: &DecodeContext<'_>,
-    scan: &Scan<'_>,
+    scan: &Scan<'_, '_>,
     properties: &[PropertyRecord],
 ) -> Result<Vec<EntryRecord>, CodecError> {
     let mut records = ctx.collection_vec(scan.entries.len(), "FCStd entry records")?;
@@ -277,7 +285,7 @@ pub(crate) fn entry_records(
 
 pub(crate) fn source_attributes(
     ctx: &DecodeContext<'_>,
-    scan: &Scan<'_>,
+    scan: &Scan<'_, '_>,
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(scan.document.root_name.len()),
@@ -379,7 +387,7 @@ pub(crate) fn source_attributes(
 /// Summarize one scan.
 pub(crate) fn summarize(
     ctx: &DecodeContext<'_>,
-    scan: &Scan,
+    scan: &Scan<'_, '_>,
 ) -> Result<ContainerSummary, CodecError> {
     let matched = crate::dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
     let mut losses = Vec::new();
@@ -424,7 +432,7 @@ pub(crate) fn summarize(
 /// Notes shared by inspect and decode without reclassifying host identity.
 pub(crate) fn summary_notes(
     ctx: &DecodeContext<'_>,
-    scan: &Scan,
+    scan: &Scan<'_, '_>,
 ) -> Result<Vec<String>, CodecError> {
     let mut notes = ctx.collection_vec(
         6 + usize::from(scan.document.program_version.is_some()),
@@ -621,11 +629,11 @@ fn scan_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
     None
 }
 
-pub(crate) fn parse_document(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(DocumentFacts, String), CodecError> {
+/// Admit the persistence tree once and keep its storage charged while it is borrowed.
+pub(crate) fn admit_document<'input, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &'input [u8],
+) -> Result<AdmittedXml<'input, 'ctx>, CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "validate FreeCAD XML UTF-8",
@@ -645,7 +653,15 @@ pub(crate) fn parse_document(
             )?));
         }
     };
-    let xml = admitted_xml.document();
+    Ok(admitted_xml)
+}
+
+/// Read container metadata from the admitted persistence tree.
+pub(crate) fn parse_document(
+    ctx: &DecodeContext<'_>,
+    xml: &roxmltree::Document<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(DocumentFacts, String), CodecError> {
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
         return Err(CodecError::WrongFormat(ctx.format_retained(

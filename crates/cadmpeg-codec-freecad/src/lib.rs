@@ -1027,15 +1027,12 @@ impl CodecBackend for FcstdCodec {
         }
         let decode_document = !ctx.container_only();
         if decode_document {
-            let document_bytes = scan
-                .data
-                .get("Document.xml")
-                .map(|view| view.window())
-                .ok_or_else(|| {
-                    CodecError::Malformed("Document.xml disappeared after scan".into())
-                })?;
-            let mut graph =
-                persistence::parse_with_context(document_bytes, &scan.schema_version, ctx)?;
+            let document_xml = scan.document_xml.document();
+            let mut graph = persistence::parse_document(
+                document_xml,
+                persistence::Vocabulary::from_declaration(&scan.schema_version)?,
+                ctx,
+            )?;
             ctx.extend_vec(&mut scan.losses, graph.losses, "FCStd persistence losses")?;
             persistence::resolve_side_entries(
                 ctx,
@@ -1047,7 +1044,7 @@ impl CodecBackend for FcstdCodec {
             let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
                 ctx,
-                document_bytes,
+                document_xml,
                 scan.document.file_version.value(),
                 &graph.properties,
                 &entry_records,

@@ -548,8 +548,9 @@ fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::Co
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)?;
+    let xml = crate::container::admit_document(&ctx, document.as_bytes())?;
     let (_facts, schema_version) =
-        crate::container::parse_document(&ctx, document.as_bytes(), &mut Vec::new()).map_err(
+        crate::container::parse_document(&ctx, xml.document(), &mut Vec::new()).map_err(
             |error| match error {
                 cadmpeg_core::CodecError::WrongFormat(message) => {
                     cadmpeg_core::CodecError::Malformed(message)
@@ -1284,7 +1285,7 @@ fn object_declaration_framing_precedes_collection_admission() {
         )
         .expect("root");
         assert!(matches!(
-            super::parse_document(document, &xml, super::Vocabulary::Objects, &ctx),
+            super::parse_document(&xml, super::Vocabulary::Objects, &ctx),
             Err(cadmpeg_core::CodecError::ResourceLimit(_))
         ));
     }
@@ -1307,7 +1308,7 @@ fn duplicate_object_name_hashing_admits_prefix_bytes() {
             &policy,
         )
         .expect("root");
-        let error = super::parse_document(&document, &xml, super::Vocabulary::Objects, &ctx)
+        let error = super::parse_document(&xml, super::Vocabulary::Objects, &ctx)
             .err()
             .expect("bounded name work refuses");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
@@ -1365,7 +1366,7 @@ fn object_ceiling_is_resource_refusal() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
             .expect("root");
-    let error = super::parse_document(document, &xml, super::Vocabulary::Objects, &ctx)
+    let error = super::parse_document(&xml, super::Vocabulary::Objects, &ctx)
         .err()
         .expect("object ceiling");
     assert!(

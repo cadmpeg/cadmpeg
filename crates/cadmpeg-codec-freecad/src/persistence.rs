@@ -165,20 +165,16 @@ pub(crate) fn parse_with_context(
         )
     })?;
     let xml = admitted_xml.document();
-    parse_document(
-        text,
-        xml,
-        Vocabulary::from_declaration(schema_version)?,
-        ctx,
-    )
+    parse_document(xml, Vocabulary::from_declaration(schema_version)?, ctx)
 }
 
-fn parse_document(
-    text: &str,
+/// Recover the persistence graph from an already admitted document.
+pub(crate) fn parse_document(
     xml: &roxmltree::Document<'_>,
     schema: Vocabulary,
     ctx: &DecodeContext<'_>,
 ) -> Result<Graph, CodecError> {
+    let text = xml.input_text();
     let root = xml.root_element();
     let mut losses = Vec::new();
     // Schema 2 is its own element vocabulary. Every other declared schema, and

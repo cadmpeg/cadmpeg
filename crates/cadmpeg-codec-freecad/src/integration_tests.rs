@@ -800,3 +800,44 @@ fn native_validation_propagates_design_census_collection_refusal() {
         |ctx| super::validate_native(ctx, result.ir()),
     );
 }
+
+#[test]
+fn document_readers_share_one_admitted_xml_tree() {
+    use std::fmt::Write as _;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut document = String::from("<Document SchemaVersion=\"4\" FileVersion=\"1\"");
+    for index in 0..20 {
+        write!(document, " padding{index}=\"\"").unwrap();
+    }
+    document.push_str("> <!--");
+    document.push_str(&"x".repeat(32_768));
+    document.push_str("--><Objects Count=\"0\"/><ObjectData Count=\"0\"/></Document>");
+    let bytes = archive(&document);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_work_units = 24_000_000;
+
+    // This budget admits one XML tree, but refuses a second full parse.
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &options.policy).unwrap();
+    let _first = ctx.parse_xml(&document, "test document XML").unwrap();
+    assert!(matches!(ctx.parse_xml(&document, "test duplicate XML"),
+        Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::WorkUnits));
+
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .unwrap();
+    assert_valid(&decoded);
+    let entry = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    assert_eq!(entry.len(), 1);
+    assert_eq!(entry[0].data(), document.as_bytes());
+}
