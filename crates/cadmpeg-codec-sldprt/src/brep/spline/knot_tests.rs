@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use super::super::expanded_knots;
+use super::expanded_knots;
 
 #[test]
 fn excessive_knot_multiplicity_does_not_visit_the_tail() {
@@ -82,7 +82,7 @@ fn curve_scanner_rejects_excessive_multiplicity_without_retaining_knots() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "scan Parasolid knot values", Some(2));
         let mut refusals = Vec::new();
-        assert!(super::super::scan_curve_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
+        assert!(super::scan_curve_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
         assert!(refusals.is_empty());
         assert_eq!(ctx.resource_refusal(), None);
         let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(2, "scan Parasolid knot values") else {
@@ -97,7 +97,7 @@ fn curve_scanner_rejects_excessive_multiplicity_without_retaining_knots() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut refusals = Vec::new();
-    let carriers = super::super::scan_curve_carriers(&ctx, &original, &mut refusals).unwrap();
+    let carriers = super::scan_curve_carriers(&ctx, &original, &mut refusals).unwrap();
     assert_eq!(carriers.len(), 1);
     let carrier = carriers.get(&170).unwrap();
     assert!(matches!(carrier.geometry.solved(), Some(SolvedCurveGeometry::Nurbs(curve))

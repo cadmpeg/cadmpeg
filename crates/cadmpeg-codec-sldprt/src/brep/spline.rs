@@ -1288,7 +1288,10 @@ pub(crate) fn scan_surface_carriers(
 mod tests;
 
 #[cfg(test)]
-mod patch_tests;
+mod scan_tests;
+
+#[cfg(test)]
+mod knot_tests;
 
 #[cfg(test)]
 mod candidate_tests;
