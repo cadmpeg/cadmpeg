@@ -7523,12 +7523,18 @@ where
                                 )?
                                 .enumerate()
                             {
-                                let Some(configuration) = endpoint_configuration_for_assignment(
-                                    ctx,
-                                    assignment_value,
-                                    &completed_pairs,
-                                )?
-                                else {
+                                let (configuration, _configuration_storage) = ctx
+                                    .with_scoped_storage(
+                                        "catia_endpoint_relation_deferred_configuration_storage",
+                                        || {
+                                            endpoint_configuration_for_assignment(
+                                                ctx,
+                                                assignment_value,
+                                                &completed_pairs,
+                                            )
+                                        },
+                                    )?;
+                                let Some(configuration) = configuration else {
                                     continue;
                                 };
                                 if endpoint_configuration_cycles_viable(
