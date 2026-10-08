@@ -144,7 +144,7 @@ fn decode_stream_parameters(
             ctx.reserve_set(&mut emitted_record_indices, 1, "f3d parameter record index")
         })?;
         emitted_record_indices.insert(parsed.record_index);
-        parsed_storage.commit()?;
+        let parsed = parsed_storage.commit_value(parsed)?;
         let parameter = locate_design_parameter(ctx, parsed, stream, at)?;
         ctx.push_vec(out, parameter, "f3d decoded parameter records")?;
     }

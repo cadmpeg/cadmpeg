@@ -1552,8 +1552,7 @@ fn collect_member_run(
     if malformed.is_some() {
         return Ok(None);
     }
-    storage.commit()?;
-    Ok(Some(members))
+    storage.commit_value(Some(members))
 }
 
 /// Parse the counted member-record run of the paired same-index container
@@ -2856,7 +2855,7 @@ fn decode_sketch_texts_from_stream(
             )
         })?;
         if let Some(text) = text {
-            text_storage.commit()?;
+            let text = text_storage.commit_value(text)?;
             ctx.push_vec(&mut out, text, "f3d sketch text records")?;
         }
     }
@@ -4214,9 +4213,10 @@ fn decode_sketch_curve_identities_from_stream(
                     )
                 })?;
             if parsed.is_some() {
-                geometry_storage.commit()?;
+                geometry_storage.commit_value(parsed)?
+            } else {
+                parsed
             }
-            parsed
         } else {
             None
         };
@@ -4495,7 +4495,7 @@ pub(crate) fn decode_sketch_surfaces(
             let Some(surface) = surface else {
                 continue;
             };
-            surface_storage.commit()?;
+            let surface = surface_storage.commit_value(surface)?;
 
             ctx.reserve_vec(&mut out, 1, "f3d sketch surface output")?;
             out.push(SketchSurface {

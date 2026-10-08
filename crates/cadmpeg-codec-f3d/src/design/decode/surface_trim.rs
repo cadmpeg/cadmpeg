@@ -206,8 +206,7 @@ fn exact_surface_trim_operation(
     let Ok(operation) = operation else {
         return Ok(None);
     };
-    entries_storage.commit()?;
-    Ok(Some(operation))
+    entries_storage.commit_value(Some(operation))
 }
 
 /// Whether `values` holds a value twice. The values are sorted in place and

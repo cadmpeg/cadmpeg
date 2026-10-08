@@ -678,8 +678,7 @@ pub(super) fn typed_primary_frames<'a>(
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
     let (frames, storage) =
         TypedFrameSource::new(bytes, meta).frames(ctx, type_guid, record_kind)?;
-    storage.commit()?;
-    Ok(frames)
+    storage.commit_value(frames)
 }
 
 /// The primary frames of one `BulkStream`, from which the frames of each

@@ -431,8 +431,7 @@ fn presentation_material(
     let Some((material, storage)) = candidate else {
         return Ok(None);
     };
-    storage.commit()?;
-    Ok(Some(material))
+    storage.commit_value(Some(material))
 }
 
 /// The counted UTF-16LE library identifiers both material envelope forms
@@ -580,8 +579,17 @@ impl PresentationEnvelope<'_> {
             };
         let visual_preset = match skip_zeros(bytes, after_visual_marker, end) {
             Some(at) if legacy => {
-                lp_utf16_bounded_charged(ctx, bytes, at, 1..=256, "f3d Design UTF-16 text")?
-                    .and_then(|(value, _)| value.starts_with("Prism-").then_some((at, value)))
+                let mut preset_storage =
+                    ctx.reserve_scoped(0, "f3d body presentation visual preset")?;
+                let parsed = preset_storage.with_storage(|| {
+                    lp_utf16_bounded_charged(ctx, bytes, at, 1..=256, "f3d Design UTF-16 text")
+                })?;
+                match parsed {
+                    Some((value, _)) if value.starts_with("Prism-") => {
+                        Some(preset_storage.commit_value((at, value))?)
+                    }
+                    _ => None,
+                }
             }
             _ => None,
         };
@@ -755,8 +763,7 @@ fn bare_presentation_material(
     let Some((material, storage)) = candidate else {
         return Ok(None);
     };
-    storage.commit()?;
-    Ok(Some(material))
+    storage.commit_value(Some(material))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
