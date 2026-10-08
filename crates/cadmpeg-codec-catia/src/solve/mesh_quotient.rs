@@ -6214,21 +6214,41 @@ fn changed_quotient_edges<'storage>(
     right: &MeshQuotient<'storage>,
 ) -> Result<HashSet<usize>, CodecError> {
     const OPERATION: &str = "catia_changed_quotient_edges";
-    let mut changed = HashSet::new();
-    for node in ctx.admit_iter(0..left.union.len(), OPERATION)? {
-        let left_root = left.union.root(ctx, node)?;
-        let right_root = right.union.root(ctx, node)?;
-        let left_members = left.members(left_root);
-        let right_members = right.members(right_root);
+    if left.union.len() != right.union.len() {
+        return Err(CodecError::malformed("quotient node counts differ"));
+    }
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let (roots, mut changed_roots) = storage.with_storage(|| {
+        let mut changed_roots = ctx.alloc_filled(left.union.len(), false, OPERATION)?;
+        let roots = ctx.collect_indexed_vec(left.union.len(), OPERATION, |node| {
+            let left_root = left.union.root(ctx, node)?;
+            let right_root = right.union.root(ctx, node)?;
+            if left_root != right_root {
+                changed_roots[left_root] = true;
+                changed_roots[right_root] = true;
+            }
+            Ok([left_root, right_root])
+        })?;
+        Ok::<_, CodecError>((roots, changed_roots))
+    })?;
+    // A changed member marks its two classes. An unchanged class needs one
+    // domain comparison, at its representative, independent of member order.
+    for (node, &[left_root, right_root]) in ctx.admit_iter(&roots, OPERATION)?.enumerate() {
+        if node != left_root || left_root != right_root || changed_roots[left_root] {
+            continue;
+        }
         let left_domain = &left.domains[left_root];
         let right_domain = &right.domains[right_root];
-        let same = left_root == right_root
-            && left_members.len() == right_members.len()
-            && ctx.equal(left_members, right_members, OPERATION)?
-            && left_domain.len() == right_domain.len()
-            && (Arc::ptr_eq(left_domain, right_domain)
-                || ctx.equal(&left_domain[..], &right_domain[..], OPERATION)?);
-        if !same {
+        if left_domain.len() != right_domain.len()
+            || !(Arc::ptr_eq(left_domain, right_domain)
+                || ctx.equal(&left_domain[..], &right_domain[..], OPERATION)?)
+        {
+            changed_roots[left_root] = true;
+        }
+    }
+    let mut changed = HashSet::new();
+    for (node, &[left_root, right_root]) in ctx.admit_iter(&roots, OPERATION)?.enumerate() {
+        if changed_roots[left_root] || changed_roots[right_root] {
             ctx.insert_hash_set(&mut changed, node / 2, OPERATION)?;
         }
     }
@@ -6801,8 +6821,9 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
         end: usize,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        ctx.admit_btree_entry(relation, &start, operation)?;
-        let ends = relation.entry(start).or_default();
+        let ends = ctx
+            .entry_btree_map(relation, start, operation)?
+            .or_default();
         ctx.insert_btree_set(ends, end, operation)
     }
 
@@ -8093,12 +8114,10 @@ fn build_endpoint_relation_constraints(
             for (choice, key) in
                 ctx.admit_iter(right_choices, "catia_endpoint_relation_index_keys")?
             {
-                ctx.admit_hash_map_entry(&mut index, &key, "catia_endpoint_relation_index_keys")?;
-                ctx.push_vec(
-                    index.entry(key).or_default(),
-                    choice.id,
-                    "catia_endpoint_relation_index_values",
-                )?;
+                let others = ctx
+                    .entry_hash_map(&mut index, key, "catia_endpoint_relation_index_keys")?
+                    .or_default();
+                ctx.push_vec(others, choice.id, "catia_endpoint_relation_index_values")?;
             }
             let mut supports = Vec::new();
             for (_, key) in ctx.admit_iter(&left_choices, "catia_endpoint_relation_support_rows")? {

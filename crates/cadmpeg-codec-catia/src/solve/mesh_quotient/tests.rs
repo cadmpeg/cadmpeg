@@ -93,3 +93,56 @@ mod face_equation_cache;
 mod orientation_limits;
 mod quotient_search;
 mod selection_limits;
+
+#[test]
+fn quotient_change_detection_ignores_member_insertion_order() {
+    catia_test_context!(ctx);
+    let mut left = MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
+    let mut right = left.clone();
+    for node in [1, 2] {
+        left.merge_charged(&ctx, 0, node)
+            .expect("merge budget")
+            .expect("shared domain");
+    }
+    for node in [2, 1] {
+        right
+            .merge_charged(&ctx, 0, node)
+            .expect("merge budget")
+            .expect("shared domain");
+    }
+    assert_ne!(left.members(0), right.members(0));
+    assert!(super::changed_quotient_edges(&ctx, &left, &right)
+        .expect("comparison budget")
+        .is_empty());
+    right.domains[0] = super::unscoped_point_domain([1]);
+    assert_eq!(
+        super::changed_quotient_edges(&ctx, &left, &right).expect("comparison budget"),
+        HashSet::from([0, 1])
+    );
+}
+
+#[test]
+fn quotient_change_detection_visits_a_shared_class_linearly() {
+    const NODE_COUNT: usize = 512;
+    // Two root walks, two index visits and flag initialization fit this ceiling.
+    const WORK_PER_NODE: u64 = 128;
+    let mut left = MeshQuotient::new(
+        (0..NODE_COUNT)
+            .map(|_| Arc::new(HashSet::from([0])))
+            .collect(),
+    );
+    crate::test_support::with_service_context(|ctx| {
+        for node in 1..NODE_COUNT {
+            left.merge_charged(ctx, 0, node)
+                .expect("merge budget")
+                .expect("shared domain");
+        }
+    });
+    let right = left.clone();
+    let changed = crate::test_support::with_work_limit(
+        WORK_PER_NODE * cadmpeg_core::decode::u64_from_index(NODE_COUNT),
+        |ctx| super::changed_quotient_edges(ctx, &left, &right),
+    )
+    .expect("linear comparison budget");
+    assert!(changed.is_empty());
+}

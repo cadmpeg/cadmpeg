@@ -446,19 +446,18 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                         return Ok(budget.exhausted());
                     };
                     let equations = common;
-                    let cached_equations = self
-                        .ctx
-                        .copy_slice(&equations, "catia_forced_cached_equation_copy")?;
                     let mut cache = self.face_equation_cache.borrow_mut();
-                    if cache.len() >= MAX_FACE_EQUATION_CACHE_ENTRIES {
-                        cache.clear();
+                    if cache.len() < MAX_FACE_EQUATION_CACHE_ENTRIES {
+                        let cached_equations = self
+                            .ctx
+                            .copy_slice(&equations, "catia_forced_cached_equation_copy")?;
+                        self.ctx.insert_hash_map(
+                            &mut cache,
+                            cache_key,
+                            cached_equations,
+                            "catia_forced_equation_cache",
+                        )?;
                     }
-                    self.ctx.insert_hash_map(
-                        &mut cache,
-                        cache_key,
-                        cached_equations,
-                        "catia_forced_equation_cache",
-                    )?;
                     equations
                 }
             };
