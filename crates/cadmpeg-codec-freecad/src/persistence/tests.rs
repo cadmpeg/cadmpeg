@@ -9,6 +9,8 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+mod exhaustion;
+
 #[test]
 fn persistence_invalid_xml_diagnostic_refuses_at_retained_limit() {
     let bytes = b"<Document";
