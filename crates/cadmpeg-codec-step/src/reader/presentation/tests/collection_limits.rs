@@ -534,7 +534,7 @@ fn presentation_style_domain_active_refuses_collection_limit() {
     style_graph_refuses(
         "step_presentation_style_domain_active",
         false,
-        |exchange, ctx| super::super::style_domain(4, exchange, ctx).map(|_| ()),
+        |exchange, ctx| super::super::StyleDomainIndex::new(ctx).and_then(|mut index| index.domain(4, exchange)).map(|_| ()),
     );
 }
 
@@ -543,7 +543,7 @@ fn presentation_style_domain_walk_refuses_depth_limit() {
     style_graph_refuses(
         "step_presentation_style_domain_walk",
         true,
-        |exchange, ctx| super::super::style_domain(4, exchange, ctx).map(|_| ()),
+        |exchange, ctx| super::super::StyleDomainIndex::new(ctx).and_then(|mut index| index.domain(4, exchange)).map(|_| ()),
     );
 }
 
@@ -569,7 +569,7 @@ fn presentation_style_domain_visits_first_child_before_large_set_suffix() {
     policy.limits.max_recursion_depth = 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits domain policy");
-    let refusal = match super::super::style_domain(1, &exchange, &ctx) {
+    let refusal = match super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)) {
         Err(CodecError::ResourceLimit(refusal)) => refusal,
         Err(error) => panic!("unexpected style domain refusal: {error:?}"),
         Ok(_) => panic!("style domain child must refuse on depth"),
@@ -1220,7 +1220,7 @@ fn style_domain_point_containment_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -1240,7 +1240,7 @@ fn style_domain_vertex_containment_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -1260,7 +1260,7 @@ fn style_domain_curve_containment_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -1280,7 +1280,7 @@ fn style_domain_edge_containment_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -1300,7 +1300,7 @@ fn style_domain_line_containment_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -1320,7 +1320,7 @@ fn style_domain_face_containment_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -1340,7 +1340,7 @@ fn style_domain_surface_containment_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -1360,7 +1360,7 @@ fn style_domain_surface_name_stops_at_face_containment() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -1368,11 +1368,8 @@ fn style_domain_surface_name_stops_at_face_containment() {
         },
     );
     assert!(matches!(
-        super::super::style_domain(
-            1,
-            &exchange,
-            &cadmpeg_test_support::service_decode_context()
-        )
+        super::super::StyleDomainIndex::new(&cadmpeg_test_support::service_decode_context())
+            .and_then(|mut index| index.domain(1, &exchange))
         .unwrap(),
         super::super::StyleDomain::Surface
     ));
@@ -1389,7 +1386,7 @@ fn style_domain_solid_containment_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -1409,7 +1406,7 @@ fn style_domain_shell_containment_preserves_refusal() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::style_domain(1, &exchange, &ctx).map(|_| ());
+            let result = super::super::StyleDomainIndex::new(&ctx).and_then(|mut index| index.domain(1, &exchange)).map(|_| ());
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }

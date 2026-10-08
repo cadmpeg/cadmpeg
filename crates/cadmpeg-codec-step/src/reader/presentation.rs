@@ -43,6 +43,7 @@ pub(super) fn decode<'ctx>(
     let slot_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP stage report buffers")?);
     let mut claim_storage = ctx.reserve_scoped(0, "STEP stage claim storage")?;
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
+    let mut style_domains = StyleDomainIndex::new(ctx)?;
     let mut typed = BTreeSet::new();
     let mut losses = Vec::new();
     let graph_limit = super::record_graph_limit(ctx);
@@ -453,7 +454,7 @@ pub(super) fn decode<'ctx>(
             })?;
             continue;
         }
-        let domain = style_domain(target_step, exchange, ctx)?;
+        let domain = style_domains.domain(target_step, exchange)?;
         let color_storage =
             std::cell::RefCell::new(ctx.reserve_scoped(0, "step color search storage")?);
         let mut style_storage = ctx.reserve_scoped(0, "STEP style selection scratch")?;
@@ -2818,21 +2819,54 @@ impl cadmpeg_core::decode::cost::DecodeCost for StyleDomain {
     }
 }
 
-fn style_domain(
-    id: u64,
-    exchange: &Exchange,
-    ctx: &DecodeContext<'_>,
-) -> Result<StyleDomain, CodecError> {
-    let (domain, _storage) = ctx.with_scoped_storage("STEP style domain cache scratch", || {
-        style_domain_at(
-            id,
-            exchange,
-            &mut BTreeSet::new(),
-            &mut BTreeMap::new(),
+struct StyleDomainIndex<'ctx, 'arena> {
+    complete: BTreeMap<u64, StyleDomain>,
+    ctx: &'ctx DecodeContext<'arena>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx, 'arena> StyleDomainIndex<'ctx, 'arena> {
+    fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
+        Ok(Self {
+            complete: BTreeMap::new(),
             ctx,
-        )
-    })?;
-    Ok(domain)
+            storage: ctx.reserve_scoped(0, "STEP style domain cache scratch")?,
+        })
+    }
+
+    fn domain(&mut self, id: u64, exchange: &Exchange) -> Result<StyleDomain, CodecError> {
+        let ctx = self.ctx;
+        let mut pending_storage = ctx.reserve_scoped(0, "STEP style domain query scratch")?;
+        let mut pending = BTreeMap::new();
+        let domain = pending_storage.with_storage(|| {
+            style_domain_at(
+                id,
+                exchange,
+                &mut BTreeSet::new(),
+                &mut pending,
+                &self.complete,
+                ctx,
+            )
+        })?;
+        // A completed first query can transfer its actual map and admission.
+        // Later queries publish only after every descendant has succeeded.
+        if self.complete.is_empty() {
+            self.storage.with_storage(|| pending_storage.commit())?;
+            self.complete = pending;
+        } else {
+            let pending_count = pending.len();
+            let mut pending = pending.into_iter();
+            for _ in 0..pending_count {
+                let (id, domain) = ctx
+                    .next_charged(&mut pending, "STEP style domain publication traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP domain completion source ended early"))?;
+                self.storage.with_storage(|| {
+                    ctx.insert_btree_map(&mut self.complete, id, domain, "step_style_domain_cache")
+                })?;
+            }
+        }
+        Ok(domain)
+    }
 }
 
 fn style_domain_at(
@@ -2840,6 +2874,7 @@ fn style_domain_at(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<u64, StyleDomain>,
+    complete: &BTreeMap<u64, StyleDomain>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
     if ctx.contains_btree_set(active, &id, "STEP presentation active contains")? {
@@ -2848,7 +2883,10 @@ fn style_domain_at(
     if let Some(domain) = ctx.get_btree_map(cache, &id, "STEP style domain cache lookup")? {
         return Ok(*domain);
     }
-    let domain = style_domain_uncached(id, exchange, active, cache, ctx)?;
+    if let Some(domain) = ctx.get_btree_map(complete, &id, "STEP style domain stage lookup")? {
+        return Ok(*domain);
+    }
+    let domain = style_domain_uncached(id, exchange, active, cache, complete, ctx)?;
     // Any is absorbing in a geometric set. A reachable cycle thus has Any
     // for every entry point, independent of the active path.
     ctx.insert_btree_map(cache, id, domain, "step_style_domain_cache")?;
@@ -2860,6 +2898,7 @@ fn style_domain_uncached(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     cache: &mut BTreeMap<u64, StyleDomain>,
+    complete: &BTreeMap<u64, StyleDomain>,
     ctx: &DecodeContext<'_>,
 ) -> Result<StyleDomain, CodecError> {
     let _nested = ctx.enter_nested("step_presentation_style_domain_walk")?;
@@ -2899,7 +2938,7 @@ fn style_domain_uncached(
             let Some(member) = ValueExt::reference(value) else {
                 continue;
             };
-            let domain = style_domain_at(member, exchange, active, cache, ctx)?;
+            let domain = style_domain_at(member, exchange, active, cache, complete, ctx)?;
             if first.is_some_and(|first| first != domain) {
                 same = false;
             }
