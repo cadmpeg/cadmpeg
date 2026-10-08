@@ -54,44 +54,51 @@ pub(crate) fn with_test_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T)
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let scan = container::scan_bytes(ctx, root.window())?;
-    let classification = crate::dialect::classify(ctx, &scan)?;
-    // Admit section identities before model construction.
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(scan.framing.sections.len()),
-        "admit Creo sections",
-    )?;
-    let BuiltIr {
-        mut ir,
-        annotations,
-        unknowns,
-        coverage,
-        brep_diagnostics,
-        transfer_losses,
-    } = if ctx.container_only() {
-        build_container_ir(ctx, &scan, &classification)?
-    } else {
-        build_ir(ctx, &scan, &classification)?
-    };
-    let mut body = build_report(
-        ctx,
-        &scan,
-        &classification,
-        &ir,
-        coverage,
-        &brep_diagnostics,
-        ctx.container_only(),
-    )?;
-    ctx.extend_vec(
-        &mut body.losses,
-        transfer_losses,
-        "creo transfer report losses",
-    )?;
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
-    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
-    Ok(Decoded {
-        ir,
-        body,
-        source_fidelity,
-    })
+    let (scan, scan_storage) = ctx.with_scoped_storage("creo container scan storage", || {
+        container::scan_bytes(ctx, root.window())
+    })?;
+    let decoded = (|| -> Result<Decoded, CodecError> {
+        let classification = crate::dialect::classify(ctx, &scan)?;
+        // Admit section identities before model construction.
+        ctx.charge_entities(
+            cadmpeg_core::decode::u64_from_index(scan.framing.sections.len()),
+            "admit Creo sections",
+        )?;
+        let BuiltIr {
+            mut ir,
+            annotations,
+            unknowns,
+            coverage,
+            brep_diagnostics,
+            transfer_losses,
+        } = if ctx.container_only() {
+            build_container_ir(ctx, &scan, &classification)?
+        } else {
+            build_ir(ctx, &scan, &classification)?
+        };
+        let mut body = build_report(
+            ctx,
+            &scan,
+            &classification,
+            &ir,
+            coverage,
+            &brep_diagnostics,
+            ctx.container_only(),
+        )?;
+        ctx.extend_vec(
+            &mut body.losses,
+            transfer_losses,
+            "creo transfer report losses",
+        )?;
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
+        source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
+        Ok(Decoded {
+            ir,
+            body,
+            source_fidelity,
+        })
+    })();
+    drop(scan);
+    drop(scan_storage);
+    decoded
 }

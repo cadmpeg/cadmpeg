@@ -45,7 +45,10 @@ pub fn scalar(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let cache = ScalarCache::from_section_checked(ctx, data)?;
     let mut offsets = 0usize..data.len();
-    while let Some(offset) = ctx.next_charged(&mut offsets, "creo fuzz scalar traversal")? {
+    while !offsets.is_empty() {
+        let Some(offset) = ctx.next_charged(&mut offsets, "creo fuzz scalar traversal")? else {
+            break;
+        };
         match decode_in_lane(data, offset, &cache) {
             Some((_, next)) if next > offset => offsets.start = next,
             _ => break,
@@ -61,15 +64,13 @@ pub fn compact_int(data: &[u8]) {
 }
 
 /// Exercise Creo PSB token stream parsing.
-pub fn psb_tokens(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    let _probe =
-        crate::psb::tokens(&ctx, data).try_fold(0usize, |count, token| token.map(|_| count + 1));
+pub fn psb_tokens(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let _probe = crate::psb::tokens(ctx, data)
+        .try_fold(0usize, |count, token| token.map(|_| count + 1))?;
+    Ok(())
 }
 
 /// Exercise Creo short-form float decoding.
@@ -87,7 +88,11 @@ pub fn container_scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let _probe = crate::container::scan_bytes(ctx, data)?;
+    let (scan, scan_storage) = ctx.with_scoped_storage("creo container scan storage", || {
+        crate::container::scan_bytes(ctx, data)
+    })?;
+    drop(scan);
+    drop(scan_storage);
     Ok(())
 }
 
@@ -104,7 +109,8 @@ mod tests {
         crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &[]))
             .expect("scalar fuzz wrapper");
         super::compact_int(&[]);
-        super::psb_tokens(&[]);
+        crate::decode::with_test_decode_ctx(|ctx| super::psb_tokens(ctx, &[]))
+            .expect("PSB token fuzz wrapper");
         super::short_form_float(&[]);
         let _probe = crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &[]));
     }
@@ -121,7 +127,8 @@ mod tests {
         crate::decode::with_test_decode_ctx(|ctx| super::scalar(ctx, &data))
             .expect("scalar fuzz wrapper");
         super::compact_int(&data);
-        super::psb_tokens(&data);
+        crate::decode::with_test_decode_ctx(|ctx| super::psb_tokens(ctx, &data))
+            .expect("PSB token fuzz wrapper");
         super::short_form_float(&data);
         crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &data))
             .expect("container fuzz wrapper");
@@ -171,5 +178,41 @@ mod tests {
         crate::test_support::assert_work_boundaries(&["creo fuzz scalar traversal"], |ctx| {
             super::scalar(ctx, &data)
         });
+    }
+
+    #[test]
+    fn scalar_probe_empty_range_uses_zero_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        super::scalar(&ctx, &[]).expect("empty scalar probe does no work");
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+
+    #[test]
+    fn psb_token_probe_preserves_caller_resource_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "caller refusal")
+            .expect_err("work limit is zero")
+        else {
+            panic!("work refusal expected");
+        };
+        assert!(matches!(
+            super::psb_tokens(&ctx, &[]),
+            Err(CodecError::ResourceLimit(actual)) if actual == original
+        ));
+        assert_eq!(ctx.resource_refusal(), Some(original));
     }
 }
