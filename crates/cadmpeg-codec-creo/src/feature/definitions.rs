@@ -2899,9 +2899,8 @@ fn variable_table(
     // more rows than the unread bytes in the table window.
     let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
     let max_rows = bounded_len(u64::from(declared_count), 1, window).unwrap_or(window);
-    let mut row_steps = std::iter::repeat(());
     while cursor < end && rows.len() < max_rows {
-        ctx.next_charged(&mut row_steps, "creo variable row traversal")?;
+        ctx.next_charged(&mut (cursor..end), "creo variable row traversal")?;
         if payload[cursor] == 0xe2 {
             cursor += 1;
             continue;
@@ -3004,9 +3003,8 @@ fn positional_variable_table(
     let row_limit = index_from_u32(declared_count);
     let mut rows = Vec::new();
     let prototype_separator_len = 2 + reference_bytes.len() + 1;
-    let mut row_steps = std::iter::repeat(());
     'rows: while cursor < end && rows.len() < row_limit {
-        ctx.next_charged(&mut row_steps, "creo positional variable row traversal")?;
+        ctx.next_charged(&mut (cursor..end), "creo positional variable row traversal")?;
         let row_offset = cursor;
         let (variable_type, next) = psb::compact_int(payload, cursor);
         cursor = next;
@@ -3193,21 +3191,20 @@ fn equation_argument_slots(
     }
 }
 
-fn equation_arguments(
-    ctx: &DecodeContext<'_>,
+fn equation_arguments<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     payload: &[u8],
     offset: &mut usize,
     end: usize,
     explicit_count: Option<usize>,
-) -> Result<Option<Vec<Option<u32>>>, CodecError> {
+) -> Result<Option<(Vec<Option<u32>>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "creo equation argument candidates")?;
     let mut arguments = Vec::new();
-    let mut steps = std::iter::repeat(());
     while match explicit_count {
         Some(count) => arguments.len() < count,
         None => *offset < end && payload.get(*offset) != Some(&0xf6),
     } {
-        ctx.next_charged(&mut steps, "creo equation argument traversal")?;
+        ctx.next_charged(&mut (*offset..=end), "creo equation argument traversal")?;
         let before = *offset;
         let Some((slots, slot_count)) = equation_argument_slots(payload, offset) else {
             return Ok(None);
@@ -3222,8 +3219,7 @@ fn equation_arguments(
         arguments.extend_from_slice(&slots[..slot_count]);
     }
     if explicit_count.is_some_and(|count| arguments.len() != count) { return Ok(None); }
-    storage.commit()?;
-    Ok(Some(arguments))
+    Ok(Some((arguments, storage)))
 }
 
 /// Decode the structurally framed `eqtn_arr` solver table in one bounded
@@ -3306,14 +3302,12 @@ pub(crate) fn equation_table(
         return Ok(None);
     }
     let prototype_end = after_prototype_reference + 1;
-    let prototype_body = ctx.copy_retained(
-        &payload[prototype_start..prototype_end],
-        "creo equation prototype body",
-    )?;
     cursor = prototype_end;
 
-    let mut rows = Vec::new();
+    let mut prototypes = Vec::new();
+    let mut storage = ctx.reserve_scoped(0, "creo equation prototypes")?;
     while cursor < rows_end {
+        ctx.next_charged(&mut (cursor..rows_end), "creo equation row traversal")?;
         let row_start = cursor;
         let Some(equation_id) = next_solver_int(payload, &mut cursor) else {
             break;
@@ -3340,7 +3334,7 @@ pub(crate) fn equation_table(
             }
             None => None,
         };
-        let Some(arguments) = equation_arguments(
+        let Some((arguments, argument_storage)) = equation_arguments(
             ctx,
             payload,
             &mut cursor,
@@ -3366,28 +3360,29 @@ pub(crate) fn equation_table(
         } else {
             break;
         };
-        let arguments_body = ctx.copy_retained(
-            &payload[arguments_start..arguments_body_end],
-            "creo equation argument body",
-        )?;
-        let auxiliary_body = ctx.copy_retained(
-            &payload[auxiliary_start..=auxiliary_start],
-            "creo equation auxiliary body",
-        )?;
-        let body = ctx.copy_retained(&payload[row_start..row_end], "creo equation row body")?;
-        ctx.reserve_vec(&mut rows, 1, "creo equation rows")?;
-        rows.push(FeatureEquation {
-            equation_id,
-            function_id,
-            explicit_argument_count,
-            arguments,
-            arguments_body,
-            auxiliary_body,
-            body,
-            offset: row_start,
-        });
+        storage.with_storage(|| ctx.push_vec(&mut prototypes, EquationPrototype {
+            equation_id, function_id, explicit_argument_count, arguments, argument_storage,
+            arguments_start, arguments_end: arguments_body_end, auxiliary_start,
+            row_start, row_end,
+        }, "creo equation prototypes"))?;
     }
 
+    let prototype_body = ctx.copy_retained(&payload[prototype_start..prototype_end], "creo equation prototype body")?;
+    let mut rows = Vec::new();
+    ctx.reserve_vec(&mut rows, prototypes.len(), "creo equation rows")?;
+    for prototype in ctx.admit_iter(prototypes, "creo equation materialization")? {
+        prototype.argument_storage.commit()?;
+        rows.push(FeatureEquation {
+            equation_id: prototype.equation_id,
+            function_id: prototype.function_id,
+            explicit_argument_count: prototype.explicit_argument_count,
+            arguments: prototype.arguments,
+            arguments_body: ctx.copy_retained(&payload[prototype.arguments_start..prototype.arguments_end], "creo equation argument body")?,
+            auxiliary_body: ctx.copy_retained(&payload[prototype.auxiliary_start..=prototype.auxiliary_start], "creo equation auxiliary body")?,
+            body: ctx.copy_retained(&payload[prototype.row_start..prototype.row_end], "creo equation row body")?,
+            offset: prototype.row_start,
+        });
+    }
     Ok(Some(FeatureEquationTable {
         declared_count,
         entity_ref,
@@ -3397,31 +3392,61 @@ pub(crate) fn equation_table(
     }))
 }
 
+
+struct EquationPrototype<'ctx> {
+    equation_id: u32,
+    function_id: u32,
+    explicit_argument_count: Option<u32>,
+    arguments: Vec<Option<u32>>,
+    argument_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    arguments_start: usize,
+    arguments_end: usize,
+    auxiliary_start: usize,
+    row_start: usize,
+    row_end: usize,
+}
+
 /// Decode instantiated placement-instruction rows from one bounded feature
 /// definition.
-pub(crate) fn placement_instructions<'a>(
-    ctx: &DecodeContext<'_>,
-    definition: &'a FeatureDefinition,
-) -> Result<impl Iterator<Item = FeaturePlacementInstruction> + use<'a>, CodecError> {
+pub(crate) fn placement_instructions<'a>(ctx: &DecodeContext<'_>, definition: &'a FeatureDefinition) -> Result<PlacementInstructions<'a>, CodecError> {
     placement_instruction_rows(ctx, &definition.body, definition.offset)
 }
 
-fn placement_instruction_rows<'a>(
-    ctx: &DecodeContext<'_>,
+fn placement_instruction_rows<'a>(ctx: &DecodeContext<'_>, payload: &'a [u8], definition_offset: usize) -> Result<PlacementInstructions<'a>, CodecError> {
+    let table_class = named_array_class(ctx, payload, b"place_instruction_ptrs\0", 0, payload.len())?;
+    let end = if table_class.is_some() { payload.len() } else { 0 };
+    Ok(PlacementInstructions { payload, definition_offset, table_class, markers: 0..end })
+}
+
+/// A position-preserving reader for instantiated placement rows.
+pub(crate) struct PlacementInstructions<'a> {
     payload: &'a [u8],
     definition_offset: usize,
-) -> Result<impl Iterator<Item = FeaturePlacementInstruction> + use<'a>, CodecError> {
-    let table_class =
-        named_array_class(ctx, payload, b"place_instruction_ptrs\0", 0, payload.len())?;
-    // Without the table class no marker can match, so nothing is visited.
-    let marker_range = if table_class.is_some() {
-        0..payload.len()
-    } else {
-        0..0
-    };
-    let markers = ctx.admit_iter(marker_range, "creo placement instruction byte traversal")?;
-    Ok(markers.filter_map(move |marker| {
-        let table_class = table_class?;
+    table_class: Option<u32>,
+    markers: std::ops::Range<usize>,
+}
+
+impl PlacementInstructions<'_> {
+    pub(crate) fn next(&mut self, ctx: &DecodeContext<'_>) -> Result<Option<FeaturePlacementInstruction>, CodecError> {
+        let Some(table_class) = self.table_class else { return Ok(None); };
+        ctx.find_map(&mut self.markers, |marker| Ok(placement_instruction_at(self.payload, self.definition_offset, table_class, marker)), "creo placement instruction byte traversal")
+    }
+
+    pub(crate) fn count(mut self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
+        let mut count = 0;
+        while self.next(ctx)?.is_some() { count += 1; }
+        Ok(count)
+    }
+
+    #[cfg(test)]
+    fn collect(mut self, ctx: &DecodeContext<'_>) -> Result<Vec<FeaturePlacementInstruction>, CodecError> {
+        let mut rows = Vec::new();
+        while let Some(row) = self.next(ctx)? { ctx.push_vec(&mut rows, row, "creo placement instruction test rows")?; }
+        Ok(rows)
+    }
+}
+
+fn placement_instruction_at(payload: &[u8], definition_offset: usize, table_class: u32, marker: usize) -> Option<FeaturePlacementInstruction> {
         if payload.get(marker..marker + 2) != Some(&[0xf1, psb::token::ENTITY_REF]) {
             return None;
         }
@@ -3463,7 +3488,6 @@ fn placement_instruction_rows<'a>(
             member2,
             offset: definition_offset + marker,
         })
-    }))
 }
 
 fn segment_table(
@@ -3487,6 +3511,7 @@ fn segment_table(
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1..=0xf3))
     {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo segment table cursor traversal")?;
         cursor += 1;
     }
     segment_table_body(ctx, payload, table, cursor, end, PrototypeRow::Present)
@@ -3512,7 +3537,7 @@ fn positional_segment_table(
     else {
         return Ok(None);
     };
-    let Some(nul) = payload[name_end..end].iter().position(|&byte| byte == 0) else {
+    let Some(nul) = ctx.position_by(&payload[name_end..end], |byte| Ok(*byte == 0), "creo positional segment name terminator")? else {
         return Ok(None);
     };
     let cursor = nul + name_end + 1;
@@ -3526,6 +3551,80 @@ enum PrototypeRow {
     Elided,
     /// Every declared row is present in the body.
     Present,
+}
+
+fn named_segment_values(ctx: &DecodeContext<'_>, payload: &[u8], cursor: usize, close: usize, label: &[u8], count: usize) -> Result<Option<(usize, [Option<u32>; 7])>, CodecError> {
+        let Some(offset) = ctx.find_bytes_in(
+            payload,
+            label,
+            cursor,
+            close,
+            "find Creo feature definition field",
+        )?
+        else {
+            return Ok(None);
+        };
+
+            let mut p = offset + label.len();
+            if payload.get(p) == Some(&psb::token::ARRAY_OPEN) {
+                let (declared, next) = psb::compact_int(payload, p + 1);
+                if usize::try_from(declared).ok() != Some(count) { return Ok(None); }
+                p = next;
+            }
+            if label == b"type\0" && payload.get(p..p + 2) == Some(&[0xc0, 0x80]) {
+                p += 2;
+            }
+            let Some(values) = segment_slots(payload, &mut p, count) else { return Ok(None); };
+            Ok(Some((offset, values)))
+}
+
+fn named_segment_prototype(ctx: &DecodeContext<'_>, payload: &[u8], cursor: usize, close: usize) -> Result<Option<FeatureOpaqueSegment>, CodecError> {
+        let Some((offset, kind)) = named_segment_values(ctx, payload, cursor, close, b"type\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, directions)) = named_segment_values(ctx, payload, cursor, close, b"dir\0", 3)? else {
+            return Ok(None);
+        };
+        let Some((_, point_ids)) = named_segment_values(ctx, payload, cursor, close, b"pointid\0", 2)? else {
+            return Ok(None);
+        };
+        let Some((_, center_id)) = named_segment_values(ctx, payload, cursor, close, b"cntrid\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, arc_orientation)) = named_segment_values(ctx, payload, cursor, close, b"arcorient\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, vertical_horizontal)) = named_segment_values(ctx, payload, cursor, close, b"verhor\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, radius_ref)) = named_segment_values(ctx, payload, cursor, close, b"radius\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, radius2_ref)) = named_segment_values(ctx, payload, cursor, close, b"radius2\0", 1)? else {
+            return Ok(None);
+        };
+        let Some((_, external_id)) = named_segment_values(ctx, payload, cursor, close, b"ext_id\0", 1)? else {
+            return Ok(None);
+        };
+        let Some(kind) = kind[0] else {
+            return Ok(None);
+        };
+        let Some(external_id) = external_id[0] else {
+            return Ok(None);
+        };
+        Ok(Some(FeatureOpaqueSegment {
+            kind,
+            directions: [directions[0], directions[1], directions[2]],
+            point_ids: [point_ids[0], point_ids[1]],
+            center_id: center_id[0],
+            arc_orientation: arc_orientation[0],
+            vertical_horizontal: vertical_horizontal[0],
+            radius_ref: radius_ref[0],
+            radius2_ref: radius2_ref[0],
+            external_id,
+            body: Vec::new(),
+            offset,
+        }))
 }
 
 fn segment_table_body(
@@ -3549,88 +3648,12 @@ fn segment_table_body(
     } else {
         None
     };
-    let Some((close, after_close_ref)) = (cursor..end).find_map(|offset| {
-        (payload.get(offset..offset + 2) == Some(&[0xf2, psb::token::ENTITY_REF])).then_some(())?;
-        let (class, after_reference) = psb::reference_id(payload, offset + 2).ok()?;
-        (entity_ref.is_none_or(|expected| class == expected)
-            && payload.get(after_reference) == Some(&0xe2))
-        .then_some((offset, after_reference))
-    }) else {
-        return Ok(None);
-    };
-    let named_values = |label: &[u8], count: usize| -> Result<Option<_>, CodecError> {
-        let Some(offset) = ctx.find_bytes_in(
-            payload,
-            label,
-            cursor,
-            close,
-            "find Creo feature definition field",
-        )?
-        else {
-            return Ok(None);
-        };
-        Ok((|| {
-            let mut p = offset + label.len();
-            if payload.get(p) == Some(&psb::token::ARRAY_OPEN) {
-                let (declared, next) = psb::compact_int(payload, p + 1);
-                (usize::try_from(declared).ok()? == count).then_some(())?;
-                p = next;
-            }
-            if label == b"type\0" && payload.get(p..p + 2) == Some(&[0xc0, 0x80]) {
-                p += 2;
-            }
-            let values = segment_slots(payload, &mut p, count)?;
-            Some((offset, values))
-        })())
-    };
-    let named_row = (|| -> Result<Option<_>, CodecError> {
-        let Some((offset, kind)) = named_values(b"type\0", 1)? else {
-            return Ok(None);
-        };
-        let Some((_, directions)) = named_values(b"dir\0", 3)? else {
-            return Ok(None);
-        };
-        let Some((_, point_ids)) = named_values(b"pointid\0", 2)? else {
-            return Ok(None);
-        };
-        let Some((_, center_id)) = named_values(b"cntrid\0", 1)? else {
-            return Ok(None);
-        };
-        let Some((_, arc_orientation)) = named_values(b"arcorient\0", 1)? else {
-            return Ok(None);
-        };
-        let Some((_, vertical_horizontal)) = named_values(b"verhor\0", 1)? else {
-            return Ok(None);
-        };
-        let Some((_, radius_ref)) = named_values(b"radius\0", 1)? else {
-            return Ok(None);
-        };
-        let Some((_, radius2_ref)) = named_values(b"radius2\0", 1)? else {
-            return Ok(None);
-        };
-        let Some((_, external_id)) = named_values(b"ext_id\0", 1)? else {
-            return Ok(None);
-        };
-        let Some(kind) = kind[0] else {
-            return Ok(None);
-        };
-        let Some(external_id) = external_id[0] else {
-            return Ok(None);
-        };
-        Ok(Some(FeatureOpaqueSegment {
-            kind,
-            directions: [directions[0], directions[1], directions[2]],
-            point_ids: [point_ids[0], point_ids[1]],
-            center_id: center_id[0],
-            arc_orientation: arc_orientation[0],
-            vertical_horizontal: vertical_horizontal[0],
-            radius_ref: radius_ref[0],
-            radius2_ref: radius2_ref[0],
-            external_id,
-            body: Vec::new(),
-            offset,
-        }))
-    })()?;
+    let Some((close, after_close_ref)) = ctx.find_map(cursor..end, |offset| {
+        if payload.get(offset..offset + 2) != Some(&[0xf2, psb::token::ENTITY_REF]) { return Ok(None); }
+        let Ok((class, after_reference)) = psb::reference_id(payload, offset + 2) else { return Ok(None); };
+        Ok((entity_ref.is_none_or(|expected| class == expected) && payload.get(after_reference) == Some(&0xe2)).then_some((offset, after_reference)))
+    }, "creo segment prototype close search")? else { return Ok(None); };
+    let named_row = named_segment_prototype(ctx, payload, cursor, close)?;
     cursor = after_close_ref + 1;
     let mut region_end = end;
     for label in [
@@ -3675,6 +3698,7 @@ fn segment_table_body(
         return Ok(None);
     };
     while cursor < region_end && rows.len() < row_limit {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo segment table body cursor traversal")?;
         let row_start = cursor;
         let kind_offset = if matches!(
             payload.get(cursor..cursor + 2),
@@ -5276,27 +5300,14 @@ fn order_table(
     else {
         return Ok(None);
     };
-    let prototype = (|| -> Result<Option<()>, CodecError> {
-        let mut field = cursor;
-        for label in [b"ext_id\0".as_slice(), b"int_id\0", b"bitmask\0"] {
-            let Some(offset) = ctx.find_bytes_in(
-                payload,
-                label,
-                field,
-                close,
-                "find Creo feature definition field",
-            )?
-            else {
-                return Ok(None);
-            };
-            let (_, next) = segment_int(payload, offset + label.len());
-            if next <= offset + label.len() || next > close {
-                return Ok(None);
-            }
-            field = next;
-        }
-        Ok(Some(()))
-    })()?;
+    let mut prototype = true;
+    let mut field = cursor;
+    for label in [b"ext_id\0".as_slice(), b"int_id\0", b"bitmask\0"] {
+        let Some(offset) = ctx.find_bytes_in(payload, label, field, close, "find Creo feature definition field")? else { prototype = false; break; };
+        let (_, next) = segment_int(payload, offset + label.len());
+        if next <= offset + label.len() || next > close { prototype = false; break; }
+        field = next;
+    }
     let Ok((_, next)) = psb::reference_id(payload, close + 2) else {
         return Ok(None);
     };
@@ -5308,7 +5319,7 @@ fn order_table(
     // A decoded prototype row is one of the declared rows. A declared count of
     // zero with the prototype row present states a body-row count the table
     // cannot hold, and refuses the table.
-    let declared_body_rows = if prototype.is_some() {
+    let declared_body_rows = if prototype {
         let Some(count) = declared_count.checked_sub(1) else {
             return Ok(None);
         };
@@ -5320,6 +5331,7 @@ fn order_table(
         return Ok(None);
     };
     while cursor < end && rows.len() < row_limit {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo order table cursor traversal")?;
         if payload[cursor] == 0xe2 {
             cursor += 1;
             continue;
@@ -5362,7 +5374,7 @@ fn order_table(
     }
     Ok(Some(FeatureOrderTable {
         declared_count,
-        has_prototype: prototype.is_some(),
+        has_prototype: prototype,
         entity_ref,
         rows,
         offset: table,
@@ -5376,17 +5388,7 @@ fn positional_order_table(
     end: usize,
     table_class: u32,
 ) -> Result<Option<FeatureOrderTable>, CodecError> {
-    let Some((table, declared_count, cursor)) = (start..end).find_map(|table| {
-        (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-        let (declared_count, after_count) = psb::compact_int(payload, table + 1);
-        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let (class, after_reference) = psb::reference_id(payload, after_count + 1).ok()?;
-        (class == table_class
-            && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
-        .then_some((table, declared_count, after_reference + 2))
-    }) else {
-        return Ok(None);
-    };
+    let Some((table, declared_count, cursor, _)) = first_positional_array(ctx, payload, start, end, table_class)? else { return Ok(None); };
     let prototype = (|| {
         (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
         let (_, mut prototype) = psb::reference_id(payload, cursor + 1).ok()?;
@@ -5421,6 +5423,7 @@ fn positional_order_table(
     let mut rows = super::order_rows::OrderRows::default();
     let mut cursor = prototype.unwrap_or(end);
     while cursor < end && rows.len() < row_limit {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo positional order table cursor traversal")?;
         let row_offset = cursor;
         let (external_id, next) = segment_int(payload, cursor);
         let (internal_id, next) = segment_int(payload, next);
@@ -5586,8 +5589,9 @@ fn section_3d(
         if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
             let (count, next) = psb::compact_int(payload, cursor + 1);
             cursor = next;
-            for _ in 0..count {
-                if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+            let mut counted_items = 0..count;
+
+                while let Some(_) = ctx.next_charged(&mut counted_items, "creo section 3d traversal")? {if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
                     break;
                 }
                 let Ok((entity_id, next)) = psb::reference_id(payload, cursor + 1) else {
@@ -5645,13 +5649,15 @@ fn section_3d(
             .get(cursor)
             .is_some_and(|byte| matches!(byte, 0xf1..=0xf3))
         {
+            ctx.next_charged(&mut (cursor..=payload.len()), "creo section 3d cursor traversal")?;
             cursor += 1;
         }
         if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
             let (count, next) = psb::compact_int(payload, cursor + 1);
             cursor = next;
-            for _ in 0..count {
-                let (Some(value), next) = segment_int(payload, cursor) else {
+            let mut counted_items = 0..count;
+
+                while let Some(_) = ctx.next_charged(&mut counted_items, "creo section 3d traversal")? {let (Some(value), next) = segment_int(payload, cursor) else {
                     break;
                 };
                 ctx.reserve_vec(&mut dimension_ids, 1, "creo section dimension IDs")?;
@@ -5677,22 +5683,10 @@ fn positional_section_3d(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureSection3d>, CodecError> {
-    let Some((section, name_end)) = payload[start..end]
-        .windows(4)
-        .enumerate()
-        .filter(|(_, window)| *window == b"\x07S2D")
-        .find_map(|(relative, _)| {
-            let section = start + relative;
-            let name_end = payload[section + 1..end]
-                .iter()
-                .position(|&byte| byte == 0)?
-                + section
-                + 1;
-            Some((section, name_end))
-        })
-    else {
-        return Ok(None);
-    };
+    let Some((section, name_end)) = ctx.find_map(start..end.saturating_sub(3), |section| {
+        if payload.get(section..section + 4) != Some(b"\x07S2D") { return Ok(None); }
+        Ok(ctx.position_by(&payload[section + 1..end], |byte| Ok(*byte == 0), "creo positional section name terminator")?.map(|relative| (section, section + relative + 1)))
+    }, "creo positional section search")? else { return Ok(None); };
     let mut result = FeatureSection3d {
         sketch_plane_entity_id: None,
         sketch_plane_flip: None,
@@ -5757,8 +5751,9 @@ fn positional_section_3d(
 
     let row_count = index_from_u32(reference_count);
     let mut reference_plane_rows = Vec::new();
-    for row in 0..row_count {
-        let (Some(plane_id), next) = segment_int(payload, cursor) else {
+    let mut counted_items = 0..row_count;
+
+        while let Some(row) = ctx.next_charged(&mut counted_items, "creo positional section 3d traversal")? {let (Some(plane_id), next) = segment_int(payload, cursor) else {
             break;
         };
         cursor = next;
@@ -5802,7 +5797,7 @@ fn positional_section_3d(
             reference_flip,
         });
         if row + 1 < row_count {
-            let Some(separator_at) = find_class_close(payload, cursor, end, 0xf2, table_reference)
+            let Some(separator_at) = find_class_close(ctx, payload, cursor, end, 0xf2, table_reference)?
             else {
                 break;
             };
@@ -5866,23 +5861,12 @@ fn named_dimension_reference(
         return Ok(None);
     };
     cursor = point_label + b"point\0".len();
-    Ok((|| {
-        (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-        let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
-        (declared_count == 2).then_some(())?;
-        cursor = after_count;
-        let point = segment_slots(payload, &mut cursor, 2)?;
-        let [first, second] = [point[0], point[1]];
-        Some((
-            FeatureDimensionReference {
-                item_id,
-                sense,
-                point: [first, second],
-                offset: item_label,
-            },
-            cursor,
-        ))
-    })())
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) { return Ok(None); }
+    let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
+    if declared_count != 2 { return Ok(None); }
+    cursor = after_count;
+    let Some(point) = segment_slots(payload, &mut cursor, 2) else { return Ok(None); };
+    Ok(Some((FeatureDimensionReference { item_id, sense, point: [point[0], point[1]], offset: item_label }, cursor)))
 }
 
 fn dimension_reference_table(
@@ -5906,6 +5890,7 @@ fn dimension_reference_table(
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1..=0xf3))
     {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo dimension reference table cursor traversal")?;
         cursor += 1;
     }
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
@@ -5982,6 +5967,7 @@ fn dimension_reference_table(
 
     let row_limit = index_from_u32(declared_count);
     while rows.len() < row_limit && cursor < end {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo dimension reference table cursor traversal")?;
         let row_offset = cursor;
         let Ok(item_id) = next_nullable_segment_int(payload, &mut cursor) else {
             break;
@@ -6052,8 +6038,6 @@ fn labeled_dimension(
     let Some(value_bytes) = payload.get(value_start..after_value) else {
         return Ok(None);
     };
-    let value_body = ctx.copy_retained(value_bytes, "creo dimension value body")?;
-    let value = DimensionValue::decoded(ctx, value.value(), &value_body)?;
     let Some(direction_label) = ctx.find_bytes_in(
         payload,
         b"direct\0",
@@ -6083,7 +6067,6 @@ fn labeled_dimension(
     let Some(auxiliary_bytes) = payload.get(auxiliary_start..after_auxiliary) else {
         return Ok(None);
     };
-    let auxiliary_body = ctx.copy_retained(auxiliary_bytes, "creo dimension auxiliary body")?;
     let Some(external_label) = ctx.find_bytes_in(
         payload,
         b"ext_id\0",
@@ -6099,6 +6082,9 @@ fn labeled_dimension(
         return Ok(None);
     };
     let references = dimension_reference_table(ctx, payload, after_external, end)?;
+    let value_body = ctx.copy_retained(value_bytes, "creo dimension value body")?;
+    let value = DimensionValue::decoded(ctx, value.value(), &value_body)?;
+    let auxiliary_body = ctx.copy_retained(auxiliary_bytes, "creo dimension auxiliary body")?;
     Ok(Some(FeatureDimension {
         dimension_type,
         value,
@@ -6134,8 +6120,6 @@ fn positional_dimension(
     let Some(value_bytes) = payload.get(value_start..cursor) else {
         return Ok(None);
     };
-    let value_body = ctx.copy_retained(value_bytes, "creo dimension value body")?;
-    let value = DimensionValue::decoded(ctx, value.value(), &value_body)?;
     let Some(&direction_byte) = payload.get(cursor).filter(|_| cursor < end) else {
         return Ok(None);
     };
@@ -6149,11 +6133,13 @@ fn positional_dimension(
     let Some(auxiliary_bytes) = payload.get(auxiliary_start..cursor) else {
         return Ok(None);
     };
-    let auxiliary_body = ctx.copy_retained(auxiliary_bytes, "creo dimension auxiliary body")?;
     let (external_id, _) = segment_int(payload, cursor);
     let Some(external_id) = external_id else {
         return Ok(None);
     };
+    let value_body = ctx.copy_retained(value_bytes, "creo dimension value body")?;
+    let value = DimensionValue::decoded(ctx, value.value(), &value_body)?;
+    let auxiliary_body = ctx.copy_retained(auxiliary_bytes, "creo dimension auxiliary body")?;
     Ok(Some(FeatureDimension {
         dimension_type,
         value,
@@ -6189,6 +6175,7 @@ fn dimension_table(
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1..=0xf3))
     {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo dimension table cursor traversal")?;
         cursor += 1;
     }
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
@@ -6218,7 +6205,7 @@ fn dimension_table(
         )?
         .unwrap_or(end);
     let first_end = if let Some(class) = reference_bytes {
-        find_class_close(payload, cursor, region_end, 0xf3, class).unwrap_or(region_end)
+        find_class_close(ctx, payload, cursor, region_end, 0xf3, class)?.unwrap_or(region_end)
     } else {
         region_end
     };
@@ -6231,12 +6218,13 @@ fn dimension_table(
         let separator_len = class.len() + 2;
         let mut replay = first_end;
         while replay < region_end && rows.len() < index_from_u32(declared_count) {
+            ctx.next_charged(&mut (replay..region_end), "creo dimension table cursor traversal")?;
             if !class_close_at(payload, replay, 0xf3, class) {
                 break;
             }
             replay += separator_len;
             let next_separator =
-                find_class_close(payload, replay, region_end, 0xf3, class).unwrap_or(region_end);
+                find_class_close(ctx, payload, replay, region_end, 0xf3, class)?.unwrap_or(region_end);
             let Some(row) = positional_dimension(ctx, payload, replay, next_separator, cache)?
             else {
                 break;
@@ -6262,27 +6250,7 @@ fn positional_dimension_table(
     table_class: u32,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimensionTable>, CodecError> {
-    let Some((table, declared_count, mut cursor, reference_bytes)) =
-        (start..end).find_map(|table| {
-            (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-            let (declared_count, after_count) = psb::compact_int(payload, table + 1);
-            (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let reference_start = after_count + 1;
-            let (class, after_reference) = psb::reference_id(payload, reference_start).ok()?;
-            (class == table_class
-                && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
-            .then(|| {
-                (
-                    table,
-                    declared_count,
-                    after_reference + 2,
-                    &payload[reference_start - 1..after_reference],
-                )
-            })
-        })
-    else {
-        return Ok(None);
-    };
+    let Some((table, declared_count, mut cursor, reference_bytes)) = first_positional_array(ctx, payload, start, end, table_class)? else { return Ok(None); };
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
         return Ok(None);
     }
@@ -6295,7 +6263,8 @@ fn positional_dimension_table(
     let mut rows = Vec::new();
     let row_limit = index_from_u32(declared_count);
     while cursor < end && rows.len() < row_limit {
-        let row_end = find_class_close(payload, cursor, end, 0xf3, reference_bytes).unwrap_or(end);
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo positional dimension table cursor traversal")?;
+        let row_end = find_class_close(ctx, payload, cursor, end, 0xf3, reference_bytes)?.unwrap_or(end);
         let Some(row) = positional_dimension(ctx, payload, cursor, row_end, cache)? else {
             break;
         };
@@ -6325,7 +6294,8 @@ fn self_described_positional_dimension_table(
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureDimensionTable>, CodecError> {
     let mut candidate = None;
-    for table in start..end {
+    let mut offsets = start..end;
+    while let Some(table) = ctx.next_charged(&mut offsets, "creo self described dimension traversal")? {
         if payload.get(table) != Some(&psb::token::ARRAY_OPEN) {
             continue;
         }
@@ -6339,7 +6309,8 @@ fn self_described_positional_dimension_table(
         if payload.get(after_reference..after_reference + 2) != Some(&[0xfb, 0xe2]) {
             continue;
         }
-        let Some(found) = positional_dimension_table(ctx, payload, table, end, table_class, cache)?
+        let mut candidate_storage = ctx.reserve_scoped(0, "creo self described dimension candidate")?;
+        let Some(found) = candidate_storage.with_storage(|| positional_dimension_table(ctx, payload, table, end, table_class, cache))?
         else {
             continue;
         };
@@ -6347,18 +6318,15 @@ fn self_described_positional_dimension_table(
             && declared_count > 1
             && found.declared_count == declared_count
             && usize::try_from(declared_count).ok() == Some(found.rows.len())
-            && found
-                .rows
-                .iter()
-                .all(|row| matches!(row.dimension_type, 0x01..=0x05 | 0x0a))
+            && ctx.all_by(&found.rows, |row| Ok(matches!(row.dimension_type, 0x01..=0x05 | 0x0a)), "creo self described dimension kinds")?
         {
             if candidate.is_some() {
                 return Ok(None);
             }
-            candidate = Some(found);
+            candidate = Some((found, candidate_storage));
         }
     }
-    Ok(candidate)
+    match candidate { Some((table, storage)) => { storage.commit()?; Ok(Some(table)) }, None => Ok(None) }
 }
 
 fn feature_skamps(
@@ -6401,7 +6369,7 @@ fn feature_skamps(
         return Ok(Vec::new());
     }
     cursor += 2;
-    let Some(prototype_end) = find_class_close(payload, cursor, end, 0xf3, class_encoding) else {
+    let Some(prototype_end) = find_class_close(ctx, payload, cursor, end, 0xf3, class_encoding)? else {
         return Ok(Vec::new());
     };
     let named_item = match named_compact_int(ctx, payload, b"ent_id\0", cursor, prototype_end)? {
@@ -6431,12 +6399,12 @@ fn feature_skamps(
     };
     let item_class_encoding = &payload[item_class_start..after_item_class];
     let named_item_end = find_class_close(
-        payload,
+        ctx, payload,
         after_item_class,
         prototype_end,
         0xf1,
         item_class_encoding,
-    );
+    )?;
     let (named_item_end, named_item_close_len) = match named_item_end {
         Some(offset) => (offset, item_class_encoding.len() + 2),
         None if prototype_item_count == 1 && named_item.is_some() => {
@@ -6449,11 +6417,13 @@ fn feature_skamps(
     };
     item_cursor = named_item_end + named_item_close_len;
     let mut prototype_items = Vec::new();
+    let mut prototype_storage = ctx.reserve_scoped(0, "creo skamp prototype items")?;
     if let Some(item) = named_item {
-        ctx.reserve_vec(&mut prototype_items, 1, "creo skamp prototype items")?;
+        prototype_storage.with_storage(|| ctx.reserve_vec(&mut prototype_items, 1, "creo skamp prototype items"))?;
         prototype_items.push(item);
     }
     while prototype_items.len() < index_from_u32(prototype_item_count) {
+        ctx.next_charged(&mut (prototype_items.len()..index_from_u32(prototype_item_count)), "creo feature skamps cursor traversal")?;
         let (Some(entity_id), next) = segment_int(payload, item_cursor) else {
             return Ok(Vec::new());
         };
@@ -6462,7 +6432,7 @@ fn feature_skamps(
             return Ok(Vec::new());
         };
         item_cursor = next;
-        ctx.reserve_vec(&mut prototype_items, 1, "creo skamp prototype items")?;
+        prototype_storage.with_storage(|| ctx.reserve_vec(&mut prototype_items, 1, "creo skamp prototype items"))?;
         prototype_items.push(FeatureSkampItem { entity_id, sense });
     }
     if item_cursor != prototype_end {
@@ -6480,6 +6450,7 @@ fn feature_skamps(
     let Some(status) = named_compact_int(ctx, payload, b"status\0", cursor, prototype_end)? else {
         return Ok(Vec::new());
     };
+    prototype_storage.commit()?;
     let prototype = FeatureSkamp {
         id,
         kind,
@@ -6493,6 +6464,7 @@ fn feature_skamps(
     rows.push(prototype);
     cursor = prototype_end + class_encoding.len() + 2;
     'rows: while rows.len() < index_from_u32(declared_count) {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo feature skamps cursor traversal")?;
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
             break;
@@ -6520,7 +6492,9 @@ fn feature_skamps(
         }
         cursor += 2;
         let mut items = Vec::new();
+        let mut item_storage = ctx.reserve_scoped(0, "creo skamp items")?;
         while items.len() < index_from_u32(item_count) {
+            ctx.next_charged(&mut (items.len()..index_from_u32(item_count)), "creo feature skamps cursor traversal")?;
             if !items.is_empty() && payload.get(cursor) == Some(&0xe2) {
                 cursor += 1;
             }
@@ -6536,7 +6510,7 @@ fn feature_skamps(
             let Some(sense) = next_solver_int(payload, &mut cursor) else {
                 break 'rows;
             };
-            ctx.reserve_vec(&mut items, 1, "creo skamp items")?;
+            item_storage.with_storage(|| ctx.reserve_vec(&mut items, 1, "creo skamp items"))?;
             items.push(FeatureSkampItem { entity_id, sense });
             if payload.get(cursor) == Some(&0xf1) {
                 let Ok((_, next)) = psb::reference_id(payload, cursor + 2) else {
@@ -6558,6 +6532,7 @@ fn feature_skamps(
         } else {
             break;
         }
+        item_storage.commit()?;
         ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
         rows.push(FeatureSkamp {
             id,
@@ -6583,15 +6558,10 @@ fn named_array_class(
         return Ok(None);
     };
     let label = offset + label.len();
-    Ok((|| {
-        let array =
-            (label..end).find(|offset| payload.get(*offset) == Some(&psb::token::ARRAY_OPEN))?;
-        let (_, after_count) = psb::compact_int(payload, array + 1);
-        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        psb::reference_id(payload, after_count + 1)
-            .ok()
-            .map(|(class, _)| class)
-    })())
+    let Some(array) = ctx.find_by(label..end, |&offset| Ok(payload.get(offset) == Some(&psb::token::ARRAY_OPEN)), "creo named class array search")? else { return Ok(None); };
+    let (_, after_count) = psb::compact_int(payload, array + 1);
+    if payload.get(after_count) != Some(&psb::token::ENTITY_REF) { return Ok(None); }
+    Ok(psb::reference_id(payload, after_count + 1).ok().map(|(class, _)| class))
 }
 
 fn named_solver_table_header(
@@ -6630,44 +6600,25 @@ fn named_solver_table_header(
     })())
 }
 
-fn positional_solver_table_header(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    table_class: u32,
-) -> Option<FeatureSolverTableHeader> {
-    let (offset, declared_count, _, _) = positional_array_header(payload, start, end, table_class)?;
-    Some(FeatureSolverTableHeader {
-        declared_count,
-        entity_ref: table_class,
-        offset,
-    })
+
+fn positional_array_candidate(payload: &[u8], offset: usize, table_class: u32) -> Option<(usize, u32, usize, &[u8])> {
+    if payload.get(offset) != Some(&psb::token::ARRAY_OPEN) { return None; }
+    let (count, after_count) = psb::compact_int(payload, offset + 1);
+    if payload.get(after_count) != Some(&psb::token::ENTITY_REF) { return None; }
+    let (class, after_class) = psb::reference_id(payload, after_count + 1).ok()?;
+    (class == table_class && payload.get(after_class..after_class + 2) == Some(&[0xfb, 0xe2]))
+        .then_some((offset, count, after_class + 2, &payload[after_count..after_class]))
 }
 
-fn positional_array_header(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    table_class: u32,
-) -> Option<(usize, u32, usize, &[u8])> {
-    let mut candidates = (start..end).filter_map(|offset| {
-        (payload.get(offset) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-        let (count, after_count) = psb::compact_int(payload, offset + 1);
-        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let reference_start = after_count + 1;
-        let (class, after_class) = psb::reference_id(payload, reference_start).ok()?;
-        (class == table_class && payload.get(after_class..after_class + 2) == Some(&[0xfb, 0xe2]))
-            .then(|| {
-                (
-                    offset,
-                    count,
-                    after_class + 2,
-                    &payload[after_count..after_class],
-                )
-            })
-    });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+fn first_positional_array<'a>(ctx: &DecodeContext<'_>, payload: &'a [u8], start: usize, end: usize, table_class: u32) -> Result<Option<(usize, u32, usize, &'a [u8])>, CodecError> {
+    ctx.find_map(start..end, |offset| Ok(positional_array_candidate(payload, offset, table_class)), "creo positional array header search")
+}
+
+fn positional_array_header<'a>(ctx: &DecodeContext<'_>, payload: &'a [u8], start: usize, end: usize, table_class: u32) -> Result<Option<(usize, u32, usize, &'a [u8])>, CodecError> {
+    let mut offsets = start..end;
+    let Some(candidate) = ctx.find_map(&mut offsets, |offset| Ok(positional_array_candidate(payload, offset, table_class)), "creo positional array header search")? else { return Ok(None); };
+    let second = ctx.find_map(offsets, |offset| Ok(positional_array_candidate(payload, offset, table_class)), "creo positional array header uniqueness")?;
+    Ok(second.is_none().then_some(candidate))
 }
 
 fn class_close_at(payload: &[u8], offset: usize, prefix: u8, class: &[u8]) -> bool {
@@ -6685,16 +6636,12 @@ fn class_close_at(payload: &[u8], offset: usize, prefix: u8, class: &[u8]) -> bo
 }
 
 fn find_class_close(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    prefix: u8,
-    class: &[u8],
-) -> Option<usize> {
-    payload.get(start..end)?;
-    let length = class.len().checked_add(2)?;
-    let last = end.checked_sub(length)?;
-    (start..=last).find(|&offset| class_close_at(payload, offset, prefix, class))
+    ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize, prefix: u8, class: &[u8],
+) -> Result<Option<usize>, CodecError> {
+    if payload.get(start..end).is_none() { return Ok(None); }
+    let Some(length) = class.len().checked_add(2) else { return Ok(None); };
+    let Some(last) = end.checked_sub(length) else { return Ok(None); };
+    ctx.find_by(start..=last, |&offset| Ok(class_close_at(payload, offset, prefix, class)), "creo class close search")
 }
 
 fn consume_positional_separator(
@@ -6723,22 +6670,24 @@ fn positional_feature_skamps(
     start: usize,
     end: usize,
     table_class: u32,
-) -> Result<Vec<FeatureSkamp>, CodecError> {
-    let Some((_, count, mut cursor, table_class_encoding)) =
-        positional_array_header(payload, start, end, table_class)
+) -> Result<Option<SolverSubtable<FeatureSkamp>>, CodecError> {
+    let Some((table, count, mut cursor, table_class_encoding)) =
+        positional_array_header(ctx, payload, start, end, table_class)?
     else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
+    let header = FeatureSolverTableHeader { declared_count: count, entity_ref: table_class, offset: table };
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Ok(Vec::new());
+        return Ok(Some(SolverSubtable::Declared { header, rows: Vec::new() }));
     }
     let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
-        return Ok(Vec::new());
+        return Ok(Some(SolverSubtable::Declared { header, rows: Vec::new() }));
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
     let mut item_classes = None::<(&[u8], &[u8])>;
     'rows: while rows.len() < index_from_u32(count) {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo positional feature skamps cursor traversal")?;
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
             break;
@@ -6752,29 +6701,32 @@ fn positional_feature_skamps(
         let Some(status) = next_solver_int(payload, &mut cursor) else {
             break;
         };
-        let Some((item_count, after_item_row_class, item_table_class, item_row_class)) =
+        let expected_item_classes = item_classes;
+        let Some((item_count, after_item_row_class, item_table_class, item_row_class, row_end)) =
             positional_skamp_item_array(
-                payload,
+                ctx, payload,
                 cursor,
                 end,
                 table_class_encoding,
                 item_classes.as_ref().map(|classes| classes.0),
                 item_classes.as_ref().map(|classes| classes.1),
-            )
+            )?
         else {
             break;
         };
         let classes = item_classes.get_or_insert((item_table_class, item_row_class));
         cursor = after_item_row_class;
         let mut items = Vec::new();
+        let mut item_storage = ctx.reserve_scoped(0, "creo skamp items")?;
         while items.len() < index_from_u32(item_count) {
+            ctx.next_charged(&mut (items.len()..index_from_u32(item_count)), "creo positional feature skamps cursor traversal")?;
             let Some(entity_id) = next_solver_int(payload, &mut cursor) else {
                 break 'rows;
             };
             let Some(sense) = next_solver_int(payload, &mut cursor) else {
                 break 'rows;
             };
-            ctx.reserve_vec(&mut items, 1, "creo skamp items")?;
+            item_storage.with_storage(|| ctx.reserve_vec(&mut items, 1, "creo skamp items"))?;
             items.push(FeatureSkampItem { entity_id, sense });
             if items.len() < index_from_u32(item_count) {
                 let Some(next) =
@@ -6785,6 +6737,12 @@ fn positional_feature_skamps(
                 cursor = next;
             }
         }
+        if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
+            if let Some(second) = positional_skamp_item_array_candidate(payload, cursor, row_end, expected_item_classes.map(|classes| classes.0), expected_item_classes.map(|classes| classes.1)) {
+                if positional_skamp_item_array_body_end(ctx, payload, second.1, second.0, second.2, end)?.is_some() { break; }
+            }
+        }
+        if positional_skamp_item_array_has_valid_boundary(payload, cursor, item_table_class, table_class_encoding, end).is_none() { break; }
         let row = FeatureSkamp {
             id,
             kind,
@@ -6801,57 +6759,27 @@ fn positional_feature_skamps(
             };
             cursor = next;
         }
+        item_storage.commit()?;
         ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
         rows.push(row);
     }
-    Ok(rows)
+    Ok(Some(SolverSubtable::Declared { header, rows }))
 }
 
 fn positional_skamp_item_array<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &'a [u8],
     start: usize,
     end: usize,
     outer_table_class: &[u8],
     expected_table_class: Option<&[u8]>,
     expected_row_class: Option<&[u8]>,
-) -> Option<(u32, usize, &'a [u8], &'a [u8])> {
-    let row_end = find_class_close(payload, start, end, 0xf3, outer_table_class).unwrap_or(end);
-    let candidate = (start..row_end).find_map(|array| {
-        positional_skamp_item_array_candidate(
-            payload,
-            array,
-            row_end,
-            expected_table_class,
-            expected_row_class,
-        )
-    })?;
-    let item_end =
-        positional_skamp_item_array_body_end(payload, candidate.1, candidate.0, candidate.2, end)?;
-    if payload.get(item_end) == Some(&psb::token::ARRAY_OPEN)
-        && positional_skamp_item_array_candidate(
-            payload,
-            item_end,
-            row_end,
-            expected_table_class,
-            expected_row_class,
-        )
-        .is_some_and(|second| {
-            positional_skamp_item_array_body_end(payload, second.1, second.0, second.2, end)
-                .is_some()
-        })
-    {
-        return None;
-    }
-    positional_skamp_item_array_has_valid_boundary(
-        payload,
-        candidate.1,
-        candidate.0,
-        candidate.2,
-        outer_table_class,
-        end,
-    )?;
-    Some(candidate)
+) -> Result<Option<(u32, usize, &'a [u8], &'a [u8], usize)>, CodecError> {
+    let row_end = find_class_close(ctx, payload, start, end, 0xf3, outer_table_class)?.unwrap_or(end);
+    let Some(candidate) = ctx.find_map(start..row_end, |array| Ok(positional_skamp_item_array_candidate(payload, array, row_end, expected_table_class, expected_row_class)), "creo skamp item array search")? else { return Ok(None); };
+    Ok(Some((candidate.0, candidate.1, candidate.2, candidate.3, row_end)))
 }
+
 
 fn positional_skamp_item_array_candidate<'a>(
     payload: &'a [u8],
@@ -6881,36 +6809,26 @@ fn positional_skamp_item_array_candidate<'a>(
 }
 
 fn positional_skamp_item_array_body_end(
-    payload: &[u8],
-    mut cursor: usize,
-    item_count: u32,
-    item_table_class: &[u8],
-    end: usize,
-) -> Option<usize> {
-    let item_limit = index_from_u32(item_count);
-    let mut items = 0;
-    while items < item_limit {
-        next_solver_int(payload, &mut cursor)?;
-        next_solver_int(payload, &mut cursor)?;
-        items += 1;
-        if items < item_limit {
-            cursor = consume_positional_separator(payload, cursor, end, item_table_class, &[0xf1])?;
+    ctx: &DecodeContext<'_>, payload: &[u8], mut cursor: usize, item_count: u32, item_table_class: &[u8], end: usize,
+) -> Result<Option<usize>, CodecError> {
+    let mut items = 0..item_count;
+    while let Some(index) = ctx.next_charged(&mut items, "creo skamp item boundary traversal")? {
+        if next_solver_int(payload, &mut cursor).is_none() || next_solver_int(payload, &mut cursor).is_none() { return Ok(None); }
+        if index + 1 < item_count {
+            let Some(next) = consume_positional_separator(payload, cursor, end, item_table_class, &[0xf1]) else { return Ok(None); };
+            cursor = next;
         }
     }
-    Some(cursor)
+    Ok(Some(cursor))
 }
 
 fn positional_skamp_item_array_has_valid_boundary(
     payload: &[u8],
-    mut cursor: usize,
-    item_count: u32,
+    cursor: usize,
     item_table_class: &[u8],
     outer_table_class: &[u8],
     end: usize,
 ) -> Option<()> {
-    cursor =
-        positional_skamp_item_array_body_end(payload, cursor, item_count, item_table_class, end)?;
-
     if cursor == end {
         return Some(());
     }
@@ -7035,6 +6953,7 @@ fn feature_relation_triples(
     ctx.reserve_vec(&mut rows, 1, "creo relation triples")?;
     rows.push(prototype);
     while rows.len() < index_from_u32(declared_count) {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo feature relation triples cursor traversal")?;
         let row_offset = cursor;
         let relation_id = next_solver_int(payload, &mut cursor);
         let equation_id = next_solver_int(payload, &mut cursor);
@@ -7064,21 +6983,23 @@ fn positional_relation_triples(
     start: usize,
     end: usize,
     table_class: u32,
-) -> Result<Vec<FeatureRelationTriple>, CodecError> {
-    let Some((_, count, mut cursor, class_encoding)) =
-        positional_array_header(payload, start, end, table_class)
+) -> Result<Option<SolverSubtable<FeatureRelationTriple>>, CodecError> {
+    let Some((table, count, mut cursor, class_encoding)) =
+        positional_array_header(ctx, payload, start, end, table_class)?
     else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
+    let header = FeatureSolverTableHeader { declared_count: count, entity_ref: table_class, offset: table };
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Ok(Vec::new());
+        return Ok(Some(SolverSubtable::Declared { header, rows: Vec::new() }));
     }
     let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
-        return Ok(Vec::new());
+        return Ok(Some(SolverSubtable::Declared { header, rows: Vec::new() }));
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
     while rows.len() < index_from_u32(count) {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo positional relation triples cursor traversal")?;
         let offset = cursor;
         let before_relation = cursor;
         let relation_id = next_solver_int(payload, &mut cursor);
@@ -7112,7 +7033,7 @@ fn positional_relation_triples(
         ctx.reserve_vec(&mut rows, 1, "creo relation triples")?;
         rows.push(row);
     }
-    Ok(rows)
+    Ok(Some(SolverSubtable::Declared { header, rows }))
 }
 
 fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
@@ -7291,10 +7212,9 @@ fn positional_relation_rows(
         return Ok(Vec::new());
     };
     let mut rows = Vec::new();
-    for _ in 0..row_count {
-        let Some(row_end) = payload[cursor..end]
-            .iter()
-            .position(|byte| *byte == 0xe2)
+    let mut counted_items = 0..row_count;
+
+        while let Some(_) = ctx.next_charged(&mut counted_items, "creo positional relation rows traversal")? {let Some(row_end) = ctx.position_by(&payload[cursor..end], |byte| Ok(*byte == 0xe2), "creo relation row end")?
             .map(|relative| relative + cursor)
         else {
             break;
@@ -7308,7 +7228,7 @@ fn positional_relation_rows(
             break;
         }
         let mut suffix = None;
-        for suffix_start in after_used..row_end {
+        for suffix_start in after_used.max(row_end.saturating_sub(6))..row_end {
             let (sign, after_sign) = psb::compact_int(payload, suffix_start);
             let (dimension_id, after_dimension) = psb::compact_int(payload, after_sign);
             let (relation_type, after_type) = psb::compact_int(payload, after_dimension);
@@ -7354,31 +7274,13 @@ fn positional_relation_table(
     end: usize,
     table_class: u32,
 ) -> Result<Option<FeatureRelationTable>, CodecError> {
-    let Some((table, declared_count, cursor, reference_bytes)) = (start..end).find_map(|table| {
-        (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-        let (declared_count, after_count) = psb::compact_int(payload, table + 1);
-        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let reference_start = after_count + 1;
-        let (class, after_reference) = psb::reference_id(payload, reference_start).ok()?;
-        (class == table_class
-            && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
-        .then(|| {
-            (
-                table,
-                declared_count,
-                after_reference + 2,
-                &payload[reference_start - 1..after_reference],
-            )
-        })
-    }) else {
-        return Ok(None);
-    };
-    let rows_start = (|| {
-        (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-        let (_, prototype) = psb::reference_id(payload, cursor + 1).ok()?;
-        let prototype_end = find_class_close(payload, prototype, end, 0xf1, reference_bytes)?;
-        Some(prototype_end + reference_bytes.len() + 2)
-    })();
+    let Some((table, declared_count, cursor, reference_bytes)) = first_positional_array(ctx, payload, start, end, table_class)? else { return Ok(None); };
+    let rows_start = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
+        match psb::reference_id(payload, cursor + 1) {
+            Ok((_, prototype)) => find_class_close(ctx, payload, prototype, end, 0xf1, reference_bytes)?.map(|offset| offset + reference_bytes.len() + 2),
+            Err(_) => None,
+        }
+    } else { None };
     let rows = match rows_start {
         Some(rows_start) => positional_relation_rows(
             ctx,
@@ -7488,13 +7390,12 @@ fn saved_line_block(
     cache: &scalar::ScalarCache,
 ) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     if payload.get(cursor) == Some(&0xf1) {
-        cursor = payload[cursor..segment_end]
-            .iter()
-            .position(|byte| *byte == 0xe3)
+        cursor = ctx.position_by(&payload[cursor..segment_end], |byte| Ok(*byte == 0xe3), "creo saved line prototype close")?
             .map_or(segment_end, |relative| cursor + relative + 1);
     }
     let mut entities = Vec::new();
     while cursor < segment_end {
+        ctx.next_charged(&mut (cursor..=payload.len()), "creo saved line block cursor traversal")?;
         if payload.get(cursor) == Some(&0xe3) {
             cursor += 1;
         }
@@ -7526,13 +7427,15 @@ fn saved_line_block(
         }
         let record_offset = cursor;
         let mut references = Vec::new();
+        let mut storage = ctx.reserve_scoped(0, "creo saved line record scratch")?;
         let mut attributes = Vec::new();
         loop {
+            ctx.next_charged(&mut (cursor..=payload.len()), "creo saved line block cursor traversal")?;
             if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
-                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
+                storage.with_storage(|| ctx.reserve_vec(&mut references, 1, "creo saved line references"))?;
                 references.push(reference);
                 cursor = next;
             } else if payload
@@ -7542,7 +7445,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 2) else {
                     break;
                 };
-                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
+                storage.with_storage(|| ctx.reserve_vec(&mut references, 1, "creo saved line references"))?;
                 references.push(reference);
                 cursor = next;
             } else if payload.get(cursor) == Some(&0xeb) {
@@ -7551,7 +7454,7 @@ fn saved_line_block(
                 };
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
-                ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes")?;
+                storage.with_storage(|| ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes"))?;
                 attributes.push(attribute);
                 cursor += 6;
             } else {
@@ -7570,6 +7473,7 @@ fn saved_line_block(
         let mut values = [None; 8];
         let mut filled = 0;
         while cursor < segment_end && filled < 6 {
+            ctx.next_charged(&mut (cursor..=payload.len()), "creo saved line block cursor traversal")?;
             if payload.get(cursor) == Some(&0xe3)
                 || payload.get(cursor) == Some(&psb::token::NAMED_RECORD)
             {
@@ -7585,7 +7489,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
-                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
+                storage.with_storage(|| ctx.reserve_vec(&mut references, 1, "creo saved line references"))?;
                 references.push(reference);
                 cursor = next;
                 continue;
@@ -7597,7 +7501,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 2) else {
                     break;
                 };
-                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
+                storage.with_storage(|| ctx.reserve_vec(&mut references, 1, "creo saved line references"))?;
                 references.push(reference);
                 cursor = next;
                 continue;
@@ -7608,7 +7512,7 @@ fn saved_line_block(
                 };
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
-                ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes")?;
+                storage.with_storage(|| ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes"))?;
                 attributes.push(attribute);
                 cursor += 6;
                 continue;
@@ -7626,6 +7530,7 @@ fn saved_line_block(
             cursor = next;
         }
         loop {
+            ctx.next_charged(&mut (cursor..=payload.len()), "creo saved line block cursor traversal")?;
             if payload
                 .get(cursor)
                 .is_some_and(|prefix| matches!(prefix, 0x0f | 0x18 | 0xe6))
@@ -7652,7 +7557,7 @@ fn saved_line_block(
             let Ok((reference, next)) = psb::reference_id(payload, reference_start) else {
                 break;
             };
-            ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
+            storage.with_storage(|| ctx.reserve_vec(&mut references, 1, "creo saved line references"))?;
             references.push(reference);
             cursor = next;
         }
@@ -7667,6 +7572,7 @@ fn saved_line_block(
         if row_separator {
             cursor += 1;
         }
+        storage.commit()?;
         let body =
             ctx.copy_retained(&payload[record_offset..record_end], "creo saved line body")?;
         ctx.reserve_vec(&mut entities, 1, "creo saved line block entities")?;
@@ -7721,50 +7627,52 @@ fn saved_line_entities(
         }
         let block = saved_line_block(ctx, payload, body_start, body_end, cache)?;
         ctx.reserve_vec(&mut entities, block.len(), "creo saved line entities")?;
-        entities.extend(block);
+        entities.extend(ctx.admit_iter(block, "creo saved entity extension")?);
         search = body_end;
     }
     Ok(entities)
 }
 
 fn saved_named_scalars<const N: usize>(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     field: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<[Option<f64>; N]> {
-    let window = payload.get(start..end)?;
-    let label_start = (0..window.len()).find(|&offset| {
+) -> Result<Option<[Option<f64>; N]>, CodecError> {
+    let Some(window) = payload.get(start..end) else { return Ok(None); };
+    let Some(label_start) = ctx.find_by(0..window.len(), |&offset| Ok(
         window.get(offset..offset + 2) == Some(&[0xe0, 0x02])
             && window.get(offset + 2..offset + 2 + field.len()) == Some(field)
             && window.get(offset + 2 + field.len()) == Some(&0)
-    })?;
+    ), "creo saved scalar label search")? else { return Ok(None); };
     let mut cursor = start + label_start + field.len() + 3;
     while payload
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1..=0xf3))
     {
+        ctx.next_charged(&mut (cursor..payload.len()), "creo saved scalar prefix traversal")?;
         cursor += 1;
     }
     if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
         let (count, next) = psb::compact_int(payload, cursor + 1);
-        (usize::try_from(count).ok()? == N).then_some(())?;
+        if usize::try_from(count).ok() != Some(N) { return Ok(None); }
         cursor = next;
     }
     if N == 3 && payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-        return Some(std::array::from_fn(|index| {
+        return Ok(Some(std::array::from_fn(|index| {
             Some(if index == 1 { 1.0 } else { 0.0 })
-        }));
+        })));
     }
     let mut values = [None; N];
     for value in &mut values {
         let (decoded, next) = saved_section_scalar(payload, cursor, end, cache);
-        (next > cursor).then_some(())?;
+        if next <= cursor { return Ok(None); }
         *value = decoded;
         cursor = next;
     }
-    Some(values)
+    Ok(Some(values))
 }
 
 fn saved_arc_scalar(
@@ -7845,27 +7753,8 @@ fn saved_positional_generated_entities(
         return Ok(Vec::new());
     };
     let mut generated_storage = ctx.reserve_scoped(0, "Creo saved generated lookup storage")?;
-    let mut generated_segments = BTreeMap::new();
-    for row in &order_table.rows {
-        if order_table.internal_id(row.external_id) != Some(row.internal_id)
-            || order_table.external_id(row.internal_id) != Some(row.external_id)
-        {
-            continue;
-        }
-        let Some(segment) = segments.unique_segment(row.external_id) else {
-            continue;
-        };
-        generated_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut generated_segments,
-                row.internal_id,
-                segment,
-                "creo saved generated segment nodes",
-            )
-        })?;
-    }
     let mut starts = Vec::new();
-    for separator in start..end {
+    for separator in ctx.admit_iter(start..end, "creo saved generated start traversal")? {
         if payload.get(separator) != Some(&0xe3) {
             continue;
         }
@@ -7873,7 +7762,7 @@ fn saved_positional_generated_entities(
         let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
             continue;
         };
-        if !generated_segments.contains_key(&entity_id) {
+        if order_table.external_id(entity_id).filter(|&id| order_table.internal_id(id) == Some(entity_id)).and_then(|id| segments.unique_segment(id)).is_none() {
             continue;
         }
         let Some(header_end) = after_id
@@ -7892,16 +7781,8 @@ fn saved_positional_generated_entities(
             starts.push(row_start);
         }
     }
-    ctx.sort_unstable_by(
-        &mut starts,
-        |value| value,
-        Ord::cmp,
-        "creo saved generated row starts sort",
-    )?;
-    starts.dedup();
-
     let mut entities = Vec::new();
-    for (index, row_start) in starts.iter().copied().enumerate() {
+    for (index, row_start) in ctx.admit_iter(&starts, "creo saved generated row traversal")?.copied().enumerate() {
         // Every row start follows an 0xe3 separator, so it has a preceding byte.
         let row_end = starts
             .get(index + 1)
@@ -7910,7 +7791,7 @@ fn saved_positional_generated_entities(
         let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
             continue;
         };
-        let segment = generated_segments[&entity_id];
+        let Some(segment) = order_table.external_id(entity_id).filter(|&id| order_table.internal_id(id) == Some(entity_id)).and_then(|id| segments.unique_segment(id)) else { continue; };
         let value_count = match segment.kind {
             FeatureSegmentKind::Line(_) => 6,
             FeatureSegmentKind::Arc(_) => 12,
@@ -7919,9 +7800,7 @@ fn saved_positional_generated_entities(
         if after_id > row_end {
             continue;
         }
-        let Some(header_size) = payload[after_id..row_end]
-            .iter()
-            .position(|byte| *byte == 0xe2)
+        let Some(header_size) = ctx.position_by(&payload[after_id..row_end], |byte| Ok(*byte == 0xe2), "creo saved generated row header")?
         else {
             continue;
         };
@@ -7929,6 +7808,7 @@ fn saved_positional_generated_entities(
         let mut values = [None; 14];
         let mut filled = 0;
         while cursor < row_end && filled < value_count {
+            ctx.next_charged(&mut (cursor..=payload.len()), "creo saved positional generated entities cursor traversal")?;
             if payload.get(cursor) == Some(&0xe3) {
                 break;
             }
@@ -8089,9 +7969,9 @@ fn saved_circular_entities(
                 search = body_end;
                 continue;
             };
-            let center = saved_named_scalars::<3>(payload, b"center", body_start, body_end, cache)
+            let center = saved_named_scalars::<3>(ctx, payload, b"center", body_start, body_end, cache)?
                 .unwrap_or([None; 3]);
-            let radius = saved_named_scalars::<1>(payload, b"radius", body_start, body_end, cache)
+            let radius = saved_named_scalars::<1>(ctx, payload, b"radius", body_start, body_end, cache)?
                 .unwrap_or([None])[0];
             if kind == "arc" {
                 let positional = saved_positional_generated_entities(
@@ -8103,23 +7983,17 @@ fn saved_circular_entities(
                     order_table,
                     segments,
                 )?;
-                let named_body_end = positional
-                    .iter()
-                    .map(saved_entity_offset)
-                    .min()
-                    .map_or(body_end, |row_start| {
-                        saved_positional_body_end(payload, row_start)
-                    });
-                let first = saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
+                let named_body_end = positional.first().map(saved_entity_offset).map_or(body_end, |row_start| saved_positional_body_end(payload, row_start));
+                let first = saved_named_scalars::<3>(ctx, payload, b"end1", body_start, body_end, cache)?
                     .unwrap_or([None; 3]);
                 let second =
-                    saved_named_scalars::<3>(payload, b"end2", body_start, body_end, cache)
+                    saved_named_scalars::<3>(ctx, payload, b"end2", body_start, body_end, cache)?
                         .unwrap_or([None; 3]);
                 let start_parameter =
-                    saved_named_scalars::<1>(payload, b"t0", body_start, body_end, cache)
+                    saved_named_scalars::<1>(ctx, payload, b"t0", body_start, body_end, cache)?
                         .unwrap_or([None])[0];
                 let end_parameter =
-                    saved_named_scalars::<1>(payload, b"t1", body_start, body_end, cache)
+                    saved_named_scalars::<1>(ctx, payload, b"t1", body_start, body_end, cache)?
                         .unwrap_or([None])[0];
                 let body =
                     ctx.copy_retained(&payload[body_start..named_body_end], "creo saved arc body")?;
@@ -8138,7 +8012,7 @@ fn saved_circular_entities(
                     positional.len(),
                     "creo saved circular entities",
                 )?;
-                entities.extend(positional);
+                entities.extend(ctx.admit_iter(positional, "creo saved entity extension")?);
             } else {
                 let body =
                     ctx.copy_retained(&payload[body_start..body_end], "creo saved circle body")?;
@@ -8195,19 +8069,19 @@ fn saved_conic_entities(
             search = body_end;
             continue;
         }
-        let first = saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
+        let first = saved_named_scalars::<3>(ctx, payload, b"end1", body_start, body_end, cache)?
             .unwrap_or([None; 3]);
-        let second = saved_named_scalars::<3>(payload, b"end2", body_start, body_end, cache)
+        let second = saved_named_scalars::<3>(ctx, payload, b"end2", body_start, body_end, cache)?
             .unwrap_or([None; 3]);
-        let start_parameter = saved_named_scalars::<1>(payload, b"t0", body_start, body_end, cache)
+        let start_parameter = saved_named_scalars::<1>(ctx, payload, b"t0", body_start, body_end, cache)?
             .unwrap_or([None])[0];
-        let end_parameter = saved_named_scalars::<1>(payload, b"t1", body_start, body_end, cache)
+        let end_parameter = saved_named_scalars::<1>(ctx, payload, b"t1", body_start, body_end, cache)?
             .unwrap_or([None])[0];
         let first_coefficient =
-            saved_named_scalars::<1>(payload, b"c1", body_start, body_end, cache).unwrap_or([None])
+            saved_named_scalars::<1>(ctx, payload, b"c1", body_start, body_end, cache)?.unwrap_or([None])
                 [0];
         let second_coefficient =
-            saved_named_scalars::<1>(payload, b"c2", body_start, body_end, cache).unwrap_or([None])
+            saved_named_scalars::<1>(ctx, payload, b"c2", body_start, body_end, cache)?.unwrap_or([None])
                 [0];
         let local_system = ctx
             .find_bytes_in(
@@ -8349,8 +8223,9 @@ fn saved_spline_entities(
                 });
                 if let Some(point_count) = point_count {
                     ctx.reserve_vec(&mut points, point_count, "creo saved spline points")?;
-                    for _ in 0..point_count {
-                        let mut point = [0.0; 3];
+                    let mut counted_items = 0..point_count;
+
+                        while let Some(_) = ctx.next_charged(&mut counted_items, "creo saved spline entities traversal")? {let mut point = [0.0; 3];
                         let mut next_cursor = cursor;
                         let mut complete = true;
                         for coordinate in &mut point {
@@ -8463,9 +8338,11 @@ fn saved_spline_parameters(
         return Ok(None);
     }
     let mut values = Vec::new();
-    ctx.reserve_vec(&mut values, point_count, "creo saved spline parameters")?;
-    for _ in 0..count {
-        let Some((value, next)) = saved_spline_parameter(payload, cursor, cache) else {
+    let mut storage = ctx.reserve_scoped(0, "creo saved spline parameters")?;
+    storage.with_storage(|| ctx.reserve_vec(&mut values, point_count, "creo saved spline parameters"))?;
+    let mut counted_items = 0..count;
+
+        while let Some(_) = ctx.next_charged(&mut counted_items, "creo saved spline parameters traversal")? {let Some((value, next)) = saved_spline_parameter(payload, cursor, cache) else {
             return Ok(None);
         };
         if next > end {
@@ -8474,6 +8351,7 @@ fn saved_spline_parameters(
         values.push(value);
         cursor = next;
     }
+    storage.commit()?;
     Ok(Some(DecodedField {
         value: values,
         body: ctx.copy_retained(
@@ -8564,16 +8442,16 @@ fn saved_section(
     let circular =
         saved_circular_entities(ctx, payload, table, table_end, cache, order_table, segments)?;
     ctx.reserve_vec(&mut entities, circular.len(), "creo saved section entities")?;
-    entities.extend(circular);
+    entities.extend(ctx.admit_iter(circular, "creo saved entity extension")?);
     let conic = saved_conic_entities(ctx, payload, table, end, cache)?;
     ctx.reserve_vec(&mut entities, conic.len(), "creo saved section entities")?;
-    entities.extend(conic);
+    entities.extend(ctx.admit_iter(conic, "creo saved entity extension")?);
     let dummy = saved_dummy_entities(ctx, payload, table, table_end)?;
     ctx.reserve_vec(&mut entities, dummy.len(), "creo saved section entities")?;
-    entities.extend(dummy);
+    entities.extend(ctx.admit_iter(dummy, "creo saved entity extension")?);
     let spline = saved_spline_entities(ctx, payload, start, end, cache)?;
     ctx.reserve_vec(&mut entities, spline.len(), "creo saved section entities")?;
-    entities.extend(spline);
+    entities.extend(ctx.admit_iter(spline, "creo saved entity extension")?);
     ctx.stable_sort_by_key(
         entities.as_mut_slice(),
         saved_entity_offset,
@@ -8610,7 +8488,7 @@ fn positional_saved_section(
         conic.len(),
         "creo positional saved section entities",
     )?;
-    entities.extend(conic);
+    entities.extend(ctx.admit_iter(conic, "creo saved entity extension")?);
     ctx.stable_sort_by_key(
         entities.as_mut_slice(),
         saved_entity_offset,
@@ -8636,21 +8514,20 @@ pub(crate) fn definition_revolution_extents(
         0x00, 0x00,
     ];
     let mut result = Vec::new();
-    for definition in definitions {
+    let mut storage = ctx.reserve_scoped(0, "creo revolution owner index")?;
+    let mut owners = std::collections::HashSet::new();
+    for operation in ctx.admit_iter(operations, "creo revolution operation traversal")? {
+        if operation.recipe.resolved().is_some_and(|recipe| recipe.kind() == FeatureRecipeKind::Revolve) {
+            storage.with_storage(|| ctx.insert_hash_set(&mut owners, operation.feature_id, "creo revolution owner nodes"))?;
+        }
+    }
+    for definition in ctx.admit_iter(definitions, "creo revolution definition traversal")? {
         let Some(feature_id) = definition.identity.owner_feature_id() else {
             continue;
         };
-        let recipe_matches = operations.iter().any(|operation| {
-            operation.feature_id == feature_id
-                && operation
-                    .recipe
-                    .resolved()
-                    .is_some_and(|recipe| recipe.kind() == FeatureRecipeKind::Revolve)
-        });
-        if !recipe_matches {
-            continue;
-        }
-        for (offset, window) in definition.body.windows(FULL_TURN.len()).enumerate() {
+        if !owners.contains(&feature_id) { continue; }
+        for offset in ctx.admit_iter(0..definition.body.len().saturating_sub(FULL_TURN.len() - 1), "creo revolution marker traversal")? {
+            let window = &definition.body[offset..offset + FULL_TURN.len()];
             if window == FULL_TURN {
                 ctx.reserve_vec(&mut result, 1, "creo definition revolution extents")?;
                 result.push(FeatureRevolutionExtent {
@@ -8673,35 +8550,75 @@ fn definitions_in_ranges(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     starts: &[DefinitionStart],
+    selected_offsets: Option<&BTreeSet<usize>>,
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
-    let mut replay_dimension_class = None;
-    let mut replay_variable_class = None;
-    let mut replay_relation_class = None;
-    let mut replay_skamp_class = None;
-    let mut replay_triples_class = None;
-    let mut replay_trim_entity_classes: Option<TrimTableClasses> = None;
-    let mut replay_trim_vertex_classes: Option<TrimTableClasses> = None;
-    let mut replay_order_class = None;
+    let mut replay = ReplaySchemas::default();
+    let (mut schema_ends, _storage) = ctx.temporary_vec(starts.len(), "creo definition schema ends")?;
+    let mut next_schema = payload.len();
+    for entry in ctx.admit_iter(starts, "creo schema range traversal")?.rev() {
+        schema_ends.push(next_schema);
+        if !entry.positional { next_schema = entry.offset; }
+    }
     for (
         index,
         &DefinitionStart {
             offset: start,
-            id,
-            owner_override,
             positional,
+            ..
         },
-    ) in starts.iter().enumerate()
+    ) in ctx.admit_iter(starts, "creo definition range traversal")?.enumerate()
     {
         let end = starts
             .get(index + 1)
             .map_or(payload.len(), |entry| entry.offset);
-        let schema_end = starts[index + 1..]
-            .iter()
-            .find(|entry| !entry.positional)
-            .map_or(payload.len(), |entry| entry.offset);
+        let schema_end = schema_ends[starts.len() - index - 1];
+        let selected = match selected_offsets {
+            Some(offsets) => ctx.contains_btree_set(offsets, &start, "creo definition output selection")?,
+            None => true,
+        };
+        if !selected && positional { continue; }
+        let range = DefinitionRange { start: starts[index], end, schema_end };
+        let definition = if selected {
+            definition_in_range(ctx, payload, range, &cache, &mut replay, DefinitionRead::Output)?
+        } else {
+            let mut storage = ctx.reserve_scoped(0, "creo inherited schema scratch")?;
+            storage.with_storage(|| definition_in_range(ctx, payload, range, &cache, &mut replay, DefinitionRead::Schema))?
+        };
+        if let Some(definition) = definition {
+            ctx.push_vec(&mut result, definition, "creo parsed feature definitions")?;
+        }
+    }
+    Ok(result)
+}
+
+
+#[derive(Default)]
+struct ReplaySchemas {
+    dimension: Option<u32>,
+    variable: Option<u32>,
+    relation: Option<u32>,
+    skamp: Option<u32>,
+    triples: Option<u32>,
+    trim_entity: Option<TrimTableClasses>,
+    trim_vertex: Option<TrimTableClasses>,
+    order: Option<u32>,
+}
+
+enum DefinitionRead { Output, Schema }
+
+struct DefinitionRange {
+    start: DefinitionStart,
+    end: usize,
+    schema_end: usize,
+}
+
+fn definition_in_range(ctx: &DecodeContext<'_>, payload: &[u8], range: DefinitionRange, cache: &scalar::ScalarCache, replay: &mut ReplaySchemas, mode: DefinitionRead) -> Result<Option<FeatureDefinition>, CodecError> {
+    let selected = matches!(mode, DefinitionRead::Output);
+    let DefinitionRange { start: DefinitionStart { offset: start, id, owner_override, positional }, end, schema_end } = range;
         let mut parameter_frames = Vec::new();
+        if selected {
         for &(label, kind) in &[
             (
                 b"local_sys".as_slice(),
@@ -8711,15 +8628,12 @@ fn definitions_in_ranges(
         ] {
             let needle_len = label.len() + 4;
             let mut from = start;
-            while let Some(relative) = payload[from..end].windows(needle_len).position(|window| {
-                window.get(..label.len()) == Some(label)
-                    && window.get(label.len()..) == Some(b"\0\xf9\x04\x03")
-            }) {
-                let field_offset = from + relative;
+            while let Some(field_offset) = ctx.find_by(from..end.saturating_sub(needle_len - 1), |&offset| {
+                let window = &payload[offset..offset + needle_len];
+                Ok(window.get(..label.len()) == Some(label) && window.get(label.len()..) == Some(b"\0\xf9\x04\x03"))
+            }, "creo parameter frame search")? {
                 let body_start = field_offset + needle_len;
-                let body_end = payload[body_start..end]
-                    .windows(1)
-                    .position(|window| window[0] == psb::token::NAMED_RECORD)
+                let body_end = ctx.position_by(&payload[body_start..end], |byte| Ok(*byte == psb::token::NAMED_RECORD), "creo parameter frame body end")?
                     .map_or(end, |relative| body_start + relative);
                 let body = ctx.copy_retained(
                     &payload[body_start..body_end],
@@ -8728,7 +8642,7 @@ fn definitions_in_ranges(
                 ctx.reserve_vec(&mut parameter_frames, 1, "creo feature parameter frames")?;
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
-                    decoded_values: scalar::decode_feature_local_system_slots(&body, &cache),
+                    decoded_values: scalar::decode_feature_local_system_slots(&body, cache),
                     body,
                     offset: field_offset,
                 });
@@ -8741,7 +8655,9 @@ fn definitions_in_ranges(
             Ord::cmp,
             "creo definitions in ranges parameter frames ordering",
         )?;
+        }
         let mut outlines = Vec::new();
+        if selected {
         if let Some(info) = ctx.find_bytes_in(
             payload,
             b"\xe0\x00feat_outl_info\0",
@@ -8757,7 +8673,7 @@ fn definitions_in_ranges(
                 "find Creo feature definition field",
             )? {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
-                let local_scalars = outline_scalars(ctx, &payload[scalar_start..end], &cache)?;
+                let local_scalars = outline_scalars(ctx, &payload[scalar_start..end], cache)?;
                 ctx.reserve_vec(&mut outlines, 1, "creo feature outlines")?;
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
@@ -8794,7 +8710,7 @@ fn definitions_in_ranges(
                 {
                     continue;
                 }
-                let local_scalars = outline_scalars(ctx, &payload[after_ref + 4..end], &cache)?;
+                let local_scalars = outline_scalars(ctx, &payload[after_ref + 4..end], cache)?;
                 ctx.reserve_vec(&mut outlines, 1, "creo feature outlines")?;
                 outlines.push(FeatureOutline {
                     phase,
@@ -8809,44 +8725,45 @@ fn definitions_in_ranges(
             Ord::cmp,
             "creo definitions in ranges outlines ordering",
         )?;
-        let variables = match variable_table(ctx, payload, start, end, &cache)? {
+        }
+        let variables = match variable_table(ctx, payload, start, end, cache)? {
             Some(variables) => Some(variables),
-            None if positional => match replay_variable_class {
+            None if positional => match replay.variable {
                 Some(table_class) => {
-                    positional_variable_table(ctx, payload, start, end, table_class, &cache)?
+                    positional_variable_table(ctx, payload, start, end, table_class, cache)?
                 }
                 None => None,
             },
             None => None,
         };
         if !positional {
-            replay_variable_class = variables.as_ref().and_then(|table| table.entity_ref);
+            replay.variable = variables.as_ref().and_then(|table| table.entity_ref);
         }
-        let segments = match segment_table(ctx, payload, start, end)? {
+        let segments = if selected { match segment_table(ctx, payload, start, end)? {
             Some(segments) => Some(segments),
             None if positional => positional_segment_table(ctx, payload, start, end)?,
             None => None,
-        };
-        let trim_entities = match trim_entity_table(ctx, payload, start, end)? {
+        } } else { None };
+        let trim_entities = if selected { match trim_entity_table(ctx, payload, start, end)? {
             Some(table) => Some(table),
-            None if positional => match replay_trim_entity_classes {
+            None if positional => match replay.trim_entity {
                 Some(classes) => positional_trim_entity_table(
                     ctx,
                     payload,
                     start,
                     end,
                     classes,
-                    replay_trim_vertex_classes.map(|classes| classes.table),
+                    replay.trim_vertex.map(|classes| classes.table),
                 )?,
                 None => None,
             },
             None => None,
-        };
+        } } else { None };
         if !positional {
-            replay_trim_entity_classes = trim_table_header(ctx, payload, b"ent_tab\0", start, end)?
+            replay.trim_entity = trim_table_header(ctx, payload, b"ent_tab\0", start, end)?
                 .map(|header| header.classes);
         }
-        let trim_vertices = match trim_vertex_table(
+        let trim_vertices = if selected { match trim_vertex_table(
             ctx,
             payload,
             start,
@@ -8855,7 +8772,7 @@ fn definitions_in_ranges(
             variables.as_ref(),
         )? {
             Some(table) => Some(table),
-            None if positional => match replay_trim_vertex_classes {
+            None if positional => match replay.trim_vertex {
                 Some(classes) => positional_trim_vertex_table(
                     ctx,
                     payload,
@@ -8868,54 +8785,54 @@ fn definitions_in_ranges(
                 None => None,
             },
             None => None,
-        };
+        } } else { None };
         if !positional {
-            replay_trim_vertex_classes =
+            replay.trim_vertex =
                 trim_table_header(ctx, payload, b"vert_tab\0", start, end)?
                     .map(|header| header.classes);
         }
         let order_table = match order_table(ctx, payload, start, end)? {
             Some(table) => Some(table),
-            None if positional => match replay_order_class {
+            None if positional => match replay.order {
                 Some(class) => positional_order_table(ctx, payload, start, end, class)?,
                 None => None,
             },
             None => None,
         };
         if !positional {
-            replay_order_class = order_table.as_ref().and_then(|table| table.entity_ref);
+            replay.order = order_table.as_ref().and_then(|table| table.entity_ref);
         }
-        let section_3d = match section_3d(ctx, payload, start, end)? {
+        let section_3d = if selected { match section_3d(ctx, payload, start, end)? {
             Some(section) => Some(section),
             None if positional => positional_section_3d(ctx, payload, start, end)?,
             None => None,
-        };
-        let dimensions = if let Some(table) = dimension_table(ctx, payload, start, end, &cache)? {
+        } } else { None };
+        let dimensions = if let Some(table) = dimension_table(ctx, payload, start, end, cache)? {
             Some(table)
         } else if positional {
-            match replay_dimension_class {
+            match replay.dimension {
                 Some(table_class) => {
-                    match positional_dimension_table(ctx, payload, start, end, table_class, &cache)?
+                    match positional_dimension_table(ctx, payload, start, end, table_class, cache)?
                     {
                         Some(table) => Some(table),
                         None => self_described_positional_dimension_table(
-                            ctx, payload, start, end, &cache,
+                            ctx, payload, start, end, cache,
                         )?,
                     }
                 }
                 None => {
-                    self_described_positional_dimension_table(ctx, payload, start, end, &cache)?
+                    self_described_positional_dimension_table(ctx, payload, start, end, cache)?
                 }
             }
         } else {
             None
         };
         if !positional {
-            replay_dimension_class = dimensions.as_ref().and_then(|table| table.entity_ref);
+            replay.dimension = dimensions.as_ref().and_then(|table| table.entity_ref);
         }
         let mut relations = match relation_table(ctx, payload, start, end)? {
             Some(table) => Some(table),
-            None if positional => match replay_relation_class {
+            None if positional => match replay.relation {
                 Some(table_class) => {
                     positional_relation_table(ctx, payload, start, end, table_class)?
                 }
@@ -8924,10 +8841,10 @@ fn definitions_in_ranges(
             None => None,
         };
         if !positional {
-            replay_relation_class = relations.as_ref().and_then(|table| table.entity_ref);
-            replay_skamp_class =
+            replay.relation = relations.as_ref().and_then(|table| table.entity_ref);
+            replay.skamp =
                 named_array_class(ctx, payload, b"skamp_ptr\0", start, schema_end)?;
-            replay_triples_class =
+            replay.triples =
                 named_array_class(ctx, payload, b"triples_ptr\0", start, schema_end)?;
         } else if let Some(table) = &mut relations {
             if table
@@ -8944,11 +8861,8 @@ fn definitions_in_ranges(
                         rows: feature_skamps(ctx, payload, start, end)?,
                     });
                 } else {
-                    table.skamps = match replay_skamp_class {
-                        Some(table_class) => SolverSubtable::from_parts(
-                            positional_solver_table_header(payload, start, end, table_class),
-                            positional_feature_skamps(ctx, payload, start, end, table_class)?,
-                        ),
+                    table.skamps = match replay.skamp {
+                        Some(table_class) => positional_feature_skamps(ctx, payload, start, end, table_class)?,
                         None => None,
                     };
                 }
@@ -8967,22 +8881,20 @@ fn definitions_in_ranges(
                         rows: feature_relation_triples(ctx, payload, start, end)?,
                     });
                 } else {
-                    table.triples = match replay_triples_class {
-                        Some(table_class) => SolverSubtable::from_parts(
-                            positional_solver_table_header(payload, start, end, table_class),
-                            positional_relation_triples(ctx, payload, start, end, table_class)?,
-                        ),
+                    table.triples = match replay.triples {
+                        Some(table_class) => positional_relation_triples(ctx, payload, start, end, table_class)?,
                         None => None,
                     };
                 }
             }
         }
+        if !selected { return Ok(None); }
         let named_saved_section = saved_section(
             ctx,
             payload,
             start,
             end,
-            &cache,
+            cache,
             order_table.as_ref(),
             segments.as_ref(),
         )?;
@@ -8993,21 +8905,22 @@ fn definitions_in_ranges(
                 payload,
                 start,
                 end,
-                &cache,
+                cache,
                 order_table.as_ref(),
                 segments.as_ref(),
             )?,
             None => None,
         };
-        let owner_feature_id = owner_override.or_else(|| {
-            let mut ids = contextual_references(payload, start, end, b"feat_id", b"gsec2d_ptr")
-                .map(|(_, id)| id);
-            let first = ids.next()?;
-            ids.all(|id| id == first).then_some(first)
-        });
+        let owner_feature_id = if owner_override.is_some() { owner_override } else {
+            let mut offsets = start..end.saturating_sub(2 + b"feat_id".len());
+            let first = ctx.find_map(&mut offsets, |offset| Ok(contextual_reference(payload, offset, end, b"feat_id", b"gsec2d_ptr")), "creo contextual owner search")?;
+            match first {
+                Some(first) if ctx.all_by(offsets, |offset| Ok(contextual_reference(payload, offset, end, b"feat_id", b"gsec2d_ptr").is_none_or(|id| id == first)), "creo contextual owner agreement")? => Some(first),
+                _ => None,
+            }
+        };
         let body = ctx.copy_retained(&payload[start..end], "creo feature definition body")?;
-        ctx.reserve_vec(&mut result, 1, "creo parsed feature definitions")?;
-        result.push(FeatureDefinition {
+        Ok(Some(FeatureDefinition {
             identity: DefinitionIdentity::Parsed {
                 schema_id: id,
                 owner_feature_id,
@@ -9025,40 +8938,21 @@ fn definitions_in_ranges(
             relations,
             saved_section,
             offset: start,
-        });
-    }
-    Ok(result)
+        }))
 }
 
-fn contextual_references<'a>(
-    payload: &'a [u8],
-    start: usize,
-    end: usize,
-    field: &'a [u8],
-    following_record: &'a [u8],
-) -> impl Iterator<Item = (usize, u32)> + 'a {
+fn contextual_reference(payload: &[u8], record_start: usize, end: usize, field: &[u8], following_record: &[u8]) -> Option<u32> {
     let needle_len = 2 + field.len() + 1;
-    payload[start..end]
-        .windows(needle_len)
-        .enumerate()
-        .filter_map(move |(relative, window)| {
-            if window.get(..2) != Some(&[psb::token::NAMED_RECORD, 1])
-                || window.get(2..2 + field.len()) != Some(field)
-                || window.last() != Some(&0)
-            {
-                return None;
-            }
-            let record_start = start + relative;
-            let value_start = record_start + needle_len;
-            let (value, after_value) = psb::reference_id(payload, value_start).ok()?;
-            let following_end = after_value.checked_add(3 + following_record.len())?;
-            (following_end <= end
-                && payload.get(after_value..after_value + 2)
-                    == Some(&[psb::token::NAMED_RECORD, 0])
-                && payload.get(after_value + 2..following_end - 1) == Some(following_record)
-                && payload.get(following_end - 1) == Some(&0))
-            .then_some((record_start, value))
-        })
+    let window = payload.get(record_start..record_start.checked_add(needle_len)?)?;
+    if window.get(..2) != Some(&[psb::token::NAMED_RECORD, 1])
+        || window.get(2..2 + field.len()) != Some(field) || window.last() != Some(&0) { return None; }
+    let value_start = record_start + needle_len;
+    let (value, after_value) = psb::reference_id(payload, value_start).ok()?;
+    let following_end = after_value.checked_add(3 + following_record.len())?;
+    (following_end <= end
+        && payload.get(after_value..after_value + 2) == Some(&[psb::token::NAMED_RECORD, 0])
+        && payload.get(after_value + 2..following_end - 1) == Some(following_record)
+        && payload.get(following_end - 1) == Some(&0)).then_some(value)
 }
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
@@ -9096,16 +8990,16 @@ fn definition_starts(
 ) -> Result<Vec<DefinitionStart>, CodecError> {
     const PREFIX: &[u8] = b"feat_defs_";
     let mut starts = Vec::new();
-    for offset in 0..payload.len() {
+    for offset in ctx.admit_iter(0..payload.len(), "creo definition label traversal")? {
         if payload.get(offset..offset + PREFIX.len()) != Some(PREFIX) {
             continue;
         }
         let digits_start = offset + PREFIX.len();
-        let Some(nul_relative) = payload[digits_start..].iter().position(|&byte| byte == 0) else {
+        let Some(nul_relative) = ctx.position_by(&payload[digits_start..], |byte| Ok(*byte == 0), "creo definition label terminator")? else {
             continue;
         };
         let digits = &payload[digits_start..digits_start + nul_relative];
-        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        if digits.is_empty() || !ctx.all_by(digits, |byte| Ok(byte.is_ascii_digit()), "creo definition label digits")? {
             continue;
         }
         let Ok(digits) = ctx.validate_utf8(digits, "creo UTF-8 validation")? else {
@@ -9122,23 +9016,16 @@ fn definition_starts(
             positional: false,
         });
     }
-    ctx.sort_unstable_by(
-        &mut starts,
-        |value| &value.offset,
-        Ord::cmp,
-        "creo feature definition starts sort",
-    )?;
     let labeled_count = starts.len();
-    for index in 0..labeled_count {
+    for index in ctx.admit_iter(0..labeled_count, "creo contextual definition range traversal")? {
         let start = starts[index].offset;
         let end = if index + 1 < labeled_count {
             starts[index + 1].offset
         } else {
             payload.len()
         };
-        for (offset, owner) in
-            contextual_references(payload, start, end, b"feat_id", b"ref_model_info")
-        {
+        for offset in ctx.admit_iter(start..end.saturating_sub(2 + b"feat_id".len()), "creo contextual definition traversal")? {
+            let Some(owner) = contextual_reference(payload, offset, end, b"feat_id", b"ref_model_info") else { continue; };
             ctx.reserve_vec(&mut starts, 1, "creo feature definition starts")?;
             starts.push(DefinitionStart {
                 offset,
@@ -9170,7 +9057,8 @@ fn depdb_gsec2d_starts(
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
     let mut starts = Vec::new();
-    for (start, window) in payload.windows(GSEC.len()).enumerate() {
+    for start in ctx.admit_iter(0..payload.len().saturating_sub(GSEC.len() - 1), "creo DEPDB section marker traversal")? {
+        let window = &payload[start..start + GSEC.len()];
         if window != GSEC {
             continue;
         }
@@ -9188,54 +9076,12 @@ fn depdb_gsec2d_starts(
             continue;
         };
         let digits_start = name_offset + NAME.len();
-        let Some(candidate) = (|| -> Result<Option<_>, CodecError> {
-            let digits_end = {
-                let Some(value) = payload[digits_start..search_end]
-                    .iter()
-                    .position(|byte| *byte == 0)
-                else {
-                    return Ok(None);
-                };
-                value
-            } + digits_start;
-            let digits = {
-                let Some(value) = payload.get(digits_start..digits_end) else {
-                    return Ok(None);
-                };
-                value
-            };
-            if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-                return Ok(None);
-            }
-            let id = {
-                let Some(value) = ctx
-                    .parse_text::<u32>(
-                        {
-                            let Some(value) =
-                                ctx.validate_utf8(digits, "creo UTF-8 validation")?.ok()
-                            else {
-                                return Ok(None);
-                            };
-                            value
-                        },
-                        "creo scalar text parsing",
-                    )?
-                    .ok()
-                else {
-                    return Ok(None);
-                };
-                value
-            };
-            Ok(Some(DefinitionStart {
-                offset: start,
-                id: NonZeroU32::new(id),
-                owner_override: None,
-                positional: false,
-            }))
-        })()?
-        else {
-            continue;
-        };
+        let Some(nul) = payload[digits_start..search_end].iter().position(|byte| *byte == 0) else { continue; };
+        let digits = &payload[digits_start..digits_start + nul];
+        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) { continue; }
+        let Ok(text) = ctx.validate_utf8(digits, "creo UTF-8 validation")? else { continue; };
+        let Ok(id) = ctx.parse_text::<u32>(text, "creo scalar text parsing")? else { continue; };
+        let candidate = DefinitionStart { offset: start, id: NonZeroU32::new(id), owner_override: None, positional: false };
         ctx.reserve_vec(&mut starts, 1, "creo DEPDB section starts")?;
         starts.push(candidate);
     }
@@ -9248,21 +9094,27 @@ pub(crate) fn definitions(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    let mut starts = definition_starts(ctx, payload)?;
+    let mut storage = ctx.reserve_scoped(0, "creo definition start scratch")?;
+    let mut starts = storage.with_storage(|| definition_starts(ctx, payload))?;
     let mut retained_offsets = BTreeSet::new();
-    for DefinitionStart { offset, .. } in &starts {
-        ctx.insert_btree_set(
+    for DefinitionStart { offset, .. } in ctx.admit_iter(&starts, "creo retained definition index traversal")? {
+        storage.with_storage(|| ctx.insert_btree_set(
             &mut retained_offsets,
             *offset,
             "creo retained definition offset nodes",
-        )?;
+        ))?;
     }
-    let replay_markers = s2d_replay_starts(ctx, payload)?;
-    let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
-    for offset in replay_markers {
-        if !claimed_markers.contains(&offset) {
-            let id = inherited_definition_id(&starts, offset);
-            ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
+    let (mut labeled, mut labeled_storage) = ctx.temporary_vec(starts.len(), "creo inherited definition index")?;
+    for entry in ctx.admit_iter(&starts, "creo inherited definition index traversal")? {
+        if !entry.positional { labeled.push(*entry); }
+    }
+    labeled_storage.with_storage(|| ctx.stable_sort_by_key(&mut labeled, |entry| entry.offset, Ord::cmp, "creo inherited definition ordering"))?;
+    let replay_markers = storage.with_storage(|| s2d_replay_starts(ctx, payload))?;
+    let claimed_markers = storage.with_storage(|| claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers))?;
+    for offset in ctx.admit_iter(replay_markers, "creo replay range traversal")? {
+        if !ctx.contains_btree_set(&claimed_markers, &offset, "creo claimed marker membership")? {
+            let id = inherited_definition_id(ctx, &labeled, offset)?;
+            storage.with_storage(|| ctx.reserve_vec(&mut starts, 1, "creo definition replay starts"))?;
             starts.push(DefinitionStart {
                 offset,
                 id,
@@ -9271,24 +9123,18 @@ pub(crate) fn definitions(
             });
         }
     }
-    ctx.sort_unstable_by(
+    storage.with_storage(|| ctx.sort_unstable_by(
         &mut starts,
         |value| &value.offset,
         Ord::cmp,
         "creo feature definition starts sort",
-    )?;
-    ctx.dedup_by_key(
+    ))?;
+    storage.with_storage(|| ctx.dedup_by_key(
         &mut starts,
         |entry| Ok(entry.offset),
         "creo definitions starts deduplication",
-    )?;
-    let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
-    ctx.retain_vec(
-        &mut definitions,
-        |definition| Ok(retained_offsets.contains(&definition.offset)),
-        "creo definition offset retain",
-    )?;
-    Ok(definitions)
+    ))?;
+    definitions_in_ranges(ctx, payload, &starts, Some(&retained_offsets))
 }
 
 /// Decode labelled and positional feature definitions embedded directly in a
@@ -9298,20 +9144,26 @@ pub(crate) fn depdb_definitions(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    let mut starts = definition_starts(ctx, payload)?;
-    let depdb_starts = depdb_gsec2d_starts(ctx, payload)?;
-    ctx.reserve_vec(
+    let mut storage = ctx.reserve_scoped(0, "creo definition start scratch")?;
+    let mut starts = storage.with_storage(|| definition_starts(ctx, payload))?;
+    let depdb_starts = storage.with_storage(|| depdb_gsec2d_starts(ctx, payload))?;
+    storage.with_storage(|| ctx.reserve_vec(
         &mut starts,
         depdb_starts.len(),
         "creo DEPDB definition starts",
-    )?;
-    starts.extend(depdb_starts);
-    let replay_markers = s2d_replay_starts(ctx, payload)?;
-    let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
-    for offset in replay_markers {
-        if !claimed_markers.contains(&offset) {
-            let id = inherited_definition_id(&starts, offset);
-            ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
+    ))?;
+    starts.extend(ctx.admit_iter(depdb_starts, "creo DEPDB start extension")?);
+    let (mut labeled, mut labeled_storage) = ctx.temporary_vec(starts.len(), "creo inherited definition index")?;
+    for entry in ctx.admit_iter(&starts, "creo inherited definition index traversal")? {
+        if !entry.positional { labeled.push(*entry); }
+    }
+    labeled_storage.with_storage(|| ctx.stable_sort_by_key(&mut labeled, |entry| entry.offset, Ord::cmp, "creo inherited definition ordering"))?;
+    let replay_markers = storage.with_storage(|| s2d_replay_starts(ctx, payload))?;
+    let claimed_markers = storage.with_storage(|| claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers))?;
+    for offset in ctx.admit_iter(replay_markers, "creo replay range traversal")? {
+        if !ctx.contains_btree_set(&claimed_markers, &offset, "creo claimed marker membership")? {
+            let id = inherited_definition_id(ctx, &labeled, offset)?;
+            storage.with_storage(|| ctx.reserve_vec(&mut starts, 1, "creo definition replay starts"))?;
             starts.push(DefinitionStart {
                 offset,
                 id,
@@ -9320,26 +9172,25 @@ pub(crate) fn depdb_definitions(
             });
         }
     }
-    ctx.sort_unstable_by(
+    storage.with_storage(|| ctx.sort_unstable_by(
         &mut starts,
         |value| &value.offset,
         Ord::cmp,
         "creo feature definition starts sort",
-    )?;
-    ctx.dedup_by_key(
+    ))?;
+    storage.with_storage(|| ctx.dedup_by_key(
         &mut starts,
         |entry| Ok(entry.offset),
         "creo depdb definitions starts deduplication",
-    )?;
-    definitions_in_ranges(ctx, payload, &starts)
+    ))?;
+    definitions_in_ranges(ctx, payload, &starts, None)
 }
 
 fn s2d_replay_starts(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Vec<usize>, CodecError> {
     const PREFIX: &[u8] = b"\xe3S2D";
-    let candidates = payload
-        .windows(PREFIX.len())
-        .enumerate()
-        .filter_map(|(offset, window)| {
+    let candidates = ctx.admit_iter(0..payload.len().saturating_sub(PREFIX.len() - 1), "creo replay marker traversal")?
+        .filter_map(|offset| {
+            let window = &payload[offset..offset + PREFIX.len()];
             if window != PREFIX {
                 return None;
             }
@@ -9355,12 +9206,9 @@ fn s2d_replay_starts(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Vec<usiz
     Ok(starts)
 }
 
-fn inherited_definition_id(starts: &[DefinitionStart], replay_offset: usize) -> Option<NonZeroU32> {
-    starts
-        .iter()
-        .filter(|entry| !entry.positional && entry.offset < replay_offset)
-        .max_by_key(|entry| entry.offset)
-        .and_then(|entry| entry.id)
+fn inherited_definition_id(ctx: &DecodeContext<'_>, labeled: &[DefinitionStart], replay_offset: usize) -> Result<Option<NonZeroU32>, CodecError> {
+    let index = ctx.partition_point(labeled, |entry| Ok(entry.offset < replay_offset), "creo inherited definition lookup")?;
+    Ok(index.checked_sub(1).and_then(|index| labeled[index].id))
 }
 
 fn claimed_s2d_replay_markers(
@@ -9369,22 +9217,14 @@ fn claimed_s2d_replay_markers(
     starts: &[DefinitionStart],
     replay_markers: &[usize],
 ) -> Result<BTreeSet<usize>, CodecError> {
-    let candidates = starts
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| entry.positional)
-        .filter_map(|(index, DefinitionStart { offset: start, .. })| {
-            let end = starts
-                .get(index + 1)
-                .map_or(payload.len(), |entry| entry.offset);
-            replay_markers
-                .iter()
-                .copied()
-                .find(|marker| marker >= start && *marker < end)
-        });
     let mut markers = BTreeSet::new();
-    for marker in candidates {
-        ctx.insert_btree_set(&mut markers, marker, "creo claimed S2D marker nodes")?;
+    for (index, entry) in ctx.admit_iter(starts, "creo claimed marker range traversal")?.enumerate() {
+        if !entry.positional { continue; }
+        let end = starts.get(index + 1).map_or(payload.len(), |entry| entry.offset);
+        let marker_index = ctx.partition_point(replay_markers, |marker| Ok(*marker < entry.offset), "creo claimed marker lookup")?;
+        if let Some(&marker) = replay_markers.get(marker_index).filter(|&&marker| marker < end) {
+            ctx.insert_btree_set(&mut markers, marker, "creo claimed S2D marker nodes")?;
+        }
     }
     Ok(markers)
 }
@@ -9395,19 +9235,25 @@ pub(crate) fn positional_replay_definitions(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    let mut starts = definition_starts(ctx, payload)?;
-    let replay_markers = s2d_replay_starts(ctx, payload)?;
-    let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
+    let mut storage = ctx.reserve_scoped(0, "creo definition start scratch")?;
+    let mut starts = storage.with_storage(|| definition_starts(ctx, payload))?;
+    let (mut labeled, mut labeled_storage) = ctx.temporary_vec(starts.len(), "creo inherited definition index")?;
+    for entry in ctx.admit_iter(&starts, "creo inherited definition index traversal")? {
+        if !entry.positional { labeled.push(*entry); }
+    }
+    labeled_storage.with_storage(|| ctx.stable_sort_by_key(&mut labeled, |entry| entry.offset, Ord::cmp, "creo inherited definition ordering"))?;
+    let replay_markers = storage.with_storage(|| s2d_replay_starts(ctx, payload))?;
+    let claimed_markers = storage.with_storage(|| claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers))?;
     let mut pending_offsets = BTreeSet::new();
-    for offset in replay_markers {
-        if !claimed_markers.contains(&offset) {
-            ctx.insert_btree_set(
+    for offset in ctx.admit_iter(replay_markers, "creo replay range traversal")? {
+        if !ctx.contains_btree_set(&claimed_markers, &offset, "creo claimed marker membership")? {
+            storage.with_storage(|| ctx.insert_btree_set(
                 &mut pending_offsets,
                 offset,
                 "creo pending S2D marker nodes",
-            )?;
-            let id = inherited_definition_id(&starts, offset);
-            ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
+            ))?;
+            let id = inherited_definition_id(ctx, &labeled, offset)?;
+            storage.with_storage(|| ctx.reserve_vec(&mut starts, 1, "creo definition replay starts"))?;
             starts.push(DefinitionStart {
                 offset,
                 id,
@@ -9416,24 +9262,18 @@ pub(crate) fn positional_replay_definitions(
             });
         }
     }
-    ctx.sort_unstable_by(
+    storage.with_storage(|| ctx.sort_unstable_by(
         &mut starts,
         |value| &value.offset,
         Ord::cmp,
         "creo feature definition starts sort",
-    )?;
-    ctx.dedup_by_key(
+    ))?;
+    storage.with_storage(|| ctx.dedup_by_key(
         &mut starts,
         |entry| Ok(entry.offset),
         "creo positional replay definitions starts deduplication",
-    )?;
-    let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
-    ctx.retain_vec(
-        &mut definitions,
-        |definition| Ok(pending_offsets.contains(&definition.offset)),
-        "creo replay definition retain",
-    )?;
-    Ok(definitions)
+    ))?;
+    definitions_in_ranges(ctx, payload, &starts, Some(&pending_offsets))
 }
 
 /// Decode one standalone DEPDB `gsec2d_ptr` section with an optional proven owner.
@@ -9447,13 +9287,9 @@ pub(crate) fn depdb_section_definition(
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
     const PREFIX: &[u8] = b"feat_defs_";
-    let mut starts = payload
-        .windows(GSEC.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == GSEC).then_some(offset));
-    let (Some(start), None) = (starts.next(), starts.next()) else {
-        return Ok(None);
-    };
+    let mut offsets = 0..payload.len().saturating_sub(GSEC.len() - 1);
+    let Some(start) = ctx.find_by(&mut offsets, |&offset| Ok(&payload[offset..offset + GSEC.len()] == GSEC), "creo standalone section search")? else { return Ok(None); };
+    if ctx.any_by(offsets, |offset| Ok(&payload[offset..offset + GSEC.len()] == GSEC), "creo standalone section uniqueness")? { return Ok(None); }
     let name_search_end = start
         .checked_add(NAME_WINDOW)
         .map_or(payload.len(), |window_end| window_end.min(payload.len()));
@@ -9468,48 +9304,11 @@ pub(crate) fn depdb_section_definition(
         return Ok(None);
     };
     let name = name_offset + NAME.len();
-    let Some(section_id) = (|| -> Result<Option<_>, CodecError> {
-        let name_end = {
-            let Some(value) = payload[name..name_search_end]
-                .iter()
-                .position(|byte| *byte == 0)
-            else {
-                return Ok(None);
-            };
-            value
-        } + name;
-        let digits = {
-            let Some(value) = payload.get(name..name_end) else {
-                return Ok(None);
-            };
-            value
-        };
-        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-            return Ok(None);
-        }
-        let section_id = {
-            let Some(value) = ctx
-                .parse_text::<u32>(
-                    {
-                        let Some(value) = ctx.validate_utf8(digits, "creo UTF-8 validation")?.ok()
-                        else {
-                            return Ok(None);
-                        };
-                        value
-                    },
-                    "creo scalar text parsing",
-                )?
-                .ok()
-            else {
-                return Ok(None);
-            };
-            value
-        };
-        Ok(Some(section_id))
-    })()?
-    else {
-        return Ok(None);
-    };
+    let Some(nul) = payload[name..name_search_end].iter().position(|byte| *byte == 0) else { return Ok(None); };
+    let digits = &payload[name..name + nul];
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) { return Ok(None); }
+    let Ok(text) = ctx.validate_utf8(digits, "creo UTF-8 validation")? else { return Ok(None); };
+    let Ok(section_id) = ctx.parse_text::<u32>(text, "creo scalar text parsing")? else { return Ok(None); };
     let end = ctx
         .find_bytes_in(
             payload,
@@ -9528,6 +9327,7 @@ pub(crate) fn depdb_section_definition(
             owner_override: owner_feature_id,
             positional: true,
         }],
+        None,
     )?
     .pop())
 }
@@ -9539,18 +9339,23 @@ pub(crate) fn bind_definition_owners(
     geometry_tables: &[FeatureGeometryTable],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "creo datum owner index")?;
-    let mut owners = std::collections::HashMap::<u32, Option<u32>>::new();
+    let mut owners = None;
+    for definition in ctx.admit_iter(&mut definitions, "creo datum definition traversal")? {
+        if definition.identity.owner_feature_id().is_some() { continue; }
+        let Some(plane) = definition.section_3d.as_ref().and_then(|section| section.sketch_plane_entity_id) else { continue; };
+        if owners.is_none() {
+    let mut index = std::collections::HashMap::<u32, Option<u32>>::new();
     for table in ctx.admit_iter(geometry_tables, "creo datum owner table traversal")? {
         let Some(ids) = table.kind.datum_ids() else { continue; };
         for id in ctx.admit_iter(ids, "creo datum owner ID traversal")? {
-            storage.with_storage(|| ctx.entry_hash_map(&mut owners, *id, "creo datum owner nodes"))?
+            storage.with_storage(|| ctx.entry_hash_map(&mut index, *id, "creo datum owner nodes"))?
                 .and_modify(|owner| { if *owner != Some(table.feature_id) { *owner = None; } })
                 .or_insert(Some(table.feature_id));
         }
     }
-    for definition in ctx.admit_iter(&mut definitions, "creo datum definition traversal")? {
-        if definition.identity.owner_feature_id().is_some() { continue; }
-        let Some(plane) = definition.section_3d.as_ref().and_then(|section| section.sketch_plane_entity_id) else { continue; };
+            owners = Some(index);
+        }
+        let Some(owners) = owners.as_ref() else { continue; };
         if let Some(owner) = owners.get(&plane).copied().flatten() {
             definition.identity = DefinitionIdentity::Parsed { schema_id: definition.identity.schema_id(), owner_feature_id: Some(owner) };
         }
@@ -9739,3 +9544,6 @@ mod tests;
 
 #[cfg(test)]
 mod numerical_range_tests;
+
+#[cfg(test)]
+mod selection_tests;

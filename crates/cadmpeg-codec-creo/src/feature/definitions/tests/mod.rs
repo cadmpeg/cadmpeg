@@ -105,31 +105,12 @@ fn assert_definition_limit(
     retained: bool,
     parse: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let run = |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        if retained {
-            policy.limits.max_retained_bytes = limit;
-        } else {
-            policy.limits.max_collection_items = limit;
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)?;
-        parse(&ctx)
-    };
-    assert!(run(u64::MAX).is_ok(), "service input should parse");
-    let dimension = if retained {
-        ResourceDimension::RetainedBytes
-    } else {
-        ResourceDimension::CollectionItems
-    };
-    let found = (0..128).any(|limit| {
-        matches!(run(limit), Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == dimension && refusal.operation == operation)
-    });
-    assert!(found, "expected a refusal at {operation}");
+    use cadmpeg_core::decode::ResourceDimension;
+    assert!(crate::decode::with_test_decode_ctx(|ctx| parse(ctx)).is_ok(), "service input should parse");
+    let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+    let error = crate::test_support::last_refusal_at(payload, dimension, operation, parse);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+        if refusal.dimension == dimension && refusal.operation == operation), "expected a refusal at {operation}");
 }
 
 #[test]
@@ -145,7 +126,9 @@ fn contextual_definition_start_vec_refuses_before_growth() {
     let payload = b"feat_defs_1\0\xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0";
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    let error = crate::test_support::last_refusal_at(payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo feature definition starts", |ctx| super::definition_starts(ctx, payload));
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    policy.limits.max_collection_items = limit.limit;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
             .expect("definition input admitted");
@@ -226,6 +209,7 @@ fn parsed_definition_vec_refuses_before_growth() {
                 owner_override: None,
                 positional: false,
             }],
+        None,
         )
         .map(|_| ())
     });
@@ -244,6 +228,7 @@ fn definition_scalar_cache_refuses_before_unique_image_insertion() {
                 owner_override: None,
                 positional: false,
             }],
+        None,
         )
         .map(|_| ())
     });
@@ -262,6 +247,7 @@ fn definition_body_refuses_before_retained_copy() {
                 owner_override: None,
                 positional: false,
             }],
+        None,
         )
         .map(|_| ())
     });
@@ -280,6 +266,7 @@ fn feature_parameter_frame_vec_refuses_before_growth() {
                 owner_override: None,
                 positional: false,
             }],
+        None,
         )
         .map(|_| ())
     });
@@ -298,6 +285,7 @@ fn feature_parameter_frame_body_refuses_before_retained_copy() {
                 owner_override: None,
                 positional: false,
             }],
+        None,
         )
         .map(|_| ())
     });
@@ -316,6 +304,7 @@ fn feature_outline_vec_refuses_before_growth() {
                 owner_override: None,
                 positional: false,
             }],
+        None,
         )
         .map(|_| ())
     });
@@ -334,6 +323,7 @@ fn feature_outline_scalar_refuses_before_retained_copy() {
                 owner_override: None,
                 positional: false,
             }],
+        None,
         )
         .map(|_| ())
     });
