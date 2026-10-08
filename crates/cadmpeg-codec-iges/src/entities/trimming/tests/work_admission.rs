@@ -21,6 +21,50 @@ fn simple_ring_duplicate_proof_refuses_work() {
 }
 
 #[test]
+fn simple_ring_rejects_a_nonadjacent_duplicate_vertex() {
+    let points = [
+        [0.0, 0.0],
+        [4.0, 0.0],
+        [4.0, 4.0],
+        [0.0, 4.0],
+        [4.0, 0.0],
+        [0.0, 0.0],
+    ];
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert!(SimpleRing::new(points.to_vec(), ctx).unwrap().is_err());
+    });
+}
+
+#[test]
+fn inner_boundary_vertices_must_all_remain_inside_the_outer_ring() {
+    const SCALE: f64 = 1.0e308;
+    let outer = vec![
+        [0.0, SCALE],
+        [SCALE, 0.0],
+        [0.0, -SCALE],
+        [-SCALE, 0.0],
+        [0.0, SCALE],
+    ];
+    let escaping_inner = vec![
+        [0.0, 0.0],
+        [1.5 * SCALE, 0.1 * SCALE],
+        [-0.1 * SCALE, 0.1 * SCALE],
+        [0.0, 0.0],
+    ];
+    crate::test_support::with_service_context(&[], |ctx| {
+        let outer = SimpleRing::new(outer, ctx).unwrap();
+        let inner = SimpleRing::new(escaping_inner, ctx).unwrap();
+        assert!(match (outer, inner) {
+            (Ok(outer), Ok(inner)) => {
+                !super::super::inner_boundaries_are_disjoint_and_inside(&outer, &[inner], ctx)
+                    .unwrap()
+            }
+            _ => true,
+        });
+    });
+}
+
+#[test]
 fn simple_ring_intersection_proof_refuses_work() {
     assert_scan_work_refusal("iges planar self-intersection comparisons", |ctx| {
         SimpleRing::new(square(), ctx)
