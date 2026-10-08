@@ -1992,3 +1992,5 @@ mod work_admission;
 mod boundary_storage;
 
 mod projection_outcome_storage;
+
+mod recursive_storage;
