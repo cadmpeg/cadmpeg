@@ -866,7 +866,7 @@ fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
 }
 
 #[test]
-fn class21_pcurve_multiplicity_range_collector_preserves_work_refusal() {
+fn class21_pcurve_multiplicity_storage_preserves_refusal_without_work() {
     let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
@@ -881,18 +881,24 @@ fn class21_pcurve_multiplicity_range_collector_preserves_work_refusal() {
     let pcurve = service.expect("service fixture produces a pcurve");
     assert_eq!(pcurve.multiplicities, [2, 2]);
 
-    let refused =
-        crate::test_support::with_work_refusal("catia_b5_class21_multiplicities", |ctx| {
-            let result = super::super::parse_pcurve(ctx, &record.record());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-            }
-            result
-        });
+    let zero_work = crate::test_support::with_work_limit(0, |ctx| {
+        super::super::parse_pcurve(ctx, &record.record())
+    })
+    .expect("fixed pcurve reads require no traversal work")
+    .expect("zero-work fixture produces a pcurve");
+    assert_eq!(zero_work.multiplicities, [2, 2]);
+
+    let refused = crate::test_support::with_collection_limit(2, |ctx| {
+        let result = super::super::parse_pcurve(ctx, &record.record());
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    });
     assert!(matches!(
         refused,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.operation == "catia_b5_class21_multiplicities"
     ));
 }
