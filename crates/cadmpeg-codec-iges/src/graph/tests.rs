@@ -20,6 +20,8 @@ use crate::test_support::test_cards::{
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
+mod storage_lifetimes;
+
 fn work_limit_at_amount(
     operation: &'static str,
     additional: u64,
