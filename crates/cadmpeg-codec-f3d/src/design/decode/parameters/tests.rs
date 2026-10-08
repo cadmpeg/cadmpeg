@@ -14,8 +14,9 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use zip::CompressionMethod;
 
 use super::{
-    decode_parameters, parse_design_parameter_record, parse_legacy_parameter_owner_68,
-    parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
+    decode_parameters, legacy_parameter_owner_68_layout, legacy_parameter_owner_88_layout,
+    parse_design_parameter_record, parse_parameter_companion, parse_parameter_owner,
+    ParsedParameterOwner,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::records::{
@@ -25,6 +26,66 @@ use crate::records::{
 use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
+
+mod retention;
+
+impl ParsedParameterOwner {
+    /// Locate this owner in a test stream through the decode path.
+    pub(in crate::design) fn into_record(
+        self,
+        stream: &str,
+        frame_start: u64,
+    ) -> Option<DesignParameterOwner> {
+        self.locate(
+            &cadmpeg_test_support::service_decode_context(),
+            stream,
+            frame_start,
+        )
+        .expect("service decode context")
+    }
+}
+
+/// The legacy 68-byte owner frame with its class tag retained.
+fn parse_legacy_parameter_owner_68(
+    ctx: &DecodeContext<'_>,
+    frame: &[u8],
+    evaluated: crate::records::identity::Located<f64>,
+    frame_start: u64,
+) -> Result<Option<ParsedParameterOwner>, cadmpeg_core::CodecError> {
+    legacy_parameter_owner_68_layout(frame, evaluated, frame_start)
+        .map(|layout| layout.retain(ctx))
+        .transpose()
+}
+
+/// The legacy 88-byte owner frame with its class tag retained.
+fn parse_legacy_parameter_owner_88(
+    ctx: &DecodeContext<'_>,
+    frame: &[u8],
+    evaluated: crate::records::identity::Located<f64>,
+    frame_start: u64,
+) -> Result<Option<ParsedParameterOwner>, cadmpeg_core::CodecError> {
+    legacy_parameter_owner_88_layout(frame, evaluated, frame_start)
+        .map(|layout| layout.retain(ctx))
+        .transpose()
+}
+
+#[test]
+fn design_parameter_class_tag_refuses_retained_bytes() {
+    let bytes = parameter_record(None, "60 mm", "User Parameter", Some("mm"), "Width", 6.0);
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        "copy F3D Design parameter class tag",
+        0,
+        |ctx| super::parse_design_parameter(ctx, &bytes).map(|_| ()),
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "copy F3D Design parameter class tag"
+                && limit.additional == 3
+    ));
+}
 
 fn compact_owned_parameter_record(
     owner_record_index: u32,
@@ -573,7 +634,12 @@ fn tagged_scalar_variant_parameter_owner_frame() -> Vec<u8> {
 
 #[test]
 fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
-    let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    let parsed = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .unwrap();
     assert_eq!(parsed.frame_length, 104);
     assert_eq!(parsed.record_index, 44);
     assert_eq!(parsed.scope_record_index, 12);
@@ -587,14 +653,23 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     let mut parameter_first = parameter_owner_frame();
     parameter_first[49..53].copy_from_slice(&43u32.to_le_bytes());
     parameter_first[82..86].copy_from_slice(&45u32.to_le_bytes());
-    let parsed = parse_parameter_owner(&parameter_first).expect("parameter-first owner frame");
+    let parsed = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_first,
+    )
+    .expect("service decode context")
+    .expect("parameter-first owner frame");
     assert_eq!(parsed.parameter_record_index, 43);
     assert_eq!(parsed.record_index, 44);
     assert_eq!(parsed.companion_record_index, 45);
 
     let mut malformed = parameter_owner_frame();
     malformed[94..98].copy_from_slice(&13u32.to_le_bytes());
-    assert!(parse_parameter_owner(&malformed).is_none());
+    assert!(
+        parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &malformed)
+            .expect("service decode context")
+            .is_none()
+    );
 }
 
 #[test]
@@ -610,31 +685,56 @@ fn parameter_owner_requires_its_complete_structural_suffix() {
     ];
     for build in builders {
         let frame = build();
-        assert!(parse_parameter_owner(&frame).is_some());
+        assert!(
+            parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &frame)
+                .expect("service decode context")
+                .is_some()
+        );
         let mut longer = frame.clone();
         longer.push(0);
-        assert!(parse_parameter_owner(&longer).is_none());
-        assert!(parse_parameter_owner(&frame[..frame.len() - 1]).is_none());
+        assert!(
+            parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &longer)
+                .expect("service decode context")
+                .is_none()
+        );
+        assert!(parse_parameter_owner(
+            &cadmpeg_test_support::service_decode_context(),
+            &frame[..frame.len() - 1]
+        )
+        .expect("service decode context")
+        .is_none());
     }
 
     assert_eq!(
-        parse_parameter_owner(&parameter_owner_frame())
-            .expect("owner frame")
-            .evaluated_value_offset,
+        parse_parameter_owner(
+            &cadmpeg_test_support::service_decode_context(),
+            &parameter_owner_frame()
+        )
+        .expect("service decode context")
+        .expect("owner frame")
+        .evaluated_value_offset,
         super::FrameRelative(40)
     );
     assert_eq!(
-        parse_parameter_owner(&compact_parameter_owner_frame())
-            .expect("compact owner frame")
-            .evaluated_value_offset,
+        parse_parameter_owner(
+            &cadmpeg_test_support::service_decode_context(),
+            &compact_parameter_owner_frame()
+        )
+        .expect("service decode context")
+        .expect("compact owner frame")
+        .evaluated_value_offset,
         super::FrameRelative(40)
     );
 }
 
 #[test]
 fn compact_parameter_owner_omits_the_variant_slot() {
-    let parsed =
-        parse_parameter_owner(&compact_parameter_owner_frame()).expect("compact parameter owner");
+    let parsed = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &compact_parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .expect("compact parameter owner");
     assert_eq!(parsed.frame_length, 103);
     assert_eq!(parsed.record_index, 6653);
     assert_eq!(parsed.scope_record_index, 6644);
@@ -647,8 +747,12 @@ fn compact_parameter_owner_omits_the_variant_slot() {
 
 #[test]
 fn counted_parameter_owner_uses_typed_u32_scalar() {
-    let parsed =
-        parse_parameter_owner(&counted_parameter_owner_frame()).expect("counted parameter owner");
+    let parsed = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &counted_parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .expect("counted parameter owner");
     assert_eq!(parsed.frame_length, 101);
     assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(41));
@@ -660,7 +764,8 @@ fn counted_parameter_owner_uses_typed_u32_scalar() {
 fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
     let mut frame = counted_parameter_owner_frame();
     frame[40] = 0;
-    let parsed = parse_parameter_owner(&frame)
+    let parsed = parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &frame)
+        .expect("service decode context")
         .expect("legacy counted parameter owner with zero scalar marker");
     assert_eq!(parsed.frame_length, 101);
     assert_eq!(parsed.evaluated_value.get(), 6.0);
@@ -672,6 +777,7 @@ fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
 #[test]
 fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     let parsed = parse_legacy_parameter_owner_68(
+        &cadmpeg_test_support::service_decode_context(),
         &legacy_parameter_owner_68_frame("284"),
         crate::records::identity::Located {
             value: 0.0,
@@ -679,6 +785,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
         },
         0,
     )
+    .expect("service decode context")
     .expect("legacy 68-byte parameter owner")
     .into_record("Design/BulkStream.dat", 0)
     .unwrap();
@@ -701,6 +808,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
 
     for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
         assert!(parse_legacy_parameter_owner_68(
+            &cadmpeg_test_support::service_decode_context(),
             &legacy_parameter_owner_68_frame(class_tag),
             crate::records::identity::Located {
                 value: 1.25,
@@ -708,6 +816,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
             },
             0
         )
+        .expect("service decode context")
         .is_some());
     }
 }
@@ -715,6 +824,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
 #[test]
 fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     assert!(parse_legacy_parameter_owner_68(
+        &cadmpeg_test_support::service_decode_context(),
         &legacy_parameter_owner_68_frame("291"),
         crate::records::identity::Located {
             value: 1.0,
@@ -722,11 +832,13 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
         },
         0
     )
+    .expect("service decode context")
     .is_none());
 
     let mut malformed = legacy_parameter_owner_68_frame("284");
     malformed[55] = 0;
     assert!(parse_legacy_parameter_owner_68(
+        &cadmpeg_test_support::service_decode_context(),
         &malformed,
         crate::records::identity::Located {
             value: 1.0,
@@ -734,12 +846,14 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
         },
         0
     )
+    .expect("service decode context")
     .is_none());
 }
 
 #[test]
 fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     let parsed = parse_legacy_parameter_owner_88(
+        &cadmpeg_test_support::service_decode_context(),
         &legacy_parameter_owner_88_frame("284"),
         crate::records::identity::Located {
             value: 2.5,
@@ -747,6 +861,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         },
         0,
     )
+    .expect("service decode context")
     .expect("legacy 88-byte parameter owner")
     .into_record("Design/BulkStream.dat", 0)
     .unwrap();
@@ -768,6 +883,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     for class_tag in ["282", "336", "325", "297"] {
         assert!(
             parse_legacy_parameter_owner_88(
+                &cadmpeg_test_support::service_decode_context(),
                 &legacy_parameter_owner_88_frame(class_tag),
                 crate::records::identity::Located {
                     value: 2.5,
@@ -775,11 +891,13 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
                 },
                 0
             )
+            .expect("service decode context")
             .is_some(),
             "class {class_tag} must use the admitted 88-byte owner grammar"
         );
     }
     assert!(parse_legacy_parameter_owner_88(
+        &cadmpeg_test_support::service_decode_context(),
         &legacy_parameter_owner_88_frame("268"),
         crate::records::identity::Located {
             value: 2.5,
@@ -787,11 +905,13 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         },
         0
     )
+    .expect("service decode context")
     .is_none());
 
     let mut mismatched = legacy_parameter_owner_88_frame("284");
     mismatched[78..82].copy_from_slice(&78u32.to_le_bytes());
     assert!(parse_legacy_parameter_owner_88(
+        &cadmpeg_test_support::service_decode_context(),
         &mismatched,
         crate::records::identity::Located {
             value: 2.5,
@@ -799,13 +919,18 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         },
         0
     )
+    .expect("service decode context")
     .is_none());
 }
 
 #[test]
 fn compact_typed_counted_parameter_owner_omits_variant_slot() {
-    let parsed = parse_parameter_owner(&compact_typed_counted_parameter_owner_frame())
-        .expect("compact typed counted parameter owner");
+    let parsed = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &compact_typed_counted_parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .expect("compact typed counted parameter owner");
     assert_eq!(parsed.frame_length, 100);
     assert_eq!(parsed.record_index, 44);
     assert_eq!(parsed.scope_record_index, 12);
@@ -823,7 +948,9 @@ fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
     let mut frame = compact_counted_parameter_owner_frame();
     frame[45..49].copy_from_slice(&46u32.to_le_bytes());
     frame[77..81].copy_from_slice(&45u32.to_le_bytes());
-    let parsed = parse_parameter_owner(&frame).expect("compact counted parameter owner");
+    let parsed = parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &frame)
+        .expect("service decode context")
+        .expect("compact counted parameter owner");
     assert_eq!(parsed.frame_length, 99);
     assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
@@ -834,8 +961,12 @@ fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
 
 #[test]
 fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
-    let parsed = parse_parameter_owner(&tagged_scalar_parameter_owner_frame())
-        .expect("tagged scalar parameter owner");
+    let parsed = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &tagged_scalar_parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .expect("tagged scalar parameter owner");
     assert_eq!(parsed.frame_length, 107);
     assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(44));
@@ -846,8 +977,12 @@ fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
 
 #[test]
 fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
-    let parsed = parse_parameter_owner(&tagged_scalar_variant_parameter_owner_frame())
-        .expect("tagged scalar variant parameter owner");
+    let parsed = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &tagged_scalar_variant_parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .expect("tagged scalar variant parameter owner");
     assert_eq!(parsed.frame_length, 108);
     assert_eq!(parsed.evaluated_value.get(), 0.8);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(44));
@@ -859,8 +994,12 @@ fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
 
 #[test]
 fn compact_scalar_parameter_owner_can_carry_a_two_byte_variant_slot() {
-    let parsed = parse_parameter_owner(&compact_variant_parameter_owner_frame())
-        .expect("compact scalar variant parameter owner");
+    let parsed = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &compact_variant_parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .expect("compact scalar variant parameter owner");
     assert_eq!(parsed.frame_length, 103);
     assert_eq!(parsed.class_tag.as_str(), "299");
     assert_eq!(parsed.variant, Some(0));
@@ -1350,6 +1489,137 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     );
 }
 
+/// A sketch scope at `byte_offset` of `stream` that binds `entity`.
+fn sketch_scope(
+    stream: &str,
+    byte_offset: u64,
+    entity: &str,
+) -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut, DesignSketchEntityBinding,
+    };
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:parameter-scope#{byte_offset}"),
+        DesignFeatureKind::Sketch,
+        12,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = byte_offset;
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let DesignScopePayloadMut::Sketch(slot) = scope.payload_mut() else {
+        panic!("sketch scope payload");
+    };
+    *slot = Some(DesignSketchEntityBinding {
+        entity_id: crate::records::identity::DesignEntityId::try_from(entity.to_owned()).unwrap(),
+        entity_reference_offset: 0,
+    });
+    scope
+}
+
+/// An entity header at `byte_offset` of `stream` for `entity`.
+fn entity_header(
+    stream: &str,
+    byte_offset: u64,
+    entity: &str,
+) -> crate::records::entity_header::DesignEntityHeader {
+    crate::records::entity_header::DesignEntityHeader {
+        id: format!("{stream}:design-entity-header#{byte_offset}"),
+        byte_offset,
+        entity_id: crate::records::identity::DesignEntityId::try_from(entity.to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("366".to_owned()).unwrap(),
+        optional_slot_present: false,
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
+            Some("MSketch".into()),
+            None,
+            crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+        )
+        .unwrap(),
+    }
+}
+
+#[test]
+fn parameter_companion_payload_ends_at_the_first_later_sketch_preamble() {
+    let native = "f3d:native";
+    let other = "f3d:other";
+    let companion = DesignParameterCompanion::unbound(
+        format!("{native}:design-parameter-companion#20"),
+        20,
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        1,
+        2,
+        std::num::NonZeroU64::new(1).unwrap(),
+        62,
+    );
+    // The scope at 100 ends the interval at 100; scopes at or after it name
+    // the preambles the companion does not own.
+    let scopes = [
+        sketch_scope(native, 2, "Sketch_4"),
+        sketch_scope(native, 100, "Sketch_1"),
+        sketch_scope(native, 104, "Sketch_2"),
+        sketch_scope(other, 104, "Sketch_3"),
+    ];
+    let entities = [
+        // Bound only by a scope before the interval end.
+        entity_header(native, 80, "Sketch_4"),
+        // Bound by no scope.
+        entity_header(native, 82, "Sketch_5"),
+        // Bound only by a scope of another stream.
+        entity_header(native, 84, "Sketch_3"),
+        entity_header(native, 94, "Sketch_2"),
+        entity_header(native, 90, "Sketch_1"),
+        // A preamble entity of another stream.
+        entity_header(other, 86, "Sketch_1"),
+    ];
+    let recipe = |stream: &str, byte_offset| ConstructionRecipe {
+        id: format!("{stream}:construction-recipe#{byte_offset}"),
+        byte_offset,
+        kind: ConstructionRecipeKind::Edge,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    let recipes = [
+        recipe(native, 92),
+        recipe(native, 85),
+        recipe(other, 81),
+        recipe(native, 79),
+        recipe(native, 70),
+    ];
+    let bound = super::bind_parameter_companion_payloads(
+        &cadmpeg_test_support::service_decode_context(),
+        vec![companion],
+        &super::ParameterCompanionInputs {
+            parameters: &[],
+            owners: &[],
+            scopes: &scopes,
+            entities: &entities,
+            headers: &[],
+            recipes: &recipes,
+            stream_lengths: &std::collections::HashMap::from([(native.to_owned(), 200)]),
+        },
+    )
+    .unwrap();
+
+    let payload = bound[0].payload().expect("bound payload");
+    assert_eq!(payload.byte_offset(), 78);
+    assert_eq!(payload.byte_length(), 12);
+    assert_eq!(
+        payload.owned_recipe_ids(),
+        [
+            format!("{native}:construction-recipe#79"),
+            format!("{native}:construction-recipe#85"),
+        ]
+    );
+}
+
 #[test]
 fn parameter_companion_binding_refuses_output_recipe_and_id_limits() {
     let companion = DesignParameterCompanion::unbound(
@@ -1490,18 +1760,46 @@ fn parameter_source_rejects_missing_or_unexpected_owner() {
 }
 
 #[test]
+fn parameter_owner_parser_propagates_class_tag_retained_refusal() {
+    let frame = parameter_owner_frame();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D class tag",
+        0,
+        |ctx| parse_parameter_owner(ctx, &frame).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && refusal.operation == "copy F3D class tag"
+                && refusal.additional == 3
+    ));
+}
+
+#[test]
 fn parameter_owner_value_offset_is_localized_once() {
-    let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+    let parsed = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .unwrap();
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
     let owner = parsed.into_record("Design/BulkStream.dat", 1000).unwrap();
     assert_eq!(owner.byte_offset(), 1000);
     assert_eq!(owner.evaluated_value_offset(), 1040);
-    assert!(parse_parameter_owner(&parameter_owner_frame())
-        .unwrap()
-        .into_record("Design/BulkStream.dat", u64::MAX)
-        .is_none());
+    assert!(parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_owner_frame()
+    )
+    .expect("service decode context")
+    .unwrap()
+    .into_record("Design/BulkStream.dat", u64::MAX)
+    .is_none());
     for owner in [
         parse_legacy_parameter_owner_68(
+            &cadmpeg_test_support::service_decode_context(),
             &legacy_parameter_owner_68_frame("284"),
             crate::records::identity::Located {
                 value: 2.5,
@@ -1509,8 +1807,10 @@ fn parameter_owner_value_offset_is_localized_once() {
             },
             0,
         )
+        .expect("service decode context")
         .unwrap(),
         parse_legacy_parameter_owner_88(
+            &cadmpeg_test_support::service_decode_context(),
             &legacy_parameter_owner_88_frame("284"),
             crate::records::identity::Located {
                 value: 2.5,
@@ -1518,6 +1818,7 @@ fn parameter_owner_value_offset_is_localized_once() {
             },
             0,
         )
+        .expect("service decode context")
         .unwrap(),
     ] {
         let owner = owner.into_record("Design/BulkStream.dat", 0).unwrap();
@@ -1534,16 +1835,20 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
         };
         for parsed in [
             parse_legacy_parameter_owner_68(
+                &cadmpeg_test_support::service_decode_context(),
                 &legacy_parameter_owner_68_frame("284"),
                 evaluated,
                 frame_start,
             )
+            .expect("service decode context")
             .unwrap(),
             parse_legacy_parameter_owner_88(
+                &cadmpeg_test_support::service_decode_context(),
                 &legacy_parameter_owner_88_frame("284"),
                 evaluated,
                 frame_start,
             )
+            .expect("service decode context")
             .unwrap(),
         ] {
             assert_eq!(
@@ -1605,18 +1910,18 @@ fn design_parameter_text_fields_refuse_each_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
-    let mut charged = 0usize;
-    for field in ["1", "AlongDistance", "mm", "d71"] {
-        charged += field.len();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::parse_design_parameter(&ctx, &payload).err().unwrap();
+    for (skip, field) in ["1", "AlongDistance", "mm", "d71"].into_iter().enumerate() {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::RetainedBytes,
+            "f3d Design UTF-16 text",
+            skip,
+            |ctx| super::parse_design_parameter(ctx, &payload),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "f3d Design UTF-16 text")
+                && refusal.operation == "f3d Design UTF-16 text"
+                && refusal.additional == u64::try_from(field.len()).unwrap())
         );
     }
     let parsed =
