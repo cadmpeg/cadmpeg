@@ -602,7 +602,8 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
 
 fn scalar_suffix<const COUNT: usize>(row: &[u8], cache: &ScalarCache) -> Option<[f64; COUNT]> {
     let mut candidate = None;
-    for start in row.len().saturating_sub(COUNT * 9)..row.len() {
+    let suffix_span = row.len().min(COUNT.checked_mul(9)?);
+    for start in row.len() - suffix_span..row.len() {
         let Some(values) = (|| {
             let mut cursor = crate::psb::Cursor::at(row, start);
             let mut values = [0.0; COUNT];
