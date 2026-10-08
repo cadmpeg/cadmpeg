@@ -2,12 +2,12 @@
 #![allow(clippy::unwrap_used)]
 const EPS_NONLINEAR_VALUE: f64 = 1.0e-9;
 
-use crate::curve::tests::compile_solve_program as curve_expression_solve_program;
 use crate::curve::expression_records;
 use crate::curve::quantity_value;
-use crate::curve::solve_unique_affine_system;
+use crate::curve::solve::solve_unique_affine_system;
+use crate::curve::solve::AffineEquationRow;
+use crate::curve::tests::compile_solve_program as curve_expression_solve_program;
 use crate::curve::tests::evaluate_expression_program;
-use crate::curve::AffineEquationRow;
 use crate::curve::CurveExpressionEquation;
 use crate::curve::CurveExpressionLine;
 use crate::curve::CurveExpressionSolveBlock;
@@ -107,7 +107,7 @@ fn dimension_inference_limit_reaches(
         )]),
     };
     let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-        crate::curve::infer_solve_variable_dimensions(
+        crate::curve::solve::infer_solve_variable_dimensions(
             ctx,
             &block,
             &values,
@@ -256,7 +256,7 @@ fn dimension_inference_refuses_duplicate_comparison_work() {
         ResourceDimension::WorkUnits,
         "creo dimension duplicate checks",
         |ctx| {
-            crate::curve::infer_solve_variable_dimensions(
+            crate::curve::solve::infer_solve_variable_dimensions(
                 ctx,
                 &block,
                 &BTreeMap::new(),
@@ -300,7 +300,13 @@ fn infer_solve_variable_dimensions(
     context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<RelationDimension>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        crate::curve::infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context)
+        crate::curve::solve::infer_solve_variable_dimensions(
+            ctx,
+            block,
+            values,
+            known_dimensions,
+            context,
+        )
     })
     .expect("test dimension inference")
 }
@@ -1245,9 +1251,20 @@ fn dimension_components_refuse_collection_limit() {
         offset: 0,
         for_offset: 1,
     };
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo_solve_dimension_components", |ctx| {
-        crate::curve::infer_solve_variable_dimensions(ctx, &block, &BTreeMap::new(), &[Some(RelationDimension::LENGTH)], RelationEvaluationContext::default())
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo_solve_dimension_components",
+        |ctx| {
+            crate::curve::solve::infer_solve_variable_dimensions(
+                ctx,
+                &block,
+                &BTreeMap::new(),
+                &[Some(RelationDimension::LENGTH)],
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1258,10 +1275,18 @@ fn dimension_components_refuse_collection_limit() {
 
 #[test]
 fn dimension_axis_refuses_collection_limit() {
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo_solve_dimension_axis", |ctx| {
-        let mut rows = vec![AffineEquationRow { coefficients: vec![1.0], rhs: 2.0 }];
-        crate::curve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo_solve_dimension_axis",
+        |ctx| {
+            let mut rows = vec![AffineEquationRow {
+                coefficients: vec![1.0],
+                rhs: 2.0,
+            }];
+            crate::curve::solve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1272,10 +1297,18 @@ fn dimension_axis_refuses_collection_limit() {
 
 #[test]
 fn dimension_pivot_rows_refuse_collection_limit() {
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve dimension pivot rows", |ctx| {
-        let mut rows = vec![AffineEquationRow { coefficients: vec![1.0], rhs: 2.0 }];
-        crate::curve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo solve dimension pivot rows",
+        |ctx| {
+            let mut rows = vec![AffineEquationRow {
+                coefficients: vec![1.0],
+                rhs: 2.0,
+            }];
+            crate::curve::solve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1285,24 +1318,31 @@ fn dimension_pivot_rows_refuse_collection_limit() {
 }
 
 fn nonlinear_seed_error(operation: &'static str) -> cadmpeg_core::CodecError {
-    let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some(operation), |cap| with_collection_limit(cap, |ctx| {
-        crate::curve::nonlinear_initial_guesses(
-            ctx,
-            &[Some(CurveExpressionValue::Number(
-                cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
-            ))],
-            &[RelationDimension::default()],
-        )
-    }));
+    let cap = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some(operation),
+        |cap| {
+            with_collection_limit(cap, |ctx| {
+                crate::curve::solve::nonlinear_initial_guesses(
+                    ctx,
+                    &[Some(CurveExpressionValue::Number(
+                        cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
+                    ))],
+                    &[RelationDimension::default()],
+                )
+            })
+        },
+    );
     with_collection_limit(cap, |ctx| {
-        crate::curve::nonlinear_initial_guesses(
+        crate::curve::solve::nonlinear_initial_guesses(
             ctx,
             &[Some(CurveExpressionValue::Number(
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
             ))],
             &[RelationDimension::default()],
         )
-    }).expect_err("nonlinear seed allocation exceeds the limit")
+    })
+    .expect_err("nonlinear seed allocation exceeds the limit")
 }
 
 #[test]
