@@ -13,7 +13,8 @@ use super::endpoints::{
     marker_is_selected_construction_line, wide_indexed_curve_endpoint_indices,
 };
 use super::markers::{
-    current_reverse_incidence_endpoint_offsets, linked_profile_point, relation_bindings_scoped,
+    current_reverse_incidence_endpoint_offsets_cached, linked_profile_point,
+    relation_bindings_scoped,
 };
 use super::operands::resolve_scalar_operand_markers;
 use super::reference_geometry::explicit_reference_plane_frame;
@@ -24,7 +25,9 @@ use super::selections::{
     coordinate_marker_local_links, generated_surface_identities, marker_local_links,
     mirror_pattern_component_path_at, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER,
 };
-use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
+use super::typed_relations::{
+    legacy_terminal_indexed_profile_line_cached, marker_curve_endpoint_markers_in, CurveMarkers,
+};
 use super::{classes_within, sorted_classes};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
@@ -2437,10 +2440,16 @@ pub(super) fn normalize_indexed_curve_entities(
         let mut marker_storage = ctx.reserve_scoped(0, TERMINAL)?;
         let markers = marker_storage
             .with_storage(|| ctx.collect_vec(lane.sketch_entities.iter(), TERMINAL))?;
+        let terminal_index = std::cell::OnceCell::new();
         let mut terminal = Vec::new();
         for curve in ctx.admit_iter(&markers, TERMINAL)? {
-            let is_terminal =
-                legacy_terminal_indexed_profile_line(ctx, &lane.native_payload, curve, &markers)?;
+            let is_terminal = legacy_terminal_indexed_profile_line_cached(
+                ctx,
+                &lane.native_payload,
+                curve,
+                &markers,
+                &terminal_index,
+            )?;
             storage.with_storage(|| ctx.push_vec(&mut terminal, is_terminal, TERMINAL))?;
         }
         terminal
@@ -2490,13 +2499,15 @@ pub(super) fn normalize_indexed_curve_entities(
         }
         let markers = lookup_storage
             .with_storage(|| ctx.collect_vec(lane.sketch_entities.iter(), REVERSE))?;
+        let reverse_index = std::cell::OnceCell::new();
         let mut coordinates = HashMap::new();
         for curve in ctx.admit_iter(&markers, REVERSE)? {
-            let Some(offsets) = current_reverse_incidence_endpoint_offsets(
+            let Some(offsets) = current_reverse_incidence_endpoint_offsets_cached(
                 ctx,
                 &lane.native_payload,
                 curve,
                 &markers,
+                &reverse_index,
             )?
             else {
                 continue;
@@ -2600,6 +2611,7 @@ fn bind_resolved_curve_vertices(
                 &markers,
                 std::rc::Rc::clone(&prefixes),
             )?;
+        let curve_markers = CurveMarkers::new(ctx, &markers)?;
         let mut selected = HashSet::new();
         for curve in ctx.admit_iter(&markers, SELECTED)? {
             if !index_from_u64(curve.offset()).is_some_and(|offset| {
@@ -2608,12 +2620,12 @@ fn bind_resolved_curve_vertices(
                 continue;
             }
             let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(SELECTED, || {
-                marker_curve_endpoint_markers(
+                marker_curve_endpoint_markers_in(
                     ctx,
                     &lane.native_payload,
                     curve,
                     &markers_by_id,
-                    &markers,
+                    &curve_markers,
                     &geometry,
                 )
             })?;
@@ -2643,6 +2655,7 @@ fn bind_resolved_curve_vertices(
                     &markers,
                     std::rc::Rc::clone(&prefixes),
                 )?;
+            let curve_markers = CurveMarkers::new(ctx, &markers)?;
             let mut resolved_curves = HashSet::new();
             let mut resolved_endpoints = HashSet::new();
             for curve in ctx.admit_iter(&markers, RESOLVE)? {
@@ -2653,12 +2666,12 @@ fn bind_resolved_curve_vertices(
                     continue;
                 }
                 let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(RESOLVE, || {
-                    marker_curve_endpoint_markers(
+                    marker_curve_endpoint_markers_in(
                         ctx,
                         &lane.native_payload,
                         curve,
                         &markers_by_id,
-                        &markers,
+                        &curve_markers,
                         &geometry,
                     )
                 })?;

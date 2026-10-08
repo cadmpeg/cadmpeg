@@ -2434,17 +2434,25 @@ pub(super) fn line_endpoint_markers_in<'a>(
         line,
         markers.by_id(),
         markers.linking_to(ctx, line.id(), "resolve SLDPRT linked line endpoints")?,
+        ReverseLinkMembership::Proven,
     )
 }
 
+#[derive(Clone, Copy)]
+enum ReverseLinkMembership {
+    Proven,
+    Unchecked,
+}
+
 /// The point markers of the line's feature with coordinates that the line
-/// links to or that link to the line, in offset order. `linking` holds the
-/// markers searched for a link to the line.
+/// links to or that link to the line, in offset order. Indexed reverse groups
+/// prove link membership; unindexed rosters are searched for the link.
 fn line_endpoint_markers_from<'a>(
     ctx: &DecodeContext<'_>,
     line: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     linking: &[&'a SketchInputEntity],
+    membership: ReverseLinkMembership,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT linked line endpoints";
     let feature = line.feature_ref.as_deref();
@@ -2469,11 +2477,12 @@ fn line_endpoint_markers_from<'a>(
     }
     for marker in ctx.admit_iter(linking, OPERATION)?.copied() {
         if endpoint(marker)?
-            && ctx.any_by(
-                marker.links(),
-                |link| ctx.equal(link.entity_ref.as_str(), line.id(), OPERATION),
-                OPERATION,
-            )?
+            && (matches!(membership, ReverseLinkMembership::Proven)
+                || ctx.any_by(
+                    marker.links(),
+                    |link| ctx.equal(link.entity_ref.as_str(), line.id(), OPERATION),
+                    OPERATION,
+                )?)
         {
             ctx.push_vec(&mut endpoints, marker, OPERATION)?;
         }
@@ -2487,63 +2496,164 @@ fn line_endpoint_markers_from<'a>(
     Ok(endpoints)
 }
 
-/// A lane roster and its offset, object and reverse-link joins. Groups preserve
-/// source order and include every occurrence, including repeated identities.
-pub(super) struct CurveMarkers<'roster, 'a> {
+type CurveObjectMarkers<'a> = HashMap<(Option<&'a str>, Option<u32>), Vec<&'a SketchInputEntity>>;
+
+/// A lane roster with joins built on first use. Feature, object and reverse-link
+/// groups preserve source order and every occurrence. Offset groups are ordered
+/// by offset, with source-order ties.
+pub(super) struct CurveMarkers<'roster, 'a, 'ctx> {
     roster: &'roster [&'a SketchInputEntity],
-    by_feature: HashMap<Option<&'a str>, Vec<&'a SketchInputEntity>>,
-    by_offset: BTreeMap<Option<&'a str>, Vec<&'a SketchInputEntity>>,
-    by_object: HashMap<(Option<&'a str>, Option<u32>), Vec<&'a SketchInputEntity>>,
-    linked_from: HashMap<&'a str, Vec<&'a SketchInputEntity>>,
+    reverse_incidence: std::cell::OnceCell<super::markers::ReverseIncidenceIndex<'a>>,
+    by_feature: std::cell::OnceCell<HashMap<Option<&'a str>, Vec<&'a SketchInputEntity>>>,
+    by_offset: std::cell::OnceCell<BTreeMap<Option<&'a str>, Vec<&'a SketchInputEntity>>>,
+    by_object: std::cell::OnceCell<CurveObjectMarkers<'a>>,
+    linked_from: std::cell::OnceCell<HashMap<&'a str, Vec<&'a SketchInputEntity>>>,
+    storage: std::cell::RefCell<ScopedReservation<'ctx>>,
 }
 
-impl<'roster, 'a> CurveMarkers<'roster, 'a> {
-    pub(super) fn new<'ctx>(
+impl<'roster, 'a, 'ctx> CurveMarkers<'roster, 'a, 'ctx> {
+    pub(super) fn new(
         ctx: &'ctx DecodeContext<'_>,
         roster: &'roster [&'a SketchInputEntity],
-    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
-        const OPERATION: &str = "index SLDPRT curve markers";
-        ctx.with_scoped_storage(OPERATION, || {
-            let mut index = Self {
-                roster,
-                by_feature: HashMap::new(),
-                by_offset: BTreeMap::new(),
-                by_object: HashMap::new(),
-                linked_from: HashMap::new(),
-            };
-            for &marker in ctx.admit_iter(roster, OPERATION)? {
-                let feature = marker.feature_ref.as_deref();
-                ctx.push_hash_group(&mut index.by_feature, feature, marker, OPERATION, OPERATION)?;
-                ctx.push_btree_group(&mut index.by_offset, feature, marker, OPERATION, OPERATION)?;
-                ctx.push_hash_group(
-                    &mut index.by_object,
-                    (feature, marker.object_index()),
-                    marker,
-                    OPERATION,
-                    OPERATION,
-                )?;
-                let mut seen_storage = ctx.reserve_scoped(0, OPERATION)?;
-                let mut seen = std::collections::BTreeSet::new();
-                for link in ctx.admit_iter(marker.links(), OPERATION)? {
-                    let target = link.entity_ref.as_str();
-                    if seen_storage
-                        .with_storage(|| ctx.insert_btree_set(&mut seen, target, OPERATION))?
-                    {
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            roster,
+            reverse_incidence: std::cell::OnceCell::new(),
+            by_feature: std::cell::OnceCell::new(),
+            by_offset: std::cell::OnceCell::new(),
+            by_object: std::cell::OnceCell::new(),
+            linked_from: std::cell::OnceCell::new(),
+            storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "index SLDPRT curve markers")?),
+        })
+    }
+
+    fn feature_markers<'query>(
+        &'query self,
+        ctx: &DecodeContext<'_>,
+        curve: &'query SketchInputEntity,
+    ) -> Result<&'query [&'a SketchInputEntity], CodecError> {
+        const OPERATION: &str = "index SLDPRT curve feature markers";
+        let by_feature = match self.by_feature.get() {
+            Some(index) => index,
+            None => {
+                let built = self.storage.borrow_mut().with_storage(|| {
+                    let mut index = HashMap::new();
+                    for &marker in ctx.admit_iter(self.roster, OPERATION)? {
                         ctx.push_hash_group(
-                            &mut index.linked_from,
-                            target,
+                            &mut index,
+                            marker.feature_ref.as_deref(),
                             marker,
                             OPERATION,
                             OPERATION,
                         )?;
                     }
-                }
+                    Ok::<_, CodecError>(index)
+                })?;
+                self.by_feature.get_or_init(|| built)
             }
-            for (_, markers) in ctx.admit_iter(&mut index.by_offset, OPERATION)? {
-                ctx.stable_sort_by_key(markers, |marker| marker.offset(), Ord::cmp, OPERATION)?;
+        };
+        Ok(ctx
+            .get_hash_map(
+                by_feature,
+                &curve.feature_ref.as_deref(),
+                "resolve SLDPRT marker curve endpoints",
+            )?
+            .map_or(&[][..], Vec::as_slice))
+    }
+
+    fn object_markers<'query>(
+        &'query self,
+        ctx: &DecodeContext<'_>,
+        feature: Option<&'query str>,
+        object: Option<u32>,
+    ) -> Result<&'query [&'a SketchInputEntity], CodecError> {
+        const OPERATION: &str = "index SLDPRT curve object markers";
+        let by_object = match self.by_object.get() {
+            Some(index) => index,
+            None => {
+                let built = self.storage.borrow_mut().with_storage(|| {
+                    let mut index = HashMap::new();
+                    for &marker in ctx.admit_iter(self.roster, OPERATION)? {
+                        ctx.push_hash_group(
+                            &mut index,
+                            (marker.feature_ref.as_deref(), marker.object_index()),
+                            marker,
+                            OPERATION,
+                            OPERATION,
+                        )?;
+                    }
+                    Ok::<_, CodecError>(index)
+                })?;
+                self.by_object.get_or_init(|| built)
             }
-            Ok(index)
-        })
+        };
+        Ok(ctx
+            .get_hash_map(
+                by_object,
+                &(feature, object),
+                "resolve SLDPRT marker curve endpoints",
+            )?
+            .map_or(&[][..], Vec::as_slice))
+    }
+
+    fn linking_to(
+        &self,
+        ctx: &DecodeContext<'_>,
+        curve: &SketchInputEntity,
+    ) -> Result<&[&'a SketchInputEntity], CodecError> {
+        const OPERATION: &str = "index SLDPRT curve reverse links";
+        let linked_from = match self.linked_from.get() {
+            Some(index) => index,
+            None => {
+                let built = self.storage.borrow_mut().with_storage(|| {
+                    let mut index = HashMap::new();
+                    for &marker in ctx.admit_iter(self.roster, OPERATION)? {
+                        let mut seen_storage = ctx.reserve_scoped(0, OPERATION)?;
+                        let mut seen = std::collections::BTreeSet::new();
+                        for link in ctx.admit_iter(marker.links(), OPERATION)? {
+                            let target = link.entity_ref.as_str();
+                            if seen_storage.with_storage(|| {
+                                ctx.insert_btree_set(&mut seen, target, OPERATION)
+                            })? {
+                                ctx.push_hash_group(
+                                    &mut index, target, marker, OPERATION, OPERATION,
+                                )?;
+                            }
+                        }
+                    }
+                    Ok::<_, CodecError>(index)
+                })?;
+                self.linked_from.get_or_init(|| built)
+            }
+        };
+        Ok(ctx
+            .get_hash_map(
+                linked_from,
+                curve.id(),
+                "resolve SLDPRT marker curve endpoints",
+            )?
+            .map_or(&[][..], Vec::as_slice))
+    }
+
+    pub(super) fn reverse_endpoint_offsets(
+        &self,
+        ctx: &DecodeContext<'_>,
+        payload: &[u8],
+        curve: &SketchInputEntity,
+    ) -> Result<Option<[u64; 2]>, CodecError> {
+        if super::markers::reverse_incidence_curve_index(payload, curve).is_none() {
+            return Ok(None);
+        }
+        let index = match self.reverse_incidence.get() {
+            Some(index) => index,
+            None => {
+                let built = self.storage.borrow_mut().with_storage(|| {
+                    super::markers::ReverseIncidenceIndex::build(ctx, payload, self.roster, None)
+                })?;
+                self.reverse_incidence.get_or_init(|| built)
+            }
+        };
+        super::markers::current_reverse_incidence_endpoint_offsets_in(ctx, payload, curve, index)
     }
 
     fn next_after(
@@ -2551,9 +2661,32 @@ impl<'roster, 'a> CurveMarkers<'roster, 'a> {
         ctx: &DecodeContext<'_>,
         curve: &SketchInputEntity,
     ) -> Result<Option<&'a SketchInputEntity>, CodecError> {
+        const INDEX: &str = "index SLDPRT curve marker offsets";
         const OPERATION: &str = "resolve SLDPRT curve marker offset";
+        let by_offset = match self.by_offset.get() {
+            Some(index) => index,
+            None => {
+                let built = self.storage.borrow_mut().with_storage(|| {
+                    let mut index = BTreeMap::new();
+                    for &marker in ctx.admit_iter(self.roster, INDEX)? {
+                        ctx.push_btree_group(
+                            &mut index,
+                            marker.feature_ref.as_deref(),
+                            marker,
+                            INDEX,
+                            INDEX,
+                        )?;
+                    }
+                    for (_, markers) in ctx.admit_iter(&mut index, INDEX)? {
+                        ctx.stable_sort_by_key(markers, |marker| marker.offset(), Ord::cmp, INDEX)?;
+                    }
+                    Ok::<_, CodecError>(index)
+                })?;
+                self.by_offset.get_or_init(|| built)
+            }
+        };
         let markers = ctx
-            .get_btree_map(&self.by_offset, &curve.feature_ref.as_deref(), OPERATION)?
+            .get_btree_map(by_offset, &curve.feature_ref.as_deref(), OPERATION)?
             .map_or(&[][..], Vec::as_slice);
         let next = ctx.partition_point(
             markers,
@@ -2572,17 +2705,11 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
     payload: &[u8],
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
-    index: &CurveMarkers<'_, 'a>,
+    index: &CurveMarkers<'_, 'a, '_>,
     geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
     let feature = curve.feature_ref.as_deref();
-    let markers = ctx
-        .get_hash_map(&index.by_feature, &feature, OPERATION)?
-        .map_or(&[][..], Vec::as_slice);
-    let linking = ctx
-        .get_hash_map(&index.linked_from, curve.id(), OPERATION)?
-        .map_or(&[][..], Vec::as_slice);
     let direct = usize::try_from(curve.offset())
         .ok()
         .and_then(|offset| extended_direct_object_line_endpoint_ids(payload, offset));
@@ -2590,18 +2717,39 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
         if let Some(ids) = direct {
             let resolve = |id| {
                 let object = (id != 0).then_some(id);
-                let candidates = ctx
-                    .get_hash_map(&index.by_object, &(feature, object), OPERATION)?
-                    .map_or(&[][..], Vec::as_slice);
-                unique_feature_marker(ctx, candidates, curve, OPERATION, is_coordinate_point)
+                let mut candidates = index.object_markers(ctx, feature, object)?.iter().copied();
+                let Some(first) = ctx.find_by(
+                    &mut candidates,
+                    |marker| Ok(is_coordinate_point(marker)),
+                    OPERATION,
+                )?
+                else {
+                    return Ok::<_, CodecError>(None);
+                };
+                Ok(ctx
+                    .find_by(
+                        &mut candidates,
+                        |marker| Ok(is_coordinate_point(marker)),
+                        OPERATION,
+                    )?
+                    .is_none()
+                    .then_some(first))
             };
-            if let (Some(first), Some(second)) = (resolve(ids[0])?, resolve(ids[1])?) {
+            let first = resolve(ids[0])?;
+            let second = if first.is_some() {
+                resolve(ids[1])?
+            } else {
+                None
+            };
+            if let (Some(first), Some(second)) = (first, second) {
                 if let Some(pair) = distinct_endpoints(ctx, [first, second], OPERATION)? {
                     return copy_endpoint_markers(ctx, &pair);
                 }
             }
         }
     }
+    let markers = index.feature_markers(ctx, curve)?;
+    let linking = index.linking_to(ctx, curve)?;
     marker_curve_endpoint_markers_from(
         ctx,
         payload,
@@ -2642,7 +2790,7 @@ fn marker_curve_endpoint_markers_from<'a>(
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     (markers, linking): (&[&'a SketchInputEntity], &[&'a SketchInputEntity]),
-    index: Option<&CurveMarkers<'_, 'a>>,
+    index: Option<&CurveMarkers<'_, 'a, '_>>,
     geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
@@ -2653,7 +2801,12 @@ fn marker_curve_endpoint_markers_from<'a>(
             return copy_endpoint_markers(ctx, &endpoints);
         }
     }
-    let endpoints = line_endpoint_markers_from(ctx, curve, markers_by_id, linking)?;
+    let membership = if index.is_some() {
+        ReverseLinkMembership::Proven
+    } else {
+        ReverseLinkMembership::Unchecked
+    };
+    let endpoints = line_endpoint_markers_from(ctx, curve, markers_by_id, linking, membership)?;
     if endpoints.len() == 2 {
         return Ok(endpoints);
     }
@@ -2723,7 +2876,7 @@ fn marker_curve_endpoint_markers_from<'a>(
         return copy_endpoint_markers(ctx, &endpoints);
     }
     let roster = index.map_or(markers, |index| index.roster);
-    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, roster, geometry)?;
+    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, roster, geometry, index)?;
     if endpoints.len() == 2 {
         if let Some(direct) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
             let roster = [endpoints[0], endpoints[1]];
@@ -2914,7 +3067,10 @@ pub(super) fn extended_direct_object_line_endpoints<'a>(
                 }
         })
     };
-    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+    let Some(first) = resolve(endpoint_ids[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(endpoint_ids[1])? else {
         return Ok(None);
     };
     distinct_endpoints(ctx, [first, second], OPERATION)
@@ -2938,7 +3094,10 @@ pub(super) fn compact_legacy_object_line_endpoints<'a>(
             marker.object_index() == Some(id) && is_coordinate_point(marker)
         })
     };
-    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+    let Some(first) = resolve(endpoint_ids[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(endpoint_ids[1])? else {
         return Ok(None);
     };
     distinct_endpoints(ctx, [first, second], OPERATION)
@@ -2989,10 +3148,13 @@ fn extended_wide_selected_axis_endpoints<'a>(
             marker.object_index() == Some(index) && is_coordinate_point(marker)
         })
     };
-    if let (Some(first), Some(second)) = (
-        resolve_object(encoded[0] + 1)?,
-        resolve_object(encoded[1] + 1)?,
-    ) {
+    let first = resolve_object(encoded[0] + 1)?;
+    let second = if first.is_some() {
+        resolve_object(encoded[1] + 1)?
+    } else {
+        None
+    };
+    if let (Some(first), Some(second)) = (first, second) {
         if let Some(endpoints) = distinct_endpoints(ctx, [first, second], OPERATION)? {
             return Ok(Some(endpoints));
         }
@@ -3059,7 +3221,10 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
             marker.object_index() == Some(id) && is_coordinate_point(marker)
         })
     };
-    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+    let Some(first) = resolve(endpoint_ids[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(endpoint_ids[1])? else {
         return Ok(None);
     };
     Ok((first.coordinates_m != second.coordinates_m).then_some([first, second]))
@@ -3221,7 +3386,10 @@ pub(super) fn legacy_terminal_profile_indexed_endpoints<'a>(
                     || marker.object_index().and_then(|index| index.checked_add(1)) == Some(id))
         })
     };
-    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+    let Some(first) = resolve(endpoint_ids[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(endpoint_ids[1])? else {
         return Ok(None);
     };
     Ok((!ctx.equal(first.id(), second.id(), OPERATION)?).then_some([first, second]))
@@ -3263,7 +3431,10 @@ fn coordinate_endpoint_pair<'a>(
             })
         })
     };
-    let (Some(first), Some(second)) = (resolve(coordinates[0])?, resolve(coordinates[1])?) else {
+    let Some(first) = resolve(coordinates[0])? else {
+        return Ok(None);
+    };
+    let Some(second) = resolve(coordinates[1])? else {
         return Ok(None);
     };
     Ok((!ctx.equal(first.id(), second.id(), operation)?).then_some([first, second]))
@@ -3491,7 +3662,7 @@ fn consecutive_legacy_profile_line_endpoints_from<'a>(
     payload: &[u8],
     line: &'a SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-    index: Option<&CurveMarkers<'_, 'a>>,
+    index: Option<&CurveMarkers<'_, 'a, '_>>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT consecutive legacy profile line endpoints";
     let Some(offset) = usize::try_from(line.offset()).ok() else {
@@ -3609,19 +3780,38 @@ fn is_legacy_terminal_indexed_profile_line(payload: &[u8], curve: &SketchInputEn
     true
 }
 
+#[cfg(test)]
 pub(super) fn legacy_terminal_indexed_profile_line(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Result<bool, CodecError> {
+    let index = std::cell::OnceCell::new();
+    legacy_terminal_indexed_profile_line_cached(ctx, payload, curve, markers, &index)
+}
+
+pub(super) fn legacy_terminal_indexed_profile_line_cached<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+    cache: &std::cell::OnceCell<(LegacyTerminalLines<'a>, ScopedReservation<'ctx>)>,
+) -> Result<bool, CodecError> {
     if !is_legacy_terminal_indexed_profile_line(payload, curve) {
         return Ok(false);
     }
-    let (index, _storage) = LegacyTerminalLines::new(ctx, payload, markers)?;
-    legacy_terminal_indexed_profile_line_in(ctx, payload, curve, &index)
+    let (index, _) = match cache.get() {
+        Some(index) => index,
+        None => {
+            let built = LegacyTerminalLines::new(ctx, payload, markers)?;
+            cache.get_or_init(|| built)
+        }
+    };
+    legacy_terminal_indexed_profile_line_lookup(ctx, curve, index)
 }
 
+#[cfg(test)]
 pub(super) fn legacy_terminal_indexed_profile_line_in(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -3631,6 +3821,14 @@ pub(super) fn legacy_terminal_indexed_profile_line_in(
     if !is_legacy_terminal_indexed_profile_line(payload, curve) {
         return Ok(false);
     }
+    legacy_terminal_indexed_profile_line_lookup(ctx, curve, index)
+}
+
+fn legacy_terminal_indexed_profile_line_lookup(
+    ctx: &DecodeContext<'_>,
+    curve: &SketchInputEntity,
+    index: &LegacyTerminalLines<'_>,
+) -> Result<bool, CodecError> {
     Ok(ctx
         .get_hash_map(
             &index.first_by_feature,

@@ -129,6 +129,7 @@ fn legacy_104_profile_line_uses_zero_based_point_roster() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
@@ -241,6 +242,7 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
@@ -338,6 +340,7 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
@@ -370,6 +373,7 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
@@ -469,6 +473,7 @@ fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
@@ -575,6 +580,7 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }

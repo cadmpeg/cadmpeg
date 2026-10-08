@@ -190,6 +190,7 @@ fn extended_geometry_locus_construction_line_uses_direct_point_object_ids() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
@@ -728,6 +729,7 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
@@ -913,6 +915,7 @@ fn legacy_compact_96_profile_line_falls_back_to_one_based_complete_roster() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
@@ -1378,6 +1381,7 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }

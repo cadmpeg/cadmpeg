@@ -318,6 +318,7 @@ fn extended_marker104_arc_prefers_point_roster_endpoints() {
                 .unwrap(),
             )
             .unwrap(),
+            None,
         );
         result
     }
@@ -390,6 +391,7 @@ fn extended_geometry_104_arc_uses_zero_based_roster_and_center_index() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
@@ -623,6 +625,7 @@ fn extended_terminal_102_profile_arc_uses_object_center_fallback() {
                     .unwrap(),
                 )
                 .unwrap(),
+                None,
             );
             result
         }
