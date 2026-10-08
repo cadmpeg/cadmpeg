@@ -1019,7 +1019,7 @@ fn planar_nurbs_projection_refuses_pole_copy() {
 }
 
 #[test]
-fn planar_nurbs_projection_refuses_nonfinite_reason_copy() {
+fn planar_nurbs_projection_refuses_nonfinite_diagnostic_text() {
     let diagonal_plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 3.0),
@@ -1048,7 +1048,7 @@ fn planar_nurbs_projection_refuses_nonfinite_reason_copy() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo planar projected NURBS refusal text"),
+        Some("creo lane refusal text"),
         |cap| {
             let trial_arena = cadmpeg_core::decode::DecodeArena::new();
             let mut trial_policy = policy;
@@ -1059,29 +1059,161 @@ fn planar_nurbs_projection_refuses_nonfinite_reason_copy() {
                 &trial_policy,
             )
             .expect("root");
-            planar_curve_pcurve(
+            let mut refusals = crate::lane_refusal::LaneRefusals::new();
+            let projected = planar_curve_pcurve(
                 &trial_ctx,
                 &diagonal_plane,
                 &nurbs,
                 &"nonfinite projection",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
+                &mut refusals,
+            )?;
+            refusals.take_records_checked()?;
+            Ok(projected)
         },
     );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    let error = planar_curve_pcurve(
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    assert!(planar_curve_pcurve(
         &ctx,
         &diagonal_plane,
         &nurbs,
         &"nonfinite projection",
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut refusals,
     )
-    .expect_err("nonfinite projection reason exceeds retained limit");
+    .expect("candidate evaluation")
+    .is_none());
+    let error = refusals
+        .take_records_checked()
+        .expect_err("diagnostic exceeds retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && resource.operation == "creo planar projected NURBS refusal text")
+            && resource.operation == "creo lane refusal text")
+    );
+
+    let admitted = cadmpeg_test_support::service_decode_context();
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    assert!(planar_curve_pcurve(
+        &admitted,
+        &diagonal_plane,
+        &nurbs,
+        &"nonfinite projection",
+        &mut refusals,
+    )
+    .expect("candidate evaluation")
+    .is_none());
+    assert_eq!(
+        refusals
+            .take_records_checked()
+            .expect("diagnostic admission"),
+        [concat!(
+            "creo planar-curve pcurve record for nonfinite projection: ",
+            "control_points contains a non-finite point",
+        )]
+    );
+}
+
+#[test]
+fn rejected_planar_nurbs_projection_releases_temporary_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    for weights in [None, Some(vec![2.0, 1.0])] {
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![2.0, 2.0, 5.0, 5.0],
+                vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 4.0)],
+                weights,
+                false,
+            )
+            .expect("fixture admission")
+            .expect("finite off-plane poles"),
+        ));
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            None,
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = limit;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                planar_curve_pcurve(
+                    &ctx,
+                    &plane(),
+                    &geometry,
+                    &"off-plane NURBS",
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            },
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = limit;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        for _ in 0..2 {
+            assert!(planar_curve_pcurve(
+                &ctx,
+                &plane(),
+                &geometry,
+                &"off-plane NURBS",
+                &mut crate::lane_refusal::LaneRefusals::new()
+            )
+            .expect("rejected projection releases storage")
+            .is_none());
+        }
+    }
+}
+
+#[test]
+fn planar_nurbs_projection_refuses_retained_poles_before_publication() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
+            Some(vec![2.0, 1.0]),
+            false,
+        )
+        .expect("fixture admission")
+        .expect("finite planar poles"),
+    ));
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::RetainedBytes,
+        Some("creo planar projected NURBS poles"),
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            planar_curve_pcurve(
+                &ctx,
+                &plane(),
+                &geometry,
+                &"planar NURBS",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        },
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = planar_curve_pcurve(
+        &ctx,
+        &plane(),
+        &geometry,
+        &"planar NURBS",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("output poles exceed retained storage");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == "creo planar projected NURBS poles")
     );
 }
 
