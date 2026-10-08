@@ -83,7 +83,7 @@ def load_dir(dirpath):
         sev = Counter(str(l.get("severity", "?")) for l in losses if isinstance(l, dict))
         records[f.name[: -len(".report.json")]] = {
             "status": str(d.get("status")),
-            "schema_version": d.get("schema_version"),
+            "ir_version": d.get("ir_version"),
             "geom": (dr.get("geometry_transferred") if isinstance(dr, dict) else None),
             "losses": len(losses),
             "blocking": sev.get("blocking", 0),
@@ -124,7 +124,7 @@ def summarize(dirpath, records, skipped, out, offenders):
     out.emit(f"== {dirpath}: {len(records)} reports" + (f" ({skipped} unparseable skipped)" if skipped else ""))
     out.emit(f"  fingerprint: {fingerprint(records)}")
     out.emit("  status: " + top(Counter(r["status"] for r in records.values())))
-    out.emit("  schema_version: " + top(Counter(str(r["schema_version"]) for r in records.values())))
+    out.emit("  ir_version: " + top(Counter(str(r["ir_version"]) for r in records.values())))
     out.emit("  geometry_transferred: " + top(Counter(str(r["geom"]) for r in records.values())))
     sev = Counter()
     codes = Counter()
