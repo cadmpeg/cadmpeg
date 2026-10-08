@@ -870,3 +870,44 @@ fn coherence_without_a_stated_value_leaves_expression_unread() {
     );
     assert!(ctx.resource_refusal().is_none());
 }
+
+#[test]
+fn empty_quoted_equation_alias_evaluates_consumer() {
+    let mut owner = feature("owner", Some("1"), 0);
+    owner.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_literal!("Width"), "1".into()),
+        (cadmpeg_core::nonblank_literal!("Consumer"), "\"\" + 1".into()),
+    ]);
+    owner.dimension_properties.insert(
+        "Width".into(),
+        BTreeMap::from([(cadmpeg_core::nonblank_literal!("EquationId"), String::new())]),
+    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let parameters = project_parameters(&ctx, &[FeatureHistory {
+        id: "history".into(), part_name: None, properties: BTreeMap::new(),
+        content: Vec::new(), configurations: Vec::new(), features: vec![owner],
+    }]).unwrap();
+    assert_eq!(parameters.iter().find(|p| p.name.as_str() == "Width").unwrap().value,
+        Some(ParameterValue::Integer(1)));
+    assert_eq!(parameters.iter().find(|p| p.name.as_str() == "Consumer").unwrap().value,
+        Some(ParameterValue::Integer(2)));
+    let (aliases, _storage) = ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new()).unwrap();
+    assert_eq!(parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(), 0);
+    assert!(expression_identifiers("\"\"").next().is_none());
+}
+
+#[test]
+fn unescaped_quoted_identifier_does_not_search_for_escapes() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let expression = format!("\"{}\"", "z".repeat(4096));
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "unescape SLDPRT parameter identifier", None,
+    );
+    let (tokens, _storage) = super::expression_identifier_tokens(&ctx, &expression).unwrap();
+    assert_eq!(tokens.unwrap()[0].value(), &expression[1..expression.len() - 1]);
+    assert!(ctx.resource_refusal().is_none());
+}
