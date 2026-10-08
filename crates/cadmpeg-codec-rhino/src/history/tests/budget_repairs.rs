@@ -46,3 +46,34 @@ fn subd_orientation_rejection_pays_only_for_visited_prefix() {
         assert!(ctx.resource_refusal().is_none());
     }
 }
+
+#[test]
+fn embedded_mesh_and_extrusion_buffers_are_scoped_through_json() {
+    for (bytes, class, archive, operation, kind) in [
+        (crate::test_support::test_dump::mesh_payload(), crate::mesh::ON_MESH, ArchiveVersion::V5, "Rhino mesh scaled vertices", "mesh"),
+        (crate::extrusion::tests::archive_payload(2, [true, true], false, false), crate::extrusion::ON_EXTRUSION, ArchiveVersion::V8, "Rhino extrusion boundaries", "extrusion"),
+    ] {
+        let geometry = EmbeddedGeometry { class_id: class, class_data_range: 0..bytes.len(), userdata: Vec::new() };
+        let run = |materialized, retained| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = materialized;
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+            let mut refusal = None;
+            let text = super::super::extended_geometry_json(
+                crate::mesh::MeshExpand::new(&ctx, root), &geometry, archive, None,
+                MillimeterScale::IDENTITY, &mut Diagnostics::new(), &mut refusal,
+            );
+            if let Some(error) = refusal { return Err(error); }
+            let text = text.expect("valid embedded geometry");
+            assert_eq!(serde_json::from_str::<serde_json::Value>(&text).unwrap()["kind"], kind);
+            Ok(text)
+        };
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, operation, |cap| run(cap, u64::MAX));
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "Rhino embedded history geometry JSON", |cap| run(u64::MAX, cap));
+        let text = run(u64::MAX, u64::MAX).unwrap();
+        // The retained property is the serialized text; geometry buffers stay scoped.
+        assert_eq!(run(u64::MAX, u64::try_from(text.len()).unwrap()).unwrap(), text);
+    }
+}

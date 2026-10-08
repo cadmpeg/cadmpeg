@@ -1204,11 +1204,6 @@ presentation_install_limit_test!(
     "Rhino group index counts"
 );
 presentation_install_limit_test!(
-    group_member_link_refuses_retained_limit,
-    presentation_install_retained_operations,
-    "Rhino group member link"
-);
-presentation_install_limit_test!(
     object_presentation_link_refuses_retained_limit,
     presentation_install_retained_operations,
     "Rhino object presentation link"
@@ -1267,8 +1262,7 @@ fn two_group_memberships(
     Ok(members)
 }
 
-/// A group's key is charged once, as scoped storage: the materialized need of
-/// the first membership also admits the second membership of the same group.
+/// A group's key is charged once; both links use the same live workspace.
 #[test]
 fn group_member_key_is_scoped_and_charged_once() {
     use cadmpeg_core::decode::ResourceDimension;
@@ -1284,7 +1278,19 @@ fn group_member_key_is_scoped_and_charged_once() {
     assert_eq!(refusal.used, 0, "nothing scoped precedes the first key");
     let need = refusal.additional;
     assert!(need > 0);
-    let members = two_group_memberships(need, u64::MAX).expect("one key admits both members");
+    let members = two_group_memberships(u64::MAX, 0).expect("both memberships retain nothing");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::MAX;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut workspace = ctx.reserve_scoped(0, "Rhino group member workspace").unwrap();
+    let mut staged = HashMap::new();
+    crate::presentation::admit_group_member(&ctx, &mut workspace, &mut staged, 7, 0).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes, "Rhino group member keys", None,
+    );
+    crate::presentation::admit_group_member(&ctx, &mut workspace, &mut staged, 7, 1)
+        .expect("the second membership allocates no new key");
     assert_eq!(
         members.get(&7).map(Vec::as_slice),
         Some(
@@ -1297,18 +1303,44 @@ fn group_member_key_is_scoped_and_charged_once() {
     );
 }
 
-/// The member links move into the group records, so they are retained, and
-/// the key table charges no retained storage.
+/// Native serialization retains independent copies while the original links
+/// remain admitted as live materialized storage.
 #[test]
-fn group_member_links_are_retained() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = two_group_memberships(u64::MAX, 0)
-    else {
-        panic!("a link needs retained storage");
-    };
-    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(refusal.operation, "Rhino group member link");
-    assert_eq!(refusal.used, 0, "the key table retains nothing");
+fn group_member_links_are_scoped_through_native_serialization() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let members = two_group_memberships(u64::MAX, 0).expect("staged links retain no bytes");
+    assert_eq!(members.get(&7).map(Vec::as_slice), Some([
+        "rhino:object:record#000000".to_owned(), "rhino:object:record#000001".to_owned()
+    ].as_slice()));
+    for operation in ["Rhino group member link", "Rhino group member links"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes, operation,
+            |cap| two_group_memberships(cap, 0),
+        );
+    }
+    let scan = presentation_install_scan(InstallFixture::Full);
+    for (dimension, operation) in [
+        (ResourceDimension::MaterializedBytes, "Rhino groups"),
+        (ResourceDimension::MaterializedBytes, "Rhino group member links"),
+        (ResourceDimension::RetainedBytes, "serialize native record"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if dimension == ResourceDimension::MaterializedBytes {
+                policy.limits.max_materialized_bytes = cap;
+            } else {
+                policy.limits.max_retained_bytes = cap;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+            crate::presentation::install(&ctx, scan, &mut cadmpeg_ir::document::CadIr::empty())
+        });
+    }
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    crate::presentation::install(&cadmpeg_test_support::service_decode_context(), scan, &mut ir).unwrap();
+    let groups = &ir.native.namespace("rhino").unwrap().arenas()["groups"];
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].field("links"), Some(serde_json::json!(["rhino:object:record#000000"])));
 }
 presentation_install_limit_test!(
     layer_identity_workspace_refuses_materialized_limit,
