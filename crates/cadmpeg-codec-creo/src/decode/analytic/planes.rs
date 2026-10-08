@@ -2372,7 +2372,7 @@ fn plane_candidates(
     select_stored_frame_branches(ctx, scan, &mut candidates)?;
     select_round_edge_origin_branches(ctx, scan, &mut candidates)?;
     ctx.retain_btree_map(&mut candidates,
-        |id, _| Ok(!scan.surfaces.rows.contains_id(*id) || scan.surfaces.rows.unique(*id).is_some()),
+        |id, _| Ok::<_, cadmpeg_core::CodecError>(!scan.surfaces.rows.contains_id(*id) || scan.surfaces.rows.unique(*id).is_some()),
         "creo plane candidate surface identity count")?;
     Ok(candidates)
 }

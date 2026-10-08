@@ -669,7 +669,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
     ctx.retain_btree_map(
         &mut coordinates,
         |vertex, _| {
-            Ok(!ctx.contains_btree_set(
+            Ok::<_, cadmpeg_core::CodecError>(!ctx.contains_btree_set(
                 &ambiguous_vertices,
                 vertex,
                 "creo sketch ambiguous vertex lookup",
