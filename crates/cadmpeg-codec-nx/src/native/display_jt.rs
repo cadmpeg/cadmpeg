@@ -5253,7 +5253,7 @@ pub(super) fn display_jt_shape_lod_bindings(
         let _property_framing_storage = property_framing_storage;
         let property_atoms = property_atoms_candidate;
         let mut property_storage = ctx.reserve_scoped(0, "store DisplayJT property atoms")?;
-        let mut strings = HashMap::new();
+        let mut shape_keys = HashMap::new();
         let mut late_loaded = HashMap::<u32, JtLateLoadedProperty>::new();
         let mut remaining_atoms = property_atoms.iter();
         while !remaining_atoms.as_slice().is_empty() {
@@ -5263,16 +5263,20 @@ pub(super) fn display_jt_shape_lod_bindings(
                 break;
             };
             if atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5 {
-                let Some(value) = property_storage
+                let mut value_storage = ctx.reserve_scoped(0, "DisplayJT binding property string")?;
+                let Some(value) = value_storage
                     .with_storage(|| parse_jt_string_property_atom_body(ctx, atom.body))?
                 else {
                     return Ok(None);
                 };
+                let shape_key = value == SHAPE_IMPLEMENTATION_KEY;
+                drop(value);
+                drop(value_storage);
                 property_storage.with_storage(|| {
                     ctx.insert_hash_map(
-                        &mut strings,
+                        &mut shape_keys,
                         atom.object_id,
-                        value,
+                        shape_key,
                         "store DisplayJT property atoms",
                     )
                 })?;
@@ -5354,8 +5358,9 @@ pub(super) fn display_jt_shape_lod_bindings(
                     return Ok(None);
                 };
                 let shape_key = ctx
-                    .get_hash_map(&strings, &key_object_id, "match DisplayJT property keys")?
-                    .is_some_and(|key: &String| key == SHAPE_IMPLEMENTATION_KEY);
+                    .get_hash_map(&shape_keys, &key_object_id, "match DisplayJT property keys")?
+                    .copied()
+                    .unwrap_or(false);
                 if shape_key {
                     let Some(&(
                         state_flags,
