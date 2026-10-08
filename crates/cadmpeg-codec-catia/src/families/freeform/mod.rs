@@ -1985,6 +1985,9 @@ pub(super) fn append_freeform_surface_pools(
     admission
         .context()
         .append_vec(&mut surfaces, &mut a5, "catia_freeform_surface_pool")?;
+    let mut carrier_storage = admission
+        .context()
+        .reserve_scoped(0, "catia_freeform_surface_pool_id_workspace")?;
     let mut carrier_ids = Vec::new();
     for surface in admission
         .context()
@@ -1999,14 +2002,16 @@ pub(super) fn append_freeform_surface_pools(
             SurfaceId::mint,
             "catia_freeform_surface_pool_id",
         )?;
-        admission.context().push_vec(
-            &mut carrier_ids,
-            id.try_clone_for_decode(
-                admission.context(),
-                "catia_freeform_surface_pool_carrier_id",
-            )?,
-            "catia_freeform_surface_pool_carrier_ids",
-        )?;
+        carrier_storage.with_storage(|| {
+            admission.context().push_vec(
+                &mut carrier_ids,
+                id.try_clone_for_decode(
+                    admission.context(),
+                    "catia_freeform_surface_pool_carrier_id",
+                )?,
+                "catia_freeform_surface_pool_carrier_ids",
+            )
+        })?;
         annotate(
             admission.context(),
             annotations,
@@ -2029,15 +2034,21 @@ pub(super) fn append_freeform_surface_pools(
         });
     }
 
-    let offsets = crate::families::b2::records::b2_offset_supports_from_records(
-        admission.context(),
-        data,
-        records,
-    )?;
-    let bindings = crate::families::b2::records::offset_support_carriers(
-        admission.context(),
-        &offsets,
-        &surfaces,
+    let ((offsets, bindings), offset_storage) = admission.context().with_scoped_storage(
+        "catia_freeform_offset_binding_workspace",
+        || {
+            let offsets = crate::families::b2::records::b2_offset_supports_from_records(
+                admission.context(),
+                data,
+                records,
+            )?;
+            let bindings = crate::families::b2::records::offset_support_carriers(
+                admission.context(),
+                &offsets,
+                &surfaces,
+            )?;
+            Ok::<_, cadmpeg_core::CodecError>((offsets, bindings))
+        },
     )?;
     for (offset, carrier) in admission
         .context()
@@ -2113,6 +2124,9 @@ pub(super) fn append_freeform_surface_pools(
         )?;
     }
 
+    drop(bindings);
+    drop(offsets);
+    drop(offset_storage);
     append_consolidated_line_profiles(
         ir,
         annotations,
@@ -2120,11 +2134,16 @@ pub(super) fn append_freeform_surface_pools(
         admission,
     )?;
 
-    let guides = crate::families::a5a8::records::a5_guide_curves_from_records(
-        admission.context(),
-        data,
-        records,
-    )?;
+    let (guides, guide_storage) =
+        admission
+            .context()
+            .with_scoped_storage("catia_freeform_guide_record_workspace", || {
+                crate::families::a5a8::records::a5_guide_curves_from_records(
+                    admission.context(),
+                    data,
+                    records,
+                )
+            })?;
     for guide in admission
         .context()
         .admit_iter(&guides, "catia_freeform_guides")?
@@ -2157,22 +2176,20 @@ pub(super) fn append_freeform_surface_pools(
                 &points,
                 &first,
                 &second,
-                cadmpeg_ir::units::FiniteVector::new,
+                |point| FinitePoint3::new(Point3::new(point[0], point[1], point[2])),
             )?
         };
         let Some((knots, control_points)) = solution else {
             continue;
         };
-        let poles = admission.context().collect_indexed_vec(
-            control_points.len(),
-            "catia A5 guide poles",
-            |index| {
-                let point = control_points[index];
-                Ok(Point3::new(point[0], point[1], point[2]))
-            },
-        )?;
-        let geometry =
-            NurbsCurve::from_lanes(admission.context(), guide.degree, knots, poles, None, false)??;
+        let geometry = NurbsCurve::from_lanes(
+            admission.context(),
+            guide.degree,
+            knots,
+            control_points,
+            None,
+            false,
+        )??;
         let id = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "guide", "curve"),
@@ -2197,10 +2214,17 @@ pub(super) fn append_freeform_surface_pools(
         });
     }
 
-    let a5_freeform_curves = crate::families::a5a8::records::a5_freeform_curves_from_records(
-        admission.context(),
-        data,
-        records,
+    drop(guides);
+    drop(guide_storage);
+    let (a5_freeform_curves, a5_storage) = admission.context().with_scoped_storage(
+        "catia_freeform_a5_jet_record_workspace",
+        || {
+            crate::families::a5a8::records::a5_freeform_curves_from_records(
+                admission.context(),
+                data,
+                records,
+            )
+        },
     )?;
     for jet in admission
         .context()
@@ -2319,6 +2343,8 @@ pub(super) fn append_freeform_surface_pools(
         ));
     }
 
+    drop(a5_freeform_curves);
+    drop(a5_storage);
     append_a8_rolling_ball_pools(ir, annotations, data, admission)?;
     let counts = append_resolved_consolidated_surface_curves(
         ir,
@@ -2917,14 +2943,13 @@ fn append_resolved_consolidated_surface_curves(
     let mut binding_counts = ConsolidatedCurveBindingCounts::default();
     let mut partner_support_blocks = HashSet::new();
 
+    let resolved_blocks =
+        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+            ctx, data, records, refusal,
+        )?;
     let mut pending = scratch.with_storage(|| {
         let mut pending = VecDeque::new();
-        for resolved in ctx.admit_iter(
-            crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-                ctx, data, records, refusal,
-            )?,
-            "catia_freeform_pending_edges",
-        )? {
+        for resolved in ctx.admit_iter(resolved_blocks, "catia_freeform_pending_edges")? {
             ctx.push_back(&mut pending, resolved, "catia_freeform_pending_edges")?;
         }
         Ok::<_, cadmpeg_core::CodecError>(pending)
@@ -4558,7 +4583,11 @@ fn append_a8_rolling_ball_pools(
     data: &[u8],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let jets = crate::families::a5a8::records::a8_freeform_curves(admission.context(), data)?;
+    let (jets, _jet_storage) = admission
+        .context()
+        .with_scoped_storage("catia_freeform_a8_jet_record_workspace", || {
+            crate::families::a5a8::records::a8_freeform_curves(admission.context(), data)
+        })?;
     for jet in admission
         .context()
         .admit_iter(&jets, "catia_freeform_a8_jets")?
@@ -5440,9 +5469,9 @@ mod tests {
             )
             .map(|_| ir.model.curves.len())
         };
-        // The guide sites are built in scoped storage before they are retained;
-        // the solver lanes are scratch released when it returns. Every
-        // materialized boundary on the way to completion is one of them.
+        // The guide record sites and solver lanes are temporary storage. Every
+        // materialized boundary on the way to completion belongs to a guide
+        // workspace or one of the freeform identity indexes.
         let mut cap = 0;
         let mut refusals = std::collections::BTreeSet::new();
         let curves = loop {
