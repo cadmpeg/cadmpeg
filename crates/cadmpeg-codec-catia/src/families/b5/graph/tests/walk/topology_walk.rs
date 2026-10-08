@@ -48,7 +48,8 @@ fn bind_implicit_pcurves(
         &by_id,
         &edges,
         &incidences,
-        (&BTreeMap::new(), &BTreeMap::new(), surfaces),
+        (&BTreeMap::new(), &BTreeMap::new()),
+        surfaces,
     )
 }
 

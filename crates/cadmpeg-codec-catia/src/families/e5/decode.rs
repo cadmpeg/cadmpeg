@@ -863,10 +863,7 @@ fn solve_e5_plane_frame(
                 .admit_iter(&segments, "catia_e5_plane_orientation_segment_scan")?
                 .enumerate()
             {
-                if anchor_indices[..anchor_count]
-                    .iter()
-                    .any(|anchor| *anchor == index)
-                {
+                if anchor_indices[..anchor_count].contains(&index) {
                     continue;
                 }
                 orientations[index] = endpoint_error((seed_u, seed_v), segment, true)?
@@ -1392,7 +1389,7 @@ impl<'a> E5LoopPlan<'a> {
         }
         let mut seen = ctx.alloc_filled(source.members.len(), false, "catia_e5_loop_plan_seen")?;
         let mut members = ctx.vector_storage(oriented.len(), "catia_e5_loop_plan_members")?;
-        let mut steps = oriented.into_iter();
+        let mut steps = oriented.iter();
         while let Some(orientation) =
             ctx.next_charged(&mut steps, "catia_e5_loop_plan_orientation_scan")?
         {
