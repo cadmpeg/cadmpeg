@@ -984,10 +984,9 @@ pub(super) fn complete_duplicate_face_slots(
     struct SearchInputs<'a, 'ctx> {
         ctx: &'a DecodeContext<'ctx>,
         unresolved: &'a [usize],
-        edge_rows: &'a [EdgeRow],
         edge_faces: &'a [[usize; 2]],
         edge_points: &'a [[usize; 2]],
-        edge_classes: Option<&'a [usize]>,
+        groups: &'a [Vec<usize>],
         mesh_bytes: Option<&'a [u8]>,
     }
 
@@ -1026,10 +1025,14 @@ pub(super) fn complete_duplicate_face_slots(
             let mesh_valid = if !closed {
                 false
             } else if let Some(bytes) = inputs.mesh_bytes {
-                let mut completed = inputs.ctx.copy_slice(
-                    inputs.edge_faces,
-                    "catia_standard_duplicate_mesh_edge_faces",
-                )?;
+                let mut mesh_storage =
+                    ctx.reserve_scoped(0, "catia_standard_duplicate_mesh_storage")?;
+                let mut completed = mesh_storage.with_storage(|| {
+                    inputs.ctx.copy_slice(
+                        inputs.edge_faces,
+                        "catia_standard_duplicate_mesh_edge_faces",
+                    )
+                })?;
                 for (&edge, &face) in inputs
                     .ctx
                     .admit_iter(
@@ -1044,7 +1047,11 @@ pub(super) fn complete_duplicate_face_slots(
                 {
                     completed[edge][1] = face;
                 }
-                standard_mesh_boundary_assignments(inputs.ctx, bytes, &completed, None)?.is_some()
+                mesh_storage
+                    .with_storage(|| {
+                        standard_mesh_boundary_assignments(inputs.ctx, bytes, &completed, None)
+                    })?
+                    .is_some()
             } else {
                 true
             };
@@ -1052,11 +1059,7 @@ pub(super) fn complete_duplicate_face_slots(
                 let distinct = if let Some(existing) = solutions.first() {
                     !duplicate_face_assignments_equivalent(
                         inputs.ctx,
-                        inputs.unresolved,
-                        inputs.edge_rows,
-                        inputs.edge_faces,
-                        inputs.edge_points,
-                        inputs.edge_classes,
+                        inputs.groups,
                         [existing, assignment],
                     )?
                 } else {
@@ -1086,6 +1089,7 @@ pub(super) fn complete_duplicate_face_slots(
             },
             "catia_standard_duplicate_deficit_faces",
         )?;
+        let mut choice_storage = ctx.reserve_scoped(0, "catia_standard_duplicate_choices")?;
         let mut choices = Vec::new();
         let mut unresolved = inputs.unresolved.iter().enumerate();
         while let Some((index, &edge)) =
@@ -1107,7 +1111,8 @@ pub(super) fn complete_duplicate_face_slots(
             {
                 let face = deficit.map_or(domain_index, |(face, _)| face);
                 if duplicate_face_admits_edge(ctx, row, [start, end])? {
-                    inputs.ctx.push_vec(
+                    ctx.push_scoped_vec(
+                        &mut choice_storage,
                         &mut choices,
                         (index, edge, face),
                         "catia_standard_duplicate_choices",
@@ -1179,145 +1184,179 @@ pub(super) fn complete_duplicate_face_slots(
     }
 
     let mut completed = ctx.copy_slice(edge_faces, "catia_standard_duplicate_edge_faces")?;
-    let mut unresolved = Vec::new();
-    for (edge, faces) in ctx
-        .admit_iter(edge_faces, "catia_standard_duplicate_edge_faces")?
-        .enumerate()
-    {
-        if faces[0] == faces[1] {
-            ctx.push_vec(
-                &mut unresolved,
-                edge,
-                "catia_standard_duplicate_unresolved_edges",
-            )?;
-        }
-    }
-    if unresolved.is_empty() {
-        return Ok(Some(completed));
-    }
-    let mut degrees =
-        ctx.collect_indexed_vec(face_count, "catia standard endpoint degrees", |_| {
-            Ok(Vec::<(usize, u8)>::new())
-        })?;
-    for (edge, faces) in ctx
-        .admit_iter(edge_faces, "catia_standard_duplicate_edge_faces")?
-        .enumerate()
-    {
-        let incident = if faces[0] == faces[1] {
-            &faces[..1]
-        } else {
-            &faces[..]
-        };
-        for &face in incident {
-            for point in edge_points[edge] {
-                let Some(next) = duplicate_degree(ctx, &degrees[face], point)?
-                    .unwrap_or_default()
-                    .checked_add(1)
-                else {
-                    return Ok(None);
-                };
-                set_duplicate_degree(ctx, &mut degrees[face], point, next)?;
+    let mut storage = ctx.reserve_scoped(0, "catia_standard_duplicate_working_state")?;
+    storage.with_storage(|| {
+        let mut unresolved = Vec::new();
+        for (edge, faces) in ctx
+            .admit_iter(edge_faces, "catia_standard_duplicate_edge_faces")?
+            .enumerate()
+        {
+            if faces[0] == faces[1] {
+                ctx.push_vec(
+                    &mut unresolved,
+                    edge,
+                    "catia_standard_duplicate_unresolved_edges",
+                )?;
             }
         }
-    }
-    if ctx.any_by(
-        &degrees,
-        |row| {
-            ctx.any_by(
-                row,
-                |(_, degree)| Ok(*degree > 2),
-                "catia_standard_duplicate_degree_values",
-            )
-        },
-        "catia_standard_duplicate_degree_rows",
-    )? {
-        return Ok(None);
-    }
-    // Most constrained first: order the unresolved edges by how many faces
-    // can still take them, counted once per edge.
-    let mut ranked = Vec::new();
-    ctx.reserve_vec(
-        &mut ranked,
-        unresolved.len(),
-        "catia standard duplicate unresolved edges sort",
-    )?;
-    for &edge in ctx.admit_iter(
-        &unresolved,
-        "catia standard duplicate unresolved edges sort",
-    )? {
-        let free_faces = ctx.fold(
+        if unresolved.is_empty() {
+            return Ok(Some(completed));
+        }
+        let mut degrees =
+            ctx.collect_indexed_vec(face_count, "catia standard endpoint degrees", |_| {
+                Ok(Vec::<(usize, u8)>::new())
+            })?;
+        for (edge, faces) in ctx
+            .admit_iter(edge_faces, "catia_standard_duplicate_edge_faces")?
+            .enumerate()
+        {
+            let incident = if faces[0] == faces[1] {
+                &faces[..1]
+            } else {
+                &faces[..]
+            };
+            for &face in incident {
+                for point in edge_points[edge] {
+                    let Some(next) = duplicate_degree(ctx, &degrees[face], point)?
+                        .unwrap_or_default()
+                        .checked_add(1)
+                    else {
+                        return Ok(None);
+                    };
+                    set_duplicate_degree(ctx, &mut degrees[face], point, next)?;
+                }
+            }
+        }
+        if ctx.any_by(
             &degrees,
-            0usize,
-            |count, row| {
-                Ok(count + usize::from(duplicate_face_admits_edge(ctx, row, edge_points[edge])?))
+            |row| {
+                ctx.any_by(
+                    row,
+                    |(_, degree)| Ok(*degree > 2),
+                    "catia_standard_duplicate_degree_values",
+                )
             },
+            "catia_standard_duplicate_degree_rows",
+        )? {
+            return Ok(None);
+        }
+        // Sparse saturated-point lists rule out faces without scanning the face arena.
+        let mut blocked = HashMap::<usize, Vec<usize>>::new();
+        let mut incident = HashMap::<usize, usize>::new();
+        for (face, row) in ctx
+            .admit_iter(&degrees, "catia_standard_duplicate_rank_degrees")?
+            .enumerate()
+        {
+            for &(point, degree) in ctx.admit_iter(row, "catia_standard_duplicate_rank_points")? {
+                *ctx.entry_hash_map(
+                    &mut incident,
+                    point,
+                    "catia_standard_duplicate_rank_points",
+                )?
+                .or_default() += 1;
+                if degree >= 2 {
+                    ctx.push_hash_group(
+                        &mut blocked,
+                        point,
+                        face,
+                        "catia_standard_duplicate_rank_points",
+                        "catia_standard_duplicate_rank_points",
+                    )?;
+                }
+            }
+        }
+        let mut counts = HashMap::<[usize; 2], usize>::new();
+        let mut ranked = Vec::new();
+        for &edge in ctx.admit_iter(
+            &unresolved,
+            "catia standard duplicate unresolved edges sort",
+        )? {
+            let [a, b] = edge_points[edge];
+            let key = [a.min(b), a.max(b)];
+            let free_faces = if let Some(&count) =
+                ctx.get_hash_map(&counts, &key, "catia_standard_duplicate_rank_cache")?
+            {
+                count
+            } else {
+                let forbidden = if a == b {
+                    ctx.get_hash_map(&incident, &a, "catia_standard_duplicate_rank_points")?
+                        .copied()
+                        .unwrap_or_default()
+                } else {
+                    let a = ctx
+                        .get_hash_map(&blocked, &a, "catia_standard_duplicate_rank_points")?
+                        .map_or(&[][..], Vec::as_slice);
+                    let b = ctx
+                        .get_hash_map(&blocked, &b, "catia_standard_duplicate_rank_points")?
+                        .map_or(&[][..], Vec::as_slice);
+                    let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+                    let common = ctx.fold(
+                        small,
+                        0usize,
+                        |count, face| {
+                            Ok(count
+                                + usize::from(
+                                    ctx.binary_search(
+                                        large,
+                                        face,
+                                        "catia_standard_duplicate_rank_intersection",
+                                    )?
+                                    .is_ok(),
+                                ))
+                        },
+                        "catia_standard_duplicate_rank_intersection",
+                    )?;
+                    a.len() + b.len() - common
+                };
+                let count = face_count - forbidden;
+                ctx.insert_hash_map(
+                    &mut counts,
+                    key,
+                    count,
+                    "catia_standard_duplicate_rank_cache",
+                )?;
+                count
+            };
+            ctx.push_vec(
+                &mut ranked,
+                (free_faces, edge),
+                "catia standard duplicate unresolved edges sort",
+            )?;
+        }
+        ctx.stable_sort_by(
+            &mut ranked,
+            |value| &value.0,
+            Ord::cmp,
             "catia standard duplicate unresolved edges sort",
         )?;
-        ranked.push((free_faces, edge));
-    }
-    ctx.stable_sort_by(
-        &mut ranked,
-        |value| &value.0,
-        Ord::cmp,
-        "catia standard duplicate unresolved edges sort",
-    )?;
-    for (slot, (_, edge)) in ctx
-        .admit_iter(
-            &mut unresolved,
-            "catia standard duplicate unresolved edges sort",
-        )?
-        .zip(ranked)
-    {
-        *slot = edge;
-    }
+        for (slot, (_, edge)) in ctx
+            .admit_iter(
+                &mut unresolved,
+                "catia standard duplicate unresolved edges sort",
+            )?
+            .zip(ranked)
+        {
+            *slot = edge;
+        }
 
-    let mut solutions = Vec::new();
-    let mut operations = 0;
-    let mut exhausted = false;
-    let inputs = SearchInputs {
-        ctx,
-        unresolved: &unresolved,
-        edge_rows,
-        edge_faces,
-        edge_points,
-        edge_classes,
-        mesh_bytes: None,
-    };
-    let mut assignment = ctx.alloc_filled(
-        unresolved.len(),
-        0,
-        "catia standard unresolved edge assignment",
-    )?;
-    let mut assigned = ctx.alloc_filled(
-        unresolved.len(),
-        false,
-        "catia standard unresolved edge marks",
-    )?;
-    search(
-        &inputs,
-        &mut degrees,
-        &mut assignment,
-        &mut assigned,
-        &mut solutions,
-        &mut operations,
-        &mut exhausted,
-    )?;
-    if exhausted {
-        return Ok(None);
-    }
-    if solutions.len() > 1 {
-        let Some(bytes) = mesh_bytes else {
-            return Ok(None);
-        };
-        solutions.clear();
-        let inputs = SearchInputs {
+        let groups = duplicate_face_groups(
             ctx,
-            unresolved: &unresolved,
+            &unresolved,
             edge_rows,
             edge_faces,
             edge_points,
             edge_classes,
-            mesh_bytes: Some(bytes),
+        )?;
+        let mut solutions = Vec::new();
+        let mut operations = 0;
+        let mut exhausted = false;
+        let inputs = SearchInputs {
+            ctx,
+            unresolved: &unresolved,
+            edge_faces,
+            edge_points,
+            groups: &groups,
+            mesh_bytes: None,
         };
         let mut assignment = ctx.alloc_filled(
             unresolved.len(),
@@ -1341,92 +1380,232 @@ pub(super) fn complete_duplicate_face_slots(
         if exhausted {
             return Ok(None);
         }
-    }
-    let [assignment] = solutions.as_slice() else {
-        return Ok(None);
-    };
-    for (&edge, &face) in ctx
-        .admit_iter(&unresolved, "catia_standard_duplicate_completed_edges")?
-        .zip(ctx.admit_iter(assignment, "catia_standard_duplicate_completed_faces")?)
-    {
-        completed[edge][1] = face;
-    }
-    Ok(Some(completed))
+        if solutions.len() > 1 {
+            let Some(bytes) = mesh_bytes else {
+                return Ok(None);
+            };
+            solutions.clear();
+            let inputs = SearchInputs {
+                ctx,
+                unresolved: &unresolved,
+                edge_faces,
+                edge_points,
+                groups: &groups,
+                mesh_bytes: Some(bytes),
+            };
+            let mut assignment = ctx.alloc_filled(
+                unresolved.len(),
+                0,
+                "catia standard unresolved edge assignment",
+            )?;
+            let mut assigned = ctx.alloc_filled(
+                unresolved.len(),
+                false,
+                "catia standard unresolved edge marks",
+            )?;
+            search(
+                &inputs,
+                &mut degrees,
+                &mut assignment,
+                &mut assigned,
+                &mut solutions,
+                &mut operations,
+                &mut exhausted,
+            )?;
+            if exhausted {
+                return Ok(None);
+            }
+        }
+        let [assignment] = solutions.as_slice() else {
+            return Ok(None);
+        };
+        for (&edge, &face) in ctx
+            .admit_iter(&unresolved, "catia_standard_duplicate_completed_edges")?
+            .zip(ctx.admit_iter(assignment, "catia_standard_duplicate_completed_faces")?)
+        {
+            completed[edge][1] = face;
+        }
+        Ok(Some(completed))
+    })
 }
 
-fn duplicate_face_assignments_equivalent(
+/// Preserve representative-star groups: a native class and a normalized row
+/// can overlap without making their union a transitive equivalence class.
+fn duplicate_face_groups(
     ctx: &DecodeContext<'_>,
     unresolved: &[usize],
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
     edge_classes: Option<&[usize]>,
-    assignments: [&[usize]; 2],
-) -> Result<bool, CodecError> {
-    let [left, right] = assignments;
-    let mut classified = ctx.alloc_filled(
-        unresolved.len(),
-        false,
-        "catia standard duplicate assignment marks",
-    )?;
-    for (first, &first_edge) in ctx
+) -> Result<Vec<Vec<usize>>, CodecError> {
+    const OP: &str = "catia_standard_duplicate_equivalence_rows";
+    let mut storage = ctx.reserve_scoped(0, OP)?;
+    let mut keys = Vec::new();
+    for &edge in ctx.admit_iter(unresolved, OP)? {
+        let row = &edge_rows[edge];
+        let reverse = ctx
+            .find_map(
+                row.handles().iter().zip(row.handles().iter().rev()),
+                |(a, b)| Ok((a != b).then_some(a > b)),
+                OP,
+            )?
+            .unwrap_or(false);
+        let mut handles = storage.with_storage(|| ctx.copy_slice(row.handles(), OP))?;
+        if reverse {
+            if handles.len() <= 2 {
+                handles.reverse();
+            } else {
+                ctx.reverse(&mut handles, OP)?;
+            }
+        }
+        let [a, b] = edge_points[edge];
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut keys,
+            (
+                [a.min(b), a.max(b)],
+                edge_faces[edge][0],
+                row.kind(),
+                u64::from(row.boundary_layout()),
+                handles,
+            ),
+            OP,
+        )?;
+    }
+    let mut by_fingerprint = HashMap::new();
+    let mut row_groups = Vec::<Vec<usize>>::new();
+    let mut row_group_indices = Vec::new();
+    let mut by_class = HashMap::new();
+    for (index, &edge) in ctx.admit_iter(unresolved, OP)?.enumerate() {
+        let key = ctx.hash_value(&keys[index], OP)?;
+        let group = if let Some(bucket) = ctx.get_hash_map(&by_fingerprint, &key, OP)? {
+            ctx.find_map(
+                bucket,
+                |&group: &usize| {
+                    Ok(ctx
+                        .equal(&keys[row_groups[group][0]], &keys[index], OP)?
+                        .then_some(group))
+                },
+                OP,
+            )?
+        } else {
+            None
+        };
+        let group = if let Some(group) = group {
+            group
+        } else {
+            let group = row_groups.len();
+            ctx.push_scoped_vec(&mut storage, &mut row_groups, Vec::new(), OP)?;
+            storage
+                .with_storage(|| ctx.push_hash_group(&mut by_fingerprint, key, group, OP, OP))?;
+            group
+        };
+        ctx.push_scoped_vec(&mut storage, &mut row_groups[group], index, OP)?;
+        ctx.push_scoped_vec(&mut storage, &mut row_group_indices, group, OP)?;
+        if let Some(classes) = edge_classes {
+            storage.with_storage(|| {
+                ctx.push_hash_group(
+                    &mut by_class,
+                    (keys[index].0, keys[index].1, classes[edge]),
+                    index,
+                    OP,
+                    OP,
+                )
+            })?;
+        }
+    }
+    let mut classified = storage.with_storage(|| {
+        ctx.alloc_filled(
+            unresolved.len(),
+            false,
+            "catia standard duplicate assignment marks",
+        )
+    })?;
+    let mut groups = Vec::new();
+    for (first, &edge) in ctx
         .admit_iter(unresolved, "catia_standard_duplicate_equivalence_classes")?
         .enumerate()
     {
         if classified[first] {
             continue;
         }
-        let mut left_faces = Vec::new();
-        let mut right_faces = Vec::new();
-        for (index, &edge) in ctx
-            .admit_iter(unresolved, "catia_standard_duplicate_choice_scan")?
-            .enumerate()
-        {
-            const OPERATION: &str = "catia_standard_duplicate_equivalence_rows";
-            let unordered = |[start, end]: [usize; 2]| [start.min(end), start.max(end)];
-            if unordered(edge_points[first_edge]) != unordered(edge_points[edge])
-                || edge_faces[first_edge][0] != edge_faces[edge][0]
-            {
-                continue;
+        let rows = &row_groups[row_group_indices[first]];
+        let classes = if let Some(classes) = edge_classes {
+            ctx.get_hash_map(
+                &by_class,
+                &(keys[first].0, keys[first].1, classes[edge]),
+                OP,
+            )?
+            .map_or(&[][..], Vec::as_slice)
+        } else {
+            &[][..]
+        };
+        let mut left = rows.iter().copied();
+        let mut right = classes.iter().copied();
+        let mut a = ctx.next_charged(&mut left, OP)?;
+        let mut b = ctx.next_charged(&mut right, OP)?;
+        let mut group = Vec::new();
+        while a.is_some() || b.is_some() {
+            let next = match (a, b) {
+                (Some(a), Some(b)) => a.min(b),
+                (Some(a), None) => a,
+                (None, Some(b)) => b,
+                (None, None) => break,
+            };
+            classified[next] = true;
+            ctx.push_vec(&mut group, next, OP)?;
+            if a == Some(next) {
+                a = ctx.next_charged(&mut left, OP)?;
             }
-            let first_row = &edge_rows[first_edge];
-            let row = &edge_rows[edge];
-            let same_row = edge_classes.is_some_and(|classes| classes[first_edge] == classes[edge])
-                || first_row.kind() == row.kind()
-                    && first_row.boundary_layout() == row.boundary_layout()
-                    && (ctx.equal(first_row.handles(), row.handles(), OPERATION)?
-                        || first_row.handles().len() == row.handles().len()
-                            && ctx.all_by(
-                                first_row.handles().iter().zip(row.handles().iter().rev()),
-                                |(left, right)| Ok(left == right),
-                                OPERATION,
-                            )?);
-            if same_row {
-                classified[index] = true;
-                ctx.push_vec(
-                    &mut left_faces,
-                    left[index],
-                    "catia_standard_duplicate_left_faces",
-                )?;
-                ctx.push_vec(
-                    &mut right_faces,
-                    right[index],
-                    "catia_standard_duplicate_right_faces",
-                )?;
+            if b == Some(next) {
+                b = ctx.next_charged(&mut right, OP)?;
             }
         }
-        ctx.sort_unstable_by(
-            &mut left_faces,
-            |value| value,
-            Ord::cmp,
-            "catia_standard_duplicate_left_faces_sort",
-        )?;
-        ctx.sort_unstable_by(
-            &mut right_faces,
-            |value| value,
-            Ord::cmp,
-            "catia_standard_duplicate_right_faces_sort",
-        )?;
+        ctx.push_vec(&mut groups, group, OP)?;
+    }
+    Ok(groups)
+}
+
+fn duplicate_face_assignments_equivalent(
+    ctx: &DecodeContext<'_>,
+    groups: &[Vec<usize>],
+    assignments: [&[usize]; 2],
+) -> Result<bool, CodecError> {
+    let [left, right] = assignments;
+    for group in ctx.admit_iter(groups, "catia_standard_duplicate_equivalence_classes")? {
+        let mut storage = ctx.reserve_scoped(0, "catia_standard_duplicate_equivalence_faces")?;
+        let mut left_faces = Vec::new();
+        let mut right_faces = Vec::new();
+        for &index in ctx.admit_iter(group, "catia_standard_duplicate_choice_scan")? {
+            ctx.push_scoped_vec(
+                &mut storage,
+                &mut left_faces,
+                left[index],
+                "catia_standard_duplicate_left_faces",
+            )?;
+            ctx.push_scoped_vec(
+                &mut storage,
+                &mut right_faces,
+                right[index],
+                "catia_standard_duplicate_right_faces",
+            )?;
+        }
+        for (faces, operation) in [
+            (&mut left_faces, "catia_standard_duplicate_left_faces_sort"),
+            (
+                &mut right_faces,
+                "catia_standard_duplicate_right_faces_sort",
+            ),
+        ] {
+            if faces.len() <= 2 {
+                if faces.len() == 2 && faces[0] > faces[1] {
+                    faces.swap(0, 1);
+                }
+            } else {
+                ctx.sort_unstable_by(faces, |value| value, Ord::cmp, operation)?;
+            }
+        }
         if !ctx.equal(
             &left_faces,
             &right_faces,
