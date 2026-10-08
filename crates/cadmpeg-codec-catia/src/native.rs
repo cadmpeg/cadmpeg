@@ -2791,7 +2791,7 @@ pub(crate) struct CatiaRelationParameterDependency {
     #[serde(default)]
     source_offset: u64,
     /// Exact expression-local symbol occurrence.
-    symbol: String,
+    pub(crate) symbol: String,
     /// Entity incidences carrying matching named parameter bindings.
     #[serde(
         default,

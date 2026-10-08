@@ -3,7 +3,17 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use super::{outer_container_in_scope, LegacyModelingScope};
+use super::LegacyModelingScope;
+
+fn outer_container_in_scope(
+    binding: Option<&CatiaOuterContainerBinding>,
+    scope: LegacyModelingScope<'_>,
+) -> bool {
+    crate::test_support::with_service_context(|ctx| {
+        super::outer_container_in_scope(ctx, binding, scope)
+    })
+    .expect("service scope comparison")
+}
 use crate::native::CatiaOuterContainerBinding;
 
 mod evaluate;

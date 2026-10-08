@@ -97,27 +97,24 @@ pub(crate) fn consolidated_owner_packets(
             ctx.insert_hash_map(&mut owner_charts, key, value, "catia_native_owner_charts")
         })?;
     }
-    let mut identity_targets = HashMap::<(usize, usize), Vec<CatiaOwnerIdentityTarget>>::new();
-    let identity_target_rows =
-        crate::families::b2::records::b2_owner_identity_targets_from_records(ctx, bytes, records)?;
+    let mut identity_targets = HashMap::<(usize, usize), Vec<_>>::new();
+    let identity_target_rows = scratch.with_storage(|| {
+        crate::families::b2::records::b2_owner_identity_targets_from_records(ctx, bytes, records)
+    })?;
     for target in ctx.admit_iter(
         &identity_target_rows,
         "catia_native_owner_identity_target_visits",
     )? {
         let key = (target.source_index, target.owner_pos);
-        let value = CatiaOwnerIdentityTarget {
-            slot: target.slot,
-            distance: target.distance,
-            target_byte_offset: u64_from_index(target.target_pos),
-            target_class: target.target_class,
-        };
-        ctx.push_hash_group(
-            &mut identity_targets,
-            key,
-            value,
-            "catia_native_owner_identity_target_groups",
-            "catia_native_owner_identity_target_entries",
-        )?;
+        scratch.with_storage(|| {
+            ctx.push_hash_group(
+                &mut identity_targets,
+                key,
+                target,
+                "catia_native_owner_identity_target_groups",
+                "catia_native_owner_identity_target_entries",
+            )
+        })?;
     }
     let mut boundary_cycles = HashMap::new();
     let boundary_cycle_rows =
@@ -288,16 +285,27 @@ pub(crate) fn consolidated_owner_packets(
                 {
                     const LOOKUP: &str = "catia_native_owner_packet_lookups";
                     let key = (source_index, pos);
-                    *stored_targets = ctx
-                        .remove_hash_map(&mut identity_targets, &key, LOOKUP)?
-                        .unwrap_or_default();
+                    if let Some(targets) = ctx.remove_hash_map(&mut identity_targets, &key, LOOKUP)? {
+                        *stored_targets = ctx.collect_vec(
+                            ctx.admit_iter(targets, "catia_native_owner_emitted_target_visits")?.map(|target| CatiaOwnerIdentityTarget {
+                                slot: target.slot, distance: target.distance,
+                                target_byte_offset: u64_from_index(target.target_pos), target_class: target.target_class,
+                            }), "catia_native_owner_emitted_targets",
+                        )?;
+                    }
                     *owner_chart = ctx
                         .remove_hash_map(&mut owner_charts, &key, LOOKUP)?
-                        .map(Box::new);
+                        .map(|value| -> Result<_, CodecError> {
+                            ctx.charge_retained(u64_from_index(std::mem::size_of_val(&value)), "catia_native_owner_packet_box")?;
+                            Ok(Box::new(value))
+                        }).transpose()?;
                     *boundary_cycle = ctx
                         .get_hash_map(&boundary_cycles, &key, LOOKUP)?
                         .copied()
-                        .map(Box::new);
+                        .map(|value| -> Result<_, CodecError> {
+                            ctx.charge_retained(u64_from_index(std::mem::size_of_val(&value)), "catia_native_owner_packet_box")?;
+                            Ok(Box::new(value))
+                        }).transpose()?;
                 }
                 Ok(CatiaConsolidatedOwnerPacket {
                     id: ctx.format_retained(

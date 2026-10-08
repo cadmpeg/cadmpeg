@@ -111,7 +111,9 @@ impl ChainWire {
     ) -> Result<Self, CodecError> {
         let mut remaining = chain.links.into_iter().peekable();
         let mut links = Vec::new();
-        while let Some(link) = remaining.next() {
+        while let Some(link) =
+            ctx.next_charged(&mut remaining, "catia_configuration_chain_wire_visits")?
+        {
             let successor = copy_reference(
                 ctx,
                 remaining.peek().map_or(&chain.terminal, |next| &next.row),

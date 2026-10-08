@@ -205,6 +205,13 @@ pub(crate) fn transfer_parameters<'ctx>(
         else {
             continue;
         };
+        let (signature_index, _signature_storage) = ctx.unique_index(
+            signature
+                .inputs
+                .iter()
+                .map(|input| (input.parameter.as_str(), input)),
+            "catia_formula_signature_index",
+        )?;
         let mut transferred = Vec::new();
         let mut dependencies = Vec::new();
         let mut program_inputs = BTreeSet::new();
@@ -220,15 +227,28 @@ pub(crate) fn transfer_parameters<'ctx>(
             &formula.parameter_dependencies,
             "catia_formula_dependency_visits",
         )? {
-            let Some(input) = ctx.find_by(
-                &signature.inputs,
-                |input| crate::native::dependency_matches_input(ctx, dependency, input),
-                "catia_formula_signature_input_visits",
-            )?
-            else {
-                all_inputs_complete = false;
-                all_inputs_typed = false;
-                continue;
+            let parameter = crate::native::relation_symbol_parameter(ctx, &dependency.symbol)?;
+            let input = parameter
+                .map(|parameter| {
+                    ctx.get_hash_map(
+                        &signature_index,
+                        parameter,
+                        "catia_formula_signature_input_visits",
+                    )
+                })
+                .transpose()?
+                .flatten()
+                .and_then(Option::as_ref)
+                .copied();
+            let input = match input {
+                Some(input) if crate::native::dependency_matches_input(ctx, dependency, input)? => {
+                    input
+                }
+                _ => {
+                    all_inputs_complete = false;
+                    all_inputs_typed = false;
+                    continue;
+                }
             };
             let [parameter] = dependency.candidates.as_slice() else {
                 all_inputs_complete = false;
@@ -878,7 +898,14 @@ fn derivable_candidates(
             released.push(position);
         }
     }
-    while let Some(position) = released.pop() {
+    loop {
+        let Some(position) = ctx.next_charged(
+            &mut std::iter::from_fn(|| released.pop()),
+            "catia_formula_released_candidate_visits",
+        )?
+        else {
+            break;
+        };
         derivable[position] = true;
         let start = ctx.partition_point(&edges, |edge| Ok(edge.0 < position), OPERATION)?;
         let end = ctx.partition_point(&edges, |edge| Ok(edge.0 <= position), OPERATION)?;
@@ -1213,13 +1240,13 @@ fn collect_legacy_parameters(
     modeling_scope: LegacyModelingScope<'_>,
 ) -> Result<LegacyParameterTransfer, cadmpeg_core::CodecError> {
     let mut transfer = LegacyParameterTransfer::default();
-    for run in ctx
-        .admit_iter(
-            &native.legacy_entity_runs,
-            "catia_formula_legacy_run_visits",
-        )?
-        .filter(|run| outer_container_in_scope(run.outer_container.as_ref(), modeling_scope))
-    {
+    for run in ctx.admit_iter(
+        &native.legacy_entity_runs,
+        "catia_formula_legacy_run_visits",
+    )? {
+        if !outer_container_in_scope(ctx, run.outer_container.as_ref(), modeling_scope)? {
+            continue;
+        }
         let mut run_scratch = ctx.reserve_scoped(0, "catia_formula_legacy_run_scratch")?;
         let mut types = LegacyTypeResolver::new(ctx, run)?;
         let mut value_names = None;
@@ -1470,14 +1497,11 @@ fn collect_legacy_parameters(
             else {
                 continue;
             };
-            let Some(evaluation) = legacy_relation_evaluation(
-                ctx,
-                &mut run_scratch,
-                relation,
-                &indexes.by_name,
-                candidates,
-            )?
-            else {
+            let (evaluation, _evaluation_storage) = ctx
+                .with_scoped_storage("catia_legacy_relation_result_scratch", || {
+                    legacy_relation_evaluation(ctx, relation, &indexes.by_name, candidates)
+                })?;
+            let Some(evaluation) = evaluation else {
                 continue;
             };
             let Some(candidate) =
@@ -1532,7 +1556,6 @@ struct LegacyRelationEvaluation<'a> {
 // rule; unresolved selector namespaces never participate in the join.
 fn legacy_relation_evaluation<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    run_scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     relation: &'a crate::native::CatiaLegacyRelation,
     parameters_by_name: &HashMap<&str, Option<ParameterId>>,
     candidates: &BTreeMap<ParameterId, FormulaParameterCandidate>,
@@ -1552,26 +1575,44 @@ fn legacy_relation_evaluation<'a>(
         }
         _ => return Ok(None),
     };
-    // Symbols, bindings and the evaluated value are dropped with the run.
+    let mut relation_scratch = ctx.reserve_scoped(0, "catia_legacy_relation_scratch")?;
+    // Symbols and bindings are dropped with this relation.
     let symbols = if relation.inputs.is_empty() {
         None
     } else {
         Some(
-            run_scratch
+            relation_scratch
                 .with_storage(|| crate::native::relation_symbols(ctx, &relation.expression))?,
         )
     };
+    let mut symbol_parameters = HashSet::new();
+    if let Some(symbols) = &symbols {
+        for (_, symbol) in ctx.admit_iter(symbols, "catia_legacy_formula_symbol_visits")? {
+            let Some(parameter) = crate::native::relation_symbol_parameter(ctx, symbol)? else {
+                continue;
+            };
+            if legacy_symbol_matches_input(ctx, symbol, parameter)? {
+                relation_scratch.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut symbol_parameters,
+                        parameter,
+                        "catia_legacy_formula_symbol_index",
+                    )
+                })?;
+            }
+        }
+    }
     let mut bindings = BTreeMap::new();
     let mut bound = HashSet::new();
     let mut dependencies = Vec::new();
-    for input in ctx.admit_iter(&relation.inputs, "catia_formula_legacy_input_visits")? {
-        let Some(symbols) = symbols.as_ref() else {
-            return Ok(None);
-        };
-        if !ctx.any_by(
-            symbols,
-            |(_, symbol)| Ok(legacy_symbol_matches_input(ctx, symbol, &input.parameter)?),
-            "catia_legacy_formula_symbol_visits",
+    let mut input_rows = relation.inputs.iter();
+    while let Some(input) =
+        ctx.next_charged(&mut input_rows, "catia_formula_legacy_input_visits")?
+    {
+        if !ctx.contains_hash_set(
+            &symbol_parameters,
+            input.parameter.as_str(),
+            "catia_legacy_formula_symbol_index",
         )? {
             return Ok(None);
         }
@@ -1583,7 +1624,9 @@ fn legacy_relation_evaluation<'a>(
         else {
             return Ok(None);
         };
-        if !run_scratch.with_storage(|| ctx.insert_hash_set(&mut bound, parameter_id, OPERATION))? {
+        if !relation_scratch
+            .with_storage(|| ctx.insert_hash_set(&mut bound, parameter_id, OPERATION))?
+        {
             return Ok(None);
         }
         let Some(candidate) = ctx.get_btree_map(
@@ -1600,7 +1643,7 @@ fn legacy_relation_evaluation<'a>(
         let Some(value) = candidate.parameter.value.as_ref() else {
             return Ok(None);
         };
-        run_scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+        relation_scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
             ctx.insert_btree_map(
                 &mut bindings,
                 input.parameter.as_str(),
@@ -1617,9 +1660,7 @@ fn legacy_relation_evaluation<'a>(
             "catia_legacy_formula_dependencies",
         )?;
     }
-    let Some(evaluated) = run_scratch
-        .with_storage(|| evaluate_formula_expression_charged(ctx, expression, &bindings))?
-    else {
+    let Some(evaluated) = evaluate_formula_expression_charged(ctx, expression, &bindings)? else {
         return Ok(None);
     };
     let Some(source_type_kind) = canonical_parameter_type(source_type) else {
@@ -1641,13 +1682,13 @@ fn legacy_symbol_matches_input(
     input: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     const OPERATION: &str = "catia_legacy_symbol_ordinal_visits";
-    let Some(suffix) = ctx.strip_prefix(symbol, input, OPERATION)? else {
+    let Some(suffix) = ctx.strip_prefix(symbol, input, "catia_legacy_symbol_prefix_checks")? else {
         return Ok(false);
     };
     let suffix = ctx.trim_start_matches(
         suffix,
         |character| Ok(character.is_ascii_whitespace()),
-        OPERATION,
+        "catia_legacy_symbol_suffix_whitespace",
     )?;
     if suffix.is_empty() {
         return Ok(true);
@@ -1697,14 +1738,34 @@ fn legacy_output_assignment_expression<'a>(
 }
 
 fn outer_container_in_scope(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     binding: Option<&crate::native::CatiaOuterContainerBinding>,
     modeling_scope: LegacyModelingScope<'_>,
-) -> bool {
-    match modeling_scope {
-        LegacyModelingScope::Unbounded => true,
-        LegacyModelingScope::Unresolved => false,
-        LegacyModelingScope::Container(modeling_container) => binding == Some(modeling_container),
-    }
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let LegacyModelingScope::Container(modeling) = modeling_scope else {
+        return Ok(matches!(modeling_scope, LegacyModelingScope::Unbounded));
+    };
+    let Some(binding) = binding else {
+        return Ok(false);
+    };
+    const OPERATION: &str = "catia_legacy_container_scope_match";
+    Ok(binding.data_offset == modeling.data_offset
+        && binding.ordinal == modeling.ordinal
+        && ctx.equal_bytes(
+            binding.class_name.as_bytes(),
+            modeling.class_name.as_bytes(),
+            OPERATION,
+        )?
+        && ctx.equal_bytes(
+            binding.base_class.as_bytes(),
+            modeling.base_class.as_bytes(),
+            OPERATION,
+        )?
+        && ctx.equal_bytes(
+            binding.stream_name.as_bytes(),
+            modeling.stream_name.as_bytes(),
+            OPERATION,
+        )?)
 }
 
 /// Resolves legacy value types through the run's type descriptors. A
@@ -1746,6 +1807,7 @@ impl<'run, 'ctx> LegacyTypeResolver<'run, 'ctx> {
         entity_id: u32,
     ) -> Result<Option<(&'run str, bool)>, cadmpeg_core::CodecError> {
         const OPERATION: &str = "catia_legacy_type_selector_chain";
+        let mut chain_storage = ctx.reserve_scoped(0, "catia_legacy_type_chain_scratch")?;
         let mut chain = Vec::new();
         let mut current = entity_id;
         let (terminal, remembered) = loop {
@@ -1766,8 +1828,7 @@ impl<'run, 'ctx> LegacyTypeResolver<'run, 'ctx> {
                     break (Some((value.as_str(), false)), false);
                 }
                 crate::native::CatiaLegacyTypeValue::Selector { value } => {
-                    self.descriptor_storage
-                        .with_storage(|| ctx.push_vec(&mut chain, current, OPERATION))?;
+                    chain_storage.with_storage(|| ctx.push_vec(&mut chain, current, OPERATION))?;
                     current = *value;
                 }
             }
@@ -2954,80 +3015,6 @@ impl ComparisonOperator {
     }
 }
 
-/// Replaces every non-overlapping occurrence of a pattern; an empty pattern
-/// inserts the replacement around every character.
-fn replaced_text(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    (source, from, to): (&str, &str, &str),
-    work_operation: &'static str,
-    text_operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    // Formatting measures the text and then writes it. Each pass visits every
-    // source character, or runs forward linear-time searches from one match to
-    // the next that visit every source byte once and every match's pattern bytes
-    // once; matches do not overlap. The written text is charged when formatted.
-    let pass = u64_from_index(source.len())
-        .checked_mul(2)
-        .and_then(|work| work.checked_add(u64_from_index(from.len())))
-        .and_then(|work| work.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit(work_operation, u64::MAX, u64::MAX))?;
-    ctx.charge_work(pass, work_operation)?;
-    ctx.format_retained(
-        format_args!("{}", ReplacedText { source, from, to }),
-        text_operation,
-    )
-}
-
-struct ReplacedText<'a> {
-    source: &'a str,
-    from: &'a str,
-    to: &'a str,
-}
-
-impl std::fmt::Display for ReplacedText<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.from.is_empty() {
-            use std::fmt::Write;
-            formatter.write_str(self.to)?;
-            for character in self.source.chars() {
-                formatter.write_char(character)?;
-                formatter.write_str(self.to)?;
-            }
-            return Ok(());
-        }
-        let mut rest = self.source;
-        while let Some(index) = rest.find(self.from) {
-            formatter.write_str(&rest[..index])?;
-            formatter.write_str(self.to)?;
-            rest = &rest[index + self.from.len()..];
-        }
-        formatter.write_str(rest)
-    }
-}
-
-struct CasedText<'a> {
-    source: &'a str,
-    upper: bool,
-}
-
-impl std::fmt::Display for CasedText<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use std::fmt::Write;
-        for character in self.source.chars() {
-            if self.upper {
-                for mapped in character.to_uppercase() {
-                    formatter.write_char(mapped)?;
-                }
-            } else {
-                for mapped in character.to_lowercase() {
-                    formatter.write_char(mapped)?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
 struct FormulaExpressionParser<'a, 'b, 'c, 'd> {
     source: &'a str,
     at: usize,
@@ -3092,7 +3079,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         let Some(value) = self.conditional(0)? else {
             return Ok(None);
         };
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         Ok((self.at == self.source.len()).then_some(value))
     }
 
@@ -3101,7 +3088,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         depth: usize,
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
         let predicate = formula_value!(self.disjunction(depth)?);
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         if self.peek() != Some(b'?') {
             return Ok(Some(predicate));
         }
@@ -3112,7 +3099,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         self.evaluate = evaluate && predicate.value();
         self.static_check = static_check && (!predicate.is_known() || predicate.value());
         let when_true = formula_value!(self.descend(depth, Self::conditional)?);
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         formula_value!((formula_value!(self.peek()) == b';').then_some(()));
         self.at += 1;
         self.evaluate = evaluate && !predicate.value();
@@ -3237,7 +3224,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
         let mut value = formula_value!(self.conjunction(depth)?);
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace()?;
             if !self.consume_keyword("or") {
                 return Ok(Some(value));
             }
@@ -3264,7 +3251,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
         let mut value = formula_value!(self.comparison(depth)?);
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace()?;
             if !self.consume_keyword("and") {
                 return Ok(Some(value));
             }
@@ -3290,7 +3277,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         depth: usize,
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
         let left = formula_value!(self.sum(depth)?);
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         let Some((operator, width)) = ComparisonOperator::parse(self.remaining()) else {
             return Ok(Some(left));
         };
@@ -3358,7 +3345,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
         let mut value = formula_value!(self.product(depth)?);
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace()?;
             let Some(operator) = self.peek() else {
                 return Ok(Some(value));
             };
@@ -3401,12 +3388,16 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                     }
                     let known = left.is_known() && right.is_known() && !right.value().is_empty();
                     let string_value = if known {
-                        replaced_text(
-                            self.ctx,
-                            (left.value(), right.value(), ""),
-                            "catia_formula_subtract_work",
-                            "catia_formula_string_subtract",
-                        )?
+                        if left.value().is_empty() {
+                            String::new()
+                        } else {
+                            self.ctx.replace_text(
+                                left.value(),
+                                right.value(),
+                                "",
+                                "catia_formula_string_subtract",
+                            )?
+                        }
                     } else {
                         String::new()
                     };
@@ -3482,7 +3473,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
         let mut value = formula_value!(self.unary(depth)?);
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace()?;
             let Some(operator) = self.peek() else {
                 return Ok(Some(value));
             };
@@ -3572,7 +3563,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         &mut self,
         depth: usize,
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         if self.consume_keyword("not") {
             let value = formula_value!(formula_value!(self.descend(depth, Self::unary)?).boolean());
             return Ok(Some(EvaluatedFormulaValue::Boolean(value.not())));
@@ -3606,7 +3597,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         depth: usize,
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
         let base = formula_value!(self.postfix(depth)?);
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         if !self.remaining().starts_with("**") {
             return Ok(Some(base));
         }
@@ -3667,7 +3658,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         &mut self,
         depth: usize,
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         if formula_value!(self.peek()) == b'"' {
             return Ok(self
                 .string_literal()?
@@ -3687,7 +3678,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         if formula_value!(self.peek()) == b'(' {
             self.at += 1;
             let value = formula_value!(self.descend(depth, Self::conditional)?);
-            self.skip_whitespace();
+            self.skip_whitespace()?;
             formula_value!((formula_value!(self.peek()) == b')').then_some(()));
             self.at += 1;
             return Ok(Some(value));
@@ -3734,16 +3725,20 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
         let mut value = formula_value!(self.primary(depth)?);
         loop {
-            self.skip_whitespace();
+            self.skip_whitespace()?;
             if self.peek() != Some(b'.') {
                 return Ok(Some(value));
             }
             self.at += 1;
             let method_start = self.at;
-            while self
-                .peek()
-                .is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            let mut bytes = self.source.as_bytes()[self.at..].iter();
+            while let Some(byte) = self
+                .ctx
+                .next_charged(&mut bytes, "catia_formula_expression_scan")?
             {
+                if !byte.is_ascii_alphanumeric() && *byte != b'_' {
+                    break;
+                }
                 self.at += 1;
             }
             formula_value!((self.at > method_start).then_some(()));
@@ -3861,13 +3856,9 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 ("ToReal", EvaluatedFormulaValue::String(value), []) => {
                     EvaluatedFormulaValue::Scalar(
                         if self.evaluate || (self.static_check && value.is_known()) {
-                            self.ctx.charge_work(
-                                u64_from_index(value.value().len()),
-                                "catia_formula_string_real",
-                            )?;
-                            formula_value!(finite_scalar(formula_value!(value
-                                .value()
-                                .parse::<f64>()
+                            formula_value!(finite_scalar(formula_value!(self
+                                .ctx
+                                .parse_text::<f64>(value.value(), "catia_formula_string_real")?
                                 .ok())))
                         } else {
                             static_unknown_result(0.0, FormulaDimension::SCALAR)
@@ -3924,19 +3915,12 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         start: usize,
         forward: bool,
     ) -> Result<Option<i64>, cadmpeg_core::CodecError> {
-        let work = u64_from_index(value.len())
-            .checked_add(u64_from_index(needle.len()))
-            .ok_or_else(|| {
-                self.ctx
-                    .refuse_codec_limit("catia_formula_string_search", u64::MAX, u64::MAX)
-            })?;
-        self.ctx.charge_work(work, "catia_formula_string_search")?;
         let byte_offset = if forward {
             let Some(start_byte) = self.string_boundary(value, start)? else {
                 return Ok(Some(-1));
             };
-            value[start_byte..]
-                .find(needle)
+            self.ctx
+                .find_text(&value[start_byte..], needle, "catia_formula_string_search")?
                 .map(|offset| start_byte + offset)
         } else {
             let character_count = self
@@ -3947,7 +3931,8 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 return Ok(Some(-1));
             };
             let end_byte = formula_value!(self.string_boundary(value, end_character)?);
-            value[..end_byte].rfind(needle)
+            self.ctx
+                .rfind_text(&value[..end_byte], needle, "catia_formula_string_search")?
         };
         let Some(offset) = byte_offset else {
             return Ok(Some(-1));
@@ -3963,7 +3948,11 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         formula_value!((formula_value!(self.peek()) == b'"').then_some(()));
         self.at += 1;
         let start = self.at;
-        while let Some(character) = formula_value!(self.source.get(self.at..)).chars().next() {
+        let mut characters = self.source[self.at..].chars();
+        while let Some(character) = self
+            .ctx
+            .next_charged(&mut characters, "catia_formula_expression_scan")?
+        {
             if character == '"' {
                 let source = formula_value!(self.source.get(start..self.at));
                 let copied = self
@@ -3986,7 +3975,14 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         depth: usize,
     ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
         let function_start = self.at;
-        while self.peek().is_some_and(|byte| byte.is_ascii_alphabetic()) {
+        let mut bytes = self.source.as_bytes()[self.at..].iter();
+        while let Some(byte) = self
+            .ctx
+            .next_charged(&mut bytes, "catia_formula_expression_scan")?
+        {
+            if !byte.is_ascii_alphabetic() {
+                break;
+            }
             self.at += 1;
         }
         let function = &self.source[function_start..self.at];
@@ -4009,12 +4005,16 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             let known =
                 source.is_known() && from.is_known() && to.is_known() && !from.value().is_empty();
             let value = if self.evaluate || (self.static_check && known) {
-                replaced_text(
-                    self.ctx,
-                    (source.value(), from.value(), to.value()),
-                    "catia_formula_replace_work",
-                    "catia_formula_replace_subtext",
-                )?
+                if source.value().is_empty() && !from.value().is_empty() {
+                    String::new()
+                } else {
+                    self.ctx.replace_text(
+                        source.value(),
+                        from.value(),
+                        to.value(),
+                        "catia_formula_replace_subtext",
+                    )?
+                }
             } else {
                 String::new()
             };
@@ -4059,25 +4059,26 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             };
             let known = value.is_known();
             let string_value = if self.evaluate || (self.static_check && known) {
-                // A Unicode character maps to at most three characters; formatting runs twice.
-                let work = u64_from_index(value.value().len())
-                    .checked_mul(12)
-                    .ok_or_else(|| {
-                        self.ctx
-                            .refuse_codec_limit("catia_formula_case_work", u64::MAX, u64::MAX)
-                    })?;
-                self.ctx.charge_work(work, "catia_formula_case_work")?;
-                let formatted = self.ctx.format_retained(
-                    format_args!(
-                        "{}",
-                        CasedText {
-                            source: value.value(),
-                            upper: function == "ToUpper",
+                if function == "ToUpper" {
+                    self.ctx
+                        .to_uppercase(value.value(), "catia_formula_string_case")?
+                } else {
+                    let mut result = String::new();
+                    let mut characters = value.value().chars();
+                    while let Some(character) = self
+                        .ctx
+                        .next_charged(&mut characters, "catia_formula_case_work")?
+                    {
+                        for mapped in character.to_lowercase() {
+                            self.ctx.push_retained_char(
+                                &mut result,
+                                mapped,
+                                "catia_formula_string_case",
+                            )?;
                         }
-                    ),
-                    "catia_formula_string_case",
-                );
-                formatted?
+                    }
+                    result
+                }
             } else {
                 String::new()
             };
@@ -4497,11 +4498,11 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         &mut self,
         depth: usize,
     ) -> Result<Option<Vec<EvaluatedFormulaValue>>, cadmpeg_core::CodecError> {
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         formula_value!((formula_value!(self.peek()) == b'(').then_some(()));
         self.at += 1;
         let mut arguments = Vec::new();
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         if formula_value!(self.peek()) == b')' {
             self.at += 1;
             return Ok(Some(arguments));
@@ -4512,7 +4513,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 .ctx
                 .push_vec(&mut arguments, argument, "catia_formula_arguments");
             pushed?;
-            self.skip_whitespace();
+            self.skip_whitespace()?;
             if formula_value!(self.peek()) == b')' {
                 self.at += 1;
                 break;
@@ -4529,26 +4530,42 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         let start = self.at;
         self.at += 1;
         let digits = self.at;
-        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+        let mut bytes = self.source.as_bytes()[self.at..].iter();
+        while let Some(byte) = self
+            .ctx
+            .next_charged(&mut bytes, "catia_formula_expression_scan")?
+        {
+            if !byte.is_ascii_digit() {
+                break;
+            }
             self.at += 1;
         }
         formula_value!((self.at > digits && formula_value!(self.peek()) == b'_').then_some(()));
         self.at += 1;
         let name_end = self.at;
-        while self.peek().is_some_and(|byte| byte.is_ascii_whitespace()) {
-            self.at += 1;
-        }
+        self.skip_whitespace()?;
         if self.peek() == Some(b'/') {
             self.at += 1;
             let ordinal = self.at;
-            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+            let mut bytes = self.source.as_bytes()[self.at..].iter();
+            while let Some(byte) = self
+                .ctx
+                .next_charged(&mut bytes, "catia_formula_expression_scan")?
+            {
+                if !byte.is_ascii_digit() {
+                    break;
+                }
                 self.at += 1;
             }
             formula_value!((self.at > ordinal).then_some(()));
         } else {
             self.at = name_end;
         }
-        let value = formula_value!(self.bindings.get(&self.source[start..name_end]));
+        let value = formula_value!(self.ctx.get_btree_map(
+            self.bindings,
+            &self.source[start..name_end],
+            "catia_formula_binding_lookup"
+        )?);
         if self.evaluate
             && matches!(value, EvaluatedFormulaValue::Scalar(scalar) if scalar.known_value().is_none())
         {
@@ -4561,13 +4578,27 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
     fn literal(&mut self) -> Result<Option<EvaluatedFormulaScalar>, cadmpeg_core::CodecError> {
         let start = self.at;
         let mut saw_digit = false;
-        while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+        let mut bytes = self.source.as_bytes()[self.at..].iter();
+        while let Some(byte) = self
+            .ctx
+            .next_charged(&mut bytes, "catia_formula_expression_scan")?
+        {
+            if !byte.is_ascii_digit() {
+                break;
+            }
             saw_digit = true;
             self.at += 1;
         }
         if self.peek() == Some(b'.') {
             self.at += 1;
-            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+            let mut bytes = self.source.as_bytes()[self.at..].iter();
+            while let Some(byte) = self
+                .ctx
+                .next_charged(&mut bytes, "catia_formula_expression_scan")?
+            {
+                if !byte.is_ascii_digit() {
+                    break;
+                }
                 saw_digit = true;
                 self.at += 1;
             }
@@ -4578,15 +4609,25 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                 self.at += 1;
             }
             let exponent = self.at;
-            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+            let mut bytes = self.source.as_bytes()[self.at..].iter();
+            while let Some(byte) = self
+                .ctx
+                .next_charged(&mut bytes, "catia_formula_expression_scan")?
+            {
+                if !byte.is_ascii_digit() {
+                    break;
+                }
                 self.at += 1;
             }
             formula_value!((self.at > exponent).then_some(()));
         }
         formula_value!(saw_digit.then_some(()));
-        let mut value = formula_value!(self.source[start..self.at].parse::<f64>().ok());
+        let mut value = formula_value!(self
+            .ctx
+            .parse_text::<f64>(&self.source[start..self.at], "catia_formula_numeric_parse")?
+            .ok());
         let unit_boundary = self.at;
-        self.skip_whitespace();
+        self.skip_whitespace()?;
         let Some(unit) = [
             "micron", "mile", "yard", "grad", "rad", "deg", "mm", "cm", "km", "ft", "in", "m",
         ]
@@ -4615,10 +4656,18 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             )))
     }
 
-    fn skip_whitespace(&mut self) {
-        while self.peek().is_some_and(|byte| byte.is_ascii_whitespace()) {
+    fn skip_whitespace(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        let mut bytes = self.source.as_bytes()[self.at..].iter();
+        while let Some(byte) = self
+            .ctx
+            .next_charged(&mut bytes, "catia_formula_expression_scan")?
+        {
+            if !byte.is_ascii_whitespace() {
+                break;
+            }
             self.at += 1;
         }
+        Ok(())
     }
 
     fn consume_keyword(&mut self, keyword: &str) -> bool {
@@ -4685,8 +4734,6 @@ fn evaluate_formula_expression_with_mode_charged<'a>(
     bindings: &BTreeMap<&'a str, EvaluatedFormulaValue>,
     evaluate: bool,
 ) -> Result<Option<EvaluatedFormulaValue>, cadmpeg_core::CodecError> {
-    let source_bytes = u64_from_index(source.len());
-    ctx.charge_work(source_bytes, "catia_formula_expression_scan")?;
     FormulaExpressionParser {
         source,
         at: 0,
