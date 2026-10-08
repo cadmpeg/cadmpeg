@@ -730,3 +730,20 @@ fn positional_replay_definitions_deduplication_refuses_work() {
 }
 
 mod cost;
+
+#[test]
+fn unresolved_guess_search_stops_at_the_first_delimiter() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let short = [0x00, 0x55, 0x01, 0x02, 0x03, 0xe2];
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
+        "creo variable guess delimiter", |ctx| super::unresolved_variable_guess_end(ctx, &short, 0, short.len()));
+    let CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+    let mut long = short.to_vec();
+    long.resize(65_536, 0x55);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = limit.used.checked_add(limit.additional).expect("work need");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(super::unresolved_variable_guess_end(&ctx, &long, 0, long.len()).expect("first delimiter scan"), Some(2));
+}
