@@ -727,15 +727,15 @@ pub(crate) fn sync_changed_feature_scalars(
                     "SLDPRT scalar offset exceeds address space".into(),
                 )
             })?;
-            let bytes = lane
-                .native_payload
-                .get_mut(offset..offset + 8)
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(format_args!(
-                        "SLDPRT scalar {} lies outside its payload",
-                        scalar.id
-                    ))
-                })?;
+            let bytes = if let Some(bytes) = lane.native_payload.get_mut(offset..offset + 8) {
+                bytes
+            } else {
+                let message = ctx.format_retained(
+                    format_args!("SLDPRT scalar {} lies outside its payload", scalar.id),
+                    "format SLDPRT scalar update error",
+                )?;
+                return Err(cadmpeg_core::CodecError::Malformed(message));
+            };
             let checked = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("SLDPRT scalar update is non-finite")
             })?;

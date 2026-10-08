@@ -920,7 +920,10 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     mut lookup: impl FnMut(&str, &'static str) -> Result<Option<&'a SketchInputEntity>, CodecError>,
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     let mut links = [None, None];
-    for link in ctx.admit_iter(marker.links(), "resolve SLDPRT linked line endpoints")? {
+    let mut candidates = marker.links().iter();
+    while let Some(link) =
+        ctx.next_charged(&mut candidates, "resolve SLDPRT linked line endpoints")?
+    {
         if ctx.equal(
             link.entity_ref.as_str(),
             marker.id(),

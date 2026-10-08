@@ -2612,12 +2612,7 @@ fn bind_resolved_curve_vertices(
         let mut marker_storage = ctx.reserve_scoped(0, SELECTED)?;
         let (markers_by_id, markers) =
             lane_marker_index(ctx, &mut marker_storage, &lane.sketch_entities)?;
-        let geometry =
-            crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
-                ctx,
-                &markers,
-                std::rc::Rc::clone(&prefixes),
-            )?;
+        let mut geometry = None;
         let curve_markers = CurveMarkers::new(ctx, &markers)?;
         let mut selected = HashSet::new();
         for curve in ctx.admit_iter(&markers, SELECTED)? {
@@ -2626,6 +2621,16 @@ fn bind_resolved_curve_vertices(
             }) {
                 continue;
             }
+            let geometry = match &mut geometry {
+                Some(geometry) => geometry,
+                slot @ None => slot.insert(
+                    crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                        ctx,
+                        &markers,
+                        std::rc::Rc::clone(&prefixes),
+                    )?,
+                ),
+            };
             let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(SELECTED, || {
                 marker_curve_endpoint_markers_in(
                     ctx,
@@ -2656,12 +2661,7 @@ fn bind_resolved_curve_vertices(
         let (resolved_curves, resolved_endpoints) = {
             let (markers_by_id, markers) =
                 lane_marker_index(ctx, &mut round, &lane.sketch_entities)?;
-            let geometry =
-                crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
-                    ctx,
-                    &markers,
-                    std::rc::Rc::clone(&prefixes),
-                )?;
+            let mut geometry = None;
             let curve_markers = CurveMarkers::new(ctx, &markers)?;
             let mut resolved_curves = HashSet::new();
             let mut resolved_endpoints = HashSet::new();
@@ -2672,6 +2672,16 @@ fn bind_resolved_curve_vertices(
                 ) {
                     continue;
                 }
+                let geometry = match &mut geometry {
+                    Some(geometry) => geometry,
+                    slot @ None => slot.insert(
+                        crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                            ctx,
+                            &markers,
+                            std::rc::Rc::clone(&prefixes),
+                        )?,
+                    ),
+                };
                 let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(RESOLVE, || {
                     marker_curve_endpoint_markers_in(
                         ctx,
