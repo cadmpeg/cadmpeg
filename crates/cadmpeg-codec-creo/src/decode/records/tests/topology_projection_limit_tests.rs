@@ -159,8 +159,8 @@ use crate::decode::records::{
         let policy = DecodePolicy::service();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let loops = loop_records(&ctx, &scan).expect("loop is admitted");
-        let rows = loop_array_record_records(&ctx, &scan).expect("row is admitted");
+        let (loops, _loops_storage) = loop_records(&ctx, &scan).expect("loop is admitted");
+        let (rows, _rows_storage) = loop_array_record_records(&ctx, &scan).expect("row is admitted");
         let loop_value = serde_json::to_value(&loops[0]).expect("loop serializes");
         let row_value = serde_json::to_value(&rows[0]).expect("row serializes");
         assert_eq!(

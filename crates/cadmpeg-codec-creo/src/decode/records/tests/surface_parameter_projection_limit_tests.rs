@@ -87,11 +87,11 @@ use crate::decode::records::surface_parameter_records;
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-      ResourceDimension::RetainedBytes, Some("creo native surface parameter record id"), |cap| {
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+      ResourceDimension::MaterializedBytes, Some("creo native surface parameter record id"), |cap| {
           let trial_arena = DecodeArena::new();
           let mut trial_policy = DecodePolicy::service();
-          trial_policy.limits.max_retained_bytes = cap;
+          trial_policy.limits.max_materialized_bytes = cap;
           let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
           surface_parameter_records(
             &trial_ctx,
@@ -115,7 +115,7 @@ use crate::decode::records::surface_parameter_records;
         };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
+            if resource.dimension == ResourceDimension::MaterializedBytes
                 && resource.operation == "creo native surface parameter record id"),
             "{error:?}"
         );
@@ -128,7 +128,7 @@ use crate::decode::records::surface_parameter_records;
         let policy = DecodePolicy::service();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let records = surface_parameter_records(
+        let (records, _records_storage) = surface_parameter_records(
             &ctx,
             &scan,
             &scan.surfaces.rows,

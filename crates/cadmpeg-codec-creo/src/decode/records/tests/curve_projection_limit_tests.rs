@@ -150,9 +150,9 @@ use crate::decode::records::{
         let policy = DecodePolicy::service();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let parameters = curve_parameter_records(&ctx, &scan, &scan.curves.parameters, "visibgeom")
+        let (parameters, _parameters_storage) = curve_parameter_records(&ctx, &scan, &scan.curves.parameters, "visibgeom")
             .expect("parameters are admitted");
-        let replay =
+        let (replay, _replay_storage) =
             tabulated_cylinder_curve_replay_records(&ctx, &scan).expect("replay is admitted");
         let parameter = serde_json::to_value(&parameters[0]).expect("parameter serializes");
         let replay = serde_json::to_value(&replay[0]).expect("replay serializes");
