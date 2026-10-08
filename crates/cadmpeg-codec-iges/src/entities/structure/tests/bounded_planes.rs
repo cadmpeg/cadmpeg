@@ -29,62 +29,37 @@ const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,
 #[test]
 fn bounded_plane_refuses_boundary_edge_slot_before_draft() {
     let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 100, "100,0,0,0,1,0,1,0;");
-    let mut cap = 0_u64;
-    let mut reached = false;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::ResourceLimit(limit),
-            )) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == "iges bounded plane boundary edges" {
-                    reached = true;
-                    break;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            _ => panic!("expected bounded plane boundary-edge refusal"),
-        }
-    }
-    assert!(reached, "bounded plane boundary-edge slot was not reached");
+    super::assert_structure_refusal(
+        &bytes,
+        "iges bounded plane boundary edges",
+        ResourceDimension::CollectionItems,
+    );
 }
 
 #[test]
 fn bounded_plane_identity_copies_refuse_before_retaining_text() {
     let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 100, "100,0,0,0,1,0,1,0;");
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::ResourceLimit(limit),
-            )) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == "iges structure identity copy" {
-                    decode(bytes);
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected bounded-plane identity refusal: {other:?}"),
-        }
-    }
-    panic!("bounded-plane identity copy was not reached");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges structure identity copy",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            crate::IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|error| match error {
+                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                    other => panic!("{other:?}"),
+                })
+        },
+    );
+    decode(bytes);
 }
 
 #[test]
@@ -105,26 +80,77 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
     )
     .expect("fixture constructor admission")
     .unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], &ctx);
-    assert!(matches!(
-        result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 0
-                && limit.additional == 5
-    ));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges plane NURBS boundary points",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::linear_nurbs_boundary_points(
+                &nurbs,
+                [0.0, 4.0],
+                Transform::identity(),
+                &ctx,
+            )
+        },
+    );
+
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges plane NURBS interior knots",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::linear_nurbs_boundary_points(
+                &nurbs,
+                [0.0, 4.0],
+                Transform::identity(),
+                &ctx,
+            )
+        },
+    );
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let points = super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], &ctx)
-        .unwrap()
-        .unwrap();
+    let points =
+        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], Transform::identity(), &ctx)
+            .unwrap()
+            .unwrap();
     assert_eq!(points.len(), 5);
     assert_eq!(points[0], points[4]);
+    let translated = Transform::affine([
+        [1.0, 0.0, 0.0, 2.0],
+        [0.0, 1.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+    ])
+    .unwrap();
+    assert_eq!(
+        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], translated, &ctx)
+            .unwrap()
+            .unwrap(),
+        vec![
+            Point3::new(2.0, 3.0, 4.0),
+            Point3::new(3.0, 3.0, 4.0),
+            Point3::new(3.0, 4.0, 4.0),
+            Point3::new(2.0, 4.0, 4.0),
+            Point3::new(2.0, 3.0, 4.0),
+        ]
+    );
+    let overflowing = Transform::affine([
+        [1e308, 0.0, 0.0, 1e308],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    assert!(
+        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], overflowing, &ctx)
+            .unwrap()
+            .is_none()
+    );
 }
 
 fn has_entity_projection_loss(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
@@ -364,7 +390,7 @@ fn bounded_plane_refuses_recursive_child_curve_identity_copy() {
     let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let context = super::super::PlaneBoundarySimplicity {
         index: &index,
@@ -373,17 +399,31 @@ fn bounded_plane_refuses_recursive_child_curve_identity_copy() {
         transform: Transform::identity(),
         ctx: &ctx,
     };
-    let result = super::super::bounded_plane_curve_is_simple(
-        &geometry,
-        context,
-        false,
-        None,
-        &mut BTreeSet::new(),
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "iges plane boundary child curve ID",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+                super::super::bounded_plane_curve_is_simple(
+                    &geometry,
+                    super::super::PlaneBoundarySimplicity {
+                        index: &index,
+                        ctx,
+                        ..context
+                    },
+                    false,
+                    None,
+                    &mut BTreeSet::new(),
+                )
+            })
+        },
     );
     assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "iges plane boundary child curve ID")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "iges plane boundary child curve ID")
     );
 
     let arena = DecodeArena::new();
@@ -469,26 +509,7 @@ fn bounded_plane_linear_nurbs_proofs_propagate_work_refusals() {
         "iges closed polyline duplicate comparisons",
         "iges planar self-intersection comparisons",
     ] {
-        let mut cap = 0;
-        let mut reached = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            match cadmpeg_test_support::decode::full(&crate::IgesCodec, &bytes, &policy) {
-                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::ResourceLimit(limit),
-                )) => {
-                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                other => panic!("proof refusal was not reached: {other:?}"),
-            }
-        }
-        assert!(reached, "{operation}");
+        super::assert_structure_refusal(&bytes, operation, ResourceDimension::WorkUnits);
     }
 }
 
@@ -543,5 +564,194 @@ fn bounded_plane_polyline_proofs_propagate_work_refusals() {
                 })
             },
         );
+    }
+}
+
+#[test]
+fn plane_nurbs_weight_validation_charges_only_rational_poles() {
+    for weights in [None, Some(vec![2.0; 5])] {
+        let operation = if weights.is_some() {
+            "iges plane NURBS weights"
+        } else {
+            "iges plane NURBS knot validation"
+        };
+        let nurbs = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ],
+            weights,
+            false,
+        )
+        .expect("fixture constructor admission")
+        .unwrap();
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                    super::super::linear_nurbs_boundary_points(
+                        &nurbs,
+                        [0.0, 4.0],
+                        Transform::identity(),
+                        ctx,
+                    )
+                })
+            },
+        );
+        let points = crate::test_support::with_service_context(&[], |ctx| {
+            super::super::linear_nurbs_boundary_points(
+                &nurbs,
+                [0.0, 4.0],
+                Transform::identity(),
+                ctx,
+            )
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(points.len(), 5);
+        assert_eq!(points[0], points[4]);
+    }
+}
+
+#[test]
+fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
+    let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 100, "100,0,0,0,1,0,1,0;");
+    let decoded = decode(bytes.clone());
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let (directory, quarantined) = crate::test_support::with_service_context(&bytes, |ctx| {
+        crate::directory::parse(&scan, crate::global::GlobalTable::V5_0, ctx)
+    })
+    .unwrap();
+    assert!(quarantined.is_empty());
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 10_000;
+    crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
+        let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+        let plane = super::super::plane_carrier(&index, 1, ctx)
+            .unwrap()
+            .unwrap();
+        let mut proofs = super::super::PlaneBoundaryProofs {
+            proven: std::collections::BTreeMap::new(),
+            storage: ctx
+                .reserve_scoped(0, "iges plane boundary proof cache")
+                .unwrap(),
+        };
+        for _ in 0..20_000 {
+            assert!(super::super::plane_boundary_edge(
+                &index,
+                plane,
+                3,
+                &entries,
+                0.001,
+                ctx,
+                &mut proofs
+            )
+            .is_ok());
+        }
+        assert_eq!(proofs.proven.len(), 1);
+        assert!(super::super::plane_boundary_edge(
+            &index,
+            plane,
+            3,
+            &entries,
+            0.002,
+            ctx,
+            &mut proofs
+        )
+        .is_ok());
+        assert_eq!(proofs.proven.len(), 2);
+        let shifted = (Point3::new(0.0, 0.0, 1.0), plane.1);
+        assert!(matches!(
+            super::super::plane_boundary_edge(
+                &index,
+                shifted,
+                3,
+                &entries,
+                0.001,
+                ctx,
+                &mut proofs
+            ),
+            Err(super::super::PlaneBoundaryError::NotCoplanar)
+        ));
+        assert_eq!(proofs.proven.len(), 2);
+    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "iges plane boundary proof cache",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            crate::test_support::with_policy_context(&bytes, &policy, |ctx| {
+                let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
+                let plane = super::super::plane_carrier(&index, 1, ctx)?.unwrap();
+                let mut proofs = super::super::PlaneBoundaryProofs {
+                    proven: std::collections::BTreeMap::new(),
+                    storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
+                };
+                super::super::plane_boundary_edge(
+                    &index,
+                    plane,
+                    3,
+                    &entries,
+                    0.001,
+                    ctx,
+                    &mut proofs,
+                )
+                .map(|_| ())
+                .map_err(|error| {
+                    error
+                        .message()
+                        .expect_err("expected cache resource refusal")
+                })
+            })
+        },
+    );
+}
+
+#[test]
+fn plane_nurbs_scalar_rejections_do_not_visit_lanes() {
+    for (degree, knots, range) in [
+        (2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], [0.0, 1.0]),
+        (1, vec![0.0, 0.0, 1.0, 2.0, 2.0], [0.0, 3.0]),
+    ] {
+        let nurbs = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            degree,
+            knots,
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ],
+            Some(vec![1.0, 1.0, 1.0]),
+            false,
+        )
+        .unwrap()
+        .unwrap();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(super::super::linear_nurbs_boundary_points(
+            &nurbs,
+            range,
+            Transform::identity(),
+            &ctx
+        )
+        .unwrap()
+        .is_none());
     }
 }

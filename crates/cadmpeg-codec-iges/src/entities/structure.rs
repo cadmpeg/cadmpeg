@@ -3,8 +3,8 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
-    curve_geometry_coplanar, linear_nurbs_parameters, planar_polyline_has_self_intersection,
-    plane_coordinates, resolve_transform, ProjectionOutcome, TransformResolutionError,
+    curve_geometry_coplanar, planar_polyline_has_self_intersection, plane_coordinates,
+    resolve_transform, ProjectionOutcome, TransformResolutionError,
 };
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
@@ -17,7 +17,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry};
-use cadmpeg_ir::ids::{CurveId, VertexId};
+use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
@@ -91,7 +91,8 @@ fn network_connect_points(
         return Ok(None);
     };
     let mut points = Vec::new();
-    for index in 0..count {
+    let mut input = 0..count;
+    while let Some(index) = ctx.next_charged(&mut input, operation)? {
         let value = if matches!(global_table, GlobalTable::V4_0) {
             record.integer(first_pointer_index + index)
         } else {
@@ -126,15 +127,20 @@ fn network_connectivity_valid(
     definition: &[Option<u32>],
     instance: &[Option<u32>],
     global_table: GlobalTable,
-) -> bool {
-    let slots_match = definition
-        .iter()
-        .zip(instance)
-        .all(|(definition, instance)| definition.is_some() || instance.is_none());
-    definition.len() == instance.len()
-        && slots_match
-        && (!matches!(global_table, GlobalTable::V4_0)
-            || (definition.iter().all(Option::is_some) && instance.iter().all(Option::is_some)))
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    if definition.len() != instance.len() {
+        return Ok(false);
+    }
+    let require_points = matches!(global_table, GlobalTable::V4_0);
+    ctx.all_by(
+        definition.iter().zip(instance),
+        |(definition, instance)| {
+            Ok((definition.is_some() || instance.is_none())
+                && (!require_points || (definition.is_some() && instance.is_some())))
+        },
+        "iges network connectivity",
+    )
 }
 
 fn subfigure_definition_directory_fields_valid(
@@ -207,11 +213,15 @@ fn single_target_cycle(
     let mut search_storage = ctx.reserve_scoped(0, "IGES single target cycle search")?;
     let mut path = Vec::new();
     let mut visiting = BTreeSet::new();
-    let mut current = sequence;
-    loop {
-        ctx.charge_work(1, "iges structure cycle traversal")?;
+    let mut chain = std::iter::successors(Some(sequence), |current| {
+        targets
+            .get(current)
+            .copied()
+            .filter(|target| targets.contains_key(target))
+    });
+    while let Some(current) = ctx.next_charged(&mut chain, "iges structure cycle traversal")? {
         if visited.contains(&current) {
-            for node in path {
+            for node in ctx.admit_iter(path, "iges structure list traversal")? {
                 ctx.insert_btree_set(visited, node, "iges structure visited cycle nodes")?;
             }
             return Ok(false);
@@ -224,18 +234,11 @@ fn single_target_cycle(
         search_storage
             .with_storage(|| ctx.reserve_vec(&mut path, 1, "iges structure cycle path"))?;
         path.push(current);
-        let Some(target) = targets
-            .get(&current)
-            .copied()
-            .filter(|target| targets.contains_key(target))
-        else {
-            for node in path {
-                ctx.insert_btree_set(visited, node, "iges structure visited cycle nodes")?;
-            }
-            return Ok(false);
-        };
-        current = target;
     }
+    for node in ctx.admit_iter(path, "iges structure cycle completion")? {
+        ctx.insert_btree_set(visited, node, "iges structure visited cycle nodes")?;
+    }
+    Ok(false)
 }
 
 pub(crate) fn array_base_type(entity_type: i64, form: i64) -> bool {
@@ -398,8 +401,10 @@ fn array_mask_valid(
     else {
         return Ok(false);
     };
+    let mut storage = ctx.reserve_scoped(0, "iges array mask scratch")?;
     let mut positions = BTreeSet::new();
-    for index in 0..count {
+    let mut input = 0..count;
+    while let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? {
         let Some(position) = record
             .integer(first_position_index + index)
             .and_then(|value| usize::try_from(value).ok())
@@ -407,7 +412,9 @@ fn array_mask_valid(
         else {
             return Ok(false);
         };
-        if !ctx.insert_btree_set(&mut positions, position, "iges array mask positions")? {
+        if !storage.with_storage(|| {
+            ctx.insert_btree_set(&mut positions, position, "iges array mask positions")
+        })? {
             return Ok(false);
         }
     }
@@ -423,29 +430,11 @@ fn array_mask_valid(
 fn has_association_back_pointer(
     record: &ParameterRecord,
     group_sequence: u32,
-    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    association_owners: &BTreeMap<u32, BTreeSet<u32>>,
 ) -> bool {
-    trailing_pointer_analysis
-        .get(&record.directory_sequence)
-        .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
-            _ => None,
-        })
-        .is_some_and(|groups| groups.associations().contains(&group_sequence))
-}
-
-fn has_property_pointer(
-    record: &ParameterRecord,
-    property_sequence: u32,
-    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
-) -> bool {
-    trailing_pointer_analysis
-        .get(&record.directory_sequence)
-        .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
-            _ => None,
-        })
-        .is_some_and(|groups| groups.properties().contains(&property_sequence))
+    association_owners
+        .get(&group_sequence)
+        .is_some_and(|owners| owners.contains(&record.directory_sequence))
 }
 
 fn legacy_primary_end_valid(
@@ -467,34 +456,39 @@ struct LegacyAssociativityContext<'map, 'data> {
     entry: &'map DirectoryEntry,
     entries: &'map BTreeMap<u32, &'data DirectoryEntry>,
     records: &'map BTreeMap<u32, &'data ParameterRecord>,
-    trailing_pointer_analysis: &'map BTreeMap<u32, TrailingPointerAnalysis>,
+    association_owners: &'map BTreeMap<u32, BTreeSet<u32>>,
 }
 
 impl LegacyAssociativityContext<'_, '_> {
     fn pointer_list_valid(
         &self,
         record: &ParameterRecord,
-        mut indices: std::ops::Range<usize>,
+        indices: std::ops::Range<usize>,
         accepts: fn(&DirectoryEntry) -> bool,
         back_pointers_required: bool,
-    ) -> bool {
-        indices.all(|index| {
-            let Some(sequence) = existing_pointer(record, index, self.entries) else {
-                return false;
-            };
-            let Some(target) = self.entries.get(&sequence) else {
-                return false;
-            };
-            accepts(target)
-                && (!back_pointers_required
-                    || self.records.get(&sequence).is_some_and(|record| {
-                        has_association_back_pointer(
-                            record,
-                            self.entry.sequence,
-                            self.trailing_pointer_analysis,
-                        )
-                    }))
-        })
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        ctx.all_by(
+            indices,
+            |index| {
+                let Some(sequence) = existing_pointer(record, index, self.entries) else {
+                    return Ok(false);
+                };
+                let Some(target) = self.entries.get(&sequence) else {
+                    return Ok(false);
+                };
+                Ok(accepts(target)
+                    && (!back_pointers_required
+                        || self.records.get(&sequence).is_some_and(|record| {
+                            has_association_back_pointer(
+                                record,
+                                self.entry.sequence,
+                                self.association_owners,
+                            )
+                        })))
+            },
+            "iges legacy associativity pointer list",
+        )
     }
 }
 
@@ -531,50 +525,62 @@ fn legacy_associativity_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    links: (
+        &BTreeMap<u32, TrailingPointerAnalysis>,
+        &BTreeMap<u32, BTreeSet<u32>>,
+    ),
     global_table: GlobalTable,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let (trailing_pointer_analysis, association_owners) = links;
     let context = LegacyAssociativityContext {
         entry,
         entries,
         records,
-        trailing_pointer_analysis,
+        association_owners,
     };
-    match entry.form {
+    Ok(match entry.form {
         8 => {
             let Some(layout) = signal_string_layout(record) else {
-                return false;
+                return Ok(false);
             };
-            let names_valid = layout.signal_names().all(|index| {
-                matches!(
-                    record.value(index),
-                    Some(TokenValue::String(_) | TokenValue::Omitted)
-                )
-            });
+            let names_valid = ctx.all_by(
+                layout.signal_names(),
+                |index| {
+                    Ok(matches!(
+                        record.value(index),
+                        Some(TokenValue::String(_) | TokenValue::Omitted)
+                    ))
+                },
+                "iges legacy associativity fields",
+            )?;
             names_valid
                 && context.pointer_list_valid(
                     record,
                     layout.connections(),
                     connect_node_target,
                     true,
-                )
+                    ctx,
+                )?
                 && context.pointer_list_valid(
                     record,
                     layout.schematic(),
                     |target| signal_string_geometry_target(target.entity_type, target.form),
                     true,
-                )
+                    ctx,
+                )?
                 && context.pointer_list_valid(
                     record,
                     layout.physical(),
                     |target| signal_string_geometry_target(target.entity_type, target.form),
                     true,
-                )
+                    ctx,
+                )?
                 && legacy_primary_end_valid(record, layout.primary_end(), trailing_pointer_analysis)
         }
         10 => {
             let Some(layout) = text_node_layout(record) else {
-                return false;
+                return Ok(false);
             };
             let description = layout.description_start();
             let numeric_fields_valid = record.number_or(description, 0.0).is_some()
@@ -590,7 +596,7 @@ fn legacy_associativity_valid(
                 .integer_or(description + 6, 0)
                 .is_some_and(|value| matches!(value, 0..=1));
             let points_valid =
-                context.pointer_list_valid(record, layout.geometry(), point_target, true);
+                context.pointer_list_valid(record, layout.geometry(), point_target, true, ctx)?;
             entry.status.use_flag(global_table) == Some(UseFlag::LogicalPositional)
                 && !layout.geometry().is_empty()
                 && points_valid
@@ -602,17 +608,21 @@ fn legacy_associativity_valid(
         }
         11 => {
             let Some(layout) = connect_node_layout(record) else {
-                return false;
+                return Ok(false);
             };
-            let data_valid = layout.data().all(|index| record.value(index).is_some());
+            let data_valid = ctx.all_by(
+                layout.data(),
+                |index| Ok(record.value(index).is_some()),
+                "iges legacy associativity fields",
+            )?;
             entry.status.use_flag(global_table) == Some(UseFlag::LogicalPositional)
                 && !layout.points().is_empty()
-                && context.pointer_list_valid(record, layout.points(), point_target, true)
+                && context.pointer_list_valid(record, layout.points(), point_target, true, ctx)?
                 && data_valid
                 && legacy_primary_end_valid(record, layout.primary_end(), trailing_pointer_analysis)
         }
         _ => false,
-    }
+    })
 }
 
 fn attribute_value_valid(
@@ -761,54 +771,53 @@ const SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS: &[&[u8]] = &[
     b"Wire-Bond",
 ];
 
-fn functional_level_identifier_valid(value: &[u8]) -> bool {
+fn functional_level_identifier_valid(
+    value: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     if FUNCTIONAL_LEVEL_IDENTIFIERS
         .iter()
         .any(|identifier| value.eq_ignore_ascii_case(identifier))
     {
-        return true;
+        return Ok(true);
     }
 
     if SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS
         .iter()
         .any(|identifier| value.eq_ignore_ascii_case(identifier))
     {
-        return true;
+        return Ok(true);
     }
 
-    SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS
-        .iter()
-        .any(|identifier| {
-            let identifier_length = identifier.len();
-            value.len() > identifier_length + 1
-                && value[..identifier_length].eq_ignore_ascii_case(identifier)
-                && value[identifier_length] == b'_'
-                && functional_level_suffix_valid(&value[identifier_length + 1..])
-        })
+    for identifier in SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS {
+        let identifier_length = identifier.len();
+        if value.len() > identifier_length + 1
+            && value[..identifier_length].eq_ignore_ascii_case(identifier)
+            && value[identifier_length] == b'_'
+            && functional_level_suffix_valid(&value[identifier_length + 1..], ctx)?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
-fn functional_level_suffix_valid(value: &[u8]) -> bool {
+fn functional_level_suffix_valid(
+    value: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     if value.eq_ignore_ascii_case(b"T") || value.eq_ignore_ascii_case(b"B") {
-        return true;
+        return Ok(true);
     }
-
-    if value.is_empty() {
-        return false;
+    if value.is_empty() || value.first() == Some(&b'+') {
+        return Ok(false);
     }
-    let mut number = 0_u64;
-    for byte in value {
-        if !byte.is_ascii_digit() {
-            return false;
-        }
-        let Some(next) = number
-            .checked_mul(10)
-            .and_then(|value| value.checked_add(u64::from(*byte - b'0')))
-        else {
-            return false;
-        };
-        number = next;
-    }
-    number >= 2
+    let Ok(text) = ctx.validate_utf8(value, "iges functional level suffix UTF-8")? else {
+        return Ok(false);
+    };
+    Ok(ctx
+        .parse_text::<u64>(text, "iges functional level suffix number")?
+        .is_ok_and(|number| number >= 2))
 }
 
 fn generic_property_value_valid(
@@ -868,7 +877,8 @@ fn property_fields_valid(
     record: &ParameterRecord,
     end: usize,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     // The property count is stated in `u64`: every caller derives it from an
     // in-memory token count, and the record's own declaration is compared in
     // that width. A declaration a `u64` cannot state — a negative one — equals
@@ -885,7 +895,7 @@ fn property_fields_valid(
             .integer(index)
             .is_some_and(|value| range.contains(&value))
     };
-    match entry.form {
+    Ok(match entry.form {
         2 => exact(3) && (2..=4).all(|index| integer_range(index, 0..=2)),
         3 => exact(2) && record.integer(2).is_some() && record.string(3).is_some(),
         4 => {
@@ -926,22 +936,31 @@ fn property_fields_valid(
             let independent_count = record.count(4).filter(|count| *count <= end);
             let Some((dependent_count, independent_count)) = dependent_count.zip(independent_count)
             else {
-                return false;
+                return Ok(false);
             };
-            let types_valid = (0..independent_count).all(|offset| integer_range(5 + offset, 1..=8));
-            let counts = (0..independent_count)
-                .map(|offset| {
-                    record
+            let types_valid = ctx.all_by(
+                0..independent_count,
+                |offset| Ok(integer_range(5 + offset, 1..=8)),
+                "iges property fields",
+            )?;
+            let mut counts = Some((0_usize, 1_usize));
+            let mut offsets = 0..independent_count;
+            while let Some(offset) =
+                ctx.next_charged(&mut offsets, "iges property independent counts")?
+            {
+                counts = counts.and_then(|(sum, product)| {
+                    let count = record
                         .integer(5 + independent_count + offset)
                         .and_then(|value| usize::try_from(value).ok())
-                        .filter(|count| *count > 0)
-                })
-                .try_fold((0_usize, 1_usize), |(sum, product), count| {
-                    let count = count?;
+                        .filter(|count| *count > 0)?;
                     Some((sum.checked_add(count)?, product.checked_mul(count)?))
                 });
+                if counts.is_none() {
+                    break;
+                }
+            }
             let Some((independent_values, point_count)) = counts else {
-                return false;
+                return Ok(false);
             };
             let expected_end =
                 dependent_count
@@ -958,13 +977,25 @@ fn property_fields_valid(
                 && types_valid
                 && expected_end == Some(end)
                 && record.integer(1) == i64::try_from(end - 2).ok()
-                && (5 + 2 * independent_count..end).all(|index| record.number(index).is_some())
+                && ctx.all_by(
+                    5 + 2 * independent_count..end,
+                    |index| Ok(record.number(index).is_some()),
+                    "iges property fields",
+                )?
         }
-        12 | 14 => record.count(1).is_some_and(|count| {
-            count > 0
-                && end == count + 2
-                && (0..count).all(|offset| record.string(2 + offset).is_some())
-        }),
+        12 | 14 => record
+            .count(1)
+            .map(|count| -> Result<bool, CodecError> {
+                Ok(count > 0
+                    && end == count + 2
+                    && ctx.all_by(
+                        0..count,
+                        |offset| Ok(record.string(2 + offset).is_some()),
+                        "iges property fields",
+                    )?)
+            })
+            .transpose()?
+            .unwrap_or(false),
         13 => {
             matches!(record.integer(1), Some(2 | 3))
                 && record
@@ -1004,27 +1035,42 @@ fn property_fields_valid(
         24 => record
             .count(2)
             .filter(|count| *count > 0)
-            .is_some_and(|count| {
-                exact(1 + 4 * u64_from_index(count))
-                    && (0..count).all(|offset| {
-                        let start = 3 + offset * 4;
-                        record.integer(start).is_some_and(|value| value >= 0)
-                            && record.string(start + 1).is_some()
-                            && record.integer(start + 2).is_some_and(|value| value >= 0)
-                            && record
-                                .string(start + 3)
-                                .is_some_and(functional_level_identifier_valid)
-                    })
-            }),
+            .map(|count| -> Result<bool, CodecError> {
+                Ok(exact(1 + 4 * u64_from_index(count))
+                    && ctx.all_by(
+                        0..count,
+                        |offset| {
+                            let start = 3 + offset * 4;
+                            Ok(record.integer(start).is_some_and(|value| value >= 0)
+                                && record.string(start + 1).is_some()
+                                && record.integer(start + 2).is_some_and(|value| value >= 0)
+                                && record
+                                    .string(start + 3)
+                                    .map(|value| -> Result<bool, CodecError> {
+                                        functional_level_identifier_valid(value, ctx)
+                                    })
+                                    .transpose()?
+                                    .unwrap_or(false))
+                        },
+                        "iges property fields",
+                    )?)
+            })
+            .transpose()?
+            .unwrap_or(false),
         25 => record
             .count(3)
             .filter(|count| *count > 0 && *count <= end)
-            .is_some_and(|count| {
-                exact(2 + u64_from_index(count))
+            .map(|count| -> Result<bool, CodecError> {
+                Ok(exact(2 + u64_from_index(count))
                     && record.string(2).is_some_and(|value| !value.is_empty())
-                    && (0..count)
-                        .all(|offset| record.integer(4 + offset).is_some_and(|value| value >= 0))
-            }),
+                    && ctx.all_by(
+                        0..count,
+                        |offset| Ok(record.integer(4 + offset).is_some_and(|value| value >= 0)),
+                        "iges property fields",
+                    )?)
+            })
+            .transpose()?
+            .unwrap_or(false),
         26 => {
             exact(3)
                 && (2..=3).all(|index| {
@@ -1039,16 +1085,22 @@ fn property_fields_valid(
         27 => record
             .count(3)
             .filter(|count| *count > 0)
-            .is_some_and(|count| {
-                exact(2 + 2 * u64_from_index(count))
+            .map(|count| -> Result<bool, CodecError> {
+                Ok(exact(2 + 2 * u64_from_index(count))
                     && record.string(2).is_some_and(|value| !value.is_empty())
-                    && (0..count).all(|offset| {
-                        let index = 4 + offset * 2;
-                        record.integer(index).is_some_and(|data_type| {
-                            generic_property_value_valid(record, index + 1, data_type, entries)
-                        })
-                    })
-            }),
+                    && ctx.all_by(
+                        0..count,
+                        |offset| {
+                            let index = 4 + offset * 2;
+                            Ok(record.integer(index).is_some_and(|data_type| {
+                                generic_property_value_valid(record, index + 1, data_type, entries)
+                            }))
+                        },
+                        "iges property fields",
+                    )?)
+            })
+            .transpose()?
+            .unwrap_or(false),
         28 => {
             let units_valid = record
                 .integer(3)
@@ -1085,8 +1137,8 @@ fn property_fields_valid(
         30 => record
             .count(13)
             .filter(|count| *count <= end)
-            .is_some_and(|count| {
-                record.integer(1) == Some(14)
+            .map(|count| -> Result<bool, CodecError> {
+                Ok(record.integer(1) == Some(14)
                     && count.checked_mul(3).and_then(|span| span.checked_add(14)) == Some(end)
                     && integer_range(2, 0..=2)
                     && integer_range(3, 0..=4)
@@ -1101,15 +1153,21 @@ fn property_fields_valid(
                     && integer_range(10, 0..=2)
                     && integer_range(11, 0..=1)
                     && record.number(12).is_some()
-                    && (0..count).all(|offset| {
-                        let start = 14 + offset * 3;
-                        integer_range(start, 1..=4)
-                            && record
-                                .integer(start + 1)
-                                .zip(record.integer(start + 2))
-                                .is_some_and(|(first, last)| first > 0 && last >= first)
-                    })
-            }),
+                    && ctx.all_by(
+                        0..count,
+                        |offset| {
+                            let start = 14 + offset * 3;
+                            Ok(integer_range(start, 1..=4)
+                                && record
+                                    .integer(start + 1)
+                                    .zip(record.integer(start + 2))
+                                    .is_some_and(|(first, last)| first > 0 && last >= first))
+                        },
+                        "iges property fields",
+                    )?)
+            })
+            .transpose()?
+            .unwrap_or(false),
         31 => exact(8) && (2..=9).all(|index| record.number(index).is_some()),
         32 => {
             exact(3)
@@ -1125,17 +1183,23 @@ fn property_fields_valid(
         34 | 35 => record
             .count(2)
             .filter(|count| *count > 0 && *count <= end)
-            .is_some_and(|count| {
-                exact(1 + u64_from_index(count) * 3)
-                    && (0..count).all(|offset| {
-                        let start = 3 + offset * 3;
-                        record.integer(start).is_some_and(|value| value > 0)
-                            && record
-                                .integer(start + 1)
-                                .zip(record.integer(start + 2))
-                                .is_some_and(|(first, last)| first > 0 && last >= first)
-                    })
-            }),
+            .map(|count| -> Result<bool, CodecError> {
+                Ok(exact(1 + u64_from_index(count) * 3)
+                    && ctx.all_by(
+                        0..count,
+                        |offset| {
+                            let start = 3 + offset * 3;
+                            Ok(record.integer(start).is_some_and(|value| value > 0)
+                                && record
+                                    .integer(start + 1)
+                                    .zip(record.integer(start + 2))
+                                    .is_some_and(|(first, last)| first > 0 && last >= first))
+                        },
+                        "iges property fields",
+                    )?)
+            })
+            .transpose()?
+            .unwrap_or(false),
         36 => {
             matches!(record.integer(1), Some(1 | 2))
                 && record
@@ -1146,7 +1210,7 @@ fn property_fields_valid(
                 && (record.integer(1) == Some(1) || integer_range(3, 0..=2))
         }
         _ => false,
-    }
+    })
 }
 
 fn existing_pointer(
@@ -1169,112 +1233,145 @@ fn predefined_associativity_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
-) -> bool {
+    association_owners: &BTreeMap<u32, BTreeSet<u32>>,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let end = record.parameter_end();
-    match entry.form {
+    Ok(match entry.form {
         5 => {
             let Some(count) = record.count(1).filter(|count| *count > 0) else {
-                return false;
+                return Ok(false);
             };
             end == 2 + count * 7
-                && (0..count).all(|offset| {
-                    let start = 2 + offset * 7;
-                    existing_pointer(record, start, entries).is_some_and(|sequence| {
-                        entries
-                            .get(&sequence)
-                            .is_some_and(|target| target.entity_type == 410)
-                    }) && (start + 1..=start + 3).all(|index| record.number(index).is_some())
-                        && existing_pointer(record, start + 4, entries).is_some_and(|sequence| {
-                            entries
-                                .get(&sequence)
-                                .is_some_and(|target| target.entity_type == 214)
-                        })
-                        && record.integer(start + 5).is_some_and(|level| level >= 0)
-                        && existing_pointer(record, start + 6, entries).is_some()
-                })
+                && ctx.all_by(
+                    0..count,
+                    |offset| {
+                        let start = 2 + offset * 7;
+                        Ok(
+                            existing_pointer(record, start, entries).is_some_and(|sequence| {
+                                entries
+                                    .get(&sequence)
+                                    .is_some_and(|target| target.entity_type == 410)
+                            }) && (start + 1..=start + 3)
+                                .all(|index| record.number(index).is_some())
+                                && existing_pointer(record, start + 4, entries).is_some_and(
+                                    |sequence| {
+                                        entries
+                                            .get(&sequence)
+                                            .is_some_and(|target| target.entity_type == 214)
+                                    },
+                                )
+                                && record.integer(start + 5).is_some_and(|level| level >= 0)
+                                && existing_pointer(record, start + 6, entries).is_some(),
+                        )
+                    },
+                    "iges predefined associativity fields",
+                )?
         }
         6 => {
             let visible_count = (record.integer(1) == Some(1))
                 .then(|| record.count(2))
                 .flatten();
             let view = existing_pointer(record, 3, entries);
-            let visible_valid = visible_count.is_some_and(|count| {
-                (0..count).all(|offset| {
-                    existing_pointer(record, 4 + offset, entries)
-                        .and_then(|sequence| records.get(&sequence))
-                        .is_some_and(|owner| {
-                            has_association_back_pointer(
-                                owner,
-                                entry.sequence,
-                                trailing_pointer_analysis,
-                            )
-                        })
+            let visible_valid = visible_count
+                .map(|count| -> Result<bool, CodecError> {
+                    ctx.all_by(
+                        0..count,
+                        |offset| {
+                            Ok(existing_pointer(record, 4 + offset, entries)
+                                .and_then(|sequence| records.get(&sequence))
+                                .is_some_and(|owner| {
+                                    has_association_back_pointer(
+                                        owner,
+                                        entry.sequence,
+                                        association_owners,
+                                    )
+                                }))
+                        },
+                        "iges predefined associativity fields",
+                    )
                 })
-            });
+                .transpose()?
+                .unwrap_or(false);
             visible_count.is_some_and(|count| end == 4 + count)
                 && view.is_some_and(|sequence| {
                     entries
                         .get(&sequence)
                         .is_some_and(|target| target.entity_type == 410)
                         && records.get(&sequence).is_some_and(|record| {
-                            has_association_back_pointer(
-                                record,
-                                entry.sequence,
-                                trailing_pointer_analysis,
-                            )
+                            has_association_back_pointer(record, entry.sequence, association_owners)
                         })
                 })
                 && visible_valid
         }
         9 => {
             let child_count = record.count(2).filter(|count| *count > 0);
-            let members_valid = child_count.is_some_and(|count| {
-                (3..4 + count).all(|index| {
-                    existing_pointer(record, index, entries)
-                        .and_then(|sequence| records.get(&sequence))
-                        .is_some_and(|member| {
-                            has_association_back_pointer(
-                                member,
-                                entry.sequence,
-                                trailing_pointer_analysis,
-                            )
-                        })
+            let members_valid = child_count
+                .map(|count| -> Result<bool, CodecError> {
+                    ctx.all_by(
+                        3..4 + count,
+                        |index| {
+                            Ok(existing_pointer(record, index, entries)
+                                .and_then(|sequence| records.get(&sequence))
+                                .is_some_and(|member| {
+                                    has_association_back_pointer(
+                                        member,
+                                        entry.sequence,
+                                        association_owners,
+                                    )
+                                }))
+                        },
+                        "iges predefined associativity fields",
+                    )
                 })
-            });
+                .transpose()?
+                .unwrap_or(false);
             record.integer(1) == Some(1)
                 && child_count.is_some_and(|count| end == 4 + count)
                 && members_valid
         }
         2 | 12 => {
             let count = record.count(1).filter(|count| *count > 0);
-            count.is_some_and(|count| {
-                end == 2 + count * 2
-                    && (0..count).all(|offset| {
-                        let start = 2 + offset * 2;
-                        record.string(start).is_some_and(|name| !name.is_empty())
-                            && existing_pointer(record, start + 1, entries).is_some()
-                    })
-            })
+            count
+                .map(|count| -> Result<bool, CodecError> {
+                    Ok(end == 2 + count * 2
+                        && ctx.all_by(
+                            0..count,
+                            |offset| {
+                                let start = 2 + offset * 2;
+                                Ok(record.string(start).is_some_and(|name| !name.is_empty())
+                                    && existing_pointer(record, start + 1, entries).is_some())
+                            },
+                            "iges predefined associativity fields",
+                        )?)
+                })
+                .transpose()?
+                .unwrap_or(false)
         }
         13 => {
             let geometry_count = record.count(2).filter(|count| *count > 0);
             let dimension = existing_pointer(record, 3, entries);
             record.integer(1) == Some(1)
-                && geometry_count.is_some_and(|count| {
-                    end == 4 + count
-                        && (0..count)
-                            .all(|offset| existing_pointer(record, 4 + offset, entries).is_some())
-                })
+                && geometry_count
+                    .map(|count| -> Result<bool, CodecError> {
+                        Ok(
+                            end == 4 + count
+                                && ctx.all_by(
+                                    0..count,
+                                    |offset| {
+                                        Ok(existing_pointer(record, 4 + offset, entries).is_some())
+                                    },
+                                    "iges predefined associativity fields",
+                                )?,
+                        )
+                    })
+                    .transpose()?
+                    .unwrap_or(false)
                 && dimension.is_some_and(|sequence| {
                     entries.get(&sequence).is_some_and(|target| {
                         matches!(target.entity_type, 202 | 206 | 216 | 218 | 220 | 222)
                     }) && records.get(&sequence).is_some_and(|member| {
-                        has_association_back_pointer(
-                            member,
-                            entry.sequence,
-                            trailing_pointer_analysis,
-                        )
+                        has_association_back_pointer(member, entry.sequence, association_owners)
                     })
                 })
         }
@@ -1291,11 +1388,21 @@ fn predefined_associativity_valid(
             };
             record.integer(1) == Some(1)
                 && transform_valid
-                && count.is_some_and(|count| {
-                    end == 4 + count
-                        && (0..count)
-                            .all(|offset| existing_pointer(record, 4 + offset, entries).is_some())
-                })
+                && count
+                    .map(|count| -> Result<bool, CodecError> {
+                        Ok(
+                            end == 4 + count
+                                && ctx.all_by(
+                                    0..count,
+                                    |offset| {
+                                        Ok(existing_pointer(record, 4 + offset, entries).is_some())
+                                    },
+                                    "iges predefined associativity fields",
+                                )?,
+                        )
+                    })
+                    .transpose()?
+                    .unwrap_or(false)
         }
         21 => {
             let geometry_count = record.count(2).filter(|count| *count > 0);
@@ -1311,22 +1418,30 @@ fn predefined_associativity_valid(
                 })
             });
             let angle_valid = record.number(5).is_some();
-            let geometry_valid = geometry_count.is_some_and(|count| {
-                end == 6 + count * 5
-                    && (0..count).all(|offset| {
-                        let start = 6 + offset * 5;
-                        let pointer_valid = match record.integer(start) {
-                            Some(0) => offset + 1 == count,
-                            Some(_) => existing_pointer(record, start, entries).is_some(),
-                            None => false,
-                        };
-                        pointer_valid
-                            && record
-                                .integer(start + 1)
-                                .is_some_and(|location| matches!(location, 0..=5))
-                            && (start + 2..=start + 4).all(|index| record.number(index).is_some())
-                    })
-            });
+            let geometry_valid = geometry_count
+                .map(|count| -> Result<bool, CodecError> {
+                    Ok(end == 6 + count * 5
+                        && ctx.all_by(
+                            0..count,
+                            |offset| {
+                                let start = 6 + offset * 5;
+                                let pointer_valid = match record.integer(start) {
+                                    Some(0) => offset + 1 == count,
+                                    Some(_) => existing_pointer(record, start, entries).is_some(),
+                                    None => false,
+                                };
+                                Ok(pointer_valid
+                                    && record
+                                        .integer(start + 1)
+                                        .is_some_and(|location| matches!(location, 0..=5))
+                                    && (start + 2..=start + 4)
+                                        .all(|index| record.number(index).is_some()))
+                            },
+                            "iges predefined associativity fields",
+                        )?)
+                })
+                .transpose()?
+                .unwrap_or(false);
             let arrow_cardinality_valid = dimension_entry.is_none_or(|dimension| {
                 if dimension.entity_type != 216 {
                     return true;
@@ -1345,23 +1460,21 @@ fn predefined_associativity_valid(
                     .unwrap_or_default();
                 arrow_count != 2 || geometry_count == Some(2)
             });
-            let mut back_pointer_owners = records.iter().filter_map(|(sequence, owner)| {
-                has_association_back_pointer(owner, entry.sequence, trailing_pointer_analysis)
-                    .then_some(*sequence)
-            });
+            let back_pointer_owners = association_owners.get(&entry.sequence);
             record.integer(1) == Some(1)
                 && orientation_valid
                 && angle_valid
                 && geometry_valid
                 && arrow_cardinality_valid
                 && dimension.is_some_and(|dimension| {
-                    back_pointer_owners.next() == Some(dimension)
-                        && back_pointer_owners.next().is_none()
+                    back_pointer_owners.is_some_and(|owners| {
+                        owners.len() == 1 && owners.first() == Some(&dimension)
+                    })
                 })
                 && entry.status.is_physically_dependent()
         }
         _ => false,
-    }
+    })
 }
 
 fn vertex_position(
@@ -1424,37 +1537,72 @@ fn points_coincident(left: Point3, right: Point3, resolution: f64) -> bool {
 fn linear_nurbs_boundary_points(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
+    transform: Transform,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
-    if (0..nurbs.pole_count()).any(|index| {
-        nurbs
-            .pole_rows()
-            .weight_at(index)
-            .is_some_and(|weight| weight <= 0.0)
-    }) {
+    let knots = nurbs.knots().as_slice();
+    let control_count = nurbs.pole_count();
+    if nurbs.periodic()
+        || nurbs.degree() != 1
+        || control_count < 2
+        || control_count.checked_add(2) != Some(knots.len())
+        || !parameter_range[0].is_finite()
+        || !parameter_range[1].is_finite()
+        || parameter_range[0] >= parameter_range[1]
+    {
         return Ok(None);
     }
-    let Some(parameters) = linear_nurbs_parameters(
-        nurbs.degree(),
-        nurbs.knots(),
-        nurbs.pole_count(),
-        nurbs.periodic(),
-        parameter_range,
-    ) else {
+    if parameter_range[0] < knots[1] || parameter_range[1] > knots[control_count] {
         return Ok(None);
-    };
-    let mut points = ctx.collection_vec(
-        parameters.clone().count(),
-        "iges plane NURBS boundary points",
-    )?;
-    for parameter in parameters {
+    }
+    if let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } = nurbs.pole_rows() {
+        if ctx.any_by(
+            points.iter(),
+            |pole| Ok(pole.weight.get() <= 0.0),
+            "iges plane NURBS weights",
+        )? {
+            return Ok(None);
+        }
+    }
+    if !ctx.all_by(
+        knots.windows(2),
+        |pair| {
+            Ok(pair[0].is_finite()
+                && pair[1].is_finite()
+                && pair[0] <= pair[1]
+                && !(pair[0] == pair[1]
+                    && parameter_range[0] < pair[0]
+                    && pair[0] < parameter_range[1]))
+        },
+        "iges plane NURBS knot validation",
+    )? {
+        return Ok(None);
+    }
+    let mut points = Vec::new();
+    let mut append_sample = |parameter| -> Result<bool, CodecError> {
         let Some(point) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::nurbs_curve_point_at(ctx, nurbs, parameter),
         )?)?
         else {
-            return Ok(None);
+            return Ok(false);
         };
-        points.push(point.get());
+        let Some(point) = transform.apply_point(point.get()) else {
+            return Ok(false);
+        };
+        ctx.push_vec(&mut points, point.get(), "iges plane NURBS boundary points")?;
+        Ok(true)
+    };
+    if !append_sample(parameter_range[0])? {
+        return Ok(None);
+    }
+    let mut interior = knots.iter();
+    while let Some(knot) = ctx.next_charged(&mut interior, "iges plane NURBS interior knots")? {
+        if parameter_range[0] < *knot && *knot < parameter_range[1] && !append_sample(*knot)? {
+            return Ok(None);
+        }
+    }
+    if !append_sample(parameter_range[1])? {
+        return Ok(None);
     }
     Ok(Some(points))
 }
@@ -1467,17 +1615,9 @@ fn linear_nurbs_is_simple_closed(
     transform: Transform,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range, ctx)? else {
-        return Ok(false);
-    };
-    let Some(points) = ctx.collect_options(
-        points.into_iter().map(|point| {
-            transform
-                .apply_point(point)
-                .map(cadmpeg_ir::features::FinitePoint3::get)
-        }),
-        "iges transformed plane boundary points",
-    )?
+    let mut storage = ctx.reserve_scoped(0, "iges plane boundary samples")?;
+    let Some(points) = storage
+        .with_storage(|| linear_nurbs_boundary_points(nurbs, parameter_range, transform, ctx))?
     else {
         return Ok(false);
     };
@@ -1491,7 +1631,7 @@ fn linear_nurbs_is_simple_closed(
     {
         return Ok(false);
     }
-    let Some(projected) = plane_coordinates(&points, plane, ctx)? else {
+    let Some(projected) = storage.with_storage(|| plane_coordinates(&points, plane, ctx))? else {
         return Ok(false);
     };
     Ok(!planar_polyline_has_self_intersection(&projected, ctx)?)
@@ -1541,27 +1681,50 @@ fn bounded_plane_curve_is_simple(
             if self_intersect != &Some(false) {
                 return Ok(false);
             }
-            for segment in segments {
+            let mut input = segments.iter();
+            while let Some(segment) = context
+                .ctx
+                .next_charged(&mut input, "iges plane boundary segment traversal")?
+            {
                 let Some(curve) = context.index.curves(segment.curve.as_str(), context.ctx)? else {
                     return Ok(false);
                 };
-                if active.contains(&segment.curve) {
+                if context.ctx.contains_btree_set(
+                    active,
+                    &segment.curve,
+                    "iges plane boundary active lookup",
+                )? {
                     return Ok(false);
                 }
-                let active_id = segment
-                    .curve
-                    .try_clone_for_decode(context.ctx, "iges plane boundary child curve ID")?;
-                context.ctx.insert_btree_set(
-                    active,
-                    active_id,
-                    "iges plane boundary active curve",
-                )?;
+                let mut active_storage = context
+                    .ctx
+                    .reserve_scoped(0, "iges plane boundary active scratch")?;
+                let active_id = active_storage.with_storage(|| {
+                    segment
+                        .curve
+                        .try_clone_for_decode(context.ctx, "iges plane boundary child curve ID")
+                })?;
+                active_storage.with_storage(|| {
+                    context.ctx.insert_btree_set(
+                        active,
+                        active_id,
+                        "iges plane boundary active curve",
+                    )
+                })?;
                 let Some(geometry) = curve.geometry.solved() else {
-                    active.remove(&segment.curve);
+                    context.ctx.remove_btree_set(
+                        active,
+                        &segment.curve,
+                        "iges plane boundary active removal",
+                    )?;
                     return Ok(false);
                 };
                 let valid = bounded_plane_curve_is_simple(geometry, context, false, None, active);
-                active.remove(&segment.curve);
+                context.ctx.remove_btree_set(
+                    active,
+                    &segment.curve,
+                    "iges plane boundary active removal",
+                )?;
                 if !valid? {
                     return Ok(false);
                 }
@@ -1605,9 +1768,13 @@ fn bounded_plane_curve_is_simple(
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let active_range_matches = parameter_range.is_none_or(|range| {
-                polyline.parameters().is_some_and(|mut parameters| {
-                    let first = parameters.next();
-                    let last = parameters.last().or(first);
+                polyline.parameters().is_some_and(|_| {
+                    let first = polyline.parameter_at(0);
+                    let last = polyline
+                        .point_count()
+                        .checked_sub(1)
+                        .and_then(|index| polyline.parameter_at(index))
+                        .or(first);
                     first.map(cadmpeg_ir::scalar::FiniteReal::get) == Some(range[0])
                         && last.map(cadmpeg_ir::scalar::FiniteReal::get) == Some(range[1])
                 })
@@ -1615,15 +1782,20 @@ fn bounded_plane_curve_is_simple(
             if !active_range_matches {
                 return Ok(false);
             }
-            let points = context.ctx.collect_options(
-                polyline.points().map(|point| {
-                    context
-                        .transform
-                        .apply_point(point.get())
-                        .map(cadmpeg_ir::features::FinitePoint3::get)
-                }),
-                "iges plane polyline points",
-            )?;
+            let mut storage = context
+                .ctx
+                .reserve_scoped(0, "iges plane polyline samples")?;
+            let points = storage.with_storage(|| {
+                context.ctx.collect_options(
+                    polyline.points().map(|point| {
+                        context
+                            .transform
+                            .apply_point(point.get())
+                            .map(cadmpeg_ir::features::FinitePoint3::get)
+                    }),
+                    "iges plane polyline points",
+                )
+            })?;
             let Some(points) = points else {
                 return Ok(false);
             };
@@ -1641,7 +1813,9 @@ fn bounded_plane_curve_is_simple(
             {
                 return Ok(false);
             }
-            let Some(projected) = plane_coordinates(&points, context.plane, context.ctx)? else {
+            let Some(projected) =
+                storage.with_storage(|| plane_coordinates(&points, context.plane, context.ctx))?
+            else {
                 return Ok(false);
             };
             Ok(!planar_polyline_has_self_intersection(
@@ -1705,18 +1879,46 @@ impl From<CodecError> for PlaneBoundaryError {
     }
 }
 
-fn plane_boundary_edge(
-    index: &ModelIndex<'_>,
+type PlaneBoundaryKey = (u32, [u64; 7]);
+
+/// Successful boundary proofs for one immutable model.
+struct PlaneBoundaryProofs<'ir, 'ctx> {
+    proven: BTreeMap<PlaneBoundaryKey, &'ir Edge>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn plane_boundary_edge<'ir>(
+    index: &ModelIndex<'ir>,
     plane: (Point3, Vector3),
     boundary_sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     resolution: f64,
     ctx: &DecodeContext<'_>,
-) -> Result<Edge, PlaneBoundaryError> {
+    proofs: &mut PlaneBoundaryProofs<'ir, '_>,
+) -> Result<&'ir Edge, PlaneBoundaryError> {
+    let proof_key = (
+        boundary_sequence,
+        [
+            plane.0.x.to_bits(),
+            plane.0.y.to_bits(),
+            plane.0.z.to_bits(),
+            plane.1.x.to_bits(),
+            plane.1.y.to_bits(),
+            plane.1.z.to_bits(),
+            resolution.to_bits(),
+        ],
+    );
+    if let Some(edge) = proofs.proven.get(&proof_key) {
+        return Ok(*edge);
+    }
     let mut key_storage = [0_u8; 64];
-    let key =
-        crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage, ctx)?
-            .ok_or(PlaneBoundaryError::MissingEdge)?;
+    let key = crate::ids::directory_lookup_key(
+        "iges:model:edge#D",
+        boundary_sequence,
+        &mut key_storage,
+        ctx,
+    )?
+    .ok_or(PlaneBoundaryError::MissingEdge)?;
     let source_edge = index
         .edges(key, ctx)
         .map_err(CodecError::from)?
@@ -1734,25 +1936,28 @@ fn plane_boundary_edge(
     let source_is_certified_simple = entries
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
+    let mut active_storage = ctx.reserve_scoped(0, "iges plane boundary active scratch")?;
     let mut active = BTreeSet::new();
-    let active_id = curve_id.try_clone_for_decode(ctx, "iges plane boundary active curve ID")?;
-    if !ctx.insert_btree_set(&mut active, active_id, "iges plane boundary active curve")?
-        || !bounded_plane_curve_is_simple(
-            geometry,
-            PlaneBoundarySimplicity {
-                index,
-                plane,
-                resolution,
-                transform: Transform::identity(),
-                ctx,
-            },
-            source_is_certified_simple,
-            source_edge
-                .param_range()
-                .map(cadmpeg_ir::units::FiniteVector::get),
-            &mut active,
-        )?
-    {
+    let active_id = active_storage.with_storage(|| {
+        curve_id.try_clone_for_decode(ctx, "iges plane boundary active curve ID")
+    })?;
+    if !active_storage.with_storage(|| {
+        ctx.insert_btree_set(&mut active, active_id, "iges plane boundary active curve")
+    })? || !bounded_plane_curve_is_simple(
+        geometry,
+        PlaneBoundarySimplicity {
+            index,
+            plane,
+            resolution,
+            transform: Transform::identity(),
+            ctx,
+        },
+        source_is_certified_simple,
+        source_edge
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        &mut active,
+    )? {
         return Err(PlaneBoundaryError::NotSimple);
     }
     if !curve_geometry_coplanar(
@@ -1773,7 +1978,42 @@ fn plane_boundary_edge(
     if start.distance(end) > resolution {
         return Err(PlaneBoundaryError::NotClosed);
     }
-    Ok(super::trimming::clone_boundary_edge(source_edge, ctx)?)
+    proofs.storage.with_storage(|| {
+        ctx.insert_btree_map(
+            &mut proofs.proven,
+            proof_key,
+            source_edge,
+            "iges plane boundary proof cache",
+        )
+    })?;
+    Ok(source_edge)
+}
+
+fn closed_plane_boundary_edge(
+    source: &Edge,
+    id: EdgeId,
+    ctx: &DecodeContext<'_>,
+) -> Result<Edge, CodecError> {
+    let curve = source
+        .curve()
+        .ok_or_else(|| CodecError::malformed("validated plane edge has no curve"))?;
+    Ok(Edge {
+        id,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+            Some(curve.try_clone_for_decode(ctx, "iges selected edge curve ID")?),
+            source
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+        )
+        .map_err(CodecError::malformed)?,
+        start: source
+            .start
+            .try_clone_for_decode(ctx, "iges selected edge start ID")?,
+        end: source
+            .start
+            .try_clone_for_decode(ctx, "iges structure identity copy")?,
+        tolerance: source.tolerance,
+    })
 }
 
 fn plane_face_draft(
@@ -1800,8 +2040,15 @@ fn plane_face_draft(
     let face_id = crate::ids::face_admitted(stem, ctx)?;
     sequences.record_face(&face_id, source_sequence, ctx)?;
     let mut candidate = ModelDraft::new();
-    let mut loop_ids = ctx.collection_vec(boundary_edges.len(), "iges legacy plane loop IDs")?;
-    for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
+    let mut outer_loop = None;
+    let mut loop_ids = ctx.collection_vec(
+        boundary_edges.len().saturating_sub(1),
+        "iges legacy plane loop IDs",
+    )?;
+    let mut input = boundary_edges.into_iter().enumerate();
+    while let Some((boundary_index, edge)) =
+        ctx.next_charged(&mut input, "iges structure list traversal")?
+    {
         let edge_id = edge
             .id
             .try_clone_for_decode(ctx, "iges structure identity copy")?;
@@ -1849,13 +2096,15 @@ fn plane_face_draft(
             face: face_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
-        loop_ids.push(loop_id);
+        if boundary_index == 0 {
+            outer_loop = Some(loop_id);
+        } else {
+            loop_ids.push(loop_id);
+        }
     }
-    let face_loops = if loop_ids.is_empty() {
-        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new())
-    } else {
-        let outer = loop_ids.remove(0);
-        cadmpeg_ir::topology::FaceLoops::classified(outer, loop_ids)
+    let face_loops = match outer_loop {
+        Some(outer) => cadmpeg_ir::topology::FaceLoops::classified(outer, loop_ids),
+        None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
     };
     ctx.reserve_vec(
         &mut candidate.model_mut().faces,
@@ -1956,15 +2205,23 @@ struct LegacyPlaneSource<'a> {
     record: &'a ParameterRecord,
 }
 
-fn legacy_single_parent_face(
-    ir: &CadIr,
+fn legacy_single_parent_face<'ir, 'ctx>(
+    proof_context: (&ModelIndex<'ir>, &mut PlaneBoundaryProofs<'ir, '_>),
     source: LegacyPlaneSource<'_>,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
+    ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
-) -> Result<Option<(ModelDraft, Vec<u32>)>, LegacyPlaneError> {
+) -> Result<
+    Option<(
+        ModelDraft,
+        Vec<u32>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
+    LegacyPlaneError,
+> {
+    let (index, proofs) = proof_context;
     let LegacyPlaneSource { entry, record } = source;
     let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
         return Ok(None);
@@ -1978,25 +2235,35 @@ fn legacy_single_parent_face(
     let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
         return Err("legacy single-parent plane hole has no children".into());
     };
-    let mut children = ctx.collection_vec(child_count, "iges legacy plane child pointers")?;
-    for offset in 0..child_count {
+    let (mut children, mut child_storage) =
+        ctx.temporary_vec(child_count, "iges legacy plane child pointers")?;
+    let mut input = 0..child_count;
+    while let Some(offset) = ctx.next_charged(&mut input, "iges structure list traversal")? {
         let Some(child) = existing_pointer(record, 4 + offset, entries) else {
             return Err("legacy single-parent plane hole has an invalid child pointer".into());
         };
         children.push(child);
     }
-    if children.iter().any(|sequence| {
-        entries
-            .get(sequence)
-            .is_some_and(|child| child.entity_type != 108)
-    }) {
+    if ctx.any_by(
+        children.iter(),
+        |sequence| {
+            Ok(entries
+                .get(sequence)
+                .is_some_and(|child| child.entity_type != 108))
+        },
+        "iges structure list validation",
+    )? {
         return Ok(None);
     }
-    if children.iter().any(|sequence| {
-        entries
-            .get(sequence)
-            .is_none_or(|child| child.form != -1 || !child.status.is_physically_dependent())
-    }) {
+    if ctx.any_by(
+        children.iter(),
+        |sequence| {
+            Ok(entries
+                .get(sequence)
+                .is_none_or(|child| child.form != -1 || !child.status.is_physically_dependent()))
+        },
+        "iges structure list validation",
+    )? {
         return Err(
             "legacy single-parent plane hole requires negative, physically dependent Type 108 children"
                 .into(),
@@ -2006,9 +2273,13 @@ fn legacy_single_parent_face(
     let boundary_count = child_count
         .checked_add(1)
         .ok_or("legacy single-parent plane hole has an invalid child pointer")?;
-    let mut boundary_sequences =
-        ctx.collection_vec(boundary_count, "iges legacy plane boundary pointers")?;
-    for sequence in std::iter::once(parent_sequence).chain(children.iter().copied()) {
+    let (mut boundary_sequences, _boundary_storage) =
+        ctx.temporary_vec(boundary_count, "iges legacy plane boundary pointers")?;
+    for sequence in std::iter::once(parent_sequence).chain(
+        ctx.admit_iter(&children, "iges legacy plane children traversal")
+            .map_err(CodecError::from)?
+            .copied(),
+    ) {
         boundary_sequences.push(
             records
                 .get(&sequence)
@@ -2016,43 +2287,54 @@ fn legacy_single_parent_face(
                 .ok_or("legacy single-parent plane has an invalid boundary pointer")?,
         );
     }
-    let index = ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?;
-    let parent_plane = plane_carrier(&index, parent_sequence, ctx)?
+    let parent_plane = plane_carrier(index, parent_sequence, ctx)?
         .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = global.minimum_resolution_mm();
-    let mut boundary_edges =
-        ctx.collection_vec(boundary_sequences.len(), "iges legacy plane boundary edges")?;
-    for (boundary_index, (plane_sequence, boundary_sequence)) in std::iter::once(parent_sequence)
+    let (mut boundary_edges, _edge_storage) =
+        ctx.temporary_vec(boundary_sequences.len(), "iges legacy plane boundary edges")?;
+    let mut input = std::iter::once(parent_sequence)
         .chain(children.iter().copied())
         .zip(boundary_sequences.iter().copied())
-        .enumerate()
+        .enumerate();
+    while let Some((boundary_index, (plane_sequence, boundary_sequence))) =
+        ctx.next_charged(&mut input, "iges structure list traversal")?
     {
-        let plane = plane_carrier(&index, plane_sequence, ctx)?
+        let plane = plane_carrier(index, plane_sequence, ctx)?
             .ok_or("legacy single-parent child plane was not projected")?;
         if !planes_are_coplanar(parent_plane, plane, resolution) {
             return Err("legacy single-parent plane boundaries are not coplanar".into());
         }
-        let mut edge =
-            plane_boundary_edge(&index, plane, boundary_sequence, entries, resolution, ctx)
-                .map_err(|error| match error.legacy_message() {
-                    Ok(message) => LegacyPlaneError::Invalid(message),
-                    Err(resource) => LegacyPlaneError::Resource(resource),
-                })?;
+        let edge = plane_boundary_edge(
+            index,
+            plane,
+            boundary_sequence,
+            entries,
+            resolution,
+            ctx,
+            proofs,
+        )
+        .map_err(|error| match error.legacy_message() {
+            Ok(message) => LegacyPlaneError::Invalid(message),
+            Err(resource) => LegacyPlaneError::Resource(resource),
+        })?;
         let edge_id = crate::ids::edge_admitted(
             &crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence)
                 .tail_index(boundary_index),
             ctx,
         )?;
-        edge.id = edge_id.try_clone_for_decode(ctx, "iges structure identity copy")?;
-        edge.end = edge
-            .start
-            .try_clone_for_decode(ctx, "iges structure identity copy")?;
+        let edge = closed_plane_boundary_edge(edge, edge_id, ctx)?;
         boundary_edges.push(edge);
     }
     let stem =
         crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence);
-    ctx.reserve_vec(&mut children, 1, "iges legacy plane sequence list")?;
-    children.insert(0, parent_sequence);
+    child_storage.with_storage(|| {
+        ctx.insert_vec(
+            &mut children,
+            0,
+            parent_sequence,
+            "iges legacy plane sequence list",
+        )
+    })?;
     Ok(Some((
         plane_face_draft(
             parent_sequence,
@@ -2064,6 +2346,7 @@ fn legacy_single_parent_face(
             ctx,
         )?,
         children,
+        child_storage,
     )))
 }
 
@@ -2096,7 +2379,8 @@ fn read_flow_required_pointers(
     operation: &'static str,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, operation)?;
-    for _ in 0..count {
+    let mut input = 0..count;
+    while ctx.next_charged(&mut input, operation)?.is_some() {
         let Some(FlowPointer::Sequence(sequence)) =
             read_flow_pointer(record, entries, cursor, false)
         else {
@@ -2115,7 +2399,11 @@ fn read_flow_optional_pointers(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Option<u32>>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, "iges flow continuation pointers")?;
-    for _ in 0..count {
+    let mut input = 0..count;
+    while ctx
+        .next_charged(&mut input, "iges structure list traversal")?
+        .is_some()
+    {
         let Some(pointer) = read_flow_pointer(record, entries, cursor, true) else {
             return Ok(None);
         };
@@ -2135,7 +2423,8 @@ fn definition_members(
     operation: &'static str,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut members = ctx.collection_vec(count, operation)?;
-    for index in 0..count {
+    let mut input = 0..count;
+    while let Some(index) = ctx.next_charged(&mut input, operation)? {
         let Some(sequence) = record
             .integer(4 + index)
             .and_then(|value| u32::try_from(value).ok())
@@ -2153,7 +2442,7 @@ fn flow_associativity(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    association_owners: &BTreeMap<u32, BTreeSet<u32>>,
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<FlowAssociativity>, CodecError> {
@@ -2201,29 +2490,38 @@ fn flow_associativity(
     else {
         return Ok(None);
     };
-    let Some(connections) = read_flow_required_pointers(
-        record,
-        entries,
-        &mut cursor,
-        counts[1],
-        ctx,
-        "iges flow connection pointers",
-    )?
+    let mut local_storage = ctx.reserve_scoped(0, "iges flow validation scratch")?;
+    let Some(connections) = local_storage.with_storage(|| {
+        read_flow_required_pointers(
+            record,
+            entries,
+            &mut cursor,
+            counts[1],
+            ctx,
+            "iges flow connection pointers",
+        )
+    })?
     else {
         return Ok(None);
     };
-    let Some(joins) = read_flow_required_pointers(
-        record,
-        entries,
-        &mut cursor,
-        counts[2],
-        ctx,
-        "iges flow join pointers",
-    )?
+    let Some(joins) = local_storage.with_storage(|| {
+        read_flow_required_pointers(
+            record,
+            entries,
+            &mut cursor,
+            counts[2],
+            ctx,
+            "iges flow join pointers",
+        )
+    })?
     else {
         return Ok(None);
     };
-    for _ in 0..counts[3] {
+    let mut input = 0..counts[3];
+    while ctx
+        .next_charged(&mut input, "iges structure list traversal")?
+        .is_some()
+    {
         if record.string(cursor).is_none_or(<[u8]>::is_empty) {
             return Ok(None);
         }
@@ -2232,14 +2530,16 @@ fn flow_associativity(
         };
         cursor = next;
     }
-    let Some(displays) = read_flow_required_pointers(
-        record,
-        entries,
-        &mut cursor,
-        counts[4],
-        ctx,
-        "iges flow display pointers",
-    )?
+    let Some(displays) = local_storage.with_storage(|| {
+        read_flow_required_pointers(
+            record,
+            entries,
+            &mut cursor,
+            counts[4],
+            ctx,
+            "iges flow display pointers",
+        )
+    })?
     else {
         return Ok(None);
     };
@@ -2248,43 +2548,66 @@ fn flow_associativity(
     else {
         return Ok(None);
     };
-    let associated_valid = associated.iter().all(|sequence| {
-        entries
-            .get(sequence)
-            .is_some_and(|target| target.entity_type == 402 && target.form == form)
-    });
-    let connections_valid = connections.iter().all(|sequence| {
-        entries
-            .get(sequence)
-            .is_some_and(|target| flow_connection_target_valid(target, form, global_table))
-            && (form == 20
-                || records.get(sequence).is_some_and(|member| {
-                    has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
-                }))
-    });
-    let joins_valid = joins.iter().all(|sequence| {
-        (form == 20
-            || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
-            }))
-            && entries
+    let associated_valid = ctx.all_by(
+        associated.iter(),
+        |sequence| {
+            Ok(entries
                 .get(sequence)
-                .is_some_and(|target| flow_join_target_valid(target, global_table))
-    });
-    let displays_valid = displays.iter().all(|sequence| {
-        entries
-            .get(sequence)
-            .is_some_and(|target| flow_display_target_valid(target, form, global_table))
-    });
-    let continuations_valid = continuations.iter().flatten().all(|sequence| {
-        entries
-            .get(sequence)
-            .is_some_and(|target| flow_continuation_target_valid(target, form, global_table))
-            && (form == 20
+                .is_some_and(|target| target.entity_type == 402 && target.form == form))
+        },
+        "iges structure list validation",
+    )?;
+    let connections_valid = ctx.all_by(
+        connections.iter(),
+        |sequence| {
+            Ok(entries
+                .get(sequence)
+                .is_some_and(|target| flow_connection_target_valid(target, form, global_table))
+                && (form == 20
+                    || records.get(sequence).is_some_and(|member| {
+                        has_association_back_pointer(member, entry.sequence, association_owners)
+                    })))
+        },
+        "iges structure list validation",
+    )?;
+    let joins_valid = ctx.all_by(
+        joins.iter(),
+        |sequence| {
+            Ok((form == 20
                 || records.get(sequence).is_some_and(|member| {
-                    has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
+                    has_association_back_pointer(member, entry.sequence, association_owners)
                 }))
-    });
+                && entries
+                    .get(sequence)
+                    .is_some_and(|target| flow_join_target_valid(target, global_table)))
+        },
+        "iges structure list validation",
+    )?;
+    let displays_valid = ctx.all_by(
+        displays.iter(),
+        |sequence| {
+            Ok(entries
+                .get(sequence)
+                .is_some_and(|target| flow_display_target_valid(target, form, global_table)))
+        },
+        "iges structure list validation",
+    )?;
+    let continuations_valid = ctx.all_by(
+        &continuations,
+        |slot| {
+            let Some(sequence) = slot else {
+                return Ok(true);
+            };
+            Ok(entries
+                .get(sequence)
+                .is_some_and(|target| flow_continuation_target_valid(target, form, global_table))
+                && (form == 20
+                    || records.get(sequence).is_some_and(|member| {
+                        has_association_back_pointer(member, entry.sequence, association_owners)
+                    })))
+        },
+        "iges structure list validation",
+    )?;
     Ok((cursor == record.parameter_end()
         && associated_valid
         && connections_valid
@@ -2421,30 +2744,17 @@ pub(crate) fn placement_affine(
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    indexes: (
+        &BTreeMap<u32, &DirectoryEntry>,
+        &BTreeMap<u32, &ParameterRecord>,
+    ),
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges structure parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges structure directory index",
-        )?;
-    }
+    let (entries, records) = indexes;
+    let mut scratch = ctx.reserve_scoped(0, "iges structure scratch")?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut placement_rejections = BTreeMap::new();
@@ -2453,28 +2763,70 @@ pub(super) fn project(
     let mut legacy_face_candidates = Vec::<(&DirectoryEntry, ModelDraft)>::new();
     let mut legacy_plane_sequences = BTreeSet::new();
     let mut flows = BTreeMap::new();
-    for entry in directory
-        .iter()
+    let mut property_owners = BTreeMap::<u32, Vec<u32>>::new();
+    let mut association_owners = BTreeMap::<u32, BTreeSet<u32>>::new();
+    for (owner, record) in ctx.admit_iter(records, "iges structure ownership records")? {
+        let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
+            trailing_pointer_analysis.get(&record.directory_sequence)
+        else {
+            continue;
+        };
+        for target in ctx.admit_iter(groups.properties(), "iges structure property references")? {
+            if target != owner
+                && property_owners.get(target).and_then(|owners| owners.last()) != Some(owner)
+            {
+                ctx.push_scoped_btree_group(
+                    &mut scratch,
+                    &mut property_owners,
+                    *target,
+                    || *owner,
+                    0,
+                    "iges property owner sequences",
+                )?;
+            }
+        }
+        for target in ctx.admit_iter(
+            groups.associations(),
+            "iges structure association references",
+        )? {
+            scratch.with_storage(|| {
+                ctx.insert_btree_group_set(
+                    &mut association_owners,
+                    *target,
+                    *owner,
+                    "iges association owner groups",
+                    "iges association owner sequences",
+                )
+            })?;
+        }
+    }
+    let mut sheet_identities = None;
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             continue;
         };
-        if let Some(flow) = flow_associativity(
-            entry,
-            record,
-            &entries,
-            &records,
-            trailing_pointer_analysis,
-            global.global_table(),
-            ctx,
-        )? {
-            ctx.insert_btree_map(&mut flows, entry.sequence, flow, "iges flow index nodes")?;
+        if let Some(flow) = scratch.with_storage(|| {
+            flow_associativity(
+                entry,
+                record,
+                entries,
+                records,
+                &association_owners,
+                global.global_table(),
+                ctx,
+            )
+        })? {
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(&mut flows, entry.sequence, flow, "iges flow index nodes")
+            })?;
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -2486,115 +2838,157 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut owners = Vec::new();
-        for (sequence, owner_record) in &records {
-            if *sequence != entry.sequence
-                && has_property_pointer(owner_record, entry.sequence, trailing_pointer_analysis)
-            {
-                ctx.reserve_vec(&mut owners, 1, "iges property owner sequences")?;
-                owners.push(*sequence);
-            }
-        }
-        let fields_valid = property_fields_valid(entry, record, record.parameter_end(), &entries);
+        let owners = property_owners
+            .get(&entry.sequence)
+            .map_or(&[][..], Vec::as_slice);
+        let fields_valid =
+            property_fields_valid(entry, record, record.parameter_end(), entries, ctx)?;
         let attachment_valid =
             entry.status.subordinate() == Some(Subordinate::Independent) || !owners.is_empty();
         let reference_designator_valid = entry.form != 7
-            || owners.iter().all(|owner| {
-                entries
-                    .get(owner)
-                    .is_some_and(|owner| owner.entity_type != 420)
-            });
+            || ctx.all_by(
+                owners.iter(),
+                |owner| {
+                    Ok(entries
+                        .get(owner)
+                        .is_some_and(|owner| owner.entity_type != 420))
+                },
+                "iges structure list validation",
+            )?;
         let owner_kind_valid = match entry.form {
             22 => {
                 !owners.is_empty()
-                    && owners.iter().all(|owner| {
-                        entries
-                            .get(owner)
-                            .is_some_and(|owner| owner.entity_type == 404)
-                    })
+                    && ctx.all_by(
+                        owners.iter(),
+                        |owner| {
+                            Ok(entries
+                                .get(owner)
+                                .is_some_and(|owner| owner.entity_type == 404))
+                        },
+                        "iges structure list validation",
+                    )?
             }
             23 => {
                 !owners.is_empty()
-                    && owners.iter().all(|owner| {
-                        entries.get(owner).is_some_and(|owner| {
-                            owner.entity_type == 402 && matches!(owner.form, 1 | 7 | 14 | 15)
-                        })
-                    })
+                    && ctx.all_by(
+                        owners.iter(),
+                        |owner| {
+                            Ok(entries.get(owner).is_some_and(|owner| {
+                                owner.entity_type == 402 && matches!(owner.form, 1 | 7 | 14 | 15)
+                            }))
+                        },
+                        "iges structure list validation",
+                    )?
             }
             26 => {
                 !owners.is_empty()
-                    && owners.iter().all(|owner| {
-                        entries
-                            .get(owner)
-                            .is_some_and(|owner| matches!(owner.entity_type, 116 | 132))
-                    })
+                    && ctx.all_by(
+                        owners.iter(),
+                        |owner| {
+                            Ok(entries
+                                .get(owner)
+                                .is_some_and(|owner| matches!(owner.entity_type, 116 | 132)))
+                        },
+                        "iges structure list validation",
+                    )?
             }
             27 => entry.status.is_physically_dependent() && owners.len() == 1,
             28 | 29 => {
                 !owners.is_empty()
-                    && owners.iter().all(|owner| {
-                        entries
-                            .get(owner)
-                            .is_some_and(|owner| dimension_entity_type(owner.entity_type))
-                    })
+                    && ctx.all_by(
+                        owners.iter(),
+                        |owner| {
+                            Ok(entries
+                                .get(owner)
+                                .is_some_and(|owner| dimension_entity_type(owner.entity_type)))
+                        },
+                        "iges structure list validation",
+                    )?
             }
             30 => {
                 let note_count = record.count(13).unwrap_or_default();
-                let owners_valid = !owners.is_empty()
-                    && (note_count == 0 || owners.len() == 1)
-                    && owners.iter().all(|owner| {
-                        let Some(owner_entry) = entries.get(owner) else {
-                            return false;
-                        };
-                        if !dimension_entity_type(owner_entry.entity_type) {
-                            return false;
-                        }
-                        let Some(owner_record) = records.get(owner) else {
-                            return false;
-                        };
-                        let groups = trailing_pointer_analysis
-                            .get(&owner_record.directory_sequence)
-                            .and_then(|analysis| match analysis {
-                                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
-                                _ => None,
-                            });
-                        let has_basic = groups.as_ref().is_some_and(|groups| {
-                            groups.properties().iter().any(|sequence| {
-                                entries.get(sequence).is_some_and(|property| {
-                                    property.entity_type == 406 && property.form == 31
-                                })
-                            })
-                        });
-                        let display_count = groups.as_ref().map_or(0, |groups| {
-                            groups
-                                .properties()
-                                .iter()
-                                .filter(|sequence| {
-                                    entries.get(sequence).is_some_and(|property| {
-                                        property.entity_type == 406 && property.form == 30
+                let owners_valid =
+                    !owners.is_empty()
+                        && (note_count == 0 || owners.len() == 1)
+                        && ctx.all_by(
+                            owners.iter(),
+                            |owner| {
+                                let Some(owner_entry) = entries.get(owner) else {
+                                    return Ok(false);
+                                };
+                                if !dimension_entity_type(owner_entry.entity_type) {
+                                    return Ok(false);
+                                }
+                                let Some(owner_record) = records.get(owner) else {
+                                    return Ok(false);
+                                };
+                                let groups = trailing_pointer_analysis
+                                    .get(&owner_record.directory_sequence)
+                                    .and_then(|analysis| match analysis {
+                                        TrailingPointerAnalysis::Unambiguous(groups) => {
+                                            Some(groups)
+                                        }
+                                        _ => None,
+                                    });
+                                let has_basic = groups
+                                    .as_ref()
+                                    .map(|groups| -> Result<bool, CodecError> {
+                                        ctx.any_by(
+                                            groups.properties().iter(),
+                                            |sequence| {
+                                                Ok(entries.get(sequence).is_some_and(|property| {
+                                                    property.entity_type == 406
+                                                        && property.form == 31
+                                                }))
+                                            },
+                                            "iges structure list validation",
+                                        )
                                     })
-                                })
-                                .count()
-                        });
-                        let basic_consistent = (record.integer(2) == Some(2)) == has_basic;
-                        let notes_valid = note_count == 0
-                            || existing_pointer(owner_record, 1, &entries).is_some_and(|note| {
-                                entries
+                                    .transpose()?
+                                    .unwrap_or(false);
+                                let display_count = groups
+                                    .as_ref()
+                                    .map(|groups| -> Result<usize, CodecError> {
+                                        Ok(ctx
+                                            .admit_iter(
+                                                groups.properties(),
+                                                "iges dimension display property references",
+                                            )?
+                                            .filter(|sequence| {
+                                                entries.get(sequence).is_some_and(|property| {
+                                                    property.entity_type == 406
+                                                        && property.form == 30
+                                                })
+                                            })
+                                            .count())
+                                    })
+                                    .transpose()?
+                                    .unwrap_or(0);
+                                let basic_consistent = (record.integer(2) == Some(2)) == has_basic;
+                                let notes_valid =
+                                    note_count == 0
+                                        || existing_pointer(owner_record, 1, entries)
+                                            .map(|note| -> Result<bool, CodecError> {
+                                                Ok(entries
                                     .get(&note)
                                     .is_some_and(|note| note.entity_type == 212)
                                     && records
                                         .get(&note)
                                         .and_then(|note| note.integer(1))
-                                        .is_some_and(|text_count| {
-                                            (0..note_count).all(|offset| {
-                                                record
+                                        .map(|text_count| -> Result<bool, CodecError> {
+ctx.all_by(0..note_count, |offset| {
+Ok(record
                                                     .integer(16 + offset * 3)
-                                                    .is_some_and(|last| last <= text_count)
+                                                    .is_some_and(|last| last <= text_count))
+}, "iges structure list validation")
+}).transpose()?.unwrap_or(false))
                                             })
-                                        })
-                            });
-                        display_count == 1 && basic_consistent && notes_valid
-                    });
+                                            .transpose()?
+                                            .unwrap_or(false);
+                                Ok(display_count == 1 && basic_consistent && notes_valid)
+                            },
+                            "iges structure list validation",
+                        )?;
                 owners_valid
             }
             31 => {
@@ -2606,48 +3000,82 @@ pub(super) fn project(
             }
             32 => {
                 !owners.is_empty()
-                    && owners.iter().all(|owner| {
-                        entries
-                            .get(owner)
-                            .is_some_and(|owner| owner.entity_type == 404)
-                    })
+                    && ctx.all_by(
+                        owners.iter(),
+                        |owner| {
+                            Ok(entries
+                                .get(owner)
+                                .is_some_and(|owner| owner.entity_type == 404))
+                        },
+                        "iges structure list validation",
+                    )?
             }
             33 => {
                 let identity = record.integer(2).zip(record.string(3));
-                let unique_identity = identity.is_some_and(|identity| {
-                    directory
-                        .iter()
-                        .filter(|candidate| candidate.entity_type == 406 && candidate.form == 33)
-                        .filter(|candidate| {
-                            records.get(&candidate.sequence).is_some_and(|candidate| {
-                                candidate.integer(2).zip(candidate.string(3)) == Some(identity)
-                            })
-                        })
-                        .count()
-                        == 1
-                });
-                let sole_sheet_id = owners.first().is_some_and(|owner| {
-                    records.get(owner).is_some_and(|owner_record| {
-                        trailing_pointer_analysis
-                            .get(&owner_record.directory_sequence)
-                            .and_then(|analysis| match analysis {
-                                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
-                                _ => None,
-                            })
-                            .is_some_and(|groups| {
-                                groups
-                                    .properties()
-                                    .iter()
-                                    .filter(|sequence| {
-                                        entries.get(sequence).is_some_and(|property| {
-                                            property.entity_type == 406 && property.form == 33
-                                        })
+                if sheet_identities.is_none() {
+                    sheet_identities = Some(
+                        ctx.unique_index(
+                            ctx.admit_iter(directory, "iges sheet identity directory")?
+                                .filter(|candidate| {
+                                    candidate.entity_type == 406 && candidate.form == 33
+                                })
+                                .filter_map(|candidate| {
+                                    records
+                                        .get(&candidate.sequence)
+                                        .and_then(|record| record.integer(2).zip(record.string(3)))
+                                        .map(|identity| (identity, candidate.sequence))
+                                }),
+                            "iges sheet identity index",
+                        )?,
+                    );
+                }
+                let unique_identity = match identity {
+                    Some(identity) => match &sheet_identities {
+                        Some((identities, _)) => ctx
+                            .get_hash_map(identities, &identity, "iges sheet identity uniqueness")?
+                            .and_then(Option::as_ref)
+                            .is_some(),
+                        None => false,
+                    },
+                    None => false,
+                };
+                let sole_sheet_id = owners
+                    .first()
+                    .map(|owner| -> Result<bool, CodecError> {
+                        Ok(records
+                            .get(owner)
+                            .map(|owner_record| -> Result<bool, CodecError> {
+                                Ok(trailing_pointer_analysis
+                                    .get(&owner_record.directory_sequence)
+                                    .and_then(|analysis| match analysis {
+                                        TrailingPointerAnalysis::Unambiguous(groups) => {
+                                            Some(groups)
+                                        }
+                                        _ => None,
                                     })
-                                    .count()
-                                    == 1
+                                    .map(|groups| -> Result<bool, CodecError> {
+                                        Ok(ctx
+                                            .admit_iter(
+                                                groups.properties(),
+                                                "iges sheet owner property references",
+                                            )?
+                                            .filter(|sequence| {
+                                                entries.get(sequence).is_some_and(|property| {
+                                                    property.entity_type == 406
+                                                        && property.form == 33
+                                                })
+                                            })
+                                            .count()
+                                            == 1)
+                                    })
+                                    .transpose()?
+                                    .unwrap_or(false))
                             })
+                            .transpose()?
+                            .unwrap_or(false))
                     })
-                });
+                    .transpose()?
+                    .unwrap_or(false);
                 owners.len() == 1
                     && entries
                         .get(&owners[0])
@@ -2672,12 +3100,16 @@ pub(super) fn project(
                     .integer(1)
                     .and_then(|value| usize::try_from(value).ok());
                 !owners.is_empty()
-                    && owners.iter().all(|owner| {
-                        entries
-                            .get(owner)
-                            .and_then(|owner| closure_owner_dimension(owner.entity_type))
-                            == arity
-                    })
+                    && ctx.all_by(
+                        owners.iter(),
+                        |owner| {
+                            Ok(entries
+                                .get(owner)
+                                .and_then(|owner| closure_owner_dimension(owner.entity_type))
+                                == arity)
+                        },
+                        "iges structure list validation",
+                    )?
             }
             _ => true,
         };
@@ -2700,8 +3132,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -2724,15 +3156,15 @@ pub(super) fn project(
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
         let mut attribute_types = BTreeSet::new();
-        let mut shape = ctx.collection_vec(
-            attribute_count.unwrap_or_default(),
-            "iges attribute shape descriptors",
-        )?;
-        for _ in 0..attribute_count.unwrap_or_default() {
+        let mut shape = Vec::new();
+        for _ in ctx.admit_iter(
+            0..attribute_count.unwrap_or_default(),
+            "iges structure list traversal",
+        )? {
             let attribute_type_valid = match record.integer(cursor) {
-                Some(value) if (0..=9999).contains(&value) => {
-                    ctx.insert_btree_set(&mut attribute_types, value, "iges attribute type nodes")?
-                }
+                Some(value) if (0..=9999).contains(&value) => scratch.with_storage(|| {
+                    ctx.insert_btree_set(&mut attribute_types, value, "iges attribute type nodes")
+                })?,
                 _ => false,
             };
             let data_type = record
@@ -2755,13 +3187,21 @@ pub(super) fn project(
             cursor += 3;
             attributes_valid &=
                 attribute_type_valid && data_type.is_some() && value_count.is_some();
-            if let Some(descriptor) = data_type.zip(value_count) {
-                shape.push(descriptor);
+            if let Some(descriptor) = data_type
+                .zip(value_count)
+                .filter(|(_, count)| entry.form == 0 && *count > 0)
+            {
+                scratch.with_storage(|| {
+                    ctx.push_vec(&mut shape, descriptor, "iges attribute shape descriptors")
+                })?;
             }
             if entry.form != 0 {
-                for _ in 0..value_count.unwrap_or_default() {
+                for _ in ctx.admit_iter(
+                    0..value_count.unwrap_or_default(),
+                    "iges structure list traversal",
+                )? {
                     attributes_valid &= data_type.is_some_and(|data_type| {
-                        attribute_value_valid(record, cursor, data_type, &entries)
+                        attribute_value_valid(record, cursor, data_type, entries)
                     });
                     cursor += 1;
                     if entry.form == 2 {
@@ -2785,20 +3225,22 @@ pub(super) fn project(
                 "iges structure decoded sequences",
             )?;
             if entry.form == 0 {
-                ctx.insert_btree_map(
-                    &mut attribute_shapes,
-                    entry.sequence,
-                    shape,
-                    "iges attribute shape index nodes",
-                )?;
+                scratch.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut attribute_shapes,
+                        entry.sequence,
+                        shape,
+                        "iges attribute shape index nodes",
+                    )
+                })?;
             }
         } else {
             super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"))?;
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -2822,11 +3264,18 @@ pub(super) fn project(
             record.count(1).filter(|count| *count > 0)
         };
         let value_start = if entry.form == 0 { 1 } else { 2 };
-        let values_per_row = shape.and_then(|shape| {
-            shape
-                .iter()
-                .try_fold(0_usize, |total, (_, count)| total.checked_add(*count))
-        });
+        let mut values_per_row = shape.map(|_| 0_usize);
+        if let Some(shape) = shape {
+            let mut descriptors = shape.iter();
+            while let Some((_, count)) =
+                ctx.next_charged(&mut descriptors, "iges attribute row width")?
+            {
+                values_per_row = values_per_row.and_then(|total| total.checked_add(*count));
+                if values_per_row.is_none() {
+                    break;
+                }
+            }
+        }
         let row_count = declared_row_count
             .zip(values_per_row)
             .and_then(|(rows, width)| {
@@ -2837,10 +3286,16 @@ pub(super) fn project(
             });
         let mut cursor = value_start;
         let mut values_valid = shape.is_some() && row_count.is_some();
-        for _ in 0..row_count.unwrap_or_default() {
-            for (data_type, count) in shape.into_iter().flatten() {
-                for _ in 0..*count {
-                    values_valid &= attribute_value_valid(record, cursor, *data_type, &entries);
+        for _ in ctx.admit_iter(
+            0..row_count.unwrap_or_default(),
+            "iges structure list traversal",
+        )? {
+            for (data_type, count) in ctx.admit_iter(
+                shape.map_or(&[][..], Vec::as_slice),
+                "iges attribute shape traversal",
+            )? {
+                for _ in ctx.admit_iter(0..*count, "iges structure list traversal")? {
+                    values_valid &= attribute_value_valid(record, cursor, *data_type, entries);
                     cursor += 1;
                 }
             }
@@ -2864,8 +3319,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -2881,13 +3336,18 @@ pub(super) fn project(
         let mut types = BTreeSet::<&[u8]>::new();
         let mut units_valid = count.is_some_and(|count| record.parameter_end() == 2 + count * 3);
         if let Some(count) = count.filter(|_| units_valid) {
-            for offset in 0..count {
+            let mut input = 0..count;
+            while let Some(offset) =
+                ctx.next_charged(&mut input, "iges structure list traversal")?
+            {
                 let start = 2 + offset * 3;
                 let valid = if let Some((unit_type, value)) =
                     record.string(start).zip(record.string(start + 1))
                 {
                     unit_value_valid(unit_type, value)
-                        && ctx.insert_btree_set(&mut types, unit_type, "iges unit type nodes")?
+                        && scratch.with_storage(|| {
+                            ctx.insert_btree_set(&mut types, unit_type, "iges unit type nodes")
+                        })?
                         && record
                             .number(start + 2)
                             .is_some_and(|scale| scale.is_finite() && scale > 0.0)
@@ -2913,7 +3373,10 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory.iter().filter(|entry| entry.entity_type == 302) {
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
+        .filter(|entry| entry.entity_type == 302)
+    {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_entity_loss(
                 ctx,
@@ -2926,7 +3389,10 @@ pub(super) fn project(
         let class_count = record.count(1).filter(|count| *count > 0);
         let mut cursor = 2;
         let mut classes_valid = class_count.is_some();
-        for _ in 0..class_count.unwrap_or_default() {
+        for _ in ctx.admit_iter(
+            0..class_count.unwrap_or_default(),
+            "iges structure list traversal",
+        )? {
             classes_valid &= record
                 .integer(cursor)
                 .is_some_and(|value| matches!(value, 1..=2));
@@ -2935,7 +3401,10 @@ pub(super) fn project(
                 .is_some_and(|value| matches!(value, 1..=2));
             let item_count = record.count(cursor + 2).filter(|count| *count > 0);
             cursor += 3;
-            for _ in 0..item_count.unwrap_or_default() {
+            for _ in ctx.admit_iter(
+                0..item_count.unwrap_or_default(),
+                "iges structure list traversal",
+            )? {
                 classes_valid &= record
                     .integer(cursor)
                     .is_some_and(|value| matches!(value, 1..=3));
@@ -2957,8 +3426,13 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    let mut plane_index = None;
+    let mut plane_proofs = PlaneBoundaryProofs {
+        proven: BTreeMap::new(),
+        storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
+    };
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -2971,24 +3445,31 @@ pub(super) fn project(
             continue;
         };
         let count = record.count(1).filter(|count| *count > 0);
-        let members_valid = count.is_some_and(|count| {
-            (0..count).all(|index| {
-                record
-                    .integer(2 + index)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
-                    .is_some_and(|sequence| {
-                        !matches!(entry.form, 1 | 14)
-                            || records.get(&sequence).is_some_and(|member_record| {
-                                has_association_back_pointer(
-                                    member_record,
-                                    entry.sequence,
-                                    trailing_pointer_analysis,
-                                )
-                            })
-                    })
+        let members_valid = count
+            .map(|count| -> Result<bool, CodecError> {
+                ctx.all_by(
+                    0..count,
+                    |index| {
+                        Ok(record
+                            .integer(2 + index)
+                            .and_then(|value| u32::try_from(value).ok())
+                            .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
+                            .is_some_and(|sequence| {
+                                !matches!(entry.form, 1 | 14)
+                                    || records.get(&sequence).is_some_and(|member_record| {
+                                        has_association_back_pointer(
+                                            member_record,
+                                            entry.sequence,
+                                            &association_owners,
+                                        )
+                                    })
+                            }))
+                    },
+                    "iges structure list validation",
+                )
             })
-        });
+            .transpose()?
+            .unwrap_or(false);
         if members_valid {
             ctx.insert_btree_set(
                 &mut decoded,
@@ -3008,10 +3489,13 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory.iter().filter(|entry| {
-        entry.entity_type == 402
-            && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
-    }) {
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
+        .filter(|entry| {
+            entry.entity_type == 402
+                && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
+        })
+    {
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_entity_loss(
                 ctx,
@@ -3026,19 +3510,21 @@ pub(super) fn project(
                 legacy_associativity_valid(
                     entry,
                     record,
-                    &entries,
-                    &records,
-                    trailing_pointer_analysis,
+                    entries,
+                    records,
+                    (trailing_pointer_analysis, &association_owners),
                     global.global_table(),
-                )
+                    ctx,
+                )?
             } else {
                 predefined_associativity_valid(
                     entry,
                     record,
-                    &entries,
-                    &records,
-                    trailing_pointer_analysis,
-                )
+                    entries,
+                    records,
+                    &association_owners,
+                    ctx,
+                )?
             };
         if valid {
             ctx.insert_btree_set(
@@ -3046,29 +3532,45 @@ pub(super) fn project(
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
-            if entry.form == 9 {
+            if entry.form == 9
+                && existing_pointer(record, 3, entries)
+                    .and_then(|sequence| entries.get(&sequence))
+                    .is_some_and(|parent| parent.entity_type == 108 && parent.form == 1)
+            {
+                let index = match &mut plane_index {
+                    Some(index) => index,
+                    slot @ None => {
+                        slot.insert(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?)
+                    }
+                };
                 match legacy_single_parent_face(
-                    ir,
+                    (index, &mut plane_proofs),
                     LegacyPlaneSource { entry, record },
-                    &entries,
-                    &records,
+                    entries,
+                    records,
                     global,
                     ctx,
                     sequences,
                 ) {
-                    Ok(Some((candidate, plane_sequences))) => {
-                        for sequence in plane_sequences {
-                            ctx.insert_btree_set(
-                                &mut legacy_plane_sequences,
-                                sequence,
-                                "iges legacy plane sequence nodes",
-                            )?;
+                    Ok(Some((candidate, plane_sequences, _plane_storage))) => {
+                        for sequence in
+                            ctx.admit_iter(plane_sequences, "iges structure list traversal")?
+                        {
+                            scratch.with_storage(|| {
+                                ctx.insert_btree_set(
+                                    &mut legacy_plane_sequences,
+                                    sequence,
+                                    "iges legacy plane sequence nodes",
+                                )
+                            })?;
                         }
-                        ctx.reserve_vec(
-                            &mut legacy_face_candidates,
-                            1,
-                            "iges legacy face candidates",
-                        )?;
+                        scratch.with_storage(|| {
+                            ctx.reserve_vec(
+                                &mut legacy_face_candidates,
+                                1,
+                                "iges legacy face candidates",
+                            )
+                        })?;
                         legacy_face_candidates.push((entry, candidate));
                     }
                     Ok(None) => {}
@@ -3085,9 +3587,8 @@ pub(super) fn project(
         }
     }
 
-    let index = ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?;
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1 | 1))
     {
         if legacy_plane_sequences.contains(&entry.sequence) {
@@ -3096,38 +3597,43 @@ pub(super) fn project(
         let Some(record) = records.get(&entry.sequence).copied() else {
             continue;
         };
-        let Some(plane) = plane_carrier(&index, entry.sequence, ctx)? else {
+        let index = match &mut plane_index {
+            Some(index) => index,
+            slot @ None => {
+                slot.insert(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?)
+            }
+        };
+        let Some(plane) = plane_carrier(index, entry.sequence, ctx)? else {
             continue;
         };
-        let Some(boundary_sequence) = existing_pointer(record, 5, &entries) else {
+        let Some(boundary_sequence) = existing_pointer(record, 5, entries) else {
             continue;
         };
         match entry.form {
             1 => match plane_boundary_edge(
-                &index,
+                index,
                 plane,
                 boundary_sequence,
-                &entries,
+                entries,
                 global.minimum_resolution_mm(),
                 ctx,
+                &mut plane_proofs,
             ) {
-                Ok(mut edge) => {
-                    edge.id = crate::ids::edge_admitted(
+                Ok(edge) => {
+                    let edge_id = crate::ids::edge_admitted(
                         &crate::ids::Stem::word_directory(
                             crate::ids::Word::BoundedPlane,
                             entry.sequence,
                         ),
                         ctx,
                     )?;
-                    edge.end = edge
-                        .start
-                        .try_clone_for_decode(ctx, "iges structure identity copy")?;
+                    let edge = closed_plane_boundary_edge(edge, edge_id, ctx)?;
                     let stem = crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
                     );
-                    let mut boundary_edges =
-                        ctx.collection_vec(1, "iges bounded plane boundary edges")?;
+                    let (mut boundary_edges, _edge_storage) =
+                        ctx.temporary_vec(1, "iges bounded plane boundary edges")?;
                     boundary_edges.push(edge);
                     let candidate = plane_face_draft(
                         entry.sequence,
@@ -3140,11 +3646,13 @@ pub(super) fn project(
                     );
                     match candidate {
                         Ok(candidate) => {
-                            ctx.reserve_vec(
-                                &mut legacy_face_candidates,
-                                1,
-                                "iges legacy face candidates",
-                            )?;
+                            scratch.with_storage(|| {
+                                ctx.reserve_vec(
+                                    &mut legacy_face_candidates,
+                                    1,
+                                    "iges legacy face candidates",
+                                )
+                            })?;
                             legacy_face_candidates.push((entry, candidate));
                         }
                         Err(reason) => super::push_entity_loss(
@@ -3163,12 +3671,13 @@ pub(super) fn project(
                 )?,
             },
             -1 => match plane_boundary_edge(
-                &index,
+                index,
                 plane,
                 boundary_sequence,
-                &entries,
+                entries,
                 global.minimum_resolution_mm(),
                 ctx,
+                &mut plane_proofs,
             ) {
                 Ok(_) => super::push_entity_loss(
                     ctx,
@@ -3189,9 +3698,12 @@ pub(super) fn project(
         }
     }
 
-    drop(index);
+    drop(plane_proofs);
+    drop(plane_index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
-    for (entry, candidate) in legacy_face_candidates {
+    for (entry, candidate) in
+        ctx.admit_iter(legacy_face_candidates, "iges structure list traversal")?
+    {
         if commit_session.commit_model(candidate)?.is_err() {
             super::push_entity_loss(
                 ctx,
@@ -3205,34 +3717,59 @@ pub(super) fn project(
         }
     }
 
+    let mut flow_graph = BTreeMap::new();
+    for (sequence, flow) in ctx.admit_iter(&flows, "iges flow graph definitions")? {
+        let targets = scratch.with_storage(|| {
+            ctx.collect_vec(
+                ctx.admit_iter(&flow.continuations, "iges flow graph continuation slots")?
+                    .flatten()
+                    .copied()
+                    .filter(|target| flows.contains_key(target)),
+                "iges flow graph targets",
+            )
+        })?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(&mut flow_graph, *sequence, targets, "iges flow graph nodes")
+        })?;
+    }
     let mut visited_flows = BTreeSet::new();
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
     {
         let flow = flows.get(&entry.sequence);
-        let flow_targets_valid = flow.is_some_and(|flow| {
-            flow.form == entry.form
-                && flow.associated.iter().all(|target| {
-                    flows
-                        .get(target)
-                        .is_some_and(|target_flow| target_flow.form == flow.form)
-                })
-                && flow.continuations.iter().flatten().all(|target| {
-                    entries.get(target).is_some_and(|target_entry| {
-                        (flow.form == 18 && target_entry.form == 11)
-                            || flows
+        let flow_targets_valid = flow
+            .map(|flow| -> Result<bool, CodecError> {
+                Ok(flow.form == entry.form
+                    && ctx.all_by(
+                        flow.associated.iter(),
+                        |target| {
+                            Ok(flows
                                 .get(target)
-                                .is_some_and(|target_flow| target_flow.form == flow.form)
-                    })
-                })
-        });
-        let cyclic = super::directed_cycle(entry.sequence, &mut visited_flows, ctx, |sequence| {
-            flows
-                .get(&sequence)
-                .into_iter()
-                .flat_map(|flow| flow.continuations.iter().flatten().copied())
-                .filter(|target| flows.contains_key(target))
+                                .is_some_and(|target_flow| target_flow.form == flow.form))
+                        },
+                        "iges structure list validation",
+                    )?
+                    && ctx.all_by(
+                        &flow.continuations,
+                        |slot| {
+                            let Some(target) = slot else { return Ok(true) };
+                            Ok(entries.get(target).is_some_and(|target_entry| {
+                                (flow.form == 18 && target_entry.form == 11)
+                                    || flows
+                                        .get(target)
+                                        .is_some_and(|target_flow| target_flow.form == flow.form)
+                            }))
+                        },
+                        "iges structure list validation",
+                    )?)
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let cyclic = scratch.with_storage(|| {
+            super::directed_cycle(entry.sequence, &mut visited_flows, ctx, |sequence| {
+                flow_graph.get(&sequence).into_iter().flatten().copied()
+            })
         })?;
         if flow_targets_valid && !cyclic {
             ctx.insert_btree_set(
@@ -3245,8 +3782,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -3284,8 +3821,8 @@ pub(super) fn project(
     }
 
     let mut array_targets = BTreeMap::new();
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
         if let Some(target) = records
@@ -3293,17 +3830,19 @@ pub(super) fn project(
             .and_then(|record| record.integer(1))
             .and_then(|value| u32::try_from(value).ok())
         {
-            ctx.insert_btree_map(
-                &mut array_targets,
-                entry.sequence,
-                target,
-                "iges array target index nodes",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut array_targets,
+                    entry.sequence,
+                    target,
+                    "iges array target index nodes",
+                )
+            })?;
         }
     }
     let mut visited_arrays = BTreeSet::new();
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -3321,9 +3860,11 @@ pub(super) fn project(
                     .get(target)
                     .is_some_and(|base| array_base_type(base.entity_type, base.form))
         });
-        let cyclic = single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays, ctx)?;
+        let cyclic = scratch.with_storage(|| {
+            single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays, ctx)
+        })?;
         let transform_valid =
-            subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
+            subfigure_definition_transform_valid(entry, entries, records, global, ctx)?;
         let fields_valid = if entry.entity_type == 412 {
             let scale_valid = record
                 .number_or(2, 1.0)
@@ -3381,8 +3922,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -3434,7 +3975,7 @@ pub(super) fn project(
                 })
         });
         let transform_valid =
-            subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
+            subfigure_definition_transform_valid(entry, entries, records, global, ctx)?;
         if position_valid
             && optional_pointer_valid(4, None)
             && type_flag_valid
@@ -3468,8 +4009,8 @@ pub(super) fn project(
     }
 
     let mut solid_instances = BTreeMap::new();
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -3486,12 +4027,14 @@ pub(super) fn project(
             (sequence % 2 == 1).then_some(sequence)
         });
         if let Some(target) = target {
-            ctx.insert_btree_map(
-                &mut solid_instances,
-                entry.sequence,
-                target,
-                "iges solid instance index nodes",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut solid_instances,
+                    entry.sequence,
+                    target,
+                    "iges solid instance index nodes",
+                )
+            })?;
         } else {
             super::push_entity_loss(
                 ctx,
@@ -3503,7 +4046,7 @@ pub(super) fn project(
     }
 
     let mut visited_instances = BTreeSet::new();
-    for (sequence, target) in &solid_instances {
+    for (sequence, target) in ctx.admit_iter(&solid_instances, "iges structure list traversal")? {
         let entry = entries[sequence];
         let target_valid = entries.get(target).is_some_and(|target_entry| {
             if entry.form == 1 {
@@ -3516,8 +4059,10 @@ pub(super) fn project(
             }
         });
         let transform_valid =
-            subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
-        let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances, ctx)?;
+            subfigure_definition_transform_valid(entry, entries, records, global, ctx)?;
+        let cyclic = scratch.with_storage(|| {
+            single_target_cycle(*sequence, &solid_instances, &mut visited_instances, ctx)
+        })?;
         if target_valid && transform_valid && !cyclic {
             ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
@@ -3533,8 +4078,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -3555,9 +4100,11 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut items = ctx.collection_vec(count, "iges solid assembly items")?;
+        let mut items =
+            scratch.with_storage(|| ctx.collection_vec(count, "iges solid assembly items"))?;
         let mut items_valid = true;
-        for index in 0..count {
+        let mut input = 0..count;
+        while let Some(index) = ctx.next_charged(&mut input, "iges structure list traversal")? {
             let Some(item) = (|| {
                 let item = record.integer(2 + index).and_then(|value| {
                     let sequence = u32::try_from(value).ok()?;
@@ -3582,27 +4129,53 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_map(
-            &mut assemblies,
-            entry.sequence,
-            SolidAssembly {
-                form: entry.form,
-                items,
-            },
-            "iges solid assembly index nodes",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut assemblies,
+                entry.sequence,
+                SolidAssembly {
+                    form: entry.form,
+                    items,
+                },
+                "iges solid assembly index nodes",
+            )
+        })?;
     }
 
+    let mut assembly_graph = BTreeMap::new();
+    for (sequence, definition) in ctx.admit_iter(&assemblies, "iges assembly graph definitions")? {
+        let targets = scratch.with_storage(|| {
+            ctx.collect_vec(
+                ctx.admit_iter(&definition.items, "iges assembly graph items")?
+                    .map(|(item, _)| *item)
+                    .filter(|item| assemblies.contains_key(item)),
+                "iges assembly graph targets",
+            )
+        })?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut assembly_graph,
+                *sequence,
+                targets,
+                "iges assembly graph nodes",
+            )
+        })?;
+    }
     let mut visited = BTreeSet::new();
-    for (sequence, assembly) in &assemblies {
+    let mut input = assemblies.iter();
+    while let Some((sequence, assembly)) =
+        ctx.next_charged(&mut input, "iges structure list traversal")?
+    {
         let entry = entries[sequence];
-        let has_brep = assembly.items.iter().any(|(item, _)| {
-            entries
-                .get(item)
-                .is_some_and(|target| target.entity_type == 186)
-        });
+        let mut has_brep = false;
         let mut items_valid = true;
-        for (item, transformation) in &assembly.items {
+        let mut input = assembly.items.iter();
+        while let Some((item, transformation)) =
+            ctx.next_charged(&mut input, "iges structure list traversal")?
+        {
+            has_brep |= entries
+                .get(item)
+                .is_some_and(|target| target.entity_type == 186);
             let item_valid = entries.get(item).is_some_and(|target| {
                 matches!(
                     target.entity_type,
@@ -3617,8 +4190,8 @@ pub(super) fn project(
             {
                 match resolve_transform(
                     i64::from(*transformation),
-                    &entries,
-                    &records,
+                    entries,
+                    records,
                     global.length_factor_mm(),
                     global.real_precision(),
                     &mut BTreeSet::new(),
@@ -3638,15 +4211,13 @@ pub(super) fn project(
                 break;
             }
         }
-        let cyclic = super::directed_cycle(*sequence, &mut visited, ctx, |sequence| {
-            assemblies
-                .get(&sequence)
-                .into_iter()
-                .flat_map(|definition| definition.items.iter().map(|(item, _)| *item))
-                .filter(|item| assemblies.contains_key(item))
+        let cyclic = scratch.with_storage(|| {
+            super::directed_cycle(*sequence, &mut visited, ctx, |sequence| {
+                assembly_graph.get(&sequence).into_iter().flatten().copied()
+            })
         })?;
         let own_transform_valid =
-            subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
+            subfigure_definition_transform_valid(entry, entries, records, global, ctx)?;
         if entry.status.use_flag(global.global_table()) != Some(UseFlag::Definition)
             || (assembly.form == 1) != has_brep
             || !items_valid
@@ -3669,8 +4240,8 @@ pub(super) fn project(
 
     let mut definitions = BTreeMap::new();
     let mut definition_fields_valid = BTreeSet::new();
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 308 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -3688,13 +4259,15 @@ pub(super) fn project(
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let count = record.count(3);
         let members = match count {
-            Some(count) => definition_members(
-                record,
-                count,
-                &entries,
-                ctx,
-                "iges subfigure definition members",
-            )?,
+            Some(count) => scratch.with_storage(|| {
+                definition_members(
+                    record,
+                    count,
+                    entries,
+                    ctx,
+                    "iges subfigure definition members",
+                )
+            })?,
             None => None,
         };
         let (Some(depth), Some(members)) = (depth, members) else {
@@ -3709,29 +4282,33 @@ pub(super) fn project(
             )?;
             continue;
         };
-        ctx.insert_btree_map(
-            &mut definitions,
-            entry.sequence,
-            SubfigureDefinition { depth, members },
-            "iges subfigure definition index nodes",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut definitions,
+                entry.sequence,
+                SubfigureDefinition { depth, members },
+                "iges subfigure definition index nodes",
+            )
+        })?;
         if name_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
-            && subfigure_definition_label_display_valid(entry, &entries)
-            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?
+            && subfigure_definition_label_display_valid(entry, entries)
+            && subfigure_definition_transform_valid(entry, entries, records, global, ctx)?
         {
-            ctx.insert_btree_set(
-                &mut definition_fields_valid,
-                entry.sequence,
-                "iges subfigure valid-definition nodes",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut definition_fields_valid,
+                    entry.sequence,
+                    "iges subfigure valid-definition nodes",
+                )
+            })?;
         }
     }
 
     let mut instances = BTreeMap::new();
     let mut instance_fields_valid = BTreeSet::new();
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 408 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -3756,8 +4333,8 @@ pub(super) fn project(
         let placement_valid = match placement_affine(
             entry,
             record,
-            &entries,
-            &records,
+            entries,
+            records,
             global.length_factor_mm(),
             global.real_precision(),
             ctx,
@@ -3793,25 +4370,29 @@ pub(super) fn project(
             )?;
             continue;
         };
-        ctx.insert_btree_map(
-            &mut instances,
-            entry.sequence,
-            definition,
-            "iges subfigure instance nodes",
-        )?;
-        if placement_valid {
-            ctx.insert_btree_set(
-                &mut instance_fields_valid,
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut instances,
                 entry.sequence,
-                "iges valid subfigure instance nodes",
-            )?;
+                definition,
+                "iges subfigure instance nodes",
+            )
+        })?;
+        if placement_valid {
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut instance_fields_valid,
+                    entry.sequence,
+                    "iges valid subfigure instance nodes",
+                )
+            })?;
         }
     }
 
     let mut network_definitions = BTreeMap::new();
     let mut network_definition_fields_valid = BTreeSet::new();
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 320 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -3829,13 +4410,15 @@ pub(super) fn project(
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let member_count = record.count(3);
         let members = match member_count {
-            Some(count) => definition_members(
-                record,
-                count,
-                &entries,
-                ctx,
-                "iges network definition members",
-            )?,
+            Some(count) => scratch.with_storage(|| {
+                definition_members(
+                    record,
+                    count,
+                    entries,
+                    ctx,
+                    "iges network definition members",
+                )
+            })?,
             None => None,
         };
         let Some((depth, member_count, members)) = depth
@@ -3863,15 +4446,17 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let Some(connect_points) = network_connect_points(
-            record,
-            7 + member_count,
-            8 + member_count,
-            &entries,
-            global.global_table(),
-            ctx,
-            "iges network definition connect points",
-        )?
+        let Some(connect_points) = scratch.with_storage(|| {
+            network_connect_points(
+                record,
+                7 + member_count,
+                8 + member_count,
+                entries,
+                global.global_table(),
+                ctx,
+                "iges network definition connect points",
+            )
+        })?
         else {
             super::push_entity_loss(
                 ctx,
@@ -3881,36 +4466,40 @@ pub(super) fn project(
             )?;
             continue;
         };
-        ctx.insert_btree_map(
-            &mut network_definitions,
-            entry.sequence,
-            NetworkDefinition {
-                depth,
-                members,
-                connect_points,
-            },
-            "iges network definition index nodes",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut network_definitions,
+                entry.sequence,
+                NetworkDefinition {
+                    depth,
+                    members,
+                    connect_points,
+                },
+                "iges network definition index nodes",
+            )
+        })?;
         if name_valid
             && type_flag_valid
             && designator_valid
             && display_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
-            && subfigure_definition_label_display_valid(entry, &entries)
-            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?
+            && subfigure_definition_label_display_valid(entry, entries)
+            && subfigure_definition_transform_valid(entry, entries, records, global, ctx)?
         {
-            ctx.insert_btree_set(
-                &mut network_definition_fields_valid,
-                entry.sequence,
-                "iges network valid-definition nodes",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut network_definition_fields_valid,
+                    entry.sequence,
+                    "iges network valid-definition nodes",
+                )
+            })?;
         }
     }
 
     let mut network_instances = BTreeMap::new();
     let mut network_instance_fields_valid = BTreeSet::new();
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges structure directory traversal")?
         .filter(|entry| entry.entity_type == 420 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -3946,20 +4535,22 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let connect_points = network_connect_points(
-            record,
-            11,
-            12,
-            &entries,
-            global.global_table(),
-            ctx,
-            "iges network instance connect points",
-        )?;
+        let connect_points = scratch.with_storage(|| {
+            network_connect_points(
+                record,
+                11,
+                12,
+                entries,
+                global.global_table(),
+                ctx,
+                "iges network instance connect points",
+            )
+        })?;
         let placement_valid = match placement_affine(
             entry,
             record,
-            &entries,
-            &records,
+            entries,
+            records,
             global.length_factor_mm(),
             global.real_precision(),
             ctx,
@@ -3999,51 +4590,62 @@ pub(super) fn project(
             )?;
             continue;
         };
-        ctx.insert_btree_map(
-            &mut network_instances,
-            entry.sequence,
-            NetworkInstance {
-                definition,
-                connect_points,
-            },
-            "iges network instance nodes",
-        )?;
-        if placement_valid && type_flag_valid && designator_valid && display_valid {
-            ctx.insert_btree_set(
-                &mut network_instance_fields_valid,
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut network_instances,
                 entry.sequence,
-                "iges valid network instance nodes",
-            )?;
+                NetworkInstance {
+                    definition,
+                    connect_points,
+                },
+                "iges network instance nodes",
+            )
+        })?;
+        if placement_valid && type_flag_valid && designator_valid && display_valid {
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut network_instance_fields_valid,
+                    entry.sequence,
+                    "iges valid network instance nodes",
+                )
+            })?;
         }
     }
 
-    for (sequence, definition) in &definitions {
+    let mut input = definitions.iter();
+    while let Some((sequence, definition)) =
+        ctx.next_charged(&mut input, "iges structure list traversal")?
+    {
         let entry = entries[sequence];
-        let nesting_valid = definition.members.iter().all(|member| {
-            let Some(member_entry) = entries.get(member) else {
-                return false;
-            };
-            if !matches!(member_entry.entity_type, 408 | 420) {
-                return true;
-            }
-            match member_entry.entity_type {
-                408 => instances.get(member).is_some_and(|definition_sequence| {
-                    instance_fields_valid.contains(member)
-                        && definition_fields_valid.contains(definition_sequence)
-                        && definitions
-                            .get(definition_sequence)
-                            .is_some_and(|child| child.depth < definition.depth)
-                }),
-                420 => network_instances.get(member).is_some_and(|instance| {
-                    network_instance_fields_valid.contains(member)
-                        && network_definition_fields_valid.contains(&instance.definition)
-                        && network_definitions
-                            .get(&instance.definition)
-                            .is_some_and(|child| child.depth < definition.depth)
-                }),
-                _ => false,
-            }
-        });
+        let nesting_valid = ctx.all_by(
+            definition.members.iter(),
+            |member| {
+                let Some(member_entry) = entries.get(member) else {
+                    return Ok(false);
+                };
+                if !matches!(member_entry.entity_type, 408 | 420) {
+                    return Ok(true);
+                }
+                Ok(match member_entry.entity_type {
+                    408 => instances.get(member).is_some_and(|definition_sequence| {
+                        instance_fields_valid.contains(member)
+                            && definition_fields_valid.contains(definition_sequence)
+                            && definitions
+                                .get(definition_sequence)
+                                .is_some_and(|child| child.depth < definition.depth)
+                    }),
+                    420 => network_instances.get(member).is_some_and(|instance| {
+                        network_instance_fields_valid.contains(member)
+                            && network_definition_fields_valid.contains(&instance.definition)
+                            && network_definitions
+                                .get(&instance.definition)
+                                .is_some_and(|child| child.depth < definition.depth)
+                    }),
+                    _ => false,
+                })
+            },
+            "iges structure list validation",
+        )?;
         if definition_fields_valid.contains(sequence) && nesting_valid {
             ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
@@ -4058,7 +4660,9 @@ pub(super) fn project(
             )?;
         }
     }
-    for (sequence, definition_sequence) in &instances {
+    for (sequence, definition_sequence) in
+        ctx.admit_iter(&instances, "iges structure list traversal")?
+    {
         let entry = entries[sequence];
         if instance_fields_valid.contains(sequence)
             && definition_fields_valid.contains(definition_sequence)
@@ -4066,9 +4670,14 @@ pub(super) fn project(
         {
             ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
-            placement_rejections
-                .entry(*sequence)
-                .or_insert(PlacementRejection::InvalidDefinition);
+            if !placement_rejections.contains_key(sequence) {
+                ctx.insert_btree_map(
+                    &mut placement_rejections,
+                    *sequence,
+                    PlacementRejection::InvalidDefinition,
+                    "iges placement rejection nodes",
+                )?;
+            }
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -4080,30 +4689,37 @@ pub(super) fn project(
             )?;
         }
     }
-    for (sequence, definition) in &network_definitions {
+    let mut input = network_definitions.iter();
+    while let Some((sequence, definition)) =
+        ctx.next_charged(&mut input, "iges structure list traversal")?
+    {
         let entry = entries[sequence];
-        let nesting_valid = definition.members.iter().all(|member| {
-            let Some(member_entry) = entries.get(member) else {
-                return false;
-            };
-            match member_entry.entity_type {
-                408 => instances.get(member).is_some_and(|definition_sequence| {
-                    instance_fields_valid.contains(member)
-                        && definition_fields_valid.contains(definition_sequence)
-                        && definitions
-                            .get(definition_sequence)
-                            .is_some_and(|child| child.depth < definition.depth)
-                }),
-                420 => network_instances.get(member).is_some_and(|instance| {
-                    network_instance_fields_valid.contains(member)
-                        && network_definition_fields_valid.contains(&instance.definition)
-                        && network_definitions
-                            .get(&instance.definition)
-                            .is_some_and(|child| child.depth < definition.depth)
-                }),
-                _ => true,
-            }
-        });
+        let nesting_valid = ctx.all_by(
+            definition.members.iter(),
+            |member| {
+                let Some(member_entry) = entries.get(member) else {
+                    return Ok(false);
+                };
+                Ok(match member_entry.entity_type {
+                    408 => instances.get(member).is_some_and(|definition_sequence| {
+                        instance_fields_valid.contains(member)
+                            && definition_fields_valid.contains(definition_sequence)
+                            && definitions
+                                .get(definition_sequence)
+                                .is_some_and(|child| child.depth < definition.depth)
+                    }),
+                    420 => network_instances.get(member).is_some_and(|instance| {
+                        network_instance_fields_valid.contains(member)
+                            && network_definition_fields_valid.contains(&instance.definition)
+                            && network_definitions
+                                .get(&instance.definition)
+                                .is_some_and(|child| child.depth < definition.depth)
+                    }),
+                    _ => true,
+                })
+            },
+            "iges structure list validation",
+        )?;
         if network_definition_fields_valid.contains(sequence) && nesting_valid {
             ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
@@ -4118,33 +4734,42 @@ pub(super) fn project(
             )?;
         }
     }
-    for (sequence, instance) in &network_instances {
+    for (sequence, instance) in
+        ctx.admit_iter(&network_instances, "iges structure list traversal")?
+    {
         let entry = entries[sequence];
-        let definition_valid =
-            network_definitions
-                .get(&instance.definition)
-                .is_some_and(|definition| {
-                    network_connectivity_valid(
-                        &definition.connect_points,
-                        &instance.connect_points,
-                        global.global_table(),
-                    )
-                });
+        let definition_valid = network_definitions
+            .get(&instance.definition)
+            .map(|definition| -> Result<bool, CodecError> {
+                network_connectivity_valid(
+                    &definition.connect_points,
+                    &instance.connect_points,
+                    global.global_table(),
+                    ctx,
+                )
+            })
+            .transpose()?
+            .unwrap_or(false);
         if network_instance_fields_valid.contains(sequence)
             && definition_valid
             && decoded.contains(&instance.definition)
         {
             ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
-            placement_rejections.entry(*sequence).or_insert(
-                if decoded.contains(&instance.definition) {
-                    PlacementRejection::InvalidMetadata {
-                        definition: instance.definition,
-                    }
-                } else {
-                    PlacementRejection::InvalidDefinition
-                },
-            );
+            if !placement_rejections.contains_key(sequence) {
+                ctx.insert_btree_map(
+                    &mut placement_rejections,
+                    *sequence,
+                    if decoded.contains(&instance.definition) {
+                        PlacementRejection::InvalidMetadata {
+                            definition: instance.definition,
+                        }
+                    } else {
+                        PlacementRejection::InvalidDefinition
+                    },
+                    "iges placement rejection nodes",
+                )?;
+            }
             super::push_entity_loss(
                 ctx,
                 &mut losses,
