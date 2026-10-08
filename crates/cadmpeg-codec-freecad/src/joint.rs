@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly joints recovered without executing Python proxy payloads.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
@@ -17,14 +17,66 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<JointRecord>, CodecError> {
-    let (by_owner, _owner_storage) = ctx.collect_scoped_btree_groups(
-        properties
-            .iter()
-            .map(|property| (property.owner.as_str(), property)),
-        "fcstd joint owner index",
-    )?;
+    let mut owner_storage = ctx.reserve_scoped(0, "fcstd joint owner index")?;
+    if objects.is_empty() || properties.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut by_owner = BTreeMap::<&str, Vec<&PropertyRecord>>::new();
+    let mut object_ids = HashSet::new();
+    let mut object_storage = ctx.reserve_scoped(0, "fcstd joint object index")?;
+    let mut candidates = properties.iter();
+    while let Some(property) = ctx.next_charged(&mut candidates, "fcstd joint owner index")? {
+        if !matches!(property.name.as_str(), "ObjectToGround" | "JointType") {
+            continue;
+        }
+        let owner = property.owner.as_str();
+        if ctx.equal_bytes(owner.as_bytes(), b"fcstd:native:document#0", "fcstd joint candidate owner")? {
+            continue;
+        }
+        if object_ids.is_empty() {
+            let mut input = objects.iter();
+            while let Some(object) = ctx.next_charged(&mut input, "fcstd joint owner objects")? {
+                object_storage.with_storage(|| {
+                    ctx.insert_hash_set(&mut object_ids, object.id().as_str(), "fcstd joint object index")
+                })?;
+            }
+        }
+        if !ctx.contains_hash_set(&object_ids, owner, "fcstd joint object lookup")? {
+            continue;
+        }
+        if ctx.contains_key_btree_map(&by_owner, owner, "fcstd joint owner index")? {
+            continue;
+        }
+        owner_storage.with_storage(|| {
+            ctx.insert_btree_map(&mut by_owner, owner, Vec::new(), "fcstd joint owner index")
+        })?;
+    }
+    drop((object_ids, object_storage));
+    if by_owner.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut properties = properties.iter();
+    while let Some(property) = ctx.next_charged(&mut properties, "fcstd joint owner properties")? {
+        if !matches!(
+            property.name.as_str(),
+            "ObjectToGround" | "JointType" | "Placement" | "Reference1" | "Reference2"
+                | "Placement1" | "Placement2" | "Offset1" | "Offset2"
+        ) && !is_parameter_property(&property.name) {
+            continue;
+        }
+        if let Some(owned) = ctx.get_mut_btree_map(
+            &mut by_owner,
+            property.owner.as_str(),
+            "fcstd joint owner index",
+        )? {
+            owner_storage.with_storage(|| {
+                ctx.push_vec(owned, property, "fcstd joint owner index")
+            })?;
+        }
+    }
     let mut output = Vec::new();
-    for object in ctx.admit_iter(objects, "fcstd joint objects")? {
+    let mut objects = objects.iter();
+    while let Some(object) = ctx.next_charged(&mut objects, "fcstd joint objects")? {
         let owned = ctx
             .get_btree_map(&by_owner, object.id().as_str(), "fcstd joint owner lookup")?
             .map_or(&[][..], Vec::as_slice);
@@ -125,28 +177,11 @@ pub(crate) fn transfer(
         };
         let mut parameter_storage = ctx.reserve_scoped(0, "fcstd joint raw parameters")?;
         let mut parameters = BTreeMap::new();
-        for property in ctx
-            .admit_iter(owned, "fcstd joint parameter properties")?
-            .filter(|property| {
-                matches!(
-                    property.name.as_str(),
-                    "Angle"
-                        | "AngleMin"
-                        | "AngleMax"
-                        | "Distance"
-                        | "Distance2"
-                        | "LengthMin"
-                        | "LengthMax"
-                        | "EnableAngleMin"
-                        | "EnableAngleMax"
-                        | "EnableLengthMin"
-                        | "EnableLengthMax"
-                        | "Detach1"
-                        | "Detach2"
-                        | "Suppressed"
-                )
-            })
-        {
+        let mut input = owned.iter();
+        while let Some(property) = ctx.next_charged(&mut input, "fcstd joint parameter properties")? {
+            if !is_parameter_property(&property.name) {
+                continue;
+            }
             if let Some(value) = scalar_parameter(ctx, property)? {
                 let name = ctx.copy_retained_text(&property.name, "fcstd joint parameter name")?;
                 parameter_storage.with_storage(|| {
@@ -166,27 +201,26 @@ pub(crate) fn transfer(
     Ok(output)
 }
 
+fn is_parameter_property(name: &str) -> bool {
+    matches!(name, "Angle" | "AngleMin" | "AngleMax" | "Distance" | "Distance2"
+        | "LengthMin" | "LengthMax" | "EnableAngleMin" | "EnableAngleMax"
+        | "EnableLengthMin" | "EnableLengthMax" | "Detach1" | "Detach2" | "Suppressed")
+}
+
 pub(crate) fn transfer_neutral(
     ctx: &DecodeContext<'_>,
     records: &[JointRecord],
     occurrences: &[Occurrence],
 ) -> Result<Vec<AssemblyJoint>, CodecError> {
     let mut lookup_storage = ctx.reserve_scoped(0, "FreeCAD joint occurrence lookup")?;
-    let mut occurrence_by_native = BTreeMap::new();
-    for occurrence in ctx.admit_iter(occurrences, "fcstd joint occurrences")? {
-        if let Some(native) = occurrence.native_ref.as_deref() {
-            lookup_storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut occurrence_by_native,
-                    native,
-                    &occurrence.id,
-                    "fcstd joint occurrence index",
-                )
-            })?;
-        }
+    if records.is_empty() {
+        return Ok(Vec::new());
     }
+    let mut occurrence_by_native = BTreeMap::new();
+    let mut occurrence_indexed = false;
     let mut output = Vec::new();
-    for record in ctx.admit_iter(records, "fcstd neutral joint records")? {
+    let mut records = records.iter();
+    while let Some(record) = ctx.next_charged(&mut records, "fcstd neutral joint records")? {
         let parameters = record.parameters();
         let bool_value = |name: &str| parameters.bool_value(ctx, name);
         let scalar = |name: &str| parameters.scalar_value(ctx, name);
@@ -225,15 +259,11 @@ pub(crate) fn transfer_neutral(
                         })
                 }
             };
-        let operand = |reference: &LinkTarget| -> Result<Option<JointOperand>, CodecError> {
-            let Some(name) = reference.object() else {
-                return Ok(None);
-            };
+        let mut operand = |reference: &LinkTarget, name: &str| -> Result<JointOperand, CodecError> {
             let object = ctx.copy_retained_text(name, "fcstd joint operand object")?;
             let mut subelements = Vec::new();
-            for name in
-                ctx.admit_iter(reference.subelements(), "fcstd joint operand subelements")?
-            {
+            let mut names = reference.subelements().iter();
+            while let Some(name) = ctx.next_charged(&mut names, "fcstd joint operand subelements")? {
                 if !name.is_empty() {
                     ctx.push_vec(
                         &mut subelements,
@@ -248,9 +278,25 @@ pub(crate) fn transfer_neutral(
                     document.as_str(),
                     document.attribute(),
                 )?;
-                return Ok(Some(JointOperand::external(document, object, subelements)));
+                return Ok(JointOperand::external(document, object, subelements));
             }
-            Ok(Some(
+            if !occurrence_indexed {
+                let mut input = occurrences.iter();
+                while let Some(occurrence) = ctx.next_charged(&mut input, "fcstd joint occurrences")? {
+                    if let Some(native) = occurrence.native_ref.as_deref() {
+                        lookup_storage.with_storage(|| {
+                            ctx.insert_btree_map(
+                                &mut occurrence_by_native,
+                                native,
+                                &occurrence.id,
+                                "fcstd joint occurrence index",
+                            )
+                        })?;
+                    }
+                }
+                occurrence_indexed = true;
+            }
+            Ok(
                 match ctx
                     .get_btree_map(&occurrence_by_native, name, "fcstd joint occurrence lookup")?
                     .copied()
@@ -262,15 +308,8 @@ pub(crate) fn transfer_neutral(
                     }
                     None => JointOperand::root(object, subelements),
                 },
-            ))
+            )
         };
-        let id = JointId::mint(crate::native::model_id_charged(
-            ctx,
-            "joint",
-            record.object(),
-            "constraint",
-        )?)
-        .map_err(CodecError::malformed)?;
         let angle = scalar("Angle")?.map(|value| value.get().to_radians());
         let distance = scalar("Distance")?;
         let distance2 = scalar("Distance2")?;
@@ -288,6 +327,15 @@ pub(crate) fn transfer_neutral(
             "EnableLengthMax",
             1.0,
         )?;
+        let id = || {
+            JointId::mint(crate::native::model_id_charged(
+                ctx,
+                "joint",
+                record.object(),
+                "constraint",
+            )?)
+            .map_err(CodecError::malformed)
+        };
         let mut joint = match &record.body {
             JointBody::Grounded {
                 reference,
@@ -296,9 +344,11 @@ pub(crate) fn transfer_neutral(
                 let Some(reference) = reference.as_ref() else {
                     continue;
                 };
-                let Some(operand) = operand(reference)? else {
+                let Some(name) = reference.object() else {
                     continue;
                 };
+                let id = id()?;
+                let operand = operand(reference, name)?;
                 AssemblyJoint::grounded(
                     id,
                     JointConnector {
@@ -311,6 +361,17 @@ pub(crate) fn transfer_neutral(
             }
             JointBody::Pair { kind, connectors } => {
                 let [first, second] = connectors.as_ref();
+                let (Some(first_reference), Some(second_reference)) =
+                    (first.reference.as_ref(), second.reference.as_ref())
+                else {
+                    continue;
+                };
+                let (Some(first_name), Some(second_name)) =
+                    (first_reference.object(), second_reference.object())
+                else {
+                    continue;
+                };
+                let id = id()?;
                 let kind = joint_kind(
                     ctx,
                     kind,
@@ -320,18 +381,8 @@ pub(crate) fn transfer_neutral(
                     angular_limits,
                     linear_limits,
                 )?;
-                let Some(first_reference) = first.reference.as_ref() else {
-                    continue;
-                };
-                let Some(first_operand) = operand(first_reference)? else {
-                    continue;
-                };
-                let Some(second_reference) = second.reference.as_ref() else {
-                    continue;
-                };
-                let Some(second_operand) = operand(second_reference)? else {
-                    continue;
-                };
+                let first_operand = operand(first_reference, first_name)?;
+                let second_operand = operand(second_reference, second_name)?;
                 AssemblyJoint::paired(
                     id,
                     kind,
@@ -804,6 +855,8 @@ fn placement(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod residual_admission;
+
     use super::joint_kind;
     use crate::test_support::test_archive::{archive, assert_valid_document};
     use crate::FcstdCodec;

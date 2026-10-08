@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Support attachment and frame recovery.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -128,21 +128,68 @@ pub(crate) fn transfer(
     properties: &[PropertyRecord],
 ) -> Result<Vec<AttachmentRecord>, CodecError> {
     let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD attachment owner storage")?;
+    if objects.is_empty() || properties.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
-    for property in ctx.admit_iter(properties, "FreeCAD attachment properties")? {
+    let mut object_ids = HashSet::new();
+    let mut object_storage = ctx.reserve_scoped(0, "FreeCAD attachment object index")?;
+    let mut candidates = properties.iter();
+    while let Some(property) = ctx.next_charged(&mut candidates, "FreeCAD attachment properties")? {
+        if !is_attachment_property(&property.name) {
+            continue;
+        }
         let owner = property.owner.as_str();
+        if ctx.equal_bytes(owner.as_bytes(), b"fcstd:native:document#0", "FreeCAD attachment candidate owner")? {
+            continue;
+        }
+        if object_ids.is_empty() {
+            let mut input = objects.iter();
+            while let Some(object) = ctx.next_charged(&mut input, "FreeCAD attachment owner objects")? {
+                object_storage.with_storage(|| {
+                    ctx.insert_hash_set(&mut object_ids, object.id().as_str(), "FreeCAD attachment object index")
+                })?;
+            }
+        }
+        if !ctx.contains_hash_set(&object_ids, owner, "FreeCAD attachment object lookup")? {
+            continue;
+        }
+        if ctx.contains_key_hash_map(&by_owner, owner, "FreeCAD attachment owner lookup")? {
+            continue;
+        }
         owner_storage.with_storage(|| {
-            ctx.push_hash_group(
+            ctx.insert_hash_map(
                 &mut by_owner,
                 owner,
-                property,
+                Vec::new(),
                 "FreeCAD attachment owner lookup",
-                "FreeCAD attachment owner properties",
             )
         })?;
     }
+    drop((object_ids, object_storage));
+    if by_owner.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut properties = properties.iter();
+    while let Some(property) =
+        ctx.next_charged(&mut properties, "FreeCAD attachment owner property visits")?
+    {
+        if !is_attachment_property(&property.name) {
+            continue;
+        }
+        if let Some(owned) = ctx.get_mut_hash_map(
+            &mut by_owner,
+            property.owner.as_str(),
+            "FreeCAD attachment owner lookup",
+        )? {
+            owner_storage.with_storage(|| {
+                ctx.push_vec(owned, property, "FreeCAD attachment owner properties")
+            })?;
+        }
+    }
     let mut records = Vec::new();
-    for object in ctx.admit_iter(objects, "FreeCAD attachment objects")? {
+    let mut objects = objects.iter();
+    while let Some(object) = ctx.next_charged(&mut objects, "FreeCAD attachment objects")? {
         let Some(owned) = ctx.get_hash_map(
             &by_owner,
             object.id().as_str(),
@@ -181,6 +228,10 @@ pub(crate) fn transfer(
         records.push(record);
     }
     Ok(records)
+}
+
+fn is_attachment_property(name: &str) -> bool {
+    matches!(name, "AttachmentSupport" | "MapMode" | "Placement" | "AttachmentOffset")
 }
 
 pub(crate) fn effective_frame(
@@ -238,7 +289,8 @@ fn support_links(
     }
     let mut links =
         ctx.vector_storage(property.links().len(), "FreeCAD attachment support links")?;
-    for link in ctx.admit_iter(property.links(), "FreeCAD attachment support link visits")? {
+    let mut input = property.links().iter();
+    while let Some(link) = ctx.next_charged(&mut input, "FreeCAD attachment support link visits")? {
         ctx.push_vec(
             &mut links,
             link.as_ref()

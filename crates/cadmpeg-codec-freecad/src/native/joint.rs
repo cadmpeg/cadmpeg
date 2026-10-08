@@ -91,8 +91,13 @@ impl JointParameters {
         parameters: BTreeMap<String, String>,
         joint_id: &str,
     ) -> Result<Self, CodecError> {
+        if parameters.is_empty() {
+            ctx.reserve_scoped(0, "fcstd joint raw parameters")?;
+            return Ok(Self::default());
+        }
         let mut checked = BTreeMap::new();
-        for (name, raw) in ctx.admit_iter(parameters, "fcstd joint raw parameters")? {
+        let mut parameters = parameters.into_iter();
+        while let Some((name, raw)) = ctx.next_charged(&mut parameters, "fcstd joint raw parameters")? {
             let parameter = match parameter_kind(&name) {
                 ParameterKind::Scalar => {
                     let value = ctx
@@ -485,6 +490,8 @@ impl TryFrom<JointRecordWire> for JointRecord {
 
 #[cfg(test)]
 mod tests {
+    mod residual_admission;
+
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::scalar::FiniteReal;

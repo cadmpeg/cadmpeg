@@ -6,6 +6,8 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+mod residual_admission;
+
 fn diagnostic_property(
     type_name: &str,
     values: Vec<crate::native::ValueRecord>,
