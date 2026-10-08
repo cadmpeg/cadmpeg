@@ -1367,6 +1367,21 @@ fn order(_ctx: &DecodeContext<'_>, values: &mut [&mutant; 4]) {
 }
 """, ["values.sort_unstable_by_key(|value| value.slot);"])
 
+    def test_generic_parameter_shadowing_is_distinct_from_return_types(self) -> None:
+        self.check_sort_source("""
+struct Edge { slot: u8 }
+fn produce() -> Option<Edge> { None }
+fn order(_ctx: &DecodeContext<'_>, values: &mut [Edge; 4]) {
+    values.sort_unstable_by_key(|value| value.slot);
+}
+""", [])
+        self.check_sort_source("""
+struct Edge { slot: u8 }
+fn order<Edge>(_ctx: &DecodeContext<'_>, values: &mut [Edge; 4]) {
+    values.sort_unstable_by_key(|value| value.slot);
+}
+""", ["values.sort_unstable_by_key(|value| value.slot);"])
+
     def test_each_slice_sort_with_context_parameter_is_rejected(self) -> None:
         for method in sorted(policy.SLICE_SORT_METHODS):
             with self.subTest(method=method):

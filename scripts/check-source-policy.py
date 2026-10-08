@@ -2547,10 +2547,28 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
             glob_imports.add(path)
         for match in re.finditer(r"\bextern\s+crate\s+([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?", code):
             names.add(match[2] or match[1])
-        for match in re.finditer(r"\b(?:fn|struct|enum|impl)\b[^;{}]*<([^>{}]*)>", code):
-            parameters = set(re.findall(r"[A-Za-z_]\w*", match[1]))
-            names.update(parameters)
-            aliases.update(parameters)
+        for index, word in enumerate(words):
+            opening = index + (1 if word == "impl" else 2)
+            if word not in {"fn", "struct", "enum", "impl"} or words[opening:opening + 1] != ["<"]:
+                continue
+            depth = 1
+            parameter_start = True
+            cursor = opening + 1
+            while cursor < len(words) and depth:
+                token = words[cursor]
+                if depth == 1 and parameter_start:
+                    if token == "const" and cursor + 1 < len(words):
+                        name = words[cursor + 1]
+                    else:
+                        name = token
+                    if FixedSortSyntax.IDENTIFIER.fullmatch(name):
+                        names.add(name)
+                        aliases.add(name)
+                    parameter_start = False
+                depth += (token == "<") - (token == ">")
+                if token == "," and depth == 1:
+                    parameter_start = True
+                cursor += 1
         record_shadowed[path] = aliases
         shadowed.setdefault(crate, set()).update(names & (FixedSortSyntax.SCALARS | {"core", "std"}))
         for index, word in enumerate(words):
