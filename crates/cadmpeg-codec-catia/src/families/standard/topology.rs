@@ -19,7 +19,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// Each face row lists `(point, degree)` entries in increasing point order.
 fn duplicate_degree_slot(
@@ -445,12 +445,12 @@ impl StandardTopologyDraft {
         let domains = storage.with_storage(|| {
             ctx.try_collect_vec(
                 ctx.admit_iter(&constrained, "catia standard vertex point domain entries")?
-                    .map(|domain| -> Result<HashSet<usize>, CodecError> {
-                        let mut points = HashSet::new();
+                    .map(|domain| -> Result<BTreeSet<usize>, CodecError> {
+                        let mut points = BTreeSet::new();
                         match domain {
                             Some(constrained) => {
                                 for &point in constrained.iter().flatten() {
-                                    ctx.insert_hash_set(
+                                    ctx.insert_btree_set(
                                         &mut points,
                                         point,
                                         "catia standard vertex point domain entries",
@@ -462,7 +462,7 @@ impl StandardTopologyDraft {
                                     0..point_count,
                                     "catia standard vertex point domain entries",
                                 )? {
-                                    ctx.insert_hash_set(
+                                    ctx.insert_btree_set(
                                         &mut points,
                                         point,
                                         "catia standard vertex point domain entries",
