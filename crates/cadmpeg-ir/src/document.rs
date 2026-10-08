@@ -407,54 +407,72 @@ macro_rules! sorted_model_value {
         sorted_rows($ctx, &$model.curves, |value| Ok(CurveWire(value)))?
     };
     ($model:expr, $ctx:expr, procedural_surfaces) => {{
-        let owners = procedural_owner_index(
-            $ctx,
-            &$model.surfaces,
-            |surface| {
-                surface
-                    .geometry
-                    .procedural_construction()
-                    .map(|id| id.as_str())
-            },
-            "index digest procedural owners",
-        )?;
-        sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
-            Ok(ProceduralSurfaceWire {
-                owner: unique_procedural_owner(
-                    $ctx,
-                    &owners,
-                    procedural.id.as_str(),
-                    "find digest procedural owner",
-                )?
-                .map(|surface| &surface.id),
-                procedural,
-            })
-        })?
+        if $model.procedural_surfaces.is_empty() {
+            sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
+                Ok(ProceduralSurfaceWire {
+                    owner: None,
+                    procedural,
+                })
+            })?
+        } else {
+            let owners = scoped_procedural_owner_index(
+                $ctx,
+                &$model.surfaces,
+                |surface| {
+                    surface
+                        .geometry
+                        .procedural_construction()
+                        .map(|id| id.as_str())
+                },
+                "index digest procedural owners",
+            )?;
+            sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
+                Ok(ProceduralSurfaceWire {
+                    owner: unique_procedural_owner(
+                        $ctx,
+                        &owners.values,
+                        procedural.id.as_str(),
+                        "find digest procedural owner",
+                    )?
+                    .map(|surface| &surface.id),
+                    procedural,
+                })
+            })?
+        }
     }};
     ($model:expr, $ctx:expr, procedural_curves) => {{
-        let owners = procedural_owner_index(
-            $ctx,
-            &$model.curves,
-            |curve| {
-                curve
-                    .geometry
-                    .procedural_construction()
-                    .map(|id| id.as_str())
-            },
-            "index digest procedural owners",
-        )?;
-        sorted_rows($ctx, &$model.procedural_curves, |procedural| {
-            Ok(ProceduralCurveWire {
-                owner: unique_procedural_owner(
-                    $ctx,
-                    &owners,
-                    procedural.id.as_str(),
-                    "find digest procedural owner",
-                )?
-                .map(|curve| &curve.id),
-                procedural,
-            })
-        })?
+        if $model.procedural_curves.is_empty() {
+            sorted_rows($ctx, &$model.procedural_curves, |procedural| {
+                Ok(ProceduralCurveWire {
+                    owner: None,
+                    procedural,
+                })
+            })?
+        } else {
+            let owners = scoped_procedural_owner_index(
+                $ctx,
+                &$model.curves,
+                |curve| {
+                    curve
+                        .geometry
+                        .procedural_construction()
+                        .map(|id| id.as_str())
+                },
+                "index digest procedural owners",
+            )?;
+            sorted_rows($ctx, &$model.procedural_curves, |procedural| {
+                Ok(ProceduralCurveWire {
+                    owner: unique_procedural_owner(
+                        $ctx,
+                        &owners.values,
+                        procedural.id.as_str(),
+                        "find digest procedural owner",
+                    )?
+                    .map(|curve| &curve.id),
+                    procedural,
+                })
+            })?
+        }
     }};
     ($model:expr, $ctx:expr, features) => {
         sorted_rows($ctx, &$model.features, |feature| {
@@ -785,6 +803,30 @@ fn procedural_owner_index<'a, T>(
     Ok(owners)
 }
 
+/// A temporary procedural-owner index and the reservation covering its backing.
+///
+/// The index remains live while procedural rows are projected, then releases
+/// its materialized bytes before the returned sorted model does.
+struct ScopedProceduralOwnerIndex<'ctx, 'ir, T> {
+    values: Vec<(&'ir str, &'ir T)>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn scoped_procedural_owner_index<'ctx, 'arena, 'ir, T>(
+    ctx: &'ctx DecodeContext<'arena>,
+    carriers: &'ir [T],
+    construction: impl Fn(&'ir T) -> Option<&'ir str>,
+    operation: &'static str,
+) -> Result<ScopedProceduralOwnerIndex<'ctx, 'ir, T>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let values =
+        storage.with_storage(|| procedural_owner_index(ctx, carriers, construction, operation))?;
+    Ok(ScopedProceduralOwnerIndex {
+        values,
+        _storage: storage,
+    })
+}
+
 /// The carrier that names `construction`, when exactly one does.
 fn unique_procedural_owner<'a, T>(
     ctx: &DecodeContext<'_>,
@@ -899,7 +941,9 @@ impl Model {
         }
         let operation = "find geometry snapshot procedural owner";
         let mut storage = ctx.reserve_scoped(0, operation)?;
-        let surface_owners = {
+        let surface_owners = if self.procedural_surfaces.is_empty() {
+            Vec::new()
+        } else {
             let mut index_storage = ctx.reserve_scoped(0, operation)?;
             let owners = index_storage.with_storage(|| {
                 procedural_owner_index(
@@ -931,7 +975,9 @@ impl Model {
                 )
             })?
         };
-        let curve_owners = {
+        let curve_owners = if self.procedural_curves.is_empty() {
+            Vec::new()
+        } else {
             let mut index_storage = ctx.reserve_scoped(0, operation)?;
             let owners = index_storage.with_storage(|| {
                 procedural_owner_index(
