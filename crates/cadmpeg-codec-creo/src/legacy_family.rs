@@ -504,7 +504,7 @@ pub(crate) fn parse(
     if !persistence
         .objects
         .iter()
-        .any(|object| object.name == FAMILY_ROOT)
+        .any(|object| object.name == FAMILY_ROOT && matches!(object.payload, ObjectPayload::Arrow))
     {
         return Ok(None);
     }
@@ -1231,5 +1231,47 @@ mod tests {
                 .expect("no family root means no family index")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn null_family_root_does_not_index_unrelated_objects() {
+        let mut persistence = Persistence::default();
+        persistence
+            .objects
+            .push(object("solid", "Solid", None, ObjectPayload::Inline, 1));
+        persistence.objects.push(object(
+            "root",
+            FAMILY_ROOT,
+            Some("solid"),
+            ObjectPayload::Null,
+            2,
+        ));
+        persistence.objects.extend((0..10_000).map(|offset| {
+            object(
+                "unused",
+                "unrelated",
+                None,
+                ObjectPayload::Inline,
+                offset + 100,
+            )
+        }));
+        assert!(
+            parse_with_limit(&persistence, ResourceDimension::CollectionItems, 0)
+                .expect("a null family pointer does not require family indices")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn null_root_competing_with_arrow_root_remains_ambiguous() {
+        let mut persistence = complete_table();
+        persistence.objects.push(object(
+            "root-2",
+            FAMILY_ROOT,
+            Some("solid"),
+            ObjectPayload::Null,
+            20,
+        ));
+        assert!(parse(&persistence).is_none());
     }
 }
