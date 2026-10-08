@@ -1859,3 +1859,39 @@ fn brep_append_refuses_collection_limit() {
 }
 
 mod serialized_budget;
+
+#[test]
+fn inherited_attribute_queries_preserve_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let parent = Record {
+        index: 7, name: "ATTRIB_CUSTOM-attrib".into(),
+        tokens: vec![Token::Ref(-1), Token::Long(-1), Token::Ref(-1),
+            Token::Ref(-1), Token::Ref(3)].into(),
+        offset: 0, len: 0,
+    };
+    let records = HashMap::from([(7, &parent)]);
+    let expected = cadmpeg_ir::attributes::AttributeTarget::Edge(
+        EdgeId::mint("test:model:edge#0").expect("identity grammar"),
+    );
+    let targets = HashMap::from([(3, expected)]);
+    for operation in ["ASM inherited target lookup", "ASM inherited record lookup"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let result = inherited_attribute_target(&ctx, 7, &records, &targets);
+                if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
+                        if actual == *limit));
+                } else {
+                    ctx.finish_session()?;
+                }
+                result
+            },
+        );
+    }
+}

@@ -650,18 +650,6 @@ pub fn decode_with_header(
         })?;
     }
     // Subtype-definition positions, built once for every carrier resolution.
-    let token_count = ctx.fold(
-        records,
-        0_u64,
-        |count, record| {
-            let record_tokens = cadmpeg_core::decode::u64_from_index(record.tokens.len());
-            count
-                .checked_add(record_tokens)
-                .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype scan work", u64::MAX, u64::MAX))
-        },
-        "ASM subtype source records",
-    )?;
-    ctx.charge_work(token_count, "scan ASM subtype definitions")?;
     let mut subtype_storage = ctx.reserve_scoped(0, "index ASM subtype definitions")?;
     let token_table = subtype_storage
         .with_storage(|| nurbs::toks::SubtypeTable::from_records(ctx, records))?
@@ -819,12 +807,12 @@ fn inherited_attribute_target(
         })? {
             return Ok(None);
         }
-        if let Some(target) = targets.get(&owner) {
+        if let Some(target) = ctx.get_hash_map(targets, &owner, "ASM inherited target lookup")? {
             return target
                 .try_clone_for_decode(ctx, "ASM inherited attribute target")
                 .map(Some);
         }
-        let Some(attribute) = by_index.get(&owner) else {
+        let Some(attribute) = ctx.get_hash_map(by_index, &owner, "ASM inherited record lookup")? else {
             return Ok(None);
         };
         if !attribute.name.ends_with("-attrib") {
