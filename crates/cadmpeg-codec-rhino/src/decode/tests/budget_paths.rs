@@ -550,3 +550,52 @@ fn staged_curve_links_preserve_work_and_storage_refusals() {
         );
     }
 }
+
+#[test]
+fn instance_member_rejection_charges_only_the_visited_prefix() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use crate::test_support::test_dump as bytes;
+    let archive = ArchiveVersion::V5;
+    let members = (1..=128_u8).map(|index| [index; 16]).collect::<Vec<_>>();
+    let definition = bytes::v5_definition_payload(archive, 7, [0x51; 16], &members, false);
+    let reference = bytes::object_record_with_payload(
+        archive,
+        0x1000,
+        bytes::INSTANCE_REFERENCE_CLASS,
+        &bytes::instance_reference_payload([0x51; 16], bytes::transform(1.0, [0.0; 3])),
+    );
+    let mut scan = crate::container::scan_owned(bytes::document_with_definitions(
+        "50", archive, &[bytes::definition_record(archive, &definition)], &[reference],
+    )).expect("instance scan");
+    bytes::set_test_units(&mut scan, 1.0);
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            scan.data, &arena, &policy,
+        )?;
+        let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+        let mut scratch = ctx.reserve_scoped(0, "instance member prefix fixture")?;
+        match transaction.expand_reference_inner(
+            0, cadmpeg_ir::transform::Transform::identity(), &mut Vec::new(), &mut Vec::new(), &mut scratch,
+        ) {
+            Err(super::super::ReferenceFailure::Codec(error)) => Err(error),
+            Err(super::super::ReferenceFailure::Semantic(message)) => {
+                assert!(message.contains("is missing"));
+                assert_eq!(transaction.expansion_budget.members, 1);
+                assert!(ctx.resource_refusal().is_none());
+                Ok(message)
+            }
+            Ok(_) => panic!("the first member is absent"),
+        }
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "Rhino instance definition members", run,
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("member visit must preserve its refusal");
+    };
+    assert_eq!(refusal.additional, 1);
+    run(u64::MAX).expect("no unused member suffix is charged");
+}
