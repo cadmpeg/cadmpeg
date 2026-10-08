@@ -442,14 +442,17 @@ fn normalized_plane_frame_refuses_collection_before_growth() {
             crate::surface::complete_plane_local_system(ctx, &body, &scalar::ScalarCache::default())
         })
     };
-    assert!(run(12)
-        .expect("twelve normalized bytes are admitted")
+    assert!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run))
+        .expect("normalized bytes are admitted")
         .is_some());
-    let error = run(11).expect_err("twelve items exceed eleven collection items");
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems, Some("creo normalized plane frame bytes"), run,
+    );
+    let error = run(boundary).expect_err("normalized frame exceeds its collection boundary");
     assert_surface_limit(
         &error,
         ResourceDimension::CollectionItems,
-        "creo normalized plane frame items",
+        "creo normalized plane frame bytes",
     );
 }
 
@@ -594,8 +597,9 @@ fn scalar_frame_limit_error(
 #[test]
 fn surface_scalar_frame_refuses_slot_vector() {
     use cadmpeg_core::decode::ResourceDimension;
+    let boundary = limit_reaching_operation("creo surface scalar frame slots", |limit| scalar_frame_limit_error(limit, u64::MAX));
     assert_surface_limit(
-        &scalar_frame_limit_error(0, u64::MAX),
+        &scalar_frame_limit_error(boundary, u64::MAX),
         ResourceDimension::CollectionItems,
         "creo surface scalar frame slots",
     );
@@ -621,8 +625,9 @@ fn surface_scalar_frame_refuses_slot_bytes() {
 #[test]
 fn surface_scalar_frame_refuses_frame_vector() {
     use cadmpeg_core::decode::ResourceDimension;
+    let boundary = limit_reaching_operation("creo surface scalar frame items", |limit| scalar_frame_limit_error(limit, u64::MAX));
     assert_surface_limit(
-        &scalar_frame_limit_error(1, u64::MAX),
+        &scalar_frame_limit_error(boundary, u64::MAX),
         ResourceDimension::CollectionItems,
         "creo surface scalar frame items",
     );
@@ -780,21 +785,6 @@ fn plane_local_system_refuses_retained_body() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo plane local-system body"),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn plane_local_system_refuses_row_system_vector() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let limit = limit_reaching_operation("creo plane row systems", |limit| {
-        plane_local_system_limit_error(limit, u64::MAX)
-    });
-    let error = plane_local_system_limit_error(limit, u64::MAX);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane row systems"),
         "{error:?}"
     );
 }

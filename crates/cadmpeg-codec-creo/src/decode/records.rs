@@ -3209,9 +3209,9 @@ mod surface_projection_limit_tests {
         ];
         scan.surfaces
             .prototype_records
-            .push(SurfacePrototypeRecord {
-                family: SurfacePrototypeFamily::Plane,
-                parameters: values
+            .push(SurfacePrototypeRecord::new_for_test(
+SurfacePrototypeFamily::Plane,
+values
                     .into_iter()
                     .enumerate()
                     .map(|(offset, value)| SurfaceNamedParameter {
@@ -3222,8 +3222,8 @@ mod surface_projection_limit_tests {
                         value_offset: offset + 1,
                     })
                     .collect(),
-                offset: 11,
-            });
+11,
+));
         scan
     }
 
