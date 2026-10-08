@@ -142,7 +142,8 @@ pub(crate) fn planes(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<DatumPlaneRecord>, CodecError> {
-    let rows = crate::surface::counted_row_bounds(ctx, payload)?;
+    let mut scratch = ctx.reserve_scoped(0, "creo datum row scratch")?;
+    let rows = scratch.with_storage(|| crate::surface::counted_row_bounds(ctx, payload))?;
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut planes = Vec::new();
     for (index, (row, frame_end)) in ctx.admit_iter(&rows, "creo datum plane rows")?.enumerate().filter(|(_, (row, _))| {
@@ -172,12 +173,13 @@ pub(crate) fn cylinders(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<DatumCylinder>, CodecError> {
-    let rows = crate::surface::rows(ctx, payload)?;
-    let parameters = crate::surface::SurfaceParameters::new(
+    let mut scratch = ctx.reserve_scoped(0, "creo datum cylinder scratch")?;
+    let rows = scratch.with_storage(|| crate::surface::rows(ctx, payload))?;
+    let parameters = scratch.with_storage(|| crate::surface::SurfaceParameters::new(
         ctx,
-        crate::surface::parameter_records(ctx, payload)?,
+        crate::surface::parameter_records_for_rows(ctx, payload, &rows)?,
         "creo datum cylinder parameter index",
-    )?;
+    ))?;
     let mut cylinders = Vec::new();
     for row in ctx
         .admit_iter(&rows, "creo datum cylinder rows")?
@@ -361,22 +363,13 @@ fn positional_plane(
     let Some(axis) = held.next().filter(|_| held.next().is_none()) else {
         return Ok(None);
     };
-    let candidate = (|| {
-        let plane_offset = outline[axis.index()].value?;
-        let [u, v] = axis.complement().map(Axis::index);
-        DatumPlaneRecord::new(
-            row.id,
-            row.feature_id,
-            DatumPlane::new(axis, plane_offset)?,
-            outline[axis.index() + 3].value?,
-            [
-                [outline[u].value, outline[v].value],
-                [outline[u + 3].value, outline[v + 3].value],
-            ],
-            id_start,
-        )
-    })();
-    Ok(candidate)
+    let Some(plane_offset) = outline[axis.index()].value else { return Ok(None); };
+    let Some(plane) = DatumPlane::new(axis, plane_offset) else { return Ok(None); };
+    let Some(opposite) = outline[axis.index() + 3].value else { return Ok(None); };
+    let [u, v] = axis.complement().map(Axis::index);
+    Ok(DatumPlaneRecord::new(row.id, row.feature_id, plane, opposite,
+        [[outline[u].value, outline[v].value], [outline[u + 3].value, outline[v + 3].value]], id_start))
+
 }
 
 /// Decode a named datum from its matching outline coordinates.
@@ -385,13 +378,13 @@ pub(crate) fn named_plane(
     payload: &[u8],
 ) -> Result<Option<DatumPlaneRecord>, CodecError> {
     let marker = b"outline\0\xf9\x02\x03";
-    let Some(outline) = ctx.find_bytes_from(payload, marker, 0, "find Creo datum outline")? else {
+    let Some(outline) = ctx.find_map(payload.get(0..).unwrap_or_default().windows(marker.len()).enumerate(), |(offset, bytes)| Ok((bytes == marker).then_some(offset)), "find Creo datum outline")? else {
         return Ok(None);
     };
     let id_marker = b"\xe0\x01geom_id\0";
-    let Some(id_at) = ctx.rfind_bytes(&payload[..outline], id_marker, "creo datum ID lookup")? else { return Ok(None); };
+    let Some(id_at) = ctx.find_map(payload[..outline].windows(id_marker.len()).enumerate().rev(), |(offset, bytes)| Ok((bytes == id_marker).then_some(offset)), "creo datum ID lookup")? else { return Ok(None); };
     let feature_marker = b"feat_id\0";
-    let Some(feature_at) = ctx.rfind_bytes(&payload[..outline], feature_marker, "creo datum feature lookup")? else { return Ok(None); };
+    let Some(feature_at) = ctx.find_map(payload[..outline].windows(feature_marker.len()).enumerate().rev(), |(offset, bytes)| Ok((bytes == feature_marker).then_some(offset)), "creo datum feature lookup")? else { return Ok(None); };
     let Some(feature_field_start) = feature_at.checked_sub(2) else { return Ok(None); };
     if payload.get(feature_field_start) != Some(&crate::psb::token::NAMED_RECORD) { return Ok(None); }
     let outline_field_start = outline.checked_sub(2)
@@ -425,22 +418,13 @@ pub(crate) fn named_plane(
         }
         _ => return Ok(None),
     };
-    let candidate = (|| {
-        let offset = slots[axis.index()].value?;
-        let [u, v] = axis.complement().map(Axis::index);
-        DatumPlaneRecord::new(
-            id,
-            feature_id,
-            DatumPlane::new(axis, offset)?,
-            slots[axis.index() + 3].value?,
-            [
-                [slots[u].value, slots[v].value],
-                [slots[u + 3].value, slots[v + 3].value],
-            ],
-            outline,
-        )
-    })();
-    Ok(candidate)
+    let Some(plane_offset) = slots[axis.index()].value else { return Ok(None); };
+    let Some(plane) = DatumPlane::new(axis, plane_offset) else { return Ok(None); };
+    let Some(opposite) = slots[axis.index() + 3].value else { return Ok(None); };
+    let [u, v] = axis.complement().map(Axis::index);
+    Ok(DatumPlaneRecord::new(id, feature_id, plane, opposite,
+        [[slots[u].value, slots[v].value], [slots[u + 3].value, slots[v + 3].value]], outline))
+
 }
 
 /// Decode one named-outline slot token at `offset`, given the number of slots

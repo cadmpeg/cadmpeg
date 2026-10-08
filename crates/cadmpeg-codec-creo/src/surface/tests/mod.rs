@@ -2,6 +2,7 @@
 mod contours;
 mod cost;
 mod dump;
+mod early_search;
 mod inline;
 mod planes;
 mod positional;

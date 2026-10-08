@@ -169,6 +169,22 @@ impl<Shape> Scalars<Shape> {
         self.tokens = None;
         Some(())
     }
+    pub(super) fn copy_retained(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError>
+    where Shape: Copy {
+        let values = ctx.collect_retained_vec(self.values.0.iter().copied(), "creo retained scalar array values")?;
+        let tokens = match &self.tokens {
+            Some(source) => {
+                let mut tokens = ctx.collection_vec(source.len(), "creo retained scalar array tokens")?;
+                for token in ctx.admit_iter(source, "creo retained scalar token traversal")? {
+                    tokens.push(ctx.copy_retained(token, "creo retained scalar token bytes")?);
+                }
+                Some(tokens)
+            }
+            None => None,
+        };
+        Ok(Self { shape: self.shape, values: FiniteScalarSlots(values), tokens,
+            complete: self.complete, increasing: self.increasing })
+    }
     pub(crate) fn is_complete(&self) -> bool { self.complete }
     pub(crate) fn is_strictly_increasing(&self) -> bool { self.complete && self.increasing }
     pub(crate) fn values(&self) -> &[Option<f64>] {
@@ -200,7 +216,7 @@ impl<Shape: Copy> Scalars<Shape> {
 #[cfg(test)]
 mod tests {
     use super::{CountedScalars, DimensionedScalars};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -235,12 +251,10 @@ mod tests {
     fn scalar_extent_does_not_allocate_placeholder_slots() {
         let extent = DimensionedScalars::extent(2, 2).expect("shape");
         assert_eq!(extent.len(), 4);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0; 4], &arena, &policy).expect("root");
-        let error = DimensionedScalars::from_tokens(&ctx, extent, vec![(None, Vec::new()); 4])
-            .expect_err("final buffer needs four slots");
+        let error = crate::test_support::last_refusal_at(
+            &[0; 4], ResourceDimension::CollectionItems, "creo scalar array values",
+            |ctx| DimensionedScalars::from_tokens(ctx, extent, vec![(None, Vec::new()); 4]),
+        );
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo scalar array values")
         );

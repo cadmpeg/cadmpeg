@@ -455,16 +455,9 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
         ctx.admit_iter(&associations, "creo surface prototype associations")?
     {
         let prototype = prototype.record();
-        let mut fields = prototype
-            .parameters
-            .iter()
-            .filter(|field| field.name == "parent_feats");
-        let Some(field) = fields.next() else {
+        let Some(field) = prototype.field("parent_feats") else {
             continue;
         };
-        if fields.next().is_some() {
-            continue;
-        }
         let crate::surface::SurfaceNamedValue::CompactIntArray(consumers) = &field.value else {
             continue;
         };

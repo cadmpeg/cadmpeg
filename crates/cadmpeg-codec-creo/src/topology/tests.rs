@@ -89,28 +89,28 @@ fn paired_incidence() -> [HalfEdgeVertexIncidence; 2] {
 
 #[test]
 fn start_vertex_pairs_refuse_group_node() {
-    let error = with_collection_limit(0, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
+    let error = with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo start-vertex pair group nodes"), |cap| with_collection_limit(cap, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))), |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
         .expect_err("one curve needs a grouping node");
     assert_collection_error(&error, "creo start-vertex pair group nodes");
 }
 
 #[test]
 fn start_vertex_pairs_refuse_output_node() {
-    let error = with_collection_limit(1, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
+    let error = with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo start-vertex pair nodes"), |cap| with_collection_limit(cap, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))), |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
         .expect_err("one curve needs an output node");
     assert_collection_error(&error, "creo start-vertex pair nodes");
 }
 
 #[test]
 fn edge_vertex_pairs_refuse_group_node() {
-    let error = with_collection_limit(0, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
+    let error = with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo edge-vertex pair group nodes"), |cap| with_collection_limit(cap, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))), |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
         .expect_err("one curve needs a grouping node");
     assert_collection_error(&error, "creo edge-vertex pair group nodes");
 }
 
 #[test]
 fn edge_vertex_pairs_refuse_output_node() {
-    let error = with_collection_limit(1, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
+    let error = with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo edge-vertex pair nodes"), |cap| with_collection_limit(cap, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))), |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
         .expect_err("one curve needs an output node");
     assert_collection_error(&error, "creo edge-vertex pair nodes");
 }
@@ -143,7 +143,7 @@ fn one_incident_vertex() -> (Vec<TopologicalVertex>, Vec<HalfEdge>) {
 #[test]
 fn vertex_incident_faces_refuse_half_edge_lookup_node() {
     let (vertices, edges) = one_incident_vertex();
-    let error = with_collection_limit(0, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
+    let error = with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo incident-face half-edge lookup nodes"), |cap| with_collection_limit(cap, |ctx| vertex_incident_faces(ctx, &vertices, &edges))), |ctx| vertex_incident_faces(ctx, &vertices, &edges))
         .expect_err("one edge needs a lookup node");
     assert_collection_error(&error, "creo incident-face half-edge lookup nodes");
 }
@@ -151,7 +151,7 @@ fn vertex_incident_faces_refuse_half_edge_lookup_node() {
 #[test]
 fn vertex_incident_faces_refuse_face_node() {
     let (vertices, edges) = one_incident_vertex();
-    let error = with_collection_limit(1, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
+    let error = with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo incident face nodes"), |cap| with_collection_limit(cap, |ctx| vertex_incident_faces(ctx, &vertices, &edges))), |ctx| vertex_incident_faces(ctx, &vertices, &edges))
         .expect_err("one incident face needs a set node");
     assert_collection_error(&error, "creo incident face nodes");
 }
@@ -159,7 +159,7 @@ fn vertex_incident_faces_refuse_face_node() {
 #[test]
 fn vertex_incident_faces_refuse_vertex_node() {
     let (vertices, edges) = one_incident_vertex();
-    let error = with_collection_limit(2, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
+    let error = with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo incident-face vertex nodes"), |cap| with_collection_limit(cap, |ctx| vertex_incident_faces(ctx, &vertices, &edges))), |ctx| vertex_incident_faces(ctx, &vertices, &edges))
         .expect_err("one vertex needs an output node");
     assert_collection_error(&error, "creo incident-face vertex nodes");
 }
@@ -296,12 +296,14 @@ fn face_components_refuse_curve_node() {
 
 #[test]
 fn face_components_refuse_seen_neighbor_node() {
-    assert_component_collection_refusal( "creo seen component faces");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo seen component faces", |ctx| face_components(ctx, &[row(1, 1)]));
+    assert_collection_error(&error, "creo seen component faces");
 }
 
 #[test]
 fn face_components_refuse_pending_neighbor() {
-    assert_component_collection_refusal( "creo pending component faces");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo pending component faces", |ctx| face_components(ctx, &[row(1, 1)]));
+    assert_collection_error(&error, "creo pending component faces");
 }
 
 #[test]
@@ -422,7 +424,7 @@ fn topology_build_refuses_unique_row_projection() {
 }
 
 #[test]
-fn topology_build_refuses_face_side_group_node() {
+fn topology_build_refuses_successor_index_node() {
     assert_build_collection_refusal( "creo topology successor index");
 }
 
@@ -1101,10 +1103,6 @@ fn face_component_constructor_rejects_zero_repeated_and_unordered_identity_sets(
 
 #[test]
 fn checked_topology_constructors_propagate_work_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let id = HalfEdgeId {
         curve_id: 1,
         side: crate::topology::Side::Zero,
@@ -1114,11 +1112,20 @@ fn checked_topology_constructors_propagate_work_refusal() {
         face_id: None,
         next: Some(id),
     }];
+    let refusal = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, "creo closed ring validation work", |ctx| super::Loop::new(ctx, None, vec![id], &graph));
+    let CodecError::ResourceLimit(boundary) = refusal else { panic!("resource refusal"); };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = boundary.limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = super::Loop::new(&ctx, None, vec![id], &graph).expect_err("ring work refused");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("resource refusal");
     };
     assert_eq!(ctx.resource_refusal(), Some(limit));
+    let refusal = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, "creo face component validation work", |ctx| super::FaceComponent::new(ctx, vec![1], vec![]));
+    let CodecError::ResourceLimit(boundary) = refusal else { panic!("resource refusal"); };
+    policy.limits.max_work_units = boundary.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error =
         super::FaceComponent::new(&ctx, vec![1], vec![]).expect_err("component work refused");
@@ -1155,7 +1162,9 @@ fn vertex_orbit_constructor_rejects_zero_empty_repeated_and_unordered_members() 
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    let refusal = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, "creo vertex orbit validation work", |ctx| super::TopologicalVertex::new(ctx, 1, vec![a]));
+    let CodecError::ResourceLimit(boundary) = refusal else { panic!("resource refusal"); };
+    policy.limits.max_work_units = boundary.limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = super::TopologicalVertex::new(&ctx, 1, vec![a]).expect_err("orbit work refused");
     let CodecError::ResourceLimit(limit) = error else {

@@ -87,21 +87,19 @@ fn topology_ignored_surface_ids(
 }
 
 pub(in crate::decode) fn canonicalized_pcurve_endpoints(
-    scan: &ContainerScan,
-    faces: [Option<NonZeroU32>; 2],
-    face_0_endpoints: [[f64; 2]; 2],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, scan: &ContainerScan,
+    faces: [Option<NonZeroU32>; 2], face_0_endpoints: [[f64; 2]; 2],
     face_1_endpoints: [[f64; 2]; 2],
-) -> [[[f64; 2]; 2]; 2] {
-    let endpoint_sets = [face_0_endpoints, face_1_endpoints];
-    std::array::from_fn(|side| {
-        faces[side].map_or(endpoint_sets[side], |face| {
-            crate::legacy_geometry::canonicalize_legacy_cone_pcurve_endpoints(
-                &scan.surfaces.legacy_carriers,
-                face.get(),
-                endpoint_sets[side],
-            )
-        })
-    })
+) -> Result<[[[f64; 2]; 2]; 2], cadmpeg_core::CodecError> {
+    let mut endpoints = [face_0_endpoints, face_1_endpoints];
+    for side in 0..2 {
+        if let Some(face) = faces[side] {
+            endpoints[side] = crate::legacy_geometry::canonicalize_legacy_cone_pcurve_endpoints(
+                ctx, &scan.surfaces.legacy_carriers, face.get(), endpoints[side],
+            )?;
+        }
+    }
+    Ok(endpoints)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -191,12 +189,12 @@ fn map_two_chart_endpoint_sets(
             };
         }
     }
-    let canonical = canonicalized_pcurve_endpoints(
+    let canonical = canonicalized_pcurve_endpoints(ctx,
         scan,
         pcurve.faces.map(NonZeroU32::new),
         [first[0], last[0]],
         [first[1], last[1]],
-    );
+    )?;
     let endpoint_sets = std::array::from_fn(|index| mapped[index].then_some(canonical[index]));
     let endpoint_sets = match endpoint_sets {
         [Some(first), Some(second)] => Some(TwoChartEndpointSets::Both([first, second])),
@@ -745,12 +743,12 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         &scan.curves.pcurves,
         "creo transfer analytic pcurve carriers pcurves traversal",
     )? {
-        let endpoint_sets = canonicalized_pcurve_endpoints(
+        let endpoint_sets = canonicalized_pcurve_endpoints(ctx,
             scan,
             pcurve.faces,
             pcurve.face_0_endpoints,
             pcurve.face_1_endpoints,
-        );
+        )?;
         collect_support_cone_plane_witness(
             ctx,
             &mut witnesses,
@@ -763,12 +761,12 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         &scan.curves.bound_prototype_pcurves,
         "creo transfer analytic pcurve carriers bound prototype pcurves traversal",
     )? {
-        let endpoint_sets = canonicalized_pcurve_endpoints(
+        let endpoint_sets = canonicalized_pcurve_endpoints(ctx,
             scan,
             pcurve.faces,
             pcurve.face_0_endpoints,
             pcurve.face_1_endpoints,
-        );
+        )?;
         collect_support_cone_plane_witness(
             ctx,
             &mut witnesses,
@@ -1195,24 +1193,24 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             process_paths(curve_id, faces, paths, false, false)
         };
         for pcurve in ctx.admit_iter(&scan.curves.pcurves, "creo visible pcurve records")? {
-            let [first, second] = canonicalized_pcurve_endpoints(
+            let [first, second] = canonicalized_pcurve_endpoints(ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            );
+            )?;
             process_face_paths(pcurve.curve_id, pcurve.faces, first, second, false)?;
         }
         for pcurve in ctx.admit_iter(
             &scan.curves.bound_prototype_pcurves,
             "creo prototype pcurve records",
         )? {
-            let [first, second] = canonicalized_pcurve_endpoints(
+            let [first, second] = canonicalized_pcurve_endpoints(ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            );
+            )?;
             process_face_paths(pcurve.curve_id, pcurve.faces, first, second, true)?;
         }
     }
@@ -1301,12 +1299,12 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         } else {
             diagnostics.topology_mismatch_records += 1;
         }
-        let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
+        let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(ctx,
             scan,
             faces,
             pcurve.face_0_endpoints,
             pcurve.face_0_endpoints,
-        );
+        )?;
         let mut paths = Vec::new();
         if faces[0].is_none_or(|id| !ignored_surface_ids.contains(&id.get())) {
             ctx.reserve_vec(&mut paths, 1, "creo pcurve candidate paths")?;
@@ -1739,12 +1737,12 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             &scan.curves.pcurves,
             "creo reconcile support apex cone parameter branches pcurves traversal",
         )? {
-            let endpoint_sets = canonicalized_pcurve_endpoints(
+            let endpoint_sets = canonicalized_pcurve_endpoints(ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            );
+            )?;
             for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets) {
                 retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
             }
@@ -1753,12 +1751,12 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             &scan.curves.bound_prototype_pcurves,
             "creo reconcile support apex cone parameter branches bound prototype pcurves traversal",
         )? {
-            let endpoint_sets = canonicalized_pcurve_endpoints(
+            let endpoint_sets = canonicalized_pcurve_endpoints(ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            );
+            )?;
             for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets) {
                 retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
             }
@@ -1786,12 +1784,12 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         )?;
         for pcurve in ctx.admit_iter(&short_pcurves, "creo short pcurve carrier records")? {
             let faces = pcurve.faces.map(NonZeroU32::new);
-            let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
+            let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(ctx,
                 scan,
                 faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_0_endpoints,
-            );
+            )?;
             retain_path(pcurve.curve_id, faces[0], face_0_endpoints, pcurve.offset)?;
         }
     }

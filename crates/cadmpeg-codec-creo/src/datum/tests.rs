@@ -53,7 +53,7 @@ fn named_datum_outline_slots_refuse_before_exact_growth() {
     let data = [0x0f; 6];
     let cache = crate::scalar::ScalarCache::default();
     assert_eq!(
-        with_collection_limit(&data, 6, |ctx| {
+        with_collection_limit(&data, u64::MAX, |ctx| {
             super::named_outline_slots(ctx, &data, 0, &cache)
         })
         .expect("six slots admitted")
@@ -61,7 +61,7 @@ fn named_datum_outline_slots_refuse_before_exact_growth() {
         .len(),
         6
     );
-    let error = with_collection_limit(&data, 5, |ctx| {
+    let error = with_collection_limit(&data, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo named datum outline slots"), |cap| with_collection_limit(&data, cap, |ctx| super::named_outline_slots(ctx, &data, 0, &cache))), |ctx| {
         super::named_outline_slots(ctx, &data, 0, &cache)
     })
     .expect_err("six slots need admission");
@@ -78,7 +78,7 @@ fn positional_datum_slots_refuse_before_exact_growth() {
     let data = [0x0f; 10];
     let cache = crate::scalar::ScalarCache::default();
     assert_eq!(
-        with_collection_limit(&data, 10, |ctx| {
+        with_collection_limit(&data, u64::MAX, |ctx| {
             super::datum_slots(ctx, &data, 0, 10, data.len(), &cache)
         })
         .expect("ten slots admitted")
@@ -86,7 +86,7 @@ fn positional_datum_slots_refuse_before_exact_growth() {
         .len(),
         10
     );
-    let error = with_collection_limit(&data, 9, |ctx| {
+    let error = with_collection_limit(&data, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo positional datum slots"), |cap| with_collection_limit(&data, cap, |ctx| super::datum_slots(ctx, &data, 0, 10, data.len(), &cache))), |ctx| {
         super::datum_slots(ctx, &data, 0, 10, data.len(), &cache)
     })
     .expect_err("ten slots need admission");
@@ -110,12 +110,12 @@ fn datum_plane_records_refuse_before_result_growth() {
     data.push(0x0f);
     data.extend(ieee8(-3.0));
     assert_eq!(
-        with_collection_limit(&data, 25, |ctx| planes(ctx, &data))
+        with_collection_limit(&data, u64::MAX, |ctx| planes(ctx, &data))
             .expect("datum plane admitted")
             .len(),
         1
     );
-    let error = with_collection_limit(&data, 24, |ctx| planes(ctx, &data))
+    let error = with_collection_limit(&data, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo datum plane records"), |cap| with_collection_limit(&data, cap, |ctx| planes(ctx, &data))), |ctx| planes(ctx, &data))
         .expect_err("datum result needs admission");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -139,18 +139,9 @@ fn datum_cylinders_refuse_before_result_growth() {
             cylinders(ctx, &data).map(|records| records.len())
         })
     };
-    assert_eq!(run(512).expect("one active cylinder admitted"), 1);
-    let mut refused = 0;
-    let mut admitted = 512;
-    while refused + 1 < admitted {
-        let middle = refused + (admitted - refused) / 2;
-        if run(middle).is_ok() {
-            admitted = middle;
-        } else {
-            refused = middle;
-        }
-    }
-    let error = run(admitted - 1).expect_err("the result slot needs admission");
+    assert_eq!(run(u64::MAX).expect("one active cylinder admitted"), 1);
+    let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo datum cylinders"), run);
+    let error = run(limit).expect_err("the result slot needs admission");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems

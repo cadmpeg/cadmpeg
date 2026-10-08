@@ -609,13 +609,13 @@ pub(super) fn fc05_cap_pair_model_frame(
     let mut placed_caps = ctx
         .admit_iter(&pair.cap_edges, "creo cap pair placed edge traversal")?
         .map(|edge| {
-            crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
-                .map(|plane| (plane, edge.cap_ordinate_row_frame))
+            Ok::<_, cadmpeg_core::CodecError>(crate::surface::unique_outline_plane(ctx, &scan.planes.outlines, edge.cap_plane_id)?
+                .map(|plane| (plane, edge.cap_ordinate_row_frame)))
         });
-    let Some(Some((first_cap, first_ordinate))) = placed_caps.next() else {
+    let Some(Some((first_cap, first_ordinate))) = placed_caps.next().transpose()? else {
         return Ok(None);
     };
-    let Some(Some((mut last_cap, mut last_ordinate))) = placed_caps.next() else {
+    let Some(Some((mut last_cap, mut last_ordinate))) = placed_caps.next().transpose()? else {
         return Ok(None);
     };
     let Some(axis_index) = Axis::ALL
@@ -628,7 +628,7 @@ pub(super) fn fc05_cap_pair_model_frame(
         return Ok(None);
     }
     for placed_cap in placed_caps {
-        let Some((plane, ordinate)) = placed_cap else {
+        let Some((plane, ordinate)) = placed_cap? else {
             return Ok(None);
         };
         if plane.normal != first_cap.normal {
@@ -657,7 +657,7 @@ pub(super) fn fc05_cap_pair_model_frame(
         &pair.cap_edges,
         |edge| {
             let Some(plane) =
-                crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
+                crate::surface::unique_outline_plane(ctx, &scan.planes.outlines, edge.cap_plane_id)?
             else {
                 return Ok(true);
             };
@@ -708,13 +708,17 @@ pub(super) fn transfer_fc05_cap_circles(
         ) else {
             continue;
         };
-        let cap_plane = crate::decode::uniqueness::exactly_one(
-            topology.bounded_face_ids().filter_map(|face| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, face)
-                    .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)?;
-                crate::surface::unique_outline_plane(&scan.planes.outlines, face)
-            }),
-        );
+        let mut cap_planes = [None; 2];
+        let mut cap_plane_count = 0;
+        for face in topology.bounded_face_ids() {
+            if crate::surface::unique_surface_row(&scan.surfaces.rows, face)
+                .is_none_or(|row| row.kind != crate::surface::SurfaceKind::Plane) { continue; }
+            if let Some(plane) = crate::surface::unique_outline_plane(ctx, &scan.planes.outlines, face)? {
+                cap_planes[cap_plane_count] = Some(plane);
+                cap_plane_count += 1;
+            }
+        }
+        let cap_plane = crate::decode::uniqueness::exactly_one(cap_planes.into_iter().flatten());
         let cylinder =
             crate::decode::uniqueness::exactly_one(topology.bounded_face_ids().filter(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *face)

@@ -13,7 +13,7 @@ use crate::scalar;
 use crate::surface::admitted_counted_parameter_body;
 use crate::surface::complete_plane_local_system_slots;
 use crate::surface::decode_row_scalar;
-use crate::surface::first_compound_close;
+use crate::surface::first_compound_close as checked_first_compound_close;
 use crate::surface::plane_direct_frame;
 use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
 use crate::surface::plane_frame;
@@ -164,13 +164,7 @@ fn held_coordinate_outline_refuses_output_vector() {
         row_offset: 10,
         offset: 20,
     }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error =
-        crate::surface::outline_planes(&ctx, &records).expect_err("outline vector exceeds limit");
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo held-coordinate outline planes", |ctx| { crate::surface::outline_planes(ctx, &records) });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo held-coordinate outline planes")
@@ -216,7 +210,7 @@ fn placed_frame_bound_limit_error(limit: u64) -> cadmpeg_core::CodecError {
 
 #[test]
 fn placed_outline_refuses_frame_bound_vector() {
-    let error = placed_frame_bound_limit_error(0);
+    let error = placed_frame_bound_limit_error(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo frame-bound outline planes"), |cap| Err::<(), _>(placed_frame_bound_limit_error(cap))));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo frame-bound outline planes")
@@ -225,7 +219,7 @@ fn placed_outline_refuses_frame_bound_vector() {
 
 #[test]
 fn placed_outline_refuses_frame_bound_id_node() {
-    let error = placed_frame_bound_limit_error(1);
+    let error = placed_frame_bound_limit_error(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo frame-bound outline ID nodes"), |cap| Err::<(), _>(placed_frame_bound_limit_error(cap))));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo frame-bound outline ID nodes")
@@ -234,47 +228,10 @@ fn placed_outline_refuses_frame_bound_id_node() {
 
 #[test]
 fn placed_outline_refuses_output_vector() {
-    let error = placed_frame_bound_limit_error(2);
+    let error = placed_frame_bound_limit_error(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo placed outline planes"), |cap| Err::<(), _>(placed_frame_bound_limit_error(cap))));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo placed outline planes")
-    );
-}
-
-#[test]
-fn placed_outline_refuses_matrix_frame_id_node() {
-    let frames = [PlaneLocalSystem {
-        surface_id: 42,
-        body: Vec::new(),
-        slots: [
-            Some(1.0),
-            Some(0.0),
-            Some(1.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-            Some(-1.0),
-            Some(0.0),
-            Some(1.0),
-            Some(0.0),
-            Some(0.0),
-            Some(0.0),
-        ],
-        layout: Some(crate::scalar::PlaneSupportFrameLayout::MatrixColumns),
-        classification: LocalSystemClassification::Unclassified,
-        row_offset: 10,
-        offset: 30,
-    }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    let error = crate::surface::placed_outline_planes(&ctx, &[], &frames)
-        .expect_err("matrix frame ID exceeds limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo matrix frame ID nodes")
     );
 }
 
@@ -355,18 +312,11 @@ fn positional_frame_limit_error(limit: u64) -> cadmpeg_core::CodecError {
     .expect_err("positional plane collection exceeds limit")
 }
 
-#[test]
-fn positional_frame_refuses_candidate_vector() {
-    let error = positional_frame_limit_error(0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo positional plane candidates")
-    );
-}
+
 
 #[test]
 fn positional_frame_refuses_output_vector() {
-    let error = positional_frame_limit_error(1);
+    let error = positional_frame_limit_error(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo positional frame planes"), |cap| Err::<(), _>(positional_frame_limit_error(cap))));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo positional frame planes")
@@ -1429,16 +1379,11 @@ fn spline_scalar_grid_parser_propagates_collection_limit() {
     let mut payload = b"srf_prim_ptr(spline)\0\xe0\x02i_points\0\xf9\x02\x03".to_vec();
     payload.extend([0x0f; 6]);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("small prototype payload is admitted");
-    let error = crate::surface::named_prototype_records(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(&payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo named spline scalar slots", |ctx| { crate::surface::named_prototype_records(
+        ctx,
         &payload,
         &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect_err("six scalar slots exceed the five-item limit");
+    ) });
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1959,3 +1904,50 @@ fn torus_rows_keep_the_byte_after_a_seven_byte_coordinate() {
 }
 
 mod named_local_systems;
+
+fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usize> {
+    super::with_decode_ctx(payload, |ctx| checked_first_compound_close(ctx, payload, start, end))
+}
+
+#[test]
+fn placed_outline_support_index_preserves_duplicates_and_conflicts() {
+    let record = PlaneEnvelopeRecord {
+        surface_id: 42, body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[None; 2]; 2],
+            corners_3d: [[Some(-3.0), Some(-4.0), Some(7.0)], [Some(5.0), Some(-4.0), None]],
+        },
+        corner_coordinate_equal: [Some(false), Some(true), None],
+        scalar_tokens: Vec::new(), row_offset: 0, offset: 20,
+    };
+    let mut earlier = record.clone();
+    earlier.offset = 5;
+    let mut unframed = record.clone();
+    unframed.surface_id = 84;
+    unframed.offset = 10;
+    unframed.corner_coordinate_equal[2] = Some(false);
+    let records = [record, earlier, unframed];
+    let frame = PlaneLocalSystem {
+        surface_id: 42, body: Vec::new(),
+        slots: [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0].map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
+        classification: LocalSystemClassification::Unclassified, row_offset: 0, offset: 0,
+    };
+    let mut invalid = frame.clone();
+    invalid.slots = [None; 12];
+    let frames = [frame.clone(), invalid, frame.clone()];
+    let result = crate::decode::with_test_decode_ctx(|ctx| crate::surface::placed_outline_planes(ctx, &records, &frames))
+        .expect("support index admitted");
+    assert_eq!(result.iter().map(|plane| plane.offset).collect::<Vec<_>>(), [5, 10, 20]);
+    assert_eq!(result[0].origin, [0.0, -4.0, 0.0]);
+    assert_eq!(result[0].normal(), [0.0, 1.0, 0.0]);
+    assert_eq!(result[0].u_axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(result[1].surface_id, 84);
+    let mut conflicting = frame.clone();
+    conflicting.slots[..3].copy_from_slice(&[Some(1.0), Some(0.0), Some(0.0)]);
+    let frames = [frame.clone(), conflicting, frame];
+    let result = crate::decode::with_test_decode_ctx(|ctx| crate::surface::placed_outline_planes(ctx, &records, &frames))
+        .expect("conflicting support index admitted");
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].surface_id, 84);
+}

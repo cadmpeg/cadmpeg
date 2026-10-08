@@ -196,21 +196,23 @@ pub(crate) fn scan(
         integer_fields: &integer_fields,
         real_fields: &real_fields,
     };
-    let (rows, mut carriers) = namespace(
+    let mut carriers = Vec::new();
+    let rows = namespace(
         ctx,
         &index,
         "Sld_VisGeom",
         "active_geom",
         LegacySurfaceNamespace::Visible,
+        &mut carriers,
     )?;
-    let (nonvisible_rows, mut nonvisible_carriers) = namespace(
+    let nonvisible_rows = namespace(
         ctx,
         &index,
         "Sld_NonVisGeom",
         "inactive_geom",
         LegacySurfaceNamespace::NonVisible,
+        &mut carriers,
     )?;
-    ctx.append_vec(&mut carriers, &mut nonvisible_carriers, "creo legacy nonvisible carrier aggregation")?;
     ctx.stable_sort_by(
         carriers.as_mut_slice(),
         |value| &value.offset,
@@ -439,7 +441,8 @@ fn namespace(
     root_name: &str,
     branch_name: &str,
     namespace: LegacySurfaceNamespace,
-) -> Result<(Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>), CodecError> {
+    carriers: &mut Vec<LegacySurfaceCarrier>,
+) -> Result<Vec<SurfaceRow>, CodecError> {
     let mut elements_scope = ctx.reserve_scoped(0, "creo legacy geometry element scratch")?;
     let Some(elements) = elements_scope.with_storage(|| geometry_array_elements(
         ctx,
@@ -449,11 +452,10 @@ fn namespace(
         branch_name,
         "srf_array",
     ))? else {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok(Vec::new());
     };
 
     let mut rows = Vec::new();
-    let mut carriers = Vec::new();
     for row_object in ctx.admit_iter(elements, "creo legacy surface rows")? {
         let Some(row) = surface_row(row_object, index.integer_fields) else {
             continue;
@@ -490,7 +492,7 @@ fn namespace(
             }
         };
         if let Some(carrier) = carrier {
-            ctx.reserve_vec(&mut carriers, 1, "creo legacy surface carriers")?;
+            ctx.reserve_vec(carriers, 1, "creo legacy surface carriers")?;
             carriers.push(carrier);
         }
         ctx.reserve_vec(&mut rows, 1, "creo legacy surface rows")?;
@@ -502,13 +504,7 @@ fn namespace(
         Ord::cmp,
         "creo namespace rows ordering",
     )?;
-    ctx.stable_sort_by(
-        carriers.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo namespace carriers ordering",
-    )?;
-    Ok((rows, carriers))
+    Ok(rows)
 }
 
 fn spline_surface_carrier(
@@ -525,13 +521,14 @@ fn spline_surface_carrier(
     if primitive.name != "srf_prim_ptr(splsrf)" {
         return Ok(None);
     }
-    let Some(points) = real_vector_array(ctx, reals, primitive.offset, "i_points")? else {
+    let mut grid_scope = ctx.reserve_scoped(0, "creo legacy spline grid scratch")?;
+    let Some(points) = grid_scope.with_storage(|| real_vector_array(ctx, reals, primitive.offset, "i_points"))? else {
         return Ok(None);
     };
-    let Some(u_parameters) = real_scalar_array(ctx, reals, primitive.offset, "u_params")? else {
+    let Some(u_parameters) = grid_scope.with_storage(|| real_scalar_array(ctx, reals, primitive.offset, "u_params"))? else {
         return Ok(None);
     };
-    let Some(v_parameters) = real_scalar_array(ctx, reals, primitive.offset, "v_params")? else {
+    let Some(v_parameters) = grid_scope.with_storage(|| real_scalar_array(ctx, reals, primitive.offset, "v_params"))? else {
         return Ok(None);
     };
     let mut derivative_scope = ctx.reserve_scoped(0, "creo legacy spline derivative scratch")?;
@@ -545,7 +542,7 @@ fn spline_surface_carrier(
     else {
         return Ok(None);
     };
-    let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
+    let spline = grid_scope.with_storage(|| crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
         ctx,
         points,
         u_parameters,
@@ -553,7 +550,8 @@ fn spline_surface_carrier(
         &u_tangents,
         &v_tangents,
         &mixed_derivatives,
-    )?;
+    ))?;
+    let spline = spline.map(|grid| grid.copy_retained(ctx)).transpose()?;
     Ok(spline.map(|spline| LegacySurfaceCarrier {
         namespace,
         surface_id: row.id,
@@ -709,22 +707,16 @@ fn surface_carrier(
 /// Map legacy pcurve `v` coordinates into the positive-angle frame emitted by
 /// [`LegacySurfaceGeometry::Cone`].
 pub(crate) fn canonicalize_legacy_cone_pcurve_endpoints(
-    carriers: &[LegacySurfaceCarrier],
-    face_id: u32,
+    ctx: &DecodeContext<'_>, carriers: &[LegacySurfaceCarrier], face_id: u32,
     endpoints: [[f64; 2]; 2],
-) -> [[f64; 2]; 2] {
-    let sign = carriers
-        .iter()
-        .find_map(|carrier| {
-            (carrier.surface_id == face_id).then_some(match carrier.geometry {
-                LegacySurfaceGeometry::Cone {
-                    parameter_v_sign, ..
-                } => parameter_v_sign,
-                _ => 1.0,
-            })
+) -> Result<[[f64; 2]; 2], CodecError> {
+    let sign = ctx.find_map(carriers, |carrier| Ok(
+        (carrier.surface_id == face_id).then_some(match carrier.geometry {
+            LegacySurfaceGeometry::Cone { parameter_v_sign, .. } => parameter_v_sign,
+            _ => 1.0,
         })
-        .unwrap_or(1.0);
-    endpoints.map(|[u, v]| [u, v * sign])
+    ), "creo legacy cone chart lookup")?.unwrap_or(1.0);
+    Ok(endpoints.map(|[u, v]| [u, v * sign]))
 }
 
 fn real_vector_array(
@@ -907,7 +899,7 @@ fn local_system_slots(ctx: &DecodeContext<'_>, record: &RealRecord) -> Result<Op
 #[cfg(test)]
 mod tests {
     use super::{
-        canonicalize_legacy_cone_pcurve_endpoints, scan as scan_checked, LegacySurfaceCarrier,
+        canonicalize_legacy_cone_pcurve_endpoints as checked_canonicalize_legacy_cone_pcurve_endpoints, scan as scan_checked, LegacySurfaceCarrier,
         LegacySurfaceGeometry, LegacySurfaceNamespace,
     };
     use crate::legacy::{
@@ -917,6 +909,12 @@ mod tests {
     use crate::test_support::{fixture_offset, object};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    fn canonicalize_legacy_cone_pcurve_endpoints(
+        carriers: &[LegacySurfaceCarrier], face_id: u32, endpoints: [[f64; 2]; 2],
+    ) -> [[f64; 2]; 2] {
+        crate::decode::with_test_decode_ctx(|ctx| checked_canonicalize_legacy_cone_pcurve_endpoints(ctx, carriers, face_id, endpoints)).expect("legacy cone fixture admission")
+    }
 
     fn scan(persistence: &Persistence) -> super::LegacyGeometryScan {
         let arena = DecodeArena::new();
@@ -1897,13 +1895,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         let persistence = cylinder_persistence(false);
         assert_eq!(scan(&persistence).rows.len(), 1);
         assert_collection_refusal(&persistence, "creo legacy surface rows");
-    }
-
-    #[test]
-    fn legacy_nonvisible_carriers_refuse_before_aggregation() {
-        let persistence = cylinder_persistence(true);
-        assert_eq!(scan(&persistence).carriers.len(), 1);
-        assert_collection_refusal(&persistence, "creo legacy nonvisible carrier aggregation");
     }
 
     #[test]

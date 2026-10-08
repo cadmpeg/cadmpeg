@@ -411,7 +411,7 @@ pub(in super::super) fn replayed_torus_minor_radius(
     let Some(prototype_minor_radius) = unique_section_torus_minor_radius(ctx, scan, row)? else {
         return Ok(None);
     };
-    Ok(record.type26_replayed_minor_radius(prototype_minor_radius))
+    record.type26_replayed_minor_radius_checked(ctx, prototype_minor_radius)
 }
 
 fn prototype_round_radius(
@@ -463,14 +463,14 @@ fn prototype_round_radius(
         let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
             return Ok(None);
         };
-        if record.torus_radius_overrides().is_some() {
+        if record.torus_radius_overrides_checked(ctx)?.is_some() {
             return Ok(None);
         }
         let replayed_matches = replayed_torus_minor_radius(ctx, scan, row, record)?
             .is_some_and(|radius| radius.to_bits() == radius2.to_bits());
         let outline_matches = if replayed_matches {
             false
-        } else if let Some(frame) = record.torus_outline_frame() {
+        } else if let Some(frame) = record.torus_outline_frame_checked(ctx)? {
             outline_has_unique_radius_delta(ctx, frame, radius2)?
         } else {
             false
@@ -781,7 +781,7 @@ fn mixed_torus_radius_samples(
         let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
             return Ok(None);
         };
-        let overridden = record.torus_radius_overrides().is_some();
+        let overridden = record.torus_radius_overrides_checked(ctx)?.is_some();
         all_overrides &= overridden;
         any_overrides |= overridden;
     }
@@ -791,7 +791,7 @@ fn mixed_torus_radius_samples(
             let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
                 return Ok(None);
             };
-            let Some(overrides) = record.torus_radius_overrides() else {
+            let Some(overrides) = record.torus_radius_overrides_checked(ctx)? else {
                 return Ok(None);
             };
             ctx.reserve_vec(&mut radii, 1, "creo torus override samples")?;
@@ -1223,7 +1223,7 @@ pub(in super::super) fn round_observed_radii(
         let radius = match row.kind {
             crate::surface::SurfaceKind::Cylinder => parameters.type24_generated_round_radius(),
             crate::surface::SurfaceKind::TorusOrSphere => {
-                if let Some(overrides) = parameters.torus_radius_overrides() {
+                if let Some(overrides) = parameters.torus_radius_overrides_checked(ctx)? {
                     Some(overrides.radius2)
                 } else {
                     replayed_torus_minor_radius(ctx, scan, row, parameters)?

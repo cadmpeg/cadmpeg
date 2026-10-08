@@ -78,7 +78,7 @@ fn contour_chain_with_limits(
 
 #[test]
 fn contour_chain_refuses_first_entry_before_growth() {
-    let error = contour_chain_with_limits(0, u64::MAX)
+    let error = contour_chain_with_limits(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo contour chain entries"), |cap| contour_chain_with_limits(cap, u64::MAX)), u64::MAX)
         .expect_err("first contour entry exceeds collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -87,8 +87,12 @@ fn contour_chain_refuses_first_entry_before_growth() {
 
 #[test]
 fn contour_chain_refuses_second_entry_before_growth() {
-    let error = contour_chain_with_limits(1, u64::MAX)
-        .expect_err("second contour entry exceeds collection limit");
+    let payload = contour_payload();
+    let rows = super::with_decode_ctx(&payload, |ctx| super::super::rows(ctx, &payload));
+    let start = payload.windows(3).position(|bytes| bytes == [0x82, 0x10, 0x01]).expect("complete contour fixture");
+    let error = crate::test_support::last_refusal_at(&payload, ResourceDimension::CollectionItems, "creo contour chain entries", |ctx| {
+        super::super::parse_surface_contour_chain(ctx, &payload, start, payload.len(), &rows[0], &crate::scalar::ScalarCache::default())
+    });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo contour chain entries"));
@@ -114,13 +118,7 @@ fn contour_chain_refuses_body_before_retained_copy() {
 fn contour_chain_refuses_aggregate_before_growth() {
     let payload = contour_payload();
     let rows = super::with_decode_ctx(&payload, |ctx| super::super::rows(ctx, &payload));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("contour input admitted");
-    let error = super::super::contour_records_for_rows(&ctx, &payload, &rows)
-        .expect_err("aggregate contour entries exceed collection limit");
+    let error = crate::test_support::last_refusal_at(&payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo contour record aggregation", |ctx| { super::super::contour_records_for_rows(ctx, &payload, &rows) });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo contour record aggregation"));
@@ -214,4 +212,21 @@ fn container_and_native_arena_retain_contour_entries() {
             .as_deref(),
         Some("surface_contour_chain_entry")
     );
+}
+
+#[test]
+fn incomplete_contour_chain_retains_no_bodies() {
+    let mut payload = contour_payload();
+    payload.pop();
+    let rows = super::with_decode_ctx(&payload, |ctx| super::super::rows(ctx, &payload));
+    let start = payload.windows(3).position(|bytes| bytes == [0x82, 0x10, 0x01])
+        .expect("contour fixture");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+    let result = super::super::parse_surface_contour_chain(
+        &ctx, &payload, start, payload.len(), &rows[0], &crate::scalar::ScalarCache::default(),
+    ).expect("incomplete chain needs no retained storage");
+    assert!(result.is_none());
 }

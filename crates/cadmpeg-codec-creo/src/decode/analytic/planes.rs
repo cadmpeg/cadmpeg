@@ -947,12 +947,12 @@ fn stored_frame_branch_constraints(
     )? {
         add(
             pcurve.faces,
-            super::pcurves::canonicalized_pcurve_endpoints(
+            super::pcurves::canonicalized_pcurve_endpoints(ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            ),
+            )?,
         )?;
     }
     for pcurve in ctx.admit_iter(
@@ -961,12 +961,12 @@ fn stored_frame_branch_constraints(
     )? {
         add(
             pcurve.faces,
-            super::pcurves::canonicalized_pcurve_endpoints(
+            super::pcurves::canonicalized_pcurve_endpoints(ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            ),
+            )?,
         )?;
     }
     for pcurve in ctx.admit_iter(
@@ -979,12 +979,12 @@ fn stored_frame_branch_constraints(
         };
         add(
             faces,
-            super::pcurves::canonicalized_pcurve_endpoints(
+            super::pcurves::canonicalized_pcurve_endpoints(ctx,
                 scan,
                 faces,
                 [first[0], last[0]],
                 [first[1], last[1]],
-            ),
+            )?,
         )?;
     }
     Ok(constraints)
@@ -1037,10 +1037,19 @@ fn fc05_cylinder_branch_witnesses(
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
             })
-            .filter_map(|face| {
-                crate::surface::unique_outline_plane(&scan.planes.outlines, face)
-                    .map(|plane| (face, plane))
+            .map(|face| {
+                Ok::<_, cadmpeg_core::CodecError>(crate::surface::unique_outline_plane(ctx, &scan.planes.outlines, face)?
+                    .map(|plane| (face, plane)))
             });
+        let mut selected_planes = [None; 2];
+        let mut plane_count = 0;
+        for plane in &mut planes {
+            if let Some(plane) = plane? {
+                selected_planes[plane_count] = Some(plane);
+                plane_count += 1;
+            }
+        }
+        let mut planes = selected_planes.into_iter().flatten();
         let mut cylinders = ctx
             .admit_iter(&topology.faces, "creo FC05 circle bounded face cylinders")?
             .flatten()
@@ -1444,12 +1453,12 @@ fn select_stored_frame_carrier_pcurve_branches(
     )? {
         apply(
             pcurve.faces,
-            super::pcurves::canonicalized_pcurve_endpoints(
+            super::pcurves::canonicalized_pcurve_endpoints(ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            ),
+            )?,
         )?;
     }
     for pcurve in ctx.admit_iter(
@@ -1458,12 +1467,12 @@ fn select_stored_frame_carrier_pcurve_branches(
     )? {
         apply(
             pcurve.faces,
-            super::pcurves::canonicalized_pcurve_endpoints(
+            super::pcurves::canonicalized_pcurve_endpoints(ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            ),
+            )?,
         )?;
     }
     for pcurve in ctx.admit_iter(
@@ -1476,12 +1485,12 @@ fn select_stored_frame_carrier_pcurve_branches(
         };
         apply(
             faces,
-            super::pcurves::canonicalized_pcurve_endpoints(
+            super::pcurves::canonicalized_pcurve_endpoints(ctx,
                 scan,
                 faces,
                 [first[0], last[0]],
                 [first[1], last[1]],
-            ),
+            )?,
         )?;
     }
     Ok(())
@@ -1976,15 +1985,10 @@ fn plane_candidates(
         }
     }
     let mut frame_bound_outlines = BTreeMap::<u32, Vec<crate::surface::OutlinePlane>>::new();
-    for outline in ctx
-        .admit_iter(
-            &scan.planes.envelopes,
-            "creo frame-bound outline envelope search",
-        )?
-        .filter_map(|record| {
-            crate::surface::frame_bound_outline_plane(record, &scan.planes.local_systems)
-        })
-    {
+    for record in ctx.admit_iter(
+        &scan.planes.envelopes, "creo frame-bound outline envelope search",
+    )? {
+        let Some(outline) = crate::surface::frame_bound_outline_plane_checked(ctx, record, &scan.planes.local_systems)? else { continue; };
         let outlines = ctx
             .entry_btree_map(
                 &mut frame_bound_outlines,
