@@ -33,7 +33,7 @@ fn assert_refusal(error: &CodecError, dimension: ResourceDimension, operation: &
 #[test]
 fn brep_untransferred_pcurve_loss_text_refuses_retained_limit() {
     assert_refusal(
-        &loss_result(16, 0).expect_err("loss text refused"),
+        &loss_result(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo B-rep untransferred pcurve loss text"), |cap| loss_result(u64::MAX, cap))).expect_err("loss text refused"),
         ResourceDimension::RetainedBytes,
         "creo B-rep untransferred pcurve loss text",
     );
@@ -42,7 +42,7 @@ fn brep_untransferred_pcurve_loss_text_refuses_retained_limit() {
 #[test]
 fn brep_untransferred_pcurve_losses_refuse_collection_limit() {
     assert_refusal(
-        &loss_result(0, u64::MAX).expect_err("loss row refused"),
+        &loss_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo B-rep untransferred pcurve losses"), |cap| loss_result(cap, u64::MAX)), u64::MAX).expect_err("loss row refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep untransferred pcurve losses",
     );
@@ -50,7 +50,7 @@ fn brep_untransferred_pcurve_losses_refuse_collection_limit() {
 
 #[test]
 fn brep_untransferred_pcurve_loss_preserves_service_message() {
-    let losses = loss_result(16, u64::MAX).expect("service loss admitted");
+    let losses = loss_result(u64::MAX, u64::MAX).expect("service loss admitted");
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].message,

@@ -81,7 +81,13 @@ fn brep_component_records_refuse_collection_limit() {
 fn brep_used_vertex_nodes_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo B-rep used vertex nodes"), |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        used_brep_vertices(&ctx, &BTreeSet::from([10]), &BTreeMap::from([(10, [1, 2])]))
+    });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = used_brep_vertices(&ctx, &BTreeSet::from([10]), &BTreeMap::from([(10, [1, 2])]))

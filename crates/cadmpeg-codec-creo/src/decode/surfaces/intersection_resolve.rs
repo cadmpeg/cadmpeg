@@ -49,21 +49,7 @@ pub(super) fn multi_component_intersection_candidates(
         .chain(axis_containing_plane_torus_circle_candidates(first, second))
 }
 
-fn carrier_intersection_components(
-    ctx: &DecodeContext<'_>,
-    first: CarrierEquation,
-    second: CarrierEquation,
-) -> Result<Vec<(CurveGeometry, &'static str)>, CodecError> {
-    let mut components = Vec::new();
-    for component in carrier_intersection_curve(first, second)
-        .into_iter()
-        .chain(multi_component_intersection_candidates(first, second))
-    {
-        ctx.reserve_vec(&mut components, 1, "creo carrier intersection components")?;
-        components.push(component);
-    }
-    Ok(components)
-}
+
 
 pub(in super::super) fn intersect_plane_with_carrier_components(
     ctx: &DecodeContext<'_>,
@@ -72,13 +58,13 @@ pub(in super::super) fn intersect_plane_with_carrier_components(
     second: CarrierEquation,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
     let mut intersections = Vec::new();
-    let mut component_storage = ctx.reserve_scoped(0, "creo carrier intersection component workspace")?;
-    let components = component_storage.with_storage(|| carrier_intersection_components(ctx, first, second))?;
-    for (geometry, _) in &components {
-        let Some((center, axis, radius)) = circle_parameters(geometry) else {
+    for (geometry, _) in carrier_intersection_curve(first, second).into_iter()
+        .chain(multi_component_intersection_candidates(first, second)) {
+        let Some((center, axis, radius)) = circle_parameters(&geometry) else {
             continue;
         };
-        let points = intersect_plane_with_circle(ctx, plane, center, axis, radius)?;
+        let mut point_storage = ctx.reserve_scoped(0, "creo carrier component point workspace")?;
+        let points = point_storage.with_storage(|| intersect_plane_with_circle(ctx, plane, center, axis, radius))?;
         for point in &points {
             ctx.reserve_vec(
                 &mut intersections,
@@ -268,26 +254,7 @@ mod tests {
         (CarrierEquation::Cone(cone), CarrierEquation::Sphere(sphere))
     }
 
-    #[test]
-    fn carrier_intersection_components_refuse_before_vec_growth() {
-        let (cone, sphere) = cone_sphere_circle_carriers();
-        let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root fits the collection policy");
-            super::carrier_intersection_components(&ctx, cone, sphere)
-        };
-        assert!(
-            matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo carrier intersection components")
-        );
-        assert!(!run(u64::MAX)
-            .expect("service budget admits the circle")
-            .is_empty());
-    }
+
 
     #[test]
     fn plane_carrier_component_intersections_refuse_before_vec_growth() {
@@ -304,13 +271,8 @@ mod tests {
                 .expect("empty root fits the collection policy");
             super::intersect_plane_with_carrier_components(&ctx, plane, cone, sphere)
         };
-        let limit = (0..64)
-            .find(|limit| {
-                matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo plane-carrier component intersections")
-            })
-            .expect("the carrier circle reaches the output boundary");
+        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems,
+            Some("creo plane-carrier component intersections"), run);
         assert!(
             matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
