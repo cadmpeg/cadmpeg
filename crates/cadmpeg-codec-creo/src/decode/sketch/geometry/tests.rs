@@ -105,10 +105,15 @@ fn saved_profile_entity_identity_refuses_retained_limit() {
 }
 
 fn saved_profile_refuses_at_collection_boundary(operation: &'static str) {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
-        let (sketch, geometries) = saved_profile_fixture();
-        super::saved_profile_chains(ctx, &sketch, &geometries)
-    });
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let (sketch, geometries) = saved_profile_fixture();
+            super::saved_profile_chains(ctx, &sketch, &geometries)
+        },
+    );
 }
 
 macro_rules! saved_profile_collection_limit_test {
