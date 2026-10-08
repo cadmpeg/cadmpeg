@@ -1352,10 +1352,17 @@ fn string_records(
             }
             if scope.declaration(value.attribute_id)
                 .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
-                && array_dimensions(ctx, &data[value.payload.clone()])?.is_some()
             {
-                active_storage.with_storage(|| ctx.reserve_vec(&mut active_arrays, 1, "creo legacy active string arrays"))?;
-                active_arrays.push((value.depth, value.offset, value.attribute_id));
+                let (dimensions, dimension_storage) = ctx.with_scoped_storage(
+                    "creo legacy string array recognition storage",
+                    || array_dimensions(ctx, &data[value.payload.clone()]),
+                )?;
+                let is_array = dimensions.is_some();
+                drop((dimensions, dimension_storage));
+                if is_array {
+                    active_storage.with_storage(|| ctx.reserve_vec(&mut active_arrays, 1, "creo legacy active string arrays"))?;
+                    active_arrays.push((value.depth, value.offset, value.attribute_id));
+                }
             }
         }
 

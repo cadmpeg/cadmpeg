@@ -152,7 +152,7 @@ fn prototype_topology_row_aggregation_refuses_before_vec_growth() {
         crate::container::append_topology_rows(
             &ctx,
             &mut rows,
-            [topology_row_fixture(7)].into_iter(),
+            ctx.admit_iter([topology_row_fixture(7)], "creo topology row append traversal")?,
             "creo prototype topology row aggregation",
         )?;
         Ok::<_, cadmpeg_core::CodecError>(rows)

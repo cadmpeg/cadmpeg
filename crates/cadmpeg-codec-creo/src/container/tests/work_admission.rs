@@ -142,7 +142,7 @@ fn appended_topology_row_deduplication_refuses_work() {
             super::super::append_topology_rows(
                 ctx,
                 &mut rows,
-                std::iter::empty(),
+                ctx.admit_iter([], "creo topology row append traversal")?,
                 "creo test topology aggregation",
             )
         },
@@ -239,4 +239,53 @@ fn native_model_name_search_stops_before_unvisited_sections() {
     assert_eq!(one, boundary(&sections));
     let name = crate::decode::with_test_decode_ctx(|ctx| super::super::native_model_name(ctx, &sections)).expect("search");
     assert_eq!(name, Some(("part".into(), 11)));
+}
+
+#[test]
+fn legacy_witness_merges_admit_each_source_before_copying() {
+    let source_topology = [crate::curve::CurveTopologyRow {
+        id: 7,
+        type_byte: 0x13,
+        feature_id: 1,
+        directions: [0; 2],
+        faces: [None; 2],
+        next_edges: [0; 2],
+        offset: 7,
+    }];
+    let source_pcurves = [crate::curve::PcurveEndpoints {
+        curve_id: 7,
+        faces: [None; 2],
+        face_0_endpoints: [[0.0; 2]; 2],
+        face_1_endpoints: [[0.0; 2]; 2],
+        offset: 7,
+    }];
+    let (topology, pcurves) = crate::test_support::assert_work_boundaries(
+        &["creo topology row append traversal", "creo legacy pcurve append traversal"],
+        |ctx| {
+            let mut topology = Vec::new();
+            let mut pcurves = Vec::new();
+            super::super::append_legacy_curve_witnesses(
+                ctx, &mut topology, &mut pcurves, &source_topology, &source_pcurves,
+            )?;
+            Ok((topology, pcurves))
+        },
+    );
+    assert_eq!(topology, source_topology);
+    assert_eq!(pcurves, source_pcurves);
+}
+
+#[test]
+fn primitive_scalar_merge_admits_the_decoded_rows() {
+    let bytes = b"\xe0\x06p1\0\xf8\x01\0";
+    let section = super::super::ExpandedSection {
+        name: "SolidPrimdata".into(),
+        source_offset: 0,
+        compressed_length: bytes.len(),
+        data: bytes.to_vec(),
+    };
+    let scan = crate::test_support::assert_work_boundaries(
+        &["creo primitive scalar append traversal"],
+        |ctx| super::super::scan_primitives(ctx, std::slice::from_ref(&section)),
+    );
+    assert_eq!(scan.scalar_arrays.len(), 1);
 }
