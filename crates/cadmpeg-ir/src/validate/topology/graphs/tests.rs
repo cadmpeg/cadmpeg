@@ -106,3 +106,64 @@ fn radial_ring_crossing_keeps_error_order_and_owner() {
     assert_eq!(findings[0].message, "radial ring crosses edges");
     assert_eq!(findings[1].message, "radial ring does not close");
 }
+
+#[test]
+fn shell_connectivity_preserves_incidence_and_shell_ownership() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    ir.model.coedges.clear();
+    let vertices = ["test:model:vertex#a", "test:model:vertex#b"];
+    for (index, loop_) in ir.model.loops.iter_mut().enumerate() {
+        loop_.boundary = crate::topology::LoopBoundary::Vertex {
+            vertex: vertices[usize::from(index > 1)].try_into().unwrap(),
+            pcurves: Vec::new(),
+        };
+    }
+    let mut bridge = ir.model.loops[1].clone();
+    bridge.id = "test:model:loop#bridge".try_into().unwrap();
+    bridge.boundary = crate::topology::LoopBoundary::Vertex {
+        vertex: vertices[1].try_into().unwrap(),
+        pcurves: Vec::new(),
+    };
+    ir.model.loops.push(bridge.clone());
+    // Repeated incidences do not change connectivity.
+    bridge.id = "test:model:loop#bridge-repeat".try_into().unwrap();
+    ir.model.loops.push(bridge);
+    let original = ir.model.shells[0].clone();
+    for (members, disconnected) in [
+        (vec![ir.model.faces[0].id.clone(), ir.model.faces[2].id.clone()], true),
+        (vec![ir.model.faces[0].id.clone(), ir.model.faces[1].id.clone(), ir.model.faces[2].id.clone()], false),
+        (original.faces().to_vec(), false),
+    ] {
+        ir.model.shells[0] = crate::topology::Shell::with_faces(
+            original.id.clone(), original.region.clone(), members,
+        ).unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut findings = Vec::new();
+        super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
+        assert_eq!(findings.len(), usize::from(disconnected));
+        if disconnected {
+            assert_eq!(findings[0].check, Check::ShellTopology);
+            assert_eq!(findings[0].severity, Severity::Error);
+            assert_eq!(findings[0].entity.as_deref(), Some(original.id.as_str()));
+            assert_eq!(findings[0].message, "shell faces are disconnected through shared edges or vertices");
+        }
+    }
+}
+
+#[test]
+fn shell_connectivity_uses_shared_edges_without_endpoint_records() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let template = ir.model.coedges[0].clone();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    for (index, face) in ir.model.faces.iter().enumerate() {
+        let mut coedge = template.clone();
+        coedge.id = format!("test:model:coedge#{index}").try_into().unwrap();
+        coedge.owner_loop = ir.model.loops.iter().find(|loop_| loop_.face == face.id).unwrap().id.clone();
+        ir.model.coedges.push(coedge);
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut findings = Vec::new();
+    super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
+    assert!(findings.is_empty());
+}
