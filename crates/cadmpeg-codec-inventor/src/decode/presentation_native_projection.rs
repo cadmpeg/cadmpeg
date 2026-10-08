@@ -157,6 +157,11 @@ pub(super) fn project(
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(CodecError::Malformed(detail)) => {
                 ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
+                ctx.reserve_capacity(
+                    &mut inventory.issues,
+                    1,
+                    "collect Inventor rendering conversion issue",
+                )?;
                 ctx.push_vec(
                     &mut inventory.issues,
                     RecordIssue {
@@ -166,7 +171,10 @@ pub(super) fn project(
                             .segment_token
                             .try_clone_for_decode(ctx, "retain Inventor rendering issue token")?,
                         record_ordinal: style.identity.record_ordinal,
-                        detail,
+                        detail: ctx.copy_retained_text(
+                            &detail,
+                            "retain Inventor rendering issue detail",
+                        )?,
                     },
                     "collect Inventor rendering conversion issue",
                 )?;
