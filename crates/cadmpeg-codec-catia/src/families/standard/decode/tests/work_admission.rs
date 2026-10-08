@@ -306,6 +306,7 @@ fn procedural_support_lookup_uses_the_stored_arena_index() {
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &mut surfaces,
             &mut supports,
+            &mut ctx.reserve_scoped(0, "test support map").expect("scope"),
             7,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             &mut admission,

@@ -345,12 +345,13 @@ impl StandardTopologyDraft {
         face_groups: &[usize],
     ) -> Result<Option<Vec<BodyKind>>, CodecError> {
         let mut remaining = self.faces.as_slice();
+        let mut storage = ctx.reserve_scoped(0, "catia_body_group_slices")?;
         let mut groups = Vec::new();
         for &count in ctx.admit_iter(face_groups, "catia_body_group_slices")? {
             let Some((group, rest)) = remaining.split_at_checked(count) else {
                 return Ok(None);
             };
-            ctx.push_vec(&mut groups, group, "catia_body_group_slices")?;
+            ctx.push_scoped_vec(&mut storage, &mut groups, group, "catia_body_group_slices")?;
             remaining = rest;
         }
         if !remaining.is_empty() {
@@ -367,18 +368,21 @@ impl StandardTopologyDraft {
         face_groups: &[usize],
     ) -> Result<Option<()>, CodecError> {
         let mut remaining = self.faces.as_mut_slice();
+        let mut storage = ctx.reserve_scoped(0, "catia_body_group_slices")?;
         let mut groups = Vec::new();
         for &count in ctx.admit_iter(face_groups, "catia_body_group_slices")? {
             let Some((group, rest)) = remaining.split_at_mut_checked(count) else {
                 return Ok(None);
             };
-            ctx.push_vec(&mut groups, group, "catia_body_group_slices")?;
+            ctx.push_scoped_vec(&mut storage, &mut groups, group, "catia_body_group_slices")?;
             remaining = rest;
         }
         if !remaining.is_empty() {
             return Ok(None);
         }
-        let Some(kinds) = classify_body_groups(ctx, &groups, self.edge_rows.len())? else {
+        let Some(kinds) =
+            storage.with_storage(|| classify_body_groups(ctx, &groups, self.edge_rows.len()))?
+        else {
             return Ok(None);
         };
         for (index, &kind) in ctx
@@ -405,13 +409,13 @@ impl StandardTopologyDraft {
         {
             return Ok(None);
         }
-        let Some(edge_vertices) = self.edge_vertices(ctx)? else {
+        let mut storage = ctx.reserve_scoped(0, "catia standard vertex point domains")?;
+        let Some(edge_vertices) = storage.with_storage(|| self.edge_vertices(ctx))? else {
             return Ok(None);
         };
         // A vertex's domain is the intersection of the endpoint pairs of its
         // edges; a vertex on no edge may take any point.
         let point_count = self.vertex_points.len();
-        let mut storage = ctx.reserve_scoped(0, "catia standard vertex point domains")?;
         let mut constrained = storage.with_storage(|| {
             ctx.alloc_filled(
                 self.logical_vertex_count,
@@ -419,10 +423,9 @@ impl StandardTopologyDraft {
                 "catia standard vertex point domains",
             )
         })?;
-        for (edge, pair) in ctx
-            .admit_iter(&edge_vertices, "catia standard vertex point domains")?
-            .copied()
-            .zip(edge_point_pairs)
+        let mut pairs = edge_vertices.iter().copied().zip(edge_point_pairs);
+        while let Some((edge, pair)) =
+            ctx.next_charged(&mut pairs, "catia standard vertex point domains")?
         {
             if pair[0] >= point_count || pair[1] >= point_count {
                 return Ok(None);
@@ -444,7 +447,8 @@ impl StandardTopologyDraft {
         }
         let domains = storage.with_storage(|| {
             ctx.try_collect_vec(
-                ctx.admit_iter(&constrained, "catia standard vertex point domain entries")?
+                constrained
+                    .iter()
                     .map(|domain| -> Result<BTreeSet<usize>, CodecError> {
                         let mut points = BTreeSet::new();
                         match domain {
@@ -483,34 +487,51 @@ impl StandardTopologyDraft {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-        let mut edge_vertices =
-            ctx.alloc_filled(self.edge_rows.len(), None, "catia standard edge vertices")?;
-        for face in ctx.admit_iter(&self.faces, "catia standard edge vertices")? {
-            for boundary in ctx.admit_iter(&face.boundaries, "catia standard edge vertices")? {
-                for coedge in
-                    ctx.admit_iter(boundary.coedges.as_slice(), "catia standard edge vertices")?
-                {
-                    let endpoints = if coedge.reversed {
-                        [coedge.end_vertex, coedge.start_vertex]
-                    } else {
-                        [coedge.start_vertex, coedge.end_vertex]
-                    };
-                    let Some(slot) = edge_vertices.get_mut(coedge.edge_row) else {
-                        return Ok(None);
-                    };
-                    match *slot {
-                        Some(previous) if previous != endpoints => return Ok(None),
-                        Some(_) => {}
-                        None => *slot = Some(endpoints),
-                    }
-                }
-            }
+        let mut storage = ctx.reserve_scoped(0, "catia standard edge vertices")?;
+        let mut edge_vertices = storage.with_storage(|| {
+            ctx.alloc_filled(self.edge_rows.len(), None, "catia standard edge vertices")
+        })?;
+        if !ctx.all_by(
+            &self.faces,
+            |face| {
+                ctx.all_by(
+                    &face.boundaries,
+                    |boundary| {
+                        ctx.all_by(
+                            boundary.coedges.as_slice(),
+                            |coedge| {
+                                let endpoints = if coedge.reversed {
+                                    [coedge.end_vertex, coedge.start_vertex]
+                                } else {
+                                    [coedge.start_vertex, coedge.end_vertex]
+                                };
+                                let Some(slot) = edge_vertices.get_mut(coedge.edge_row) else {
+                                    return Ok(false);
+                                };
+                                match *slot {
+                                    Some(previous) if previous != endpoints => Ok(false),
+                                    Some(_) => Ok(true),
+                                    None => {
+                                        *slot = Some(endpoints);
+                                        Ok(true)
+                                    }
+                                }
+                            },
+                            "catia standard edge vertices",
+                        )
+                    },
+                    "catia standard edge vertices",
+                )
+            },
+            "catia standard edge vertices",
+        )? {
+            return Ok(None);
         }
 
         let mut complete = Vec::new();
-        for vertices in ctx
-            .admit_iter(&edge_vertices, "catia_standard_edge_vertices_complete")?
-            .copied()
+        let mut values = edge_vertices.iter().copied();
+        while let Some(vertices) =
+            ctx.next_charged(&mut values, "catia_standard_edge_vertices_complete")?
         {
             let Some(vertices) = vertices else {
                 return Ok(None);
@@ -1645,17 +1666,20 @@ pub(crate) fn orient_face_cycles(
             boundary.coedges.as_slice(),
             "catia_standard_orientation_edge_uses",
         )? {
-            ctx.push_btree_group(
-                &mut edge_uses,
-                coedge.edge_row,
-                (node, coedge.reversed),
-                "catia_standard_orientation_edge_uses",
-                "catia_standard_orientation_edge_use_entries",
-            )?;
+            storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut edge_uses,
+                    coedge.edge_row,
+                    (node, coedge.reversed),
+                    "catia_standard_orientation_edge_uses",
+                    "catia_standard_orientation_edge_use_entries",
+                )
+            })?;
         }
     }
-    let Some(flips) =
-        solve_boundary_orientation_constraints(ctx, boundaries.len(), &edge_uses, true)?
+    let Some(flips) = storage.with_storage(|| {
+        solve_boundary_orientation_constraints(ctx, boundaries.len(), &edge_uses, true)
+    })?
     else {
         return Ok(None);
     };
@@ -1686,12 +1710,18 @@ pub(crate) fn solve_boundary_orientation_constraints(
     edge_uses: &BTreeMap<usize, Vec<(usize, bool)>>,
     require_paired_uses: bool,
 ) -> Result<Option<Vec<bool>>, CodecError> {
-    let mut constraints = ctx.collect_indexed_vec(
-        boundary_count,
-        "catia standard boundary constraints",
-        |_| Ok(Vec::<(usize, bool)>::new()),
-    )?;
-    for (_, uses) in ctx.admit_iter(edge_uses, "catia_standard_boundary_constraint_sources")? {
+    let mut storage = ctx.reserve_scoped(0, "catia_standard_boundary_working_state")?;
+    let mut constraints = storage.with_storage(|| {
+        ctx.collect_indexed_vec(
+            boundary_count,
+            "catia standard boundary constraints",
+            |_| Ok(Vec::<(usize, bool)>::new()),
+        )
+    })?;
+    let mut uses_iter = edge_uses.iter();
+    while let Some((_, uses)) =
+        ctx.next_charged(&mut uses_iter, "catia_standard_boundary_constraint_sources")?
+    {
         let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
             if !require_paired_uses && uses.len() == 1 {
                 continue;
@@ -1707,12 +1737,14 @@ pub(crate) fn solve_boundary_orientation_constraints(
                 return Ok(None);
             }
         } else {
-            ctx.push_vec(
+            ctx.push_scoped_vec(
+                &mut storage,
                 &mut constraints[*left_node],
                 (*right_node, parity),
                 "catia_standard_boundary_constraint_entries",
             )?;
-            ctx.push_vec(
+            ctx.push_scoped_vec(
+                &mut storage,
                 &mut constraints[*right_node],
                 (*left_node, parity),
                 "catia_standard_boundary_constraint_entries",
@@ -1720,7 +1752,8 @@ pub(crate) fn solve_boundary_orientation_constraints(
         }
     }
 
-    let mut flips = ctx.alloc_filled(boundary_count, None, "catia standard boundary flips")?;
+    let mut flips = storage
+        .with_storage(|| ctx.alloc_filled(boundary_count, None, "catia standard boundary flips"))?;
     let mut result = Vec::new();
     for (root, _) in ctx
         .admit_iter(&constraints, "catia_standard_boundary_roots")?
@@ -1731,11 +1764,18 @@ pub(crate) fn solve_boundary_orientation_constraints(
             continue;
         }
         flips[root] = Some(false);
+        let mut stack_storage = ctx.reserve_scoped(0, "catia_standard_boundary_stack")?;
         let mut stack = Vec::new();
-        ctx.push_vec(&mut stack, (root, false), "catia_standard_boundary_stack")?;
+        ctx.push_scoped_vec(
+            &mut stack_storage,
+            &mut stack,
+            (root, false),
+            "catia_standard_boundary_stack",
+        )?;
         while let Some((face, flip)) = stack.pop() {
-            for &(neighbor, parity) in
-                ctx.admit_iter(&constraints[face], "catia_standard_boundary_stack")?
+            let mut neighbors = constraints[face].iter();
+            while let Some(&(neighbor, parity)) =
+                ctx.next_charged(&mut neighbors, "catia_standard_boundary_stack")?
             {
                 let required = flip ^ parity;
                 match flips[neighbor] {
@@ -1743,7 +1783,8 @@ pub(crate) fn solve_boundary_orientation_constraints(
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
-                        ctx.push_vec(
+                        ctx.push_scoped_vec(
+                            &mut stack_storage,
                             &mut stack,
                             (neighbor, required),
                             "catia_standard_boundary_stack",

@@ -45,21 +45,24 @@ pub(super) fn standard_face_count(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<usize>, CodecError> {
-    let Some(selected) = selected_standard_run(ctx, bytes)? else {
-        return Ok(None);
-    };
-    let layouts = fbb_population_layouts(ctx, bytes)?;
-    if layouts.is_empty()
-        || ctx.any_by(
-            &layouts,
-            |layout| Ok(layout.face_run == selected),
-            "catia_standard_iteration",
-        )?
-    {
-        Ok(Some(selected.face_count()))
-    } else {
-        Ok(None)
-    }
+    let mut storage = ctx.reserve_scoped(0, "catia_standard_count_working_state")?;
+    storage.with_storage(|| -> Result<_, CodecError> {
+        let Some(selected) = selected_standard_run(ctx, bytes)? else {
+            return Ok(None);
+        };
+        let layouts = fbb_population_layouts(ctx, bytes)?;
+        if layouts.is_empty()
+            || ctx.any_by(
+                &layouts,
+                |layout| Ok(layout.face_run == selected),
+                "catia_standard_iteration",
+            )?
+        {
+            Ok(Some(selected.face_count()))
+        } else {
+            Ok(None)
+        }
+    })
 }
 
 /// Number of physical edge rows in the admitted standard edge-table form.
@@ -70,11 +73,14 @@ pub(crate) fn standard_edge_count(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<usize>, CodecError> {
-    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
-        return Ok(None);
-    };
-    let after_faces = face_run.after_faces();
-    Ok(parse_standard_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _)| rows.len()))
+    let mut storage = ctx.reserve_scoped(0, "catia_standard_count_working_state")?;
+    storage.with_storage(|| -> Result<_, CodecError> {
+        let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+            return Ok(None);
+        };
+        let after_faces = face_run.after_faces();
+        Ok(parse_standard_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _)| rows.len()))
+    })
 }
 
 /// Number of physical edge rows in the width-selected FBB-only tables.
@@ -82,11 +88,14 @@ pub(crate) fn fbb_only_edge_count(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<usize>, CodecError> {
-    let Some(face_run) = largest_fbb_run(ctx, bytes)? else {
-        return Ok(None);
-    };
-    let after_faces = face_run.after_faces();
-    Ok(parse_fbb_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _, _, _)| rows.len()))
+    let mut storage = ctx.reserve_scoped(0, "catia_standard_count_working_state")?;
+    storage.with_storage(|| -> Result<_, CodecError> {
+        let Some(face_run) = largest_fbb_run(ctx, bytes)? else {
+            return Ok(None);
+        };
+        let after_faces = face_run.after_faces();
+        Ok(parse_fbb_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _, _, _)| rows.len()))
+    })
 }
 
 /// RGBA display color for each positional standard face row.
@@ -162,13 +171,20 @@ fn trim_frame_vectors(
     face_start: usize,
     face_count: usize,
 ) -> Result<Option<Vec<Option<FiniteVector<3>>>>, CodecError> {
-    let mut solutions = Vec::new();
-    for width in [1, 2, 3] {
-        if let Some(records) = parse_trim_chain(ctx, bytes, face_start, face_count, width)? {
-            ctx.push_vec(&mut solutions, records, "catia_trim_width_solutions")?;
+    let mut storage = ctx.reserve_scoped(0, "catia_trim_frame_working_state")?;
+    let Some(records) = storage.with_storage(|| -> Result<_, CodecError> {
+        let mut solutions = Vec::new();
+        for width in [1, 2, 3] {
+            if let Some(records) = parse_trim_chain(ctx, bytes, face_start, face_count, width)? {
+                ctx.push_vec(&mut solutions, records, "catia_trim_width_solutions")?;
+            }
         }
-    }
-    let Ok([records]) = <[Vec<TrimRecord>; 1]>::try_from(solutions) else {
+        let Ok([records]) = <[Vec<TrimRecord>; 1]>::try_from(solutions) else {
+            return Ok(None);
+        };
+        Ok(Some(records))
+    })?
+    else {
         return Ok(None);
     };
     let mut vectors = Vec::new();
@@ -191,18 +207,25 @@ pub(super) fn standard_face_frame_vectors(
     bytes: &[u8],
     expected_face_count: usize,
 ) -> Result<Vec<Option<FiniteVector<3>>>, CodecError> {
-    let runs = crate::container::fbb_run_ranges(ctx, bytes)?;
+    let mut storage = ctx.reserve_scoped(0, "catia_trim_population_working_state")?;
+    let runs = storage.with_storage(|| crate::container::fbb_run_ranges(ctx, bytes))?;
     if runs.len() > 1 {
         let mut combined = Vec::new();
         let mut complete = true;
         for range in ctx.admit_iter(&runs, "catia_standard_iteration")? {
-            let Some(vectors) =
-                trim_frame_vectors(ctx, bytes, range.start, range.len() / fbb_row::LEN)?
+            let Some(vectors) = storage.with_storage(|| {
+                trim_frame_vectors(ctx, bytes, range.start, range.len() / fbb_row::LEN)
+            })?
             else {
                 complete = false;
                 break;
             };
-            ctx.push_vec(&mut combined, vectors, "catia_trim_population_frames")?;
+            ctx.push_scoped_vec(
+                &mut storage,
+                &mut combined,
+                vectors,
+                "catia_trim_population_frames",
+            )?;
         }
         if complete {
             let mut combined_len = 0_usize;
@@ -443,86 +466,96 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
     if !deferred_edges.is_empty() && deferred_edges.len() != edge_candidates.len() {
         return Ok(None);
     }
-    let mut effective_deferred = if deferred_edges.is_empty() {
-        ctx.alloc_filled(
-            edge_candidates.len(),
-            false,
-            "catia_port_effective_deferred",
-        )?
-    } else {
-        ctx.copy_slice(deferred_edges, "catia_port_effective_deferred")?
-    };
-    if !expand_deferred_edge_port_components(ctx, edge_ports, &mut effective_deferred)? {
-        return Ok(None);
-    }
-    let is_deferred = |edge: usize| effective_deferred[edge];
-    let mut all_points = HashSet::new();
-    for candidates in ctx.admit_iter(edge_candidates, "catia_standard_iteration")? {
-        for pair in ctx.admit_iter(candidates, "catia_standard_iteration")? {
-            for point in *pair {
-                ctx.insert_hash_set(&mut all_points, point, "catia_port_all_points")?;
-            }
-        }
-    }
-    // Every deferred edge shares the one all-points domain; the quotient
-    // never edits a domain in place.
-    let all_points = Arc::new(all_points);
-    let mut domains = Vec::new();
-    for (edge, candidates) in ctx
-        .admit_iter(edge_candidates, "catia_standard_iteration")?
-        .enumerate()
-    {
-        let domain = if is_deferred(edge) {
-            Arc::clone(&all_points)
+    let mut storage = ctx.reserve_scoped(0, "catia_port_working_state")?;
+    let Some(mut quotient) = storage.with_storage(|| -> Result<_, CodecError> {
+        let mut effective_deferred = if deferred_edges.is_empty() {
+            ctx.alloc_filled(
+                edge_candidates.len(),
+                false,
+                "catia_port_effective_deferred",
+            )?
         } else {
-            let mut points = HashSet::new();
+            ctx.copy_slice(deferred_edges, "catia_port_effective_deferred")?
+        };
+        if !expand_deferred_edge_port_components(ctx, edge_ports, &mut effective_deferred)? {
+            return Ok(None);
+        }
+        let is_deferred = |edge: usize| effective_deferred[edge];
+        let mut all_points = HashSet::new();
+        for candidates in ctx.admit_iter(edge_candidates, "catia_standard_iteration")? {
             for pair in ctx.admit_iter(candidates, "catia_standard_iteration")? {
                 for point in *pair {
-                    ctx.insert_hash_set(&mut points, point, "catia_port_candidate_domain")?;
+                    ctx.insert_hash_set(&mut all_points, point, "catia_port_all_points")?;
                 }
             }
-            Arc::new(points)
-        };
-        ctx.push_vec(&mut domains, domain.clone(), "catia_port_domains")?;
-        ctx.push_vec(&mut domains, domain, "catia_port_domains")?;
-    }
-    let mut quotient = MeshQuotient::new_charged(ctx, domains)?;
-    let mut node_by_port = HashMap::new();
-    for (edge, ports) in ctx
-        .admit_iter(edge_ports, "catia_standard_iteration")?
-        .enumerate()
-    {
-        for (endpoint, port) in ports.iter().copied().enumerate() {
-            let node = edge * 2 + endpoint;
-            if let Some(&previous) = ctx.get_hash_map(&node_by_port, &port, "catia_port_nodes")? {
-                if quotient.merge_charged(ctx, previous, node)?.is_none() {
-                    return Ok(None);
-                }
+        }
+        // Every deferred edge shares the one all-points domain; the quotient
+        // never edits a domain in place.
+        let all_points = Arc::new(all_points);
+        let mut domains = Vec::new();
+        for (edge, candidates) in ctx
+            .admit_iter(edge_candidates, "catia_standard_iteration")?
+            .enumerate()
+        {
+            let domain = if is_deferred(edge) {
+                Arc::clone(&all_points)
             } else {
-                ctx.insert_hash_map(&mut node_by_port, port, node, "catia_port_nodes")?;
+                let mut points = HashSet::new();
+                for pair in ctx.admit_iter(candidates, "catia_standard_iteration")? {
+                    for point in *pair {
+                        ctx.insert_hash_set(&mut points, point, "catia_port_candidate_domain")?;
+                    }
+                }
+                Arc::new(points)
+            };
+            ctx.push_vec(&mut domains, domain.clone(), "catia_port_domains")?;
+            ctx.push_vec(&mut domains, domain, "catia_port_domains")?;
+        }
+        let mut quotient = MeshQuotient::new_charged(ctx, domains)?;
+        let mut node_by_port = HashMap::new();
+        for (edge, ports) in ctx
+            .admit_iter(edge_ports, "catia_standard_iteration")?
+            .enumerate()
+        {
+            for (endpoint, port) in ports.iter().copied().enumerate() {
+                let node = edge * 2 + endpoint;
+                if let Some(&previous) =
+                    ctx.get_hash_map(&node_by_port, &port, "catia_port_nodes")?
+                {
+                    if quotient.merge_charged(ctx, previous, node)?.is_none() {
+                        return Ok(None);
+                    }
+                } else {
+                    ctx.insert_hash_map(&mut node_by_port, port, node, "catia_port_nodes")?;
+                }
             }
         }
-    }
-    let mut constrained_candidates = Vec::new();
-    ctx.reserve_vec(
-        &mut constrained_candidates,
-        edge_candidates.len(),
-        "catia_port_constrained_edges",
-    )?;
-    for candidates in ctx.admit_iter(edge_candidates, "catia_standard_iteration")? {
-        constrained_candidates.push(ctx.copy_slice(candidates, "catia_port_constrained_pairs")?);
-    }
-    for (edge, candidates) in ctx
-        .admit_iter(&mut constrained_candidates, "catia_port_constrained_edges")?
-        .enumerate()
-    {
-        if is_deferred(edge) {
-            ctx.clear_vec(candidates, "catia_port_constrained_edges")?;
+        let mut constrained_candidates = Vec::new();
+        ctx.reserve_vec(
+            &mut constrained_candidates,
+            edge_candidates.len(),
+            "catia_port_constrained_edges",
+        )?;
+        for candidates in ctx.admit_iter(edge_candidates, "catia_standard_iteration")? {
+            constrained_candidates
+                .push(ctx.copy_slice(candidates, "catia_port_constrained_pairs")?);
         }
-    }
-    if !quotient.edge_domains_viable(ctx, &constrained_candidates)? {
+        for (edge, candidates) in ctx
+            .admit_iter(&mut constrained_candidates, "catia_port_constrained_edges")?
+            .enumerate()
+        {
+            if is_deferred(edge) {
+                ctx.clear_vec(candidates, "catia_port_constrained_edges")?;
+            }
+        }
+        if !quotient.edge_domains_viable(ctx, &constrained_candidates)? {
+            return Ok(None);
+        }
+        Ok(Some(quotient))
+    })?
+    else {
         return Ok(None);
-    }
+    };
     let mut result = Vec::new();
     for (edge, candidates) in ctx
         .admit_iter(edge_candidates, "catia_standard_iteration")?
@@ -1300,57 +1333,62 @@ pub(super) fn fbb_population_layouts(
     bytes: &[u8],
 ) -> Result<Vec<FbbPopulationLayout>, CodecError> {
     let mut layouts = Vec::new();
-    let ranges = crate::container::fbb_run_ranges(ctx, bytes)?;
+    let mut range_storage = ctx.reserve_scoped(0, "catia_fbb_population_ranges")?;
+    let ranges = range_storage.with_storage(|| crate::container::fbb_run_ranges(ctx, bytes))?;
     for range in ctx.admit_iter(&ranges, "catia_standard_iteration")? {
-        let Some(face_run) = FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN) else {
-            continue;
-        };
-        let after_faces = face_run.after_faces();
-        let parsed = parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?.map(
-            |(rows, vertex_header, handle_width)| {
-                (rows, vertex_header, handle_width, EdgeTableForm::Standard)
-            },
-        );
-        let parsed = if parsed.is_some() {
-            parsed
-        } else {
-            parse_fbb_edge_tables(ctx, bytes, after_faces)?.map(
-                |(rows, _, vertex_header, handle_width)| {
-                    (rows, vertex_header, handle_width, EdgeTableForm::FbbOnly)
+        let mut probe_storage = ctx.reserve_scoped(0, "catia_fbb_population_probe")?;
+        let Some(layout) = probe_storage.with_storage(|| -> Result<_, CodecError> {
+            let Some(face_run) = FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN)
+            else {
+                return Ok(None);
+            };
+            let after_faces = face_run.after_faces();
+            let parsed = parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?.map(
+                |(rows, vertex_header, handle_width)| {
+                    (rows, vertex_header, handle_width, EdgeTableForm::Standard)
                 },
-            )
-        };
-        let Some((edge_rows, vertex_header, handle_width, edge_table_form)) = parsed else {
-            continue;
-        };
-        if vertex_table_end(ctx, bytes, vertex_header)?.is_none() {
-            continue;
-        }
-        let mut count_position = vertex_header + 2;
-        let Some(vertex_count) = parse_count(bytes, &mut count_position) else {
-            continue;
-        };
-        if parse_trim_chain(
-            ctx,
-            bytes,
-            face_run.face_start(),
-            face_run.face_count(),
-            handle_width,
-        )?
-        .is_none()
-        {
-            continue;
-        }
-        ctx.push_vec(
-            &mut layouts,
-            FbbPopulationLayout {
+            );
+            let parsed = if parsed.is_some() {
+                parsed
+            } else {
+                parse_fbb_edge_tables(ctx, bytes, after_faces)?.map(
+                    |(rows, _, vertex_header, handle_width)| {
+                        (rows, vertex_header, handle_width, EdgeTableForm::FbbOnly)
+                    },
+                )
+            };
+            let Some((edge_rows, vertex_header, handle_width, edge_table_form)) = parsed else {
+                return Ok(None);
+            };
+            if vertex_table_end(ctx, bytes, vertex_header)?.is_none() {
+                return Ok(None);
+            }
+            let mut count_position = vertex_header + 2;
+            let Some(vertex_count) = parse_count(bytes, &mut count_position) else {
+                return Ok(None);
+            };
+            if parse_trim_chain(
+                ctx,
+                bytes,
+                face_run.face_start(),
+                face_run.face_count(),
+                handle_width,
+            )?
+            .is_none()
+            {
+                return Ok(None);
+            }
+            Ok(Some(FbbPopulationLayout {
                 face_run,
                 edge_count: edge_rows.len(),
                 vertex_count,
                 edge_table_form,
-            },
-            "catia_fbb_population_layouts",
-        )?;
+            }))
+        })?
+        else {
+            continue;
+        };
+        ctx.push_vec(&mut layouts, layout, "catia_fbb_population_layouts")?;
     }
     Ok(layouts)
 }
@@ -1361,39 +1399,46 @@ fn parse_standard_group(
     face_start: usize,
     face_count: usize,
 ) -> Result<Option<FbbFaceRun>, CodecError> {
-    let Some(face_run) = FbbFaceRun::try_new(face_start, face_count) else {
-        return Ok(None);
-    };
-    let after_faces = face_run.after_faces();
-    let Some((edge_rows, vertex_header, handle_width)) =
-        parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?
-    else {
-        return Ok(None);
-    };
-    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
-        return Ok(None);
-    };
-    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
-        return Ok(None);
-    };
-    Ok(reconstruct(ctx, edge_rows, vertex_points, &trims)?.map(|_| face_run))
+    let mut storage = ctx.reserve_scoped(0, "catia_fbb_run_working_state")?;
+    storage.with_storage(|| -> Result<_, CodecError> {
+        let Some(face_run) = FbbFaceRun::try_new(face_start, face_count) else {
+            return Ok(None);
+        };
+        let after_faces = face_run.after_faces();
+        let Some((edge_rows, vertex_header, handle_width)) =
+            parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?
+        else {
+            return Ok(None);
+        };
+        let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
+            return Ok(None);
+        };
+        let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)?
+        else {
+            return Ok(None);
+        };
+        Ok(reconstruct(ctx, edge_rows, vertex_points, &trims)?.map(|_| face_run))
+    })
 }
 
 pub(crate) fn selected_standard_run(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<FbbFaceRun>, CodecError> {
-    let ranges = crate::container::fbb_run_ranges(ctx, bytes)?;
-    if let [range] = ranges.as_slice() {
-        // A single marker run has no competing population to disambiguate.
-        return Ok(FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN));
-    }
-    let groups = standard_fbb_groups(ctx, bytes, &ranges)?;
-    Ok(match groups.as_slice() {
-        [group] => Some(*group),
-        [] => largest_of_runs(ctx, &ranges)?
-            .and_then(|range| FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN)),
-        _ => None,
+    let mut storage = ctx.reserve_scoped(0, "catia_fbb_run_working_state")?;
+    storage.with_storage(|| -> Result<_, CodecError> {
+        let ranges = crate::container::fbb_run_ranges(ctx, bytes)?;
+        if let [range] = ranges.as_slice() {
+            // A single marker run has no competing population to disambiguate.
+            return Ok(FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN));
+        }
+        let groups = standard_fbb_groups(ctx, bytes, &ranges)?;
+        Ok(match groups.as_slice() {
+            [group] => Some(*group),
+            [] => largest_of_runs(ctx, &ranges)?
+                .and_then(|range| FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN)),
+            _ => None,
+        })
     })
 }
 
@@ -1401,9 +1446,12 @@ pub(crate) fn largest_fbb_run(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<FbbFaceRun>, CodecError> {
-    let ranges = crate::container::fbb_run_ranges(ctx, bytes)?;
-    Ok(largest_of_runs(ctx, &ranges)?
-        .and_then(|range| FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN)))
+    let mut storage = ctx.reserve_scoped(0, "catia_fbb_run_working_state")?;
+    storage.with_storage(|| -> Result<_, CodecError> {
+        let ranges = crate::container::fbb_run_ranges(ctx, bytes)?;
+        Ok(largest_of_runs(ctx, &ranges)?
+            .and_then(|range| FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN)))
+    })
 }
 
 /// The unique longest run; equal-longest runs leave the selection open.
@@ -2215,20 +2263,36 @@ fn parse_trim_chain_start(
     record_count: usize,
     width: usize,
 ) -> Result<Option<(usize, Vec<TrimRecord>)>, CodecError> {
-    let compact =
-        parse_trim_chain_with_length_encoding(ctx, bytes, end, record_count, width, false)?;
-    let wide_u16be = if width == 2 {
-        parse_trim_chain_with_length_encoding(ctx, bytes, end, record_count, width, true)?
+    let mut compact_storage = ctx.reserve_scoped(0, "catia_trim_compact_encoding")?;
+    let compact = compact_storage.with_storage(|| {
+        parse_trim_chain_with_length_encoding(ctx, bytes, end, record_count, width, false)
+    })?;
+    let mut wide_storage = ctx.reserve_scoped(0, "catia_trim_wide_encoding")?;
+    let wide = if width == 2 {
+        wide_storage.with_storage(|| {
+            parse_trim_chain_with_length_encoding(ctx, bytes, end, record_count, width, true)
+        })?
     } else {
         None
     };
-    Ok(match (compact, wide_u16be) {
-        (Some((compact_start, compact)), Some((wide_start, wide))) => (compact_start == wide_start
-            && ctx.equal(&compact, &wide, "catia_trim_chain_encodings")?)
-        .then_some((compact_start, compact)),
-        (Some(records), None) | (None, Some(records)) => Some(records),
-        (None, None) => None,
-    })
+    match (compact, wide) {
+        (Some((a, compact)), Some((b, wide))) => {
+            if a != b || !ctx.equal(&compact, &wide, "catia_trim_chain_encodings")? {
+                return Ok(None);
+            }
+            compact_storage.commit()?;
+            Ok(Some((a, compact)))
+        }
+        (Some(compact), None) => {
+            compact_storage.commit()?;
+            Ok(Some(compact))
+        }
+        (None, Some(wide)) => {
+            wide_storage.commit()?;
+            Ok(Some(wide))
+        }
+        (None, None) => Ok(None),
+    }
 }
 
 fn parse_trim_chain_with_length_encoding(
@@ -2245,7 +2309,10 @@ fn parse_trim_chain_with_length_encoding(
         next_predecessor: usize,
     }
 
-    fn backtrack(frames: &mut Vec<Frame>, reversed: &mut Vec<TrimRecord>) {
+    fn backtrack(
+        frames: &mut Vec<Frame>,
+        reversed: &mut Vec<(TrimRecord, cadmpeg_core::decode::ScopedReservation<'_>)>,
+    ) {
         let had_parent = frames.len() > 1;
         frames.pop();
         if had_parent {
@@ -2269,9 +2336,10 @@ fn parse_trim_chain_with_length_encoding(
         if marker[0] != 0x01 || !TRIM_KINDS.contains(&marker[1]) {
             continue;
         }
-        if let Some(layout) =
-            parse_trim_record_layout_with_length_encoding(ctx, prefix, start, width, wide_u16be)?
-        {
+        let mut layout_storage = ctx.reserve_scoped(0, "catia_trim_predecessor_layout")?;
+        if let Some(layout) = layout_storage.with_storage(|| {
+            parse_trim_record_layout_with_length_encoding(ctx, prefix, start, width, wide_u16be)
+        })? {
             predecessor_storage.with_storage(|| {
                 ctx.push_hash_group(
                     &mut predecessors,
@@ -2284,11 +2352,15 @@ fn parse_trim_chain_with_length_encoding(
         }
     }
 
+    let mut search_storage = ctx.reserve_scoped(0, "catia_trim_search_storage")?;
     let mut solutions = Vec::new();
-    let mut reversed = Vec::<TrimRecord>::new();
-    ctx.reserve_capacity(&mut reversed, record_count, "catia_trim_reversed")?;
+    let mut reversed = Vec::<(TrimRecord, cadmpeg_core::decode::ScopedReservation<'_>)>::new();
+    search_storage.with_storage(|| {
+        ctx.reserve_capacity(&mut reversed, record_count, "catia_trim_reversed")
+    })?;
     let mut frames = Vec::new();
-    ctx.push_vec(
+    ctx.push_scoped_vec(
+        &mut search_storage,
         &mut frames,
         Frame {
             end,
@@ -2301,18 +2373,23 @@ fn parse_trim_chain_with_length_encoding(
         let frame = frames.len() - 1;
         if frames[frame].remaining == 0 {
             let chain_start = frames[frame].end;
-            let mut records = Vec::new();
-            ctx.reserve_vec(&mut records, reversed.len(), "catia_trim_solution_records")?;
-            for record in ctx.admit_iter(&reversed, "catia_standard_iteration")?.rev() {
-                records.push(TrimRecord {
-                    packet: record.packet.try_clone_with_context(ctx)?,
-                    frame_vector: record.frame_vector,
-                    kind: record.kind,
-                });
-            }
-            ctx.push_vec(
+            let mut solution_storage = ctx.reserve_scoped(0, "catia_trim_solution_storage")?;
+            let records = solution_storage.with_storage(|| -> Result<_, CodecError> {
+                let mut records = Vec::new();
+                ctx.reserve_vec(&mut records, reversed.len(), "catia_trim_solution_records")?;
+                for (record, _) in ctx.admit_iter(&reversed, "catia_standard_iteration")?.rev() {
+                    records.push(TrimRecord {
+                        packet: record.packet.try_clone_with_context(ctx)?,
+                        frame_vector: record.frame_vector,
+                        kind: record.kind,
+                    });
+                }
+                Ok(records)
+            })?;
+            ctx.push_scoped_vec(
+                &mut search_storage,
                 &mut solutions,
-                (chain_start, records),
+                (chain_start, records, solution_storage),
                 "catia_trim_solutions",
             )?;
             backtrack(&mut frames, &mut reversed);
@@ -2331,14 +2408,22 @@ fn parse_trim_chain_with_length_encoding(
             continue;
         };
         frames[frame].next_predecessor += 1;
-        let Some(record) =
-            parse_trim_record_with_length_encoding(ctx, prefix, start, width, wide_u16be)?
+        let mut record_storage = ctx.reserve_scoped(0, "catia_trim_record_storage")?;
+        let Some(record) = record_storage.with_storage(|| {
+            parse_trim_record_with_length_encoding(ctx, prefix, start, width, wide_u16be)
+        })?
         else {
             continue;
         };
         let remaining = frames[frame].remaining - 1;
-        ctx.push_vec(&mut reversed, record, "catia_trim_reversed")?;
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut search_storage,
+            &mut reversed,
+            (record, record_storage),
+            "catia_trim_reversed",
+        )?;
+        ctx.push_scoped_vec(
+            &mut search_storage,
             &mut frames,
             Frame {
                 end: start,
@@ -2348,9 +2433,11 @@ fn parse_trim_chain_with_length_encoding(
             "catia_trim_search_frames",
         )?;
     }
-    Ok(<[(usize, Vec<TrimRecord>); 1]>::try_from(solutions)
-        .ok()
-        .map(|[solution]| solution))
+    let Ok([(start, records, solution_storage)]) = <[_; 1]>::try_from(solutions) else {
+        return Ok(None);
+    };
+    solution_storage.commit()?;
+    Ok(Some((start, records)))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2782,70 +2869,82 @@ pub(crate) fn boundary_cycles(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     triangles: &[[u32; 3]],
 ) -> Result<Option<Vec<Vec<u32>>>, cadmpeg_core::CodecError> {
-    let mut edge_directions = BTreeMap::<(u32, u32), u8>::new();
-    for &[a, b, c] in ctx.admit_iter(triangles, "catia_standard_iteration")? {
-        for (start, end) in [(a, b), (b, c), (c, a)] {
-            if start == end {
-                return Ok(None);
-            }
-            let (edge, direction) = if start < end {
-                ((start, end), 1)
-            } else {
-                ((end, start), 2)
-            };
-            if let Some(directions) = ctx.get_mut_btree_map(
-                &mut edge_directions,
-                &edge,
-                "catia_boundary_edge_directions",
-            )? {
-                if *directions & direction != 0 {
+    let mut storage = ctx.reserve_scoped(0, "catia_boundary_working_state")?;
+    let Some(successors) = storage.with_storage(|| -> Result<_, CodecError> {
+        let mut edge_directions = BTreeMap::<(u32, u32), u8>::new();
+        let mut triangles = triangles.iter();
+        while let Some(&[a, b, c]) = ctx.next_charged(&mut triangles, "catia_standard_iteration")? {
+            for (start, end) in [(a, b), (b, c), (c, a)] {
+                if start == end {
                     return Ok(None);
                 }
-                *directions |= direction;
-            } else {
-                ctx.insert_btree_map(
+                let (edge, direction) = if start < end {
+                    ((start, end), 1)
+                } else {
+                    ((end, start), 2)
+                };
+                if let Some(directions) = ctx.get_mut_btree_map(
                     &mut edge_directions,
-                    edge,
-                    direction,
+                    &edge,
                     "catia_boundary_edge_directions",
-                )?;
+                )? {
+                    if *directions & direction != 0 {
+                        return Ok(None);
+                    }
+                    *directions |= direction;
+                } else {
+                    ctx.insert_btree_map(
+                        &mut edge_directions,
+                        edge,
+                        direction,
+                        "catia_boundary_edge_directions",
+                    )?;
+                }
             }
         }
-    }
-    let mut successors = BTreeMap::new();
-    for (&(low, high), &directions) in
-        ctx.admit_iter(&edge_directions, "catia_standard_iteration")?
-    {
-        let boundary = match directions {
-            1 => Some((low, high)),
-            2 => Some((high, low)),
-            3 => None,
-            _ => return Ok(None),
-        };
-        if let Some((start, end)) = boundary {
-            if ctx
-                .insert_btree_map(&mut successors, start, end, "catia_boundary_successors")?
-                .is_some()
-            {
-                return Ok(None);
+        let mut successors = BTreeMap::new();
+        let mut directions_iter = edge_directions.iter();
+        while let Some((&(low, high), &directions)) =
+            ctx.next_charged(&mut directions_iter, "catia_standard_iteration")?
+        {
+            let boundary = match directions {
+                1 => Some((low, high)),
+                2 => Some((high, low)),
+                3 => None,
+                _ => return Ok(None),
+            };
+            if let Some((start, end)) = boundary {
+                if ctx
+                    .insert_btree_map(&mut successors, start, end, "catia_boundary_successors")?
+                    .is_some()
+                {
+                    return Ok(None);
+                }
             }
         }
-    }
+        Ok(Some(successors))
+    })?
+    else {
+        return Ok(None);
+    };
     // Starts are visited in ascending order, so each cycle is first reached
     // from its smallest handle and cycles are produced in ascending order of
     // their first handle.
     let mut seen = HashSet::new();
     let mut cycles = Vec::new();
-    for (&start, &first) in ctx.admit_iter(&successors, "catia_standard_iteration")? {
+    let mut starts = successors.iter();
+    while let Some((&start, &first)) = ctx.next_charged(&mut starts, "catia_standard_iteration")? {
         if ctx.contains_hash_set(&seen, &start, "catia_boundary_seen")? {
             continue;
         }
         let mut cycle = Vec::new();
         ctx.push_vec(&mut cycle, start, "catia_boundary_cycle_handles")?;
-        ctx.insert_hash_set(&mut seen, start, "catia_boundary_seen")?;
+        storage.with_storage(|| ctx.insert_hash_set(&mut seen, start, "catia_boundary_seen"))?;
         let mut current = first;
         while current != start {
-            if !ctx.insert_hash_set(&mut seen, current, "catia_boundary_seen")? {
+            if !storage
+                .with_storage(|| ctx.insert_hash_set(&mut seen, current, "catia_boundary_seen"))?
+            {
                 return Ok(None);
             }
             ctx.push_vec(&mut cycle, current, "catia_boundary_cycle_handles")?;
@@ -2967,7 +3066,8 @@ fn cover_cycle_by_rows(
         else {
             return Ok(None);
         };
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut storage,
             &mut matches,
             (boundary_start, segment_count, edge_row, reversed),
             "catia_fbb_cycle_matches",
@@ -2976,7 +3076,8 @@ fn cover_cycle_by_rows(
     if matches.is_empty() {
         return Ok(None);
     }
-    let mut coverage = ctx.alloc_filled(length, 0_u8, "catia FBB boundary coverage")?;
+    let mut coverage =
+        storage.with_storage(|| ctx.alloc_filled(length, 0_u8, "catia FBB boundary coverage"))?;
     for &(start, edge_count, edge_row, _) in ctx.admit_iter(&matches, "catia_standard_iteration")? {
         let Some(row) = rows.get(edge_row) else {
             return Ok(None);
@@ -3269,5 +3370,62 @@ mod tests {
         ] {
             assert!(operations.contains(operation), "no refusal at {operation}");
         }
+    }
+}
+
+#[cfg(test)]
+mod scratch_tests {
+    use super::*;
+
+    #[test]
+    fn fbb_scalar_queries_use_no_retained_parser_storage() {
+        let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert_eq!(
+                standard_face_count(ctx, &bytes).expect("face count"),
+                Some(1)
+            );
+            assert_eq!(
+                fbb_only_edge_count(ctx, &bytes).expect("edge count"),
+                Some(4)
+            );
+            assert_eq!(
+                largest_fbb_run(ctx, &bytes)
+                    .expect("run")
+                    .expect("one run")
+                    .face_count(),
+                1
+            );
+        });
+    }
+
+    #[test]
+    fn port_pruning_retains_only_returned_pairs() {
+        let ports = [[10, 11], [11, 12]];
+        let candidates = [vec![[0, 1]], vec![[1, 2]]];
+        // Core amortized growth owns four slots for each of two pair rows,
+        // and four slots for the result's row vector. Every domain is scratch.
+        let bytes = 8 * size_of::<[usize; 2]>() + 4 * size_of::<Vec<[usize; 2]>>();
+        crate::test_support::with_retained_limit(
+            cadmpeg_core::decode::u64_from_index(bytes),
+            |ctx| {
+                assert_eq!(
+                    prune_edge_candidates_by_port_domains(ctx, &ports, &candidates)
+                        .expect("temporary domains"),
+                    Some(candidates.to_vec())
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn boundary_cycles_stop_before_unvisited_triangles() {
+        let mut triangles = vec![[0, 0, 0]];
+        triangles.extend((0..1024_u32).map(|row| [row * 3, row * 3 + 1, row * 3 + 2]));
+        crate::test_support::with_work_limit(64, |ctx| {
+            assert!(boundary_cycles(ctx, &triangles)
+                .expect("first invalid triangle")
+                .is_none());
+        });
     }
 }

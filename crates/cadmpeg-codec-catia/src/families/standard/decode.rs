@@ -1596,18 +1596,27 @@ fn attach_free_vertices(
     if ir.model.vertices.is_empty() {
         return Ok(());
     }
-    let body_id = BodyId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
-        cadmpeg_ir::identity_key!("unbound-points"),
-    );
-    let region_id = RegionId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "region"),
-        cadmpeg_ir::identity_key!("unbound-points"),
-    );
-    let shell_id = ShellId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "shell"),
-        cadmpeg_ir::identity_key!("unbound-points"),
-    );
+    let body_id = standard_id(
+        ctx,
+        "body",
+        format_args!("unbound-points"),
+        BodyId::mint,
+        "catia_standard_free_body_identity",
+    )?;
+    let region_id = standard_id(
+        ctx,
+        "region",
+        format_args!("unbound-points"),
+        RegionId::mint,
+        "catia_standard_free_region_identity",
+    )?;
+    let shell_id = standard_id(
+        ctx,
+        "shell",
+        format_args!("unbound-points"),
+        ShellId::mint,
+        "catia_standard_free_shell_identity",
+    )?;
     admission.reserve_entity(&mut ir.model.shells, "catia_standard_free_vertex_shells")?;
     let mut free_vertices = Vec::new();
     for vertex in ctx.admit_iter(&ir.model.vertices, "catia_standard_iteration")? {
@@ -1672,6 +1681,7 @@ fn standard_extrusion_support_id(
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     surfaces: &mut Vec<Surface>,
     procedural_supports: &mut HashMap<u32, usize>,
+    map_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     surface_object_id: u32,
     geometry: SurfaceGeometry,
     admission: &mut FamilyEntityAdmission<'_, '_>,
@@ -1708,12 +1718,14 @@ fn standard_extrusion_support_id(
         geometry,
         source_object: Some(source_object),
     });
-    ctx.insert_hash_map(
-        procedural_supports,
-        surface_object_id,
-        surfaces.len() - 1,
-        "catia_extrusion_support_map",
-    )?;
+    map_storage.with_storage(|| {
+        ctx.insert_hash_map(
+            procedural_supports,
+            surface_object_id,
+            surfaces.len() - 1,
+            "catia_extrusion_support_map",
+        )
+    })?;
     Ok(id)
 }
 
@@ -1722,7 +1734,11 @@ fn emit_standard_extrusion_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    (surfaces, procedural_supports): (&mut Vec<Surface>, &mut HashMap<u32, usize>),
+    (surfaces, procedural_supports, map_storage): (
+        &mut Vec<Surface>,
+        &mut HashMap<u32, usize>,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
     extrusion_definitions: &mut HashMap<
         u32,
         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction,
@@ -1738,10 +1754,15 @@ fn emit_standard_extrusion_definition(
         return copy_standard_extrusion_definition(ctx, definition);
     }
     let surface_object_id = extrusion.surface_object_id;
-    let directrix_id = CurveId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "extrusion-directrix"),
-        extrusion.directrix_object_id,
-    );
+    let directrix_id = map_storage.with_storage(|| {
+        crate::resource::compose_u32_id(
+            ctx,
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "extrusion-directrix"),
+            extrusion.directrix_object_id,
+            CurveId::mint,
+            "catia_extrusion_directrix_identity",
+        )
+    })?;
     let parameter_range = extrusion.directrix_parameter_range;
     let direction = extrusion.direction;
     match extrusion.directrix {
@@ -1757,6 +1778,7 @@ fn emit_standard_extrusion_definition(
                         annotations,
                         surfaces,
                         procedural_supports,
+                        map_storage,
                         side.surface_object_id,
                         side.surface,
                         admission,
@@ -1786,14 +1808,17 @@ fn emit_standard_extrusion_definition(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source(ctx, "curve", extrusion.directrix_object_id)?),
             });
-            let procedure_id = ProceduralCurveId::compose(
+            let procedure_id = crate::resource::compose_u32_id(
+                ctx,
                 &cadmpeg_ir::identity_namespace!(
                     "catia",
                     "standard",
                     "extrusion-directrix-procedure"
                 ),
                 extrusion.directrix_object_id,
-            );
+                ProceduralCurveId::mint,
+                "catia_extrusion_directrix_procedure_identity",
+            )?;
             annotate(
                 ctx,
                 annotations,
@@ -1852,10 +1877,13 @@ fn emit_standard_extrusion_definition(
             distance,
             direction,
         } => {
-            let source_id = CurveId::compose(
+            let source_id = crate::resource::compose_u32_id(
+                ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "extrusion-directrix-source"),
                 source_object_id,
-            );
+                CurveId::mint,
+                "catia_extrusion_source_identity",
+            )?;
             annotate(
                 ctx,
                 annotations,
@@ -1891,14 +1919,17 @@ fn emit_standard_extrusion_definition(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source(ctx, "curve", extrusion.directrix_object_id)?),
             });
-            let procedure_id = ProceduralCurveId::compose(
+            let procedure_id = crate::resource::compose_u32_id(
+                ctx,
                 &cadmpeg_ir::identity_namespace!(
                     "catia",
                     "standard",
                     "extrusion-directrix-procedure"
                 ),
                 extrusion.directrix_object_id,
-            );
+                ProceduralCurveId::mint,
+                "catia_extrusion_directrix_procedure_identity",
+            )?;
             annotate(
                 ctx,
                 annotations,
@@ -1913,6 +1944,7 @@ fn emit_standard_extrusion_definition(
                 annotations,
                 surfaces,
                 procedural_supports,
+                map_storage,
                 support.surface_object_id,
                 support.surface,
                 admission,
@@ -1943,12 +1975,14 @@ fn emit_standard_extrusion_definition(
         None,
     );
     let returned = copy_standard_extrusion_definition(ctx, &definition)?;
-    ctx.insert_hash_map(
-        extrusion_definitions,
-        surface_object_id,
-        definition,
-        "catia_extrusion_definitions",
-    )?;
+    map_storage.with_storage(|| {
+        ctx.insert_hash_map(
+            extrusion_definitions,
+            surface_object_id,
+            definition,
+            "catia_extrusion_definitions",
+        )
+    })?;
     Ok(returned)
 }
 
@@ -3123,6 +3157,7 @@ fn try_decode_standard_population(
         }
     }
 
+    let mut procedural_storage = match ctx.reserve_scoped(0,"catia_standard_procedural_working_state") { Ok(storage) => storage, Err(error) => return Some(Err(error)) };
     let mut procedural_supports = HashMap::<u32, usize>::new();
     let mut extrusion_definitions = HashMap::new();
     for (index, surface_index, tag, procedure) in admitted!(ctx.admit_iter(procedural_surface_plans, "catia_standard_procedural_surface_plans")) {
@@ -3190,7 +3225,7 @@ fn try_decode_standard_population(
                                 geometry: support,
                                 source_object: Some(source_object),
                             });
-                            admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, surfaces.len() - 1, "catia_standard_procedural_supports"));
+                            admitted!(procedural_storage.with_storage(|| ctx.insert_hash_map(&mut procedural_supports, support_object_id, surfaces.len() - 1, "catia_standard_procedural_supports")));
                             id
                         }
                     }
@@ -3230,7 +3265,7 @@ fn try_decode_standard_population(
                         let definition = match emit_standard_extrusion_definition(ctx,
 &mut ir,
 &mut annotations,
-(&mut surfaces, &mut procedural_supports),
+(&mut surfaces, &mut procedural_supports,&mut procedural_storage),
 &mut extrusion_definitions,
 *extrusion,
 &mut admission) {
@@ -3281,7 +3316,7 @@ fn try_decode_standard_population(
                                 Some(record_bounds),
                             ));
                         }
-                        admitted!(ctx.insert_hash_map(&mut procedural_supports, support_object_id, support_index, "catia_standard_procedural_supports"));
+                        admitted!(procedural_storage.with_storage(|| ctx.insert_hash_map(&mut procedural_supports, support_object_id, support_index, "catia_standard_procedural_supports")));
                         support_id
                     }
                 };
@@ -3307,7 +3342,7 @@ fn try_decode_standard_population(
                 let definition = match emit_standard_extrusion_definition(ctx,
 &mut ir,
 &mut annotations,
-(&mut surfaces, &mut procedural_supports),
+(&mut surfaces, &mut procedural_supports,&mut procedural_storage),
 &mut extrusion_definitions,
 *extrusion,
 &mut admission) {
@@ -5929,1466 +5964,1573 @@ fn attach_standard_topology(
         admission,
     } = inputs;
 
-    let face_count = ir.model.faces.len();
-    let edge_count = if edge_table_form == EdgeTableForm::FbbOnly {
-        crate::families::standard::fbb::fbb_only_edge_count(ctx, spine)
-            .map_err(StandardTopologyError::Resource)?
-    } else {
-        crate::families::standard::fbb::standard_edge_count(ctx, spine)
-            .map_err(StandardTopologyError::Resource)?
-    };
-    let Some(edge_count) = edge_count.filter(|count| *count > 0) else {
-        return Err(StandardTopologyFailure::NoCurveSupports.into());
-    };
-    let mut supports = support_override
-        .map_or_else(
-            || {
-                crate::families::standard::records::standard_curve_supports(
-                    ctx,
-                    brep,
-                    face_count,
-                    Some(edge_count),
-                )
-            },
-            |supports| ctx.copy_slice(supports, "catia_topology_support_override"),
-        )
-        .map_err(StandardTopologyError::Resource)?;
-    if supports.is_empty() {
-        return Err(StandardTopologyFailure::NoCurveSupports.into());
-    }
-    diagnostics.curve_supports = supports.len();
-    let serialized_edge_faces = ctx
-        .collect_vec(
-            supports.iter().map(|support| support.faces),
-            "catia_standard_serialized_edge_faces",
-        )
-        .map_err(StandardTopologyError::Resource)?;
-    let Some(mut edge_faces) =
-        missing_edge::resolve_standard_edge_faces(ctx, spine, &serialized_edge_faces)
-            .map_err(StandardTopologyError::Resource)?
-    else {
-        return Err(StandardTopologyFailure::EdgeFaceAssignment.into());
-    };
-    let mut deferred_port_edges = ctx
-        .alloc_filled(supports.len(), false, "catia_deferred_port_edges")
-        .map_err(StandardTopologyError::Resource)?;
-    let mut open_face_domains = None;
-    let mut endpoint_face_assignments = None;
-    apply_standard_native_edge_faces(ctx, &mut edge_faces, &supports, records, native_edge_faces)
-        .map_err(StandardTopologyError::Resource)?;
-    for (edge, faces) in ctx
-        .admit_iter(&edge_faces, "catia_standard_native_edge_face_assignments")?
-        .take(supports.len())
-        .enumerate()
-    {
-        supports[edge].faces = *faces;
-    }
     let mut topology_storage = ctx
         .reserve_scoped(0, "catia_standard_topology_storage")
         .map_err(StandardTopologyError::Resource)?;
-    let surface_indices = topology_storage
+    let (
+        surface_indices,
+        supports,
+        mut topology,
+        point_assignment,
+        native_supports_by_row,
+        limit_curve_bindings,
+        endpoint_candidates,
+    ) = topology_storage
         .with_storage(|| {
-            let mut surface_indices = HashMap::new();
-            for (index, surface) in ctx
-                .admit_iter(&ir.model.surfaces, "catia_standard_iteration")?
-                .enumerate()
-            {
-                let id = surface
-                    .id
-                    .try_clone_for_decode(ctx, "catia_standard_surface_id_copy")?;
-                ctx.insert_hash_map(
-                    &mut surface_indices,
-                    id,
-                    index,
-                    "catia_standard_surface_indices",
-                )?;
-            }
-            Ok::<_, CodecError>(surface_indices)
-        })
-        .map_err(StandardTopologyError::Resource)?;
-    let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
-    let face_point_membership =
-        standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
-            .map_err(StandardTopologyError::Resource)?;
-    let limit_curve_bindings =
-        standard_limit_curve_bindings(ctx, ir, bindings, &surface_indices, &supports, limit_curves)
-            .map_err(StandardTopologyError::Resource)?;
-    let mut ordered_endpoint_pairs = ctx
-        .alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
-        .map_err(StandardTopologyError::Resource)?;
-    let mut point_coordinates = Vec::new();
-    ctx.reserve_vec(
-        &mut point_coordinates,
-        ir.model.points.len(),
-        "catia_visualization_point_coordinates",
-    )
-    .map_err(StandardTopologyError::Resource)?;
-    for point in ctx.admit_iter(&ir.model.points, "catia_standard_iteration")? {
-        point_coordinates.push([
-            f32_from_f64(point.position().get().x)
-                .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
-            f32_from_f64(point.position().get().y)
-                .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
-            f32_from_f64(point.position().get().z)
-                .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
-        ]);
-    }
-    let visualization_endpoint_pairs =
-        missing_edge::standard_edge_rows(ctx, spine).map_err(StandardTopologyError::Resource)?;
-    let visualization_endpoint_pairs = match visualization_endpoint_pairs {
-        Some(rows) => {
-            missing_edge::visualization_endpoint_pairs(ctx, source, &rows, &point_coordinates)
-                .map_err(StandardTopologyError::Resource)?
-        }
-        None => None,
-    };
-    if let Some(pairs) = &visualization_endpoint_pairs {
-        if pairs.len() != ordered_endpoint_pairs.len() {
-            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-        }
-    }
-    let mut endpoint_candidates = Vec::new();
-    ctx.reserve_vec(
-        &mut endpoint_candidates,
-        supports.len(),
-        "catia_standard_endpoint_candidate_rows",
-    )
-    .map_err(StandardTopologyError::Resource)?;
-    let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
-    let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
-    for support in ctx.admit_iter(&supports, "catia_standard_iteration")? {
-        let Some(surface0) = face_surface(ctx, ir, bindings, &surface_indices, support.faces[0])
-            .map_err(StandardTopologyError::Resource)?
-        else {
-            return Err(StandardTopologyFailure::MissingFaceSurface.into());
-        };
-        let Some(surface1) = face_surface(ctx, ir, bindings, &surface_indices, support.faces[1])
-            .map_err(StandardTopologyError::Resource)?
-        else {
-            return Err(StandardTopologyFailure::MissingFaceSurface.into());
-        };
-        let candidates = match &support.geometry {
-            crate::families::standard::records::StandardCurveGeometry::Circle {
-                center,
-                radius,
-            } => standard_circle_endpoint_candidates(
-                ctx,
-                &ir.model.points,
-                center.get(),
-                radius.get(),
-                Some([
-                    (
-                        &surface0.geometry,
-                        face_bounds
-                            .as_ref()
-                            .and_then(|bounds| bounds[support.faces[0]]),
-                    ),
-                    (
-                        &surface1.geometry,
-                        face_bounds
-                            .as_ref()
-                            .and_then(|bounds| bounds[support.faces[1]]),
-                    ),
-                ]),
-            )
-            .map_err(StandardTopologyError::Resource)?,
-            crate::families::standard::records::StandardCurveGeometry::Line
-            | crate::families::standard::records::StandardCurveGeometry::Bspline => {
-                let [first, second] = support.faces;
-                let faces = [first.min(second), first.max(second)];
-                for (face, surface) in [
-                    (support.faces[0], &surface0.geometry),
-                    (support.faces[1], &surface1.geometry),
-                ] {
-                    if !ctx
-                        .contains_key_hash_map(
-                            &face_incidence_candidates,
-                            &face,
-                            "catia_face_incidence_lookup",
-                        )
+            Ok::<_, CodecError>((|| -> Result<_, StandardTopologyError> {
+                let face_count = ir.model.faces.len();
+                let edge_count = if edge_table_form == EdgeTableForm::FbbOnly {
+                    crate::families::standard::fbb::fbb_only_edge_count(ctx, spine)
                         .map_err(StandardTopologyError::Resource)?
-                    {
-                        let mut points = Vec::new();
-                        for (index, point) in ctx
-                            .admit_iter(&ir.model.points, "catia_standard_iteration")?
-                            .enumerate()
-                        {
-                            if point_on_standard_face(
+                } else {
+                    crate::families::standard::fbb::standard_edge_count(ctx, spine)
+                        .map_err(StandardTopologyError::Resource)?
+                };
+                let Some(edge_count) = edge_count.filter(|count| *count > 0) else {
+                    return Err(StandardTopologyFailure::NoCurveSupports.into());
+                };
+                let mut supports = support_override
+                    .map_or_else(
+                        || {
+                            crate::families::standard::records::standard_curve_supports(
                                 ctx,
-                                point.position().get(),
-                                surface,
-                                face_bounds.as_ref().and_then(|bounds| bounds[face]),
+                                brep,
+                                face_count,
+                                Some(edge_count),
                             )
-                            .map_err(CodecError::from)
-                            .map_err(StandardTopologyError::Resource)?
-                            {
-                                ctx.push_vec(&mut points, index, "catia_face_incidence_points")
-                                    .map_err(StandardTopologyError::Resource)?;
-                            }
-                        }
+                        },
+                        |supports| ctx.copy_slice(supports, "catia_topology_support_override"),
+                    )
+                    .map_err(StandardTopologyError::Resource)?;
+                if supports.is_empty() {
+                    return Err(StandardTopologyFailure::NoCurveSupports.into());
+                }
+                diagnostics.curve_supports = supports.len();
+                let serialized_edge_faces = ctx
+                    .collect_vec(
+                        supports.iter().map(|support| support.faces),
+                        "catia_standard_serialized_edge_faces",
+                    )
+                    .map_err(StandardTopologyError::Resource)?;
+                let Some(mut edge_faces) =
+                    missing_edge::resolve_standard_edge_faces(ctx, spine, &serialized_edge_faces)
+                        .map_err(StandardTopologyError::Resource)?
+                else {
+                    return Err(StandardTopologyFailure::EdgeFaceAssignment.into());
+                };
+                let mut deferred_port_edges = ctx
+                    .alloc_filled(supports.len(), false, "catia_deferred_port_edges")
+                    .map_err(StandardTopologyError::Resource)?;
+                let mut open_face_domains = None;
+                let mut endpoint_face_assignments = None;
+                apply_standard_native_edge_faces(
+                    ctx,
+                    &mut edge_faces,
+                    &supports,
+                    records,
+                    native_edge_faces,
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                for (edge, faces) in ctx
+                    .admit_iter(&edge_faces, "catia_standard_native_edge_face_assignments")?
+                    .take(supports.len())
+                    .enumerate()
+                {
+                    supports[edge].faces = *faces;
+                }
+                let surface_indices = (|| {
+                    let mut surface_indices = HashMap::new();
+                    for (index, surface) in ctx
+                        .admit_iter(&ir.model.surfaces, "catia_standard_iteration")?
+                        .enumerate()
+                    {
+                        let id = surface
+                            .id
+                            .try_clone_for_decode(ctx, "catia_standard_surface_id_copy")?;
                         ctx.insert_hash_map(
-                            &mut face_incidence_candidates,
-                            face,
-                            points,
-                            "catia_face_incidence_rows",
-                        )
-                        .map_err(StandardTopologyError::Resource)?;
+                            &mut surface_indices,
+                            id,
+                            index,
+                            "catia_standard_surface_indices",
+                        )?;
+                    }
+                    Ok::<_, CodecError>(surface_indices)
+                })()
+                .map_err(StandardTopologyError::Resource)?;
+                let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
+                let face_point_membership = standard_face_point_membership(
+                    ctx,
+                    ir,
+                    bindings,
+                    &surface_indices,
+                    face_bounds,
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                let limit_curve_bindings = standard_limit_curve_bindings(
+                    ctx,
+                    ir,
+                    bindings,
+                    &surface_indices,
+                    &supports,
+                    limit_curves,
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                let mut ordered_endpoint_pairs = ctx
+                    .alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
+                    .map_err(StandardTopologyError::Resource)?;
+                let mut point_coordinates = Vec::new();
+                ctx.reserve_vec(
+                    &mut point_coordinates,
+                    ir.model.points.len(),
+                    "catia_visualization_point_coordinates",
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                for point in ctx.admit_iter(&ir.model.points, "catia_standard_iteration")? {
+                    point_coordinates.push([
+                        f32_from_f64(point.position().get().x)
+                            .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
+                        f32_from_f64(point.position().get().y)
+                            .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
+                        f32_from_f64(point.position().get().z)
+                            .ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
+                    ]);
+                }
+                let visualization_endpoint_pairs = missing_edge::standard_edge_rows(ctx, spine)
+                    .map_err(StandardTopologyError::Resource)?;
+                let visualization_endpoint_pairs = match visualization_endpoint_pairs {
+                    Some(rows) => missing_edge::visualization_endpoint_pairs(
+                        ctx,
+                        source,
+                        &rows,
+                        &point_coordinates,
+                    )
+                    .map_err(StandardTopologyError::Resource)?,
+                    None => None,
+                };
+                if let Some(pairs) = &visualization_endpoint_pairs {
+                    if pairs.len() != ordered_endpoint_pairs.len() {
+                        return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
                     }
                 }
-                if !ctx
-                    .contains_key_hash_map(
-                        &incidence_candidates,
-                        &faces,
-                        "catia_incidence_candidate_lookup",
-                    )
-                    .map_err(StandardTopologyError::Resource)?
-                {
-                    // Both rows list point indexes in increasing order, so
-                    // their intersection is one merge walk.
-                    let incidence_row = |face: usize| {
-                        ctx.get_hash_map(
-                            &face_incidence_candidates,
-                            &face,
-                            "catia_face_incidence_lookup",
-                        )
-                        .map(|row| row.map_or(&[][..], Vec::as_slice))
+                let mut endpoint_candidates = Vec::new();
+                ctx.reserve_vec(
+                    &mut endpoint_candidates,
+                    supports.len(),
+                    "catia_standard_endpoint_candidate_rows",
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
+                let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
+                for support in ctx.admit_iter(&supports, "catia_standard_iteration")? {
+                    let Some(surface0) =
+                        face_surface(ctx, ir, bindings, &surface_indices, support.faces[0])
+                            .map_err(StandardTopologyError::Resource)?
+                    else {
+                        return Err(StandardTopologyFailure::MissingFaceSurface.into());
                     };
-                    let left = incidence_row(faces[0]).map_err(StandardTopologyError::Resource)?;
-                    let right = incidence_row(faces[1]).map_err(StandardTopologyError::Resource)?;
-                    let mut shared = Vec::new();
-                    let (mut left_index, mut right_index) = (0, 0);
-                    while let (Some(&left_point), Some(&right_point)) =
-                        (left.get(left_index), right.get(right_index))
-                    {
-                        ctx.charge_work(1, "catia_incidence_shared_points")
-                            .map_err(StandardTopologyError::Resource)?;
-                        match left_point.cmp(&right_point) {
-                            std::cmp::Ordering::Less => left_index += 1,
-                            std::cmp::Ordering::Greater => right_index += 1,
-                            std::cmp::Ordering::Equal => {
-                                ctx.push_vec(
-                                    &mut shared,
-                                    left_point,
-                                    "catia_incidence_shared_points",
+                    let Some(surface1) =
+                        face_surface(ctx, ir, bindings, &surface_indices, support.faces[1])
+                            .map_err(StandardTopologyError::Resource)?
+                    else {
+                        return Err(StandardTopologyFailure::MissingFaceSurface.into());
+                    };
+                    let candidates = match &support.geometry {
+                        crate::families::standard::records::StandardCurveGeometry::Circle {
+                            center,
+                            radius,
+                        } => standard_circle_endpoint_candidates(
+                            ctx,
+                            &ir.model.points,
+                            center.get(),
+                            radius.get(),
+                            Some([
+                                (
+                                    &surface0.geometry,
+                                    face_bounds
+                                        .as_ref()
+                                        .and_then(|bounds| bounds[support.faces[0]]),
+                                ),
+                                (
+                                    &surface1.geometry,
+                                    face_bounds
+                                        .as_ref()
+                                        .and_then(|bounds| bounds[support.faces[1]]),
+                                ),
+                            ]),
+                        )
+                        .map_err(StandardTopologyError::Resource)?,
+                        crate::families::standard::records::StandardCurveGeometry::Line
+                        | crate::families::standard::records::StandardCurveGeometry::Bspline => {
+                            let [first, second] = support.faces;
+                            let faces = [first.min(second), first.max(second)];
+                            for (face, surface) in [
+                                (support.faces[0], &surface0.geometry),
+                                (support.faces[1], &surface1.geometry),
+                            ] {
+                                if !ctx
+                                    .contains_key_hash_map(
+                                        &face_incidence_candidates,
+                                        &face,
+                                        "catia_face_incidence_lookup",
+                                    )
+                                    .map_err(StandardTopologyError::Resource)?
+                                {
+                                    let mut points = Vec::new();
+                                    for (index, point) in ctx
+                                        .admit_iter(&ir.model.points, "catia_standard_iteration")?
+                                        .enumerate()
+                                    {
+                                        if point_on_standard_face(
+                                            ctx,
+                                            point.position().get(),
+                                            surface,
+                                            face_bounds.as_ref().and_then(|bounds| bounds[face]),
+                                        )
+                                        .map_err(CodecError::from)
+                                        .map_err(StandardTopologyError::Resource)?
+                                        {
+                                            ctx.push_vec(
+                                                &mut points,
+                                                index,
+                                                "catia_face_incidence_points",
+                                            )
+                                            .map_err(StandardTopologyError::Resource)?;
+                                        }
+                                    }
+                                    ctx.insert_hash_map(
+                                        &mut face_incidence_candidates,
+                                        face,
+                                        points,
+                                        "catia_face_incidence_rows",
+                                    )
+                                    .map_err(StandardTopologyError::Resource)?;
+                                }
+                            }
+                            if !ctx
+                                .contains_key_hash_map(
+                                    &incidence_candidates,
+                                    &faces,
+                                    "catia_incidence_candidate_lookup",
+                                )
+                                .map_err(StandardTopologyError::Resource)?
+                            {
+                                // Both rows list point indexes in increasing order, so
+                                // their intersection is one merge walk.
+                                let incidence_row = |face: usize| {
+                                    ctx.get_hash_map(
+                                        &face_incidence_candidates,
+                                        &face,
+                                        "catia_face_incidence_lookup",
+                                    )
+                                    .map(|row| row.map_or(&[][..], Vec::as_slice))
+                                };
+                                let left = incidence_row(faces[0])
+                                    .map_err(StandardTopologyError::Resource)?;
+                                let right = incidence_row(faces[1])
+                                    .map_err(StandardTopologyError::Resource)?;
+                                let mut shared = Vec::new();
+                                let (mut left_index, mut right_index) = (0, 0);
+                                while let (Some(&left_point), Some(&right_point)) =
+                                    (left.get(left_index), right.get(right_index))
+                                {
+                                    ctx.charge_work(1, "catia_incidence_shared_points")
+                                        .map_err(StandardTopologyError::Resource)?;
+                                    match left_point.cmp(&right_point) {
+                                        std::cmp::Ordering::Less => left_index += 1,
+                                        std::cmp::Ordering::Greater => right_index += 1,
+                                        std::cmp::Ordering::Equal => {
+                                            ctx.push_vec(
+                                                &mut shared,
+                                                left_point,
+                                                "catia_incidence_shared_points",
+                                            )
+                                            .map_err(StandardTopologyError::Resource)?;
+                                            left_index += 1;
+                                            right_index += 1;
+                                        }
+                                    }
+                                }
+                                ctx.insert_hash_map(
+                                    &mut incidence_candidates,
+                                    faces,
+                                    shared,
+                                    "catia_incidence_candidate_rows",
                                 )
                                 .map_err(StandardTopologyError::Resource)?;
-                                left_index += 1;
-                                right_index += 1;
                             }
+                            let shared = ctx
+                                .get_hash_map(
+                                    &incidence_candidates,
+                                    &faces,
+                                    "catia_incidence_candidate_lookup",
+                                )
+                                .map_err(StandardTopologyError::Resource)?
+                                .map_or(&[][..], Vec::as_slice);
+                            ctx.copy_slice(shared, "catia_incidence_candidate_copy")
+                                .map_err(StandardTopologyError::Resource)?
+                        }
+                    };
+                    endpoint_candidates.push(candidates);
+                }
+                let edge_classes = standard_curve_edge_classes(ctx, &supports)
+                    .map_err(StandardTopologyError::Resource)?;
+                let edge_geometry = standard_curve_geometry_gauge_keys(ctx, &supports)
+                    .map_err(StandardTopologyError::Resource)?;
+                let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
+                    .map_err(StandardTopologyError::Resource)?;
+                let native_edges = match topology_graph.as_ref() {
+                    Some(graph) => graph
+                        .referenced_edge_vertex_references(ctx)
+                        .map_err(StandardTopologyError::Resource)?,
+                    None => None,
+                };
+                let mut native_edges = match native_edges {
+                    Some(edges) => edges,
+                    None => crate::families::b5::graph::edge_vertex_references(ctx, source)
+                        .map_err(StandardTopologyError::Resource)?,
+                };
+                let e5_topology = match e5_record_range {
+                    Some(range) => crate::families::e5::graph::parse_topology(ctx, &source[range])
+                        .map_err(StandardTopologyError::Resource)?,
+                    None => None,
+                };
+                if let Some(e5_topology) = e5_topology {
+                    if !merge_standard_edge_vertex_references(
+                        ctx,
+                        &mut native_edges,
+                        &e5_topology.edges,
+                        |record| [record.start_vertex, record.end_vertex],
+                    )
+                    .map_err(StandardTopologyError::Resource)?
+                    {
+                        return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+                    }
+                }
+                let graph_endpoint_pairs = standard_native_graph_endpoint_pairs(
+                    ctx,
+                    topology_graph.as_ref(),
+                    &supports,
+                    &native_edges,
+                    &ir.model.points,
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                let mut native_port_options = Vec::new();
+                ctx.reserve_vec(
+                    &mut native_port_options,
+                    supports.len(),
+                    "catia_native_port_options",
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                for support in ctx.admit_iter(&supports, "catia_native_port_options")? {
+                    native_port_options.push(
+                        ctx.get_btree_map(&native_edges, &support.tag, "catia_native_port_options")
+                            .map_err(StandardTopologyError::Resource)?
+                            .copied(),
+                    );
+                }
+                let mut native_ports = Vec::new();
+                let mut all_ports = true;
+                let mut port_options = native_port_options.iter().copied();
+                while let Some(pair) = ctx
+                    .next_charged(&mut port_options, "catia_native_port_pair_visits")
+                    .map_err(StandardTopologyError::Resource)?
+                {
+                    let Some(pair) = pair else {
+                        all_ports = false;
+                        break;
+                    };
+                    ctx.push_vec(&mut native_ports, pair, "catia_native_port_pairs")
+                        .map_err(StandardTopologyError::Resource)?;
+                }
+                let native_ports = all_ports.then_some(native_ports);
+                let vertex_roster = if use_vertex_roster {
+                    crate::families::standard::records::standard_vertex_roster(
+                        ctx,
+                        source,
+                        ir.model.points.len(),
+                    )
+                    .map_err(StandardTopologyError::Resource)?
+                } else {
+                    None
+                };
+                let allocation_endpoint_points = vertex_roster
+                    .as_ref()
+                    .map(|roster| standard_successor_endpoint_points(ctx, &supports, roster))
+                    .transpose()
+                    .map_err(StandardTopologyError::Resource)?;
+                let roster_endpoint_pairs = vertex_roster
+                    .as_ref()
+                    .map(|roster| {
+                        standard_serialized_endpoint_pairs(ctx, &supports, &native_edges, roster)
+                    })
+                    .transpose()
+                    .map_err(StandardTopologyError::Resource)?
+                    .flatten();
+                let native_support_edge_ids =
+                    standard_native_support_edge_ids(ctx, &supports, native_edge_supports)
+                        .map_err(StandardTopologyError::Resource)?;
+                let native_supports_by_row = ctx
+                    .try_collect_vec(
+                        ctx.admit_iter(&native_support_edge_ids, "catia_native_support_rows")?
+                            .map(|edge| match edge {
+                                Some(edge) => ctx.get_hash_map(
+                                    native_edge_supports,
+                                    edge,
+                                    "catia_native_support_rows",
+                                ),
+                                None => Ok(None),
+                            }),
+                        "catia_native_support_rows",
+                    )
+                    .map_err(StandardTopologyError::Resource)?;
+                let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
+                    ctx,
+                    graph_endpoint_pairs.as_deref(),
+                    roster_endpoint_pairs.as_deref(),
+                )
+                .map_err(StandardTopologyError::Resource)?
+                else {
+                    return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+                };
+                diagnostics.native_endpoint_pairs = match native_endpoint_evidence.as_ref() {
+                    Some(pairs) => ctx
+                        .admit_iter(pairs, "catia_standard_native_endpoint_pair_count")?
+                        .filter(|pair| pair.is_some())
+                        .count(),
+                    None => 0,
+                };
+                if let Some(pairs) = &native_endpoint_evidence {
+                    for (edge, pair) in ctx
+                        .admit_iter(pairs, "catia_standard_native_endpoint_pairs")?
+                        .enumerate()
+                        .filter_map(|(edge, pair)| pair.as_ref().copied().map(|pair| (edge, pair)))
+                    {
+                        if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
                         }
                     }
-                    ctx.insert_hash_map(
-                        &mut incidence_candidates,
-                        faces,
-                        shared,
-                        "catia_incidence_candidate_rows",
-                    )
-                    .map_err(StandardTopologyError::Resource)?;
                 }
-                let shared = ctx
-                    .get_hash_map(
-                        &incidence_candidates,
-                        &faces,
-                        "catia_incidence_candidate_lookup",
-                    )
-                    .map_err(StandardTopologyError::Resource)?
-                    .map_or(&[][..], Vec::as_slice);
-                ctx.copy_slice(shared, "catia_incidence_candidate_copy")
-                    .map_err(StandardTopologyError::Resource)?
-            }
-        };
-        endpoint_candidates.push(candidates);
-    }
-    let edge_classes =
-        standard_curve_edge_classes(ctx, &supports).map_err(StandardTopologyError::Resource)?;
-    let edge_geometry = standard_curve_geometry_gauge_keys(ctx, &supports)
-        .map_err(StandardTopologyError::Resource)?;
-    let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
-        .map_err(StandardTopologyError::Resource)?;
-    let native_edges = match topology_graph.as_ref() {
-        Some(graph) => graph
-            .referenced_edge_vertex_references(ctx)
-            .map_err(StandardTopologyError::Resource)?,
-        None => None,
-    };
-    let mut native_edges = match native_edges {
-        Some(edges) => edges,
-        None => crate::families::b5::graph::edge_vertex_references(ctx, source)
-            .map_err(StandardTopologyError::Resource)?,
-    };
-    let e5_topology = match e5_record_range {
-        Some(range) => crate::families::e5::graph::parse_topology(ctx, &source[range])
-            .map_err(StandardTopologyError::Resource)?,
-        None => None,
-    };
-    if let Some(e5_topology) = e5_topology {
-        if !merge_standard_edge_vertex_references(
-            ctx,
-            &mut native_edges,
-            &e5_topology.edges,
-            |record| [record.start_vertex, record.end_vertex],
-        )
-        .map_err(StandardTopologyError::Resource)?
-        {
-            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-        }
-    }
-    let graph_endpoint_pairs = standard_native_graph_endpoint_pairs(
-        ctx,
-        topology_graph.as_ref(),
-        &supports,
-        &native_edges,
-        &ir.model.points,
-    )
-    .map_err(StandardTopologyError::Resource)?;
-    let mut native_port_options = Vec::new();
-    ctx.reserve_vec(
-        &mut native_port_options,
-        supports.len(),
-        "catia_native_port_options",
-    )
-    .map_err(StandardTopologyError::Resource)?;
-    for support in ctx.admit_iter(&supports, "catia_native_port_options")? {
-        native_port_options.push(
-            ctx.get_btree_map(&native_edges, &support.tag, "catia_native_port_options")
-                .map_err(StandardTopologyError::Resource)?
-                .copied(),
-        );
-    }
-    let mut native_ports = Vec::new();
-    let mut all_ports = true;
-    let mut port_options = native_port_options.iter().copied();
-    while let Some(pair) = ctx
-        .next_charged(&mut port_options, "catia_native_port_pair_visits")
-        .map_err(StandardTopologyError::Resource)?
-    {
-        let Some(pair) = pair else {
-            all_ports = false;
-            break;
-        };
-        ctx.push_vec(&mut native_ports, pair, "catia_native_port_pairs")
-            .map_err(StandardTopologyError::Resource)?;
-    }
-    let native_ports = all_ports.then_some(native_ports);
-    let vertex_roster = if use_vertex_roster {
-        crate::families::standard::records::standard_vertex_roster(
-            ctx,
-            source,
-            ir.model.points.len(),
-        )
-        .map_err(StandardTopologyError::Resource)?
-    } else {
-        None
-    };
-    let allocation_endpoint_points = vertex_roster
-        .as_ref()
-        .map(|roster| standard_successor_endpoint_points(ctx, &supports, roster))
-        .transpose()
-        .map_err(StandardTopologyError::Resource)?;
-    let roster_endpoint_pairs = vertex_roster
-        .as_ref()
-        .map(|roster| standard_serialized_endpoint_pairs(ctx, &supports, &native_edges, roster))
-        .transpose()
-        .map_err(StandardTopologyError::Resource)?
-        .flatten();
-    let native_support_edge_ids =
-        standard_native_support_edge_ids(ctx, &supports, native_edge_supports)
-            .map_err(StandardTopologyError::Resource)?;
-    let native_supports_by_row = ctx
-        .try_collect_vec(
-            ctx.admit_iter(&native_support_edge_ids, "catia_native_support_rows")?
-                .map(|edge| match edge {
-                    Some(edge) => {
-                        ctx.get_hash_map(native_edge_supports, edge, "catia_native_support_rows")
+                if let Some(pairs) = visualization_endpoint_pairs {
+                    for (edge, pair) in ctx
+                        .admit_iter(pairs, "catia_visualization_endpoint_pairs")?
+                        .enumerate()
+                    {
+                        if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+                        }
                     }
-                    None => Ok(None),
-                }),
-            "catia_native_support_rows",
-        )
-        .map_err(StandardTopologyError::Resource)?;
-    let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
-        ctx,
-        graph_endpoint_pairs.as_deref(),
-        roster_endpoint_pairs.as_deref(),
-    )
-    .map_err(StandardTopologyError::Resource)?
-    else {
-        return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-    };
-    diagnostics.native_endpoint_pairs = match native_endpoint_evidence.as_ref() {
-        Some(pairs) => ctx
-            .admit_iter(pairs, "catia_standard_native_endpoint_pair_count")?
-            .filter(|pair| pair.is_some())
-            .count(),
-        None => 0,
-    };
-    if let Some(pairs) = &native_endpoint_evidence {
-        for (edge, pair) in ctx
-            .admit_iter(pairs, "catia_standard_native_endpoint_pairs")?
-            .enumerate()
-            .filter_map(|(edge, pair)| pair.as_ref().copied().map(|pair| (edge, pair)))
-        {
-            if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
-                return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-            }
-        }
-    }
-    if let Some(pairs) = visualization_endpoint_pairs {
-        for (edge, pair) in ctx
-            .admit_iter(pairs, "catia_visualization_endpoint_pairs")?
-            .enumerate()
-        {
-            if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
-                return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-            }
-        }
-    }
-    for (edge, bindings) in ctx
-        .admit_iter(&limit_curve_bindings, "catia_standard_limit_curve_bindings")?
-        .enumerate()
-    {
-        let Ok([binding]) = <[StandardLimitCurveBinding; 1]>::try_from(bindings.as_slice()) else {
-            continue;
-        };
-        if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, binding.points) {
-            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-        }
-    }
-    if let Some(pairs) = &native_endpoint_evidence {
-        include_native_endpoint_pairs(ctx, &mut endpoint_candidates, pairs)
-            .map_err(StandardTopologyError::Resource)?;
-    }
-    let mut endpoint_options = resolve_standard_endpoint_pairs(
-        ctx,
-        ir,
-        bindings,
-        &surface_indices,
-        &supports,
-        &endpoint_candidates,
-    )
-    .map_err(StandardTopologyError::Resource)?;
-    if let Some(options) = &mut endpoint_options {
-        for (edge, bindings) in ctx
-            .admit_iter(&limit_curve_bindings, "catia_standard_limit_curve_bindings")?
-            .enumerate()
-        {
-            if bindings.is_empty() {
-                continue;
-            }
-            let mut limit_pairs = Vec::new();
-            ctx.reserve_vec(
-                &mut limit_pairs,
-                bindings.len(),
-                "catia_limit_endpoint_pairs",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-            for binding in ctx.admit_iter(bindings, "catia_standard_limit_curve_binding_rows")? {
-                let [first, second] = binding.points;
-                limit_pairs.push([first.min(second), first.max(second)]);
-            }
-            ctx.sort_unstable_by(
-                &mut limit_pairs,
-                |value| value,
-                Ord::cmp,
-                "catia_limit_endpoint_pairs_sort",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-            ctx.dedup_vec(&mut limit_pairs, "catia_limit_endpoint_pairs_dedup")
-                .map_err(StandardTopologyError::Resource)?;
-            if options[edge].is_empty() {
-                options[edge] = limit_pairs;
-            }
-        }
-    }
-    for (edge, _) in ctx
-        .admit_iter(&supports, "catia_standard_native_endpoint_support_rows")?
-        .enumerate()
-    {
-        let native_pair = match native_supports_by_row.get(edge).and_then(Option::as_ref) {
-            Some(native) => standard_native_support_endpoint_pair(
-                ctx,
-                native,
-                &ir.model.points,
-                &endpoint_candidates[edge],
-                native_endpoint_evidence
-                    .as_ref()
-                    .and_then(|pairs| pairs[edge]),
-            )?,
-            None => None,
-        };
-        let Some(pair) = native_pair else { continue };
-        if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
-            return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
-        }
-        if let Some(options) = &mut endpoint_options {
-            if ctx
-                .any_by(
-                    &options[edge],
-                    |candidate| Ok(missing_edge::same_unordered_pair(*candidate, pair)),
-                    "catia_standard_endpoint_options",
-                )
-                .map_err(StandardTopologyError::Resource)?
-            {
-                options[edge] = ctx
-                    .alloc_filled(1, pair, "catia_native_support_singleton_pair")
-                    .map_err(StandardTopologyError::Resource)?;
-            }
-        }
-    }
-    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &native_endpoint_evidence) {
-        for (edge, pair) in ctx
-            .admit_iter(pairs, "catia_standard_native_endpoint_evidence_rows")?
-            .take(options.len())
-            .enumerate()
-        {
-            if let Some(pair) = pair {
-                options[edge] = ctx
-                    .alloc_filled(1, *pair, "catia_native_evidence_singleton_pair")
-                    .map_err(StandardTopologyError::Resource)?;
-            }
-        }
-    }
-    if let (Some(options), Some(points)) = (&mut endpoint_options, &allocation_endpoint_points) {
-        corroborate_successor_endpoint_points(ctx, options, points)
-            .map_err(StandardTopologyError::Resource)?;
-    }
-    let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
-        Some(pairs) => {
-            let Some(propagated) =
-                missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
-                    ctx,
-                    &native_port_options,
-                    pairs,
-                    &ordered_endpoint_pairs,
-                )
-                .map_err(StandardTopologyError::Resource)?
-            else {
-                return Err(StandardTopologyFailure::NativeEndpointPropagation.into());
-            };
-            Some(propagated)
-        }
-        None => None,
-    };
-    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &graph_propagated_endpoint_pairs)
-    {
-        for (edge, pair) in ctx
-            .admit_iter(pairs, "catia_standard_propagated_endpoint_rows")?
-            .take(options.len())
-            .enumerate()
-        {
-            if let Some(pair) = pair {
-                options[edge] = ctx
-                    .alloc_filled(1, *pair, "catia_propagated_singleton_pair")
-                    .map_err(StandardTopologyError::Resource)?;
-            }
-        }
-    }
-    if let Some(pairs) = &graph_propagated_endpoint_pairs {
-        include_native_endpoint_pairs(ctx, &mut endpoint_candidates, pairs)
-            .map_err(StandardTopologyError::Resource)?;
-    }
-    if let Some(options) = &mut endpoint_options {
-        let handle_face_candidates = missing_edge::standard_repeated_edge_face_handle_candidates(
-            ctx,
-            spine,
-            &serialized_edge_faces,
-        )
-        .map_err(StandardTopologyError::Resource)?;
-        let mut allowed_faces = Vec::new();
-        ctx.reserve_vec(
-            &mut allowed_faces,
-            supports.len(),
-            "catia_repeated_allowed_face_rows",
-        )
-        .map_err(StandardTopologyError::Resource)?;
-        for (edge, support) in ctx
-            .admit_iter(&supports, "catia_standard_iteration")?
-            .enumerate()
-        {
-            let mut faces = Vec::new();
-            if support.faces[0] == support.faces[1] {
-                for (face, _) in ctx
-                    .admit_iter(&ir.model.faces, "catia_standard_circle_face_rows")?
+                }
+                for (edge, bindings) in ctx
+                    .admit_iter(&limit_curve_bindings, "catia_standard_limit_curve_bindings")?
                     .enumerate()
-                    .filter(|(face, _)| *face != support.faces[0])
                 {
-                    let Some(surface) = face_surface(ctx, ir, bindings, &surface_indices, face)
-                        .map_err(StandardTopologyError::Resource)?
+                    let Ok([binding]) =
+                        <[StandardLimitCurveBinding; 1]>::try_from(bindings.as_slice())
                     else {
                         continue;
                     };
-                    let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
-                    let res = ctx
+                    if !merge_derived_endpoint_pair(
+                        &mut ordered_endpoint_pairs,
+                        edge,
+                        binding.points,
+                    ) {
+                        return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+                    }
+                }
+                if let Some(pairs) = &native_endpoint_evidence {
+                    include_native_endpoint_pairs(ctx, &mut endpoint_candidates, pairs)
+                        .map_err(StandardTopologyError::Resource)?;
+                }
+                let mut endpoint_options = resolve_standard_endpoint_pairs(
+                    ctx,
+                    ir,
+                    bindings,
+                    &surface_indices,
+                    &supports,
+                    &endpoint_candidates,
+                )
+                .map_err(StandardTopologyError::Resource)?;
+                if let Some(options) = &mut endpoint_options {
+                    for (edge, bindings) in ctx
+                        .admit_iter(&limit_curve_bindings, "catia_standard_limit_curve_bindings")?
+                        .enumerate()
+                    {
+                        if bindings.is_empty() {
+                            continue;
+                        }
+                        let mut limit_pairs = Vec::new();
+                        ctx.reserve_vec(
+                            &mut limit_pairs,
+                            bindings.len(),
+                            "catia_limit_endpoint_pairs",
+                        )
+                        .map_err(StandardTopologyError::Resource)?;
+                        for binding in
+                            ctx.admit_iter(bindings, "catia_standard_limit_curve_binding_rows")?
+                        {
+                            let [first, second] = binding.points;
+                            limit_pairs.push([first.min(second), first.max(second)]);
+                        }
+                        ctx.sort_unstable_by(
+                            &mut limit_pairs,
+                            |value| value,
+                            Ord::cmp,
+                            "catia_limit_endpoint_pairs_sort",
+                        )
+                        .map_err(StandardTopologyError::Resource)?;
+                        ctx.dedup_vec(&mut limit_pairs, "catia_limit_endpoint_pairs_dedup")
+                            .map_err(StandardTopologyError::Resource)?;
+                        if options[edge].is_empty() {
+                            options[edge] = limit_pairs;
+                        }
+                    }
+                }
+                for (edge, _) in ctx
+                    .admit_iter(&supports, "catia_standard_native_endpoint_support_rows")?
+                    .enumerate()
+                {
+                    let native_pair =
+                        match native_supports_by_row.get(edge).and_then(Option::as_ref) {
+                            Some(native) => standard_native_support_endpoint_pair(
+                                ctx,
+                                native,
+                                &ir.model.points,
+                                &endpoint_candidates[edge],
+                                native_endpoint_evidence
+                                    .as_ref()
+                                    .and_then(|pairs| pairs[edge]),
+                            )?,
+                            None => None,
+                        };
+                    let Some(pair) = native_pair else { continue };
+                    if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                        return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
+                    }
+                    if let Some(options) = &mut endpoint_options {
+                        if ctx
+                            .any_by(
+                                &options[edge],
+                                |candidate| Ok(missing_edge::same_unordered_pair(*candidate, pair)),
+                                "catia_standard_endpoint_options",
+                            )
+                            .map_err(StandardTopologyError::Resource)?
+                        {
+                            options[edge] = ctx
+                                .alloc_filled(1, pair, "catia_native_support_singleton_pair")
+                                .map_err(StandardTopologyError::Resource)?;
+                        }
+                    }
+                }
+                if let (Some(options), Some(pairs)) =
+                    (&mut endpoint_options, &native_endpoint_evidence)
+                {
+                    for (edge, pair) in ctx
+                        .admit_iter(pairs, "catia_standard_native_endpoint_evidence_rows")?
+                        .take(options.len())
+                        .enumerate()
+                    {
+                        if let Some(pair) = pair {
+                            options[edge] = ctx
+                                .alloc_filled(1, *pair, "catia_native_evidence_singleton_pair")
+                                .map_err(StandardTopologyError::Resource)?;
+                        }
+                    }
+                }
+                if let (Some(options), Some(points)) =
+                    (&mut endpoint_options, &allocation_endpoint_points)
+                {
+                    corroborate_successor_endpoint_points(ctx, options, points)
+                        .map_err(StandardTopologyError::Resource)?;
+                }
+                let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
+                    Some(pairs) => {
+                        let Some(propagated) =
+                            missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
+                                ctx,
+                                &native_port_options,
+                                pairs,
+                                &ordered_endpoint_pairs,
+                            )
+                            .map_err(StandardTopologyError::Resource)?
+                        else {
+                            return Err(StandardTopologyFailure::NativeEndpointPropagation.into());
+                        };
+                        Some(propagated)
+                    }
+                    None => None,
+                };
+                if let (Some(options), Some(pairs)) =
+                    (&mut endpoint_options, &graph_propagated_endpoint_pairs)
+                {
+                    for (edge, pair) in ctx
+                        .admit_iter(pairs, "catia_standard_propagated_endpoint_rows")?
+                        .take(options.len())
+                        .enumerate()
+                    {
+                        if let Some(pair) = pair {
+                            options[edge] = ctx
+                                .alloc_filled(1, *pair, "catia_propagated_singleton_pair")
+                                .map_err(StandardTopologyError::Resource)?;
+                        }
+                    }
+                }
+                if let Some(pairs) = &graph_propagated_endpoint_pairs {
+                    include_native_endpoint_pairs(ctx, &mut endpoint_candidates, pairs)
+                        .map_err(StandardTopologyError::Resource)?;
+                }
+                if let Some(options) = &mut endpoint_options {
+                    let handle_face_candidates =
+                        missing_edge::standard_repeated_edge_face_handle_candidates(
+                            ctx,
+                            spine,
+                            &serialized_edge_faces,
+                        )
+                        .map_err(StandardTopologyError::Resource)?;
+                    let mut allowed_faces = Vec::new();
+                    ctx.reserve_vec(
+                        &mut allowed_faces,
+                        supports.len(),
+                        "catia_repeated_allowed_face_rows",
+                    )
+                    .map_err(StandardTopologyError::Resource)?;
+                    for (edge, support) in ctx
+                        .admit_iter(&supports, "catia_standard_iteration")?
+                        .enumerate()
+                    {
+                        let mut faces = Vec::new();
+                        if support.faces[0] == support.faces[1] {
+                            for (face, _) in ctx
+                                .admit_iter(&ir.model.faces, "catia_standard_circle_face_rows")?
+                                .enumerate()
+                                .filter(|(face, _)| *face != support.faces[0])
+                            {
+                                let Some(surface) =
+                                    face_surface(ctx, ir, bindings, &surface_indices, face)
+                                        .map_err(StandardTopologyError::Resource)?
+                                else {
+                                    continue;
+                                };
+                                let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
+                                let res = ctx
+                                    .any_by(
+                                        &options[edge],
+                                        |pair| {
+                                            for point in pair {
+                                                let Some(point) = ir.model.points.get(*point)
+                                                else {
+                                                    return Ok(false);
+                                                };
+                                                if !point_on_standard_face(
+                                                    ctx,
+                                                    point.position().get(),
+                                                    &surface.geometry,
+                                                    bounds,
+                                                )? {
+                                                    return Ok(false);
+                                                }
+                                            }
+                                            Ok(standard_nurbs_line_pair_on_face(
+                                                ctx,
+                                                &surface.geometry,
+                                                support,
+                                                pair,
+                                                &ir.model.points,
+                                                bounds,
+                                            )?)
+                                        },
+                                        "catia_standard_repeated_edge_pairs",
+                                    )
+                                    .map_err(StandardTopologyError::Resource)?;
+                                if res {
+                                    ctx.push_vec(&mut faces, face, "catia_repeated_allowed_faces")
+                                        .map_err(StandardTopologyError::Resource)?;
+                                }
+                            }
+                        }
+                        allowed_faces.push(faces);
+                    }
+                    let mut face_geometries = Vec::new();
+                    ctx.reserve_vec(
+                        &mut face_geometries,
+                        face_count,
+                        "catia_repeated_face_geometry_refs",
+                    )
+                    .map_err(StandardTopologyError::Resource)?;
+                    let mut all_face_geometries = true;
+                    let mut faces = 0..face_count;
+                    while let Some(face) = ctx
+                        .next_charged(&mut faces, "catia_repeated_face_geometry_rows")
+                        .map_err(StandardTopologyError::Resource)?
+                    {
+                        let Some(surface) = face_surface(ctx, ir, bindings, &surface_indices, face)
+                            .map_err(StandardTopologyError::Resource)?
+                        else {
+                            all_face_geometries = false;
+                            break;
+                        };
+                        face_geometries.push(&surface.geometry);
+                    }
+                    let face_geometries = all_face_geometries.then_some(face_geometries);
+                    let mut edge_geometries = Vec::new();
+                    ctx.reserve_vec(
+                        &mut edge_geometries,
+                        supports.len(),
+                        "catia_repeated_edge_geometry_refs",
+                    )
+                    .map_err(StandardTopologyError::Resource)?;
+                    for support in ctx.admit_iter(&supports, "catia_repeated_edge_geometry_refs")? {
+                        edge_geometries.push(&support.geometry);
+                    }
+                    if let Some(handle_face_candidates) = handle_face_candidates {
+                        missing_edge::refine_repeated_edge_face_candidates(
+                            ctx,
+                            &edge_faces,
+                            &mut allowed_faces,
+                            &handle_face_candidates,
+                        )
+                        .map_err(StandardTopologyError::Resource)?
+                        .ok_or(StandardTopologyFailure::EdgeFaceAssignment)?;
+                    }
+                    refine_repeated_face_domains_by_geometry_and_bounds(
+                        ctx,
+                        &edge_faces,
+                        &mut allowed_faces,
+                        face_bounds,
+                        face_geometries.as_deref(),
+                        &edge_geometries,
+                    )
+                    .map_err(StandardTopologyError::Resource)?;
+                    let has_alternates = ctx
                         .any_by(
-                            &options[edge],
+                            &allowed_faces,
+                            |faces| Ok(!faces.is_empty()),
+                            "catia_standard_alternate_face_domains",
+                        )
+                        .map_err(StandardTopologyError::Resource)?;
+                    let endpoint_pairs = if has_alternates {
+                        let mut pairs = Vec::new();
+                        ctx.reserve_vec(&mut pairs, options.len(), "catia_repeated_endpoint_pairs")
+                            .map_err(StandardTopologyError::Resource)?;
+                        let mut complete = true;
+                        let mut rows = options.iter();
+                        while let Some(choices) = ctx
+                            .next_charged(&mut rows, "catia_repeated_endpoint_pairs")
+                            .map_err(StandardTopologyError::Resource)?
+                        {
+                            let Ok([pair]) = <[[usize; 2]; 1]>::try_from(choices.as_slice()) else {
+                                complete = false;
+                                break;
+                            };
+                            pairs.push(pair);
+                        }
+                        complete.then_some(pairs)
+                    } else {
+                        None
+                    };
+                    let endpoint_closures = match endpoint_pairs {
+                        Some(pairs) => missing_edge::repeated_face_endpoint_closures(
+                            ctx,
+                            &edge_faces,
+                            &allowed_faces,
+                            &pairs,
+                            face_count,
+                        )
+                        .map_err(StandardTopologyError::Resource)?,
+                        None => None,
+                    };
+                    let endpoint_completed = match endpoint_closures.as_deref() {
+                        Some([closure]) => Some(
+                            ctx.copy_slice(closure, "catia_repeated_endpoint_completed")
+                                .map_err(StandardTopologyError::Resource)?,
+                        ),
+                        _ => None,
+                    };
+                    if endpoint_closures
+                        .as_ref()
+                        .is_some_and(|closures| closures.len() > 1)
+                    {
+                        endpoint_face_assignments = endpoint_closures;
+                    }
+                    // A non-empty domain remains open when endpoint degree closure does
+                    // not select one complete incidence assignment. Face-local endpoint
+                    // evidence cannot choose among multiple globally closed assignments.
+                    let completed = if endpoint_completed.is_some() || has_alternates {
+                        endpoint_completed
+                    } else {
+                        missing_edge::resolve_standard_duplicate_edge_faces(
+                            ctx,
+                            spine,
+                            &edge_faces,
+                            &allowed_faces,
+                        )
+                        .map_err(StandardTopologyError::Resource)?
+                    };
+                    if let Some(completed) = completed {
+                        edge_faces = completed;
+                        for (edge, faces) in ctx
+                            .admit_iter(&edge_faces, "catia_standard_completed_edge_faces")?
+                            .take(supports.len())
+                            .enumerate()
+                        {
+                            let support = &mut supports[edge];
+                            if support.faces == *faces {
+                                continue;
+                            }
+                            support.faces = *faces;
+                            let Some(surface) =
+                                face_surface(ctx, ir, bindings, &surface_indices, faces[1])
+                                    .map_err(StandardTopologyError::Resource)?
+                            else {
+                                return Err(StandardTopologyFailure::MissingFaceSurface.into());
+                            };
+                            let bounds = face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]);
+                            ctx.retain_vec(
+                                &mut options[edge],
+                                |pair| {
+                                    for point in pair {
+                                        let Some(point) = ir.model.points.get(*point) else {
+                                            return Ok(false);
+                                        };
+                                        if !point_on_standard_face(
+                                            ctx,
+                                            point.position().get(),
+                                            &surface.geometry,
+                                            bounds,
+                                        )? {
+                                            return Ok(false);
+                                        }
+                                    }
+                                    Ok(true)
+                                },
+                                "catia_standard_completed_endpoint_pairs",
+                            )
+                            .map_err(StandardTopologyError::Resource)?;
+                            if options[edge].is_empty() {
+                                return Err(StandardTopologyFailure::EmptyEndpointDomain.into());
+                            }
+                        }
+                    } else {
+                        for (edge, faces) in ctx
+                            .admit_iter(&edge_faces, "catia_standard_deferred_edge_faces")?
+                            .enumerate()
+                        {
+                            deferred_port_edges[edge] = faces[0] == faces[1]
+                                && allowed_faces
+                                    .get(edge)
+                                    .is_some_and(|faces| !faces.is_empty());
+                        }
+                        if ctx
+                            .any_by(
+                                &allowed_faces,
+                                |faces| Ok(!faces.is_empty()),
+                                "catia_standard_open_face_domains",
+                            )
+                            .map_err(StandardTopologyError::Resource)?
+                        {
+                            open_face_domains = Some(allowed_faces);
+                        }
+                    }
+                }
+                let has_open_face_domains = match open_face_domains.as_ref() {
+                    Some(domains) => ctx
+                        .any_by(
+                            domains,
+                            |domain| Ok(!domain.is_empty()),
+                            "catia_standard_open_face_domains",
+                        )
+                        .map_err(StandardTopologyError::Resource)?,
+                    None => false,
+                };
+                let endpoint_pair_on_incident_faces = |edge: usize,
+                                                       pair: [usize; 2]|
+                 -> Result<bool, CodecError> {
+                    for point in pair {
+                        let Some(position) = ir
+                            .model
+                            .points
+                            .get(point)
+                            .map(|point| point.position().get())
+                        else {
+                            return Ok(false);
+                        };
+                        for face in supports[edge].faces {
+                            let Some(surface) =
+                                face_surface(ctx, ir, bindings, &surface_indices, face)?
+                            else {
+                                return Ok(false);
+                            };
+                            let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
+                            if !point_on_standard_face(ctx, position, &surface.geometry, bounds)?
+                                || !standard_nurbs_line_pair_on_face(
+                                    ctx,
+                                    &surface.geometry,
+                                    &supports[edge],
+                                    &pair,
+                                    &ir.model.points,
+                                    bounds,
+                                )?
+                            {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                    Ok(true)
+                };
+                if let Some(options) = &mut endpoint_options {
+                    for (edge, _) in ctx
+                        .admit_iter(&supports, "catia_standard_endpoint_option_supports")?
+                        .take(options.len())
+                        .enumerate()
+                    {
+                        let pairs = &mut options[edge];
+                        let support = &supports[edge];
+                        if matches!(
+                            support.geometry,
+                            crate::families::standard::records::StandardCurveGeometry::Bspline
+                        ) {
+                            continue;
+                        }
+                        let unfiltered = ctx
+                            .copy_slice(pairs, "catia_standard_unfiltered_endpoint_pairs")
+                            .map_err(StandardTopologyError::Resource)?;
+                        ctx.retain_vec(
+                            pairs,
                             |pair| {
-                                for point in pair {
-                                    let Some(point) = ir.model.points.get(*point) else {
+                                let Some(start) = ir
+                                    .model
+                                    .points
+                                    .get(pair[0])
+                                    .map(|point| point.position().get())
+                                else {
+                                    return Ok(false);
+                                };
+                                let Some(end) = ir
+                                    .model
+                                    .points
+                                    .get(pair[1])
+                                    .map(|point| point.position().get())
+                                else {
+                                    return Ok(false);
+                                };
+                                for &face in &support.faces {
+                                    let Some(surface) =
+                                        face_surface(ctx, ir, bindings, &surface_indices, face)?
+                                    else {
                                         return Ok(false);
                                     };
-                                    if !point_on_standard_face(
+                                    if !standard_endpoint_pair_supports_topology(
                                         ctx,
-                                        point.position().get(),
                                         &surface.geometry,
-                                        bounds,
+                                        support,
+                                        start,
+                                        end,
+                                        crate::families::standard::records::standard_face_witness(
+                                            brep,
+                                            bindings[face].2,
+                                        ),
+                                        refusal,
                                     )? {
                                         return Ok(false);
                                     }
                                 }
-                                Ok(standard_nurbs_line_pair_on_face(
-                                    ctx,
-                                    &surface.geometry,
-                                    support,
-                                    pair,
-                                    &ir.model.points,
-                                    bounds,
-                                )?)
+                                Ok(true)
                             },
-                            "catia_standard_repeated_edge_pairs",
+                            "catia_standard_endpoint_topology_filter",
                         )
                         .map_err(StandardTopologyError::Resource)?;
-                    if res {
-                        ctx.push_vec(&mut faces, face, "catia_repeated_allowed_faces")
-                            .map_err(StandardTopologyError::Resource)?;
+                        if pairs.is_empty() {
+                            *pairs = unfiltered;
+                        }
                     }
                 }
-            }
-            allowed_faces.push(faces);
-        }
-        let mut face_geometries = Vec::new();
-        ctx.reserve_vec(
-            &mut face_geometries,
-            face_count,
-            "catia_repeated_face_geometry_refs",
-        )
-        .map_err(StandardTopologyError::Resource)?;
-        let mut all_face_geometries = true;
-        let mut faces = 0..face_count;
-        while let Some(face) = ctx
-            .next_charged(&mut faces, "catia_repeated_face_geometry_rows")
-            .map_err(StandardTopologyError::Resource)?
-        {
-            let Some(surface) = face_surface(ctx, ir, bindings, &surface_indices, face)
-                .map_err(StandardTopologyError::Resource)?
-            else {
-                all_face_geometries = false;
-                break;
-            };
-            face_geometries.push(&surface.geometry);
-        }
-        let face_geometries = all_face_geometries.then_some(face_geometries);
-        let mut edge_geometries = Vec::new();
-        ctx.reserve_vec(
-            &mut edge_geometries,
-            supports.len(),
-            "catia_repeated_edge_geometry_refs",
-        )
-        .map_err(StandardTopologyError::Resource)?;
-        for support in ctx.admit_iter(&supports, "catia_repeated_edge_geometry_refs")? {
-            edge_geometries.push(&support.geometry);
-        }
-        if let Some(handle_face_candidates) = handle_face_candidates {
-            missing_edge::refine_repeated_edge_face_candidates(
-                ctx,
-                &edge_faces,
-                &mut allowed_faces,
-                &handle_face_candidates,
-            )
-            .map_err(StandardTopologyError::Resource)?
-            .ok_or(StandardTopologyFailure::EdgeFaceAssignment)?;
-        }
-        refine_repeated_face_domains_by_geometry_and_bounds(
-            ctx,
-            &edge_faces,
-            &mut allowed_faces,
-            face_bounds,
-            face_geometries.as_deref(),
-            &edge_geometries,
-        )
-        .map_err(StandardTopologyError::Resource)?;
-        let has_alternates = ctx
-            .any_by(
-                &allowed_faces,
-                |faces| Ok(!faces.is_empty()),
-                "catia_standard_alternate_face_domains",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-        let endpoint_pairs = if has_alternates {
-            let mut pairs = Vec::new();
-            ctx.reserve_vec(&mut pairs, options.len(), "catia_repeated_endpoint_pairs")
-                .map_err(StandardTopologyError::Resource)?;
-            let mut complete = true;
-            let mut rows = options.iter();
-            while let Some(choices) = ctx
-                .next_charged(&mut rows, "catia_repeated_endpoint_pairs")
-                .map_err(StandardTopologyError::Resource)?
-            {
-                let Ok([pair]) = <[[usize; 2]; 1]>::try_from(choices.as_slice()) else {
-                    complete = false;
-                    break;
-                };
-                pairs.push(pair);
-            }
-            complete.then_some(pairs)
-        } else {
-            None
-        };
-        let endpoint_closures = match endpoint_pairs {
-            Some(pairs) => missing_edge::repeated_face_endpoint_closures(
-                ctx,
-                &edge_faces,
-                &allowed_faces,
-                &pairs,
-                face_count,
-            )
-            .map_err(StandardTopologyError::Resource)?,
-            None => None,
-        };
-        let endpoint_completed = match endpoint_closures.as_deref() {
-            Some([closure]) => Some(
-                ctx.copy_slice(closure, "catia_repeated_endpoint_completed")
-                    .map_err(StandardTopologyError::Resource)?,
-            ),
-            _ => None,
-        };
-        if endpoint_closures
-            .as_ref()
-            .is_some_and(|closures| closures.len() > 1)
-        {
-            endpoint_face_assignments = endpoint_closures;
-        }
-        // A non-empty domain remains open when endpoint degree closure does
-        // not select one complete incidence assignment. Face-local endpoint
-        // evidence cannot choose among multiple globally closed assignments.
-        let completed = if endpoint_completed.is_some() || has_alternates {
-            endpoint_completed
-        } else {
-            missing_edge::resolve_standard_duplicate_edge_faces(
-                ctx,
-                spine,
-                &edge_faces,
-                &allowed_faces,
-            )
-            .map_err(StandardTopologyError::Resource)?
-        };
-        if let Some(completed) = completed {
-            edge_faces = completed;
-            for (edge, faces) in ctx
-                .admit_iter(&edge_faces, "catia_standard_completed_edge_faces")?
-                .take(supports.len())
-                .enumerate()
-            {
-                let support = &mut supports[edge];
-                if support.faces == *faces {
-                    continue;
-                }
-                support.faces = *faces;
-                let Some(surface) = face_surface(ctx, ir, bindings, &surface_indices, faces[1])
-                    .map_err(StandardTopologyError::Resource)?
-                else {
-                    return Err(StandardTopologyFailure::MissingFaceSurface.into());
-                };
-                let bounds = face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]);
-                ctx.retain_vec(
-                    &mut options[edge],
-                    |pair| {
-                        for point in pair {
-                            let Some(point) = ir.model.points.get(*point) else {
-                                return Ok(false);
-                            };
-                            if !point_on_standard_face(
+                if let Some(options) = &mut endpoint_options {
+                    loop {
+                        let seeds = ctx
+                            .collect_vec(
+                                options.iter().map(|pairs| {
+                                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                                        .ok()
+                                        .map(|[pair]| pair)
+                                }),
+                                "catia_standard_placement_seeds",
+                            )
+                            .map_err(StandardTopologyError::Resource)?;
+                        let mut changed = false;
+                        if let Some(placement_domains) =
+                            missing_edge::standard_mesh_placement_endpoint_pairs(
                                 ctx,
-                                point.position().get(),
-                                &surface.geometry,
-                                bounds,
-                            )? {
-                                return Ok(false);
+                                spine,
+                                &edge_faces,
+                                &seeds,
+                            )
+                            .map_err(StandardTopologyError::Resource)?
+                        {
+                            for (edge, mut domain) in ctx
+                                .admit_iter(
+                                    placement_domains,
+                                    "catia_standard_placement_domain_rows",
+                                )?
+                                .enumerate()
+                            {
+                                if deferred_port_edges[edge] {
+                                    continue;
+                                }
+                                ctx.retain_vec(
+                                    &mut domain,
+                                    |pair| endpoint_pair_on_incident_faces(edge, *pair),
+                                    "catia_standard_placement_domain_faces",
+                                )
+                                .map_err(StandardTopologyError::Resource)?;
+                                if domain.is_empty() {
+                                    continue;
+                                }
+                                // The domain only narrows a nonempty row, so a row changes
+                                // exactly when it was empty or loses a pair.
+                                if options[edge].is_empty() {
+                                    options[edge] = domain;
+                                    changed = true;
+                                } else {
+                                    let before = options[edge].len();
+                                    ctx.retain_vec(
+                                        &mut options[edge],
+                                        |pair| {
+                                            ctx.any_by(
+                                                &domain,
+                                                |candidate| {
+                                                    Ok(missing_edge::same_unordered_pair(
+                                                        *pair, *candidate,
+                                                    ))
+                                                },
+                                                "catia_standard_endpoint_domain_pairs",
+                                            )
+                                        },
+                                        "catia_standard_endpoint_pair_domain_filter",
+                                    )
+                                    .map_err(StandardTopologyError::Resource)?;
+                                    changed |= options[edge].len() != before;
+                                }
                             }
                         }
-                        Ok(true)
-                    },
-                    "catia_standard_completed_endpoint_pairs",
-                )
-                .map_err(StandardTopologyError::Resource)?;
-                if options[edge].is_empty() {
-                    return Err(StandardTopologyFailure::EmptyEndpointDomain.into());
-                }
-            }
-        } else {
-            for (edge, faces) in ctx
-                .admit_iter(&edge_faces, "catia_standard_deferred_edge_faces")?
-                .enumerate()
-            {
-                deferred_port_edges[edge] = faces[0] == faces[1]
-                    && allowed_faces
-                        .get(edge)
-                        .is_some_and(|faces| !faces.is_empty());
-            }
-            if ctx
-                .any_by(
-                    &allowed_faces,
-                    |faces| Ok(!faces.is_empty()),
-                    "catia_standard_open_face_domains",
-                )
-                .map_err(StandardTopologyError::Resource)?
-            {
-                open_face_domains = Some(allowed_faces);
-            }
-        }
-    }
-    let has_open_face_domains = match open_face_domains.as_ref() {
-        Some(domains) => ctx
-            .any_by(
-                domains,
-                |domain| Ok(!domain.is_empty()),
-                "catia_standard_open_face_domains",
-            )
-            .map_err(StandardTopologyError::Resource)?,
-        None => false,
-    };
-    let endpoint_pair_on_incident_faces = |edge: usize,
-                                           pair: [usize; 2]|
-     -> Result<bool, CodecError> {
-        for point in pair {
-            let Some(position) = ir
-                .model
-                .points
-                .get(point)
-                .map(|point| point.position().get())
-            else {
-                return Ok(false);
-            };
-            for face in supports[edge].faces {
-                let Some(surface) = face_surface(ctx, ir, bindings, &surface_indices, face)? else {
-                    return Ok(false);
-                };
-                let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
-                if !point_on_standard_face(ctx, position, &surface.geometry, bounds)?
-                    || !standard_nurbs_line_pair_on_face(
-                        ctx,
-                        &surface.geometry,
-                        &supports[edge],
-                        &pair,
-                        &ir.model.points,
-                        bounds,
-                    )?
-                {
-                    return Ok(false);
-                }
-            }
-        }
-        Ok(true)
-    };
-    if let Some(options) = &mut endpoint_options {
-        for (edge, _) in ctx
-            .admit_iter(&supports, "catia_standard_endpoint_option_supports")?
-            .take(options.len())
-            .enumerate()
-        {
-            let pairs = &mut options[edge];
-            let support = &supports[edge];
-            if matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Bspline
-            ) {
-                continue;
-            }
-            let unfiltered = ctx
-                .copy_slice(pairs, "catia_standard_unfiltered_endpoint_pairs")
-                .map_err(StandardTopologyError::Resource)?;
-            ctx.retain_vec(
-                pairs,
-                |pair| {
-                    let Some(start) = ir
-                        .model
-                        .points
-                        .get(pair[0])
-                        .map(|point| point.position().get())
-                    else {
-                        return Ok(false);
-                    };
-                    let Some(end) = ir
-                        .model
-                        .points
-                        .get(pair[1])
-                        .map(|point| point.position().get())
-                    else {
-                        return Ok(false);
-                    };
-                    for &face in &support.faces {
-                        let Some(surface) =
-                            face_surface(ctx, ir, bindings, &surface_indices, face)?
-                        else {
-                            return Ok(false);
+                        let boundary_domains = if ctx
+                            .all_by(
+                                options.as_slice(),
+                                |domain| Ok(!domain.is_empty()),
+                                "catia_standard_complete_endpoint_domains",
+                            )
+                            .map_err(StandardTopologyError::Resource)?
+                        {
+                            missing_edge::standard_mesh_prune_endpoint_candidates(
+                                ctx,
+                                spine,
+                                &edge_faces,
+                                options,
+                            )
+                            .map_err(StandardTopologyError::Resource)?
+                        } else {
+                            None
                         };
-                        if !standard_endpoint_pair_supports_topology(
-                            ctx,
-                            &surface.geometry,
-                            support,
-                            start,
-                            end,
-                            crate::families::standard::records::standard_face_witness(
-                                brep,
-                                bindings[face].2,
-                            ),
-                            refusal,
-                        )? {
-                            return Ok(false);
+                        if let Some(boundary_domains) = boundary_domains {
+                            for (edge, mut domain) in ctx
+                                .admit_iter(
+                                    boundary_domains,
+                                    "catia_standard_boundary_domain_rows",
+                                )?
+                                .enumerate()
+                            {
+                                if deferred_port_edges[edge] {
+                                    continue;
+                                }
+                                ctx.retain_vec(
+                                    &mut domain,
+                                    |pair| endpoint_pair_on_incident_faces(edge, *pair),
+                                    "catia_standard_boundary_domain_faces",
+                                )
+                                .map_err(StandardTopologyError::Resource)?;
+                                // Filtering only removes pairs, so a row changes exactly
+                                // when it was empty and gains the domain or loses a pair.
+                                if options[edge].is_empty() {
+                                    changed |= !domain.is_empty();
+                                    options[edge] = domain;
+                                } else {
+                                    let before = options[edge].len();
+                                    ctx.retain_vec(
+                                        &mut options[edge],
+                                        |pair| {
+                                            ctx.any_by(
+                                                &domain,
+                                                |candidate| {
+                                                    Ok(missing_edge::same_unordered_pair(
+                                                        *pair, *candidate,
+                                                    ))
+                                                },
+                                                "catia_standard_boundary_domain_pairs",
+                                            )
+                                        },
+                                        "catia_standard_boundary_pair_domain_filter",
+                                    )
+                                    .map_err(StandardTopologyError::Resource)?;
+                                    changed |= options[edge].len() != before;
+                                }
+                            }
+                        }
+                        if !changed {
+                            break;
                         }
                     }
-                    Ok(true)
-                },
-                "catia_standard_endpoint_topology_filter",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-            if pairs.is_empty() {
-                *pairs = unfiltered;
-            }
-        }
-    }
-    if let Some(options) = &mut endpoint_options {
-        loop {
-            let seeds = ctx
-                .collect_vec(
-                    options.iter().map(|pairs| {
-                        <[[usize; 2]; 1]>::try_from(pairs.as_slice())
-                            .ok()
-                            .map(|[pair]| pair)
-                    }),
-                    "catia_standard_placement_seeds",
-                )
-                .map_err(StandardTopologyError::Resource)?;
-            let mut changed = false;
-            if let Some(placement_domains) = missing_edge::standard_mesh_placement_endpoint_pairs(
-                ctx,
-                spine,
-                &edge_faces,
-                &seeds,
-            )
-            .map_err(StandardTopologyError::Resource)?
-            {
-                for (edge, mut domain) in ctx
-                    .admit_iter(placement_domains, "catia_standard_placement_domain_rows")?
-                    .enumerate()
-                {
-                    if deferred_port_edges[edge] {
-                        continue;
-                    }
-                    ctx.retain_vec(
-                        &mut domain,
-                        |pair| endpoint_pair_on_incident_faces(edge, *pair),
-                        "catia_standard_placement_domain_faces",
-                    )
-                    .map_err(StandardTopologyError::Resource)?;
-                    if domain.is_empty() {
-                        continue;
-                    }
-                    // The domain only narrows a nonempty row, so a row changes
-                    // exactly when it was empty or loses a pair.
-                    if options[edge].is_empty() {
-                        options[edge] = domain;
-                        changed = true;
-                    } else {
-                        let before = options[edge].len();
+                    for (edge, _) in ctx
+                        .admit_iter(&supports, "catia_standard_endpoint_option_filter_supports")?
+                        .take(options.len())
+                        .enumerate()
+                    {
+                        let pairs = &mut options[edge];
                         ctx.retain_vec(
-                            &mut options[edge],
-                            |pair| {
-                                ctx.any_by(
-                                    &domain,
-                                    |candidate| {
-                                        Ok(missing_edge::same_unordered_pair(*pair, *candidate))
-                                    },
-                                    "catia_standard_endpoint_domain_pairs",
-                                )
-                            },
-                            "catia_standard_endpoint_pair_domain_filter",
+                            pairs,
+                            |pair| endpoint_pair_on_incident_faces(edge, *pair),
+                            "catia_standard_endpoint_option_faces",
                         )
                         .map_err(StandardTopologyError::Resource)?;
-                        changed |= options[edge].len() != before;
-                    }
-                }
-            }
-            let boundary_domains = if ctx
-                .all_by(
-                    options.as_slice(),
-                    |domain| Ok(!domain.is_empty()),
-                    "catia_standard_complete_endpoint_domains",
-                )
-                .map_err(StandardTopologyError::Resource)?
-            {
-                missing_edge::standard_mesh_prune_endpoint_candidates(
-                    ctx,
-                    spine,
-                    &edge_faces,
-                    options,
-                )
-                .map_err(StandardTopologyError::Resource)?
-            } else {
-                None
-            };
-            if let Some(boundary_domains) = boundary_domains {
-                for (edge, mut domain) in ctx
-                    .admit_iter(boundary_domains, "catia_standard_boundary_domain_rows")?
-                    .enumerate()
-                {
-                    if deferred_port_edges[edge] {
-                        continue;
-                    }
-                    ctx.retain_vec(
-                        &mut domain,
-                        |pair| endpoint_pair_on_incident_faces(edge, *pair),
-                        "catia_standard_boundary_domain_faces",
-                    )
-                    .map_err(StandardTopologyError::Resource)?;
-                    // Filtering only removes pairs, so a row changes exactly
-                    // when it was empty and gains the domain or loses a pair.
-                    if options[edge].is_empty() {
-                        changed |= !domain.is_empty();
-                        options[edge] = domain;
-                    } else {
-                        let before = options[edge].len();
-                        ctx.retain_vec(
-                            &mut options[edge],
-                            |pair| {
-                                ctx.any_by(
-                                    &domain,
-                                    |candidate| {
-                                        Ok(missing_edge::same_unordered_pair(*pair, *candidate))
-                                    },
-                                    "catia_standard_boundary_domain_pairs",
-                                )
-                            },
-                            "catia_standard_boundary_pair_domain_filter",
+                        ctx.sort_unstable_by(
+                            pairs,
+                            |value| value,
+                            Ord::cmp,
+                            "catia_standard_endpoint_pairs_sort",
                         )
                         .map_err(StandardTopologyError::Resource)?;
-                        changed |= options[edge].len() != before;
+                        ctx.dedup_vec(pairs, "catia_standard_endpoint_pairs_dedup")
+                            .map_err(StandardTopologyError::Resource)?;
+                    }
+                    for (edge, _) in ctx
+                        .admit_iter(&supports, "catia_standard_endpoint_candidate_option_rows")?
+                        .take(endpoint_candidates.len())
+                        .take(options.len())
+                        .enumerate()
+                    {
+                        let candidates = &mut endpoint_candidates[edge];
+                        for point in ctx
+                            .admit_iter(
+                                options[edge].as_slice(),
+                                "catia_standard_endpoint_option_points",
+                            )?
+                            .flat_map(|pair| [&pair[0], &pair[1]])
+                        {
+                            if !ctx
+                                .contains(
+                                    candidates,
+                                    point,
+                                    "catia_standard_endpoint_candidate_point",
+                                )
+                                .map_err(StandardTopologyError::Resource)?
+                            {
+                                ctx.push_vec(
+                                    candidates,
+                                    *point,
+                                    "catia_standard_endpoint_candidate_point",
+                                )
+                                .map_err(StandardTopologyError::Resource)?;
+                            }
+                        }
                     }
                 }
-            }
-            if !changed {
-                break;
-            }
-        }
-        for (edge, _) in ctx
-            .admit_iter(&supports, "catia_standard_endpoint_option_filter_supports")?
-            .take(options.len())
-            .enumerate()
-        {
-            let pairs = &mut options[edge];
-            ctx.retain_vec(
-                pairs,
-                |pair| endpoint_pair_on_incident_faces(edge, *pair),
-                "catia_standard_endpoint_option_faces",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-            ctx.sort_unstable_by(
-                pairs,
-                |value| value,
-                Ord::cmp,
-                "catia_standard_endpoint_pairs_sort",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-            ctx.dedup_vec(pairs, "catia_standard_endpoint_pairs_dedup")
-                .map_err(StandardTopologyError::Resource)?;
-        }
-        for (edge, _) in ctx
-            .admit_iter(&supports, "catia_standard_endpoint_candidate_option_rows")?
-            .take(endpoint_candidates.len())
-            .take(options.len())
-            .enumerate()
-        {
-            let candidates = &mut endpoint_candidates[edge];
-            for point in ctx
-                .admit_iter(
-                    options[edge].as_slice(),
-                    "catia_standard_endpoint_option_points",
-                )?
-                .flat_map(|pair| [&pair[0], &pair[1]])
-            {
-                if !ctx
-                    .contains(candidates, point, "catia_standard_endpoint_candidate_point")
-                    .map_err(StandardTopologyError::Resource)?
-                {
-                    ctx.push_vec(
-                        candidates,
-                        *point,
-                        "catia_standard_endpoint_candidate_point",
-                    )
-                    .map_err(StandardTopologyError::Resource)?;
-                }
-            }
-        }
-    }
-    let graph_propagated_pairs = graph_propagated_endpoint_pairs
-        .as_ref()
-        .map(|pairs| {
-            ctx.collect_options(
-                pairs.iter().copied(),
-                "catia_standard_graph_propagated_pairs",
-            )
-        })
-        .transpose()
-        .map_err(StandardTopologyError::Resource)?
-        .flatten();
-    let native_endpoint_pairs = if let Some(pairs) = graph_propagated_pairs {
-        Some(pairs)
-    } else {
-        (|| -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
-            const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
-            const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
-
-            let Some(options) = endpoint_options.as_ref() else {
-                return Ok(None);
-            };
-            let Some(ports) = native_ports.as_ref() else {
-                return Ok(None);
-            };
-            let seeds = ctx.collect_vec(
-                options.iter().map(|choices| {
-                    <[[usize; 2]; 1]>::try_from(choices.as_slice())
-                        .ok()
-                        .map(|[pair]| pair)
-                }),
-                "catia_standard_native_port_seeds",
-            )?;
-            let Some(propagated) = missing_edge::propagate_edge_port_points_with_ordered_seeds(
-                ctx,
-                ports,
-                &seeds,
-                &ordered_endpoint_pairs,
-            )?
-            else {
-                return Ok(None);
-            };
-            if let Some(complete) = ctx.collect_options(
-                propagated.iter().copied(),
-                "catia_standard_native_complete_pairs",
-            )? {
-                return Ok(Some(complete));
-            }
-            // Exhaustive binding is a fallback after exact identity propagation.
-            // Large symmetric choice sets remain unresolved and continue through
-            // trim-mesh and incidence paths instead of making decode unbounded.
-            let choice_count = ctx.fold(
-                options,
-                0usize,
-                |total, choices| Ok(total + choices.len()),
-                "catia_standard_native_port_choice_count",
-            )?;
-            if choice_count <= MAX_NATIVE_PORT_CHOICES
-                && options
-                    .len()
-                    .checked_mul(choice_count)
-                    .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK)
-            {
-                missing_edge::bind_edge_port_candidates(ctx, ports, options)
-            } else {
-                Ok(None)
-            }
-        })()
-        .map_err(StandardTopologyError::Resource)?
-    };
-    let propagated_endpoint_pairs = if let Some((options, ports)) = endpoint_options.as_ref().zip(
-        missing_edge::edge_port_identities(ctx, spine).map_err(StandardTopologyError::Resource)?,
-    ) {
-        let pairs = ctx
-            .collect_vec(
-                ctx.admit_iter(options, "catia_standard_propagated_option_rows")?
+                let graph_propagated_pairs = graph_propagated_endpoint_pairs
+                    .as_ref()
                     .map(|pairs| {
-                        <[[usize; 2]; 1]>::try_from(pairs.as_slice())
-                            .ok()
-                            .map(|pair| pair[0])
-                    }),
-                "catia_standard_propagated_seeds",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-        missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
-            ctx,
-            &ports,
-            &pairs,
-            &ordered_endpoint_pairs,
-            &deferred_port_edges,
-        )
-        .map_err(StandardTopologyError::Resource)?
-        .map(|propagated| {
-            ctx.try_collect_vec(
-                ctx.admit_iter(&propagated, "catia_standard_validated_propagated_pairs")?
-                    .copied()
-                    .zip(ctx.admit_iter(options, "catia_standard_propagated_candidate_rows")?)
-                    .map(|(pair, candidates)| -> Result<_, CodecError> {
-                        let Some(pair) = pair else {
+                        ctx.collect_options(
+                            pairs.iter().copied(),
+                            "catia_standard_graph_propagated_pairs",
+                        )
+                    })
+                    .transpose()
+                    .map_err(StandardTopologyError::Resource)?
+                    .flatten();
+                let native_endpoint_pairs = if let Some(pairs) = graph_propagated_pairs {
+                    Some(pairs)
+                } else {
+                    (|| -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
+                        const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
+                        const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
+
+                        let Some(options) = endpoint_options.as_ref() else {
                             return Ok(None);
                         };
-                        let matches = ctx.any_by(
-                            candidates,
-                            |candidate| Ok(*candidate == pair || *candidate == [pair[1], pair[0]]),
-                            "catia_standard_propagated_candidates",
+                        let Some(ports) = native_ports.as_ref() else {
+                            return Ok(None);
+                        };
+                        let seeds = ctx.collect_vec(
+                            options.iter().map(|choices| {
+                                <[[usize; 2]; 1]>::try_from(choices.as_slice())
+                                    .ok()
+                                    .map(|[pair]| pair)
+                            }),
+                            "catia_standard_native_port_seeds",
                         )?;
-                        Ok(matches.then_some(pair))
-                    }),
-                "catia_standard_validated_propagated_pairs",
-            )
-        })
-        .transpose()
-        .map_err(StandardTopologyError::Resource)?
-    } else {
-        None
-    };
-    let mesh_propagated_endpoint_pairs = if let Some((options, ports)) =
-        endpoint_options.as_ref().zip(
-            missing_edge::standard_mesh_edge_ports(ctx, spine)
-                .map_err(StandardTopologyError::Resource)?,
-        ) {
-        let pairs = ctx
-            .collect_vec(
-                options.iter().map(|pairs| {
-                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
-                        .ok()
-                        .map(|pair| pair[0])
-                }),
-                "catia_standard_mesh_propagated_seeds",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-        missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
-            ctx,
-            &ports,
-            &pairs,
-            &ordered_endpoint_pairs,
-            &deferred_port_edges,
-        )
-        .map_err(StandardTopologyError::Resource)?
-    } else {
-        None
-    };
-    let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
-        ctx,
-        propagated_endpoint_pairs,
-        mesh_propagated_endpoint_pairs,
-    )
-    .map_err(StandardTopologyError::Resource)?;
-    let mut constrained_endpoint_options = if let Some(options) = endpoint_options.as_ref() {
-        let mut copied = Vec::new();
-        for (edge, pairs) in ctx
-            .admit_iter(options, "catia_endpoint_option_copy")?
-            .enumerate()
-        {
-            let row = if let Some(pair) = propagated_endpoint_pairs
-                .as_ref()
-                .and_then(|propagated| propagated.get(edge).copied().flatten())
-            {
-                ctx.alloc_filled(1, pair, "catia_endpoint_propagated_pair")
+                        let Some(propagated) =
+                            missing_edge::propagate_edge_port_points_with_ordered_seeds(
+                                ctx,
+                                ports,
+                                &seeds,
+                                &ordered_endpoint_pairs,
+                            )?
+                        else {
+                            return Ok(None);
+                        };
+                        if let Some(complete) = ctx.collect_options(
+                            propagated.iter().copied(),
+                            "catia_standard_native_complete_pairs",
+                        )? {
+                            return Ok(Some(complete));
+                        }
+                        // Exhaustive binding is a fallback after exact identity propagation.
+                        // Large symmetric choice sets remain unresolved and continue through
+                        // trim-mesh and incidence paths instead of making decode unbounded.
+                        let choice_count = ctx.fold(
+                            options,
+                            0usize,
+                            |total, choices| Ok(total + choices.len()),
+                            "catia_standard_native_port_choice_count",
+                        )?;
+                        if choice_count <= MAX_NATIVE_PORT_CHOICES
+                            && options
+                                .len()
+                                .checked_mul(choice_count)
+                                .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK)
+                        {
+                            missing_edge::bind_edge_port_candidates(ctx, ports, options)
+                        } else {
+                            Ok(None)
+                        }
+                    })()
                     .map_err(StandardTopologyError::Resource)?
-            } else {
-                ctx.copy_slice(pairs, "catia_endpoint_pair_copy")
+                };
+                let propagated_endpoint_pairs =
+                    if let Some((options, ports)) = endpoint_options.as_ref().zip(
+                        missing_edge::edge_port_identities(ctx, spine)
+                            .map_err(StandardTopologyError::Resource)?,
+                    ) {
+                        let pairs = ctx
+                            .collect_vec(
+                                ctx.admit_iter(options, "catia_standard_propagated_option_rows")?
+                                    .map(|pairs| {
+                                        <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                                            .ok()
+                                            .map(|pair| pair[0])
+                                    }),
+                                "catia_standard_propagated_seeds",
+                            )
+                            .map_err(StandardTopologyError::Resource)?;
+                        missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+                            ctx,
+                            &ports,
+                            &pairs,
+                            &ordered_endpoint_pairs,
+                            &deferred_port_edges,
+                        )
+                        .map_err(StandardTopologyError::Resource)?
+                        .map(|propagated| {
+                            ctx.try_collect_vec(
+                                ctx.admit_iter(
+                                    &propagated,
+                                    "catia_standard_validated_propagated_pairs",
+                                )?
+                                .copied()
+                                .zip(ctx.admit_iter(
+                                    options,
+                                    "catia_standard_propagated_candidate_rows",
+                                )?)
+                                .map(
+                                    |(pair, candidates)| -> Result<_, CodecError> {
+                                        let Some(pair) = pair else {
+                                            return Ok(None);
+                                        };
+                                        let matches = ctx.any_by(
+                                            candidates,
+                                            |candidate| {
+                                                Ok(*candidate == pair
+                                                    || *candidate == [pair[1], pair[0]])
+                                            },
+                                            "catia_standard_propagated_candidates",
+                                        )?;
+                                        Ok(matches.then_some(pair))
+                                    },
+                                ),
+                                "catia_standard_validated_propagated_pairs",
+                            )
+                        })
+                        .transpose()
+                        .map_err(StandardTopologyError::Resource)?
+                    } else {
+                        None
+                    };
+                let mesh_propagated_endpoint_pairs = if let Some((options, ports)) =
+                    endpoint_options.as_ref().zip(
+                        missing_edge::standard_mesh_edge_ports(ctx, spine)
+                            .map_err(StandardTopologyError::Resource)?,
+                    ) {
+                    let pairs = ctx
+                        .collect_vec(
+                            options.iter().map(|pairs| {
+                                <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                                    .ok()
+                                    .map(|pair| pair[0])
+                            }),
+                            "catia_standard_mesh_propagated_seeds",
+                        )
+                        .map_err(StandardTopologyError::Resource)?;
+                    missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+                        ctx,
+                        &ports,
+                        &pairs,
+                        &ordered_endpoint_pairs,
+                        &deferred_port_edges,
+                    )
                     .map_err(StandardTopologyError::Resource)?
-            };
-            ctx.push_vec(&mut copied, row, "catia_endpoint_option_copy")
+                } else {
+                    None
+                };
+                let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
+                    ctx,
+                    propagated_endpoint_pairs,
+                    mesh_propagated_endpoint_pairs,
+                )
                 .map_err(StandardTopologyError::Resource)?;
-        }
-        Some(copied)
-    } else {
-        None
-    };
-    if let (Some(options), Some(ports)) = (
-        constrained_endpoint_options.as_mut(),
-        missing_edge::standard_mesh_edge_ports(ctx, spine)
-            .map_err(StandardTopologyError::Resource)?,
-    ) {
-        let has_deferred_ports = ctx
-            .any_by(
-                &deferred_port_edges,
-                |deferred| Ok(*deferred),
-                "catia_standard_deferred_port_edges",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-        let pruned = if has_deferred_ports {
-            fbb::prune_edge_candidates_by_port_domains_with_deferred(
-                ctx,
-                &ports,
-                options,
-                &deferred_port_edges,
-            )
-        } else {
-            fbb::prune_edge_candidates_by_port_domains(ctx, &ports, options)
-        }
-        .map_err(StandardTopologyError::Resource)?;
-        if let Some(pruned) = pruned {
-            *options = pruned;
-        }
-        let unique_pairs = if has_deferred_ports {
-            missing_edge::unique_mesh_edge_port_candidate_pairs_with_deferred(
-                ctx,
-                &ports,
-                options,
-                &deferred_port_edges,
-            )
-            .map_err(StandardTopologyError::Resource)?
-        } else {
-            missing_edge::unique_mesh_edge_port_candidate_pairs(ctx, &ports, options)
-                .map_err(StandardTopologyError::Resource)?
-                .map(|pairs| {
-                    ctx.collect_vec(
-                        pairs.into_iter().map(Some),
-                        "catia_standard_unique_port_pair_options",
-                    )
-                })
-                .transpose()
-                .map_err(StandardTopologyError::Resource)?
-        };
-        if let Some(pairs) = unique_pairs {
-            for (edge, pair) in ctx
-                .admit_iter(&pairs, "catia_standard_unique_endpoint_option_rows")?
-                .take(options.len())
-                .enumerate()
-            {
-                if let Some(pair) = pair {
-                    ctx.retain_vec(
-                        &mut options[edge],
-                        |candidate| Ok(missing_edge::same_unordered_pair(*candidate, *pair)),
-                        "catia_standard_unique_endpoint_options",
-                    )
+                let mut constrained_endpoint_options =
+                    if let Some(options) = endpoint_options.as_ref() {
+                        let mut copied = Vec::new();
+                        for (edge, pairs) in ctx
+                            .admit_iter(options, "catia_endpoint_option_copy")?
+                            .enumerate()
+                        {
+                            let row = if let Some(pair) = propagated_endpoint_pairs
+                                .as_ref()
+                                .and_then(|propagated| propagated.get(edge).copied().flatten())
+                            {
+                                ctx.alloc_filled(1, pair, "catia_endpoint_propagated_pair")
+                                    .map_err(StandardTopologyError::Resource)?
+                            } else {
+                                ctx.copy_slice(pairs, "catia_endpoint_pair_copy")
+                                    .map_err(StandardTopologyError::Resource)?
+                            };
+                            ctx.push_vec(&mut copied, row, "catia_endpoint_option_copy")
+                                .map_err(StandardTopologyError::Resource)?;
+                        }
+                        Some(copied)
+                    } else {
+                        None
+                    };
+                if let (Some(options), Some(ports)) = (
+                    constrained_endpoint_options.as_mut(),
+                    missing_edge::standard_mesh_edge_ports(ctx, spine)
+                        .map_err(StandardTopologyError::Resource)?,
+                ) {
+                    let has_deferred_ports = ctx
+                        .any_by(
+                            &deferred_port_edges,
+                            |deferred| Ok(*deferred),
+                            "catia_standard_deferred_port_edges",
+                        )
+                        .map_err(StandardTopologyError::Resource)?;
+                    let pruned = if has_deferred_ports {
+                        fbb::prune_edge_candidates_by_port_domains_with_deferred(
+                            ctx,
+                            &ports,
+                            options,
+                            &deferred_port_edges,
+                        )
+                    } else {
+                        fbb::prune_edge_candidates_by_port_domains(ctx, &ports, options)
+                    }
                     .map_err(StandardTopologyError::Resource)?;
+                    if let Some(pruned) = pruned {
+                        *options = pruned;
+                    }
+                    let unique_pairs = if has_deferred_ports {
+                        missing_edge::unique_mesh_edge_port_candidate_pairs_with_deferred(
+                            ctx,
+                            &ports,
+                            options,
+                            &deferred_port_edges,
+                        )
+                        .map_err(StandardTopologyError::Resource)?
+                    } else {
+                        missing_edge::unique_mesh_edge_port_candidate_pairs(ctx, &ports, options)
+                            .map_err(StandardTopologyError::Resource)?
+                            .map(|pairs| {
+                                ctx.collect_vec(
+                                    pairs.into_iter().map(Some),
+                                    "catia_standard_unique_port_pair_options",
+                                )
+                            })
+                            .transpose()
+                            .map_err(StandardTopologyError::Resource)?
+                    };
+                    if let Some(pairs) = unique_pairs {
+                        for (edge, pair) in ctx
+                            .admit_iter(&pairs, "catia_standard_unique_endpoint_option_rows")?
+                            .take(options.len())
+                            .enumerate()
+                        {
+                            if let Some(pair) = pair {
+                                ctx.retain_vec(
+                                    &mut options[edge],
+                                    |candidate| {
+                                        Ok(missing_edge::same_unordered_pair(*candidate, *pair))
+                                    },
+                                    "catia_standard_unique_endpoint_options",
+                                )
+                                .map_err(StandardTopologyError::Resource)?;
+                            }
+                        }
+                    }
                 }
-            }
-        }
-    }
-    if let Some(options) = &mut constrained_endpoint_options {
-        // A same-incidence row relation is not an endpoint identity. Keep its
-        // complete candidate domain for exact identity and mesh constraints.
-        for domain in ctx.admit_iter(options.as_slice(), "catia_standard_endpoint_domain_census")? {
-            match domain.len() {
-                0 => diagnostics.empty_endpoint_domains += 1,
-                1 => diagnostics.singleton_endpoint_domains += 1,
-                _ => diagnostics.multiple_endpoint_domains += 1,
-            }
-            diagnostics.endpoint_domain_choices += domain.len();
-        }
-    }
-    let resolved_endpoint_pairs = propagated_endpoint_pairs
-        .map(|pairs| ctx.collect_options(pairs, "catia_standard_resolved_endpoint_pairs"))
-        .transpose()
-        .map_err(StandardTopologyError::Resource)?
-        .flatten();
-    if let Some(pairs) = &resolved_endpoint_pairs {
-        let pairs = ctx
-            .collect_vec(
-                pairs.iter().copied().map(Some),
-                "catia_standard_included_native_pairs",
-            )
-            .map_err(StandardTopologyError::Resource)?;
-        include_native_endpoint_pairs(ctx, &mut endpoint_candidates, &pairs)
-            .map_err(StandardTopologyError::Resource)?;
-    }
-    let fbb_mesh_ports = if edge_table_form == EdgeTableForm::FbbOnly {
-        missing_edge::standard_mesh_edge_ports(ctx, spine)
-            .map_err(StandardTopologyError::Resource)?
-    } else {
-        None
-    };
-    let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
-        let native = if let Some(ports) = fbb_mesh_ports.as_deref() {
-            topology::parse_fbb_with_native_vertices(ctx, spine, ports)
-                .map_err(StandardTopologyError::Resource)?
-        } else {
-            None
-        };
-        if native.is_some() {
-            native
-        } else {
-            topology::parse_fbb(ctx, spine).map_err(StandardTopologyError::Resource)?
-        }
-    } else {
-        let standard = fbb::parse_standard(ctx, spine).map_err(StandardTopologyError::Resource)?;
-        if standard.is_some() {
-            standard
-        } else if let Some(ports) = native_ports.as_ref() {
-            topology::parse_fbb_with_native_vertices(ctx, spine, ports)
-                .map_err(StandardTopologyError::Resource)?
-        } else {
-            None
-        }
-    };
-    let mesh_bound = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
-        let Some(topology) = (!has_open_face_domains).then_some(mesh_topology).flatten() else {
-            return Ok(None);
-        };
-        let candidate_pairs = match resolved_endpoint_pairs.as_ref() {
-            Some(pairs) => Some(ctx.copy_slice(pairs, "catia_standard_mesh_resolved_pair_copy")?),
-            None => ctx.collect_options(
-                endpoint_candidates
-                    .iter()
-                    .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok()),
-                "catia_standard_mesh_candidate_pairs",
-            )?,
-        };
-        let endpoint_pairs = if let Some(pairs) = candidate_pairs {
-            Some(pairs)
-        } else {
-            let Some(vertices) = topology.edge_vertices(ctx)? else {
-                return Ok(None);
-            };
-            let ports = ctx.collect_options(
-                vertices.into_iter().map(|[left, right]| {
-                    Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
-                }),
-                "catia_standard_mesh_vertex_ports",
-            )?;
-            let Some(ports) = ports else {
-                return Ok(None);
-            };
-            let Some(options) = constrained_endpoint_options.as_ref() else {
-                return Ok(None);
-            };
-            missing_edge::bind_edge_port_candidates(ctx, &ports, options)?
-        };
-        let Some(endpoint_pairs) = endpoint_pairs else {
-            return Ok(None);
-        };
-        let Some(point_assignment) = topology.bind_vertex_points(ctx, &endpoint_pairs)? else {
-            return Ok(None);
-        };
-        Ok(Some((topology, point_assignment)))
-    })();
-    let mesh_bound = match mesh_bound {
-        Ok(bound) => bound,
-        Err(error) => return Err(StandardTopologyError::Resource(error)),
-    };
-    let circle_anchors = ctx
-        .collect_vec(
-            ctx.admit_iter(&supports, "catia_standard_circle_anchors")?
-                .zip(ctx.admit_iter(
-                    &endpoint_candidates,
-                    "catia_standard_circle_anchor_candidates",
-                )?)
-                .map(|(support, candidates)| match &support.geometry {
+                if let Some(options) = &mut constrained_endpoint_options {
+                    // A same-incidence row relation is not an endpoint identity. Keep its
+                    // complete candidate domain for exact identity and mesh constraints.
+                    for domain in
+                        ctx.admit_iter(options.as_slice(), "catia_standard_endpoint_domain_census")?
+                    {
+                        match domain.len() {
+                            0 => diagnostics.empty_endpoint_domains += 1,
+                            1 => diagnostics.singleton_endpoint_domains += 1,
+                            _ => diagnostics.multiple_endpoint_domains += 1,
+                        }
+                        diagnostics.endpoint_domain_choices += domain.len();
+                    }
+                }
+                let resolved_endpoint_pairs = propagated_endpoint_pairs
+                    .map(|pairs| {
+                        ctx.collect_options(pairs, "catia_standard_resolved_endpoint_pairs")
+                    })
+                    .transpose()
+                    .map_err(StandardTopologyError::Resource)?
+                    .flatten();
+                if let Some(pairs) = &resolved_endpoint_pairs {
+                    let pairs = ctx
+                        .collect_vec(
+                            pairs.iter().copied().map(Some),
+                            "catia_standard_included_native_pairs",
+                        )
+                        .map_err(StandardTopologyError::Resource)?;
+                    include_native_endpoint_pairs(ctx, &mut endpoint_candidates, &pairs)
+                        .map_err(StandardTopologyError::Resource)?;
+                }
+                let fbb_mesh_ports = if edge_table_form == EdgeTableForm::FbbOnly {
+                    missing_edge::standard_mesh_edge_ports(ctx, spine)
+                        .map_err(StandardTopologyError::Resource)?
+                } else {
+                    None
+                };
+                let mesh_topology = if edge_table_form == EdgeTableForm::FbbOnly {
+                    let native = if let Some(ports) = fbb_mesh_ports.as_deref() {
+                        topology::parse_fbb_with_native_vertices(ctx, spine, ports)
+                            .map_err(StandardTopologyError::Resource)?
+                    } else {
+                        None
+                    };
+                    if native.is_some() {
+                        native
+                    } else {
+                        topology::parse_fbb(ctx, spine).map_err(StandardTopologyError::Resource)?
+                    }
+                } else {
+                    let standard =
+                        fbb::parse_standard(ctx, spine).map_err(StandardTopologyError::Resource)?;
+                    if standard.is_some() {
+                        standard
+                    } else if let Some(ports) = native_ports.as_ref() {
+                        topology::parse_fbb_with_native_vertices(ctx, spine, ports)
+                            .map_err(StandardTopologyError::Resource)?
+                    } else {
+                        None
+                    }
+                };
+                let mesh_bound = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+                    let Some(topology) =
+                        (!has_open_face_domains).then_some(mesh_topology).flatten()
+                    else {
+                        return Ok(None);
+                    };
+                    let candidate_pairs = match resolved_endpoint_pairs.as_ref() {
+                        Some(pairs) => {
+                            Some(ctx.copy_slice(pairs, "catia_standard_mesh_resolved_pair_copy")?)
+                        }
+                        None => ctx.collect_options(
+                            endpoint_candidates.iter().map(|candidates| {
+                                <[usize; 2]>::try_from(candidates.as_slice()).ok()
+                            }),
+                            "catia_standard_mesh_candidate_pairs",
+                        )?,
+                    };
+                    let endpoint_pairs = if let Some(pairs) = candidate_pairs {
+                        Some(pairs)
+                    } else {
+                        let Some(vertices) = topology.edge_vertices(ctx)? else {
+                            return Ok(None);
+                        };
+                        let ports = ctx.collect_options(
+                            vertices.into_iter().map(|[left, right]| {
+                                Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
+                            }),
+                            "catia_standard_mesh_vertex_ports",
+                        )?;
+                        let Some(ports) = ports else {
+                            return Ok(None);
+                        };
+                        let Some(options) = constrained_endpoint_options.as_ref() else {
+                            return Ok(None);
+                        };
+                        missing_edge::bind_edge_port_candidates(ctx, &ports, options)?
+                    };
+                    let Some(endpoint_pairs) = endpoint_pairs else {
+                        return Ok(None);
+                    };
+                    let Some(point_assignment) =
+                        topology.bind_vertex_points(ctx, &endpoint_pairs)?
+                    else {
+                        return Ok(None);
+                    };
+                    Ok(Some((topology, point_assignment)))
+                })();
+                let mesh_bound = match mesh_bound {
+                    Ok(bound) => bound,
+                    Err(error) => return Err(StandardTopologyError::Resource(error)),
+                };
+                let circle_anchors = ctx
+                    .collect_vec(
+                        ctx.admit_iter(&supports, "catia_standard_circle_anchors")?
+                            .zip(ctx.admit_iter(
+                                &endpoint_candidates,
+                                "catia_standard_circle_anchor_candidates",
+                            )?)
+                            .map(|(support, candidates)| {
+                                match &support.geometry {
                     crate::families::standard::records::StandardCurveGeometry::Circle {
                         ..
                     } => <[usize; 2]>::try_from(candidates.as_slice()).ok(),
                     crate::families::standard::records::StandardCurveGeometry::Line
                     | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
-                }),
-            "catia_standard_circle_anchors",
-        )
-        .map_err(StandardTopologyError::Resource)?;
-    let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
-    {
-        if let Some(pairs) = native_endpoint_pairs.as_ref() {
-            fbb::parse_fbb_endpoints_with_edge_classes(
-                ctx,
-                spine,
-                &edge_faces,
-                pairs,
-                Some(&edge_classes),
-            )
-            .map_err(StandardTopologyError::Resource)?
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let mut selected_face_assignment = None;
-    let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
+                }
+                            }),
+                        "catia_standard_circle_anchors",
+                    )
+                    .map_err(StandardTopologyError::Resource)?;
+                let native_fbb_topology =
+                    if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains {
+                        if let Some(pairs) = native_endpoint_pairs.as_ref() {
+                            fbb::parse_fbb_endpoints_with_edge_classes(
+                                ctx,
+                                spine,
+                                &edge_faces,
+                                pairs,
+                                Some(&edge_classes),
+                            )
+                            .map_err(StandardTopologyError::Resource)?
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                let mut selected_face_assignment = None;
+                let (topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
     } else if let Some(topology) = native_fbb_topology {
         let point_assignment = ctx
@@ -7811,16 +7953,28 @@ fn attach_standard_topology(
         })
         .into());
     };
-    if let Some(faces) = selected_face_assignment {
-        edge_faces = faces;
-        for (edge, faces) in ctx
-            .admit_iter(&edge_faces, "catia_standard_selected_face_supports")?
-            .take(supports.len())
-            .enumerate()
-        {
-            supports[edge].faces = *faces;
-        }
-    }
+                if let Some(faces) = selected_face_assignment {
+                    edge_faces = faces;
+                    for (edge, faces) in ctx
+                        .admit_iter(&edge_faces, "catia_standard_selected_face_supports")?
+                        .take(supports.len())
+                        .enumerate()
+                    {
+                        supports[edge].faces = *faces;
+                    }
+                }
+                Ok((
+                    surface_indices,
+                    supports,
+                    topology,
+                    point_assignment,
+                    native_supports_by_row,
+                    limit_curve_bindings,
+                    endpoint_candidates,
+                ))
+            })())
+        })
+        .map_err(StandardTopologyError::Resource)??;
     let Some(edge_vertices) = validate_standard_topology(
         ctx,
         ir,
@@ -7831,38 +7985,46 @@ fn attach_standard_topology(
             supports: &supports,
             endpoint_candidates: &endpoint_candidates,
         },
+        &mut topology_storage,
         admission,
     )
     .map_err(StandardTopologyError::Resource)?
     else {
         return Err(StandardTopologyFailure::InvalidTopologySolution.into());
     };
-    let Some(topology) =
-        crate::families::standard::topology::admitted::StandardTopology::new(ctx, topology)
-            .map_err(StandardTopologyError::Resource)?
+    let Some(topology) = topology_storage
+        .with_storage(|| {
+            crate::families::standard::topology::admitted::StandardTopology::new(ctx, topology)
+        })
+        .map_err(StandardTopologyError::Resource)?
     else {
         return Err(StandardTopologyFailure::InvalidTopologySolution.into());
     };
-    let mut resolved_limit_curve_bindings = Vec::new();
-    ctx.reserve_vec(
-        &mut resolved_limit_curve_bindings,
-        edge_vertices.len(),
-        "catia_resolved_limit_curve_bindings",
-    )
-    .map_err(StandardTopologyError::Resource)?;
-    for (edge, logical_vertices) in ctx
-        .admit_iter(&edge_vertices, "catia_resolved_limit_curve_bindings")?
-        .enumerate()
-    {
-        let points = [
-            point_assignment[logical_vertices[0]],
-            point_assignment[logical_vertices[1]],
-        ];
-        resolved_limit_curve_bindings.push(
-            resolve_standard_limit_curve_binding(ctx, &limit_curve_bindings[edge], points)
-                .map_err(StandardTopologyError::Resource)?,
-        );
-    }
+    let resolved_limit_curve_bindings = topology_storage
+        .with_storage(|| -> Result<_, CodecError> {
+            let mut resolved_limit_curve_bindings = Vec::new();
+            ctx.reserve_vec(
+                &mut resolved_limit_curve_bindings,
+                edge_vertices.len(),
+                "catia_resolved_limit_curve_bindings",
+            )?;
+            for (edge, logical_vertices) in ctx
+                .admit_iter(&edge_vertices, "catia_resolved_limit_curve_bindings")?
+                .enumerate()
+            {
+                let points = [
+                    point_assignment[logical_vertices[0]],
+                    point_assignment[logical_vertices[1]],
+                ];
+                resolved_limit_curve_bindings.push(resolve_standard_limit_curve_binding(
+                    ctx,
+                    &limit_curve_bindings[edge],
+                    points,
+                )?);
+            }
+            Ok(resolved_limit_curve_bindings)
+        })
+        .map_err(StandardTopologyError::Resource)?;
     *bound_limit_curve_count = ctx
         .admit_iter(
             &resolved_limit_curve_bindings,
@@ -7911,6 +8073,7 @@ fn validate_standard_topology(
     topology: &mut crate::families::standard::topology::StandardTopologyDraft,
     point_assignment: &[usize],
     validation: StandardTopologyValidation<'_>,
+    output_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
     let StandardTopologyValidation {
@@ -7939,10 +8102,11 @@ fn validate_standard_topology(
     {
         return Ok(None);
     }
-    let Some(body_kinds) = topology.body_kinds(ctx, &face_groups)? else {
+    let mut storage = ctx.reserve_scoped(0, "catia_standard_topology_validation_storage")?;
+    let Some(body_kinds) = storage.with_storage(|| topology.body_kinds(ctx, &face_groups))? else {
         return Ok(None);
     };
-    let Some(edge_vertices) = topology.edge_vertices(ctx)? else {
+    let Some(edge_vertices) = output_storage.with_storage(|| topology.edge_vertices(ctx))? else {
         return Ok(None);
     };
     if ctx.any_by(
@@ -7962,29 +8126,50 @@ fn validate_standard_topology(
     )? {
         return Ok(None);
     }
+    let mut bodies_by_id = HashMap::new();
+    for (index, body) in ctx
+        .admit_iter(&ir.model.bodies, "catia_standard_body_identity_rows")?
+        .enumerate()
+    {
+        if ctx
+            .get_hash_map(
+                &bodies_by_id,
+                body.id.as_str(),
+                "catia_standard_body_identity_rows",
+            )?
+            .is_none()
+        {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut bodies_by_id,
+                    body.id.as_str(),
+                    index,
+                    "catia_standard_body_identity_rows",
+                )
+            })?;
+        }
+    }
     let mut body_arena_indices = Vec::new();
     for (body_index, _) in ctx
         .admit_iter(&body_kinds, "catia_standard_body_kind_rows")?
         .enumerate()
     {
-        let id = standard_id(
-            ctx,
-            "body",
-            format_args!("{body_index}"),
-            BodyId::mint,
+        let (id, _token) = ctx.format_scoped(
+            format_args!("catia:standard:body#{body_index}"),
             "catia_standard_body_lookup_identity",
         )?;
-        let Some(arena_index) = ctx.position_by(
-            &ir.model.bodies,
-            |body| ctx.equal(&body.id, &id, "catia_standard_body_identity_rows"),
+        let Some(&index) = ctx.get_hash_map(
+            &bodies_by_id,
+            id.as_str(),
             "catia_standard_body_identity_rows",
         )?
         else {
             return Ok(None);
         };
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut storage,
             &mut body_arena_indices,
-            arena_index,
+            index,
             "catia_standard_body_arena_indices",
         )?;
     }
@@ -7994,13 +8179,8 @@ fn validate_standard_topology(
     {
         ir.model.bodies[arena_index].kind = kind;
     }
-    if !partition_standard_face_components(
-        ctx,
-        ir,
-        annotations,
-        &topology.face_components(ctx)?,
-        admission,
-    )? {
+    let components = storage.with_storage(|| topology.face_components(ctx))?;
+    if !partition_standard_face_components(ctx, ir, annotations, &components, admission)? {
         return Ok(None);
     }
     Ok(Some(edge_vertices))
@@ -8184,12 +8364,15 @@ fn emit_standard_topology(
     }
 
     let mut native_surfaces = edge_geometry::NativeSurfaceIndex::new(admission.context())?;
+    let mut edge_storage = ctx.reserve_scoped(0, "catia_standard_edge_reversed_storage")?;
     let mut edge_reversed = Vec::new();
-    ctx.reserve_vec(
-        &mut edge_reversed,
-        supports.len(),
-        "catia_standard_edge_reverse_flags",
-    )?;
+    edge_storage.with_storage(|| {
+        ctx.reserve_vec(
+            &mut edge_reversed,
+            supports.len(),
+            "catia_standard_edge_reverse_flags",
+        )
+    })?;
     for (edge_index, (support, logical_vertices)) in ctx
         .admit_iter(supports, "catia_standard_emission_edge_supports")?
         .zip(ctx.admit_iter(edge_vertices, "catia_standard_emission_edge_vertices")?)
