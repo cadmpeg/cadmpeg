@@ -118,7 +118,15 @@ fn empty_section_transfer_keeps_zero_family_coverage() {
 #[test]
 fn sketch_native_reference_refuses_below_retained_limit() {
     let sketch = SketchId::mint("creo:model:sketch#7").expect("valid sketch ID");
-    let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#7".len());
+    let need = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    crate::decode::sketch_ids::sketch_native_ref_admitted(&ctx, &sketch)
+                },
+            );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = need - 1;
@@ -202,8 +210,8 @@ fn emitted_entity_views_refuse_each_tree_node() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo emitted sketch entity ID nodes"));
-    policy.limits.max_collection_items = 1;
-    let error = views_with_policy(&policy).expect_err("second node exceeds one item");
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo emitted sketch geometry nodes"), |cap| { let mut trial = policy; trial.limits.max_collection_items = cap; views_with_policy(&trial) });
+    let error = views_with_policy(&policy).expect_err("second node exceeds its boundary");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo emitted sketch geometry nodes"));
@@ -217,7 +225,7 @@ fn emitted_entity_views_refuse_each_tree_node() {
 fn emitted_entity_views_refuse_nested_identity_and_geometry_copies() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("creo:model:sketch_entity#1".len()) - 1;
+        crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo emitted sketch entity IDs"), |cap| { let mut trial = policy; trial.limits.max_retained_bytes = cap; views_with_policy(&trial) });
     let error = views_with_policy(&policy).expect_err("first identity copy exceeds cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -254,7 +262,15 @@ fn available_parameter_ids_refuse_existing_node_and_identity_copy() {
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo available parameter ID nodes"));
     policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo available parameter identities"), |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    available_parameter_ids(&ctx, [&id], BTreeSet::new())
+                },
+            );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = available_parameter_ids(&ctx, [&id], BTreeSet::new())
         .expect_err("existing parameter identity exceeds cap");

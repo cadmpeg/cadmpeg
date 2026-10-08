@@ -1316,14 +1316,30 @@ mod tests {
     #[test]
     fn native_section_geometry_kind_refuses_before_retained_copy() {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo section native geometry kind"), |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    native_section_geometry(&ctx, "line")
+                },
+            );
         assert!(
             matches!(with_policy(&policy, |ctx| native_section_geometry(ctx, "line")),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "creo section native geometry kind")
         );
-        policy.limits.max_retained_bytes = 4;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    native_section_geometry(&ctx, "line")
+                },
+            );
         assert_eq!(
             with_policy(&policy, |ctx| native_section_geometry(ctx, "line"))
                 .expect("exact cap admits kind"),
@@ -1342,14 +1358,30 @@ mod tests {
             ),
         )]);
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 5;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo section geometry copy"), |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    copied_or_native_geometry(&ctx, &geometries, 7, "line")
+                },
+            );
         assert!(
             matches!(with_policy(&policy, |ctx| copied_or_native_geometry(ctx, &geometries, 7, "line")),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "creo section geometry copy")
         );
-        policy.limits.max_retained_bytes = 6;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    copied_or_native_geometry(&ctx, &geometries, 7, "line")
+                },
+            );
         assert_eq!(
             with_policy(&policy, |ctx| copied_or_native_geometry(
                 ctx,
@@ -1367,14 +1399,30 @@ mod tests {
         for (unique, expected) in [(true, "42"), (false, "circle:offset:9")] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes =
-                cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+                crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo section entity suffix"), |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    section_row_suffix(&ctx, unique, 42, "circle", 9)
+                },
+            );
             assert!(
                 matches!(with_policy(&policy, |ctx| section_row_suffix(ctx, unique, 42, "circle", 9)),
                 Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                     if refusal.dimension == ResourceDimension::RetainedBytes
                         && refusal.operation == "creo section entity suffix")
             );
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
+            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    section_row_suffix(&ctx, unique, 42, "circle", 9)
+                },
+            );
             assert_eq!(
                 with_policy(&policy, |ctx| section_row_suffix(
                     ctx, unique, 42, "circle", 9
@@ -1389,14 +1437,30 @@ mod tests {
     fn placed_section_source_refuses_before_object_id_formatting() {
         let expected = "FeatDefs:section#5:42";
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo placed section source object"), |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    placed_source_object(&ctx, expected)
+                },
+            );
         assert!(
             matches!(with_policy(&policy, |ctx| placed_source_object(ctx, expected)),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "creo placed section source object")
         );
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    placed_source_object(&ctx, expected)
+                },
+            );
         let admitted = with_policy(&policy, |ctx| placed_source_object(ctx, expected))
             .expect("exact cap admits placed source");
         assert_eq!(admitted.object_id.as_str(), expected);
@@ -1418,7 +1482,15 @@ mod tests {
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "creo section entities")
         );
-        policy.limits.max_collection_items = 1;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_collection_items = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    push_section_entity(&ctx, &mut Vec::new(), entity())
+                },
+            );
         let mut entities = Vec::new();
         with_policy(&policy, |ctx| {
             push_section_entity(ctx, &mut entities, entity())
@@ -1434,7 +1506,15 @@ mod tests {
         let expected = "creo:featdefs:sketch#5:point#7";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo sketch point reference"), |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    admitted_endpoint_refs(&ctx, &sketch, &[7])
+                },
+            );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         assert!(matches!(admitted_endpoint_refs(&ctx, &sketch, &[7]),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
