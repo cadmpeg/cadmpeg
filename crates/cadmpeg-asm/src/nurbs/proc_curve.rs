@@ -1211,7 +1211,10 @@ fn embedded_deformable(
         let Some(Token::Long(index)) = toks.get(reference + 2) else {
             return None;
         };
-        let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
+        let reference_span = propagate_resource!(crate::nurbs::toks::subtype_span(
+            ctx, toks, reference
+        ))?
+        .tokens();
         cur.set_pos(reference + reference_span.len());
         EmbeddedDeformableSource::NativeReference {
             flag,
@@ -1945,7 +1948,9 @@ pub(super) fn embedded_base_curve_resolving_refs(
         cur.take_bool()?;
         let reference = cur.pos();
         if matches!(toks.get(reference), Some(Token::SubtypeOpen)) {
-            let scope = crate::nurbs::toks::subtype_span(toks, reference)?;
+            let scope = propagate_resource!(crate::nurbs::toks::subtype_span(
+                ctx, toks, reference
+            ))?;
             if let Some(curve) = owned_curve_cache_resolving_refs(ctx, scope, table) {
                 cur.set_pos(reference + scope.tokens().len());
                 return Some(curve);
@@ -2014,7 +2019,9 @@ pub(super) fn embedded_base_curve_resolving_refs(
             if !compact_ref {
                 if matches!(toks.get(reference), Some(Token::SubtypeOpen)) {
                     // Inline subtype scope: resolve its solved curve cache.
-                    let scope = crate::nurbs::toks::subtype_span(toks, reference)?;
+                    let scope = propagate_resource!(crate::nurbs::toks::subtype_span(
+                        ctx, toks, reference
+                    ))?;
                     let curve =
                         propagate_resource!(owned_curve_cache_resolving_refs(ctx, scope, table)?);
                     cur.set_pos(reference + scope.tokens().len());
@@ -2027,7 +2034,10 @@ pub(super) fn embedded_base_curve_resolving_refs(
                 return None;
             };
             let index = usize::try_from(*index).ok()?;
-            let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
+            let reference_span = propagate_resource!(crate::nurbs::toks::subtype_span(
+                ctx, toks, reference
+            ))?
+            .tokens();
             cur.set_pos(reference + reference_span.len());
             table
                 .span(index)
@@ -3875,7 +3885,10 @@ pub(super) fn optional_embedded_surface_with_bounds(
                 return None;
             };
             let index = usize::try_from(*index).ok()?;
-            let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
+            let reference_span = propagate_resource!(crate::nurbs::toks::subtype_span(
+                ctx, toks, reference
+            ))?
+            .tokens();
             cur.set_pos(reference + reference_span.len());
             let surface = table
                 .span(index)
@@ -3919,7 +3932,11 @@ pub(super) fn optional_embedded_surface_with_bounds(
             cur.take_bool()?;
         }
         if matches!(cur.peek(), Some(Token::SubtypeOpen)) {
-            let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?;
+            let scope = propagate_resource!(crate::nurbs::toks::subtype_span(
+                ctx,
+                toks,
+                cur.pos(),
+            ))?;
             let surface =
                 if let Some(surface) = owned_surface_cache_resolving_refs(ctx, scope, table) {
                     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -4171,7 +4188,7 @@ pub fn record_trailing_surface_bounds(
     if !matches!(toks.get(position), Some(Token::SubtypeOpen)) {
         return Ok(None);
     }
-    let Some(scope) = crate::nurbs::toks::subtype_span(toks, position) else {
+    let Some(scope) = crate::nurbs::toks::subtype_span(ctx, toks, position)? else {
         return Ok(None);
     };
     position += scope.tokens().len();

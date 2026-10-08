@@ -196,7 +196,8 @@ fn pcurve_fit_tolerance_withholds_nested_only_cache() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let scope = crate::nurbs::toks::subtype_span(&tokens, 0)
+        let scope = crate::nurbs::toks::subtype_span(&resource_ctx, &tokens, 0)
+            .expect("decode work admission")
             .expect("the fixture opens one balanced scope");
         assert!(super::pcurve_fit_tolerance(&resource_ctx, scope).is_none());
     }
@@ -615,7 +616,9 @@ fn a_token_scope_decodes_the_curve_cache_it_owns_through_the_scope_type() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let scope = crate::nurbs::toks::subtype_span(&tokens, 0).expect("balanced scope");
+        let scope = crate::nurbs::toks::subtype_span(&resource_ctx, &tokens, 0)
+            .expect("decode work admission")
+            .expect("balanced scope");
         let curve = crate::nurbs::core::owned_curve_cache(&resource_ctx, scope)
             .transpose()
             .expect("resource allocation")
@@ -670,7 +673,9 @@ fn an_exp_par_cur_scope_decodes_its_own_bs2_field_through_the_scope_type() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        let scope = crate::nurbs::toks::subtype_span(&tokens, 0).expect("balanced scope");
+        let scope = crate::nurbs::toks::subtype_span(&resource_ctx, &tokens, 0)
+            .expect("decode work admission")
+            .expect("balanced scope");
         let pcurve = crate::nurbs::pcurve::explicit_pcurve_cache(&resource_ctx, scope)
             .transpose()
             .expect("resource allocation")

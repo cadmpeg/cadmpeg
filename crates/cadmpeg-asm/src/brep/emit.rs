@@ -4853,7 +4853,7 @@ pub(super) fn emit_pcurves(
                 let parameter_range = tail.parameter_range;
                 let fit_tolerance = match (r.chunk(3), r.chunk(4)) {
                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
-                        nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
+                        nurbs::toks::payload_subtype_toks(ctx, r, 5, "exp_par_cur")?
                             .and_then(|scope| nurbs::pcurve::pcurve_fit_tolerance(ctx, scope))
                     }
                     _ => None,

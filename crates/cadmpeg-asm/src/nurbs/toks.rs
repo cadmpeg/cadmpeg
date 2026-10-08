@@ -11,6 +11,7 @@
 use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{finish_knot_layout, BsplineMarker, Nullable};
 use crate::sab::Token;
+use cadmpeg_core::decode::admission::Admission;
 
 /// A cursor over one record's payload tokens.
 ///
@@ -630,29 +631,48 @@ impl<'a> SubtypeScope<'a> {
 ///
 /// `None` unless the token at `start` is a `SubtypeOpen`. A scope opens at its
 /// own opening delimiter, so a `start` that names another token names no
-/// scope, and the span is then at least two tokens.
-pub(super) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<'_>> {
-    matches!(toks.get(start), Some(Token::SubtypeOpen)).then_some(())?;
+/// scope, and the span is then at least two tokens. An open scope is scanned
+/// through its matching close, with work admitted before each token read.
+/// Returns a resource refusal if the scan exceeds the context's work budget.
+pub(super) fn subtype_span<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &'a [Token],
+    start: usize,
+) -> Result<Option<SubtypeScope<'a>>, cadmpeg_core::CodecError> {
+    if !matches!(toks.get(start), Some(Token::SubtypeOpen)) {
+        return match Admission::resource_refusal(ctx) {
+            Some(refusal) => Err(refusal.into()),
+            None => Ok(None),
+        };
+    }
     let mut depth = 0usize;
-    for (pos, token) in toks.iter().enumerate().skip(start) {
+    let mut tokens = toks[start..].iter();
+    for pos in start..toks.len() {
+        let Some(token) = ctx.next_charged(&mut tokens, "ASM subtype span token scan")? else {
+            return Ok(None);
+        };
         match token {
             Token::SubtypeOpen => depth += 1,
             Token::SubtypeClose => {
-                depth = depth.checked_sub(1)?;
+                let Some(next_depth) = depth.checked_sub(1) else {
+                    return Ok(None);
+                };
+                depth = next_depth;
                 if depth == 0 {
                     // `pos > start`: reaching depth one needs a `SubtypeOpen`
                     // at or after `start`, so the close that returns depth to
                     // zero is never the token at `start` itself. Both slices
                     // are therefore in range.
-                    return Some(SubtypeScope {
-                        tokens: toks.get(start..=pos)?,
-                    });
+                    let Some(tokens) = toks.get(start..=pos) else {
+                        return Ok(None);
+                    };
+                    return Ok(Some(SubtypeScope { tokens }));
                 }
             }
             _ => {}
         }
     }
-    None
+    Ok(None)
 }
 
 /// The subtype scope at payload chunk `chunk_index` when its immediately
@@ -660,35 +680,52 @@ pub(super) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<
 ///
 /// The scope carries its own balance proof, so a caller that walks it needs no
 /// walk of its own to establish one. The identifier this function matched is
-/// the first token of [`SubtypeScope::interior`].
+/// the first token of [`SubtypeScope::interior`]. The chunk search and scope
+/// scan admit work before each token read. Production callers pass one of the
+/// fixed names `exp_par_cur` and `ref`, so the name comparison is bounded.
 pub fn payload_subtype_toks<'r>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &'r crate::sab::Record,
     chunk_index: usize,
     expected: &str,
-) -> Option<SubtypeScope<'r>> {
+) -> Result<Option<SubtypeScope<'r>>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = Admission::resource_refusal(ctx) {
+        return Err(refusal.into());
+    }
     let mut chunk = 0usize;
     let mut open = None;
-    for (pos, token) in record.tokens.iter().enumerate() {
+    let mut tokens = record.tokens.iter();
+    for pos in 0..record.tokens.len() {
+        let Some(token) = ctx.next_charged(&mut tokens, "ASM payload subtype token scan")? else {
+            return Ok(None);
+        };
         if token.is_payload_ident() {
             continue;
         }
         if chunk == chunk_index {
+            if !matches!(token, Token::SubtypeOpen) {
+                return Ok(None);
+            }
             open = Some(pos);
             break;
         }
         chunk += 1;
     }
-    let open = open?;
-    if !matches!(record.tokens.get(open), Some(Token::SubtypeOpen)) {
-        return None;
-    }
-    let (Token::Ident(name) | Token::SubIdent(name)) = record.tokens.get(open + 1)? else {
-        return None;
+    let Some(open) = open else {
+        return Ok(None);
+    };
+    let Some(_name_pos) = open.checked_add(1).filter(|pos| *pos < record.tokens.len()) else {
+        return Ok(None);
+    };
+    let Some(Token::Ident(name) | Token::SubIdent(name)) =
+        ctx.next_charged(&mut tokens, "ASM payload subtype token scan")?
+    else {
+        return Ok(None);
     };
     if name != expected {
-        return None;
+        return Ok(None);
     }
-    subtype_span(&record.tokens, open)
+    subtype_span(ctx, &record.tokens, open)
 }
 
 /// Token positions of the stream's subtype definitions, in stream order.
@@ -906,7 +943,8 @@ mod tests {
     use super::{
         cache_scope as cache_scope_ctx, lex_test_span, marker_at,
         owned_construction_subtype as owned_construction_subtype_ctx,
-        owned_marker_positions as owned_marker_positions_ctx, subtype_span, test_table, Cur,
+        owned_marker_positions as owned_marker_positions_ctx,
+        subtype_span as subtype_span_ctx, test_table, Cur,
     };
     use crate::kernel_header::RefWidth;
     use crate::nurbs::reader::BsplineMarker;
@@ -918,6 +956,10 @@ mod tests {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         f(&ctx)
+    }
+
+    fn subtype_span<'a>(toks: &'a [Token], start: usize) -> Option<super::SubtypeScope<'a>> {
+        with_ctx(|ctx| subtype_span_ctx(ctx, toks, start).expect("decode work admission"))
     }
 
     fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
@@ -1329,6 +1371,243 @@ mod tests {
         let scope = subtype_span(&toks, 1).expect("balanced scope");
         assert_eq!(scope.tokens(), &toks[1..=3]);
         assert_eq!(scope.interior(), &toks[2..3]);
+    }
+
+    #[test]
+    fn subtype_span_charges_only_the_balanced_prefix_and_fuses_its_first_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+        let mut toks = vec![
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            Token::SubtypeOpen,
+            ident("ref"),
+            Token::Long(3),
+            Token::SubtypeClose,
+            Token::SubtypeClose,
+        ];
+        toks.extend((0..256).map(|_| Token::Double(0.0)));
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 7;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        let scope = subtype_span_ctx(&ctx, &toks, 0)
+            .expect("scan work admission")
+            .expect("balanced prefix");
+        assert_eq!(scope.tokens(), &toks[..7]);
+        ctx.finish_session().expect("the unused tail costs no work");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 6;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        let error = subtype_span_ctx(&ctx, &toks, 0).expect_err("the closing token is admitted");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM subtype span token scan");
+        assert_eq!(limit.used, 6);
+        assert_eq!(limit.additional, 1);
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
+        ));
+    }
+
+    #[test]
+    fn subtype_span_stops_at_an_unclosed_end_without_an_eof_charge() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+        let toks = [
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            Token::SubtypeOpen,
+            ident("ref"),
+            Token::Long(3),
+        ];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units =
+            u64::try_from(toks.len()).expect("fixture length fits in u64");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        assert!(subtype_span_ctx(&ctx, &toks, 0)
+            .expect("scan work admission")
+            .is_none());
+        ctx.finish_session().expect("there is no EOF probe");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units =
+            u64::try_from(toks.len() - 1).expect("fixture length fits in u64");
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        let error = subtype_span_ctx(&ctx, &toks, 0).expect_err("the final token is admitted");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM subtype span token scan");
+        assert_eq!(
+            limit.used,
+            u64::try_from(toks.len() - 1).expect("fixture length fits in u64")
+        );
+        assert_eq!(limit.additional, 1);
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
+        ));
+    }
+
+    #[test]
+    fn subtype_span_no_open_is_fixed_work_and_does_not_hide_a_fused_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+
+        let toks = [ident("x"), Token::SubtypeClose];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        assert!(subtype_span_ctx(&ctx, &toks, 0)
+            .expect("no scan occurs")
+            .is_none());
+        ctx.finish_session().expect("no-open is a fixed O(1) check");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        let error = ctx
+            .charge_work(1, "ASM prior scan refusal")
+            .expect_err("the first positive charge is refused");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert!(matches!(
+            subtype_span_ctx(&ctx, &toks, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
+        ));
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
+        ));
+    }
+
+    #[test]
+    fn payload_subtype_lookup_charges_payload_prefix_and_matching_scope() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+        let mut tokens = vec![
+            ident("preamble"),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Long(0),
+            Token::True,
+            Token::SubtypeOpen,
+            ident("exp_par_cur"),
+            Token::Long(3),
+            Token::SubtypeClose,
+        ];
+        tokens.extend((0..256).map(|_| Token::Double(0.0)));
+        let record = crate::sab::Record {
+            index: 0,
+            name: "pcurve".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        };
+
+        // Lookup scans the 7-token payload prefix, reads the matching name,
+        // then validates the 4-token scope from its original base.
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 12;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        let scope = super::payload_subtype_toks(&ctx, &record, 5, "exp_par_cur")
+            .expect("lookup work admission")
+            .expect("matching inline pcurve subtype");
+        assert_eq!(scope.tokens(), &record.tokens[6..=9]);
+        ctx.finish_session().expect("the trailing payload is unused");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 8;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        assert!(super::payload_subtype_toks(&ctx, &record, 5, "different")
+            .expect("lookup work admission")
+            .is_none());
+        ctx.finish_session().expect("name mismatch stops before the body");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 11;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        let error = super::payload_subtype_toks(&ctx, &record, 5, "exp_par_cur")
+            .expect_err("the matching close is admitted");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "ASM subtype span token scan");
+        assert_eq!(limit.used, 11);
+        assert_eq!(limit.additional, 1);
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
+        ));
+    }
+
+    #[test]
+    fn payload_subtype_lookup_preserves_a_fused_refusal_when_no_chunk_exists() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+
+        let record = crate::sab::Record {
+            index: 0,
+            name: "pcurve".into(),
+            tokens: Vec::new().into(),
+            offset: 0,
+            len: 0,
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        assert!(super::payload_subtype_toks(&ctx, &record, 0, "exp_par_cur")
+            .expect("empty lookup does not scan")
+            .is_none());
+        ctx.finish_session().expect("empty lookup uses no work");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        let error = ctx
+            .charge_work(1, "ASM prior scan refusal")
+            .expect_err("the first positive charge is refused");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal: {error:?}");
+        };
+
+        assert!(matches!(
+            super::payload_subtype_toks(&ctx, &record, 0, "exp_par_cur"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
+        ));
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
+        ));
     }
 
     #[test]
