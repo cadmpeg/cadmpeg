@@ -2752,7 +2752,9 @@ pub(super) fn project(
                         .then_some(count)
                     })
                 }
-                Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
+                Some(TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_)) => {
+                    None
+                }
             };
             cursor += 3;
             attributes_valid &=

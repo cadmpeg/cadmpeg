@@ -305,8 +305,20 @@ fn unreadable_directory_metadata_preserves_independent_point_geometry() {
             .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
             .unwrap();
         assert_eq!(
-            decoded.ir().model.points,
-            expected.ir().model.points,
+            decoded
+                .ir()
+                .model
+                .points
+                .iter()
+                .map(|point| (&point.id, point.position()))
+                .collect::<Vec<_>>(),
+            expected
+                .ir()
+                .model
+                .points
+                .iter()
+                .map(|point| (&point.id, point.position()))
+                .collect::<Vec<_>>(),
             "{field}"
         );
         assert_eq!(

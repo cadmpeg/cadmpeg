@@ -327,14 +327,25 @@ pub fn surface_cache_resolving_refs(
     })
 }
 
-/// [`owned_surface_cache`], following subtype-table references.
+/// Read the owned cache, resolving a direct subtype-table alias.
 pub(super) fn owned_surface_cache_resolving_refs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
 ) -> Option<Result<NurbsSurface, cadmpeg_core::CodecError>> {
-    owned_surface_cache(ctx, scope)
-        .or_else(|| cache_from_subtype_refs(ctx, scope.tokens(), table, owned_surface_cache))
+    if let Some(cache) = owned_surface_cache(ctx, scope) {
+        return Some(cache);
+    }
+    // Only a reference scope aliases another construction. References inside
+    // a named construction are its supports or guides, whose caches use their
+    // own parameter charts and cannot stand in for the owner's missing cache.
+    let index = match scope.interior() {
+        [Token::Ident(name), Token::Long(index)] if name == "ref" => *index,
+        [Token::Long(index)] => *index,
+        _ => return None,
+    };
+    let target = table.span(usize::try_from(index).ok()?)?;
+    owned_surface_cache(ctx, target)
 }
 
 /// Decode a curve cache, following subtype-table references.
@@ -677,6 +688,71 @@ mod tests {
     use crate::nurbs::toks::SubtypeTable;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn cacheless_surface_does_not_borrow_a_referenced_support_cache() {
+        use crate::sab::{Record, Token};
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let mut tokens = vec![
+            Token::SubtypeOpen,
+            Token::Ident("exact_spl_sur".into()),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(2),
+        ];
+        for _ in 0..2 {
+            tokens.extend([
+                Token::Double(0.0),
+                Token::Long(1),
+                Token::Double(1.0),
+                Token::Long(1),
+            ]);
+        }
+        for point in [[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [1., 1., 0.]] {
+            tokens.extend(point.map(Token::Double));
+        }
+        tokens.push(Token::SubtypeClose);
+        let record = Record {
+            index: 0,
+            name: "spline-surface".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        };
+        let table = SubtypeTable::from_records(&ctx, &[record]).unwrap();
+        for reference in [
+            vec![
+                Token::SubtypeOpen,
+                Token::Ident("ref".into()),
+                Token::Long(0),
+                Token::SubtypeClose,
+            ],
+            vec![Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose],
+        ] {
+            let scope = crate::nurbs::toks::subtype_span(&reference, 0).unwrap();
+            assert!(
+                super::owned_surface_cache_resolving_refs(&ctx, scope, &table)
+                    .unwrap()
+                    .is_ok()
+            );
+            let mut owner = vec![
+                Token::SubtypeOpen,
+                Token::Ident("srf_srf_v_bl_spl_sur".into()),
+            ];
+            owner.extend(reference);
+            owner.push(Token::SubtypeClose);
+            let scope = crate::nurbs::toks::subtype_span(&owner, 0).unwrap();
+            assert!(super::owned_surface_cache_resolving_refs(&ctx, scope, &table).is_none());
+        }
+    }
 
     #[test]
     fn cached_nurbs_recovery_caps_preserve_resource_refusals() {

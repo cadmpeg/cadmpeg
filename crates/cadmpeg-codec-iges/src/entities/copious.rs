@@ -34,7 +34,11 @@ fn push_copious_loss(
         ctx,
         losses,
         entry,
-        crate::loss::IgesLossCode::EntityNotProjected,
+        if presentation_form(entry.form) {
+            crate::loss::IgesLossCode::EntityNotProjected
+        } else {
+            crate::loss::IgesLossCode::GeometryNotProjected
+        },
         format_args!(
             "IGES entity type {} form {} was not projected: {reason}",
             entry.entity_type, entry.form

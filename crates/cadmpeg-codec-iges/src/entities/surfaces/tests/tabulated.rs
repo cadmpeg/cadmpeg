@@ -217,7 +217,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
                 .report()
                 .losses
                 .iter()
-                .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+                .all(|loss| loss.code != IgesLossCode::GeometryNotProjected.kind()),
             "{:#?}",
             result.report().losses
         );
@@ -330,7 +330,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
                 .report()
                 .losses
                 .iter()
-                .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+                .all(|loss| loss.code != IgesLossCode::GeometryNotProjected.kind()),
             "{:#?}",
             result.report().losses
         );
@@ -426,7 +426,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
                 .report()
                 .losses
                 .iter()
-                .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+                .all(|loss| loss.code != IgesLossCode::GeometryNotProjected.kind()),
             "{:#?}",
             result.report().losses
         );

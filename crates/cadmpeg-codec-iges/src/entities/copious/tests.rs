@@ -373,7 +373,7 @@ fn v5_one_tuple_linear_path_keeps_the_later_minimum() {
     assert!(result.ir().model.points.is_empty());
     assert!(result.ir().model.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss
                 .message
                 .contains("linear paths require at least 2 tuple(s)")
@@ -506,7 +506,7 @@ fn decode_rejects_form_63_self_intersections_without_duplicate_points() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+            .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
     }
 }
 
@@ -613,18 +613,16 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 }
 
 #[test]
-fn strict_decode_reports_an_attributed_projection_loss_without_refusal() {
+fn strict_decode_refuses_an_unusable_required_copious_geometry_record() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
-
-    let result = IgesCodec.decode(&mut Cursor::new(bytes), &options).unwrap();
-
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    let failure = IgesCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .unwrap_err();
+    assert!(
+        matches!(failure, cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } if rejection.loss().code == IgesLossCode::GeometryNotProjected.kind())
+    );
 }
 
 #[test]

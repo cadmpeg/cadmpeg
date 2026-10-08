@@ -128,11 +128,10 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
 }
 
 fn has_entity_projection_loss(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
-    result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+    result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            || loss.code == IgesLossCode::GeometryNotProjected.kind()
+    })
 }
 
 #[test]

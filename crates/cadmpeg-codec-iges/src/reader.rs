@@ -488,6 +488,49 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             ctx.reserve_vec(&mut losses, 1, "iges record loss slots")?;
             losses.push(record.loss_note(ctx)?);
         }
+        let mut entries = BTreeMap::new();
+        let mut storage = ctx.reserve_scoped(0, "iges literal loss directory index")?;
+        for record in &self.parameters {
+            for (index, token) in record.tokens().iter().enumerate() {
+                ctx.charge_work(1, "iges parameter literal defects")?;
+                let parameter::TokenValue::Unreadable(defect) = token.value else {
+                    continue;
+                };
+                if entries.is_empty() {
+                    for entry in &self.directory {
+                        storage.with_storage(|| {
+                            ctx.insert_btree_map(
+                                &mut entries,
+                                entry.sequence,
+                                entry,
+                                "iges literal loss directory index",
+                            )
+                        })?;
+                    }
+                }
+                let entry = entries.get(&record.directory_sequence).ok_or_else(|| {
+                    CodecError::malformed("IGES parameter literal has no Directory owner")
+                })?;
+                let code = IgesLossCode::ParameterLiteralUnusable;
+                let message = ctx.format_retained(
+                    format_args!(
+                        "Parameter field {index} in D{} is unreadable: {}; exact field retained",
+                        record.directory_sequence,
+                        defect.describe(),
+                    ),
+                    "iges parameter literal loss message",
+                )?;
+                ctx.charge_retained(
+                    4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+                    "iges parameter literal loss kind",
+                )?;
+                ctx.reserve_vec(&mut losses, 1, "iges record loss slots")?;
+                losses.push(
+                    code.note(message)
+                        .with_provenance(entry.admitted_loss_provenance(ctx)?),
+                );
+            }
+        }
         Ok(losses)
     }
 }

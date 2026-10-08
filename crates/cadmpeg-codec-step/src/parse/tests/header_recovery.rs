@@ -283,6 +283,10 @@ fn unusable_presentation_literals_preserve_shape_and_exact_record() {
     for record in [
         "#900001=COLOUR_RGB('',1.E999,0.,0.);",
         "#900001=SURFACE_STYLE_TRANSPARENT(1.E999);",
+        "#900001=SURFACE_STYLE_REFLECTANCE_AMBIENT_DIFFUSE(1.E999,0.5);",
+        "#900001=SURFACE_STYLE_REFLECTANCE_AMBIENT_DIFFUSE_SPECULAR(0.5,1.E999,0.5,0.5,$);",
+        "#900001=TEXT_STYLE_WITH_BOX_CHARACTERISTICS('',$,((.BOX_HEIGHT.,1.E999)));",
+        "#900001=TEXT_STYLE_WITH_BOX_CHARACTERISTICS('',#900002,((.BOX_HEIGHT.,1.E999)));",
         "#900001=CURVE_STYLE('',.CONTINUOUS.,LENGTH_MEASURE(1.E999),$);",
     ] {
         let data_end = original.rfind("ENDSEC;").unwrap();

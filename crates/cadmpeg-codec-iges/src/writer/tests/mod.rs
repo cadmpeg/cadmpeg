@@ -65,6 +65,7 @@ use crate::{IgesCodec, IgesVersion};
 mod allocation;
 mod encode;
 mod extrusion_directrix;
+mod ownership;
 mod pcurve_orientation;
 mod quarantine;
 mod roundtrip;

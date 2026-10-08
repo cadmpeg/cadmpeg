@@ -61,7 +61,7 @@ fn decode_projects_a_v4_composite_with_a_point_attachment() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn decode_projects_a_v5_composite_with_a_point_attachment() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn decode_projects_a_v5_composite_with_a_connect_point_attachment() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
 }
 
 #[test]
@@ -217,7 +217,7 @@ fn decode_rejects_a_composite_point_attachment_at_the_wrong_curve_endpoint() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
             .count(),
         1
     );
@@ -283,7 +283,7 @@ fn decode_rejects_consecutive_point_members_in_a_composite_with_curve_members() 
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
             .count(),
         1
     );

@@ -871,7 +871,7 @@ fn quarantined_parameter_sequence_index_refuses_node_limit() {
         form: 0,
         label: "POINT".into(),
         status: "00000000",
-        parameters: "116,1,2,3x4,0;".into(),
+        parameters: "116,1,2,64Hshort;".into(),
     }]);
     let arena = DecodeArena::new();
     let (parse_ctx, _) =

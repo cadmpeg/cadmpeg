@@ -19,7 +19,7 @@ native CAD or CADIR ── load + decode/parse ──> CadIr
 - `check` reads or decodes an input and checks IR invariants. Decoder and export admission subsets are in [admissibility-routes.md](admissibility-routes.md).
 - `dump` runs the selected codec and serializes `CadIr` as CADIR JSON.
 
-CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 6, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
+CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 7, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. `--allow-empty` permits geometry export when a source decode transferred no geometry.
 
 A successful dump is not a checked model.
 

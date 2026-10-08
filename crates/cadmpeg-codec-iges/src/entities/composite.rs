@@ -5,6 +5,10 @@ use super::curve_conversion::{
     circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs, CurveConversionError,
 };
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
+use super::nurbs_controls::{
+    euclidean_control_points, homogeneous_control_points, homogeneous_point_is_valid,
+    insert_homogeneous_knot, trim_nurbs_lanes, EuclideanControlNet, InsertedKnotNet,
+};
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -21,7 +25,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
@@ -475,87 +479,6 @@ fn select_composite_edge(
         .transpose()
 }
 
-fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
-    point.iter().all(|value| value.is_finite()) && point[0] > 0.0
-}
-
-fn homogeneous_control_points(
-    ctx: &DecodeContext<'_>,
-    curve: &NurbsCurve,
-) -> Result<Option<Vec<[f64; 4]>>, CodecError> {
-    let control_count = curve.pole_count();
-    let mut homogeneous = ctx.alloc_filled(
-        control_count,
-        [0.0; 4],
-        "iges composite homogeneous control points",
-    )?;
-    for (index, slot) in homogeneous.iter_mut().enumerate().take(control_count) {
-        let Some(point) = curve.pole_rows().point_at(index) else {
-            return Ok(None);
-        };
-        let weight = if matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }) {
-            let Some(weight) = curve.pole_rows().weight_at(index) else {
-                return Ok(None);
-            };
-            weight
-        } else {
-            1.0
-        };
-        let homogeneous_point = [weight, weight * point.x, weight * point.y, weight * point.z];
-        if !homogeneous_point_is_valid(&homogeneous_point) {
-            return Ok(None);
-        }
-        *slot = homogeneous_point;
-    }
-    Ok(Some(homogeneous))
-}
-
-struct EuclideanControlNet {
-    control_points: Vec<FinitePoint3>,
-    weights: Option<Vec<PositiveReal>>,
-}
-
-fn euclidean_control_points(
-    ctx: &DecodeContext<'_>,
-    homogeneous: Vec<[f64; 4]>,
-    rational: bool,
-) -> Result<Option<EuclideanControlNet>, CodecError> {
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(homogeneous.len()),
-        "iges composite Euclidean control points",
-    )?;
-    if rational {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(homogeneous.len()),
-            "iges composite Euclidean weights",
-        )?;
-    }
-    let mut control_points =
-        ctx.vector_storage(homogeneous.len(), "iges composite Euclidean control points")?;
-    let mut weights = if rational {
-        Some(ctx.vector_storage(homogeneous.len(), "iges composite Euclidean weights")?)
-    } else {
-        None
-    };
-    for [weight, x, y, z] in homogeneous {
-        let Some(weight) = PositiveReal::new(weight) else {
-            return Ok(None);
-        };
-        let point = Point3::new(x / weight.get(), y / weight.get(), z / weight.get());
-        let Some(point) = FinitePoint3::new(point) else {
-            return Ok(None);
-        };
-        control_points.push(point);
-        if let Some(weights) = &mut weights {
-            weights.push(weight);
-        }
-    }
-    Ok(Some(EuclideanControlNet {
-        control_points,
-        weights,
-    }))
-}
-
 fn elevate_bezier_homogeneous(
     ctx: &DecodeContext<'_>,
     control_points: &[[f64; 4]],
@@ -734,115 +657,6 @@ fn reverse_nurbs(
     Ok((reversed, reversed_range))
 }
 
-#[derive(Debug)]
-struct InsertedKnotNet {
-    control_points: Vec<[f64; 4]>,
-    knots: Vec<f64>,
-}
-
-fn insert_homogeneous_knot(
-    ctx: &DecodeContext<'_>,
-    control_points: &[[f64; 4]],
-    knots: &[f64],
-    degree: usize,
-    value: f64,
-) -> Result<Option<InsertedKnotNet>, CodecError> {
-    let control_count = control_points.len();
-    let Some(last_control) = control_count.checked_sub(1) else {
-        return Ok(None);
-    };
-    let Some(span) = knots.iter().rposition(|knot| *knot <= value) else {
-        return Ok(None);
-    };
-    let span = if degree == 0 {
-        span.min(last_control)
-    } else {
-        span
-    };
-    let multiplicity = knots.iter().filter(|knot| **knot == value).count();
-    let Some(left_end) = span.checked_sub(degree) else {
-        return Ok(None);
-    };
-    let Some(expected_knots) = control_count
-        .checked_add(degree)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return Ok(None);
-    };
-    if control_count <= degree
-        || left_end > last_control
-        || multiplicity > degree
-        || span < degree
-        || knots.len() != expected_knots
-    {
-        return Ok(None);
-    }
-    let Some(knot_count) = knots.len().checked_add(1) else {
-        return Ok(None);
-    };
-    let mut inserted_knots = ctx.alloc_filled(knot_count, 0.0, "iges composite inserted knots")?;
-    inserted_knots.clear();
-    let Some(left_knots) = knots.get(..=span) else {
-        return Ok(None);
-    };
-    inserted_knots.extend_from_slice(left_knots);
-    inserted_knots.push(value);
-    let Some(next_knot) = span.checked_add(1) else {
-        return Ok(None);
-    };
-    let Some(right_knots) = knots.get(next_knot..) else {
-        return Ok(None);
-    };
-    inserted_knots.extend_from_slice(right_knots);
-
-    let Some(inserted_count) = control_count.checked_add(1) else {
-        return Ok(None);
-    };
-    let mut inserted_control_points = ctx.alloc_filled(
-        inserted_count,
-        [0.0; 4],
-        "iges composite knot-insertion control points",
-    )?;
-    let Some(tail_start) = span.checked_sub(multiplicity) else {
-        return Ok(None);
-    };
-    if tail_start > last_control {
-        return Ok(None);
-    }
-    inserted_control_points[..=left_end].copy_from_slice(&control_points[..=left_end]);
-    inserted_control_points[tail_start + 1..]
-        .copy_from_slice(&control_points[tail_start..control_count]);
-    let Some(first_interior) = left_end.checked_add(1) else {
-        return Ok(None);
-    };
-    for index in first_interior..=tail_start {
-        let denominator = knots[index + degree] - knots[index];
-        if !denominator.is_finite() || denominator <= 0.0 {
-            return Ok(None);
-        }
-        let alpha = (value - knots[index]) / denominator;
-        if !alpha.is_finite() || !(0.0..=1.0).contains(&alpha) {
-            return Ok(None);
-        }
-        let previous = control_points[index - 1];
-        let current = control_points[index];
-        let point = [
-            alpha * current[0] + (1.0 - alpha) * previous[0],
-            alpha * current[1] + (1.0 - alpha) * previous[1],
-            alpha * current[2] + (1.0 - alpha) * previous[2],
-            alpha * current[3] + (1.0 - alpha) * previous[3],
-        ];
-        if !homogeneous_point_is_valid(&point) {
-            return Ok(None);
-        }
-        inserted_control_points[index] = point;
-    }
-    Ok(Some(InsertedKnotNet {
-        control_points: inserted_control_points,
-        knots: inserted_knots,
-    }))
-}
-
 /// Trim a curve to `interval`. `Ok(None)` states an interval the curve cannot
 /// be trimmed to; `Err` states trimmed lanes the carrier refuses.
 fn trim_nurbs_to_interval(
@@ -874,105 +688,6 @@ fn trim_nurbs_to_interval(
         weights,
         false,
     )??))
-}
-
-type TrimmedLanes = (Vec<FinitePoint3>, Option<Vec<PositiveReal>>, Vec<f64>);
-
-fn trim_nurbs_lanes(
-    ctx: &DecodeContext<'_>,
-    curve: &NurbsCurve,
-    interval: [f64; 2],
-) -> Result<Option<TrimmedLanes>, CodecError> {
-    let Ok(degree) = usize::try_from(curve.degree()) else {
-        return Ok(None);
-    };
-    let control_count = curve.pole_count();
-    if curve.periodic() {
-        return Ok(None);
-    }
-    let [start, end] = interval;
-    if !start.is_finite() || !end.is_finite() || start >= end {
-        return Ok(None);
-    }
-    let (Some(&domain_start), Some(&domain_end)) =
-        (curve.knots().get(degree), curve.knots().get(control_count))
-    else {
-        return Ok(None);
-    };
-    if !domain_start.is_finite()
-        || !domain_end.is_finite()
-        || domain_start >= domain_end
-        || start < domain_start
-        || end > domain_end
-    {
-        return Ok(None);
-    }
-    let Some(mut homogeneous) = homogeneous_control_points(ctx, curve)? else {
-        return Ok(None);
-    };
-    let mut knots = ctx.collection_vec(curve.knots().len(), "iges composite trim knot copy")?;
-    knots.extend_from_slice(curve.knots());
-    for value in [start, end] {
-        let Some(target_multiplicity) = degree.checked_add(1) else {
-            return Ok(None);
-        };
-        while knots.iter().filter(|knot| **knot == value).count() < target_multiplicity {
-            let Some(InsertedKnotNet {
-                control_points: new_homogeneous,
-                knots: new_knots,
-            }) = insert_homogeneous_knot(ctx, &homogeneous, &knots, degree, value)?
-            else {
-                return Ok(None);
-            };
-            homogeneous = new_homogeneous;
-            knots = new_knots;
-        }
-    }
-    let (Some(start_knot), Some(end_knot)) = (
-        knots.iter().position(|knot| *knot == start),
-        knots.iter().rposition(|knot| *knot == end),
-    ) else {
-        return Ok(None);
-    };
-    let Some(control_end) = end_knot.checked_sub(degree) else {
-        return Ok(None);
-    };
-    if start_knot >= control_end {
-        return Ok(None);
-    }
-    let (Some(homogeneous_slice), Some(knot_slice)) = (
-        homogeneous.get(start_knot..control_end),
-        knots.get(start_knot..=end_knot),
-    ) else {
-        return Ok(None);
-    };
-    let mut trimmed_homogeneous =
-        ctx.collection_vec(homogeneous_slice.len(), "iges composite trimmed controls")?;
-    trimmed_homogeneous.extend_from_slice(homogeneous_slice);
-    let mut trimmed_knots = ctx.collection_vec(knot_slice.len(), "iges composite trimmed knots")?;
-    trimmed_knots.extend_from_slice(knot_slice);
-    let Some(expected_knots) = trimmed_homogeneous
-        .len()
-        .checked_add(degree)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return Ok(None);
-    };
-    if trimmed_knots.len() != expected_knots {
-        return Ok(None);
-    }
-    let Some(EuclideanControlNet {
-        control_points,
-        weights,
-    }) = euclidean_control_points(
-        ctx,
-        trimmed_homogeneous,
-        matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }),
-    )?
-    else {
-        return Ok(None);
-    };
-    Ok(Some((control_points, weights, trimmed_knots)))
 }
 
 /// Why a child curve could not be raised to the composite's degree.
@@ -2285,7 +2000,7 @@ fn project_degraded_composite(
             format_args!("IGES Type 102 entity D{} has no admitted concatenated carrier because {reason}; the ordered native composite carrier was retained", carrier.entry.sequence),
         )?;
     } else {
-        super::push_entity_loss(
+        super::push_geometry_loss(
             ctx,
             losses,
             carrier.entry,
@@ -2399,7 +2114,7 @@ fn project_with_type_130_policy(
             .use_flag(global.global_table())
             .filter(|use_flag| composite_use_flag_valid(*use_flag, global.global_table()))
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2415,7 +2130,7 @@ fn project_with_type_130_policy(
                 "IGES directory metadata diagnostic")?), "IGES directory metadata losses")?;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2424,7 +2139,7 @@ fn project_with_type_130_policy(
             continue;
         };
         let Some(raw_child_count) = record.integer(1) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2447,7 +2162,7 @@ fn project_with_type_130_policy(
             .ok()
             .filter(|count| *count >= minimum_child_count)
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2471,7 +2186,7 @@ fn project_with_type_130_policy(
             child_sequences.push(sequence);
         }
         if !valid_child_pointers {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2490,11 +2205,11 @@ fn project_with_type_130_policy(
             is_logical_connector,
             global.global_table(),
         ) {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later"))?;
+            super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later"))?;
             continue;
         }
         if entry.transform != 0 {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2511,7 +2226,7 @@ fn project_with_type_130_policy(
                     || !child.status.is_physically_dependent()
             })
         }) {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "composite child is missing, outside the effective specification family, or is not physically dependent"))?;
+            super::push_geometry_loss(ctx, &mut losses, entry, format_args!("{}", "composite child is missing, outside the effective specification family, or is not physically dependent"))?;
             continue;
         }
         let point_context = CompositePointContext {
@@ -2545,7 +2260,7 @@ fn project_with_type_130_policy(
             &curve_carriers,
             &point_context,
         )? {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2561,7 +2276,7 @@ fn project_with_type_130_policy(
             ctx.collection_vec(curve_count, "iges composite curve child sequences")?;
         curve_sequences.extend(child_sequences.iter().copied().filter(is_curve_sequence));
         if curve_sequences.is_empty() {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -2581,7 +2296,7 @@ fn project_with_type_130_policy(
                 .push(curve.try_clone_for_decode(ctx, "iges composite child curve ID copies")?);
         }
         if missing_curve {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,

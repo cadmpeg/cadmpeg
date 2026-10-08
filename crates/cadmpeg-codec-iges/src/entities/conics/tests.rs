@@ -170,7 +170,7 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
                     .report()
                     .losses
                     .iter()
-                    .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+                    .all(|loss| loss.code != IgesLossCode::GeometryNotProjected.kind()),
                 "{version} {family}: {:#?}",
                 result.report().losses
             );
@@ -291,7 +291,7 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
             assert_eq!(result.report().losses.len(), 1, "{point_name}");
             assert_eq!(
                 result.report().losses[0].code,
-                IgesLossCode::EntityNotProjected.kind(),
+                IgesLossCode::GeometryNotProjected.kind(),
                 "{point_name}"
             );
         }
@@ -311,7 +311,7 @@ fn decode_rejects_a_conic_endpoint_at_exact_global_resolution() {
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].code,
-        IgesLossCode::EntityNotProjected.kind()
+        IgesLossCode::GeometryNotProjected.kind()
     );
 }
 
@@ -393,7 +393,7 @@ fn decode_applies_the_scale_relative_standard_position_gate() {
             assert_eq!(result.report().losses.len(), 1);
             assert_eq!(
                 result.report().losses[0].code,
-                IgesLossCode::EntityNotProjected.kind()
+                IgesLossCode::GeometryNotProjected.kind()
             );
             assert!(result.report().losses[0]
                 .message

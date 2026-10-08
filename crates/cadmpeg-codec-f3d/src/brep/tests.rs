@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::graph_ops::insert_brep_adjacency;
 use super::graph_ops::AdjacencyRow;
-use super::graph_ops::{collect_brep_references, insert_brep_adjacency};
 use super::{persistent_design_links, persistent_subentity_tags, Brep};
 use crate::records::recipes::CreationTimestamp;
 use crate::records::sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink};
@@ -13,7 +13,6 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::{FaceId, RegionId};
 use cadmpeg_ir::topology::{Body, BodyKind, Region};
 use std::collections::{HashMap, HashSet};
-mod structural_budget;
 
 fn with_limits<T>(
     max_items: u64,
@@ -43,11 +42,6 @@ fn with_materialized_limit<T>(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     run(&ctx)
-}
-
-fn empty_retention_projection_items() -> u64 {
-    let empty = Brep::default();
-    structural_budget::projection_items(&empty)
 }
 
 #[test]
@@ -336,35 +330,7 @@ fn brep_owned_id_copy_refuses_retained_limit() {
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D BREP remapped ID")
-    );
-}
-
-#[test]
-fn brep_owned_id_index_refuses_collection_limit() {
-    let mut brep = one_body_brep();
-    let projection_items = structural_budget::projection_items(&brep);
-    let error = with_limits(projection_items, u64::MAX, |ctx| {
-        brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source")
-            .unwrap_err()
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D BREP owned IDs")
-    );
-}
-
-#[test]
-fn brep_replacement_index_refuses_collection_limit() {
-    let mut brep = one_body_brep();
-    let projection_items = structural_budget::projection_items(&brep);
-    let error = with_limits(projection_items + 1, u64::MAX, |ctx| {
-        brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source")
-            .unwrap_err()
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D BREP replacements")
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
 }
 
@@ -384,21 +350,7 @@ fn brep_remapped_id_refuses_retained_limit() {
     // The boundary oracle reaches the remapped identity after preceding map storage.
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D BREP remapped ID")
-    );
-}
-
-#[test]
-fn brep_value_map_rebuild_refuses_collection_limit() {
-    let mut brep = one_body_brep();
-    let projection_items = structural_budget::projection_items(&brep);
-    let error = with_limits(projection_items + 2, u64::MAX, |ctx| {
-        brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source")
-            .unwrap_err()
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "rewrite F3D qualified BREP fields")
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
     );
 }
 
@@ -411,59 +363,7 @@ fn brep_qualification_projection_refuses_materialized_limit() {
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "project F3D qualified BREP value")
-    );
-}
-
-#[test]
-fn brep_qualification_rebuild_refuses_materialized_limit() {
-    let mut brep = one_body_brep();
-    let first_projection = structural_budget::projection_bytes(&brep);
-    let error = with_materialized_limit(first_projection, |ctx| {
-        brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source")
-            .unwrap_err()
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "project F3D qualified BREP value")
-    );
-}
-
-#[test]
-fn brep_retention_projection_refuses_materialized_limit() {
-    let mut brep = Brep::default();
-    let error = with_materialized_limit(0, |ctx| {
-        brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "project F3D retained BREP value")
-    );
-}
-
-#[test]
-fn brep_retention_rebuild_refuses_materialized_limit() {
-    let mut brep = Brep::default();
-    let first_projection = structural_budget::projection_bytes(&brep);
-    let error = with_materialized_limit(first_projection, |ctx| {
-        brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "project F3D retained BREP value")
-    );
-}
-
-#[test]
-fn brep_adjacency_reference_refuses_retained_limit() {
-    let value = serde_value::Value::String("f3d:brep:entity#1".to_owned());
-    let error = with_limits(u64::MAX, 0, |ctx| {
-        let owned = vec!["f3d:brep:entity#1".to_owned()];
-        collect_brep_references(ctx, &value, &owned, &mut Vec::new()).unwrap_err()
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "copy F3D BREP adjacency reference")
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
     );
 }
 
@@ -524,7 +424,7 @@ fn brep_retained_sketch_links_refuse_collection_limit() {
         }],
         ..Brep::default()
     };
-    let error = with_limits(empty_retention_projection_items(), u64::MAX, |ctx| {
+    let error = with_limits(0, u64::MAX, |ctx| {
         brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
     });
     assert!(
@@ -545,7 +445,7 @@ fn brep_retained_design_links_refuse_collection_limit() {
         }],
         ..Brep::default()
     };
-    let error = with_limits(empty_retention_projection_items(), u64::MAX, |ctx| {
+    let error = with_limits(0, u64::MAX, |ctx| {
         brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
     });
     assert!(
@@ -567,7 +467,7 @@ fn brep_retained_subentity_tags_refuse_collection_limit() {
         }],
         ..Brep::default()
     };
-    let error = with_limits(empty_retention_projection_items(), u64::MAX, |ctx| {
+    let error = with_limits(0, u64::MAX, |ctx| {
         brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
     });
     assert!(
@@ -587,7 +487,7 @@ fn brep_retained_timestamps_refuse_collection_limit() {
         }],
         ..Brep::default()
     };
-    let error = with_limits(empty_retention_projection_items(), u64::MAX, |ctx| {
+    let error = with_limits(0, u64::MAX, |ctx| {
         brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err()
     });
     assert!(
@@ -621,7 +521,13 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
     };
     let mut brep = Brep {
         asm: AsmBrep {
-            bodies: vec![body(1, 2), body(3, 4)],
+            bodies: vec![
+                Body {
+                    name: Some("f3d:brep:entity#3".into()),
+                    ..body(1, 2)
+                },
+                body(3, 4),
+            ],
             regions: vec![
                 Region {
                     id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),

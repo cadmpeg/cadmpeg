@@ -1182,26 +1182,37 @@ impl Parser<'_, '_, '_> {
             }
         }
         for record in records.values() {
-            refs.clear();
-            value_refs.clear();
             for partial in &record.partials {
+                refs.clear();
+                value_refs.clear();
                 for value in &partial.parameters {
                     reference_storage.with_storage(|| {
                         references(value, &mut refs, &mut value_refs, self.budget)
                     })?;
                 }
-            }
-            if refs
-                .iter()
-                .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
-            {
-                return Self::err_at(record.span.start, "unresolved instance reference");
-            }
-            if value_refs
-                .iter()
-                .any(|id| !external_value_reference_ids.contains(id))
-            {
-                return Self::err_at(record.span.start, "unresolved value instance reference");
+                let unresolved = refs
+                    .iter()
+                    .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id));
+                let unresolved_value = value_refs
+                    .iter()
+                    .any(|id| !external_value_reference_ids.contains(id));
+                if (unresolved || unresolved_value) && metadata::presentation_record(&partial.name)
+                {
+                    let message = self.budget.format_retained(format_args!("{} contains an unresolved presentation reference; exact record retained", partial.name), "STEP presentation reference diagnostic")?;
+                    self.budget.push_vec(
+                        &mut self.diagnostics,
+                        ParseDiagnostic {
+                            offset: record.span.start,
+                            kind: ParseDiagnosticKind::PresentationMetadataUnusable,
+                            message,
+                        },
+                        "step_parse_diagnostics",
+                    )?;
+                } else if unresolved {
+                    return Self::err_at(record.span.start, "unresolved instance reference");
+                } else if unresolved_value {
+                    return Self::err_at(record.span.start, "unresolved value instance reference");
+                }
             }
         }
         if let Some(message) = class3_restriction {

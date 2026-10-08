@@ -145,11 +145,11 @@ fn numeric_fields_may_have_leading_but_not_embedded_or_trailing_blanks() {
         for field in [b"1  ".as_slice(), b"1 2".as_slice()] {
             let bytes = [b"116,".as_slice(), field, b",2,3,0;".as_slice()].concat();
             assert!(matches!(
-                tokenize(&bytes, &[64], b',', b';', GlobalTable::V5Later, decode_ctx),
-                Err(TokenizeFailure::Defect(
-                    ParameterDefect::NumericContainsBlanks,
-                    4
-                ))
+                tokenize(&bytes, &[64], b',', b';', GlobalTable::V5Later, decode_ctx)
+                    .unwrap_or_else(|_| panic!("framed field"))
+                    .0[1]
+                    .value,
+                TokenValue::Unreadable(ParameterDefect::NumericContainsBlanks)
             ));
         }
     });
@@ -186,11 +186,9 @@ fn parameter_numeric_tokens_obey_global_integer_and_real_capabilities() {
     for value in ["2147483648", "-2147483648"] {
         assert!(
             matches!(
-                tokenize_with_declared_limits(value),
-                Err(TokenizeFailure::Defect(
-                    ParameterDefect::NumericOutOfRange,
-                    4
-                )),
+                tokenize_with_declared_limits(value).unwrap_or_else(|_| panic!("framed field"))[1]
+                    .value,
+                TokenValue::Unreadable(ParameterDefect::NumericOutOfRange),
             ),
             "{value}"
         );
@@ -200,19 +198,13 @@ fn parameter_numeric_tokens_obey_global_integer_and_real_capabilities() {
         assert!(tokenize_with_declared_limits(value).is_ok(), "{value}");
     }
     assert!(matches!(
-        tokenize_with_declared_limits("1E39"),
-        Err(TokenizeFailure::Defect(
-            ParameterDefect::NumericOutOfRange,
-            4
-        )),
+        tokenize_with_declared_limits("1E39").unwrap_or_else(|_| panic!("framed field"))[1].value,
+        TokenValue::Unreadable(ParameterDefect::NumericOutOfRange),
     ));
     assert!(tokenize_with_declared_limits("1.234567D308").is_ok());
     assert!(matches!(
-        tokenize_with_declared_limits("1D309"),
-        Err(TokenizeFailure::Defect(
-            ParameterDefect::NumericOutOfRange,
-            4
-        )),
+        tokenize_with_declared_limits("1D309").unwrap_or_else(|_| panic!("framed field"))[1].value,
+        TokenValue::Unreadable(ParameterDefect::NumericOutOfRange),
     ));
 }
 
@@ -243,7 +235,7 @@ fn parameter_numeric_capability_checks_are_proven_for_v4_and_v5_0() {
             .unwrap();
         assert!(result.ir().model.points.is_empty(), "version {version}");
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::ParameterDataQuarantined.kind()
+            loss.code == IgesLossCode::ParameterLiteralUnusable.kind()
         }), "version {version}: {:#?}", result.report().losses);
     }
 }

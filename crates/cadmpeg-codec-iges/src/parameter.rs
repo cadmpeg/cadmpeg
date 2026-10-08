@@ -35,6 +35,8 @@ pub(crate) enum TokenValue {
     Integer(i64),
     Real(FiniteReal),
     String(Vec<u8>),
+    /// The field boundaries are known, but its literal cannot be interpreted.
+    Unreadable(ParameterDefect),
 }
 
 #[cfg(test)]
@@ -307,14 +309,20 @@ impl ParameterRecord {
     fn raw_integer(&self, index: usize) -> Option<i64> {
         match self.raw_value(index)? {
             TokenValue::Integer(value) => Some(*value),
-            TokenValue::Omitted | TokenValue::Real(_) | TokenValue::String(_) => None,
+            TokenValue::Omitted
+            | TokenValue::Real(_)
+            | TokenValue::String(_)
+            | TokenValue::Unreadable(_) => None,
         }
     }
 
     pub(crate) fn integer(&self, index: usize) -> Option<i64> {
         match self.value(index)? {
             TokenValue::Integer(value) => Some(*value),
-            TokenValue::Omitted | TokenValue::Real(_) | TokenValue::String(_) => None,
+            TokenValue::Omitted
+            | TokenValue::Real(_)
+            | TokenValue::String(_)
+            | TokenValue::Unreadable(_) => None,
         }
     }
 
@@ -327,7 +335,7 @@ impl ParameterRecord {
         match &token.value {
             TokenValue::Omitted => Some(default),
             TokenValue::Integer(value) => Some(*value),
-            TokenValue::Real(_) | TokenValue::String(_) => None,
+            TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_) => None,
         }
     }
 
@@ -335,7 +343,7 @@ impl ParameterRecord {
         match self.value(index)? {
             TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
-            TokenValue::Omitted | TokenValue::String(_) => None,
+            TokenValue::Omitted | TokenValue::String(_) | TokenValue::Unreadable(_) => None,
         }
     }
 
@@ -349,7 +357,7 @@ impl ParameterRecord {
             TokenValue::Omitted => Some(default),
             TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
-            TokenValue::String(_) => None,
+            TokenValue::String(_) | TokenValue::Unreadable(_) => None,
         }
     }
 
@@ -388,7 +396,10 @@ impl ParameterRecord {
     pub(crate) fn string(&self, index: usize) -> Option<&[u8]> {
         match self.value(index)? {
             TokenValue::String(value) => Some(value),
-            TokenValue::Omitted | TokenValue::Integer(_) | TokenValue::Real(_) => None,
+            TokenValue::Omitted
+            | TokenValue::Integer(_)
+            | TokenValue::Real(_)
+            | TokenValue::Unreadable(_) => None,
         }
     }
 
@@ -401,7 +412,7 @@ impl ParameterRecord {
         match &token.value {
             TokenValue::Omitted => Some(&[]),
             TokenValue::String(value) => Some(value),
-            TokenValue::Integer(_) | TokenValue::Real(_) => None,
+            TokenValue::Integer(_) | TokenValue::Real(_) | TokenValue::Unreadable(_) => None,
         }
     }
 
@@ -2689,7 +2700,7 @@ impl ParameterDefect {
         }
     }
 
-    fn describe(self) -> &'static str {
+    pub(crate) fn describe(self) -> &'static str {
         match self {
             Self::HollerithCountUnreadable => "a Hollerith byte count is unreadable",
             Self::HollerithCountZero => "a Hollerith byte count is zero",
@@ -3557,7 +3568,25 @@ fn tokenize_with_limits(
                     first_value,
                 ));
             }
-            (numeric_with_limits(bytes, span, limits, ctx)?, end)
+            let token = match numeric_with_limits(bytes, span.clone(), limits, ctx) {
+                Ok(token) => token,
+                Err(TokenizeFailure::Defect(defect, _))
+                    if matches!(
+                        defect,
+                        ParameterDefect::NumericContainsBlanks
+                            | ParameterDefect::TokenNotAscii
+                            | ParameterDefect::TokenNotANumber
+                            | ParameterDefect::NumericOutOfRange
+                    ) =>
+                {
+                    Token {
+                        value: TokenValue::Unreadable(defect),
+                        span,
+                    }
+                }
+                Err(error) => return Err(error),
+            };
+            (token, end)
         };
         ctx.reserve_vec(&mut tokens, 1, "iges_parameter_tokens")
             .map_err(TokenizeFailure::Refusal)?;

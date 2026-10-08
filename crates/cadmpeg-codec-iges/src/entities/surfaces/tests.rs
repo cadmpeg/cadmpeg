@@ -797,7 +797,7 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
         assert_eq!(result.report().losses.len(), 1);
         assert_eq!(
             result.report().losses[0].code,
-            IgesLossCode::EntityNotProjected.kind()
+            IgesLossCode::GeometryNotProjected.kind()
         );
     }
 }
@@ -889,7 +889,7 @@ fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert!(!result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("entity type 118")
     }));
     let surface = result
@@ -935,7 +935,7 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
     assert_eq!((surface.u_degree(), surface.v_degree()), (4, 1));
     assert!(surface.weights().is_some());
     assert!(!result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("entity type 118")
     }));
     let curve_point = |sequence: u32, parameter: f64| {
@@ -1133,7 +1133,7 @@ fn decode_projects_rational_circular_arc_length_ruled_surface() {
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
     assert!(surface.weights().is_some());
     assert!(!result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("entity type 118")
     }));
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
@@ -1332,7 +1332,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
             .report()
             .losses
             .iter()
-            .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+            .all(|loss| loss.code != IgesLossCode::GeometryNotProjected.kind()),
         "{:#?}",
         result.report().losses
     );
@@ -1366,7 +1366,7 @@ fn decode_uses_recovered_global_resolution_for_line_revolution_admission() {
             .report()
             .losses
             .iter()
-            .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+            .all(|loss| loss.code != IgesLossCode::GeometryNotProjected.kind()),
         "{:#?}",
         result.report().losses
     );
@@ -1469,7 +1469,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
                 .report()
                 .losses
                 .iter()
-                .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+                .all(|loss| loss.code != IgesLossCode::GeometryNotProjected.kind()),
             "{:#?}",
             result.report().losses
         );
@@ -1583,3 +1583,56 @@ mod projection;
 mod implicit_planes;
 
 mod tabulated;
+
+#[test]
+fn ruled_developability_claim_does_not_hide_readable_rails() {
+    for claim in ["2", "", "3Hbad", "1E999", "bad"] {
+        let bytes = owned_test_file(&[
+            OwnedTestEntity {
+                entity_type: 110,
+                form: 0,
+                label: "FIRST".into(),
+                status: "00000000",
+                parameters: "110,0,0,0,1,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 110,
+                form: 0,
+                label: "SECOND".into(),
+                status: "00000000",
+                parameters: "110,0,1,0,1,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 118,
+                form: 0,
+                label: "RULED".into(),
+                status: "00000000",
+                parameters: format!("118,1,3,0,{claim};"),
+            },
+        ]);
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.surfaces.len(), 1, "claim {claim}");
+        let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+            result.ir().model.surfaces[0].geometry.solved()
+        else {
+            panic!("exact ruled cache")
+        };
+        assert_eq!(
+            cadmpeg_ir::eval::decode::nurbs_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                surface,
+                0.25,
+                0.75
+            )
+            .map(FinitePoint3::get),
+            Ok(Point3::new(0.25, 0.75, 0.0))
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityRecovered.kind()));
+    }
+}

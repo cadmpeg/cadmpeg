@@ -360,7 +360,7 @@ fn decode_uses_global_resolution_for_spline_position_continuity() {
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+                .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
                 .count(),
             usize::from(!decoded)
         );
@@ -413,13 +413,13 @@ fn decode_type_112_h1_compares_unit_tangent_not_parameter_speed() {
             )
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), usize::from(decoded));
+        assert_eq!(result.ir().model.curves.len(), 1);
         assert_eq!(
             result
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+                .filter(|loss| loss.code == IgesLossCode::SplineClaimRecovered.kind())
                 .count(),
             usize::from(!decoded)
         );
@@ -472,13 +472,13 @@ fn decode_type_112_h2_compares_curvature_with_arc_length_parameterization() {
             )
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), usize::from(decoded));
+        assert_eq!(result.ir().model.curves.len(), 1);
         assert_eq!(
             result
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+                .filter(|loss| loss.code == IgesLossCode::SplineClaimRecovered.kind())
                 .count(),
             usize::from(!decoded)
         );
@@ -504,7 +504,7 @@ fn decode_keeps_type_112_curve_when_redundant_terminal_block_disagrees() {
 
     assert_eq!(result.ir().model.curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::SplineClaimRecovered.kind()
             && loss
                 .message
                 .contains("terminal derivative block disagrees with the last polynomial")
@@ -529,8 +529,137 @@ fn decode_rejects_a_degenerate_type_112_segment() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
             .count(),
         1
     );
+}
+
+#[test]
+fn coefficient_curve_survives_missing_terminal_and_invalid_claims() {
+    let coefficients = "0,1,0,0,0,0,0,0,0,0,1,0";
+    for header in ["3,1,3", "2,2,2", "bad,,1", "1E999,7,2"] {
+        let parameters = format!("112,{header},1,0,1,{coefficients};");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(parametric_spline_curve_file_with_parameters(
+                    parameters.as_bytes(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(result.ir().model.curves.len(), 1, "{header}");
+        let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
+        else {
+            panic!("exact carrier")
+        };
+        let point = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            curve,
+            0.5,
+        )
+        .unwrap();
+        assert!(point.distance(Point3::new(0.5, 0.0, 0.25)) < 1.0e-12);
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::SplineClaimRecovered.kind()));
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+    }
+}
+
+#[test]
+fn coefficient_surface_survives_only_missing_unused_trailing_placeholders() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    let mut patch = vec!["0"; 48];
+    patch[1] = "1";
+    patch[20] = "1";
+    for padding in [0, 48, 96, 144] {
+        let mut fields = vec!["114", "3", "1", "1", "1", "0", "1", "0", "1"];
+        fields.extend(&patch);
+        fields.extend(std::iter::repeat_n("0", padding));
+        let bytes = owned_test_file(&[OwnedTestEntity {
+            entity_type: 114,
+            form: 0,
+            label: "PATCH".into(),
+            status: "00000000",
+            parameters: format!("{};", fields.join(",")),
+        }]);
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.surfaces.len(), 1, "padding {padding}");
+        let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+            result.ir().model.surfaces[0].geometry.solved()
+        else {
+            panic!("exact patch")
+        };
+        assert_eq!(
+            cadmpeg_ir::eval::decode::nurbs_surface_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                surface,
+                0.25,
+                0.75
+            )
+            .map(cadmpeg_ir::features::FinitePoint3::get),
+            Ok(Point3::new(0.25, 0.75, 0.0))
+        );
+    }
+}
+
+#[test]
+fn coefficient_surface_requires_actual_patches_at_their_declared_grid_positions() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    let mut first = vec!["0"; 48];
+    first[1] = "1";
+    first[20] = "1";
+    let mut second = first.clone();
+    second[0] = "1";
+    for (interior_padding, last_coefficients, recoverable) in
+        [(48, 48, true), (0, 48, false), (48, 47, false)]
+    {
+        let mut fields = vec!["114", "3", "1", "2", "1", "0", "1", "2", "0", "1"];
+        fields.extend(&first);
+        fields.extend(std::iter::repeat_n("0", interior_padding));
+        fields.extend(&second[..last_coefficients]);
+        let bytes = owned_test_file(&[OwnedTestEntity {
+            entity_type: 114,
+            form: 0,
+            label: "GRID".into(),
+            status: "00000000",
+            parameters: format!("{};", fields.join(",")),
+        }]);
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.surfaces.len(), usize::from(recoverable));
+        if recoverable {
+            let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
+                result.ir().model.surfaces[0].geometry.solved()
+            else {
+                panic!("exact grid")
+            };
+            assert_eq!(
+                cadmpeg_ir::eval::decode::nurbs_surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    surface,
+                    1.5,
+                    0.75
+                )
+                .map(cadmpeg_ir::features::FinitePoint3::get),
+                Ok(Point3::new(1.5, 0.75, 0.0))
+            );
+        } else {
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+        }
+    }
 }

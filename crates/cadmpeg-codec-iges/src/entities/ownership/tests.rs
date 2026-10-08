@@ -97,3 +97,39 @@ fn declared_counts_cannot_make_support_scanning_escape_the_primary_span() {
     .unwrap();
     assert_eq!(targets, [1, 3]);
 }
+
+#[test]
+fn unreadable_owner_flag_keeps_its_readable_support_pointer() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    for claim in ["1E999", "bad", "3Hbad"] {
+        let bytes = owned_test_file(&[
+            OwnedTestEntity {
+                entity_type: 108,
+                form: 0,
+                label: "PLANE".into(),
+                status: "00000000",
+                parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 144,
+                form: 0,
+                label: "OWNER".into(),
+                status: "00000000",
+                parameters: format!("144,1,{claim},0;"),
+            },
+        ]);
+        let result = crate::IgesCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.surfaces.len(), 1);
+        assert_eq!(
+            result.ir().model.surfaces[0]
+                .source_object
+                .as_ref()
+                .unwrap()
+                .geometry_role,
+            Some(cadmpeg_ir::SourceGeometryRole::Support)
+        );
+    }
+}

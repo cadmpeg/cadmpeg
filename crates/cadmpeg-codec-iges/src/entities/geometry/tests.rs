@@ -632,7 +632,7 @@ fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
         .unwrap();
     assert!(v4.ir().model.points.is_empty());
     assert!(v4.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("Entity Use Flag 06 is outside")
     }));
 
@@ -641,7 +641,7 @@ fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
         .unwrap();
     assert_eq!(v5.ir().model.points.len(), 1);
     assert!(!v5.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("Entity Use Flag 06 is outside")
     }));
 }
@@ -767,7 +767,7 @@ fn decode_applies_v4_base_geometry_use_flag_03_by_dialect() {
 
     assert!(result.ir().model.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains(
                 "Entity Use Flag 03 is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
             )
@@ -791,7 +791,7 @@ fn decode_applies_v4_base_geometry_use_flag_03_by_dialect() {
         .unwrap();
     assert_eq!(later.ir().model.curves.len(), 1);
     assert!(!later.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("base geometry values")
     }));
 }
@@ -1023,7 +1023,7 @@ fn type125_flash_is_admitted_in_v4_and_v5() {
         );
         assert!(!result.report().losses.iter().any(|loss| {
             loss.code == IgesLossCode::EntityOutsideEnvelope.kind()
-                || loss.code == IgesLossCode::EntityNotProjected.kind()
+                || loss.code == IgesLossCode::GeometryNotProjected.kind()
         }));
     }
 }
@@ -1373,7 +1373,7 @@ fn decode_accepts_omitted_type_126_normal_for_nonplanar_v4_and_v5() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+            .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
     }
 }
 
@@ -1978,23 +1978,4 @@ fn decode_reports_transform_translation_overflow_after_inch_scaling() {
 
 mod ownership;
 
-#[test]
-fn spline_claim_recovery_is_rejected_by_strict_mode() {
-    let parameters = b"126,1,1,2,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1;";
-    let input = polynomial_nurbs_curve_file(parameters);
-    let recovered = IgesCodec
-        .decode(&mut Cursor::new(&input), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(recovered.ir().model.curves.len(), 1);
-    assert!(recovered
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::IgesLossCode::SplineClaimRecovered.kind()));
-    let mut strict = DecodeOptions::default();
-    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
-    assert!(matches!(
-        IgesCodec.decode(&mut Cursor::new(input), &strict),
-        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })
-    ));
-}
+mod lexical_recovery;

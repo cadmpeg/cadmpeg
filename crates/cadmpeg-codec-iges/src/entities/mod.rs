@@ -50,6 +50,24 @@ fn push_entity_loss(
     )
 }
 
+fn push_geometry_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    push_attributed_loss(
+        ctx,
+        losses,
+        entry,
+        IgesLossCode::GeometryNotProjected,
+        format_args!(
+            "IGES entity type {} form {} geometry was not projected: {reason}",
+            entry.entity_type, entry.form
+        ),
+    )
+}
+
 fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
     match error {
         CodecError::ResourceLimit(_) => Err(error),
@@ -135,6 +153,7 @@ mod csg;
 pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
 pub(crate) mod geometry;
+pub(crate) mod nurbs_controls;
 mod offsets;
 pub(crate) mod ownership;
 mod presentation;

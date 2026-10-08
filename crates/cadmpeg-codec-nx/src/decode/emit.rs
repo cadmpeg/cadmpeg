@@ -798,7 +798,10 @@ pub(super) fn emit_topology(
         });
         if !ring_resolves {
             ctx.reserve_vec(topology_losses, 1, "nx topology losses")?;
-            super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
+            crate::loss::charge_loss_code(
+                ctx,
+                crate::loss::NxLossCode::TopologyLoopRingUnresolved,
+            )?;
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                 ctx.format_retained(format_args!(
                         "parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face"
@@ -1217,7 +1220,10 @@ pub(super) fn emit_topology(
             };
             let Some(ring) = ring else {
                 ctx.reserve_vec(topology_losses, 1, "nx topology losses")?;
-                super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
+                crate::loss::charge_loss_code(
+                    ctx,
+                    crate::loss::NxLossCode::TopologyLoopRingUnresolved,
+                )?;
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                     ctx.format_retained(format_args!(
                             "parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"
@@ -1244,7 +1250,10 @@ pub(super) fn emit_topology(
     for pending in pending_faces {
         if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
             ctx.reserve_vec(topology_losses, 1, "nx topology losses")?;
-            super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyFaceLoopUnresolved)?;
+            crate::loss::charge_loss_code(
+                ctx,
+                crate::loss::NxLossCode::TopologyFaceLoopUnresolved,
+            )?;
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
                 ctx.format_retained(format_args!(
                         "parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",

@@ -867,7 +867,7 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .filter(|loss| loss.code == IgesLossCode::SplineClaimRecovered.kind())
             .count(),
         1
     );

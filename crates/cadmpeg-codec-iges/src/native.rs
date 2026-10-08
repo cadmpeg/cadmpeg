@@ -95,8 +95,8 @@ impl Serialize for NativeCard<'_> {
         struct Wire<'a> {
             id: CardId,
             offset: u64,
-            payload: &'a [u8],
-            line_ending: &'a [u8],
+            payload: cadmpeg_ir::hash::LowerHex<'a>,
+            line_ending: cadmpeg_ir::hash::LowerHex<'a>,
             section: Option<Section>,
             sequence: Option<u32>,
         }
@@ -114,8 +114,8 @@ impl Serialize for NativeCard<'_> {
                     .ok_or_else(|| serde::ser::Error::custom("IGES card index exceeds usize"))?,
             ),
             offset: line.offset,
-            payload: &line.payload,
-            line_ending: line.line_ending(),
+            payload: cadmpeg_ir::hash::LowerHex(&line.payload),
+            line_ending: cadmpeg_ir::hash::LowerHex(line.line_ending()),
             section,
             sequence,
         }
@@ -1537,7 +1537,7 @@ fn attribute_table_rows<'a>(
                 .integer_or(count_index, 1)
                 .ok_or(UnstatableAttributeTable::ValueCount { attribute })?,
             Some(TokenValue::Integer(value)) => *value,
-            Some(TokenValue::Real(_) | TokenValue::String(_)) => {
+            Some(TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_)) => {
                 return Err(UnstatableAttributeTable::ValueCount { attribute })
             }
         };
@@ -5487,7 +5487,12 @@ pub(crate) fn store(
                             Some(TokenValue::Integer(_)) => {
                                 record.count_with_stride_before(cursor + 2, stride, end)
                             }
-                            None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
+                            None
+                            | Some(
+                                TokenValue::Real(_)
+                                | TokenValue::String(_)
+                                | TokenValue::Unreadable(_),
+                            ) => None,
                         }
                     };
                     let Some(value_start) = cursor.checked_add(3) else {

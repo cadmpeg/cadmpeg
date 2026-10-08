@@ -389,7 +389,7 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
         form: 0,
         label: "POINT".into(),
         status: "00000000",
-        parameters: "116,1,2,3x4,0;".into(),
+        parameters: "116,1,2,64Hshort;".into(),
     }]);
     let scan = crate::test_support::scan(&bytes).unwrap();
     let arena = DecodeArena::new();
@@ -499,6 +499,7 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
             matches!(
                 code.as_str(),
                 "entity.not-projected"
+                    | "geometry.not-projected"
                     | "entity.retained-unprojected"
                     | "entity.outside-envelope"
                     | "presentation.display-data-not-projected"
@@ -517,7 +518,10 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         .unwrap_err()
     {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
-            assert_eq!(rejection.loss().code.to_string(), overdeclared.to_string());
+            assert!(
+                rejection.loss().code == overdeclared
+                    || rejection.loss().code == IgesLossCode::GeometryNotProjected.kind()
+            );
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }

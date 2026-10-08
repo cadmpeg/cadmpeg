@@ -651,3 +651,38 @@ fn repeated_body_identity_builds_output_lineage() {
     assert_eq!(results[0].bodies(), results[1].bodies());
     assert_ne!(results[0].native_ref, results[1].native_ref);
 }
+
+#[test]
+fn duplicate_result_member_claims_do_not_discard_recovered_geometry() {
+    crate::test_support::with_decode_context(|ctx| {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let original = ir.model.clone();
+        let mut losses = Vec::new();
+        crate::native::attach::append_feature_result_topology(
+            ctx,
+            &mut ir,
+            crate::native::attach::PendingFeatureResult {
+                result_id: "nx:history:result#1".try_into().unwrap(),
+                output_of: &"nx:history:feature#1".try_into().unwrap(),
+                bodies: vec![cadmpeg_core::nonblank_literal!("native-body")],
+                members: crate::native::attach::FeatureResultGroupMembers {
+                    faces: vec![
+                        cadmpeg_core::nonblank_literal!("nx:s4:face#40"),
+                        cadmpeg_core::nonblank_literal!("nx:s4:face#40"),
+                    ],
+                    ..Default::default()
+                },
+                native_ref: "nx:history:write#1".into(),
+            },
+            &mut losses,
+        )
+        .unwrap();
+        assert_eq!(ir.model, original);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::NxLossCode::FeatureOutputLineageIncomplete.kind()
+        );
+        assert!(losses[0].message.contains("nx:history:write#1"));
+    });
+}

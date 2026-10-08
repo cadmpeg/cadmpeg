@@ -427,7 +427,7 @@ fn decode_requires_direct_brep_operand_for_boolean_form_one() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
         .map(|loss| {
             loss.provenance
                 .as_ref()

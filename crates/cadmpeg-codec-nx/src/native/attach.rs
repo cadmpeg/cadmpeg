@@ -5680,11 +5680,14 @@ fn attach_feature_operations(
                 append_feature_result_topology(
                     ctx,
                     ir,
-                    result_topology_id(ctx, key, Some(write.ordinal))?,
-                    &id,
-                    bodies,
-                    result_members,
-                    native_ref,
+                    PendingFeatureResult {
+                        result_id: result_topology_id(ctx, key, Some(write.ordinal))?,
+                        output_of: &id,
+                        bodies,
+                        members: result_members,
+                        native_ref,
+                    },
+                    losses,
                 )?;
             }
         } else if !deletes_body {
@@ -5705,11 +5708,14 @@ fn attach_feature_operations(
                 append_feature_result_topology(
                     ctx,
                     ir,
-                    result_topology_id(ctx, key, None)?,
-                    &id,
-                    bodies,
-                    FeatureResultGroupMembers::default(),
-                    native_ref,
+                    PendingFeatureResult {
+                        result_id: result_topology_id(ctx, key, None)?,
+                        output_of: &id,
+                        bodies,
+                        members: FeatureResultGroupMembers::default(),
+                        native_ref,
+                    },
+                    losses,
                 )?;
             }
         }
@@ -5833,15 +5839,28 @@ fn result_topology_id(
         .ok_or_else(|| CodecError::malformed("NX operation label key is not identity key text"))
 }
 
-fn append_feature_result_topology(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
+/// A native result claim held until its member lists pass admission.
+struct PendingFeatureResult<'feature> {
     result_id: FeatureResultTopologyId,
-    output_of: &FeatureId,
+    output_of: &'feature FeatureId,
     bodies: Vec<cadmpeg_core::text::NonBlankString>,
     members: FeatureResultGroupMembers,
     native_ref: String,
+}
+
+fn append_feature_result_topology(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    pending: PendingFeatureResult<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let PendingFeatureResult {
+        result_id,
+        output_of,
+        bodies,
+        members,
+        native_ref,
+    } = pending;
     let members = cadmpeg_ir::features::FeatureResultMembers::new(
         bodies,
         members.faces,
@@ -5849,8 +5868,23 @@ fn append_feature_result_topology(
         members.vertices,
         ctx,
         "NX result topology member validation",
-    )?
-    .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    )?;
+    let members = match members {
+        Ok(members) => members,
+        Err(error) => {
+            let message = ctx.format_retained(
+                format_args!("Feature result {result_id} has unusable member claims: {error}; native result {native_ref} is retained"),
+                "NX unusable feature result diagnostic",
+            )?;
+            crate::loss::charge_loss_code(ctx, NxLossCode::FeatureOutputLineageIncomplete)?;
+            ctx.push_vec(
+                losses,
+                NxLossCode::FeatureOutputLineageIncomplete.note(message),
+                "NX unusable feature result losses",
+            )?;
+            return Ok(());
+        }
+    };
     ctx.reserve_vec_limit(
         &mut ir.model.feature_result_topologies,
         1,

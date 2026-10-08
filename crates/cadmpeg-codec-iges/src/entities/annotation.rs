@@ -261,7 +261,8 @@ fn general_note_suffix_structurally_valid(record: &ParameterRecord, primary_end:
             crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
             crate::parameter::TokenValue::Omitted
             | crate::parameter::TokenValue::Real(_)
-            | crate::parameter::TokenValue::String(_) => None,
+            | crate::parameter::TokenValue::String(_)
+            | crate::parameter::TokenValue::Unreadable(_) => None,
         })
     else {
         return false;
@@ -285,7 +286,8 @@ fn general_note_suffix_structurally_valid(record: &ParameterRecord, primary_end:
             crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
             crate::parameter::TokenValue::Omitted
             | crate::parameter::TokenValue::Real(_)
-            | crate::parameter::TokenValue::String(_) => None,
+            | crate::parameter::TokenValue::String(_)
+            | crate::parameter::TokenValue::Unreadable(_) => None,
         })
     else {
         return false;

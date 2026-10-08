@@ -21,7 +21,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     sampled::{GeometryLayoutError, PolylineCurve},
     CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -78,6 +78,16 @@ enum EntityStatus {
 }
 
 impl EntityStatus {
+    const fn is_physically_dependent(self) -> bool {
+        matches!(
+            self,
+            Self::PhysicallyDependent
+                | Self::BothDependent
+                | Self::PhysicallyDependentEdgeList
+                | Self::ParameterCurve
+        )
+    }
+
     const fn as_field(self) -> &'static str {
         match self {
             Self::Independent => "00000000",
@@ -401,15 +411,25 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             &mut losses,
         )?
     } else {
+        let ownership = ownership::SourceOwnership::build(ctx, ir)?;
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
         let mut consumed_curves = BTreeSet::<String>::new();
         let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
         surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for surface in surfaces {
-            append_surface_entities(ctx, &mut entities, ir, &surface.geometry, version)?;
+            append_surface_entities(
+                ctx,
+                &mut entities,
+                ir,
+                surface,
+                version,
+                &ownership,
+                &mut losses,
+            )?;
         }
         for directrix in ir.model.surfaces.iter().filter_map(|surface| {
+            ownership.surface_status(surface)?;
             let SurfaceGeometry::Procedural {
                 construction,
                 cache: None,
@@ -478,7 +498,6 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             consumed_points.insert(vertex_point_id(ir, &edge.end)?);
         }
 
-        let ownership = ownership::SourceCurveOwnership::build(ctx, ir)?;
         let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
         curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for curve in curves {
@@ -502,7 +521,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                     geometry: &geometry,
                     span: span.as_ref(),
                     sense: Sense::Forward,
-                    status: ownership.status(curve),
+                    status: ownership.status(curve.source_object.as_ref()),
                     reference_offset: 0,
                 },
             )?;
@@ -515,7 +534,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             if consumed_points.contains(&point.id) {
                 continue;
             }
-            entities.push(point_entity(point.position()));
+            append_free_point_entity(ctx, &mut entities, point, &ownership, &mut losses)?;
         }
         entities
     };
@@ -1246,7 +1265,7 @@ fn validate_brep_topology<'a>(
                             face.id, face.surface
                         ))
                     })?;
-                surface_entities_for_ir(ctx, ir, &surface.geometry, 0, version)?;
+                surface_entities_for_ir(ctx, ir, surface, 0, version)?;
                 if matches!(
                     surface.geometry,
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
@@ -1576,6 +1595,7 @@ fn brep_entities(
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
+    let ownership = ownership::SourceOwnership::build(ctx, ir)?;
     let version = topology.version;
     let ignored_carriers = ignored_carrier_geometry(ir)?;
     let mut topology_point_ids = std::collections::BTreeSet::new();
@@ -1622,8 +1642,11 @@ fn brep_entities(
         "iges surfaces sort",
     )?;
     for surface in surfaces {
-        let index = append_surface_entities(ctx, &mut entities, ir, &surface.geometry, version)?;
-        surface_indices.insert(surface.id.as_str().to_owned(), index);
+        if let Some(index) =
+            append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, losses)?
+        {
+            surface_indices.insert(surface.id.as_str().to_owned(), index);
+        }
     }
 
     let mut consumed_curve_ids = ir
@@ -1690,7 +1713,6 @@ fn brep_entities(
         mark_curve_descendants(ir, curve_id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
     }
 
-    let ownership = ownership::SourceCurveOwnership::build(ctx, ir)?;
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut curves,
@@ -1721,7 +1743,7 @@ fn brep_entities(
                 geometry: &geometry,
                 span: span.as_ref(),
                 sense: Sense::Forward,
-                status: ownership.status(curve),
+                status: ownership.status(curve.source_object.as_ref()),
                 reference_offset: 0,
             },
         )?;
@@ -2233,7 +2255,7 @@ fn brep_entities(
         {
             continue;
         }
-        entities.push(point_entity(point.position()));
+        append_free_point_entity(ctx, &mut entities, point, &ownership, losses)?;
     }
     Ok(entities)
 }
@@ -2476,6 +2498,7 @@ fn topology_entities(
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
+    let ownership = ownership::SourceOwnership::build(ctx, ir)?;
     let version = topology.version;
     let ignored_carriers = ignored_carrier_geometry(ir)?;
     let topology_edge_ids = ir
@@ -2494,8 +2517,11 @@ fn topology_entities(
         "iges surfaces sort",
     )?;
     for surface in surfaces {
-        let index = append_surface_entities(ctx, &mut entities, ir, &surface.geometry, version)?;
-        surface_indices.insert(surface.id.as_str().to_owned(), index);
+        if let Some(index) =
+            append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, losses)?
+        {
+            surface_indices.insert(surface.id.as_str().to_owned(), index);
+        }
     }
 
     let mut edge_indices = BTreeMap::new();
@@ -2553,7 +2579,6 @@ fn topology_entities(
         consumed_points.insert(vertex_point_id(ir, &edge.end)?.as_str().to_owned());
     }
 
-    let ownership = ownership::SourceCurveOwnership::build(ctx, ir)?;
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut curves,
@@ -2584,7 +2609,7 @@ fn topology_entities(
                 geometry: &geometry,
                 span: span.as_ref(),
                 sense: Sense::Forward,
-                status: ownership.status(curve),
+                status: ownership.status(curve.source_object.as_ref()),
                 reference_offset: 0,
             },
         )?;
@@ -2762,7 +2787,7 @@ fn topology_entities(
         {
             continue;
         }
-        entities.push(point_entity(point.position()));
+        append_free_point_entity(ctx, &mut entities, point, &ownership, losses)?;
     }
     Ok(entities)
 }
@@ -2946,7 +2971,7 @@ fn validate_trimmed_sheet_topology<'a>(
                     face.id, face.surface
                 ))
             })?;
-        surface_entities_for_ir(ctx, ir, &surface.geometry, 0, version)?;
+        surface_entities_for_ir(ctx, ir, surface, 0, version)?;
         let loops = face_loop_order(ir, face)?;
         if loops.is_empty() {
             return Err(CodecError::NotImplemented(format!(
@@ -5092,8 +5117,39 @@ fn construction_carrier_interval(
     }
 }
 
-fn point_entity(position: FinitePoint3) -> Entity {
-    point_entity_with_status(position, EntityStatus::Independent)
+fn report_unowned_support(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    id: &str,
+) -> Result<(), CodecError> {
+    let code = IgesLossCode::WriterSupportGeometryNotRepresented;
+    let message = ctx.format_retained(
+        format_args!("Support geometry {id} has no exported owner and was withheld"),
+        "iges orphan support diagnostic",
+    )?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges orphan support loss kind",
+    )?;
+    ctx.push_vec(losses, code.note(message), "iges orphan support loss")
+}
+
+fn append_free_point_entity(
+    ctx: &DecodeContext<'_>,
+    entities: &mut Vec<Entity>,
+    point: &cadmpeg_ir::topology::Point,
+    ownership: &ownership::SourceOwnership<'_>,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let status = ownership.status(point.source_object.as_ref());
+    if status.is_physically_dependent() {
+        return report_unowned_support(ctx, losses, point.id.as_str());
+    }
+    ctx.push_vec(
+        entities,
+        point_entity_with_status(point.position(), status),
+        "iges standalone point entity",
+    )
 }
 
 fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Entity {
@@ -5186,11 +5242,20 @@ fn append_surface_entities(
     ctx: &DecodeContext<'_>,
     entities: &mut Vec<Entity>,
     ir: &CadIr,
-    geometry: &SurfaceGeometry,
+    surface: &Surface,
     version: crate::IgesVersion,
-) -> Result<usize, CodecError> {
+    ownership: &ownership::SourceOwnership<'_>,
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<usize>, CodecError> {
+    let Some(status) = ownership.surface_status(surface) else {
+        report_unowned_support(ctx, losses, surface.id.as_str())?;
+        return Ok(None);
+    };
     let base_index = entities.len();
-    let additions = surface_entities_for_ir(ctx, ir, geometry, base_index, version)?;
+    let mut additions = surface_entities_for_ir(ctx, ir, surface, base_index, version)?;
+    if let Some(entity) = additions.last_mut() {
+        entity.status = status;
+    }
     let surface_offset = additions
         .len()
         .checked_sub(1)
@@ -5199,18 +5264,35 @@ fn append_surface_entities(
         .checked_add(surface_offset)
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     entities.extend(additions);
-    Ok(surface_index)
+    Ok(Some(surface_index))
 }
 
 fn surface_entities_for_ir(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
-    geometry: &SurfaceGeometry,
+    surface: &Surface,
     base_index: usize,
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
-    if let Some(geometry) = geometry.solved() {
-        return surface_entities(ctx, geometry, base_index, version);
+    let geometry = &surface.geometry;
+    if let Some(solved) = geometry.solved() {
+        if let SolvedSurfaceGeometry::Nurbs(nurbs) = solved {
+            let construction = geometry.procedural_construction().and_then(|id| {
+                ir.model
+                    .procedural_surfaces
+                    .iter()
+                    .find(|row| row.id == *id)
+            });
+            let ranges = construction.and_then(|row| match row.definition() {
+                ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
+                    cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => Some(*ranges),
+                    cadmpeg_ir::geometry::ExactSpline::Revision { .. } => None,
+                },
+                _ => None,
+            });
+            return Ok(vec![encode_nurbs_surface(ctx, nurbs, ranges)?]);
+        }
+        return surface_entities(ctx, solved, base_index, version);
     }
     match geometry {
         SurfaceGeometry::Procedural { construction, .. } => {
@@ -5645,7 +5727,7 @@ fn surface_entities(
             });
             Ok(entities)
         }
-        SolvedSurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(ctx, nurbs)?]),
+        SolvedSurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(ctx, nurbs, None)?]),
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let radius = cylinder_surface.radius().magnitude();
             let (mut entities, location, axis, reference) = pointer_surface_support(
@@ -5785,6 +5867,7 @@ fn surface_entities(
 fn encode_nurbs_surface(
     ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
+    active_ranges: Option<[[FiniteReal; 2]; 2]>,
 ) -> Result<Entity, CodecError> {
     let u_count = nurbs.u_count();
     let v_count = nurbs.v_count();
@@ -5792,6 +5875,40 @@ fn encode_nurbs_surface(
         .map_err(|_| CodecError::Malformed("IGES surface u degree overflows usize".into()))?;
     let v_degree = usize::try_from(nurbs.v_degree())
         .map_err(|_| CodecError::Malformed("IGES surface v degree overflows usize".into()))?;
+    let u_knots = nurbs.u_knots().finite_knots().collect::<Vec<_>>();
+    let v_knots = nurbs.v_knots().finite_knots().collect::<Vec<_>>();
+    let natural = [
+        [u_knots[u_degree], u_knots[u_count]],
+        [v_knots[v_degree], v_knots[v_count]],
+    ];
+    let [u_range, v_range] = active_ranges.unwrap_or(natural);
+    if [u_range, v_range]
+        .iter()
+        .zip(natural)
+        .any(|(active, basis)| active[0] < basis[0] || active[1] > basis[1])
+    {
+        return Err(CodecError::NotImplemented(
+            "IGES active surface domain exceeds its NURBS basis".into(),
+        ));
+    }
+    if u_range[0] >= u_range[1] || v_range[0] >= v_range[1] {
+        return Err(CodecError::NotImplemented(
+            "IGES NURBS surface has an empty parameter domain".into(),
+        ));
+    }
+    if [u_range, v_range] != natural {
+        let cropped = crate::entities::nurbs_controls::trim_surface(
+            ctx,
+            nurbs,
+            [u_range.map(FiniteReal::get), v_range.map(FiniteReal::get)],
+        )?
+        .ok_or_else(|| {
+            CodecError::NotImplemented(
+                "IGES cannot exactly restrict this NURBS basis to its active surface domain".into(),
+            )
+        })?;
+        return encode_nurbs_surface(ctx, &cropped, None);
+    }
     // The admitted rectangular pole grid already contains this many resident
     // elements, so its dimensions cannot overflow the host address space.
     let pole_count = u_count * v_count;
@@ -5806,15 +5923,6 @@ fn encode_nurbs_surface(
         }
         None => ctx.alloc_filled(pole_count, FiniteReal::ONE, "iges NURBS surface weights")?,
     };
-    let u_knots = nurbs.u_knots().finite_knots().collect::<Vec<_>>();
-    let v_knots = nurbs.v_knots().finite_knots().collect::<Vec<_>>();
-    let u_range = [u_knots[u_degree], u_knots[u_count]];
-    let v_range = [v_knots[v_degree], v_knots[v_count]];
-    if u_range[0] >= u_range[1] || v_range[0] >= v_range[1] {
-        return Err(CodecError::NotImplemented(
-            "IGES NURBS surface has an empty parameter domain".into(),
-        ));
-    }
     let closed_u = nurbs.u_periodic()
         || nurbs_surface_closed_u(
             nurbs,

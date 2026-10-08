@@ -1499,7 +1499,7 @@ fn decode_rejects_a_linear_type_144_inner_boundary_outside_the_outer() {
         .iter()
         .any(|face| face.id.as_str() == "iges:model:face#D15"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss
                 .message
                 .contains("trimmed-surface boundary loops are not simple")
@@ -1527,7 +1527,7 @@ fn decode_rejects_a_trimmed_surface_pointer_to_a_non_type_142_entity() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
 }
 
 #[test]
@@ -1565,7 +1565,7 @@ fn decode_rejects_a_bounded_surface_pointer_to_a_non_type_141_entity() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
 }
 
 #[test]
@@ -1584,7 +1584,7 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
     );
     assert_eq!(
         result.report().losses[0].code,
-        IgesLossCode::EntityNotProjected.kind()
+        IgesLossCode::GeometryNotProjected.kind()
     );
     // D13 is the Type 144 owner, the seventh entity in the fixture. Pinning
     // the provenance tag is what separates this test from the bug it guards

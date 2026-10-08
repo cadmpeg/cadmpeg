@@ -20,7 +20,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::{self, Container, EntryContent};
-use crate::loss::NxLossCode;
+use crate::loss::{charge_loss_code, NxLossCode};
 use crate::native::TypedNative;
 use crate::parasolid::{self, Stream, StreamKind};
 
@@ -196,17 +196,6 @@ fn report_untransferred_streams(
         }
     }
     Ok(())
-}
-
-fn charge_loss_code(ctx: &DecodeContext<'_>, code: NxLossCode) -> Result<(), CodecError> {
-    let bytes = "nx"
-        .len()
-        .checked_add(code.code().len())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx loss code text", 0, u64::MAX))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "nx loss code text",
-    )
 }
 
 pub(super) fn offset_store_control_counts(

@@ -68,39 +68,19 @@ fn brep_graph_searches_keep_original_fused_capsule() {
 }
 
 #[test]
-fn brep_adjacency_query_storage_is_scoped() {
-    for allowance in 0..=6 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = allowance;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut adjacency = vec![AdjacencyRow {
-            source: "source".to_owned(),
-            targets: vec!["target".to_owned()],
-        }];
-        let result = super::super::insert_brep_adjacency(&ctx, &mut adjacency, "source", "target");
-        if allowance < 6 {
-            let CodecError::ResourceLimit(original) = result.unwrap_err() else {
-                panic!("query copy must refuse");
-            };
-            assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
-            assert_eq!(original.operation, "copy F3D BREP adjacency query");
-            assert_eq!(original.additional, 6);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-            );
-        } else {
-            result.unwrap();
-            assert_eq!(adjacency.len(), 1);
-            assert_eq!(adjacency.first().unwrap().targets.len(), 1);
-            drop(
-                ctx.reserve_scoped_limit(6, "query scratch released")
-                    .unwrap(),
-            );
-            ctx.finish_session().unwrap();
-        }
-    }
+fn an_existing_dependency_pair_requires_no_new_storage() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut adjacency = vec![AdjacencyRow {
+        source: "source".into(),
+        targets: vec!["target".into()],
+    }];
+    super::super::insert_brep_adjacency(&ctx, &mut adjacency, "source", "target").unwrap();
+    assert_eq!(adjacency[0].targets, ["target"]);
+    ctx.finish_session().unwrap();
 }

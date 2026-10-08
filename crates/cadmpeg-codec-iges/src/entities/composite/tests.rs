@@ -5,6 +5,7 @@
 mod nurbs;
 
 use crate::directory::UseFlag;
+use crate::entities::nurbs_controls::{homogeneous_control_points, insert_homogeneous_knot};
 
 use std::io::Cursor;
 
@@ -504,8 +505,7 @@ use super::{
     bounded_nurbs_for_curve, bounded_nurbs_for_curve_with_tolerance, close, close_with_tolerance,
     composite_child_type_allowed, composite_line_font_valid, composite_logical_connector_use_valid,
     composite_minimum_child_count, composite_use_flag_valid, concatenate_nurbs,
-    elevate_nurbs_to_degree, homogeneous_control_points, insert_homogeneous_knot,
-    trim_nurbs_to_interval, CompositeIndex,
+    elevate_nurbs_to_degree, trim_nurbs_to_interval, CompositeIndex,
 };
 
 #[test]
@@ -683,7 +683,7 @@ fn decode_rejects_a_nonzero_v4_composite_entity_use_flag() {
         .iter()
         .any(|curve| curve.id.as_str() == "iges:model:curve#D5"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss
                 .message
                 .contains("Type 102 Entity Use Flag must be 00 in IGES 4.0")
@@ -726,7 +726,7 @@ fn decode_rejects_a_v5_logical_connector_without_entity_use_flag_04() {
         .unwrap();
 
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains(
                 "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04",
             )
@@ -800,7 +800,7 @@ fn decode_rejects_a_single_v4_composite_constituent() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
             .count(),
         1
     );
@@ -839,7 +839,7 @@ fn decode_projects_a_single_v5_composite_constituent() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code == IgesLossCode::EntityNotProjected.kind() }));
+        .any(|loss| { loss.code == IgesLossCode::GeometryNotProjected.kind() }));
 }
 
 #[test]

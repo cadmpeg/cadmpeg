@@ -314,7 +314,7 @@ pub(super) fn try_decode_geometry(
         } = parsed.parse_nurbs(ctx, si)?;
         for refusal in nurbs_refusals {
             ctx.reserve_vec(&mut carrier_refusals, 1, "nx carrier refusal losses")?;
-            super::charge_loss_code(ctx, NxLossCode::CarrierLanesUnpaired)?;
+            crate::loss::charge_loss_code(ctx, NxLossCode::CarrierLanesUnpaired)?;
             carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(ctx.format_retained(
                 format_args!(
                     "parasolid#{si} {} at byte {} states no carrier: {}",

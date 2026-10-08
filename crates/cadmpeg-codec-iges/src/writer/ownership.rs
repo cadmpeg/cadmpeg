@@ -3,15 +3,27 @@
 
 use super::EntityStatus;
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::{geometry::Curve, CadIr, CodecFormat};
-use std::collections::BTreeMap;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::{CadIr, CodecFormat, SourceGeometryRole, SourceObjectAssociation};
+use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) struct SourceCurveOwnership {
+pub(super) struct SourceOwnership<'ir> {
     statuses: BTreeMap<u32, EntityStatus>,
+    owned_surfaces: BTreeSet<&'ir SurfaceId>,
 }
 
-impl SourceCurveOwnership {
-    pub(super) fn build(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Self, CodecError> {
+impl<'ir> SourceOwnership<'ir> {
+    pub(super) fn build(ctx: &DecodeContext<'_>, ir: &'ir CadIr) -> Result<Self, CodecError> {
+        let mut owned_surfaces = BTreeSet::new();
+        for face in &ir.model.faces {
+            ctx.charge_work(1, "iges surface ownership scan")?;
+            ctx.insert_btree_set(
+                &mut owned_surfaces,
+                &face.surface,
+                "iges surface ownership index",
+            )?;
+        }
         let mut statuses = BTreeMap::new();
         for record in ir
             .native
@@ -47,26 +59,38 @@ impl SourceCurveOwnership {
                 "iges carrier ownership index",
             )?;
         }
-        Ok(Self { statuses })
+        Ok(Self {
+            statuses,
+            owned_surfaces,
+        })
     }
 
-    pub(super) fn status(&self, curve: &Curve) -> EntityStatus {
-        curve
-            .source_object
-            .as_ref()
+    pub(super) fn status(&self, source: Option<&SourceObjectAssociation>) -> EntityStatus {
+        let status = source
             .filter(|source| source.format == CodecFormat::Iges)
             .and_then(|source| source.object_id.as_str().strip_prefix('D'))
             .and_then(|sequence| sequence.parse::<u32>().ok())
             .and_then(|sequence| self.statuses.get(&sequence))
             .copied()
-            .unwrap_or_else(|| {
-                if curve.source_object.as_ref().is_some_and(|source| {
-                    source.geometry_role == Some(cadmpeg_ir::SourceGeometryRole::Support)
-                }) {
+            .unwrap_or(EntityStatus::Independent);
+        if source.is_some_and(|source| source.geometry_role == Some(SourceGeometryRole::Support)) {
+            match status {
+                EntityStatus::Independent | EntityStatus::Definition => {
                     EntityStatus::PhysicallyDependent
-                } else {
-                    EntityStatus::Independent
                 }
-            })
+                EntityStatus::LogicallyDependent => EntityStatus::BothDependent,
+                status => status,
+            }
+        } else {
+            status
+        }
+    }
+
+    pub(super) fn surface_status(&self, surface: &Surface) -> Option<EntityStatus> {
+        let status = self.status(surface.source_object.as_ref());
+        // A dependent flag without an exported owner is still transferred as
+        // standalone geometry by some importers. Withhold that orphan instead.
+        (!status.is_physically_dependent() || self.owned_surfaces.contains(&surface.id))
+            .then_some(status)
     }
 }
