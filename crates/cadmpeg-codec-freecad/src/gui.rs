@@ -649,6 +649,8 @@ fn transfer_schema_one<'ctx>(
             ));
         }
     }
+    let mut edge_index = None;
+    let mut vertex_index = None;
     for (provider_order, provider) in ctx
         .admit_iter(providers, "FCStd GUI provider transfer")?
         .enumerate()
@@ -851,18 +853,24 @@ fn transfer_schema_one<'ctx>(
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
         {
             let width = value_attribute("LineWidth", "value")?;
+            let style = PrimitiveStyle::Line(PrimitiveSize::from_source(ctx, width)?);
+            let provenance = property_provenance("LineWidth")?;
+            let index = match &mut edge_index {
+                Some(index) => index,
+                slot @ None => slot.insert(PrimitiveIndex::new(ctx, ir, style)?),
+            };
             transfer_primitive_appearance(
                 ctx,
-                ir,
+                index,
                 &mut plan,
                 &mut losses,
                 PrimitiveAppearanceSource {
                     provider_name: name,
                     object_id,
                     packed_color: color,
-                    style: PrimitiveStyle::Line(PrimitiveSize::from_source(ctx, width)?),
+                    style,
                     payload_prefixes: &payload_prefixes,
-                    provenance: property_provenance("LineWidth")?,
+                    provenance,
                 },
             )?;
         }
@@ -894,18 +902,24 @@ fn transfer_schema_one<'ctx>(
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
         {
             let size = value_attribute("PointSize", "value")?;
+            let style = PrimitiveStyle::Point(PrimitiveSize::from_source(ctx, size)?);
+            let provenance = property_provenance("PointSize")?;
+            let index = match &mut vertex_index {
+                Some(index) => index,
+                slot @ None => slot.insert(PrimitiveIndex::new(ctx, ir, style)?),
+            };
             transfer_primitive_appearance(
                 ctx,
-                ir,
+                index,
                 &mut plan,
                 &mut losses,
                 PrimitiveAppearanceSource {
                     provider_name: name,
                     object_id,
                     packed_color: color,
-                    style: PrimitiveStyle::Point(PrimitiveSize::from_source(ctx, size)?),
+                    style,
                     payload_prefixes: &payload_prefixes,
-                    provenance: property_provenance("PointSize")?,
+                    provenance,
                 },
             )?;
         }
@@ -1007,6 +1021,8 @@ fn transfer_schema_one<'ctx>(
             });
         }
     }
+    drop(edge_index);
+    drop(vertex_index);
     let mut graph = Graph {
         documents: ctx.collect_vec(std::iter::once(document), "FCStd GUI document records")?,
         providers: native_providers,
@@ -1626,6 +1642,73 @@ impl PrimitiveSize {
     }
 }
 
+#[derive(Clone, Copy)]
+enum PrimitiveTarget<'source> {
+    Edge(&'source cadmpeg_ir::ids::EdgeId),
+    Vertex(&'source cadmpeg_ir::ids::VertexId),
+}
+
+/// Borrowed primitive identities grouped by key prefixes in arena order.
+struct PrimitiveIndex<'source, 'ctx> {
+    by_prefix: BTreeMap<&'source str, Vec<(usize, PrimitiveTarget<'source>)>>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'source, 'ctx> PrimitiveIndex<'source, 'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        ir: &'source CadIr,
+        style: PrimitiveStyle,
+    ) -> Result<Self, CodecError> {
+        let mut by_prefix = BTreeMap::new();
+        let mut storage = ctx.reserve_scoped(0, "FCStd GUI primitive index")?;
+        let len = match style {
+            PrimitiveStyle::Line(_) => ir.model.edges.len(),
+            PrimitiveStyle::Point(_) => ir.model.vertices.len(),
+        };
+        for ordinal in ctx.admit_iter(0..len, "FCStd GUI primitive candidates")? {
+            let (id, target) = match style {
+                PrimitiveStyle::Line(_) => {
+                    let id = &ir.model.edges[ordinal].id;
+                    (id.as_str(), PrimitiveTarget::Edge(id))
+                }
+                PrimitiveStyle::Point(_) => {
+                    let id = &ir.model.vertices[ordinal].id;
+                    (id.as_str(), PrimitiveTarget::Vertex(id))
+                }
+            };
+            let key = crate::native::id_key_charged(ctx, id, "FCStd GUI primitive identity key")?;
+            // The empty prefix selects the whole arena. Payload prefixes end at colons.
+            ctx.push_scoped_btree_group(
+                &mut storage,
+                &mut by_prefix,
+                &key[..0],
+                || (ordinal, target),
+                0,
+                "FCStd GUI primitive index",
+            )?;
+            for offset in ctx.find_bytes_iter(
+                key.as_bytes(),
+                b":",
+                "FCStd GUI primitive prefix separators",
+            )? {
+                ctx.push_scoped_btree_group(
+                    &mut storage,
+                    &mut by_prefix,
+                    &key[..offset + 1],
+                    || (ordinal, target),
+                    0,
+                    "FCStd GUI primitive index",
+                )?;
+            }
+        }
+        Ok(Self {
+            by_prefix,
+            _storage: storage,
+        })
+    }
+}
+
 struct PrimitiveAppearanceSource<'a> {
     provider_name: &'a str,
     object_id: &'a str,
@@ -1656,7 +1739,7 @@ fn shape_payload_prefixes(
 
 fn transfer_primitive_appearance(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+    index: &PrimitiveIndex<'_, '_>,
     plan: &mut AppearancePlan<'_>,
     losses: &mut Vec<LossNote>,
     source: PrimitiveAppearanceSource<'_>,
@@ -1670,56 +1753,42 @@ fn transfer_primitive_appearance(
         provenance,
     } = source;
     let mut target_storage = ctx.reserve_scoped(0, "FCStd GUI primitive targets")?;
-    let mut targets = Vec::new();
-    match style {
-        PrimitiveStyle::Line(_) => {
-            for edge in ctx.admit_iter(&ir.model.edges, "FCStd GUI primitive candidates")? {
-                let key = ctx
-                    .split_once(edge.id.as_str(), "#", "FCStd GUI primitive identity key")?
-                    .map_or(edge.id.as_str(), |(_, key)| key);
-                if !ctx.any_by(
-                    payload_prefixes,
-                    |prefix| {
-                        ctx.starts_with(key, prefix.as_str(), "FCStd GUI primitive payload prefix")
-                    },
-                    "FCStd GUI primitive payload prefix search",
-                )? {
-                    continue;
-                }
-                target_storage.with_storage(|| {
-                    ctx.reserve_vec(&mut targets, 1, "FCStd GUI primitive targets")
+    let mut selected_storage = ctx.reserve_scoped(0, "FCStd GUI primitive selection")?;
+    let mut selected = BTreeMap::new();
+    for prefix in ctx.admit_iter(payload_prefixes, "FCStd GUI primitive payload prefixes")? {
+        if let Some(candidates) = ctx.get_btree_map(
+            &index.by_prefix,
+            prefix.as_str(),
+            "FCStd GUI primitive prefix lookup",
+        )? {
+            for &(ordinal, target) in
+                ctx.admit_iter(candidates, "FCStd GUI primitive prefix candidates")?
+            {
+                selected_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut selected,
+                        ordinal,
+                        target,
+                        "FCStd GUI primitive selection",
+                    )
                 })?;
-                targets.push(AppearanceTarget::Edge(
-                    edge.id
-                        .try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?,
-                ));
-            }
-        }
-        PrimitiveStyle::Point(_) => {
-            for vertex in ctx.admit_iter(&ir.model.vertices, "FCStd GUI primitive candidates")? {
-                let key = ctx
-                    .split_once(vertex.id.as_str(), "#", "FCStd GUI primitive identity key")?
-                    .map_or(vertex.id.as_str(), |(_, key)| key);
-                if !ctx.any_by(
-                    payload_prefixes,
-                    |prefix| {
-                        ctx.starts_with(key, prefix.as_str(), "FCStd GUI primitive payload prefix")
-                    },
-                    "FCStd GUI primitive payload prefix search",
-                )? {
-                    continue;
-                }
-                target_storage.with_storage(|| {
-                    ctx.reserve_vec(&mut targets, 1, "FCStd GUI primitive targets")
-                })?;
-                targets.push(AppearanceTarget::Vertex(
-                    vertex
-                        .id
-                        .try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?,
-                ));
             }
         }
     }
+    let mut targets = Vec::new();
+    for (_, target) in ctx.admit_iter(selected, "FCStd GUI primitive selected targets")? {
+        target_storage
+            .with_storage(|| ctx.reserve_vec(&mut targets, 1, "FCStd GUI primitive targets"))?;
+        targets.push(match target {
+            PrimitiveTarget::Edge(id) => AppearanceTarget::Edge(
+                id.try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?,
+            ),
+            PrimitiveTarget::Vertex(id) => AppearanceTarget::Vertex(
+                id.try_clone_for_decode(ctx, "FCStd GUI primitive target identity")?,
+            ),
+        });
+    }
+    drop(selected_storage);
     if targets.is_empty() {
         return Ok(());
     }
