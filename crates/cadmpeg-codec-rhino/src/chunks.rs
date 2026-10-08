@@ -887,14 +887,15 @@ pub(crate) fn direct_checksum_ranges<'a>(
     )? {
         ChecksumChildren::Borrowed(children)
     } else {
-        let mut values = Vec::new();
+        let mut buffer = Vec::new();
         let reservation = ctx
             .reserve_temporary_vec(
-                &mut values,
+                &mut buffer,
                 children.len(),
                 "Rhino checksum child ordering copy",
             )
             .map_err(FramingError::Resource)?;
+        let mut values = buffer;
         values.extend(
             ctx.admit_iter(children, "Rhino checksum child ordering copy")
                 .map_err(FramingError::Resource)?
@@ -912,10 +913,10 @@ pub(crate) fn direct_checksum_ranges<'a>(
         }
     };
     let mut cursor = body.start;
-    for child in ctx
-        .admit_iter(children.as_slice(), "Rhino checksum child validation")
-        .map_err(FramingError::Resource)?
-    {
+    let mut child_ranges = children.as_slice().iter();
+    for _ in 0..children.as_slice().len() {
+        let child = ctx.next_charged(&mut child_ranges, "Rhino checksum child validation")?
+            .ok_or_else(|| FramingError::structural(cursor, "checksum child source ended early"))?;
         if child.start < cursor || child.end < child.start || child.end > body.end {
             return Err(FramingError::Structural {
                 offset: child.start,
@@ -1134,6 +1135,49 @@ mod direct_range_tests {
             direct_checksum_ranges(&ctx, &(10..50), &[15..30, 20..40]),
             Err(FramingError::Structural { .. })
         ));
+    }
+
+    #[test]
+    fn direct_checksum_ranges_invalid_first_child_does_not_admit_later_validation() {
+        let children = vec![9..9; 1024];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The order scan visits n-1 adjacent pairs and its end probe. The
+        // first invalid child adds one validation; no later child executes.
+        let prefix_work = cadmpeg_core::decode::u64_from_index(children.len()) + 1;
+        policy.limits.max_work_units = prefix_work;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        assert!(matches!(
+            direct_checksum_ranges(&ctx, &(10..50), &children),
+            Err(FramingError::Structural { offset: 9, message })
+                if message == "nested checksum range overlaps or escapes its parent"
+        ));
+        assert_eq!(ctx.resource_refusal(), None);
+        let error = ctx.charge_work(1, "test exhausted checksum validation")
+            .expect_err("only the executed prefix fits");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.used == prefix_work && limit.additional == 1
+                && ctx.resource_refusal() == Some(limit)));
+    }
+
+    #[test]
+    fn direct_checksum_ranges_first_validation_refuses_before_structural_error() {
+        let children = [9..9, 9..9];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One adjacent comparison and the order scan's end probe fit. The
+        // first child validation cannot run with those two units consumed.
+        let order_work = cadmpeg_core::decode::u64_from_index(children.len());
+        policy.limits.max_work_units = order_work;
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        assert!(matches!(direct_checksum_ranges(&ctx, &(10..50), &children),
+            Err(FramingError::Resource(limit))
+                if limit.operation == "Rhino checksum child validation"
+                    && limit.used == order_work && limit.additional == 1
+                    && ctx.resource_refusal() == Some(limit)));
     }
 
     #[test]
