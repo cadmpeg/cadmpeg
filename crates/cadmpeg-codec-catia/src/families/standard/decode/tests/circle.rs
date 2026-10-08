@@ -159,7 +159,8 @@ fn standard_edge_circle_axes_use_fixed_slots_before_curve_growth() {
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation != "catia_standard_edge_circle_axes")
+        if limit.operation == "catia_family_emit_curves"
+            && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
 }
 

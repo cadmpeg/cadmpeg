@@ -1413,6 +1413,7 @@ pub(super) fn build_standard_edge_curve(
     } else {
         None
     };
+    admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
     let id = standard_id(
         ctx,
         "curve",
@@ -1477,7 +1478,6 @@ pub(super) fn build_standard_edge_curve(
         &geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     );
-    admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
     ir.model.curves.push(Curve {
         id: id.try_clone_for_decode(ctx, "catia_standard_model_curve_id_copy")?,
         geometry,
@@ -1777,7 +1777,7 @@ pub(super) fn ensure_native_edge_support_surface(
 }
 
 pub(super) fn circle_endpoint_range_choices(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     center: Point3,
     radius: f64,
     axis: UnitVector3,
@@ -1813,12 +1813,9 @@ pub(super) fn circle_endpoint_range_choices(
     if endpoints.iter().any(|angle| !angle.is_finite()) {
         return Ok(None);
     }
-    ctx.stable_sort_by(
-        &mut endpoints,
-        |value| value,
-        f64::total_cmp,
-        "catia standard circle endpoint angles sort",
-    )?;
+    if endpoints[0].total_cmp(&endpoints[1]).is_gt() {
+        endpoints.swap(0, 1);
+    }
     let Some(short) = crate::nurbs::canonical_periodic_range(endpoints) else {
         return Ok(None);
     };
