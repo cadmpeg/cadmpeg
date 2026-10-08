@@ -45,13 +45,13 @@ fn named_records_with_limits(
 fn named_prototype_record_refuses_before_vec_growth() {
     let payload = b"srf_prim_ptr(plane)\0";
     assert_eq!(
-        named_records_with_limits(payload, 2, u64::MAX)
+        named_records_with_limits(payload, u64::MAX, u64::MAX)
             .expect("one record admitted")
             .len(),
         1
     );
     let error =
-        named_records_with_limits(payload, 1, u64::MAX).expect_err("record needs one Vec item");
+        named_records_with_limits(payload, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo named prototype records"), |cap| named_records_with_limits(payload, cap, u64::MAX)), u64::MAX).expect_err("record needs one Vec item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo named prototype records"));
@@ -67,7 +67,7 @@ fn named_prototype_parameter_refuses_before_vec_growth() {
         1
     );
     let error =
-        named_records_with_limits(payload, 4, u64::MAX).expect_err("parameter needs one Vec item");
+        named_records_with_limits(payload, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo named prototype parameters"), |cap| named_records_with_limits(payload, cap, u64::MAX)), u64::MAX).expect_err("parameter needs one Vec item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo named prototype parameters"));
@@ -100,7 +100,7 @@ fn named_prototype_body_refuses_before_retained_copy() {
 #[test]
 fn named_prototype_scalar_cache_refuses_before_hashset_growth() {
     assert!(
-        run_with_collection_limit(6, |ctx| super::super::named_prototype_records(
+        run_with_collection_limit(u64::MAX, |ctx| super::super::named_prototype_records(
             ctx,
             SCALAR_IMAGE,
             &mut crate::lane_refusal::LaneRefusals::new()
@@ -109,7 +109,13 @@ fn named_prototype_scalar_cache_refuses_before_hashset_growth() {
         .is_empty()
     );
     assert_scalar_cache_refusal(
-        &run_with_collection_limit(0, |ctx| {
+        &run_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache unique images"), |cap| run_with_collection_limit(cap, |ctx| {
+            super::super::named_prototype_records(
+                ctx,
+                SCALAR_IMAGE,
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        })), |ctx| {
             super::super::named_prototype_records(
                 ctx,
                 SCALAR_IMAGE,
@@ -122,13 +128,15 @@ fn named_prototype_scalar_cache_refuses_before_hashset_growth() {
 
 #[test]
 fn positional_parameter_scalar_cache_refuses_before_hashset_growth() {
-    assert!(run_with_collection_limit(3, |ctx| {
+    assert!(run_with_collection_limit(u64::MAX, |ctx| {
         super::super::parameter_records_for_rows(ctx, SCALAR_IMAGE, &[])
     })
     .expect("service collection budget admits scalar cache")
     .is_empty());
     assert_scalar_cache_refusal(
-        &run_with_collection_limit(0, |ctx| {
+        &run_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache unique images"), |cap| run_with_collection_limit(cap, |ctx| {
+            super::super::parameter_records_for_rows(ctx, SCALAR_IMAGE, &[])
+        })), |ctx| {
             super::super::parameter_records_for_rows(ctx, SCALAR_IMAGE, &[])
         })
         .expect_err("scalar image needs a HashSet item"),
@@ -137,13 +145,15 @@ fn positional_parameter_scalar_cache_refuses_before_hashset_growth() {
 
 #[test]
 fn contour_scalar_cache_refuses_before_hashset_growth() {
-    assert!(run_with_collection_limit(3, |ctx| {
+    assert!(run_with_collection_limit(u64::MAX, |ctx| {
         super::super::contour_records_for_rows(ctx, SCALAR_IMAGE, &[])
     })
     .expect("service collection budget admits scalar cache")
     .is_empty());
     assert_scalar_cache_refusal(
-        &run_with_collection_limit(0, |ctx| {
+        &run_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache unique images"), |cap| run_with_collection_limit(cap, |ctx| {
+            super::super::contour_records_for_rows(ctx, SCALAR_IMAGE, &[])
+        })), |ctx| {
             super::super::contour_records_for_rows(ctx, SCALAR_IMAGE, &[])
         })
         .expect_err("scalar image needs a HashSet item"),
@@ -152,13 +162,15 @@ fn contour_scalar_cache_refuses_before_hashset_growth() {
 
 #[test]
 fn plane_local_system_scalar_cache_refuses_before_hashset_growth() {
-    assert!(run_with_collection_limit(6, |ctx| {
+    assert!(run_with_collection_limit(u64::MAX, |ctx| {
         super::super::plane_local_systems_for_rows(ctx, SCALAR_IMAGE, &[])
     })
     .expect("service collection budget admits both scalar caches")
     .is_empty());
     assert_scalar_cache_refusal(
-        &run_with_collection_limit(0, |ctx| {
+        &run_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache unique images"), |cap| run_with_collection_limit(cap, |ctx| {
+            super::super::plane_local_systems_for_rows(ctx, SCALAR_IMAGE, &[])
+        })), |ctx| {
             super::super::plane_local_systems_for_rows(ctx, SCALAR_IMAGE, &[])
         })
         .expect_err("scalar image needs a HashSet item"),

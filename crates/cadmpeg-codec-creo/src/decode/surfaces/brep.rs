@@ -2319,22 +2319,22 @@ pub(in super::super) fn transfer_native_brep(
     )?;
     let solved_vertices = &solved_vertex_result.points;
     let mut native_pcurves = NativePcurveCandidates::new();
-    for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in ctx
+    for item in ctx
         .admit_iter(&scan.curves.pcurves, "creo B-rep native pcurve traversal")?
         .map(|pcurve| {
-            let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(
+            let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
-            );
-            (
+            )?;
+            Ok::<_, cadmpeg_core::CodecError>((
                 pcurve.curve_id,
                 pcurve.faces,
                 face_0_endpoints,
                 face_1_endpoints,
                 pcurve.offset,
-            )
+            ))
         })
         .chain(
             ctx.admit_iter(
@@ -2342,22 +2342,23 @@ pub(in super::super) fn transfer_native_brep(
                 "creo B-rep bound prototype pcurve traversal",
             )?
             .map(|pcurve| {
-                let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(
+                let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(ctx,
                     scan,
                     pcurve.faces,
                     pcurve.face_0_endpoints,
                     pcurve.face_1_endpoints,
-                );
-                (
+                )?;
+                Ok::<_, cadmpeg_core::CodecError>((
                     pcurve.curve_id,
                     pcurve.faces,
                     face_0_endpoints,
                     face_1_endpoints,
                     pcurve.offset,
-                )
+                ))
             }),
         )
     {
+        let (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) = item?;
         for (face, endpoints) in faces.into_iter().zip([face_0_endpoints, face_1_endpoints]) {
             if let Some(face) = face {
                 push_native_pcurve_candidate(
@@ -2404,12 +2405,12 @@ pub(in super::super) fn transfer_native_brep(
         &scan.curves.topology_rows,
     )?;
     for pcurve in ctx.admit_iter(&short_pcurves, "creo B-rep short pcurve traversal")? {
-        let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
+        let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(ctx,
             scan,
             pcurve.faces.map(std::num::NonZeroU32::new),
             pcurve.face_0_endpoints,
             pcurve.face_0_endpoints,
-        );
+        )?;
         push_native_pcurve_candidate(
             ctx,
             &mut native_pcurves,
@@ -3643,7 +3644,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         } in ctx.admit_iter(&pair.cap_edges, "creo B-rep cap edge traversal")?
         {
             let cap_offset =
-                crate::surface::unique_outline_plane(&scan.planes.outlines, *cap_plane_id)
+                crate::surface::unique_outline_plane(ctx, &scan.planes.outlines, *cap_plane_id)?
                     .map_or_else(
                         || {
                             frame.origin[frame.axis_index.index()]

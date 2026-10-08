@@ -3099,7 +3099,7 @@ pub(super) fn surface_prototype_records<'a>(
             )?),
         };
         let mut parameters = Vec::new();
-        for parameter in &record.parameters {
+        for parameter in record.parameters() {
             ctx.reserve_vec(
                 &mut parameters,
                 1,
@@ -3812,7 +3812,7 @@ pub(super) fn surface_parameter_records<'a>(
                 }
             }),
             torus_outline_frame: record
-                .torus_outline_frame()
+                .torus_outline_frame_checked(ctx)?
                 .map(|frame| CreoTorusOutlineFrame {
                     values: frame.values,
                     selector: frame.selector,
@@ -3830,7 +3830,7 @@ pub(super) fn surface_parameter_records<'a>(
                     offset: envelope.offset,
                 },
             ),
-            torus_radius_overrides: record.torus_radius_overrides().map(|overrides| {
+            torus_radius_overrides: record.torus_radius_overrides_checked(ctx)?.map(|overrides| {
                 CreoTorusRadiusOverrides {
                     radius1: overrides.radius1,
                     radius2: overrides.radius2,

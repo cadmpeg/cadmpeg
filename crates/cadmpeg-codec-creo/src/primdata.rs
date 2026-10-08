@@ -65,6 +65,7 @@ pub(crate) struct PrimitiveTriangleStrip {
     strip_lengths: Vec<u32>,
 }
 impl PrimitiveTriangleStrip {
+    #[cfg(test)]
     pub(crate) fn new(
         ctx: &DecodeContext<'_>,
         offset: usize,
@@ -150,6 +151,7 @@ enum TriangleStripGeometryError {
     Resource(CodecError),
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 struct TriangleStripGeometry {
     positions: Vec<FiniteVector<3>>,
@@ -180,9 +182,9 @@ fn project_vertex_lane(ctx: &DecodeContext<'_>, lane: VertexLane<'_>, operation:
     Ok(points)
 }
 
-fn triangle_strip_geometry(
-    ctx: &DecodeContext<'_>, arrays: &[PrimitiveScalarArray], vertex_count: u32,
-) -> Result<TriangleStripGeometry, TriangleStripGeometryError> {
+fn select_triangle_strip_lanes<'a>(
+    ctx: &DecodeContext<'_>, arrays: &'a [PrimitiveScalarArray], vertex_count: u32,
+) -> Result<(VertexLane<'a>, Option<VertexLane<'a>>), TriangleStripGeometryError> {
     let vertex_count = usize::try_from(vertex_count).map_err(|_| TriangleStripGeometryError::Missing)?;
     let mut positions = None;
     let mut normals = None;
@@ -206,10 +208,37 @@ fn triangle_strip_geometry(
         }
     }
     let positions = positions.ok_or(TriangleStripGeometryError::Missing)?;
+    Ok((positions, normals))
+}
+
+#[cfg(test)]
+fn triangle_strip_geometry(
+    ctx: &DecodeContext<'_>, arrays: &[PrimitiveScalarArray], vertex_count: u32,
+) -> Result<TriangleStripGeometry, TriangleStripGeometryError> {
+    let (positions, normals) = select_triangle_strip_lanes(ctx, arrays, vertex_count)?;
     Ok(TriangleStripGeometry {
         positions: project_vertex_lane(ctx, positions, "creo triangle strip positions")?,
         normals: normals.map(|lane| project_vertex_lane(ctx, lane, "creo triangle strip normals")).transpose()?,
     })
+}
+
+fn triangle_strip_vertices(
+    ctx: &DecodeContext<'_>, positions: VertexLane<'_>, normals: Option<VertexLane<'_>>,
+) -> Result<PrimitiveVertices, CodecError> {
+    let Some(normals) = normals else {
+        return Ok(PrimitiveVertices::Unshaded(project_vertex_lane(ctx, positions, "creo triangle strip positions")?));
+    };
+    let count = positions.0.len() / positions.1;
+    let mut vertices = ctx.collection_vec(count, "creo primitive shaded vertices")?;
+    for index in ctx.admit_iter(0..count, "creo primitive shaded vertex projection")? {
+        let position = index * positions.1 + positions.2;
+        let normal = index * normals.1 + normals.2;
+        vertices.push(PrimitiveShadedVertex {
+            position: FiniteVector::from([positions.0[position], positions.0[position + 1], positions.0[position + 2]]),
+            normal: FiniteVector::from([normals.0[normal], normals.0[normal + 1], normals.0[normal + 2]]),
+        });
+    }
+    Ok(PrimitiveVertices::Shaded(vertices))
 }
 
 /// Decode named triangle-strip primitives and representation conflicts.
@@ -223,9 +252,9 @@ pub(crate) fn triangle_strips(
     let mut conflicting_representation_count = 0usize;
     for offset in ctx.find_bytes_iter(data, RECORD, "creo primitive strip discovery")? {
         let start = offset + RECORD.len();
-        let end = ctx.find_bytes_from(data, b"\xe0\x00value(", start, "creo primitive strip boundary scan")?.unwrap_or(data.len());
+        let end = ctx.find_map(data.get(start..).unwrap_or_default().windows(b"\xe0\x00value(".len()).enumerate(), |(offset, bytes)| Ok((bytes == b"\xe0\x00value(").then_some(start + offset)), "creo primitive strip boundary scan")?.unwrap_or(data.len());
         let record = &data[offset..end];
-        let Some(accum) = ctx.find_bytes(record, ACCUM, "creo primitive cumulative label scan")?.map(|relative| relative + ACCUM.len()) else { continue; };
+        let Some(accum) = ctx.find_map(record.windows(ACCUM.len()).enumerate(), |(offset, bytes)| Ok((bytes == ACCUM).then_some(offset)), "creo primitive cumulative label scan")?.map(|relative| relative + ACCUM.len()) else { continue; };
         if record.get(accum) != Some(&psb::token::ARRAY_OPEN) {
             continue;
         }
@@ -265,7 +294,7 @@ pub(crate) fn triangle_strips(
         }
         let mut arrays_scope = ctx.reserve_scoped(0, "creo primitive geometry arrays")?;
         let arrays = arrays_scope.with_storage(|| scalar_arrays(ctx, record))?;
-        let geometry = match triangle_strip_geometry(ctx, &arrays, vertex_count) {
+        let (positions, normals) = match select_triangle_strip_lanes(ctx, &arrays, vertex_count) {
             Ok(geometry) => geometry,
             Err(TriangleStripGeometryError::Missing) => continue,
             Err(TriangleStripGeometryError::Conflicting) => {
@@ -275,15 +304,9 @@ pub(crate) fn triangle_strips(
             Err(TriangleStripGeometryError::Resource(error)) => return Err(error),
         };
         ctx.reserve_vec(&mut strips, 1, "creo triangle strip records")?;
-        if let Some(strip) = PrimitiveTriangleStrip::new(
-            ctx,
-            offset,
-            geometry.positions,
-            geometry.normals,
-            ctx.collect_retained_vec(strip_lengths.iter().copied(), "creo triangle strip retained lengths")?,
-        )? {
-            strips.push(strip);
-        }
+        let vertices = triangle_strip_vertices(ctx, positions, normals)?;
+        let strip_lengths = ctx.collect_retained_vec(strip_lengths.iter().copied(), "creo triangle strip retained lengths")?;
+        strips.push(PrimitiveTriangleStrip { offset, vertices, strip_lengths });
     }
     Ok(PrimitiveTriangleStripScan {
         strips,

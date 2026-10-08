@@ -223,17 +223,11 @@ fn tabulated_cylinder_replay_requires_the_immediately_preceding_row() {
 
 #[test]
 fn tabulated_curve_signature_positions_refuse_before_growth() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
     let payload = [
         0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7,
     ];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("signature fixture fits the root-byte limit");
-    let error = checked_tabulated_cylinder_curve_replays(&ctx, &payload)
-        .expect_err("signature index needs a collection item");
+    let error = crate::test_support::last_refusal_at(&payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo tabulated curve signatures", |ctx| { checked_tabulated_cylinder_curve_replays(ctx, &payload) });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -288,11 +282,7 @@ fn tabulated_curve_replay_refuses_each_retained_copy_and_record() {
                 && limit.operation == operation)
         );
     }
-    let item_limit = (0..64)
-        .find(|limit| matches!(run(*limit, u64::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo tabulated curve replays"))
-        .expect("one collection limit reaches the replay record");
+    let item_limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo tabulated curve replays"), |cap| run(cap, u64::MAX));
     let error = run(item_limit, u64::MAX).expect_err("replay record needs a collection item");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

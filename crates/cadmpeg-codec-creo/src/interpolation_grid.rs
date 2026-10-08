@@ -21,6 +21,25 @@ fn finite_vectors(
 
 }
 
+fn valid_grid_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, points: &[[f64; 3]],
+    u_parameters: &[f64], v_parameters: &[f64],
+) -> Result<bool, cadmpeg_core::CodecError> {
+        let ordered_finite = |parameters: &[f64]| -> Result<bool, cadmpeg_core::CodecError> {
+            let mut previous = None;
+            ctx.all_by(parameters, |&value| {
+                let valid = value.is_finite() && previous.is_none_or(|previous| previous < value);
+                previous = Some(value);
+                Ok(valid)
+            }, "creo interpolation grid parameter validation")
+
+        };
+    Ok(u_parameters.len() >= 2 && v_parameters.len() >= 2
+        && Some(points.len()) == u_parameters.len().checked_mul(v_parameters.len())
+        && ordered_finite(u_parameters)? && ordered_finite(v_parameters)?
+        && finite_vectors(ctx, points, "creo interpolation grid vector validation")?)
+}
+
 impl InterpolationGrid {
     /// Admits a complete finite grid with increasing parameters and matching
     /// point and boundary-derivative counts.
@@ -35,20 +54,9 @@ impl InterpolationGrid {
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let u_count = u_parameters.len();
         let v_count = v_parameters.len();
-        let ordered_finite = |parameters: &[f64]| -> Result<bool, cadmpeg_core::CodecError> {
-            let mut previous = None;
-            ctx.all_by(parameters, |&value| {
-                let valid = value.is_finite() && previous.is_none_or(|previous| previous < value);
-                previous = Some(value);
-                Ok(valid)
-            }, "creo interpolation grid parameter validation")
-
-        };
-        if !(u_count >= 2
-            && v_count >= 2
-            && ordered_finite(&u_parameters)?
-            && ordered_finite(&v_parameters)?
-            && finite_vectors(ctx, &points, "creo interpolation grid vector validation")?
+        if !(Some(u_derivatives.len()) == v_count.checked_mul(2)
+            && Some(v_derivatives.len()) == u_count.checked_mul(2)
+            && valid_grid_points(ctx, &points, &u_parameters, &v_parameters)?
             && finite_vectors(
                 ctx,
                 &u_derivatives,
@@ -59,10 +67,7 @@ impl InterpolationGrid {
                 &v_derivatives,
                 "creo interpolation grid vector validation",
             )?
-            && mixed_derivatives.iter().flatten().all(|value| value.is_finite())
-            && Some(points.len()) == u_count.checked_mul(v_count)
-            && Some(u_derivatives.len()) == v_count.checked_mul(2)
-            && Some(v_derivatives.len()) == u_count.checked_mul(2))
+            && mixed_derivatives.iter().flatten().all(|value| value.is_finite()))
         {
             return Ok(None);
         }
@@ -91,15 +96,13 @@ impl InterpolationGrid {
         let Some(point_count) = u_count.checked_mul(v_count) else {
             return Ok(None);
         };
-        if !(u_count >= 2
-            && v_count >= 2
-            && points.len() == point_count
+        if !(u_tangents.len() == point_count
+            && v_tangents.len() == point_count
+            && mixed_derivatives.len() == point_count
+            && valid_grid_points(ctx, &points, &u_parameters, &v_parameters)?
             && finite_vectors(ctx, u_tangents, "creo full tangent grid validation")?
             && finite_vectors(ctx, v_tangents, "creo full tangent grid validation")?
-            && finite_vectors(ctx, mixed_derivatives, "creo full tangent grid validation")?
-            && u_tangents.len() == point_count
-            && v_tangents.len() == point_count
-            && mixed_derivatives.len() == point_count)
+            && finite_vectors(ctx, mixed_derivatives, "creo full tangent grid validation")?)
         {
             return Ok(None);
         }
@@ -142,15 +145,21 @@ impl InterpolationGrid {
             mixed_derivatives[upper_u],
             mixed_derivatives[upper_u + upper_v],
         ];
-        Self::try_new(
-            ctx,
-            points,
-            u_parameters,
-            v_parameters,
-            u_derivatives,
-            v_derivatives,
-            mixed_derivatives,
-        )
+        Ok(Some(Self {
+            points, u_parameters, v_parameters, u_derivatives, v_derivatives, mixed_derivatives,
+        }))
+    }
+
+    /// Copy a checked scratch grid into retained decode storage.
+    pub(crate) fn copy_retained(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            points: ctx.collect_retained_vec(self.points.iter().copied(), "creo interpolation retained points")?,
+            u_parameters: ctx.collect_retained_vec(self.u_parameters.iter().copied(), "creo interpolation retained u parameters")?,
+            v_parameters: ctx.collect_retained_vec(self.v_parameters.iter().copied(), "creo interpolation retained v parameters")?,
+            u_derivatives: ctx.collect_retained_vec(self.u_derivatives.iter().copied(), "creo interpolation retained u derivatives")?,
+            v_derivatives: ctx.collect_retained_vec(self.v_derivatives.iter().copied(), "creo interpolation retained v derivatives")?,
+            mixed_derivatives: self.mixed_derivatives,
+        })
     }
 
     /// Interpolation points in u-major order.
