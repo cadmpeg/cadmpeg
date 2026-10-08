@@ -12,6 +12,78 @@ use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
 
 #[test]
+fn native_conversion_error_admission_preserves_refusals_and_formats_once() {
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (fused, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let CodecError::ResourceLimit(original) = fused.charge_work(1, "original work").unwrap_err()
+    else {
+        panic!("the zero-work policy must refuse");
+    };
+    let converted = crate::native::NativeConvertError::InvalidCollection("later detail".into())
+        .into_codec_error_for_decode(&fused, "format native conversion error");
+    let CodecError::ResourceLimit(converted) = converted else {
+        panic!("the original fused refusal must remain a resource limit");
+    };
+    assert_eq!(converted, original);
+
+    let mut source_policy = DecodePolicy::service();
+    source_policy.limits.max_work_units = 0;
+    let (source_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &source_policy).unwrap();
+    let CodecError::ResourceLimit(nested) = source_ctx
+        .charge_work(1, "nested conversion work")
+        .unwrap_err()
+    else {
+        panic!("the nested source refusal must be a resource limit");
+    };
+    let (target, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let converted = crate::native::NativeConvertError::Arena {
+        arena: "records".into(),
+        source: Box::new(crate::native::NativeConvertError::Resource(
+            CodecError::ResourceLimit(nested),
+        )),
+    }
+    .into_codec_error_for_decode(&target, "format native conversion error");
+    let CodecError::ResourceLimit(converted) = converted else {
+        panic!("the nested refusal must remain a resource limit");
+    };
+    assert_eq!(converted, nested);
+    assert_eq!(target.resource_refusal(), None);
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let converted = crate::native::NativeConvertError::InvalidCollection("detail".into())
+        .into_codec_error_for_decode(&limited, "format native conversion error");
+    let CodecError::ResourceLimit(formatted) = converted else {
+        panic!("the diagnostic must respect the retained-byte budget");
+    };
+    assert_eq!(formatted.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(formatted.operation, "format native conversion error");
+    assert_eq!(
+        formatted.additional,
+        u64::try_from("native collection is invalid: detail".len()).unwrap()
+    );
+    assert_eq!(limited.resource_refusal(), Some(formatted));
+
+    let diagnostic = "native collection is invalid: detail";
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(diagnostic.len()).unwrap();
+    let (exact, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let converted = crate::native::NativeConvertError::InvalidCollection("detail".into())
+        .into_codec_error_for_decode(&exact, "format native conversion error");
+    assert!(matches!(converted, CodecError::Malformed(message) if message == diagnostic));
+}
+
+#[test]
 fn native_record_conversion_refuses_retained_limit_before_record_growth() {
     use std::cell::Cell;
 
