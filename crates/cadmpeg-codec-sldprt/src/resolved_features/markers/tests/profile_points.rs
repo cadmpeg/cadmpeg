@@ -116,6 +116,17 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
         ])
     );
     let ctx = cadmpeg_test_support::service_decode_context();
+    let cache = std::cell::OnceCell::new();
+    assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(&ctx, &payload, &entities[1], &markers, &cache).unwrap(), None);
+    assert!(cache.get().is_none());
+    let expected = current_reverse_incidence_endpoint_offsets(&ctx, &payload, &entities[0], &markers).unwrap();
+    assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(&ctx, &payload, &entities[0], &markers, &cache).unwrap(), expected);
+    {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "index SLDPRT reverse incidence endpoints", None);
+        assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(&ctx, &payload, &entities[0], &markers, &cache).unwrap(), expected);
+    }
     let duplicated = [&entities[2], &entities[1], &entities[1], &entities[0]];
     let (index, _storage) =
         crate::resolved_features::markers::ReverseIncidenceIndex::new(&ctx, &payload, &duplicated)

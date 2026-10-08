@@ -532,6 +532,16 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
     .unwrap());
     let ctx = cadmpeg_test_support::service_decode_context();
     let roster = [&sibling, &terminal];
+    let cache = std::cell::OnceCell::new();
+    assert!(!super::legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &sibling, &roster, &cache).unwrap());
+    assert!(cache.get().is_none());
+    assert!(super::legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &terminal, &roster, &cache).unwrap());
+    {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "index SLDPRT legacy terminal profile lines", None);
+        assert!(super::legacy_terminal_indexed_profile_line_cached(&ctx, &payload, &terminal, &roster, &cache).unwrap());
+    }
     let (index, _storage) = super::LegacyTerminalLines::new(&ctx, &payload, &roster).unwrap();
     assert!(
         super::legacy_terminal_indexed_profile_line_in(&ctx, &payload, &terminal, &index).unwrap()
