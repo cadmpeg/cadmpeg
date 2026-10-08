@@ -2297,10 +2297,12 @@ class FixedSortSyntax:
         r"(?:_?(?:u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f32|f64))?\Z"
     )
 
-    def __init__(self, code: str, records: dict[str, dict[str, str]], shadowed: set[str]):
+    def __init__(self, code: str, records: dict[str, dict[str, str]], shadowed: set[str],
+                 macro_scopes: set[int | None] | None = None):
         self.code = code
         self.records = records
         self.shadowed = shadowed
+        self.macro_scopes = macro_scopes or set()
 
     @staticmethod
     def split(text: str, separator: str) -> list[str]:
@@ -2544,6 +2546,16 @@ class FixedSortSyntax:
         return bindings
 
     def accepts(self, tokens, pairs, parents, function, call: int) -> bool:
+        parent = parents.get(call)
+        ancestors = {None}
+        while parent is not None:
+            ancestors.add(parent)
+            parent = parents.get(parent)
+        if self.macro_scopes & ancestors:
+            # An item/statement expansion can introduce type names in its
+            # scope. Literal primitive types do not rely on those names.
+            literal_only = FixedSortSyntax(self.code, {}, self.shadowed | self.SCALARS | {"core", "std"})
+            return literal_only.accepts(tokens, pairs, parents, function, call)
         words = [token[0] for token in tokens]
         end = call - 2
         start = end
@@ -2599,6 +2611,7 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
     record_candidates: dict[tuple[Path, str], list[dict[str, str]]] = {}
     record_shadowed: dict[Path, set[str]] = {}
     glob_imports: set[Path] = set()
+    macro_scopes: dict[Path, set[int | None]] = {}
     shadowed: dict[str, set[str]] = {}
     for path, source in sources.items():
         if not is_production_rs(path):
@@ -2615,6 +2628,35 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
         aliases = set(re.findall(r"\b(?:type|trait)\s+([A-Za-z_]\w*)", code)) | set(imports)
         if "*" in imports:
             glob_imports.add(path)
+        opaque = set()
+        # Compiler attributes cannot introduce user type declarations. Other
+        # attribute/derive expansions are unresolved source generators.
+        builtin_attributes = {"cfg", "doc", "repr", "allow", "warn", "deny", "forbid",
+                              "expect", "inline", "cold", "track_caller", "must_use",
+                              "deprecated", "non_exhaustive", "automatically_derived"}
+        builtin_derives = {"Debug", "Clone", "Copy", "Eq", "PartialEq", "Ord", "PartialOrd", "Default", "Hash"}
+        for index, word in enumerate(words):
+            if word == "#" and words[index + 1:index + 2] == ["["] and index + 1 in pairs:
+                attribute = words[index + 2:pairs[index + 1]]
+                known = bool(attribute) and attribute[0] in builtin_attributes and attribute[1:2] != ["::"]
+                if attribute[:2] == ["derive", "("]:
+                    derives = {name for name in attribute[2:-1] if name != ","}
+                    known = bool(derives) and derives <= builtin_derives and not derives.intersection(imports)
+                if not known:
+                    opaque.add(parents.get(index))
+            raw = words[index - 2:index] == ["r", "#"] if index >= 2 else False
+            if (not FixedSortSyntax.IDENTIFIER.fullmatch(word)
+                    or (not raw and word in {"if", "while", "for", "match", "return", "let", "else", "in"})
+                    or words[index + 1:index + 2] != ["!"]
+                    or words[index + 2:index + 3] not in [["("], ["["], ["{"]]):
+                continue
+            start = index - 2 if raw else evaluation_expression_start(words, pairs, index)
+            if start == 0 or words[start - 1] in {"{", "}", ";", "]"}:
+                opaque.add(parents.get(start))
+        macro_scopes[path] = opaque
+        raw_names = set(re.findall(r"\br#([A-Za-z_]\w*)", code))
+        names.update(raw_names)
+        aliases.update(raw_names)
         for match in re.finditer(r"\bextern\s+crate\s+([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?", code):
             names.add(match[2] or match[1])
         for index, word in enumerate(words):
@@ -2670,7 +2712,7 @@ def scan_decode_sorts(sources: dict[Path, str]) -> list[Finding]:
         if path in glob_imports:
             uncertain = uncertain | FixedSortSyntax.SCALARS | {"core", "std"}
             records = {}
-        fixed = FixedSortSyntax(code, records, uncertain)
+        fixed = FixedSortSyntax(code, records, uncertain, macro_scopes[path])
         decode_scope = (bool(DECODE_SORT_CRATE.fullmatch(crate)) or bool(IR_DECODE_SORT_PATH.fullmatch(relative_path(path)))) and not ENCODE_SORT_PATH.fullmatch(relative_path(path))
         functions = []
         for index, _, _, owner in evaluation_signatures(tokens, pairs, parents):

@@ -1420,6 +1420,53 @@ fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8]) {
             "let blocked = |values: &mut Vec<String>| { (values).sort_unstable(); };",
         ])
 
+    def test_macro_generated_primitive_name_custom_ord_remains_rejected(self) -> None:
+        self.check_sort_source("""
+macro_rules! counted { ($name:ident) => {
+    #[derive(Eq, PartialEq)] struct $name { count: usize }
+    impl Ord for $name { fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        for step in 0..self.count { std::hint::black_box(step); }
+        self.count.cmp(&other.count)
+    } }
+    impl PartialOrd for $name { fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) } }
+}; }
+counted!(u64);
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8]) {
+    values.sort_unstable();
+    let mut literals = [0u64; 8];
+    literals.sort_unstable();
+}
+""", ["values.sort_unstable();"])
+
+    def test_item_macro_uncertainty_stays_in_its_scope(self) -> None:
+        self.check_sort_source("""
+fn other() { make_types!(); }
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8]) {
+    values.sort_unstable();
+    { make_types!(); let mut typed: [u64; 8] = create(); typed.sort_unstable(); }
+    values.sort_unstable();
+}
+""", ["{ make_types!(); let mut typed: [u64; 8] = create(); typed.sort_unstable(); }"])
+
+    def test_unknown_attribute_and_derive_generators_do_not_supply_type_evidence(self) -> None:
+        for attribute in ("#[generate_types]", "#[derive(GenerateTypes)]", "#[cfg_attr(feature = \"x\", generate_types)]"):
+            with self.subTest(attribute=attribute):
+                self.check_sort_source(f"""
+{attribute}
+struct Marker;
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8]) {{
+    values.sort_unstable();
+}}
+""", ["values.sort_unstable();"])
+
+    def test_raw_identifier_primitive_alias_remains_rejected(self) -> None:
+        self.check_sort_source("""
+struct r#u64 { count: usize }
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8]) {
+    values.sort_unstable();
+}
+""", ["values.sort_unstable();"])
+
     def test_each_slice_sort_with_context_parameter_is_rejected(self) -> None:
         for method in sorted(policy.SLICE_SORT_METHODS):
             with self.subTest(method=method):

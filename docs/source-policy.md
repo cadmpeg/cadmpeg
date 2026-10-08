@@ -246,7 +246,12 @@ matching unqualified primitive type evidence. Glob imports disable named type
 evidence in their source file. Loop, match, conditional and closure bindings
 erase an outer array fact when their type is unknown. An explicit local array
 type or a typed closure parameter can establish a new fact. The finder does
-not expand macros. Resolved symbol identity requires compiler checks.
+not expand macros. Item and statement macro scopes, unknown attributes and
+custom derives cannot supply named type evidence. Primitive literal array
+inference remains available in those scopes. Compiler attributes and the
+built-in derives retain their normal meaning; an imported derive name is
+unknown. Raw primitive-name identifiers retain name-shadowing checks.
+Resolved symbol identity requires compiler checks.
 Unknown syntax remains a finding.
 
 The compiler resolves expressions, receiver types, associated trait calls,
