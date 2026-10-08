@@ -138,7 +138,8 @@ fn knot_replacement_moves_admitted_output_without_copying_poles() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
-    policy.limits.max_work_units = u64::try_from(count * 2 - 1).expect("n finite values and n-1 order pairs");
+    policy.limits.max_work_units =
+        u64::try_from(count * 2 - 1).expect("n finite values and n-1 order pairs");
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let curve = original
