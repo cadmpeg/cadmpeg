@@ -654,6 +654,45 @@ impl ScopedReservation<'_> {
     /// takes over the bytes this reservation already holds, so they are
     /// neither charged again nor released.
     pub fn commit(mut self) -> Result<(), CodecError> {
+        self.commit_in_place()
+    }
+
+    /// Transfers this value's admitted storage. A refusal drops the value
+    /// before releasing its reservation. The reservation must own only storage
+    /// that survives in the returned value.
+    pub fn commit_value<T>(mut self, value: T) -> Result<T, CodecError> {
+        self.commit_in_place()?;
+        Ok(value)
+    }
+
+    /// Transfers already-live temporary bytes between reservations of the
+    /// same session. Failure preserves both reservations. The caller moves the
+    /// corresponding data without copying or dropping its surviving storage.
+    pub fn absorb(&mut self, source: &mut ScopedReservation<'_>) -> Result<(), CodecError> {
+        if let Some(limit) = self.budget.fused() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        if !std::ptr::eq(self.budget, source.budget) {
+            return Err(CodecError::malformed(
+                "storage reservations belong to different sessions",
+            ));
+        }
+        let bytes = self.bytes.checked_add(source.bytes).ok_or_else(|| {
+            self.budget.refuse_limit(
+                ResourceDimension::MaterializedBytes,
+                ResourceFailure::BudgetExceeded,
+                self.budget.materialized_allowance(),
+                self.bytes,
+                source.bytes,
+                self.operation,
+            )
+        })?;
+        self.bytes = bytes;
+        source.bytes = 0;
+        Ok(())
+    }
+
+    fn commit_in_place(&mut self) -> Result<(), CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -1085,6 +1124,108 @@ mod tests {
             return depth;
         };
         descend(budget, depth + 1)
+    }
+
+    #[test]
+    fn scoped_absorption_transfers_live_storage_without_readmission() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 5;
+        policy.limits.max_work_units = 0;
+        let session = DecodeBudget::new(policy, 0);
+        let mut target = session.reserve_scoped(2, "target").expect("target");
+        let mut source = session.reserve_scoped(3, "source").expect("source");
+        target.absorb(&mut source).expect("same live bytes");
+        assert_eq!((target.bytes, source.bytes), (5, 0));
+        assert_eq!(session.materialized.get(), 5);
+        assert_eq!(session.work.get(), 0);
+        drop(source);
+        assert_eq!(session.materialized.get(), 5);
+        drop(target);
+        assert_eq!(session.materialized.get(), 0);
+    }
+
+    #[test]
+    fn scoped_absorption_rejects_foreign_or_refused_sessions_without_mutation() {
+        let policy = DecodePolicy::service();
+        let first = DecodeBudget::new(policy, 0);
+        let second = DecodeBudget::new(policy, 0);
+        let mut target = first.reserve_scoped(2, "target").expect("target");
+        let mut source = second.reserve_scoped(3, "source").expect("source");
+        assert!(matches!(
+            target.absorb(&mut source),
+            Err(crate::CodecError::Malformed(_))
+        ));
+        assert_eq!((target.bytes, source.bytes), (2, 3));
+        assert_eq!(
+            (first.materialized.get(), second.materialized.get()),
+            (2, 3)
+        );
+        assert_eq!(first.fused(), None);
+        let error = first.charge_work(u64::MAX, "original").expect_err("fuse");
+        let crate::CodecError::ResourceLimit(original) = error else {
+            panic!("refusal")
+        };
+        assert!(matches!(target.absorb(&mut source),
+            Err(crate::CodecError::ResourceLimit(found)) if found == original));
+        assert_eq!((target.bytes, source.bytes), (2, 3));
+    }
+
+    #[test]
+    fn scoped_value_promotion_keeps_lease_through_failed_value_drop() {
+        struct ObservedDrop<'a> {
+            budget: &'a DecodeBudget,
+            observed: &'a std::cell::Cell<u64>,
+        }
+        impl Drop for ObservedDrop<'_> {
+            fn drop(&mut self) {
+                self.observed.set(self.budget.materialized.get());
+            }
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 3;
+        policy.limits.max_retained_bytes = 2;
+        let session = DecodeBudget::new(policy, 0);
+        let storage = session.reserve_scoped(3, "candidate").expect("scratch");
+        let observed = std::cell::Cell::new(0);
+        let result = storage.commit_value(ObservedDrop {
+            budget: &session,
+            observed: &observed,
+        });
+        let Err(crate::CodecError::ResourceLimit(original)) = result else {
+            panic!("retained refusal")
+        };
+        assert_eq!(observed.get(), 3);
+        assert_eq!(session.materialized.get(), 0);
+        assert_eq!(session.fused(), Some(original));
+    }
+
+    #[test]
+    fn scoped_value_promotion_transfers_to_parent_or_session_once() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 3;
+        policy.limits.max_retained_bytes = 3;
+        policy.limits.max_work_units = 0;
+        for parent in [false, true] {
+            let session = DecodeBudget::new(policy, 0);
+            let scope = parent.then(|| session.storage_scope("parent"));
+            let storage = session.reserve_scoped(3, "candidate").expect("scratch");
+            assert_eq!(
+                storage
+                    .commit_value("owned value")
+                    .expect("same live bytes"),
+                "owned value"
+            );
+            if let Some(scope) = scope {
+                let storage = scope.finish();
+                assert_eq!(session.materialized.get(), 3);
+                assert_eq!(session.retained.get(), 0);
+                drop(storage);
+            } else {
+                assert_eq!(session.retained.get(), 3);
+            }
+            assert_eq!(session.materialized.get(), 0);
+            assert_eq!(session.work.get(), 0);
+        }
     }
 
     #[test]
