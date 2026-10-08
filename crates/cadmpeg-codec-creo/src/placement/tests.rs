@@ -44,7 +44,7 @@ fn generated_cylinder_section_transform(
     tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_generated_cylinder_section_transform(ctx, definition, tables, &mut super::PlacementLookup::new(ctx, sources)?)
+        parse_generated_cylinder_section_transform(ctx, definition, tables, &mut super::PlacementLookup::new(ctx, sources, &[])?)
     })
     .expect("test cylinder placement")
 }
@@ -55,7 +55,7 @@ fn generated_planar_section_transform(
     tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_generated_planar_section_transform(ctx, definition, tables, &mut super::PlacementLookup::new(ctx, sources)?)
+        parse_generated_planar_section_transform(ctx, definition, tables, &mut super::PlacementLookup::new(ctx, sources, &[])?)
     })
     .expect("test planar placement")
 }
@@ -1659,6 +1659,6 @@ fn plane_equation(id: u32, datums: &[DatumPlaneRecord], models: &[PlaneLocalSyst
         let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
         let sources = PlacementSources { datums, surface_rows: &rows, model_planes: models, outline_planes: outlines,
             plane_envelopes: &[], surface_parameters: &[], geometry_tables: &[], affected_ids: &[] };
-        super::PlacementLookup::new(ctx, &sources)?.equation(id)
+        super::PlacementLookup::new(ctx, &sources, &[])?.equation(id)
     }).expect("test plane equation")
 }
