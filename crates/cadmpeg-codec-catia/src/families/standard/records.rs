@@ -451,11 +451,10 @@ pub(super) fn standard_surface_populations(
     ctx: &DecodeContext<'_>,
     brep: &[u8],
 ) -> Result<Vec<StandardSurfacePopulation>, CodecError> {
+    let mut group_storage = ctx.reserve_scoped(0, "catia_surface_population_groups")?;
+    let groups = group_storage.with_storage(|| standard_surface_record_groups(ctx, brep))?;
     let mut populations = Vec::new();
-    for records in ctx.admit_iter(
-        standard_surface_record_groups(ctx, brep)?,
-        "catia_surface_populations",
-    )? {
+    for records in ctx.admit_iter(&groups, "catia_surface_populations")? {
         let Some(support_start) = records.last().map(StandardSurfaceRecord::end) else {
             continue;
         };
@@ -463,6 +462,7 @@ pub(super) fn standard_surface_populations(
         else {
             continue;
         };
+        let records = ctx.copy_slice(records, "catia_surface_population_records")?;
         ctx.push_vec(
             &mut populations,
             StandardSurfacePopulation { records, supports },
@@ -845,64 +845,87 @@ pub(super) fn standard_curve_supports(
     face_count: usize,
     edge_count: Option<usize>,
 ) -> Result<Vec<StandardCurveSupport>, CodecError> {
-    let populations = standard_surface_populations(ctx, brep)?;
-    let mut matching_populations = Vec::new();
-    for population in ctx.admit_iter(&populations, "catia_standard_iteration")? {
-        if population.records.len() == face_count
-            && edge_count.is_none_or(|count| population.supports.len() == count)
-        {
-            ctx.push_vec(
-                &mut matching_populations,
-                population,
-                "catia_matching_surface_populations",
-            )?;
-        }
+    let mut population_storage = ctx.reserve_scoped(0, "catia_curve_support_population_scratch")?;
+    let (populations, matching_populations, has_face_population) = population_storage
+        .with_storage(|| {
+            let populations = standard_surface_populations(ctx, brep)?;
+            let mut matching_populations = Vec::new();
+            let mut has_face_population = false;
+            for (index, population) in ctx
+                .admit_iter(&populations, "catia_standard_iteration")?
+                .enumerate()
+            {
+                if population.records.len() == face_count {
+                    has_face_population = true;
+                    if edge_count.is_none_or(|count| population.supports.len() == count) {
+                        ctx.push_vec(
+                            &mut matching_populations,
+                            index,
+                            "catia_matching_surface_populations",
+                        )?;
+                    }
+                }
+            }
+            Ok::<_, CodecError>((populations, matching_populations, has_face_population))
+        })?;
+    if has_face_population {
+        let [index] = matching_populations.as_slice() else {
+            return Ok(Vec::new());
+        };
+        return ctx.copy_slice(&populations[*index].supports, "catia_curve_support_copy");
     }
-    if ctx.any_by(
-        &populations,
-        |population| Ok(population.records.len() == face_count),
-        "catia_standard_iteration",
-    )? {
-        let Ok([population]) = <[&StandardSurfacePopulation; 1]>::try_from(matching_populations)
+    drop(matching_populations);
+    drop(populations);
+    drop(population_storage);
+    let first = {
+        let mut record_storage = ctx.reserve_scoped(0, "catia_curve_support_record_scratch")?;
+        record_storage
+            .with_storage(|| standard_surface_records(ctx, brep, face_count))?
+            .and_then(|records| records.last().map(StandardSurfaceRecord::end))
+    };
+    if let Some(first) = first {
+        let mut row_storage = ctx.reserve_scoped(0, "catia_curve_support_selected_rows")?;
+        let Some(rows) = row_storage
+            .with_storage(|| standard_curve_supports_at(ctx, brep, face_count, first))?
         else {
             return Ok(Vec::new());
         };
-        return ctx.copy_slice(&population.supports, "catia_curve_support_copy");
-    }
-    if let Some(first) = standard_surface_records(ctx, brep, face_count)?
-        .and_then(|records| records.last().map(StandardSurfaceRecord::end))
-    {
-        let Some(rows) = standard_curve_supports_at(ctx, brep, face_count, first)? else {
-            return Ok(Vec::new());
-        };
-        return if edge_count.is_none_or(|count| rows.len() == count) {
-            Ok(rows)
-        } else {
-            Ok(Vec::new())
-        };
+        if edge_count.is_none_or(|count| rows.len() == count) {
+            row_storage.commit()?;
+            return Ok(rows);
+        }
+        return Ok(Vec::new());
     }
 
-    let mut candidates = Vec::new();
-    for (start, _) in ctx
-        .admit_iter(brep, "catia_standard_iteration")?
-        .enumerate()
-    {
-        if brep.get(start) != Some(&0x60)
-            || standard_curve_support_has_predecessor(ctx, brep, face_count, start)?
+    let mut candidate_storage = ctx.reserve_scoped(0, "catia_curve_support_candidate_scratch")?;
+    let candidates = candidate_storage.with_storage(|| {
+        let mut candidates = Vec::new();
+        for (start, _) in ctx
+            .admit_iter(brep, "catia_standard_iteration")?
+            .enumerate()
         {
-            continue;
+            if brep.get(start) != Some(&0x60)
+                || standard_curve_support_has_predecessor(ctx, brep, face_count, start)?
+            {
+                continue;
+            }
+            let mut rows_storage = ctx.reserve_scoped(0, "catia_curve_support_candidate_rows")?;
+            let Some(rows) = rows_storage
+                .with_storage(|| standard_curve_supports_at(ctx, brep, face_count, start))?
+            else {
+                continue;
+            };
+            if edge_count.is_none_or(|count| rows.len() == count) {
+                rows_storage.commit()?;
+                ctx.push_vec(&mut candidates, rows, "catia_curve_support_candidates")?;
+            }
         }
-        let Some(rows) = standard_curve_supports_at(ctx, brep, face_count, start)? else {
-            continue;
-        };
-        if edge_count.is_none_or(|count| rows.len() == count) {
-            ctx.push_vec(&mut candidates, rows, "catia_curve_support_candidates")?;
-        }
-    }
-    Ok(<[Vec<StandardCurveSupport>; 1]>::try_from(candidates)
-        .ok()
-        .map(|[rows]| rows)
-        .unwrap_or_default())
+        Ok::<_, CodecError>(candidates)
+    })?;
+    let [rows] = candidates.as_slice() else {
+        return Ok(Vec::new());
+    };
+    ctx.copy_slice(rows, "catia_curve_support_copy")
 }
 
 fn standard_curve_supports_at(
@@ -911,16 +934,26 @@ fn standard_curve_supports_at(
     face_count: usize,
     mut position: usize,
 ) -> Result<Option<Vec<StandardCurveSupport>>, CodecError> {
-    let mut rows = Vec::new();
-    while brep.get(position) == Some(&0x60) {
-        ctx.charge_work(1, "catia_curve_support_rows")?;
-        let Some((row, end)) = standard_curve_support_row_at(brep, face_count, position) else {
-            return Ok(None);
-        };
-        ctx.push_vec(&mut rows, row, "catia_curve_support_rows")?;
-        position = end;
+    let mut storage = ctx.reserve_scoped(0, "catia_curve_support_row_candidate")?;
+    let rows = storage.with_storage(|| {
+        let mut rows = Vec::new();
+        loop {
+            ctx.charge_work(1, "catia_curve_support_rows")?;
+            if brep.get(position) != Some(&0x60) {
+                break;
+            }
+            let Some((row, end)) = standard_curve_support_row_at(brep, face_count, position) else {
+                return Ok::<_, CodecError>(None);
+            };
+            ctx.push_vec(&mut rows, row, "catia_curve_support_rows")?;
+            position = end;
+        }
+        Ok((!rows.is_empty()).then_some(rows))
+    })?;
+    if rows.is_some() {
+        storage.commit()?;
     }
-    Ok((!rows.is_empty()).then_some(rows))
+    Ok(rows)
 }
 
 fn standard_curve_support_row_at(
@@ -1384,6 +1417,62 @@ mod tests {
                     .expect("ambiguous candidates are scratch"),
                 None
             );
+        });
+    }
+    #[test]
+    fn malformed_support_rows_release_retained_storage() {
+        let mut bytes = vec![0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 1];
+        bytes.push(0x60);
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert!(super::standard_curve_supports_at(ctx, &bytes, 2, 0)
+                .expect("malformed row is scratch")
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn rejected_and_ambiguous_support_candidates_release_retained_storage() {
+        let row = [0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 1];
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert!(super::standard_curve_supports(ctx, &row, 2, Some(2))
+                .expect("rejected row is scratch")
+                .is_empty());
+        });
+        let mut bytes = row.to_vec();
+        bytes.push(0xff);
+        bytes.extend_from_slice(&row);
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert!(super::standard_curve_supports(ctx, &bytes, 2, Some(1))
+                .expect("ambiguous rows are scratch")
+                .is_empty());
+        });
+    }
+
+    #[test]
+    fn support_population_selection_retains_only_result_rows() {
+        let mut bytes = vec![0x34, 0x12, 0, 0, 0, 0];
+        for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x01);
+        let analytic = bytes.len();
+        bytes.extend_from_slice(&[0x78, 0x56, 0, 0, 0x1a, 0, 0x33, 0x33]);
+        bytes.resize(analytic + 72, 0);
+        bytes.push(0xff);
+        bytes.extend_from_slice(&[0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 1]);
+        let retained = std::mem::size_of::<super::StandardCurveSupport>() as u64;
+        crate::test_support::with_retained_limit(retained, |ctx| {
+            let rows = super::standard_curve_supports(ctx, &bytes, 2, Some(1))
+                .expect("only selected result retained");
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].tag, 1);
+            assert_eq!(rows[0].faces, [0, 1]);
+        });
+        bytes.push(0x60);
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert!(super::standard_surface_populations(ctx, &bytes)
+                .expect("invalid population is scratch")
+                .is_empty());
         });
     }
 }

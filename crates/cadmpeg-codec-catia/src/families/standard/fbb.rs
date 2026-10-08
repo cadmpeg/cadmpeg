@@ -917,12 +917,14 @@ pub(super) fn parse_fbb_edge_tables_width(
                 let Some(handle_lane) = bytes.get(position..handle_lane_end) else {
                     return None;
                 };
-                let admitted_handle_bytes =
-                    match ctx.admit_iter(handle_lane, "catia_fbb_edge_handle_lane") {
-                        Ok(bytes) => bytes.chunks(handle_width_nonzero),
-                        Err(error) => return Some(Err(CodecError::from(error))),
-                    };
-                for handle_bytes in admitted_handle_bytes {
+                let mut handle_chunks = handle_lane.chunks(handle_width_nonzero.get());
+                loop {
+                    let handle_bytes =
+                        match ctx.next_charged(&mut handle_chunks, "catia_fbb_edge_handle_lane") {
+                            Ok(Some(bytes)) => bytes,
+                            Ok(None) => break,
+                            Err(error) => return Some(Err(error)),
+                        };
                     let Some(handle) = read_handle(handle_bytes, 0, handle_width) else {
                         return None;
                     };
@@ -1729,6 +1731,33 @@ mod allocation_tests {
     }
 
     #[test]
+    fn trim_handle_work_counts_records_instead_of_bytes() {
+        let consumed = |width| {
+            let mut bytes = vec![0x01, 0x42, 0x01, 0xff];
+            bytes.extend_from_slice(&3_u32.to_le_bytes());
+            bytes.push(3);
+            for handle in 0_u16..3 {
+                if width == 1 {
+                    bytes.push(u8::try_from(handle).expect("small handle"));
+                } else {
+                    bytes.extend_from_slice(&handle.to_be_bytes());
+                }
+            }
+            crate::test_support::with_service_context(|ctx| {
+                let row = parse_trim_record_with_length_encoding(ctx, &bytes, 0, width, false)
+                    .expect("admitted record")
+                    .expect("valid trim record");
+                assert_eq!(row.packet.handles(), &[0, 1, 2]);
+                assert!(ctx
+                    .charge_work(u64::MAX, "catia_test_handle_work_total")
+                    .is_err());
+                ctx.resource_refusal().expect("counter probe").used
+            })
+        };
+        assert_eq!(consumed(1), consumed(2));
+    }
+
+    #[test]
     fn trim_packet_handle_lane_refuses_work() {
         let mut bytes = vec![
             0x01, 0x47, 0x01, 0x01, 0x01, 0xff, 0x0a, 0x00, 0x00, 0x00, 0x03, 0x04,
@@ -2171,12 +2200,15 @@ fn parse_edge_tables_scoped_width(
                 let Some(handle_lane) = bytes.get(position..handle_lane_end) else {
                     return None;
                 };
-                let admitted_handle_bytes =
-                    match ctx.admit_iter(handle_lane, "catia_standard_edge_handle_lane") {
-                        Ok(bytes) => bytes.chunks(handle_width_nonzero),
-                        Err(error) => return Some(Err(CodecError::from(error))),
+                let mut handle_chunks = handle_lane.chunks(handle_width_nonzero.get());
+                loop {
+                    let handle_bytes = match ctx
+                        .next_charged(&mut handle_chunks, "catia_standard_edge_handle_lane")
+                    {
+                        Ok(Some(bytes)) => bytes,
+                        Ok(None) => break,
+                        Err(error) => return Some(Err(error)),
                     };
-                for handle_bytes in admitted_handle_bytes {
                     let Some(handle) = read_handle(handle_bytes, 0, handle_width) else {
                         return None;
                     };
@@ -2880,12 +2912,14 @@ fn parse_trim_record_with_length_encoding(
         let Some(handle_lane) = bytes.get(position..layout.end) else {
             return None;
         };
-        let admitted_handle_bytes =
-            match ctx.admit_iter(handle_lane, "catia_trim_packet_handle_lane") {
-                Ok(bytes) => bytes.chunks(handle_width),
-                Err(error) => return Some(Err(CodecError::from(error))),
-            };
-        for handle_bytes in admitted_handle_bytes {
+        let mut handle_chunks = handle_lane.chunks(handle_width.get());
+        loop {
+            let handle_bytes =
+                match ctx.next_charged(&mut handle_chunks, "catia_trim_packet_handle_lane") {
+                    Ok(Some(bytes)) => bytes,
+                    Ok(None) => break,
+                    Err(error) => return Some(Err(error)),
+                };
             let Some(handle) = read_handle(handle_bytes, 0, width) else {
                 return None;
             };
