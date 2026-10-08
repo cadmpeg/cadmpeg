@@ -163,6 +163,8 @@ pub(crate) fn double_xar_tables(
         if cursor == count_offset + 1 {
             continue;
         }
+        let mut literal_storage = ctx.reserve_scoped(0, "creo double_xar literal bytes")?;
+        let mut slot_storage = ctx.reserve_scoped(0, "creo double_xar slots")?;
         let mut entries = Vec::new();
         let mut slots = 0..count;
         while ctx.next_charged(&mut slots, "creo double_xar slot parsing")?.is_some() {
@@ -189,7 +191,7 @@ pub(crate) fn double_xar_tables(
                         (
                             DoubleXarSlot::Literal {
                                 value,
-                                raw: ctx.copy_retained(raw, "creo double_xar literal bytes")?,
+                                raw: literal_storage.with_storage(|| ctx.copy_retained(raw, "creo double_xar literal bytes"))?,
                             },
                             end,
                         )
@@ -200,7 +202,7 @@ pub(crate) fn double_xar_tables(
                     }
                 },
             };
-            ctx.reserve_vec(&mut entries, 1, "creo double_xar slots")?;
+            slot_storage.with_storage(|| ctx.reserve_vec(&mut entries, 1, "creo double_xar slots"))?;
             entries.push(slot);
             cursor = end;
         }
@@ -209,6 +211,8 @@ pub(crate) fn double_xar_tables(
                 .last()
                 .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
         {
+            literal_storage.commit()?;
+            slot_storage.commit()?;
             ctx.reserve_vec(&mut tables, 1, "creo double_xar tables")?;
             tables.push(DoubleXarTable { offset, entries });
         }
@@ -4144,4 +4148,14 @@ mod tests {
         assert_eq!(admitted_scalar_body(&payload, 1, 3, 1), None);
         assert_eq!(admitted_scalar_body(&payload, 2, 2, 1), None);
     }
+    #[test]
+    fn incomplete_double_xar_slots_need_no_retained_storage() {
+        let data = b"double_xar\0\xf8\x02\x0b\x10";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy).expect("small dictionary input");
+        assert!(double_xar_tables(&ctx, data).expect("rejected slots are temporary").is_empty());
+    }
+
 }

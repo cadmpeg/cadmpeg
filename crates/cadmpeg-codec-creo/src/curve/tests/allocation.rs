@@ -214,7 +214,7 @@ fn expression_assignment_text_refuses_before_copy() {
 fn solve_line_index_nodes_refuse_before_insert() {
     let lines = expression_lines(&["SOLVE"]);
     let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve line index nodes", |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
+        crate::curve::tests::compile_solve_program(ctx, &lines)
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve line index nodes"));
 }
@@ -240,7 +240,7 @@ fn solve_keyword_comparison_refuses_work() {
         &[],
         ResourceDimension::WorkUnits,
         "creo solve keyword comparison",
-        |ctx| super::super::curve_expression_solve_program(ctx, &lines),
+        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
@@ -251,7 +251,7 @@ fn solve_keyword_comparison_refuses_work() {
 fn pending_solve_statements_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
     let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo pending solve statements", |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
+        crate::curve::tests::compile_solve_program(ctx, &lines)
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo pending solve statements"));
 }
@@ -260,7 +260,7 @@ fn pending_solve_statements_refuse_before_growth() {
 fn solve_equations_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
     let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve equations", |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
+        crate::curve::tests::compile_solve_program(ctx, &lines)
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve equations"));
 }
@@ -270,7 +270,7 @@ fn solve_blocks_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
     assert_eq!(
         with_expression_policy(DecodePolicy::service(), |ctx| {
-            super::super::curve_expression_solve_program(ctx, &lines)
+            crate::curve::tests::compile_solve_program(ctx, &lines)
         })
         .expect("service profile")
         .blocks
@@ -278,25 +278,16 @@ fn solve_blocks_refuse_before_growth() {
         1
     );
     let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve blocks", |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
+        crate::curve::tests::compile_solve_program(ctx, &lines)
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve blocks"));
-}
-
-#[test]
-fn solve_assignment_indices_refuse_before_growth() {
-    let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve assignment indices", |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
-    });
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve assignment indices"));
 }
 
 #[test]
 fn solve_assignments_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
     let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve assignments", |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
+        crate::curve::tests::compile_solve_program(ctx, &lines)
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve assignments"));
 }
@@ -305,11 +296,11 @@ fn solve_assignments_refuse_before_growth() {
 fn executable_solve_line_nodes_refuse_before_insert() {
     let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
     let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo executable solve line index nodes", |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
+        crate::curve::tests::compile_solve_program(ctx, &lines)
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo executable solve line index nodes"));
     let program = with_expression_policy(DecodePolicy::service(), |ctx| {
-        super::super::curve_expression_solve_program(ctx, &lines)
+        crate::curve::tests::compile_solve_program(ctx, &lines)
     })
     .expect("service solve program");
     assert_eq!(
@@ -328,7 +319,7 @@ fn solve_equation_left_refuses_retained_limit() {
         &[],
         ResourceDimension::RetainedBytes,
         "creo solve equation left",
-        |ctx| super::super::curve_expression_solve_program(ctx, &lines),
+        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -342,7 +333,7 @@ fn solve_equation_right_refuses_retained_limit() {
         &[],
         ResourceDimension::RetainedBytes,
         "creo solve equation right",
-        |ctx| super::super::curve_expression_solve_program(ctx, &lines),
+        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -353,11 +344,11 @@ fn solve_equation_right_refuses_retained_limit() {
 fn conditional_expression_assignments_refuse_before_growth() {
     let lines = expression_lines(&["else", "a=1"]);
     let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo conditional expression assignments", |ctx| {
-        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(
+        crate::curve::tests::evaluate_program_details(
             ctx,
             &lines,
             None,
-            &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
+            &super::super::ExternalRelationSymbols::default())
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo conditional expression assignments"));
 }
@@ -366,21 +357,21 @@ fn conditional_expression_assignments_refuse_before_growth() {
 fn parsed_expression_assignment_slots_refuse_before_allocation() {
     let lines = expression_lines(&["a=1"]);
     let evaluation = with_expression_policy(DecodePolicy::service(), |ctx| {
-        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(
+        crate::curve::tests::evaluate_program_details(
             ctx,
             &lines,
             None,
-            &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
+            &super::super::ExternalRelationSymbols::default())
     })
     .expect("service profile");
     assert_eq!(evaluation.assignments.len(), 1);
 
     let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo parsed expression assignment slots", |ctx| {
-        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(
+        crate::curve::tests::evaluate_program_details(
             ctx,
             &lines,
             None,
-            &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
+            &super::super::ExternalRelationSymbols::default())
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo parsed expression assignment slots"));
 }
@@ -393,12 +384,12 @@ fn evaluation_limit_reaches(
 ) {
     let lines = expression_lines(source);
     with_expression_policy(DecodePolicy::service(), |ctx| {
-        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols, &mut solution_storage) }
+        crate::curve::tests::evaluate_program_details(ctx, &lines, None, external_symbols)
     })
     .expect("service profile evaluates expression");
 
     let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols, &mut solution_storage) }
+        crate::curve::tests::evaluate_program_details(ctx, &lines, None, external_symbols)
     });
     assert!(matches!(error, CodecError::ResourceLimit(refusal)
         if refusal.dimension == dimension && refusal.operation == operation));
@@ -464,16 +455,10 @@ fn solve_phase_inputs(
     external_symbols: &super::super::ExternalRelationSymbols,
 ) -> (super::super::CurveExpressionSolveBlock, BTreeMap<String, super::super::CurveExpressionValue>, super::super::CurveExpressionEvaluation) {
     let lines = expression_lines(source);
-    let evaluation = with_expression_policy(DecodePolicy::service(), |ctx| {
-        let mut storage = ctx.reserve_scoped(0, "creo expression solution scratch")?;
-        super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols, &mut storage)
-    }).expect("service profile evaluates the original expression");
-    let block = with_expression_policy(DecodePolicy::service(), |ctx| super::super::curve_expression_solve_program(ctx, &lines)).expect("solve program").blocks.pop().expect("one solve block");
+    let evaluation = with_expression_policy(DecodePolicy::service(), |ctx| crate::curve::tests::evaluate_program_details(ctx, &lines, None, external_symbols)).expect("service profile evaluates the original expression");
+    let block = with_expression_policy(DecodePolicy::service(), |ctx| crate::curve::tests::compile_solve_program(ctx, &lines)).expect("solve program").blocks.pop().expect("one solve block");
     let preceding: Vec<_> = lines.iter().take_while(|line| line.offset < block.offset).cloned().collect();
-    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| {
-        let mut storage = ctx.reserve_scoped(0, "creo expression solution scratch")?;
-        super::super::evaluate_expression_program_details(ctx, &preceding, None, external_symbols, &mut storage)
-    }).expect("preceding assignments");
+    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| crate::curve::tests::evaluate_program_details(ctx, &preceding, None, external_symbols)).expect("preceding assignments");
     let mut values = BTreeMap::new();
     for (name, value) in &external_symbols.values { if let Some(value) = value { values.insert(name.clone(), value.clone()); } }
     for assignment in preceding.assignments {
@@ -640,12 +625,20 @@ evaluation_collection_test!(
     super::super::ExternalRelationSymbols::default(),
     "creo existing solve symbol nodes"
 );
-evaluation_materialized_test!(
-    existing_solve_symbol_names_refuse,
-    &["SOLVE", "x=1", "FOR x"],
-    super::super::ExternalRelationSymbols::default(),
-    "creo existing solve symbol names"
-);
+#[test]
+fn existing_solve_symbol_names_refuse() {
+    let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
+    let external = super::super::ExternalRelationSymbols::default();
+    with_expression_policy(DecodePolicy::service(), |ctx| crate::curve::tests::evaluate_program_details(ctx, &lines, None, &external)).expect("service evaluates the original expression");
+    let program = with_expression_policy(DecodePolicy::service(), |ctx| crate::curve::tests::compile_solve_program(ctx, &lines)).expect("accepted solve program");
+    let parsed = vec![None; lines.len()];
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::MaterializedBytes, "creo existing solve symbol names", |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "creo relation evaluation scratch")?;
+        storage.with_storage(|| super::super::expression_program_symbols(ctx, &external, &parsed, &program))
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "creo existing solve symbol names"));
+}
+
 evaluation_collection_test!(
     defined_solve_symbol_nodes_refuse,
     &["SOLVE", "x=1", "FOR x"],
@@ -766,15 +759,15 @@ affine_helix_collection_test!(affine_value_nodes_refuse, "creo affine value node
 fn solve_storage_limit_reaches(source: &[&str], operation: &'static str) {
     let lines = expression_lines(source);
     with_expression_policy(DecodePolicy::service(), |ctx| {
-        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(
+        crate::curve::tests::evaluate_program_details(
             ctx,
             &lines,
             None,
-            &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
+            &super::super::ExternalRelationSymbols::default())
     })
     .expect("service profile solves expression");
     let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
-        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &lines, None, &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
+        crate::curve::tests::evaluate_program_details(ctx, &lines, None, &super::super::ExternalRelationSymbols::default())
     });
     assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == operation));
 }
@@ -905,11 +898,11 @@ solve_storage_test!(
 fn nonlinear_materialized_limit_reaches(source: &[&str], external_symbols: &super::super::ExternalRelationSymbols, operation: &'static str) {
     let lines = expression_lines(source);
     with_expression_policy(DecodePolicy::service(), |ctx| {
-        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols, &mut solution_storage) }
+        crate::curve::tests::evaluate_program_details(ctx, &lines, None, external_symbols)
     }).expect("service profile solves the original expression");
-    let block = with_expression_policy(DecodePolicy::service(), |ctx| super::super::curve_expression_solve_program(ctx, &lines)).expect("solve program").blocks.pop().expect("one solve block");
+    let block = with_expression_policy(DecodePolicy::service(), |ctx| crate::curve::tests::compile_solve_program(ctx, &lines)).expect("solve program").blocks.pop().expect("one solve block");
     let preceding: Vec<_> = lines.iter().take_while(|line| line.offset < block.offset).cloned().collect();
-    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &preceding, None, external_symbols, &mut solution_storage) }).expect("preceding assignments");
+    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| crate::curve::tests::evaluate_program_details(ctx, &preceding, None, external_symbols)).expect("preceding assignments");
     let mut values = std::collections::BTreeMap::new();
     for assignment in preceding.assignments {
         if let (Some((name, _)), Some(value)) = (assignment.scalar_target(), assignment.value.as_ref()) { values.insert(name.to_ascii_lowercase(), value.clone()); }
@@ -1628,3 +1621,28 @@ fn prohibited_construct_trim_refuses_before_comment_skip() {
 }
 
 mod trimming;
+
+#[test]
+fn unterminated_solve_program_needs_no_retained_storage() {
+    let lines = expression_lines(&["SOLVE", "x=1"]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let program = with_expression_policy(policy, |ctx| crate::curve::tests::compile_solve_program(ctx, &lines)).expect("no native block is retained");
+    assert!(program.unresolved_control);
+    assert!(program.blocks.is_empty());
+}
+
+#[test]
+fn incomplete_expression_record_needs_no_retained_storage() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x02a=1\0b=2";
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(parse(payload, policy).expect("incomplete lines are temporary").is_empty());
+}
+
+#[test]
+fn duplicate_solve_unknowns_need_no_retained_storage() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(with_expression_policy(policy, |ctx| super::super::curve_expression_solve_unknowns(ctx, "x, X")).expect("rejected names are temporary").is_none());
+}

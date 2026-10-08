@@ -1132,7 +1132,6 @@ pub(crate) fn expression_records_with_model_name(
         if after_id == id_start {
             continue;
         }
-        let local_system = expression_local_system(ctx, payload, after_id, end, &cache)?;
         let Some(expression_offset) =
             ctx.find_bytes_in(payload, EXPRESSION, after_id, end, "find Creo curve marker")?
         else {
@@ -1146,6 +1145,8 @@ pub(crate) fn expression_records_with_model_name(
         if cursor == opener + 1 || cursor > end {
             continue;
         }
+        let mut line_storage = ctx.reserve_scoped(0, "creo expression record line text")?;
+        let mut line_vector_storage = ctx.reserve_scoped(0, "creo expression record lines")?;
         let mut lines = Vec::new();
         let mut slots = 0..count;
         while ctx.next_charged(&mut slots, "creo expression line traversal")?.is_some() {
@@ -1160,22 +1161,26 @@ pub(crate) fn expression_records_with_model_name(
                 lines.clear();
                 break;
             };
-            ctx.reserve_vec(&mut lines, 1, "creo expression record lines")?;
+            line_vector_storage.with_storage(|| ctx.reserve_vec(&mut lines, 1, "creo expression record lines"))?;
             lines.push(CurveExpressionLine {
-                text: ctx.copy_retained_text(text, "creo expression record line text")?,
+                text: line_storage.with_storage(|| ctx.copy_retained_text(text, "creo expression record line text"))?,
                 offset: cursor,
             });
             cursor = line_end + 1;
         }
         if lines.len() == index_from_u32(count) {
+            line_storage.commit()?;
+            line_vector_storage.commit()?;
+            let local_system = expression_local_system(ctx, payload, after_id, end, &cache)?;
             let prohibited_constructs = curve_equation_prohibited_constructs(ctx, &lines)?;
-            let mut solve_program = curve_expression_solve_program(ctx, &lines)?;
+            let mut program_index_storage = ctx.reserve_scoped(0, "creo solve program index scratch")?;
+            let mut solve_program = curve_expression_solve_program(ctx, &lines, &mut program_index_storage)?;
             let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?;
         let mut evaluation = evaluate_expression_program_details(
                 ctx,
                 &lines,
                 model_name,
-                &ExternalRelationSymbols::default(), &mut solution_storage)?;
+                &ExternalRelationSymbols::default(), &mut solution_storage, &solve_program)?;
             if !prohibited_constructs.is_empty() || solve_program.unresolved_control {
                 for assignment in ctx.admit_iter(&mut evaluation.assignments, "creo disabled expression assignment traversal")? {
                     assignment.value = None;
@@ -1250,9 +1255,12 @@ pub(crate) fn reevaluate_expression_records(
     external_symbols: &ExternalRelationSymbols,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for record in ctx.admit_iter(records, "creo expression reevaluation traversal")? {
+        let mut program_storage = ctx.reserve_scoped(0, "creo solve program scratch")?;
+        let mut program_index_storage = ctx.reserve_scoped(0, "creo solve program index scratch")?;
+        let solve_program = program_storage.with_storage(|| curve_expression_solve_program(ctx, &record.lines, &mut program_index_storage))?;
         let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?;
         let mut evaluation =
-            evaluate_expression_program_details(ctx, &record.lines, model_name, external_symbols, &mut solution_storage)?;
+            evaluate_expression_program_details(ctx, &record.lines, model_name, external_symbols, &mut solution_storage, &solve_program)?;
         if !record.prohibited_constructs.is_empty() || record.unresolved_solve_control {
             for assignment in ctx.admit_iter(&mut evaluation.assignments, "creo disabled expression assignment traversal")? {
                 assignment.value = None;
@@ -1437,15 +1445,15 @@ fn expression_assignment(
     let Some((name, expression)) = split_expression_assignment(ctx, source)? else {
         return Ok(None);
     };
+    let expression = ctx.trim_text(expression, "creo assignment expression trim")?;
+    if expression.is_empty() {
+        return Ok(None);
+    }
     let Some(target) =
         expression_assignment_target(ctx, ctx.trim_text(name, "creo assignment name trim")?)?
     else {
         return Ok(None);
     };
-    let expression = ctx.trim_text(expression, "creo assignment expression trim")?;
-    if expression.is_empty() {
-        return Ok(None);
-    }
     let mut dependency_storage = ctx.reserve_scoped(0, "creo dependency name index scratch")?;
     let mut seen_dependencies = HashSet::new();
     let mut dependencies = Vec::<String>::new();
@@ -1597,165 +1605,176 @@ struct CurveExpressionSolveProgram {
     unresolved_control: bool,
 }
 
-struct PendingCurveExpressionSolveBlock {
-    statements: Vec<PendingCurveExpressionSolveStatement>,
+struct PendingCurveExpressionSolveBlock<'text, 'budget> {
+    statements: Vec<PendingCurveExpressionSolveStatement<'text>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'budget>,
     offset: usize,
     valid: bool,
 }
 
-struct PendingCurveExpressionSolveStatement {
-    equation: CurveExpressionEquation,
-    assignment: Option<CurveExpressionAssignment>,
+struct PendingCurveExpressionSolveStatement<'text> {
+    left: &'text str,
+    right: &'text str,
     line_index: usize,
+}
+
+enum SelectedCurveExpressionSolveStatement<'text, 'budget> {
+    Equation {
+        statement: PendingCurveExpressionSolveStatement<'text>,
+        dependencies: Vec<String>,
+        storage: cadmpeg_core::decode::ScopedReservation<'budget>,
+    },
+    Assignment {
+        assignment: CurveExpressionAssignment,
+        storage: cadmpeg_core::decode::ScopedReservation<'budget>,
+        line_index: usize,
+    },
 }
 
 fn curve_expression_solve_program(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     lines: &[CurveExpressionLine],
+    index_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<CurveExpressionSolveProgram, cadmpeg_core::CodecError> {
     let mut program = CurveExpressionSolveProgram::default();
-    let mut pending = None::<PendingCurveExpressionSolveBlock>;
+    let mut pending = None::<PendingCurveExpressionSolveBlock<'_, '_>>;
     for (index, line) in ctx.admit_iter(lines, "creo solve source line traversal")?.enumerate() {
         let source = ctx.trim_text(&line.text, "creo solve source line trim")?;
         let Some(block) = pending.as_mut() else {
             if starts_relation_keyword(ctx, source, "solve")? {
-                ctx.insert_btree_set(
-                    &mut program.line_indices,
-                    index,
-                    "creo solve line index nodes",
-                )?;
+                index_storage.with_storage(|| ctx.insert_btree_set(&mut program.line_indices, index, "creo solve line index nodes"))?;
                 pending = Some(PendingCurveExpressionSolveBlock {
                     statements: Vec::new(),
+                    storage: ctx.reserve_scoped(0, "creo pending solve statements")?,
                     offset: line.offset,
-                    valid: ctx.eq_ignore_ascii_case(
-                        source,
-                        "solve",
-                        "creo solve keyword comparison",
-                    )?,
+                    valid: ctx.eq_ignore_ascii_case(source, "solve", "creo solve keyword comparison")?,
                 });
             } else if starts_relation_keyword(ctx, source, "for")? {
-                ctx.insert_btree_set(
-                    &mut program.line_indices,
-                    index,
-                    "creo solve line index nodes",
-                )?;
+                index_storage.with_storage(|| ctx.insert_btree_set(&mut program.line_indices, index, "creo solve line index nodes"))?;
                 program.unresolved_control = true;
             }
             continue;
         };
-
-        ctx.insert_btree_set(
-            &mut program.line_indices,
-            index,
-            "creo solve line index nodes",
-        )?;
+        index_storage.with_storage(|| ctx.insert_btree_set(&mut program.line_indices, index, "creo solve line index nodes"))?;
         if starts_relation_keyword(ctx, source, "solve")? {
             program.unresolved_control = true;
             block.valid = false;
             continue;
         }
         if starts_relation_keyword(ctx, source, "for")? {
-            let unknowns = match conditional_keyword_expression(ctx, source, "for")? {
-                Some(unknowns) => curve_expression_solve_unknowns(ctx, unknowns)?,
-                None => None,
-            };
-            let mut equations = Vec::new();
-            let mut assignments = Vec::new();
-            let mut assignment_line_indices = Vec::new();
-            let mut block_scratch = ctx.reserve_scoped(0, "creo solve block index scratch")?;
-            if let Some(unknowns) = &unknowns {
-                let mut unknown_names = HashSet::new();
-                for unknown in ctx.admit_iter(unknowns, "creo solve unknown index traversal")? {
-                    let mut key = block_scratch.with_storage(|| ctx.copy_retained_text(&unknown.name, "creo solve unknown index key"))?;
-                    ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-                    block_scratch.with_storage(|| ctx.insert_hash_set(&mut unknown_names, key, "creo solve unknown index nodes"))?;
+            if !block.valid {
+                program.unresolved_control = true;
+                pending = None;
+                continue;
+            }
+            let (unknowns, unknown_storage) = ctx.with_scoped_storage("creo solve unknown names", || -> Result<_, cadmpeg_core::CodecError> {
+                match conditional_keyword_expression(ctx, source, "for")? {
+                    Some(unknowns) => curve_expression_solve_unknowns(ctx, unknowns),
+                    None => Ok(None),
                 }
-                for statement in ctx.admit_iter(std::mem::take(&mut block.statements), "creo pending solve statement traversal")? {
-                    if ctx.any_by(
-                        &statement.equation.dependencies,
-                        |dependency| {
-                            let (mut key, _key_storage) = ctx.format_scoped(format_args!("{dependency}"), "creo solve dependency lookup key")?;
-                            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-                            ctx.contains_hash_set(&unknown_names, &key, "creo solve dependency unknown lookup")
-                        },
-                        "creo relation comparison traversal",
-                    )? {
-                        ctx.reserve_vec(&mut equations, 1, "creo solve equations")?;
-                        equations.push(statement.equation);
-                    } else if let Some(assignment) = statement.assignment {
-                        block_scratch.with_storage(|| ctx.reserve_vec(&mut assignment_line_indices, 1, "creo solve assignment indices"))?;
-                        assignment_line_indices.push(statement.line_index);
-                        ctx.reserve_vec(&mut assignments, 1, "creo solve assignments")?;
-                        assignments.push(assignment);
-                    } else {
-                        block.valid = false;
+            })?;
+            let Some(unknowns) = unknowns else {
+                program.unresolved_control = true;
+                pending = None;
+                continue;
+            };
+            let mut scratch = ctx.reserve_scoped(0, "creo solve block index scratch")?;
+            let mut unknown_names = HashSet::new();
+            for unknown in ctx.admit_iter(&unknowns, "creo solve unknown index traversal")? {
+                let mut key = scratch.with_storage(|| ctx.copy_retained_text(&unknown.name, "creo solve unknown index key"))?;
+                ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
+                scratch.with_storage(|| ctx.insert_hash_set(&mut unknown_names, key, "creo solve unknown index nodes"))?;
+            }
+            let mut selected = Vec::new();
+            let mut equation_count = 0;
+            let mut assignment_count = 0;
+            let mut statements = std::mem::take(&mut block.statements).into_iter();
+            while let Some(statement) = ctx.next_charged(&mut statements, "creo pending solve statement traversal")? {
+        let (dependencies, dependency_storage) = ctx.with_scoped_storage("creo solve equation dependencies", || -> Result<_, cadmpeg_core::CodecError> {
+            let mut index_storage = ctx.reserve_scoped(0, "creo dependency name index scratch")?;
+            let mut seen = HashSet::new();
+            let mut dependencies = Vec::new();
+            if extend_expression_dependencies(ctx, &mut dependencies, &mut seen, &mut index_storage, statement.left)?.is_none()
+                || extend_expression_dependencies(ctx, &mut dependencies, &mut seen, &mut index_storage, statement.right)?.is_none() {
+                return Ok(None);
+            }
+            Ok(Some(dependencies))
+        })?;
+        let Some(dependencies) = dependencies else {
+            program.unresolved_control = true;
+            block.valid = false;
+            break;
+        };
+                let equation = ctx.any_by(&dependencies, |dependency| {
+                    let (mut key, _storage) = ctx.format_scoped(format_args!("{dependency}"), "creo solve dependency lookup key")?;
+                    ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
+                    ctx.contains_hash_set(&unknown_names, &key, "creo solve dependency unknown lookup")
+                }, "creo relation comparison traversal")?;
+                let statement = if equation {
+                    equation_count += 1;
+                    SelectedCurveExpressionSolveStatement::Equation { statement, dependencies, storage: dependency_storage }
+                } else {
+                    drop(dependencies);
+                    drop(dependency_storage);
+                    let (assignment, storage) = ctx.with_scoped_storage("creo expression assignment text", || expression_assignment(ctx, &lines[statement.line_index]))?;
+                    let Some(assignment) = assignment else { block.valid = false; break; };
+                    assignment_count += 1;
+                    SelectedCurveExpressionSolveStatement::Assignment { assignment, storage, line_index: statement.line_index }
+                };
+                scratch.with_storage(|| ctx.push_vec(&mut selected, statement, "creo selected solve statements"))?;
+            }
+            drop(statements);
+            if block.valid && equation_count != 0 {
+                let mut equations = Vec::new();
+                let mut assignments = Vec::new();
+                ctx.reserve_vec(&mut equations, equation_count, "creo solve equations")?;
+                ctx.reserve_vec(&mut assignments, assignment_count, "creo solve assignments")?;
+                for statement in ctx.admit_iter(selected, "creo selected solve statement traversal")? {
+                    match statement {
+                        SelectedCurveExpressionSolveStatement::Equation { statement, dependencies, storage } => {
+                            storage.commit()?;
+                            equations.push(CurveExpressionEquation {
+                                left: ctx.copy_retained_text(statement.left, "creo solve equation left")?,
+                                right: ctx.copy_retained_text(statement.right, "creo solve equation right")?,
+                                dependencies,
+                                offset: lines[statement.line_index].offset,
+                            });
+                        }
+                        SelectedCurveExpressionSolveStatement::Assignment { assignment, storage, line_index } => {
+                            storage.commit()?;
+                            index_storage.with_storage(|| ctx.insert_btree_set(&mut program.executable_line_indices, line_index, "creo executable solve line index nodes"))?;
+                            assignments.push(assignment);
+                        }
                     }
                 }
-            }
-            if let Some(unknowns) = unknowns.filter(|_| block.valid && !equations.is_empty()) {
-                for index in ctx.admit_iter(assignment_line_indices, "creo executable solve index traversal")? {
-                    ctx.insert_btree_set(
-                        &mut program.executable_line_indices,
-                        index,
-                        "creo executable solve line index nodes",
-                    )?;
-                }
-                ctx.reserve_vec(&mut program.blocks, 1, "creo solve blocks")?;
-                program.blocks.push(CurveExpressionSolveBlock {
-                    equations,
-                    assignments,
-                    unknowns,
-                    offset: block.offset,
-                    for_offset: line.offset,
-                });
+                unknown_storage.commit()?;
+                ctx.push_vec(&mut program.blocks, CurveExpressionSolveBlock {
+                    equations, assignments, unknowns, offset: block.offset, for_offset: line.offset,
+                }, "creo solve blocks")?;
             } else {
                 program.unresolved_control = true;
             }
             pending = None;
             continue;
         }
-        if source.is_empty() || source.starts_with("/*") {
-            continue;
-        }
+        if source.is_empty() || source.starts_with("/*") { continue; }
         let Some((left, right)) = split_expression_assignment(ctx, source)? else {
             program.unresolved_control = true;
             block.valid = false;
             continue;
         };
-        let (left, right) = (
-            ctx.trim_text(left, "creo solve left operand trim")?,
-            ctx.trim_text(right, "creo solve right operand trim")?,
-        );
+        let left = ctx.trim_text(left, "creo solve left operand trim")?;
+        let right = ctx.trim_text(right, "creo solve right operand trim")?;
         if left.is_empty() || right.is_empty() || split_expression_assignment(ctx, right)?.is_some() {
             program.unresolved_control = true;
             block.valid = false;
             continue;
         }
-        let mut dependency_storage = ctx.reserve_scoped(0, "creo dependency name index scratch")?;
-        let mut seen_dependencies = HashSet::new();
-        let mut dependencies = Vec::new();
-        if extend_expression_dependencies(ctx, &mut dependencies, &mut seen_dependencies, &mut dependency_storage, left)?.is_none()
-            || extend_expression_dependencies(ctx, &mut dependencies, &mut seen_dependencies, &mut dependency_storage, right)?.is_none()
-        {
-            program.unresolved_control = true;
-            block.valid = false;
-            continue;
-        }
-        ctx.reserve_vec(&mut block.statements, 1, "creo pending solve statements")?;
-        block.statements.push(PendingCurveExpressionSolveStatement {
-            equation: CurveExpressionEquation {
-                left: ctx.copy_retained_text(left, "creo solve equation left")?,
-                right: ctx.copy_retained_text(right, "creo solve equation right")?,
-                dependencies,
-                offset: line.offset,
-            },
-            assignment: expression_assignment(ctx, line)?,
-            line_index: index,
-        });
+        block.storage.with_storage(|| ctx.push_vec(&mut block.statements, PendingCurveExpressionSolveStatement {
+            left, right, line_index: index,
+        }, "creo pending solve statements"))?;
     }
-    if pending.is_some() {
-        program.unresolved_control = true;
-    }
+    if pending.is_some() { program.unresolved_control = true; }
     Ok(program)
 }
 
@@ -1765,6 +1784,8 @@ fn curve_expression_solve_unknowns(
 ) -> Result<Option<Vec<SolveUnknown>>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo solve unknown index scratch")?;
     let mut seen = HashSet::new();
+    let mut name_storage = ctx.reserve_scoped(0, "creo solve unknown names")?;
+    let mut row_storage = ctx.reserve_scoped(0, "creo solve unknowns")?;
     let mut unknowns = Vec::<SolveUnknown>::new();
     let mut cursor = 0;
     while cursor < source.len() {
@@ -1780,9 +1801,13 @@ fn curve_expression_solve_unknowns(
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         if ctx.contains_hash_set(&seen, &key, "creo solve unknown duplicate checks")? { return Ok(None); }
         scratch.with_storage(|| ctx.insert_hash_set(&mut seen, ctx.copy_retained_text(&key, "creo solve unknown index key")?, "creo solve unknown index nodes"))?;
-        ctx.push_vec(&mut unknowns, SolveUnknown { name: ctx.copy_retained_text(name, "creo solve unknown names")?, solution: None }, "creo solve unknowns")?;
+        let name = name_storage.with_storage(|| ctx.copy_retained_text(name, "creo solve unknown names"))?;
+        row_storage.with_storage(|| ctx.push_vec(&mut unknowns, SolveUnknown { name, solution: None }, "creo solve unknowns"))?;
     }
-    Ok((!unknowns.is_empty()).then_some(unknowns))
+    if unknowns.is_empty() { return Ok(None); }
+    name_storage.commit()?;
+    row_storage.commit()?;
+    Ok(Some(unknowns))
 }
 
 fn expression_assignment_target(
@@ -1797,14 +1822,14 @@ fn expression_assignment_target(
             let [parameter, row, rest @ ..] = arguments.as_slice() else {
                 return Ok(None);
             };
+            if !valid_expression_identifier(ctx, parameter)? {
+                return Ok(None);
+            }
             let column = match rest {
                 [] => None,
                 [column] => Some(ctx.copy_retained_text(column, "creo expression table column")?),
                 _ => return Ok(None),
             };
-            if !valid_expression_identifier(ctx, parameter)? {
-                return Ok(None);
-            }
             return Ok(Some(CurveExpressionTarget::TableCell {
                 parameter: ctx.copy_retained_text(parameter, "creo expression table parameter")?,
                 row: ctx.copy_retained_text(row, "creo expression table row")?,
@@ -2214,15 +2239,54 @@ fn copy_expression_value(
     }
 }
 
+fn expression_program_symbols(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    external_symbols: &ExternalRelationSymbols,
+    parsed_assignments: &[Option<CurveExpressionAssignment>],
+    solve_program: &CurveExpressionSolveProgram,
+) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
+    let mut existing_symbols = BTreeSet::new();
+    for (name, _) in ctx.admit_iter(&external_symbols.values, "creo external symbol traversal")? {
+        ctx.insert_btree_set(
+            &mut existing_symbols,
+            ctx.copy_retained_text(name, "creo existing external symbol names")?,
+            "creo existing external symbol nodes",
+        )?;
+    }
+    for assignment in ctx.admit_iter(parsed_assignments, "creo parsed assignment traversal")?.flatten() {
+        if let Some((name, _)) = assignment.scalar_target() {
+            let mut key = ctx.copy_retained_text(name, "creo existing assignment symbol names")?;
+            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
+            ctx.insert_btree_set(
+                &mut existing_symbols,
+                key,
+                "creo existing assignment symbol nodes",
+            )?;
+        }
+    }
+    for block in ctx.admit_iter(&solve_program.blocks, "creo solve symbol block traversal")? {
+      for unknown in ctx.admit_iter(&block.unknowns, "creo solve symbol traversal")? {
+        let mut key = ctx.copy_retained_text(&unknown.name, "creo existing solve symbol names")?;
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
+        ctx.insert_btree_set(
+            &mut existing_symbols,
+            key,
+            "creo existing solve symbol nodes",
+        )?;
+    }
+    }
+    Ok(existing_symbols)
+}
+
 fn evaluate_expression_program_details(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     lines: &[CurveExpressionLine],
     model_name: Option<&str>,
     external_symbols: &ExternalRelationSymbols,
     solution_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    solve_program: &CurveExpressionSolveProgram,
 ) -> Result<CurveExpressionEvaluation, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo relation evaluation scratch")?;
-    let solve_program = scratch.with_storage(|| curve_expression_solve_program(ctx, lines))?;
     let solve_line_is_executable = |index: &usize| -> Result<bool, cadmpeg_core::CodecError> {
         Ok(!ctx.contains_btree_set(&solve_program.line_indices, index, "creo solve line lookup")?
             || ctx.contains_btree_set(&solve_program.executable_line_indices, index, "creo executable solve line lookup")?)
@@ -2265,36 +2329,7 @@ fn evaluate_expression_program_details(
         });
     }
 
-    let mut existing_symbols = BTreeSet::new();
-    for (name, _) in ctx.admit_iter(&external_symbols.values, "creo external symbol traversal")? {
-        scratch.with_storage(|| ctx.insert_btree_set(
-            &mut existing_symbols,
-            ctx.copy_retained_text(name, "creo existing external symbol names")?,
-            "creo existing external symbol nodes",
-        ))?;
-    }
-    for assignment in ctx.admit_iter(&parsed_assignments, "creo parsed assignment traversal")?.flatten() {
-        if let Some((name, _)) = assignment.scalar_target() {
-            let mut key = scratch.with_storage(|| ctx.copy_retained_text(name, "creo existing assignment symbol names"))?;
-            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-            scratch.with_storage(|| ctx.insert_btree_set(
-                &mut existing_symbols,
-                key,
-                "creo existing assignment symbol nodes",
-            ))?;
-        }
-    }
-    for block in ctx.admit_iter(&solve_program.blocks, "creo solve symbol block traversal")? {
-      for unknown in ctx.admit_iter(&block.unknowns, "creo solve symbol traversal")? {
-        let mut key = scratch.with_storage(|| ctx.copy_retained_text(&unknown.name, "creo existing solve symbol names"))?;
-        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        scratch.with_storage(|| ctx.insert_btree_set(
-            &mut existing_symbols,
-            key,
-            "creo existing solve symbol nodes",
-        ))?;
-    }
-    }
+    let existing_symbols = scratch.with_storage(|| expression_program_symbols(ctx, external_symbols, &parsed_assignments, solve_program))?;
     let context = RelationEvaluationContext {
         model_name,
         existing_symbols: Some(&existing_symbols),
@@ -2477,21 +2512,30 @@ fn evaluate_expression_program_details(
         match activity {
             CurveExpressionActivation::Active => {
                 assignment.value = if declaration_is_valid {
-                    parse_relation_expression::<CurveExpressionValue>(
-                        ctx,
-                        &assignment.expression,
-                        &values,
-                        context,
-                    )?
-                    .map(|value| apply_declared_relation_unit(ctx, value, declared_unit))
-                    .transpose()?
-                    .flatten()
+                    let (value, storage) = ctx.with_scoped_storage("creo evaluated expression scratch", || -> Result<_, cadmpeg_core::CodecError> {
+                        parse_relation_expression::<CurveExpressionValue>(ctx, &assignment.expression, &values, context)?
+                            .map(|value| apply_declared_relation_unit(ctx, value, declared_unit))
+                            .transpose()
+                            .map(Option::flatten)
+                    })?;
+                    if let Some(CurveExpressionValue::String(text)) = &value {
+                        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(text.len()), "creo evaluated assignment string")?;
+                    }
+                    drop(storage);
+                    value
                 } else {
                     None
                 };
                 if let Some(value) = assignment.value.as_ref() {
-                    let value = scratch.with_storage(|| copy_expression_value(ctx, value, "creo evaluated string values"))?;
-                    scratch.with_storage(|| ctx.insert_btree_map(&mut values, key, value, "creo evaluated value nodes"))?;
+                    scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+                        let entry = ctx.entry_btree_map(&mut values, key, "creo evaluated value nodes")?;
+                        let value = copy_expression_value(ctx, value, "creo evaluated string values")?;
+                        match entry {
+                            std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(value); }
+                            std::collections::btree_map::Entry::Occupied(mut entry) => { entry.insert(value); }
+                        }
+                        Ok(())
+                    })?;
                 } else {
                     ctx.remove_btree_map(&mut values, &key, "creo evaluated value removal")?;
                 }
