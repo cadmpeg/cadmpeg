@@ -848,15 +848,13 @@ pub(crate) fn remap_nurbs_domain(
         return Err(error(offset, "curve target domain is invalid"));
     }
     let target = target.map(FiniteReal::get);
-    let mut remapped = ctx
-        .collection_vec(curve.knots().len(), "Rhino remapped NURBS knots")
-        .map_err(crate::curves::GeometryError::from)?;
+    let (degree, knots, poles, periodic) = curve.into_parts();
+    let mut remapped = knots.into_values();
     for knot in ctx
-        .admit_iter(&(curve.knots())[..], "Rhino remap nurbs domain traversal")
+        .admit_iter(&mut remapped[..], "Rhino remap nurbs domain traversal")
         .map_err(cadmpeg_core::CodecError::from)?
-        .copied()
     {
-        let fraction = cadmpeg_ir::math::parameter_fraction(knot, source[0], source[1])
+        let fraction = cadmpeg_ir::math::parameter_fraction(*knot, source[0], source[1])
             .map(cadmpeg_ir::scalar::FiniteReal::get)
             .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
         let value = if fraction == 0.0 {
@@ -866,14 +864,12 @@ pub(crate) fn remap_nurbs_domain(
         } else {
             (1.0 - fraction) * target[0] + fraction * target[1]
         };
-        remapped.push(
-            value
-                .is_finite()
-                .then_some(value)
-                .ok_or_else(|| error(offset, "curve knot remap overflowed"))?,
-        );
+        *knot = value
+            .is_finite()
+            .then_some(value)
+            .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
     }
-    curve.with_knots(ctx, remapped)?.or_else(|error| {
+    NurbsCurve::new(ctx, degree, remapped, poles, periodic)?.or_else(|error| {
         Err(GeometryError::malformed(
             offset,
             ctx.format_retained(format_args!("{error}"), "Rhino remap_nurbs_domain text")?,
@@ -2755,26 +2751,67 @@ mod tests {
     }
 
     #[test]
-    fn remapped_nurbs_knots_refuse_collection_limit() {
+    fn remapped_nurbs_knots_reuse_admitted_lanes() {
         let target = [
             FiniteReal::new(2.0).expect("finite"),
             FiniteReal::new(3.0).expect("finite"),
         ];
-        let error = with_collection_limit(3, |ctx| {
-            super::remap_nurbs_domain(ctx, rational_line_for_limits(), target, 0)
-        })
-        .expect_err("four remapped knots exceed three collection items");
-        assert!(matches!(
-            error,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == "Rhino remapped NURBS knots"
-        ));
-        let remapped = with_test_context(|ctx| {
-            super::remap_nurbs_domain(ctx, rational_line_for_limits(), target, 0)
-        })
-        .expect("service profile admits remapped knots");
+        let curve = rational_line_for_limits();
+        let knot_address = curve.knots().as_slice().as_ptr();
+        let pole_address = match curve.pole_rows() {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => points.as_ptr(),
+            _ => panic!("fixture is rational"),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        // Remapping reuses both lanes: zero new slots and zero new bytes.
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty remapping root");
+        let remapped = super::remap_nurbs_domain(&ctx, curve, target, 0)
+            .expect("remapping allocates no lane storage");
         assert_eq!(remapped.knots().as_slice(), &[2.0, 2.0, 3.0, 3.0]);
+        assert_eq!(remapped.knots().as_slice().as_ptr(), knot_address);
+        match remapped.pole_rows() {
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                assert_eq!(points.as_ptr(), pole_address);
+                assert_eq!(points[0].weight.get(), 2.0);
+                assert_eq!(points[1].weight.get(), 1.0);
+            }
+            _ => panic!("remapping preserves rational poles"),
+        }
+        ctx.finish_session().expect("no remapping resource refusal");
     }
+
+
+#[test]
+fn remapped_nurbs_knots_refuse_work_before_mutation() {
+    let target = [FiniteReal::new(2.0).unwrap(), FiniteReal::new(3.0).unwrap()];
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "Rhino remap nurbs domain traversal",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty remapping root");
+            super::remap_nurbs_domain(&ctx, rational_line_for_limits(), target, 0)
+                .map_err(|error| match error {
+                    GeometryError::Codec(error) => error,
+                    other => panic!("unexpected knot remapping rejection: {other:?}"),
+                })
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected knot remapping resource refusal");
+    };
+    // Remapping visits four existing knots before the IR validates the new values.
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.additional, 4);
+}
 
     fn assert_elevation_refusal(target: usize, operation: &'static str) {
         let curve = rational_line_for_limits();
