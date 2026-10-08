@@ -182,6 +182,84 @@ fn decoded_brep_site_collection_refuses_limit() {
 }
 
 #[test]
+fn decoded_brep_site_index_refuses_materialized_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let source = sldprt_with_body(&triangle_body());
+    let scan = crate::test_support::container::scan(&source);
+    let setup_ctx = cadmpeg_test_support::service_decode_context();
+    let streams = super::super::active_body_streams(&setup_ctx, &scan).unwrap();
+    for operation in [
+        "format SLDPRT Parasolid site key",
+        "collect SLDPRT B-rep sites",
+    ] {
+        let arena = DecodeArena::new();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+                super::super::try_decode_brep(&ctx, &scan, &streams).map(drop)
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == operation && limit.additional > 0));
+    }
+}
+
+#[test]
+fn decoded_brep_site_list_refuses_collection_limit() {
+    let source = sldprt_with_body(&triangle_body());
+    let limit = collection_refusal_at(&source, "collect decoded SLDPRT sites");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn decoded_brep_site_containers_do_not_consume_retained_bytes() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+
+    let source = sldprt_with_body(&triangle_body());
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = u64::MAX;
+    for operation in [
+        "format SLDPRT Parasolid site key",
+        "collect SLDPRT B-rep sites",
+        "collect decoded SLDPRT sites",
+    ] {
+        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .expect("site map and vector shells are scratch; B-rep output still decodes");
+        assert!(!decoded.ir().model.faces.is_empty());
+    }
+}
+
+#[test]
+fn geometry_without_swift_root_skips_topology_and_nominal_work() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+
+    let source = sldprt_with_body_and_history(&triangle_body());
+    for operation in [
+        "index SWIFT body identities",
+        "swift pattern hole candidates",
+    ] {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_work_units = u64::MAX;
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .expect("geometry with no SWIFT root does not build annotation indexes");
+        assert!(!decoded.ir().model.faces.is_empty());
+        assert!(!decoded.ir().model.bodies.is_empty());
+        assert!(!decoded.ir().model.features.is_empty());
+    }
+}
+
+
+#[test]
 fn decoded_brep_header_copy_refuses_work_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     let source = sldprt_with_body(&triangle_body());

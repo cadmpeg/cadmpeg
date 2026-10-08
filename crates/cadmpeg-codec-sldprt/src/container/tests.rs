@@ -173,6 +173,7 @@ fn charged_container_scan_preserves_utf16_envelope() {
 
 #[test]
 fn site_keys_use_outer_container_identity() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let first = Block {
         offset: 100,
         type_id: 0,
@@ -189,8 +190,8 @@ fn site_keys_use_outer_container_identity() {
         ..first.clone()
     };
     assert_ne!(
-        Section::Block(&first).site_key(),
-        Section::Block(&second).site_key()
+        Section::Block(&first).site_key(&ctx).unwrap(),
+        Section::Block(&second).site_key(&ctx).unwrap()
     );
 
     let compound = CompoundStream {
@@ -202,7 +203,10 @@ fn site_keys_use_outer_container_identity() {
         decoded_payload: None,
         ps_streams: Vec::new(),
     };
-    assert_eq!(Section::Compound(&compound).site_key(), "compound@300");
+    assert_eq!(
+        Section::Compound(&compound).site_key(&ctx).unwrap(),
+        "compound@300"
+    );
 }
 
 #[test]
@@ -424,14 +428,12 @@ fn parasolid_partition_selection_retains_a_compound_stream_site() {
     )
     .unwrap();
 
-    let site = container::select_active_parasolid_site(
-        &cadmpeg_test_support::service_decode_context(),
-        &scan,
-    )
-    .unwrap()
-    .expect("compound partition");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let site = container::select_active_parasolid_site(&ctx, &scan)
+        .unwrap()
+        .expect("compound partition");
     assert_eq!(site.name(), "Contents/Config-0-Partition");
-    assert_eq!(site.site_key(), "compound@7");
+    assert_eq!(site.site_key(&ctx).unwrap(), "compound@7");
     assert!(matches!(site.section, container::Section::Compound(_)));
 }
 
