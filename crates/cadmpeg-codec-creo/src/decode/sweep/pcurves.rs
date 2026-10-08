@@ -42,11 +42,11 @@ fn nurbs_sense_sample(lower: f64, upper: f64) -> (f64, f64) {
 #[derive(Clone, Copy)]
 pub(super) enum PcurveAdmission<'a> {
     Existing(
-        &'a crate::decode::source_carriers::SourceUnitCarriers,
+        &'a crate::decode::source_carriers::SourceUnitCarriers<'a, 'a>,
         &'a SurfaceId,
     ),
     Pending(
-        &'a crate::decode::source_carriers::SourceUnitCarriers,
+        &'a crate::decode::source_carriers::SourceUnitCarriers<'a, 'a>,
         &'a SurfaceGeometry,
     ),
 }

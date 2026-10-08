@@ -481,7 +481,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 matching_curve = Some(curve);
             }
             let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
-                matching_curve.map(|curve| source_carriers.curve_geometry(curve))
+                matching_curve.map(|curve| source_carriers.curve_geometry(curve)).transpose()?
             else {
                 return Ok(std::ops::ControlFlow::Continue(()));
             };

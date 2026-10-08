@@ -957,7 +957,7 @@ fn counterbore_source_boundary_circle(
                     Ok(if crate::identity::matches_numbered_identity(curve.id.as_str(), "creo:visibgeom:curve#", edge.id) { Some(numbered_identity_candidate) } else { None })
                 }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
                 let Some(SolvedCurveGeometry::Circle(circle_curve)) =
-                    source_carriers.curve_geometry(curve).solved()
+                    source_carriers.curve_geometry(curve)?.solved()
                 else {
                     return Ok(None);
                 };

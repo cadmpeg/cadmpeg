@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-unit geometry retained for analyses during IR construction.
 
-use std::collections::BTreeMap;
+use std::collections::{btree_map::Entry, BTreeMap};
 
 use crate::decode::build::units::{malformed_refusal, not_implemented_refusal};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, ParameterValue};
@@ -22,18 +22,50 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::{Body, Coedge, Edge, EdgeCarrier, Face, Point, Vertex};
 use cadmpeg_ir::transform::Transform;
 
-#[derive(Default)]
-pub(super) struct SourceUnitCarriers {
-    length_scale_mm: Option<PositiveReal>,
-    surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
-    curves: BTreeMap<CurveId, CurveGeometry>,
-    edge_parameter_ranges: BTreeMap<EdgeId, [f64; 2]>,
-    sketch_entities: BTreeMap<SketchEntityId, SketchGeometry>,
+#[derive(Clone, Copy)]
+enum SourceContext<'ctx, 'input> {
+    Decode(&'ctx DecodeContext<'input>),
+    #[cfg(test)]
+    Fixture,
 }
 
-impl SourceUnitCarriers {
+struct SourceValue<'ctx, T> {
+    value: (T, Option<ScopedReservation<'ctx>>),
+    _key_and_node_storage: Option<ScopedReservation<'ctx>>,
+}
+
+pub(super) struct SourceUnitCarriers<'ctx, 'input> {
+    context: SourceContext<'ctx, 'input>,
+    length_scale_mm: Option<PositiveReal>,
+    surfaces: BTreeMap<SurfaceId, SourceValue<'ctx, SurfaceGeometry>>,
+    curves: BTreeMap<CurveId, SourceValue<'ctx, CurveGeometry>>,
+    edge_parameter_ranges: BTreeMap<EdgeId, SourceValue<'ctx, [f64; 2]>>,
+    sketch_entities: BTreeMap<SketchEntityId, SourceValue<'ctx, SketchGeometry>>,
+}
+
+#[cfg(test)]
+impl Default for SourceUnitCarriers<'_, '_> {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl<'ctx, 'input> SourceUnitCarriers<'ctx, 'input> {
+    pub(super) fn for_decode(ctx: &'ctx DecodeContext<'input>, length_scale_mm: Option<PositiveReal>) -> Self {
+        Self {
+            context: SourceContext::Decode(ctx),
+            length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
+            surfaces: BTreeMap::new(),
+            curves: BTreeMap::new(),
+            edge_parameter_ranges: BTreeMap::new(),
+            sketch_entities: BTreeMap::new(),
+        }
+    }
+
+    #[cfg(test)]
     pub(super) fn new(length_scale_mm: Option<PositiveReal>) -> Self {
         Self {
+            context: SourceContext::Fixture,
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
             surfaces: BTreeMap::new(),
             curves: BTreeMap::new(),
@@ -170,13 +202,30 @@ impl SourceUnitCarriers {
         entities: Vec<SketchEntity>,
     ) -> Result<(), CodecError> {
         for mut entity in ctx.admit_iter(entities, "creo source sketch entity traversal")? {
-            let source_id = SketchEntityId::mint(
-                ctx.copy_retained_text(entity.id().as_str(), "creo source sketch entity IDs")?,
-            )
-            .map_err(CodecError::malformed)?;
-            let source_geometry = entity
-                .geometry
-                .try_clone_for_decode(ctx, "creo source sketch geometry copy")?;
+            let copy_ctx = match self.context {
+                SourceContext::Decode(ctx) => ctx,
+                #[cfg(test)]
+                SourceContext::Fixture => ctx,
+            };
+            let mut key_storage = match self.context {
+                SourceContext::Decode(ctx) => Some(ctx.reserve_scoped(0, "creo source sketch entity IDs")?),
+                #[cfg(test)]
+                SourceContext::Fixture => None,
+            };
+            let copy_id = || entity.id().try_clone_for_decode(copy_ctx, "creo source sketch entity IDs");
+            let source_id = match key_storage.as_mut() {
+                Some(storage) => storage.with_storage(copy_id)?,
+                None => copy_id()?,
+            };
+            let copy_geometry = || entity.geometry.try_clone_for_decode(copy_ctx, "creo source sketch geometry copy");
+            let (source_geometry, geometry_storage) = match self.context {
+                SourceContext::Decode(ctx) => {
+                    let (geometry, storage) = ctx.with_scoped_storage("creo source sketch geometry copy", copy_geometry)?;
+                    (geometry, Some(storage))
+                }
+                #[cfg(test)]
+                SourceContext::Fixture => (copy_geometry()?, None),
+            };
             let source_geometry = if let Some(scale) = self.length_scale_mm {
                 let unscaled = std::mem::replace(&mut entity.geometry, source_geometry);
                 let scaled =
@@ -186,12 +235,22 @@ impl SourceUnitCarriers {
             } else {
                 source_geometry
             };
-            ctx.insert_btree_map(
-                &mut self.sketch_entities,
-                source_id,
-                source_geometry,
-                "creo source sketch entity nodes",
-            )?;
+            let insert = || copy_ctx.entry_btree_map(&mut self.sketch_entities, source_id, "creo source sketch entity nodes");
+            let entry = match key_storage.as_mut() {
+                Some(storage) => storage.with_storage(insert)?,
+                None => insert()?,
+            };
+            match entry {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().value = (source_geometry, geometry_storage);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(SourceValue {
+                        value: (source_geometry, geometry_storage),
+                        _key_and_node_storage: key_storage,
+                    });
+                }
+            }
             ctx.reserve_vec(
                 &mut ir.model.sketch_entities,
                 1,
@@ -202,10 +261,13 @@ impl SourceUnitCarriers {
         Ok(())
     }
 
-    pub(super) fn sketch_geometry<'a>(&'a self, entity: &'a SketchEntity) -> &'a SketchGeometry {
-        self.sketch_entities
-            .get(entity.id())
-            .unwrap_or(&entity.geometry)
+    pub(super) fn sketch_geometry<'a>(&'a self, entity: &'a SketchEntity) -> Result<&'a SketchGeometry, CodecError> {
+        let geometry = match self.context {
+            SourceContext::Decode(ctx) => ctx.get_btree_map(&self.sketch_entities, entity.id(), "creo source sketch geometry lookup")?,
+            #[cfg(test)]
+            SourceContext::Fixture => crate::decode::with_test_decode_ctx(|ctx| ctx.get_btree_map(&self.sketch_entities, entity.id(), "creo source sketch geometry lookup"))?,
+        };
+        Ok(geometry.map(|source| &source.value.0).unwrap_or(&entity.geometry))
     }
 
     pub(super) fn admit_sketch_constraints(
@@ -241,13 +303,30 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut surface: Surface,
     ) -> Result<(), CodecError> {
-        let source_id = SurfaceId::mint(
-            ctx.copy_retained_text(surface.id.as_str(), "creo source surface IDs")?,
-        )
-        .map_err(CodecError::malformed)?;
-        let source_geometry = surface
-            .geometry
-            .try_clone_for_decode(ctx, "creo source surface geometry")?;
+        let copy_ctx = match self.context {
+            SourceContext::Decode(ctx) => ctx,
+            #[cfg(test)]
+            SourceContext::Fixture => ctx,
+        };
+        let mut key_storage = match self.context {
+            SourceContext::Decode(ctx) => Some(ctx.reserve_scoped(0, "creo source surface IDs")?),
+            #[cfg(test)]
+            SourceContext::Fixture => None,
+        };
+        let copy_id = || surface.id.try_clone_for_decode(copy_ctx, "creo source surface IDs");
+        let source_id = match key_storage.as_mut() {
+            Some(storage) => storage.with_storage(copy_id)?,
+            None => copy_id()?,
+        };
+        let copy_geometry = || surface.geometry.try_clone_for_decode(copy_ctx, "creo source surface geometry");
+        let (source_geometry, geometry_storage) = match self.context {
+            SourceContext::Decode(ctx) => {
+                let (geometry, storage) = ctx.with_scoped_storage("creo source surface geometry", copy_geometry)?;
+                (geometry, Some(storage))
+            }
+            #[cfg(test)]
+            SourceContext::Fixture => (copy_geometry()?, None),
+        };
         if let (Some(scale), SurfaceGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut surface.geometry)
         {
@@ -258,12 +337,22 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        ctx.insert_btree_map(
-            &mut self.surfaces,
-            source_id,
-            source_geometry,
-            "creo source surface nodes",
-        )?;
+        let insert = || copy_ctx.entry_btree_map(&mut self.surfaces, source_id, "creo source surface nodes");
+        let entry = match key_storage.as_mut() {
+            Some(storage) => storage.with_storage(insert)?,
+            None => insert()?,
+        };
+        match entry {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().value = (source_geometry, geometry_storage);
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(SourceValue {
+                    value: (source_geometry, geometry_storage),
+                    _key_and_node_storage: key_storage,
+                });
+            }
+        }
         ctx.reserve_vec(&mut ir.model.surfaces, 1, "creo model surfaces")?;
         ir.model.surfaces.push(surface);
         Ok(())
@@ -275,12 +364,30 @@ impl SourceUnitCarriers {
         surface: &mut Surface,
         mut geometry: SurfaceGeometry,
     ) -> Result<(), CodecError> {
-        let source_id = SurfaceId::mint(
-            ctx.copy_retained_text(surface.id.as_str(), "creo replacement source surface IDs")?,
-        )
-        .map_err(CodecError::malformed)?;
-        let source_geometry =
-            geometry.try_clone_for_decode(ctx, "creo replacement source surface geometry")?;
+        let copy_ctx = match self.context {
+            SourceContext::Decode(ctx) => ctx,
+            #[cfg(test)]
+            SourceContext::Fixture => ctx,
+        };
+        let mut key_storage = match self.context {
+            SourceContext::Decode(ctx) => Some(ctx.reserve_scoped(0, "creo replacement source surface IDs")?),
+            #[cfg(test)]
+            SourceContext::Fixture => None,
+        };
+        let copy_id = || surface.id.try_clone_for_decode(copy_ctx, "creo replacement source surface IDs");
+        let source_id = match key_storage.as_mut() {
+            Some(storage) => storage.with_storage(copy_id)?,
+            None => copy_id()?,
+        };
+        let copy_geometry = || geometry.try_clone_for_decode(copy_ctx, "creo replacement source surface geometry");
+        let (source_geometry, geometry_storage) = match self.context {
+            SourceContext::Decode(ctx) => {
+                let (geometry, storage) = ctx.with_scoped_storage("creo replacement source surface geometry", copy_geometry)?;
+                (geometry, Some(storage))
+            }
+            #[cfg(test)]
+            SourceContext::Fixture => (copy_geometry()?, None),
+        };
         if let (Some(scale), SurfaceGeometry::Solved(solved)) =
             (self.length_scale_mm, &mut geometry)
         {
@@ -291,12 +398,22 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        ctx.insert_btree_map(
-            &mut self.surfaces,
-            source_id,
-            source_geometry,
-            "creo replacement source surface nodes",
-        )?;
+        let insert = || copy_ctx.entry_btree_map(&mut self.surfaces, source_id, "creo replacement source surface nodes");
+        let entry = match key_storage.as_mut() {
+            Some(storage) => storage.with_storage(insert)?,
+            None => insert()?,
+        };
+        match entry {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().value = (source_geometry, geometry_storage);
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(SourceValue {
+                    value: (source_geometry, geometry_storage),
+                    _key_and_node_storage: key_storage,
+                });
+            }
+        }
         surface.geometry = geometry;
         Ok(())
     }
@@ -307,12 +424,30 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut curve: Curve,
     ) -> Result<(), CodecError> {
-        let source_id =
-            CurveId::mint(ctx.copy_retained_text(curve.id.as_str(), "creo source curve IDs")?)
-                .map_err(CodecError::malformed)?;
-        let source_geometry = curve
-            .geometry
-            .try_clone_for_decode(ctx, "creo source curve geometry")?;
+        let copy_ctx = match self.context {
+            SourceContext::Decode(ctx) => ctx,
+            #[cfg(test)]
+            SourceContext::Fixture => ctx,
+        };
+        let mut key_storage = match self.context {
+            SourceContext::Decode(ctx) => Some(ctx.reserve_scoped(0, "creo source curve IDs")?),
+            #[cfg(test)]
+            SourceContext::Fixture => None,
+        };
+        let copy_id = || curve.id.try_clone_for_decode(copy_ctx, "creo source curve IDs");
+        let source_id = match key_storage.as_mut() {
+            Some(storage) => storage.with_storage(copy_id)?,
+            None => copy_id()?,
+        };
+        let copy_geometry = || curve.geometry.try_clone_for_decode(copy_ctx, "creo source curve geometry");
+        let (source_geometry, geometry_storage) = match self.context {
+            SourceContext::Decode(ctx) => {
+                let (geometry, storage) = ctx.with_scoped_storage("creo source curve geometry", copy_geometry)?;
+                (geometry, Some(storage))
+            }
+            #[cfg(test)]
+            SourceContext::Fixture => (copy_geometry()?, None),
+        };
         if let (Some(scale), CurveGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut curve.geometry)
         {
@@ -323,19 +458,34 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        ctx.insert_btree_map(
-            &mut self.curves,
-            source_id,
-            source_geometry,
-            "creo source curve nodes",
-        )?;
+        let insert = || copy_ctx.entry_btree_map(&mut self.curves, source_id, "creo source curve nodes");
+        let entry = match key_storage.as_mut() {
+            Some(storage) => storage.with_storage(insert)?,
+            None => insert()?,
+        };
+        match entry {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().value = (source_geometry, geometry_storage);
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(SourceValue {
+                    value: (source_geometry, geometry_storage),
+                    _key_and_node_storage: key_storage,
+                });
+            }
+        }
         ctx.reserve_vec(&mut ir.model.curves, 1, "creo model curves")?;
         ir.model.curves.push(curve);
         Ok(())
     }
 
-    pub(super) fn curve_geometry<'a>(&'a self, curve: &'a Curve) -> &'a CurveGeometry {
-        self.curves.get(&curve.id).unwrap_or(&curve.geometry)
+    pub(super) fn curve_geometry<'a>(&'a self, curve: &'a Curve) -> Result<&'a CurveGeometry, CodecError> {
+        let geometry = match self.context {
+            SourceContext::Decode(ctx) => ctx.get_btree_map(&self.curves, &curve.id, "creo source curve geometry lookup")?,
+            #[cfg(test)]
+            SourceContext::Fixture => crate::decode::with_test_decode_ctx(|ctx| ctx.get_btree_map(&self.curves, &curve.id, "creo source curve geometry lookup"))?,
+        };
+        Ok(geometry.map(|source| &source.value.0).unwrap_or(&curve.geometry))
     }
 
     pub(super) fn replace_curve_geometry(
@@ -344,12 +494,30 @@ impl SourceUnitCarriers {
         curve: &mut Curve,
         mut geometry: CurveGeometry,
     ) -> Result<(), CodecError> {
-        let source_id = CurveId::mint(
-            ctx.copy_retained_text(curve.id.as_str(), "creo replacement source curve IDs")?,
-        )
-        .map_err(CodecError::malformed)?;
-        let source_geometry =
-            geometry.try_clone_for_decode(ctx, "creo replacement source curve geometry")?;
+        let copy_ctx = match self.context {
+            SourceContext::Decode(ctx) => ctx,
+            #[cfg(test)]
+            SourceContext::Fixture => ctx,
+        };
+        let mut key_storage = match self.context {
+            SourceContext::Decode(ctx) => Some(ctx.reserve_scoped(0, "creo replacement source curve IDs")?),
+            #[cfg(test)]
+            SourceContext::Fixture => None,
+        };
+        let copy_id = || curve.id.try_clone_for_decode(copy_ctx, "creo replacement source curve IDs");
+        let source_id = match key_storage.as_mut() {
+            Some(storage) => storage.with_storage(copy_id)?,
+            None => copy_id()?,
+        };
+        let copy_geometry = || geometry.try_clone_for_decode(copy_ctx, "creo replacement source curve geometry");
+        let (source_geometry, geometry_storage) = match self.context {
+            SourceContext::Decode(ctx) => {
+                let (geometry, storage) = ctx.with_scoped_storage("creo replacement source curve geometry", copy_geometry)?;
+                (geometry, Some(storage))
+            }
+            #[cfg(test)]
+            SourceContext::Fixture => (copy_geometry()?, None),
+        };
         if let (Some(scale), CurveGeometry::Solved(solved)) = (self.length_scale_mm, &mut geometry)
         {
             crate::decode::build::units::scale_curve_geometry(ctx, solved, scale).map_err(
@@ -359,12 +527,22 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        ctx.insert_btree_map(
-            &mut self.curves,
-            source_id,
-            source_geometry,
-            "creo replacement source curve nodes",
-        )?;
+        let insert = || copy_ctx.entry_btree_map(&mut self.curves, source_id, "creo replacement source curve nodes");
+        let entry = match key_storage.as_mut() {
+            Some(storage) => storage.with_storage(insert)?,
+            None => insert()?,
+        };
+        match entry {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().value = (source_geometry, geometry_storage);
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(SourceValue {
+                    value: (source_geometry, geometry_storage),
+                    _key_and_node_storage: key_storage,
+                });
+            }
+        }
         curve.geometry = geometry;
         Ok(())
     }
@@ -441,7 +619,7 @@ impl SourceUnitCarriers {
                 |curve| ctx.equal(&curve.id, curve_id, "creo source edge curve ID comparison"),
                 "creo source edge curve search")?;
             let parameter_scale = curve
-                .and_then(|curve| self.curve_geometry(curve).solved())
+                .map(|curve| self.curve_geometry(curve)).transpose()?.and_then(CurveGeometry::solved)
                 .map(|geometry| {
                     crate::decode::build::units::curve_parameter_scale(ctx, geometry, scale)
                 })
@@ -454,19 +632,34 @@ impl SourceUnitCarriers {
             }
         }
         if let Some(source_range) = source_range {
-            if let Some(existing) = self.edge_parameter_ranges.get_mut(&edge.id) {
-                *existing = source_range;
-            } else {
-                let id = EdgeId::mint(
-                    ctx.copy_retained_text(edge.id.as_str(), "creo source edge range IDs")?,
-                )
-                .map_err(CodecError::malformed)?;
-                ctx.insert_btree_map(
-                    &mut self.edge_parameter_ranges,
-                    id,
-                    source_range,
-                    "creo source edge range nodes",
-                )?;
+            let copy_ctx = match self.context {
+                SourceContext::Decode(ctx) => ctx,
+                #[cfg(test)]
+                SourceContext::Fixture => ctx,
+            };
+            let mut key_storage = match self.context {
+                SourceContext::Decode(ctx) => Some(ctx.reserve_scoped(0, "creo source edge range IDs")?),
+                #[cfg(test)]
+                SourceContext::Fixture => None,
+            };
+            let copy_id = || edge.id.try_clone_for_decode(copy_ctx, "creo source edge range IDs");
+            let id = match key_storage.as_mut() {
+                Some(storage) => storage.with_storage(copy_id)?,
+                None => copy_id()?,
+            };
+            let insert = || copy_ctx.entry_btree_map(&mut self.edge_parameter_ranges, id, "creo source edge range nodes");
+            let entry = match key_storage.as_mut() {
+                Some(storage) => storage.with_storage(insert)?,
+                None => insert()?,
+            };
+            match entry {
+                Entry::Occupied(mut entry) => entry.get_mut().value.0 = source_range,
+                Entry::Vacant(entry) => {
+                    entry.insert(SourceValue {
+                        value: (source_range, None),
+                        _key_and_node_storage: key_storage,
+                    });
+                }
             }
         }
         ctx.reserve_vec(&mut ir.model.edges, 1, "creo model edges")?;
@@ -474,11 +667,14 @@ impl SourceUnitCarriers {
         Ok(())
     }
 
-    pub(super) fn source_edge_parameter_range(&self, edge: &Edge) -> Option<[f64; 2]> {
-        self.edge_parameter_ranges
-            .get(&edge.id)
-            .copied()
-            .or_else(|| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get))
+    pub(super) fn source_edge_parameter_range(&self, edge: &Edge) -> Result<Option<[f64; 2]>, CodecError> {
+        let source = match self.context {
+            SourceContext::Decode(ctx) => ctx.get_btree_map(&self.edge_parameter_ranges, &edge.id, "creo source edge range lookup")?,
+            #[cfg(test)]
+            SourceContext::Fixture => crate::decode::with_test_decode_ctx(|ctx| ctx.get_btree_map(&self.edge_parameter_ranges, &edge.id, "creo source edge range lookup"))?,
+        };
+        Ok(source.map(|source| source.value.0)
+            .or_else(|| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)))
     }
 
     pub(super) fn admit_coedge(
@@ -492,7 +688,7 @@ impl SourceUnitCarriers {
                 |curve| ctx.equal(&curve.id, &use_curve.curve, "creo source coedge curve ID comparison"),
                 "creo source coedge curve search")?;
             let parameter_scale = curve
-                .and_then(|curve| self.curve_geometry(curve).solved())
+                .map(|curve| self.curve_geometry(curve)).transpose()?.and_then(CurveGeometry::solved)
                 .map(|geometry| {
                     crate::decode::build::units::curve_parameter_scale(ctx, geometry, scale)
                 })
@@ -523,18 +719,12 @@ impl SourceUnitCarriers {
             |surface| ctx.equal(&surface.id, surface_id, "creo source pcurve surface ID comparison"),
             "creo source pcurve surface search")?
             .ok_or_else(|| malformed_refusal(ctx, "Creo pcurve has no owning surface"))?;
-        let scales = self
-            .length_scale_mm
-            .and_then(|scale| {
-                self.surface_geometry(surface).solved().map(|geometry| {
-                    crate::decode::build::units::surface_parameter_scales(
-                        ctx,
-                        geometry,
-                        scale.get(),
-                    )
-                })
-            })
-            .transpose()?;
+        let scales = match self.length_scale_mm {
+            Some(scale) => self.surface_geometry(surface)?.solved().map(|geometry| {
+                crate::decode::build::units::surface_parameter_scales(ctx, geometry, scale.get())
+            }).transpose()?,
+            None => None,
+        };
         Self::push_pcurve(ctx, ir, pcurve, scales)
     }
 
@@ -616,18 +806,25 @@ impl SourceUnitCarriers {
     #[cfg(test)]
     pub(super) fn record_surface(&mut self, surface: &Surface) {
         self.surfaces
-            .insert(surface.id.clone(), surface.geometry.clone());
+            .insert(surface.id.clone(), SourceValue { value: (surface.geometry.clone(), None), _key_and_node_storage: None });
     }
 
-    pub(super) fn surface_geometry<'a>(&'a self, surface: &'a Surface) -> &'a SurfaceGeometry {
-        match self.surfaces.get(&surface.id) {
-            Some(geometry) => geometry,
-            None => &surface.geometry,
+    pub(super) fn surface_geometry<'a>(&'a self, surface: &'a Surface) -> Result<&'a SurfaceGeometry, CodecError> {
+        let geometry = match self.context {
+            SourceContext::Decode(ctx) => ctx.get_btree_map(&self.surfaces, &surface.id, "creo source surface geometry lookup")?,
+            #[cfg(test)]
+            SourceContext::Fixture => crate::decode::with_test_decode_ctx(|ctx| ctx.get_btree_map(&self.surfaces, &surface.id, "creo source surface geometry lookup"))?,
+        };
+        Ok(geometry.map(|source| &source.value.0).unwrap_or(&surface.geometry))
+    }
+
+    pub(super) fn remove_surface(&mut self, id: &SurfaceId) -> Result<(), CodecError> {
+        match self.context {
+            SourceContext::Decode(ctx) => drop(ctx.remove_btree_map(&mut self.surfaces, id, "creo source surface removal")?),
+            #[cfg(test)]
+            SourceContext::Fixture => drop(crate::decode::with_test_decode_ctx(|ctx| ctx.remove_btree_map(&mut self.surfaces, id, "creo source surface removal"))?),
         }
-    }
-
-    pub(super) fn remove_surface(&mut self, id: &SurfaceId) {
-        self.surfaces.remove(id);
+        Ok(())
     }
 }
 

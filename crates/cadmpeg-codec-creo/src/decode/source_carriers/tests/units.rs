@@ -53,7 +53,7 @@ fn planar_sketch_lengths_are_in_millimeters_at_admission() {
     };
     assert_eq!(distance.get(), 50.8);
     let SketchGeometryDefinition::Line { start, .. } = carriers
-        .sketch_geometry(&ir.model.sketch_entities[0])
+        .sketch_geometry(&ir.model.sketch_entities[0]).expect("source carrier lookup")
         .definition()
     else {
         panic!("source sketch line changed family");
@@ -87,42 +87,16 @@ fn sketch_entity_overflow_refuses_before_admission() {
 
 #[test]
 fn sketch_entity_admission_refuses_each_source_and_model_boundary() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    for (limit, operation) in [
-        (0, "creo source sketch entity nodes"),
-        (1, "creo model sketch entities"),
+    for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "creo source sketch entity nodes"),
+        (ResourceDimension::CollectionItems, "creo model sketch entities"),
+        (ResourceDimension::MaterializedBytes, "creo source sketch entity IDs"),
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let mut ir = CadIr::empty();
-        let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = carriers
-            .admit_sketch_entities(&ctx, &mut ir, vec![source_sketch_line(1.0)])
-            .expect_err("one sketch entity exceeds its collection limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            SourceUnitCarriers::for_decode(ctx, PositiveReal::new(25.4)).admit_sketch_entities(ctx, &mut CadIr::empty(), vec![source_sketch_line(1.0)])
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
     }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let mut ir = CadIr::empty();
-    let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-    let error = carriers
-        .admit_sketch_entities(&ctx, &mut ir, vec![source_sketch_line(1.0)])
-        .expect_err("source identity copy exceeds retained-byte limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo source sketch entity IDs"),
-        "{error:?}"
-    );
 }
 
 #[test]
@@ -614,7 +588,7 @@ fn bounded_line_edge_range_is_in_millimeters_at_admission() {
         Some([0.0, 50.8])
     );
     assert_eq!(
-        source_carriers.source_edge_parameter_range(&ir.model.edges[0]),
+        source_carriers.source_edge_parameter_range(&ir.model.edges[0]).expect("source carrier lookup"),
         Some([0.0, 2.0])
     );
     assert_eq!(
@@ -623,7 +597,7 @@ fn bounded_line_edge_range_is_in_millimeters_at_admission() {
     );
 }
 
-fn source_line_for_range_tests() -> (CadIr, SourceUnitCarriers, CurveId) {
+fn source_line_for_range_tests() -> (CadIr, SourceUnitCarriers<'static, 'static>, CurveId) {
     let mut ir = CadIr::empty();
     let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
     let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");

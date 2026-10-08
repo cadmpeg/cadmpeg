@@ -997,7 +997,7 @@ fn constrained_slot_cylinder_radius_is_in_millimeters_at_ir_admission() {
     };
     assert_eq!(cylinder.radius().get(), 25.4);
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(source_cylinder)) =
-        source_carriers.surface_geometry(surface)
+        source_carriers.surface_geometry(surface).expect("source carrier lookup")
     else {
         panic!("source carrier changed family");
     };
