@@ -415,3 +415,75 @@ fn stored_expanded_and_concatenated_spaces_have_distinct_zero_based_locations() 
         assert_eq!(view.location().offset, 0);
     }
 }
+
+#[test]
+fn committing_inside_an_enclosing_scope_moves_the_bytes_without_charging_them_again() {
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_materialized_bytes = 100);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut outer = ctx.reserve_scoped(0, "outer").unwrap();
+    outer
+        .with_storage(|| ctx.reserve_scoped(100, "inner")?.commit())
+        .unwrap();
+    // The outer scope now holds the hundred bytes; nothing else fits.
+    assert!(ctx.reserve_scoped(1, "more").is_err());
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut outer = ctx.reserve_scoped(0, "outer").unwrap();
+    outer
+        .with_storage(|| ctx.reserve_scoped(100, "inner")?.commit())
+        .unwrap();
+    drop(outer);
+    ctx.reserve_scoped(100, "released").unwrap();
+}
+
+#[test]
+fn nested_commit_returns_the_original_sticky_refusal() {
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_materialized_bytes = 8);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut outer = ctx.reserve_scoped(0, "outer").unwrap();
+    let first_error = outer
+        .with_storage(|| {
+            let nested = ctx.reserve_scoped(8, "nested")?;
+            let refusal_error = ctx
+                .reserve_scoped(1, "first refusal")
+                .expect_err("one additional byte exceeds the materialized limit");
+            let CodecError::ResourceLimit(refusal) = refusal_error else {
+                unreachable!();
+            };
+            let commit_error = nested
+                .commit()
+                .expect_err("commit must propagate the first refusal inside a parent scope");
+            assert!(matches!(commit_error, CodecError::ResourceLimit(limit) if limit == refusal));
+            Err::<(), _>(CodecError::ResourceLimit(refusal))
+        })
+        .unwrap_err();
+    let CodecError::ResourceLimit(first) = first_error else {
+        unreachable!();
+    };
+    drop(outer);
+    assert_eq!(ctx.resource_refusal(), Some(first));
+    let later_error = ctx
+        .charge_work(1, "later")
+        .expect_err("the fused session refuses further work");
+    assert!(matches!(later_error, CodecError::ResourceLimit(limit) if limit == first));
+}
+
+#[test]
+fn equal_bytes_admits_only_the_bytes_it_compares() {
+    let left = vec![0_u8; 1000];
+    let mut right = left.clone();
+    right[0] = 1;
+    for (right, limit, expected) in [
+        (&right, 0, None),
+        (&right, 1, Some(false)),
+        (&left, 999, None),
+        (&left, 1000, Some(true)),
+    ] {
+        let arena = DecodeArena::new();
+        let policy = policy_with(|limits| limits.max_work_units = limit);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(ctx.equal_bytes(&left, right, "compare").ok(), expected);
+    }
+}
