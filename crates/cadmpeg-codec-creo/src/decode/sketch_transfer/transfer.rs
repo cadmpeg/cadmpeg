@@ -124,12 +124,13 @@ pub(in super::super) fn transfer_sketches(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<SketchSegmentTransferCoverage, cadmpeg_core::CodecError> {
     let mut coverage = SketchSegmentTransferCoverage::default();
-    let planned_parameter_ids = planned_feature_dimension_parameter_ids(ctx, scan)?;
+    let mut parameter_storage = ctx.reserve_scoped(0, "creo available parameter storage")?;
+    let planned_parameter_ids = parameter_storage.with_storage(|| planned_feature_dimension_parameter_ids(ctx, scan))?;
     let existing_parameter_ids = ctx
         .admit_iter(&ir.model.parameters, "creo existing parameter rows")?
         .map(|parameter| &parameter.id);
     let available_parameter_ids =
-        available_parameter_ids(ctx, existing_parameter_ids, planned_parameter_ids)?;
+        parameter_storage.with_storage(|| available_parameter_ids(ctx, existing_parameter_ids, planned_parameter_ids))?;
     for definition in ctx.admit_iter(
         &scan.features.definitions,
         "creo sketch feature definitions",
@@ -162,10 +163,11 @@ pub(in super::super) fn transfer_sketches(
         let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
-        let segments = section_segment_rows(ctx, definition)?;
-        let unique_segment_ids = unique_section_segment_external_ids(ctx, definition)?;
-        let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
-        let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
+        let mut section_storage = ctx.reserve_scoped(0, "creo section transfer scratch storage")?;
+        let segments = section_storage.with_storage(|| section_segment_rows(ctx, definition))?;
+        let unique_segment_ids = section_storage.with_storage(|| unique_section_segment_external_ids(ctx, definition))?;
+        let ambiguous_segment_ids = section_storage.with_storage(|| ambiguous_section_segment_external_ids(ctx, definition))?;
+        let unique_saved_ids = section_storage.with_storage(|| unique_saved_section_internal_ids(ctx, definition))?;
         let complete_segment_table = definition
             .segments
             .as_ref()
@@ -193,53 +195,48 @@ pub(in super::super) fn transfer_sketches(
                 coverage.record_family_rows(family, 1);
             }
         }
-        let variable_points = resolved_section_coordinates(ctx, definition)?;
+        let variable_points = section_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
         let mut points = BTreeMap::new();
         for (point, [u, v]) in ctx.admit_iter(&variable_points, "creo resolved sketch points")? {
             if let (Some(u), Some(v)) = (u, v) {
-                ctx.insert_btree_map(
+                section_storage.with_storage(|| ctx.insert_btree_map(
                     &mut points,
                     *point,
                     [*u, *v],
                     "creo resolved sketch point nodes",
-                )?;
+                ))?;
             }
         }
-        let radii = resolved_section_radii(ctx, definition)?;
-        let missing_line_geometry = saved_section_missing_line_geometry(ctx, definition)?;
+        let radii = section_storage.with_storage(|| resolved_section_radii(ctx, definition))?;
+        let missing_line_geometry = section_storage.with_storage(|| saved_section_missing_line_geometry(ctx, definition))?;
         let mut solved = BTreeSet::new();
         for id in ctx
             .admit_iter(
-                trim_segment_ids(ctx, definition)?,
+                section_storage.with_storage(|| trim_segment_ids(ctx, definition))?,
                 "creo solved section trim rows",
             )?
             .flatten()
         {
-            ctx.insert_btree_set(&mut solved, id, "creo solved section segment ID nodes")?;
+            section_storage.with_storage(|| ctx.insert_btree_set(&mut solved, id, "creo solved section segment ID nodes"))?;
         }
         let trim_vertex_coordinates =
-            resolved_trim_vertex_coordinates(ctx, definition, &points, &radii)?;
+            section_storage.with_storage(|| resolved_trim_vertex_coordinates(ctx, definition, &points, &radii))?;
         let mut resolved_segment_geometries = BTreeMap::new();
         for segment in ctx.admit_iter(&segments, "creo resolved segment rows")? {
-            ctx.insert_btree_map(
-                &mut resolved_segment_geometries,
-                segment.offset,
-                resolved_section_segment_geometry_with_missing_line(
-                    ctx,
-                    definition,
-                    &points,
-                    segment,
-                    missing_line_geometry.as_ref(),
-                )?,
+            let geometry = section_storage.with_storage(|| resolved_section_segment_geometry_with_missing_line(
+                ctx, definition, &points, segment, missing_line_geometry.as_ref(),
+            ))?;
+            section_storage.with_storage(|| ctx.insert_btree_map(
+                &mut resolved_segment_geometries, segment.offset, geometry,
                 "creo resolved section geometry nodes",
-            )?;
+            ))?;
         }
         let mut segment_geometries = BTreeMap::new();
         for segment in ctx.admit_iter(&segments, "creo transferred segment rows")? {
             let geometry = if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo transferred segment identity membership")?
                 && ctx.contains_btree_set(&solved, &segment.external_id, "creo transferred segment identity membership")?
             {
-                trimmed_section_segment_geometry_with_missing_line(
+                section_storage.with_storage(|| trimmed_section_segment_geometry_with_missing_line(
                     ctx,
                     definition,
                     &points,
@@ -247,30 +244,30 @@ pub(in super::super) fn transfer_sketches(
                     &trim_vertex_coordinates,
                     segment,
                     missing_line_geometry.as_ref(),
-                )?
+                ))?
             } else {
                 ctx.get_btree_map(&resolved_segment_geometries, &segment.offset, "creo transferred segment geometry lookup")?
                     .and_then(Option::as_ref)
                     .map(|geometry| {
-                        geometry.try_clone_for_decode(ctx, "creo resolved section geometry copy")
+                        section_storage.with_storage(|| geometry.try_clone_for_decode(ctx, "creo resolved section geometry copy"))
                     })
                     .transpose()?
             };
             let geometry = match geometry {
                 Some(geometry) => Some(geometry),
-                None => section_axis_reference_line_geometry(
+                None => section_storage.with_storage(|| section_axis_reference_line_geometry(
                     ctx,
                     definition,
                     &variable_points,
                     segment,
-                )?,
+                ))?,
             };
-            ctx.insert_btree_map(
+            section_storage.with_storage(|| ctx.insert_btree_map(
                 &mut segment_geometries,
                 segment.offset,
                 geometry,
                 "creo section geometry nodes",
-            )?;
+            ))?;
         }
         let mut circle_geometries = BTreeMap::new();
         let mut point_geometries = BTreeMap::new();
@@ -282,31 +279,31 @@ pub(in super::super) fn transfer_sketches(
             {
                 let (geometry, offset, geometries, operation) = match row {
                     SegmentRow::Circle(segment) => (
-                        section_circle_geometry(ctx, &points, &radii, segment)?,
+                        section_storage.with_storage(|| section_circle_geometry(ctx, &points, &radii, segment))?,
                         segment.offset,
                         &mut circle_geometries,
                         "creo section circle geometry nodes",
                     ),
                     SegmentRow::Point(segment) => (
-                        section_point_row_geometry(ctx, &points, segment)?,
+                        section_storage.with_storage(|| section_point_row_geometry(ctx, &points, segment))?,
                         segment.offset,
                         &mut point_geometries,
                         "creo section point geometry nodes",
                     ),
                     SegmentRow::CenteredLine(segment) => (
-                        section_centered_line_geometry(ctx, &points, segment)?,
+                        section_storage.with_storage(|| section_centered_line_geometry(ctx, &points, segment))?,
                         segment.offset,
                         &mut centered_line_geometries,
                         "creo section centered-line geometry nodes",
                     ),
                     SegmentRow::ReferenceLine(segment) => (
-                        resolved_section_reference_line_geometry(
+                        section_storage.with_storage(|| resolved_section_reference_line_geometry(
                             ctx,
                             definition,
                             &variable_points,
                             &points,
                             segment,
-                        )?,
+                        ))?,
                         segment.offset,
                         &mut reference_line_geometries,
                         "creo section reference-line geometry nodes",
@@ -314,7 +311,7 @@ pub(in super::super) fn transfer_sketches(
                     _ => continue,
                 };
                 if let Some(geometry) = geometry {
-                    ctx.insert_btree_map(geometries, offset, geometry, operation)?;
+                    section_storage.with_storage(|| ctx.insert_btree_map(geometries, offset, geometry, operation))?;
                 }
             }
         }
@@ -325,11 +322,11 @@ pub(in super::super) fn transfer_sketches(
                     || ctx.get_btree_map(&segment_geometries, &segment.offset, "creo transferred segment geometry lookup")?
                         .is_some_and(Option::is_some))
             {
-                ctx.insert_btree_set(
+                section_storage.with_storage(|| ctx.insert_btree_set(
                     &mut emitted,
                     segment.external_id,
                     "creo emitted section segment ID nodes",
-                )?;
+                ))?;
             }
         }
         if let Some(table) = definition.segments.as_ref() {
@@ -343,11 +340,11 @@ pub(in super::super) fn transfer_sketches(
                 if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo transferred segment identity membership")?
                     && ctx.contains_key_btree_map(&circle_geometries, &segment.offset, "creo transferred circle geometry membership")?
                 {
-                    ctx.insert_btree_set(
+                    section_storage.with_storage(|| ctx.insert_btree_set(
                         &mut emitted,
                         segment.external_id,
                         "creo emitted section segment ID nodes",
-                    )?;
+                    ))?;
                 }
             }
         }
@@ -356,16 +353,17 @@ pub(in super::super) fn transfer_sketches(
             if ctx.get_btree_map(&segment_geometries, &segment.offset, "creo transferred segment geometry lookup")?
                 .is_some_and(Option::is_some)
             {
-                ctx.insert_btree_set(
+                section_storage.with_storage(|| ctx.insert_btree_set(
                     &mut resolved_segment_offsets,
                     segment.offset,
                     "creo resolved section offset nodes",
-                )?;
+                ))?;
             }
         }
+
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let materialized_saved_section_external_ids =
-            materialized_saved_section_external_ids(ctx, definition, &mut refusal)?;
+            section_storage.with_storage(|| materialized_saved_section_external_ids(ctx, definition, &mut refusal))?;
         let refused_records = refusal.take_records_checked()?;
         for record in ctx.admit_iter(&refused_records, "creo refused saved spline records")? {
             let message = ctx.format_retained(
@@ -421,6 +419,7 @@ pub(in super::super) fn transfer_sketches(
             }
         }
         let mut profiles = resolved_profile_chains(ctx, definition, &sketch_id, &emitted)?;
+        let generated_profile_geometries = section_storage.with_storage(|| {
         let mut generated_profile_geometries = Vec::new();
         for segment in ctx.admit_iter(&segments, "creo generated profile segments")? {
             if !ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo transferred segment identity membership")?
@@ -495,6 +494,8 @@ pub(in super::super) fn transfer_sketches(
                 }
             }
         }
+            Ok::<_, cadmpeg_core::CodecError>(generated_profile_geometries)
+        })?;
         let mut profile_storage = ctx.reserve_scoped(0, "Creo sketch profile membership")?;
         let mut profile_entities = BTreeSet::new();
         for profile in ctx.admit_iter(&profiles, "creo sketch profiles")? {
@@ -575,7 +576,7 @@ pub(in super::super) fn transfer_sketches(
         let mut emitted_storage = ctx.reserve_scoped(0, "Creo emitted sketch lookup")?;
         let (mut emitted_entity_ids, mut emitted_entity_geometry) =
             emitted_storage.with_storage(|| emitted_entity_views(ctx, &entities))?;
-        let solver_only_entities = solver_only_section_entities(ctx, definition)?;
+        let solver_only_entities = section_storage.with_storage(|| solver_only_section_entities(ctx, definition))?;
         for (external_id, offset) in
             ctx.admit_iter(&solver_only_entities, "creo solver-only section entities")?
         {
@@ -837,7 +838,7 @@ pub(in super::super) fn transfer_sketches(
         }
         let relation_solver = RelationIncidences::new(ctx, definition)?;
         for (mut constraint, offset, relation_index) in
-            ctx.admit_iter(section_dimension_constraints_with_links(ctx, definition, &sketch_id, &relation_solver)?, "creo transferred dimension rows")?
+            ctx.admit_iter(section_dimension_constraints_with_links(ctx, &sketch_id, &relation_solver)?, "creo transferred dimension rows")?
         {
             let Some(relation) = definition
                 .relations
@@ -850,7 +851,6 @@ pub(in super::super) fn transfer_sketches(
                 reconcile_section_dimension_constraint(
                     ctx,
                     kind,
-                    definition,
                     &sketch_id,
                     relation,
                     &emitted_entity_ids,
@@ -893,8 +893,7 @@ pub(in super::super) fn transfer_sketches(
             )?;
             admit_constraint_row(ctx, &mut constraints, constraint)?;
         }
-        let equation_constraints = ctx.collect_vec(
-            section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
+        let equation_rows = section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
                 .chain(section_equation_unsigned_distance_constraints(
                     ctx, definition, &sketch_id,
@@ -934,15 +933,14 @@ pub(in super::super) fn transfer_sketches(
                 )?)
                 .chain(section_equation_equal_distance_constraints(
                     ctx, definition, &sketch_id,
-                )?),
-            "creo sketch equation constraints",
-        )?;
-        let equation_offsets = collect_numeric_set(
+                )?);
+        let equation_constraints = section_storage.with_storage(|| ctx.collect_vec(equation_rows, "creo sketch equation constraints"))?;
+        let equation_offsets = section_storage.with_storage(|| collect_numeric_set(
             ctx,
             ctx.admit_iter(&equation_constraints, "creo equation offset source")?
                 .map(|(_, offset)| *offset),
             "creo equation offset nodes",
-        )?;
+        ))?;
         let mut rejected_equation_offsets = BTreeSet::new();
         let mut reconciled_equation_constraints = Vec::new();
         for (mut constraint, offset) in ctx.admit_iter(equation_constraints, "creo equation reconciliation rows")? {
@@ -961,18 +959,18 @@ pub(in super::super) fn transfer_sketches(
                 Err(_) => false,
             };
             if !entity_reconciled || !parameter_reconciled {
-                ctx.insert_btree_set(
+                section_storage.with_storage(|| ctx.insert_btree_set(
                     &mut rejected_equation_offsets,
                     offset,
                     "creo rejected equation offset nodes",
-                )?;
+                ))?;
                 continue;
             }
-            ctx.reserve_vec(
+            section_storage.with_storage(|| ctx.reserve_vec(
                 &mut reconciled_equation_constraints,
                 1,
                 "creo reconciled equation rows",
-            )?;
+            ))?;
             reconciled_equation_constraints.push((constraint, offset));
         }
         for (constraint, offset) in ctx.admit_iter(reconciled_equation_constraints, "creo reconciled equation traversal")? {
@@ -995,7 +993,7 @@ pub(in super::super) fn transfer_sketches(
         let mut typed_equation_offsets = BTreeSet::new();
         for offset in ctx.admit_iter(&equation_offsets, "creo typed equation offset source")? {
             if !ctx.contains_btree_set(&rejected_equation_offsets, offset, "creo rejected equation offset membership")? {
-                ctx.insert_btree_set(&mut typed_equation_offsets, *offset, "creo typed equation offset nodes")?;
+                section_storage.with_storage(|| ctx.insert_btree_set(&mut typed_equation_offsets, *offset, "creo typed equation offset nodes"))?;
             }
         }
         drop(equation_offsets);

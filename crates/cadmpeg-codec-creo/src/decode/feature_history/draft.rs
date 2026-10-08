@@ -729,7 +729,7 @@ pub(in super::super) fn schema_feature_definition(
     }
     if schema_class == Some(SchemaClass::Protrusion)
         && !feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
-        && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
+        && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(ctx, scan, feature_id)?)
     {
         if let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? {
             let definition =
@@ -756,7 +756,7 @@ pub(in super::super) fn schema_feature_definition(
                 profile,
                 &sweep,
                 section_sweep_boolean_operation(
-                    feature_recipe_effect(scan, feature_id),
+                    feature_recipe_effect(ctx, scan, feature_id)?,
                     kind,
                     output_kind.is_some(),
                     preceding_features_establish_body(ctx, ir)?,
@@ -765,7 +765,7 @@ pub(in super::super) fn schema_feature_definition(
             ));
         }
     }
-    if feature_recipe(scan, feature_id)
+    if feature_recipe(ctx, scan, feature_id)?
         == Some(crate::feature::operations::FeatureRecipeKind::Revolve)
     {
         let extent = feature_revolution_extent(ctx, scan, feature_id)?;
@@ -828,7 +828,7 @@ pub(in super::super) fn schema_feature_definition(
                     },
                 },
                 op: section_sweep_boolean_operation(
-                    feature_recipe_effect(scan, feature_id),
+                    feature_recipe_effect(ctx, scan, feature_id)?,
                     kind,
                     output_kind.is_some(),
                     preceding_features_establish_body(ctx, ir)?,
@@ -836,7 +836,7 @@ pub(in super::super) fn schema_feature_definition(
             },
         ));
     }
-    let recipe = feature_recipe(scan, feature_id);
+    let recipe = feature_recipe(ctx, scan, feature_id)?;
     if (!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
         && section_sweep_allows_linear_extrusion(schema_class, recipe))
         || feature_is_sheet_extrusion(ctx, scan, feature_id)?
@@ -867,7 +867,7 @@ pub(in super::super) fn schema_feature_definition(
         };
         let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            feature_recipe_effect(ctx, scan, feature_id)?,
             kind,
             output_kind.is_some(),
             preceding_features_establish_body(ctx, ir)?,
@@ -1035,7 +1035,7 @@ pub(in super::super) fn schema_feature_definition(
     {
         let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            feature_recipe_effect(ctx, scan, feature_id)?,
             kind,
             output_kind.is_some(),
             preceding_features_establish_body(ctx, ir)?,
@@ -1237,12 +1237,11 @@ pub(in super::super) fn feature_allows_linear_extrusion(
     let schema_class = feature_schema_class(ctx, scan, feature_id)?;
     Ok(
         (!feature_section_sweep_semantics_conflict(ctx, scan, feature_id)?
-            && schema_class.is_some_and(|schema_class| {
-                section_sweep_allows_linear_extrusion(
-                    Some(schema_class),
-                    feature_recipe(scan, feature_id),
-                )
-            }))
+            && match schema_class {
+                Some(schema_class) => section_sweep_allows_linear_extrusion(
+                    Some(schema_class), feature_recipe(ctx, scan, feature_id)?),
+                None => false,
+            })
             || feature_is_sheet_extrusion(ctx, scan, feature_id)?,
     )
 }
@@ -1257,9 +1256,9 @@ pub(in super::super) fn feature_allows_additive_linear_extrusion(
             && feature_schema_class(ctx, scan, feature_id)? == Some(SchemaClass::Protrusion)
             && section_sweep_allows_linear_extrusion(
                 Some(SchemaClass::Protrusion),
-                feature_recipe(scan, feature_id),
+                feature_recipe(ctx, scan, feature_id)?,
             )
-            && feature_recipe_effect(scan, feature_id).is_none_or(|effect| {
+            && feature_recipe_effect(ctx, scan, feature_id)?.is_none_or(|effect| {
                 effect == crate::feature::operations::FeatureRecipeEffect::Protrude
             }),
     )

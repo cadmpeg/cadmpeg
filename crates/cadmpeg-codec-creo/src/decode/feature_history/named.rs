@@ -113,7 +113,7 @@ fn name_only_feature_definition(
             source_carriers,
             feature_id,
             section_sweep_boolean_operation(
-                feature_recipe_effect(scan, feature_id),
+                feature_recipe_effect(ctx, scan, feature_id)?,
                 kind,
                 false,
                 preceding_features_establish_body(ctx, ir)?,
@@ -156,7 +156,7 @@ fn name_only_feature_definition(
     if kind == "Extrude" || numbered_feature_name_has_family(ctx, kind, "Extrude")? {
         let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            feature_recipe_effect(ctx, scan, feature_id)?,
             kind,
             output_kind.is_some(),
             preceding_features_establish_body(ctx, ir)?,
@@ -173,7 +173,7 @@ fn name_only_feature_definition(
     if kind == "Revolve" || numbered_feature_name_has_family(ctx, kind, "Revolve")? {
         let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            feature_recipe_effect(ctx, scan, feature_id)?,
             kind,
             output_kind.is_some(),
             preceding_features_establish_body(ctx, ir)?,
@@ -204,7 +204,7 @@ pub(in super::super) fn named_or_referenced_feature_definition(
         return Ok(Some(definition));
     }
     if kind == "Native Feature"
-        && current_feature_operation(&scan.features.operations, feature_id)
+        && current_feature_operation(ctx, &scan.features.operations, feature_id)?
             .is_some_and(|operation| operation.display_state_conflict)
     {
         return Ok(None);

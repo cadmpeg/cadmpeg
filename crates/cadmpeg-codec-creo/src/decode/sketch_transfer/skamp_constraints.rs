@@ -69,17 +69,19 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     let Some(relations) = &definition.relations else {
         return Ok(Vec::new());
     };
+    let mut scratch_storage = ctx.reserve_scoped(0, "creo SKAMP scratch storage")?;
     let resolved_points = if ctx.any_by(
         relations.skamps(),
         |skamp| Ok(section_skamp_active(skamp.status) && matches!(skamp.kind, 15 | 17 | 30 | 31)),
         "creo SKAMP coordinate requirement search",
     )? {
-        Some(resolved_section_points(ctx, definition)?)
+        Some(scratch_storage.with_storage(|| resolved_section_points(ctx, definition))?)
     } else {
         None
     };
     let solver = SkampEquations::new(ctx, definition)?;
-    let available_entities = if let Some(geometry) = geometry {
+    let available_entities = scratch_storage.with_storage(|| {
+        Ok::<_, cadmpeg_core::CodecError>(if let Some(geometry) = geometry {
         let mut ids = std::collections::BTreeSet::new();
         for skamp in ctx.admit_iter(
             relations.skamps(),
@@ -99,7 +101,8 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         ids
     } else {
         section_entity_external_ids(ctx, definition)?
-    };
+    })
+    })?;
     let mut constraints = Vec::new();
     for skamp in ctx.admit_iter(relations.skamps(), "creo SKAMP constraint row traversal")? {
         let resource_error = Cell::new(None);
@@ -111,32 +114,17 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 let native_ref =
                     defer_resource(sketch_native_ref_admitted(ctx, sketch), resource_error)?;
                 let mut entities = Vec::new();
-                for item in defer_resource(
-                    ctx.admit_iter(&skamp.items, "creo SKAMP native entity item traversal")
-                        .map_err(cadmpeg_core::CodecError::from),
-                    resource_error,
-                )?
-                {
-                    if !defer_resource(ctx.contains_btree_set(&available_entities, &item.entity_id, "creo SKAMP available entity membership"), resource_error)? { continue; }
-                    let Some(id) = defer_resource(
-                        sketch_entity_id_admitted(ctx, sketch, item.entity_id),
-                        resource_error,
-                    )?
-                    else {
-                        continue;
-                    };
-                    defer_resource(
-                        ctx.reserve_vec(&mut entities, 1, "creo skamp native entities"),
-                        resource_error,
-                    )?;
-                    entities.push(id);
-                }
                 let mut operands = Vec::new();
                 for item in defer_resource(
-                    ctx.admit_iter(&skamp.items, "creo SKAMP native operand item traversal")
-                        .map_err(cadmpeg_core::CodecError::from),
-                    resource_error,
+                    ctx.admit_iter(&skamp.items, "creo SKAMP native item traversal")
+                        .map_err(cadmpeg_core::CodecError::from), resource_error,
                 )? {
+                    if defer_resource(ctx.contains_btree_set(&available_entities, &item.entity_id,
+                        "creo SKAMP available entity membership"), resource_error)? {
+                        if let Some(id) = defer_resource(sketch_entity_id_admitted(ctx, sketch, item.entity_id), resource_error)? {
+                            defer_resource(ctx.push_vec(&mut entities, id, "creo skamp native entities"), resource_error)?;
+                        }
+                    }
                     defer_resource(
                         ctx.reserve_vec(&mut operands, 1, "creo skamp native operands"),
                         resource_error,

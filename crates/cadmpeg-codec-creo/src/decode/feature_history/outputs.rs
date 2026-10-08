@@ -565,7 +565,7 @@ pub(in super::super) fn sweep_output_kind(
         return Ok(Some(BodyKind::Sheet));
     }
     Ok(
-        current_feature_operation(&scan.features.operations, feature_id)
+        current_feature_operation(ctx, &scan.features.operations, feature_id)?
             .filter(|operation| operation.kind.as_str() == "Surface")
             .map(|_| BodyKind::Sheet),
     )
@@ -987,7 +987,7 @@ pub(in super::super) fn feature_parameters<'ctx>(
             "profile_sketch",
             profile_sketch.as_str(),
         )?;
-        if feature_recipe(scan, feature_id)
+        if feature_recipe(ctx, scan, feature_id)?
             == Some(crate::feature::operations::FeatureRecipeKind::Extrude)
         {
             insert_feature_parameter(
@@ -1101,7 +1101,7 @@ pub(in super::super) fn feature_source_properties<'ctx>(
 ) -> Result<(ScopedReservation<'ctx>, BTreeMap<String, String>), CodecError> {
     let mut node_storage = ctx.reserve_scoped(0, "creo feature source property nodes")?;
     let mut properties = BTreeMap::new();
-    if let Some(recipe) = current_feature_recipe(&scan.features.operations, feature_id) {
+    if let Some(recipe) = current_feature_recipe(ctx, &scan.features.operations, feature_id)? {
         insert_feature_source_property(
             ctx,
             &mut node_storage,

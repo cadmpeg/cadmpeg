@@ -102,7 +102,7 @@ pub(in super::super) fn native_feature_dependency_ids(
         feature_output_surface_dependencies(ctx, entity_tables, surface_rows, feature_id)
     })?;
     let mut dependencies = Vec::new();
-    let recipe_parent = current_feature_recipe_parent(operations, feature_id);
+    let recipe_parent = current_feature_recipe_parent(ctx, operations, feature_id)?;
     for dependency in ctx
         .admit_iter(&parents, "creo native parent dependency IDs")?
         .copied()
@@ -683,7 +683,7 @@ pub(in super::super) fn reconcile_feature_links(
         )
         .map_err(cadmpeg_core::CodecError::from)?;
         if let Some(parent_id) =
-            current_feature_recipe_parent(&scan.features.operations, feature_id)
+            current_feature_recipe_parent(ctx, &scan.features.operations, feature_id)?
         {
             let text = ctx.format_retained(
                 format_args!("creo:model:feature#{parent_id}"),

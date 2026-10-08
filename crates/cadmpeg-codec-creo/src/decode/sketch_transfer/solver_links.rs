@@ -68,6 +68,7 @@ impl<'definition, 'ctx> IncidenceJoins<'definition, 'ctx> {
 }
 
 pub(in super::super) struct RelationIncidences<'definition, 'ctx> {
+    pub(super) definition: &'definition FeatureDefinition,
     relations: UniqueRows<'definition, FeatureRelation>,
     joins: IncidenceJoins<'definition, 'ctx>,
 }
@@ -81,7 +82,7 @@ impl<'definition, 'ctx> RelationIncidences<'definition, 'ctx> {
                 &mut joins.storage, "creo solver relation identity rows")?,
             None => HashMap::new(),
         };
-        Ok(Self { relations, joins })
+        Ok(Self { definition, relations, joins })
     }
 
     pub(in super::super) fn is_unique(&self, id: u32) -> bool {
@@ -155,5 +156,20 @@ mod tests {
             assert!(!index.contains_key(&12));
             Ok(())
         });
+    }
+    #[test]
+    fn numeric_join_index_does_not_retain_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        for _ in 0..2 {
+            let mut storage = ctx.reserve_scoped(0, "creo test solver index storage").expect("scope");
+            let rows = [(7, 1), (9, 2)];
+            let index = super::unique_rows(&ctx, &rows, |row| Some(row.0), &mut storage,
+                "creo test solver identity rows").expect("index uses temporary storage");
+            assert_eq!(index.get(&7).copied().flatten(), Some(&rows[0]));
+        }
     }
 }

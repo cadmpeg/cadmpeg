@@ -761,40 +761,15 @@ pub(in super::super) fn section_degenerate_axis_line(
         Some(1) => 1,
         _ => return Ok(false),
     };
-    let unary_orientation = matches!(
-        visit_section_skamps(ctx, definition, false, |skamp| {
-            Ok(
-                if matches!(
-                    (skamp.kind, skamp.items.as_slice()),
-                    (kind, [item])
-                        if kind == expected_kind
-                            && item.entity_id == segment.external_id
-                            && item.sense == 0
-                ) {
-                    ControlFlow::Break(())
-                } else {
-                    ControlFlow::Continue(())
-                },
-            )
-        })?,
-        ControlFlow::Break(())
-    );
-    let symmetry_axis = matches!(
-        visit_section_skamps(ctx, definition, false, |skamp| {
-            Ok(
-                if matches!(
-                    (skamp.kind, skamp.items.as_slice()),
-                    (14, [axis, _, _])
-                        if axis.entity_id == segment.external_id && axis.sense == 0
-                ) {
-                    ControlFlow::Break(())
-                } else {
-                    ControlFlow::Continue(())
-                },
-            )
-        })?,
-        ControlFlow::Break(())
-    );
+    let mut unary_orientation = false;
+    let mut symmetry_axis = false;
+    let _ = visit_section_skamps(ctx, definition, false, |skamp| {
+        unary_orientation |= matches!((skamp.kind, skamp.items.as_slice()), (kind, [item])
+            if kind == expected_kind && item.entity_id == segment.external_id && item.sense == 0);
+        symmetry_axis |= matches!((skamp.kind, skamp.items.as_slice()), (14, [axis, _, _])
+            if axis.entity_id == segment.external_id && axis.sense == 0);
+        Ok(if unary_orientation && symmetry_axis { ControlFlow::Break(()) } else { ControlFlow::Continue(()) })
+    })?;
     Ok(unary_orientation && symmetry_axis)
 }
 
