@@ -4,6 +4,7 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 mod append_admission;
+mod budget_repairs;
 mod collector_sources;
 mod consolidated;
 mod constraint;

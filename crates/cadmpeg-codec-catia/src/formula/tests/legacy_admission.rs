@@ -163,9 +163,9 @@ fn formula_legacy_indexes_refuse_collection_limits_before_growth() {
 }
 
 #[test]
-fn formula_legacy_parameter_identity_refuses_retained_limit() {
+fn formula_legacy_parameter_identity_refuses_work_limit() {
     let native = legacy_values();
-    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+    let refused = crate::test_support::with_work_refusal("catia_legacy_parameter_id", |ctx| {
         crate::formula::transfer_parameters(
             ctx,
             &mut CadIr::empty(),

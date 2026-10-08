@@ -43,7 +43,7 @@ pub(crate) fn transfer_parameters<'ctx>(
     let entity_by_id = |id: &str| -> Result<_, cadmpeg_core::CodecError> {
         Ok(ctx.get_hash_map(&entities, id, ENTITY_LOOKUP)?.copied())
     };
-    let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
+    let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate<'_>>::new();
     let mut conflicting_inputs = BTreeSet::<ParameterId>::new();
     collect_definition_chain_parameters(
         ctx,
@@ -281,7 +281,7 @@ pub(crate) fn transfer_parameters<'ctx>(
             )? {
                 continue;
             }
-            scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+            formula_scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
                 let id = candidate
                     .parameter
                     .id
@@ -289,11 +289,13 @@ pub(crate) fn transfer_parameters<'ctx>(
                 ctx.insert_btree_set(&mut program_inputs, id, "catia_formula_program_inputs")?;
                 Ok(())
             })?;
-            let id = candidate
-                .parameter
-                .id
-                .try_clone_for_decode(ctx, "catia_formula_dependency_id")?;
-            ctx.push_vec(&mut dependencies, id, "catia_formula_dependencies")?;
+            formula_scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+                let id = candidate
+                    .parameter
+                    .id
+                    .try_clone_for_decode(ctx, "catia_formula_dependency_id")?;
+                ctx.push_vec(&mut dependencies, id, "catia_formula_dependencies")
+            })?;
             formula_scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
                 ctx.insert_btree_map(
                     &mut type_bindings,
@@ -369,7 +371,10 @@ pub(crate) fn transfer_parameters<'ctx>(
             .flatten()
         {
             if let Some(output_value) = output.parameter_value() {
-                let output_id = neutral_parameter_id(ctx, &output.id)?;
+                let (output_id, _output_id_storage) = ctx
+                    .with_scoped_storage("catia_formula_output_id_scratch", || {
+                        neutral_parameter_id(ctx, &output.id)
+                    })?;
                 if !ctx.contains_btree_set(
                     &program_inputs,
                     &output_id,
@@ -386,8 +391,8 @@ pub(crate) fn transfer_parameters<'ctx>(
                             },
                         };
                         if accepted {
-                            let (program_output, input_parameters) = scratch.with_storage(
-                                || -> Result<_, cadmpeg_core::CodecError> {
+                            let (program_output, program_input_ids, input_parameters) = scratch
+                                .with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
                                     let output = output_id.try_clone_for_decode(
                                         ctx,
                                         "catia_formula_program_output",
@@ -406,9 +411,23 @@ pub(crate) fn transfer_parameters<'ctx>(
                                         ),
                                         "catia_formula_input_parameters",
                                     )?;
-                                    Ok((output, inputs))
-                                },
-                            )?;
+                                    let mut input_ids = BTreeSet::new();
+                                    for input in ctx.admit_iter(
+                                        &program_inputs,
+                                        "catia_formula_program_input_snapshots",
+                                    )? {
+                                        let input = input.try_clone_for_decode(
+                                            ctx,
+                                            "catia_formula_program_input_id",
+                                        )?;
+                                        ctx.insert_btree_set(
+                                            &mut input_ids,
+                                            input,
+                                            "catia_formula_program_inputs",
+                                        )?;
+                                    }
+                                    Ok((output, input_ids, inputs))
+                                })?;
                             scratch.with_storage(|| {
                                 ctx.push_vec(
                                     &mut programs,
@@ -416,63 +435,84 @@ pub(crate) fn transfer_parameters<'ctx>(
                                         relation_entity: &formula_entity.id,
                                         expression_entity: &expression_entity.id,
                                         output: program_output,
-                                        inputs: std::mem::take(&mut program_inputs),
+                                        inputs: program_input_ids,
                                         input_parameters,
                                     },
                                     "catia_formula_programs",
                                 )
                             })?;
                             ctx.charge_entities(1, "admit CATIA formula candidate")?;
-                            let output_dependencies =
-                                cadmpeg_ir::features::DistinctMembers::try_from(
-                                    std::mem::take(&mut dependencies),
-                                    ctx,
+                            let (mut output_candidate, candidate_storage) = ctx
+                                .with_scoped_storage(
+                                    "catia_formula_output_candidate_scratch",
+                                    || -> Result<_, cadmpeg_core::CodecError> {
+                                        let output_dependencies = ctx.try_collect_vec(
+                                            dependencies.iter().map(|id| {
+                                                id.try_clone_for_decode(
+                                                    ctx,
+                                                    "catia_formula_dependency_id",
+                                                )
+                                            }),
+                                            "catia_formula_dependencies",
+                                        )?;
+                                        let output_dependencies =
+                                            cadmpeg_ir::features::DistinctMembers::try_from(
+                                                output_dependencies,
+                                                ctx,
+                                            )?;
+                                        let output_name = ctx.copy_retained_text(
+                                            &output_value.name.value,
+                                            "catia_formula_output_name",
+                                        )?;
+                                        let output_expression = ctx.copy_retained_text(
+                                            &expression.expression.value,
+                                            "catia_formula_output_expression",
+                                        )?;
+                                        let output_native_ref = ctx.copy_retained_text(
+                                            &output.id,
+                                            "catia_formula_output_native_ref",
+                                        )?;
+                                        let properties = parameter_properties(
+                                            ctx,
+                                            parameter_type.as_str(),
+                                            Some(output_value.binding.value.as_str()),
+                                        )?;
+                                        Ok(FormulaParameterCandidate {
+                                            storage: None,
+                                            parameter: DesignParameter {
+                                                id: output_id.try_clone_for_decode(
+                                                    ctx,
+                                                    "catia_formula_output_id",
+                                                )?,
+                                                owner: None,
+                                                ordinal: 0,
+                                                name: output_name,
+                                                expression: output_expression,
+                                                display: None,
+                                                value: match value {
+                                                    TypedParameterEvaluation::Unset => None,
+                                                    TypedParameterEvaluation::Value(value) => {
+                                                        Some(value)
+                                                    }
+                                                },
+                                                dependencies: output_dependencies,
+                                                properties,
+                                                pmi: None,
+                                                native_ref: Some(output_native_ref),
+                                            },
+                                            parameter_type,
+                                            role: FormulaParameterRole::FormulaOutput {
+                                                fallback: None,
+                                            },
+                                            source_order: output.byte_offset,
+                                        })
+                                    },
                                 )?;
-                            let output_name = ctx.copy_retained_text(
-                                &output_value.name.value,
-                                "catia_formula_output_name",
-                            )?;
-                            let output_expression = ctx.copy_retained_text(
-                                &expression.expression.value,
-                                "catia_formula_output_expression",
-                            )?;
-                            let output_native_ref = ctx.copy_retained_text(
-                                &output.id,
-                                "catia_formula_output_native_ref",
-                            )?;
-                            let properties = parameter_properties(
-                                ctx,
-                                parameter_type.as_str(),
-                                Some(output_value.binding.value.as_str()),
-                            )?;
+                            output_candidate.storage = Some(candidate_storage);
                             formula_scratch.with_storage(|| {
                                 ctx.push_vec(
                                     &mut transferred,
-                                    FormulaParameterCandidate {
-                                        parameter: DesignParameter {
-                                            id: output_id,
-                                            owner: None,
-                                            ordinal: 0,
-                                            name: output_name,
-                                            expression: output_expression,
-                                            display: None,
-                                            value: match value {
-                                                TypedParameterEvaluation::Unset => None,
-                                                TypedParameterEvaluation::Value(value) => {
-                                                    Some(value)
-                                                }
-                                            },
-                                            dependencies: output_dependencies,
-                                            properties,
-                                            pmi: None,
-                                            native_ref: Some(output_native_ref),
-                                        },
-                                        parameter_type,
-                                        role: FormulaParameterRole::FormulaOutput {
-                                            fallback: None,
-                                        },
-                                        source_order: output.byte_offset,
-                                    },
+                                    output_candidate,
                                     "catia_formula_transferred_inputs",
                                 )
                             })?;
@@ -796,7 +836,9 @@ pub(crate) fn transfer_parameters<'ctx>(
         "catia_formula_neutral_parameters",
     )?;
     for candidate in ctx.admit_iter(parameters, "catia_formula_neutral_parameter_visits")? {
-        ir.model.parameters.push(candidate.parameter);
+        ir.model
+            .parameters
+            .push(copy_design_parameter(ctx, &candidate.parameter)?);
     }
     let typed_parameter_count = transferred
         .checked_sub(legacy_transfer.parameters)
@@ -817,12 +859,20 @@ pub(crate) fn transfer_parameters<'ctx>(
 
 /// Clones the candidate's identity as its index key and inserts it. The key
 /// and the index nodes are dropped with the transfer.
-fn insert_formula_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn insert_formula_candidate<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
-    candidate: FormulaParameterCandidate,
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate<'ctx>>,
+    candidate: FormulaParameterCandidate<'ctx>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(existing) = ctx.get_mut_btree_map(
+        candidates,
+        &candidate.parameter.id,
+        "catia_formula_candidates",
+    )? {
+        *existing = candidate;
+        return Ok(());
+    }
     scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
         let key = candidate
             .parameter
@@ -852,7 +902,7 @@ fn insert_formula_conflict(
 fn derivable_candidates(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    candidates: &BTreeMap<ParameterId, FormulaParameterCandidate>,
+    candidates: &BTreeMap<ParameterId, FormulaParameterCandidate<'_>>,
 ) -> Result<Vec<bool>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "catia_formula_derivable_parameters";
     let count = candidates.len();
@@ -927,12 +977,12 @@ fn derivable_candidates(
 /// names its source type. The suffix selector must already agree with the
 /// first definition; the native decoder enforces that invariant. Other suffix
 /// states remain native because they do not contain a neutral parameter value.
-fn collect_definition_chain_parameters(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn collect_definition_chain_parameters<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
-    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate<'ctx>>,
     conflicting_inputs: &mut BTreeSet<ParameterId>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for entity in ctx.admit_iter(&native.entity_records, "catia_formula_entity_visits")? {
@@ -966,137 +1016,150 @@ fn collect_definition_chain_parameters(
     Ok(())
 }
 
-fn definition_chain_parameter_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn definition_chain_parameter_candidate<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     entity: &crate::native::entity_record::CatiaEntityRecord,
     chain: &crate::native::CatiaDefinitionChainValue,
-) -> Result<Option<FormulaParameterCandidate>, cadmpeg_core::CodecError> {
-    let (parameter_type, evaluation, evaluation_opcode_offset, atom_value) = match &chain.value {
-        crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
-            opcode_offset,
-            evaluation,
-        } => {
-            let Some((parameter_type, evaluation)) =
-                typed_parameter_evaluation(&chain.role.value, evaluation)
-            else {
-                return Ok(None);
-            };
-            (parameter_type, evaluation, Some(*opcode_offset), None)
-        }
-        crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
-            if canonical_parameter_type(&chain.role.value)
-                == Some(FormulaParameterType::Boolean) =>
-        {
-            (
-                FormulaParameterType::Boolean,
-                TypedParameterEvaluation::Value(ParameterValue::Boolean(match value {
-                    0 => false,
-                    1 => true,
+) -> Result<Option<FormulaParameterCandidate<'ctx>>, cadmpeg_core::CodecError> {
+    let (mut candidate, storage) = ctx.with_scoped_storage(
+        "catia_formula_candidate_scratch",
+        || -> Result<_, cadmpeg_core::CodecError> {
+            let (parameter_type, evaluation, evaluation_opcode_offset, atom_value) =
+                match &chain.value {
+                    crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
+                        opcode_offset,
+                        evaluation,
+                    } => {
+                        let Some((parameter_type, evaluation)) =
+                            typed_parameter_evaluation(&chain.role.value, evaluation)
+                        else {
+                            return Ok(None);
+                        };
+                        (parameter_type, evaluation, Some(*opcode_offset), None)
+                    }
+                    crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
+                        if canonical_parameter_type(&chain.role.value)
+                            == Some(FormulaParameterType::Boolean) =>
+                    {
+                        (
+                            FormulaParameterType::Boolean,
+                            TypedParameterEvaluation::Value(ParameterValue::Boolean(match value {
+                                0 => false,
+                                1 => true,
+                                _ => return Ok(None),
+                            })),
+                            None,
+                            Some(*value),
+                        )
+                    }
                     _ => return Ok(None),
-                })),
-                None,
-                Some(*value),
-            )
-        }
-        _ => return Ok(None),
-    };
-    if chain.selector.value.is_empty() {
-        return Ok(None);
-    }
-    let id = match neutral_parameter_id(ctx, &entity.id) {
-        Ok(id) => id,
-        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    ctx.charge_entities(1, "admit CATIA formula candidate")?;
-    let name = ctx.copy_retained_text(&chain.selector.value, "catia_formula_chain_name")?;
-    let (expression, value) = match evaluation {
-        TypedParameterEvaluation::Unset => (String::new(), None),
-        TypedParameterEvaluation::Value(value) => {
-            let expression = parameter_expression(ctx, &value)?;
-            (expression, Some(value))
-        }
-    };
-    // A definition chain names the parameter in its first definition. It does
-    // not carry the named-parameter value record's scope/expression binding,
-    // so do not publish the definition name as `catia_binding`.
-    let mut properties = parameter_properties(ctx, parameter_type.as_str(), None)?;
-    insert_parameter_property(
-        ctx,
-        &mut properties,
-        "catia_definition_selector_entry",
-        format_args!("{}", chain.selector.entry),
-    )?;
-    insert_parameter_property(
-        ctx,
-        &mut properties,
-        "catia_definition_selector_ordinal",
-        format_args!("{}", chain.selector.ordinal),
-    )?;
-    insert_parameter_property(
-        ctx,
-        &mut properties,
-        "catia_definition_selector_offset",
-        format_args!("{}", chain.selector.offset),
-    )?;
-    insert_parameter_property(
-        ctx,
-        &mut properties,
-        "catia_definition_role_entry",
-        format_args!("{}", chain.role.entry),
-    )?;
-    insert_parameter_property(
-        ctx,
-        &mut properties,
-        "catia_definition_role_ordinal",
-        format_args!("{}", chain.role.ordinal),
-    )?;
-    insert_parameter_property(
-        ctx,
-        &mut properties,
-        "catia_definition_role_offset",
-        format_args!("{}", chain.role.offset),
-    )?;
-    if let Some(opcode_offset) = evaluation_opcode_offset {
-        insert_parameter_property(
-            ctx,
-            &mut properties,
-            "catia_definition_evaluation_opcode_offset",
-            format_args!("{opcode_offset}"),
-        )?;
-    }
-    if let Some(atom_value) = atom_value {
-        insert_parameter_property(
-            ctx,
-            &mut properties,
-            "catia_definition_value_kind",
-            format_args!("atom"),
-        )?;
-        insert_parameter_property(
-            ctx,
-            &mut properties,
-            "catia_definition_atom_value",
-            format_args!("{atom_value}"),
-        )?;
-    }
-    Ok(Some(FormulaParameterCandidate {
-        parameter: DesignParameter {
-            id,
-            owner: None,
-            ordinal: 0,
-            name,
-            expression,
-            display: None,
-            value,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            properties,
-            pmi: None,
-            native_ref: Some(ctx.copy_retained_text(&entity.id, "catia_formula_chain_native_ref")?),
+                };
+            if chain.selector.value.is_empty() {
+                return Ok(None);
+            }
+            let id = match neutral_parameter_id(ctx, &entity.id) {
+                Ok(id) => id,
+                Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+                Err(error) => return Err(error),
+            };
+            ctx.charge_entities(1, "admit CATIA formula candidate")?;
+            let name = ctx.copy_retained_text(&chain.selector.value, "catia_formula_chain_name")?;
+            let (expression, value) = match evaluation {
+                TypedParameterEvaluation::Unset => (String::new(), None),
+                TypedParameterEvaluation::Value(value) => {
+                    let expression = parameter_expression(ctx, &value)?;
+                    (expression, Some(value))
+                }
+            };
+            // A definition chain names the parameter in its first definition. It does
+            // not carry the named-parameter value record's scope/expression binding,
+            // so do not publish the definition name as `catia_binding`.
+            let mut properties = parameter_properties(ctx, parameter_type.as_str(), None)?;
+            insert_parameter_property(
+                ctx,
+                &mut properties,
+                "catia_definition_selector_entry",
+                format_args!("{}", chain.selector.entry),
+            )?;
+            insert_parameter_property(
+                ctx,
+                &mut properties,
+                "catia_definition_selector_ordinal",
+                format_args!("{}", chain.selector.ordinal),
+            )?;
+            insert_parameter_property(
+                ctx,
+                &mut properties,
+                "catia_definition_selector_offset",
+                format_args!("{}", chain.selector.offset),
+            )?;
+            insert_parameter_property(
+                ctx,
+                &mut properties,
+                "catia_definition_role_entry",
+                format_args!("{}", chain.role.entry),
+            )?;
+            insert_parameter_property(
+                ctx,
+                &mut properties,
+                "catia_definition_role_ordinal",
+                format_args!("{}", chain.role.ordinal),
+            )?;
+            insert_parameter_property(
+                ctx,
+                &mut properties,
+                "catia_definition_role_offset",
+                format_args!("{}", chain.role.offset),
+            )?;
+            if let Some(opcode_offset) = evaluation_opcode_offset {
+                insert_parameter_property(
+                    ctx,
+                    &mut properties,
+                    "catia_definition_evaluation_opcode_offset",
+                    format_args!("{opcode_offset}"),
+                )?;
+            }
+            if let Some(atom_value) = atom_value {
+                insert_parameter_property(
+                    ctx,
+                    &mut properties,
+                    "catia_definition_value_kind",
+                    format_args!("atom"),
+                )?;
+                insert_parameter_property(
+                    ctx,
+                    &mut properties,
+                    "catia_definition_atom_value",
+                    format_args!("{atom_value}"),
+                )?;
+            }
+            Ok(Some(FormulaParameterCandidate {
+                storage: None,
+                parameter: DesignParameter {
+                    id,
+                    owner: None,
+                    ordinal: 0,
+                    name,
+                    expression,
+                    display: None,
+                    value,
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    properties,
+                    pmi: None,
+                    native_ref: Some(
+                        ctx.copy_retained_text(&entity.id, "catia_formula_chain_native_ref")?,
+                    ),
+                },
+                parameter_type,
+                role: FormulaParameterRole::Input,
+                source_order: entity.byte_offset,
+            }))
         },
-        parameter_type,
-        role: FormulaParameterRole::Input,
-        source_order: entity.byte_offset,
-    }))
+    )?;
+    if let Some(candidate) = &mut candidate {
+        candidate.storage = Some(storage);
+    }
+    Ok(candidate)
 }
 
 #[derive(Default)]
@@ -1211,11 +1274,11 @@ struct LegacyParameterIndexes<'run> {
 
 /// Inserts a new legacy candidate. The returned identity is retained by the
 /// candidate; its index key is a scoped copy.
-fn insert_legacy_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn insert_legacy_candidate<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
-    candidate: FormulaParameterCandidate,
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate<'ctx>>,
+    candidate: FormulaParameterCandidate<'ctx>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
         let key = candidate
@@ -1232,11 +1295,11 @@ fn insert_legacy_candidate(
     })
 }
 
-fn collect_legacy_parameters(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn collect_legacy_parameters<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     native: &CatiaNative,
-    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate<'ctx>>,
     modeling_scope: LegacyModelingScope<'_>,
 ) -> Result<LegacyParameterTransfer, cadmpeg_core::CodecError> {
     let mut transfer = LegacyParameterTransfer::default();
@@ -1277,20 +1340,27 @@ fn collect_legacy_parameters(
             let Some(key) = scalar.id.strip_prefix("catia:legacy:scalar#") else {
                 continue;
             };
-            let id = legacy_parameter_id(ctx, key)?;
+            let mut candidate_storage = ctx.reserve_scoped(0, "catia_legacy_candidate_scratch")?;
+            let id = candidate_storage.with_storage(|| legacy_parameter_id(ctx, key))?;
             if ctx.contains_key_btree_map(candidates, &id, "catia_legacy_parameter_candidates")? {
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA formula candidate")?;
-            let (expression, value) = match evaluation {
-                TypedParameterEvaluation::Unset => (String::new(), None),
-                TypedParameterEvaluation::Value(value) => {
-                    let expression = parameter_expression(ctx, &value)?;
-                    (expression, Some(value))
-                }
-            };
-            let parameter_name = ctx.copy_retained_text(name, "catia_legacy_scalar_name")?;
-            let native_ref = ctx.copy_retained_text(&run.id, "catia_legacy_scalar_native_ref")?;
+            let (expression, value, parameter_name, native_ref) =
+                candidate_storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
+                    let (expression, value) = match evaluation {
+                        TypedParameterEvaluation::Unset => (String::new(), None),
+                        TypedParameterEvaluation::Value(value) => {
+                            let expression = parameter_expression(ctx, &value)?;
+                            (expression, Some(value))
+                        }
+                    };
+                    let parameter_name =
+                        ctx.copy_retained_text(name, "catia_legacy_scalar_name")?;
+                    let native_ref =
+                        ctx.copy_retained_text(&run.id, "catia_legacy_scalar_native_ref")?;
+                    Ok((expression, value, parameter_name, native_ref))
+                })?;
             insert_legacy_parameter(
                 ctx,
                 &mut run_scratch,
@@ -1298,29 +1368,36 @@ fn collect_legacy_parameters(
                 (scalar.entity_id, name),
                 &id,
             )?;
-            insert_legacy_candidate(
-                ctx,
-                scratch,
-                candidates,
-                FormulaParameterCandidate {
-                    parameter: DesignParameter {
-                        id,
-                        owner: None,
-                        ordinal: 0,
-                        name: parameter_name,
-                        expression,
-                        display: None,
-                        value,
-                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                        properties: parameter_properties(ctx, parameter_type.as_str(), None)?,
-                        pmi: None,
-                        native_ref: Some(native_ref),
-                    },
-                    parameter_type,
-                    role: FormulaParameterRole::Input,
-                    source_order: scalar.byte_offset,
-                },
-            )?;
+            insert_legacy_candidate(ctx, scratch, candidates, {
+                let mut candidate =
+                    candidate_storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
+                        Ok(FormulaParameterCandidate {
+                            storage: None,
+                            parameter: DesignParameter {
+                                id,
+                                owner: None,
+                                ordinal: 0,
+                                name: parameter_name,
+                                expression,
+                                display: None,
+                                value,
+                                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                                properties: parameter_properties(
+                                    ctx,
+                                    parameter_type.as_str(),
+                                    None,
+                                )?,
+                                pmi: None,
+                                native_ref: Some(native_ref),
+                            },
+                            parameter_type,
+                            role: FormulaParameterRole::Input,
+                            source_order: scalar.byte_offset,
+                        })
+                    })?;
+                candidate.storage = Some(candidate_storage);
+                candidate
+            })?;
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -1350,16 +1427,23 @@ fn collect_legacy_parameters(
             let Some(key) = string.id.strip_prefix("catia:legacy:string#") else {
                 continue;
             };
-            let id = legacy_parameter_id(ctx, key)?;
+            let mut candidate_storage = ctx.reserve_scoped(0, "catia_legacy_candidate_scratch")?;
+            let id = candidate_storage.with_storage(|| legacy_parameter_id(ctx, key))?;
             if ctx.contains_key_btree_map(candidates, &id, "catia_legacy_parameter_candidates")? {
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA formula candidate")?;
-            let value = ParameterValue::String(
-                ctx.copy_retained_text(&string.value, "catia_legacy_string_value")?,
-            );
-            let parameter_name = ctx.copy_retained_text(name, "catia_legacy_string_name")?;
-            let native_ref = ctx.copy_retained_text(&run.id, "catia_legacy_string_native_ref")?;
+            let (value, parameter_name, native_ref) =
+                candidate_storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
+                    let value = ParameterValue::String(
+                        ctx.copy_retained_text(&string.value, "catia_legacy_string_value")?,
+                    );
+                    let parameter_name =
+                        ctx.copy_retained_text(name, "catia_legacy_string_name")?;
+                    let native_ref =
+                        ctx.copy_retained_text(&run.id, "catia_legacy_string_native_ref")?;
+                    Ok((value, parameter_name, native_ref))
+                })?;
             insert_legacy_parameter(
                 ctx,
                 &mut run_scratch,
@@ -1367,29 +1451,32 @@ fn collect_legacy_parameters(
                 (string.entity_id, name),
                 &id,
             )?;
-            insert_legacy_candidate(
-                ctx,
-                scratch,
-                candidates,
-                FormulaParameterCandidate {
-                    parameter: DesignParameter {
-                        id,
-                        owner: None,
-                        ordinal: 0,
-                        name: parameter_name,
-                        expression: parameter_expression(ctx, &value)?,
-                        display: None,
-                        value: Some(value),
-                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                        properties: parameter_properties(ctx, "String", None)?,
-                        pmi: None,
-                        native_ref: Some(native_ref),
-                    },
-                    parameter_type: FormulaParameterType::String,
-                    role: FormulaParameterRole::Input,
-                    source_order: string.byte_offset,
-                },
-            )?;
+            insert_legacy_candidate(ctx, scratch, candidates, {
+                let mut candidate =
+                    candidate_storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
+                        Ok(FormulaParameterCandidate {
+                            storage: None,
+                            parameter: DesignParameter {
+                                id,
+                                owner: None,
+                                ordinal: 0,
+                                name: parameter_name,
+                                expression: parameter_expression(ctx, &value)?,
+                                display: None,
+                                value: Some(value),
+                                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                                properties: parameter_properties(ctx, "String", None)?,
+                                pmi: None,
+                                native_ref: Some(native_ref),
+                            },
+                            parameter_type: FormulaParameterType::String,
+                            role: FormulaParameterRole::Input,
+                            source_order: string.byte_offset,
+                        })
+                    })?;
+                candidate.storage = Some(candidate_storage);
+                candidate
+            })?;
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -1419,14 +1506,21 @@ fn collect_legacy_parameters(
             let Some(key) = integer.id.strip_prefix("catia:legacy:integer#") else {
                 continue;
             };
-            let id = legacy_parameter_id(ctx, key)?;
+            let mut candidate_storage = ctx.reserve_scoped(0, "catia_legacy_candidate_scratch")?;
+            let id = candidate_storage.with_storage(|| legacy_parameter_id(ctx, key))?;
             if ctx.contains_key_btree_map(candidates, &id, "catia_legacy_parameter_candidates")? {
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA formula candidate")?;
-            let value = ParameterValue::Integer(i64::from(integer.value));
-            let parameter_name = ctx.copy_retained_text(name, "catia_legacy_integer_name")?;
-            let native_ref = ctx.copy_retained_text(&run.id, "catia_legacy_integer_native_ref")?;
+            let (value, parameter_name, native_ref) =
+                candidate_storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
+                    let value = ParameterValue::Integer(i64::from(integer.value));
+                    let parameter_name =
+                        ctx.copy_retained_text(name, "catia_legacy_integer_name")?;
+                    let native_ref =
+                        ctx.copy_retained_text(&run.id, "catia_legacy_integer_native_ref")?;
+                    Ok((value, parameter_name, native_ref))
+                })?;
             insert_legacy_parameter(
                 ctx,
                 &mut run_scratch,
@@ -1434,29 +1528,32 @@ fn collect_legacy_parameters(
                 (integer.entity_id, name),
                 &id,
             )?;
-            insert_legacy_candidate(
-                ctx,
-                scratch,
-                candidates,
-                FormulaParameterCandidate {
-                    parameter: DesignParameter {
-                        id,
-                        owner: None,
-                        ordinal: 0,
-                        name: parameter_name,
-                        expression: parameter_expression(ctx, &value)?,
-                        display: None,
-                        value: Some(value),
-                        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                        properties: parameter_properties(ctx, "Integer", None)?,
-                        pmi: None,
-                        native_ref: Some(native_ref),
-                    },
-                    parameter_type: FormulaParameterType::Integer,
-                    role: FormulaParameterRole::Input,
-                    source_order: integer.byte_offset,
-                },
-            )?;
+            insert_legacy_candidate(ctx, scratch, candidates, {
+                let mut candidate =
+                    candidate_storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
+                        Ok(FormulaParameterCandidate {
+                            storage: None,
+                            parameter: DesignParameter {
+                                id,
+                                owner: None,
+                                ordinal: 0,
+                                name: parameter_name,
+                                expression: parameter_expression(ctx, &value)?,
+                                display: None,
+                                value: Some(value),
+                                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                                properties: parameter_properties(ctx, "Integer", None)?,
+                                pmi: None,
+                                native_ref: Some(native_ref),
+                            },
+                            parameter_type: FormulaParameterType::Integer,
+                            role: FormulaParameterRole::Input,
+                            source_order: integer.byte_offset,
+                        })
+                    })?;
+                candidate.storage = Some(candidate_storage);
+                candidate
+            })?;
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -1517,11 +1614,34 @@ fn collect_legacy_parameters(
                     continue;
                 }
             }
-            let expression =
-                ctx.copy_retained_text(evaluation.expression, "catia_legacy_formula_expression")?;
+            let mut output_storage =
+                ctx.reserve_scoped(0, "catia_legacy_formula_output_scratch")?;
+            let (expression, dependencies) =
+                output_storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
+                    let expression = ctx.copy_retained_text(
+                        evaluation.expression,
+                        "catia_legacy_formula_expression",
+                    )?;
+                    let dependencies = ctx.try_collect_vec(
+                        evaluation.dependencies.iter().map(|id| {
+                            id.try_clone_for_decode(ctx, "catia_legacy_formula_dependency_id")
+                        }),
+                        "catia_legacy_formula_dependencies",
+                    )?;
+                    Ok((
+                        expression,
+                        cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)?,
+                    ))
+                })?;
             candidate.parameter.expression = expression;
-            candidate.parameter.dependencies =
-                cadmpeg_ir::features::DistinctMembers::try_from(evaluation.dependencies, ctx)?;
+            candidate.parameter.dependencies = dependencies;
+            // Keep only the current parameter's storage after replacement.
+            let (parameter, storage) = ctx
+                .with_scoped_storage("catia_legacy_candidate_scratch", || {
+                    copy_design_parameter(ctx, &candidate.parameter)
+                })?;
+            candidate.parameter = parameter;
+            candidate.storage = Some(storage);
             candidate.role = FormulaParameterRole::FormulaOutput { fallback: None };
             transfer.formulas += 1;
         }
@@ -1558,7 +1678,7 @@ fn legacy_relation_evaluation<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     relation: &'a crate::native::CatiaLegacyRelation,
     parameters_by_name: &HashMap<&str, Option<ParameterId>>,
-    candidates: &BTreeMap<ParameterId, FormulaParameterCandidate>,
+    candidates: &BTreeMap<ParameterId, FormulaParameterCandidate<'_>>,
 ) -> Result<Option<LegacyRelationEvaluation<'a>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "catia_legacy_formula_bindings";
     let (source_type, expression) = match relation.output.as_ref() {
@@ -1910,10 +2030,11 @@ fn resolved_or_intrinsic_legacy_type<'run, 'ctx>(
     .then_some((value.intrinsic_type, false)))
 }
 
-struct FormulaParameterCandidate {
+struct FormulaParameterCandidate<'ctx> {
+    storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     parameter: DesignParameter,
     parameter_type: FormulaParameterType,
-    role: FormulaParameterRole,
+    role: FormulaParameterRole<'ctx>,
     source_order: u64,
 }
 
@@ -1940,77 +2061,86 @@ impl FormulaParameterType {
     }
 }
 
-#[derive(Clone)]
-enum FormulaParameterRole {
+enum FormulaParameterRole<'ctx> {
     Input,
     FormulaOutput {
-        fallback: Option<Box<(DesignParameter, FormulaParameterType)>>,
+        fallback: Option<Box<FormulaParameterCandidate<'ctx>>>,
     },
 }
 
-impl FormulaParameterRole {
+impl FormulaParameterRole<'_> {
     fn is_formula_output(&self) -> bool {
         matches!(self, Self::FormulaOutput { .. })
     }
 }
 
-fn typed_entity_parameter_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn typed_entity_parameter_candidate<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     entity: &crate::native::entity_record::CatiaEntityRecord,
     parameter: &crate::native::CatiaParameterValue,
     source_type: &str,
-) -> Result<Option<FormulaParameterCandidate>, cadmpeg_core::CodecError> {
-    let Some((parameter_type, evaluation)) =
-        typed_parameter_evaluation(source_type, &parameter.evaluation)
-    else {
-        return Ok(None);
-    };
-    let id = match neutral_parameter_id(ctx, &entity.id) {
-        Ok(id) => id,
-        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    ctx.charge_entities(1, "admit CATIA formula candidate")?;
-    let name =
-        ctx.copy_retained_text(&parameter.name.value, "catia_formula_typed_parameter_name")?;
-    let native_ref =
-        ctx.copy_retained_text(&entity.id, "catia_formula_typed_parameter_native_ref")?;
-    let (expression, value) = match evaluation {
-        TypedParameterEvaluation::Unset => (String::new(), None),
-        TypedParameterEvaluation::Value(value) => {
-            let expression = parameter_expression(ctx, &value)?;
-            (expression, Some(value))
-        }
-    };
-    Ok(Some(FormulaParameterCandidate {
-        parameter: DesignParameter {
-            id,
-            owner: None,
-            ordinal: 0,
-            name,
-            expression,
-            display: None,
-            value,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            properties: parameter_properties(
-                ctx,
-                parameter_type.as_str(),
-                Some(parameter.binding.value.as_str()),
-            )?,
-            pmi: None,
-            native_ref: Some(native_ref),
+) -> Result<Option<FormulaParameterCandidate<'ctx>>, cadmpeg_core::CodecError> {
+    let (mut candidate, storage) = ctx.with_scoped_storage(
+        "catia_formula_candidate_scratch",
+        || -> Result<_, cadmpeg_core::CodecError> {
+            let Some((parameter_type, evaluation)) =
+                typed_parameter_evaluation(source_type, &parameter.evaluation)
+            else {
+                return Ok(None);
+            };
+            let id = match neutral_parameter_id(ctx, &entity.id) {
+                Ok(id) => id,
+                Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+                Err(error) => return Err(error),
+            };
+            ctx.charge_entities(1, "admit CATIA formula candidate")?;
+            let name = ctx
+                .copy_retained_text(&parameter.name.value, "catia_formula_typed_parameter_name")?;
+            let native_ref =
+                ctx.copy_retained_text(&entity.id, "catia_formula_typed_parameter_native_ref")?;
+            let (expression, value) = match evaluation {
+                TypedParameterEvaluation::Unset => (String::new(), None),
+                TypedParameterEvaluation::Value(value) => {
+                    let expression = parameter_expression(ctx, &value)?;
+                    (expression, Some(value))
+                }
+            };
+            Ok(Some(FormulaParameterCandidate {
+                storage: None,
+                parameter: DesignParameter {
+                    id,
+                    owner: None,
+                    ordinal: 0,
+                    name,
+                    expression,
+                    display: None,
+                    value,
+                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    properties: parameter_properties(
+                        ctx,
+                        parameter_type.as_str(),
+                        Some(parameter.binding.value.as_str()),
+                    )?,
+                    pmi: None,
+                    native_ref: Some(native_ref),
+                },
+                parameter_type,
+                role: FormulaParameterRole::Input,
+                source_order: entity.byte_offset,
+            }))
         },
-        parameter_type,
-        role: FormulaParameterRole::Input,
-        source_order: entity.byte_offset,
-    }))
+    )?;
+    if let Some(candidate) = &mut candidate {
+        candidate.storage = Some(storage);
+    }
+    Ok(candidate)
 }
 
-fn typed_entity_parameter_candidate_for_source(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn typed_entity_parameter_candidate_for_source<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     entity: &crate::native::entity_record::CatiaEntityRecord,
     source_type: &str,
-) -> Result<Option<FormulaParameterCandidate>, cadmpeg_core::CodecError> {
+) -> Result<Option<FormulaParameterCandidate<'ctx>>, cadmpeg_core::CodecError> {
     if let Some(parameter) = entity.parameter_value() {
         return typed_entity_parameter_candidate(ctx, entity, parameter, source_type);
     }
@@ -2037,12 +2167,12 @@ struct FormulaProgramCandidate<'a> {
     input_parameters: Vec<(DesignParameter, FormulaParameterType)>,
 }
 
-fn merge_formula_parameter_candidate(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn merge_formula_parameter_candidate<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate<'ctx>>,
     conflicting_inputs: &mut BTreeSet<ParameterId>,
-    mut candidate: FormulaParameterCandidate,
+    mut candidate: FormulaParameterCandidate<'ctx>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let Some(existing) = ctx.get_mut_btree_map(
         candidates,
@@ -2058,7 +2188,13 @@ fn merge_formula_parameter_candidate(
         match (existing_output, candidate_output) {
             (true, true) => {}
             (true, false) | (false, false) => {
-                insert_formula_conflict(ctx, scratch, conflicting_inputs, candidate.parameter.id)?;
+                let conflict = scratch.with_storage(|| {
+                    candidate
+                        .parameter
+                        .id
+                        .try_clone_for_decode(ctx, "catia_formula_conflict_id")
+                })?;
+                insert_formula_conflict(ctx, scratch, conflicting_inputs, conflict)?;
             }
             (false, true) => {
                 let conflict = scratch.with_storage(|| {
@@ -2075,19 +2211,42 @@ fn merge_formula_parameter_candidate(
     }
     match (existing_output, candidate_output) {
         (false, true) => {
-            candidate.role = FormulaParameterRole::FormulaOutput {
-                fallback: Some(Box::new((
-                    copy_design_parameter(ctx, &existing.parameter)?,
-                    existing.parameter_type,
-                ))),
+            std::mem::swap(existing, &mut candidate);
+            let mut storage = match candidate.storage.take() {
+                Some(storage) => storage,
+                None => ctx.reserve_scoped(0, "catia_formula_fallback_scratch")?,
             };
-            insert_formula_candidate(ctx, scratch, candidates, candidate)?;
+            let mut fallback =
+                storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
+                    ctx.charge_retained(
+                        u64_from_index(std::mem::size_of_val(&candidate)),
+                        "catia_formula_fallback_box",
+                    )?;
+                    Ok(Box::new(candidate))
+                })?;
+            fallback.storage = Some(storage);
+            existing.role = FormulaParameterRole::FormulaOutput {
+                fallback: Some(fallback),
+            };
         }
         (true, false) => {
             if let FormulaParameterRole::FormulaOutput { fallback } = &mut existing.role {
-                fallback.get_or_insert_with(|| {
-                    Box::new((candidate.parameter, candidate.parameter_type))
-                });
+                if fallback.is_none() {
+                    let mut storage = match candidate.storage.take() {
+                        Some(storage) => storage,
+                        None => ctx.reserve_scoped(0, "catia_formula_fallback_scratch")?,
+                    };
+                    let mut input =
+                        storage.with_storage(|| -> Result<_, cadmpeg_core::CodecError> {
+                            ctx.charge_retained(
+                                u64_from_index(std::mem::size_of_val(&candidate)),
+                                "catia_formula_fallback_box",
+                            )?;
+                            Ok(Box::new(candidate))
+                        })?;
+                    input.storage = Some(storage);
+                    *fallback = Some(input);
+                }
             }
         }
         (true, true) | (false, false) => {}
@@ -2102,15 +2261,15 @@ struct RelationProgramEntities<'a> {
     output: &'a crate::native::entity_record::CatiaEntityRecord,
 }
 
-fn relation_program_output_candidate<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn relation_program_output_candidate<'a, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     program_entities: RelationProgramEntities<'a>,
     expression: &crate::native::CatiaRelationExpression,
     inputs: &[crate::native::CatiaRelationProgramInput],
     entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
 ) -> Result<
-    Option<(FormulaProgramCandidate<'a>, FormulaParameterCandidate)>,
+    Option<(FormulaProgramCandidate<'a>, FormulaParameterCandidate<'ctx>)>,
     cadmpeg_core::CodecError,
 > {
     const OPERATION: &str = "catia_relation_program_inputs";
@@ -2151,7 +2310,8 @@ fn relation_program_output_candidate<'a>(
     let mut expression_bindings = BTreeMap::new();
     let mut type_bindings = BTreeMap::new();
     let mut all_inputs_complete = true;
-    for input in ctx.admit_iter(inputs, "catia_formula_input_visits")? {
+    let mut input_rows = inputs.iter();
+    while let Some(input) = ctx.next_charged(&mut input_rows, "catia_formula_input_visits")? {
         let Some(input_entity) = input
             .entity
             .entity()
@@ -2199,7 +2359,7 @@ fn relation_program_output_candidate<'a>(
             }
             ctx.push_vec(
                 &mut input_parameters,
-                (candidate.parameter, candidate.parameter_type),
+                candidate,
                 "catia_relation_program_input_parameters",
             )
         })?;
@@ -2240,11 +2400,12 @@ fn relation_program_output_candidate<'a>(
     let Some(output_value) = output_entity.parameter_value() else {
         return Ok(None);
     };
-    let output_id = match neutral_parameter_id(ctx, &output_entity.id) {
-        Ok(id) => id,
-        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
-        Err(error) => return Err(error),
-    };
+    let output_id =
+        match program_scratch.with_storage(|| neutral_parameter_id(ctx, &output_entity.id)) {
+            Ok(id) => id,
+            Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
     if ctx.contains_btree_set(&dependencies, &output_id, OPERATION)? {
         return Ok(None);
     }
@@ -2280,63 +2441,75 @@ fn relation_program_output_candidate<'a>(
                 )?;
             }
             let parameters = ctx.try_collect_vec(
-                input_parameters.iter().map(
-                    |(parameter, parameter_type)| -> Result<_, cadmpeg_core::CodecError> {
-                        Ok((copy_design_parameter(ctx, parameter)?, *parameter_type))
-                    },
-                ),
+                input_parameters
+                    .iter()
+                    .map(|candidate| -> Result<_, cadmpeg_core::CodecError> {
+                        Ok((
+                            copy_design_parameter(ctx, &candidate.parameter)?,
+                            candidate.parameter_type,
+                        ))
+                    }),
                 "catia_relation_program_input_parameters",
             )?;
             Ok((inputs, parameters))
         })?;
-    let output_dependencies = ctx.try_collect_vec(
-        input_parameters.iter().map(|(parameter, _)| {
-            parameter
-                .id
-                .try_clone_for_decode(ctx, "catia_relation_program_output_dependency_id")
-        }),
-        "catia_relation_program_output_dependencies",
-    )?;
-    let output_name = ctx.copy_retained_text(
-        &output_value.name.value,
-        "catia_relation_program_output_name",
-    )?;
-    let output_expression = ctx.copy_retained_text(
-        &expression.expression.value,
-        "catia_relation_program_output_expression",
-    )?;
-    let output_native_ref = ctx.copy_retained_text(
-        &output_entity.id,
-        "catia_relation_program_output_native_ref",
-    )?;
-    let candidate = FormulaParameterCandidate {
-        parameter: DesignParameter {
-            id: output_id,
-            owner: None,
-            ordinal: 0,
-            name: output_name,
-            expression: output_expression,
-            display: None,
-            value: match value {
-                TypedParameterEvaluation::Unset => None,
-                TypedParameterEvaluation::Value(value) => Some(value),
-            },
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                output_dependencies,
-                ctx,
-            )?,
-            properties: parameter_properties(
-                ctx,
-                parameter_type.as_str(),
-                Some(output_value.binding.value.as_str()),
-            )?,
-            pmi: None,
-            native_ref: Some(output_native_ref),
+    let (mut candidate, candidate_storage) = ctx.with_scoped_storage(
+        "catia_relation_output_candidate_scratch",
+        || -> Result<_, cadmpeg_core::CodecError> {
+            let output_dependencies = ctx.try_collect_vec(
+                input_parameters.iter().map(|candidate| {
+                    candidate
+                        .parameter
+                        .id
+                        .try_clone_for_decode(ctx, "catia_relation_program_output_dependency_id")
+                }),
+                "catia_relation_program_output_dependencies",
+            )?;
+            let output_name = ctx.copy_retained_text(
+                &output_value.name.value,
+                "catia_relation_program_output_name",
+            )?;
+            let output_expression = ctx.copy_retained_text(
+                &expression.expression.value,
+                "catia_relation_program_output_expression",
+            )?;
+            let output_native_ref = ctx.copy_retained_text(
+                &output_entity.id,
+                "catia_relation_program_output_native_ref",
+            )?;
+            let candidate = FormulaParameterCandidate {
+                storage: None,
+                parameter: DesignParameter {
+                    id: output_id.try_clone_for_decode(ctx, "catia_relation_program_output_id")?,
+                    owner: None,
+                    ordinal: 0,
+                    name: output_name,
+                    expression: output_expression,
+                    display: None,
+                    value: match value {
+                        TypedParameterEvaluation::Unset => None,
+                        TypedParameterEvaluation::Value(value) => Some(value),
+                    },
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                        output_dependencies,
+                        ctx,
+                    )?,
+                    properties: parameter_properties(
+                        ctx,
+                        parameter_type.as_str(),
+                        Some(output_value.binding.value.as_str()),
+                    )?,
+                    pmi: None,
+                    native_ref: Some(output_native_ref),
+                },
+                parameter_type,
+                role: FormulaParameterRole::FormulaOutput { fallback: None },
+                source_order: output_entity.byte_offset,
+            };
+            Ok(candidate)
         },
-        parameter_type,
-        role: FormulaParameterRole::FormulaOutput { fallback: None },
-        source_order: output_entity.byte_offset,
-    };
+    )?;
+    candidate.storage = Some(candidate_storage);
     Ok(Some((
         FormulaProgramCandidate {
             relation_entity: &relation_entity.id,
@@ -2351,8 +2524,8 @@ fn relation_program_output_candidate<'a>(
 
 fn formula_parameter_candidates_agree(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    existing: &FormulaParameterCandidate,
-    candidate: &FormulaParameterCandidate,
+    existing: &FormulaParameterCandidate<'_>,
+    candidate: &FormulaParameterCandidate<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     if existing.source_order != candidate.source_order
         || existing.parameter_type != candidate.parameter_type
@@ -2410,7 +2583,7 @@ fn formula_parameter_matches_input(
 
 fn formula_parameter_candidate_accepts_input(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    candidate: &FormulaParameterCandidate,
+    candidate: &FormulaParameterCandidate<'_>,
     input: &(DesignParameter, FormulaParameterType),
 ) -> Result<bool, cadmpeg_core::CodecError> {
     if candidate.parameter_type != input.1 {
@@ -2427,7 +2600,7 @@ fn formula_parameter_candidate_accepts_input(
     }
 }
 
-fn demote_formula_output(candidate: &mut FormulaParameterCandidate) -> bool {
+fn demote_formula_output(candidate: &mut FormulaParameterCandidate<'_>) -> bool {
     let FormulaParameterRole::FormulaOutput {
         fallback: Some(input),
     } = std::mem::replace(&mut candidate.role, FormulaParameterRole::Input)
@@ -2435,9 +2608,7 @@ fn demote_formula_output(candidate: &mut FormulaParameterCandidate) -> bool {
         candidate.role = FormulaParameterRole::Input;
         return false;
     };
-    let (input, parameter_type) = *input;
-    candidate.parameter = input;
-    candidate.parameter_type = parameter_type;
+    *candidate = *input;
     true
 }
 
@@ -4864,8 +5035,9 @@ mod parser_tests {
     use cadmpeg_ir::features::ParameterValue;
     use std::collections::BTreeMap;
 
-    fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
+    fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate<'static> {
         FormulaParameterCandidate {
+            storage: None,
             parameter: DesignParameter {
                 id: ParameterId::mint("synthetic:test:id#parameter".to_string())
                     .expect("identity grammar"),
@@ -4958,18 +5130,19 @@ mod parser_tests {
             if limit.operation == "catia_formula_candidates")
         );
         let candidate = unset_candidate(FormulaParameterType::String);
-        let mut candidates = BTreeMap::new();
         crate::test_support::with_service_context(|ctx| {
+            let mut candidates = BTreeMap::new();
             super::merge_formula_parameter_candidate(
                 ctx,
                 &mut ctx.reserve_scoped(0, "test scratch")?,
                 &mut candidates,
                 &mut std::collections::BTreeSet::new(),
                 candidate,
-            )
+            )?;
+            assert_eq!(candidates.len(), 1);
+            Ok::<_, cadmpeg_core::CodecError>(())
         })
         .expect("service profile admits candidate");
-        assert_eq!(candidates.len(), 1);
     }
 
     #[test]
