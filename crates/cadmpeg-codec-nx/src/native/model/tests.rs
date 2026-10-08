@@ -235,3 +235,22 @@ fn terminal_body_selection_refuses_identity_retention_limit() {
         },
     );
 }
+
+#[test]
+fn terminal_body_selection_refuses_status_iteration_work_limit() {
+    let (emitted, bindings, statuses) = one_terminal_body();
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let error = terminal_feature_body_ids(ctx, &emitted, &bindings, &statuses).unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("status admission must propagate a resource refusal");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "nx terminal body statuses");
+            assert_eq!(limit.additional, 1);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        },
+    );
+}

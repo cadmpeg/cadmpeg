@@ -117,7 +117,8 @@ fn finalize_assignments(
         Ord::cmp,
         "sort NX display color assignments",
     )?;
-    for (ordinal, assignment) in assignments.iter_mut().enumerate() {
+    for ordinal in ctx.admit_iter(&(0..assignments.len()), "NX display color output ordinals")? {
+        let assignment = &mut assignments[ordinal];
         assignment.ordinal = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX display color ordinal", 0, 1))?;
         assignment.id = assignment_id(ctx, ordinal)?;
@@ -133,9 +134,9 @@ pub(in crate::native) fn rm_display_color_assignments(
     object_ids: &[RmFastLoadObjectId],
 ) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
     let mut assignments = Vec::new();
-    for (entry, section) in container
-        .om_sections(ctx)?
-        .into_iter()
+    let sections = container.om_sections(ctx)?;
+    for (entry, section) in ctx
+        .admit_iter(&sections, "NX display color input sections")?
         .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
     {
         let Some(record_area) = section.record_area else {
@@ -145,7 +146,8 @@ pub(in crate::native) fn rm_display_color_assignments(
         let record_area = record_area.bytes;
         let source_base = entry.file_span().map_or(0, |(offset, _)| offset)
             + cadmpeg_core::decode::u64_from_index(record_area_offset);
-        for row in crate::om::column_row::scan::linked_rows(ctx, record_area)? {
+        let linked_rows = crate::om::column_row::scan::linked_rows(ctx, record_area)?;
+        for row in ctx.admit_iter(linked_rows, "NX display color linked rows visits")? {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())
             else {
@@ -183,7 +185,8 @@ pub(in crate::native) fn rm_display_color_assignments(
                 &entry.name,
             )?;
         }
-        for row in crate::om::column_row::scan::target_rows(ctx, record_area)? {
+        let target_rows = crate::om::column_row::scan::target_rows(ctx, record_area)?;
+        for row in ctx.admit_iter(target_rows, "NX display color target rows visits")? {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())
             else {

@@ -63,8 +63,15 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
             draft.layout_fixture_tail();
         })
         .unwrap();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope),
+        exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &records,
+            &scope,
+        )
+        .unwrap(),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness,
@@ -78,10 +85,12 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
     assert_eq!(
         exact_direct_face_operation(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &records,
             &scope
-        ),
+        )
+        .unwrap(),
         None
     );
 }
