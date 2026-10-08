@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed IGES entity accessors and neutral projection.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -14,6 +14,57 @@ use cadmpeg_ir::CadIr;
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
+
+/// Equality identity for property text within one projection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PropertyTextId(usize);
+
+/// Keys borrow immutable parameter text. Equal byte strings have one identity.
+/// Record identities prevent repeated comparisons of the same parameter text.
+struct PropertyTextIndex<'text, 'budget> {
+    records: BTreeMap<u32, PropertyTextId>,
+    values: BTreeMap<&'text [u8], PropertyTextId>,
+    storage: ScopedReservation<'budget>,
+}
+
+impl<'text, 'budget> PropertyTextIndex<'text, 'budget> {
+    fn new(ctx: &'budget DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            records: BTreeMap::new(),
+            values: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "iges property text index")?,
+        })
+    }
+
+    fn id(
+        &mut self,
+        sequence: u32,
+        text: &'text [u8],
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<PropertyTextId, CodecError> {
+        if let Some(id) = self.records.get(&sequence) {
+            return Ok(*id);
+        }
+        let id = if let Some(id) = ctx.get_btree_map(&self.values, text, operation)? {
+            *id
+        } else {
+            let id = PropertyTextId(self.values.len());
+            self.storage
+                .with_storage(|| ctx.insert_btree_map(&mut self.values, text, id, operation))?;
+            id
+        };
+        self.storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut self.records,
+                sequence,
+                id,
+                "iges property text record identities",
+            )
+        })?;
+        Ok(id)
+    }
+}
 
 fn push_attributed_loss(
     ctx: &DecodeContext<'_>,
@@ -74,8 +125,9 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     let mut stack = Vec::new();
     search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
     stack.push((sequence, false));
-    while let Some((current, expanded)) = stack.pop() {
-        ctx.charge_work(1, "iges cycle work")?;
+    while let Some((current, expanded)) =
+        ctx.next_charged(&mut std::iter::from_fn(|| stack.pop()), "iges cycle work")?
+    {
         if expanded {
             active.remove(&current);
             ctx.insert_btree_set(visited, current, "iges cycle visited")?;
@@ -91,8 +143,8 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
         }
         search_storage.with_storage(|| ctx.reserve_vec(&mut stack, 1, "iges cycle stack"))?;
         stack.push((current, true));
-        for target in successors(current).rev() {
-            ctx.charge_work(1, "iges cycle work")?;
+        let mut targets = successors(current).rev();
+        while let Some(target) = ctx.next_charged(&mut targets, "iges cycle work")? {
             if active.contains(&target) {
                 return Ok(true);
             }

@@ -4,7 +4,6 @@
 
 use crate::directory::{DirectoryEntry, SourceStatus};
 use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
@@ -62,28 +61,33 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
 #[test]
 fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
     let entry = directory_entry(404, 0);
+    for (dimension, operation) in [
+        (
+            ResourceDimension::CollectionItems,
+            "iges drawing loss slots",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges drawing loss message",
+        ),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if dimension == ResourceDimension::RetainedBytes {
+                policy.limits.max_retained_bytes = cap;
+            } else {
+                policy.limits.max_collection_items = cap;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut losses = Vec::new();
+            let result = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing");
+            assert!(losses.is_empty());
+            result
+        });
+    }
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut losses = Vec::new();
-    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges drawing loss slots")
-    );
-    assert!(losses.is_empty());
-
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
-    );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap_err();
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges drawing loss message")
-    );
-    assert!(losses.is_empty());
-
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap();
     assert_eq!(losses.len(), 1);
@@ -1021,4 +1025,274 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
         "iges:entity:directory#5"
     );
     assert!(result.report().losses.is_empty(), "{:#?}", result.report());
+}
+
+#[test]
+fn drawing_traversal_refusals_reach_decode() {
+    for (bytes, operation) in [
+        (
+            drawing_with_properties_file(),
+            "iges drawing directory traversal",
+        ),
+        (
+            drawing_with_properties_file(),
+            "iges drawing reference traversal",
+        ),
+        (
+            drawing_with_properties_file(),
+            "iges drawing property traversal",
+        ),
+        (
+            segmented_view_visibility_file(),
+            "iges segmented view traversal",
+        ),
+        (view_visibility_forms_file(), "iges view association search"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|failure| match failure {
+                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
+    }
+}
+
+#[test]
+fn invalid_segmented_view_stops_before_the_remaining_count() {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    use std::collections::BTreeMap;
+    let mut entry = crate::test_support::directory_target(1, 402);
+    entry.form = 19;
+    entry.status = SourceStatus::from_codes([0, 0, 1, 0]);
+    let count = 20_000;
+    let mut values = vec![
+        TokenValue::Integer(402),
+        TokenValue::Integer(i64::try_from(count).unwrap()),
+        TokenValue::Integer(0),
+        TokenValue::real(0.0),
+        TokenValue::Integer(0),
+        TokenValue::Integer(0),
+        TokenValue::Integer(1),
+        TokenValue::Integer(0),
+    ];
+    values.resize(2 + count * 6, TokenValue::Integer(0));
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect(),
+        Vec::new(),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 10_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let bytes = owned_test_file(&[]);
+    let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
+    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context(&ctx).unwrap().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let outcome = super::project(
+        &mut ir,
+        std::slice::from_ref(&entry),
+        (
+            &BTreeMap::from([(1, &entry)]),
+            &BTreeMap::from([(1, &record)]),
+        ),
+        &BTreeMap::new(),
+        &global,
+        &ctx,
+    )
+    .unwrap();
+    assert!(outcome.decoded.is_empty());
+    assert_eq!(outcome.losses.len(), 1);
+    assert_eq!(
+        outcome.losses[0].code,
+        IgesLossCode::EntityNotProjected.kind()
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn shared_drawing_property_names_do_not_repeat_text_comparisons() {
+    let name = "N".repeat(5_000);
+    let count = 2_000;
+    let mut entities = vec![
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME1".into(),
+            status: "00000200",
+            parameters: format!("406,1,{}H{name};", name.len()),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME2".into(),
+            status: "00000200",
+            parameters: format!("406,1,{}H{name};", name.len()),
+        },
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00020100",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+    ];
+    for _ in 0..count {
+        entities.push(OwnedTestEntity {
+            entity_type: 404,
+            form: 0,
+            label: "DRAWING".into(),
+            status: "00000100",
+            parameters: "404,1,5,0,0,0,0,2,1,3;".into(),
+        });
+    }
+    let bytes = owned_test_file(&entities);
+    let (directory, global, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
+        let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
+        let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+        let (directory, quarantined) =
+            crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+        assert!(quarantined.is_empty());
+        let assembly =
+            crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
+        assert!(assembly.quarantined.is_empty());
+        assert!(matches!(
+            assembly.trailing_pointer_analysis.get(&7),
+            Some(crate::parameter::TrailingPointerAnalysis::Unambiguous(_))
+        ));
+        (directory, global, assembly)
+    });
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = assembly
+        .records
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Integer identity insertion admits node passes and up to 44 comparisons per lookup.
+    // This permits those admissions and one text-index pass, but not 2,000 long comparisons.
+    policy.limits.max_work_units = 2_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let global = global.length_context(&ctx).unwrap().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let outcome = super::project(
+        &mut ir,
+        &directory,
+        (&entries, &records),
+        &assembly.trailing_pointer_analysis,
+        &global,
+        &ctx,
+    )
+    .unwrap();
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    assert_eq!(outcome.decoded.len(), count + 1);
+    assert!(outcome.decoded.contains(&5));
+    for entry in &directory[3..] {
+        assert!(outcome.decoded.contains(&entry.sequence));
+    }
+    assert_eq!(records.len(), directory.len());
+    ctx.finish_session().unwrap();
+}
+
+fn assert_drawing_property_conflict_without_text_work(form: i64, first: &str, second: &str) {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 404,
+            form: 0,
+            label: "DRAWING".into(),
+            status: "00000100",
+            parameters: "404,0,0,0,2,3,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form,
+            label: "FIRST".into(),
+            status: "00000200",
+            parameters: first.into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form,
+            label: "SECOND".into(),
+            status: "00000200",
+            parameters: second.into(),
+        },
+    ]);
+    let (directory, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
+        let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
+        let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+        let (directory, quarantined) =
+            crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+        assert!(quarantined.is_empty());
+        let assembly =
+            crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
+        assert!(assembly.quarantined.is_empty());
+        assert!(matches!(
+            assembly.trailing_pointer_analysis.get(&1),
+            Some(crate::parameter::TrailingPointerAnalysis::Unambiguous(_))
+        ));
+        (directory, assembly)
+    });
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = assembly
+        .records
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Raw pointer traversal fits; creating text-index nodes does not.
+    policy.limits.max_work_units = 100;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut texts = super::PropertyTextIndex::new(&ctx).unwrap();
+    assert!(super::conflicting_drawing_property_forms(
+        &assembly.records[0],
+        form,
+        &entries,
+        &records,
+        &assembly.trailing_pointer_analysis,
+        &mut texts,
+        &ctx,
+    )
+    .unwrap());
+    drop(texts);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn drawing_property_length_conflict_skips_text_index() {
+    assert_drawing_property_conflict_without_text_work(15, "406,1,1HA;", "406,1,2HAB;");
+}
+
+#[test]
+fn drawing_unit_flag_conflict_skips_text_index() {
+    assert_drawing_property_conflict_without_text_work(17, "406,2,1,1HA;", "406,2,2,1HA;");
 }

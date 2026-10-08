@@ -2,6 +2,7 @@
 //! Views, drawings, and view-dependent presentation relationships.
 
 use super::geometry::{resolve_transform, ProjectionOutcome};
+use super::PropertyTextIndex;
 
 use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
@@ -145,37 +146,86 @@ pub(crate) fn drawing_property_value(
     }
 }
 
-fn conflicting_drawing_property_forms(
+fn conflicting_drawing_property_forms<'text>(
     record: &ParameterRecord,
     form: i64,
     directory: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    records: &BTreeMap<u32, &'text ParameterRecord>,
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
-) -> bool {
-    let Some(groups) = trailing_pointer_analysis
-        .get(&record.directory_sequence)
-        .and_then(|analysis| match analysis {
-            TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
-            _ => None,
-        })
+    texts: &mut PropertyTextIndex<'text, '_>,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
+        trailing_pointer_analysis.get(&record.directory_sequence)
     else {
-        return false;
+        return Ok(false);
     };
-    let mut values = groups
-        .properties()
-        .iter()
-        .copied()
-        .filter(|sequence| {
-            directory
-                .get(sequence)
-                .is_some_and(|entry| entry.entity_type == 406 && entry.form == form)
-        })
-        .filter_map(|sequence| records.get(&sequence))
-        .filter_map(|record| drawing_property_value(form, record));
-    let Some(first) = values.next() else {
-        return false;
-    };
-    values.any(|value| value != first)
+    let mut first: Option<(u32, DrawingPropertyValue<'text>)> = None;
+    let mut properties = groups.properties().iter();
+    while let Some(sequence) =
+        ctx.next_charged(&mut properties, "iges drawing property traversal")?
+    {
+        if directory
+            .get(sequence)
+            .is_none_or(|entry| entry.entity_type != 406 || entry.form != form)
+        {
+            continue;
+        }
+        let Some(value) = records
+            .get(sequence)
+            .and_then(|&record| drawing_property_value(form, record))
+        else {
+            continue;
+        };
+        if let Some((first_sequence, first_value)) = &first {
+            let agrees = match (&value, first_value) {
+                (DrawingPropertyValue::Name(left), DrawingPropertyValue::Name(right)) => {
+                    sequence == first_sequence
+                        || (left.len() == right.len()
+                            && texts.id(
+                                *first_sequence,
+                                right,
+                                ctx,
+                                "iges drawing property name agreement",
+                            )? == texts.id(
+                                *sequence,
+                                left,
+                                ctx,
+                                "iges drawing property name agreement",
+                            )?)
+                }
+                (DrawingPropertyValue::Size(left), DrawingPropertyValue::Size(right)) => {
+                    left == right
+                }
+                (
+                    DrawingPropertyValue::Units(left_unit, left_name),
+                    DrawingPropertyValue::Units(right_unit, right_name),
+                ) => {
+                    left_unit == right_unit
+                        && (sequence == first_sequence
+                            || (left_name.len() == right_name.len()
+                                && texts.id(
+                                    *first_sequence,
+                                    right_name,
+                                    ctx,
+                                    "iges drawing unit name agreement",
+                                )? == texts.id(
+                                    *sequence,
+                                    left_name,
+                                    ctx,
+                                    "iges drawing unit name agreement",
+                                )?))
+                }
+                _ => false,
+            };
+            if !agrees {
+                return Ok(true);
+            }
+        } else {
+            first = Some((*sequence, value));
+        }
+    }
+    Ok(false)
 }
 
 fn push_drawing_loss(
@@ -219,34 +269,20 @@ fn push_drawing_entity_loss(
 pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    (entries, records): (
+        &BTreeMap<u32, &DirectoryEntry>,
+        &BTreeMap<u32, &ParameterRecord>,
+    ),
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges drawing parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges drawing directory index",
-        )?;
-    }
+    let mut property_texts = PropertyTextIndex::new(ctx)?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 16 | 17))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -278,8 +314,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -290,10 +326,12 @@ pub(super) fn project(
             if conflicting_drawing_property_forms(
                 record,
                 form,
-                &entries,
-                &records,
+                entries,
+                records,
                 trailing_pointer_analysis,
-            ) {
+                &mut property_texts,
+                ctx,
+            )? {
                 push_drawing_loss(
                     ctx,
                     &mut losses,
@@ -307,39 +345,53 @@ pub(super) fn project(
         }
         let view_count = record.count(1);
         let width = if entry.form == 0 { 3 } else { 4 };
-        let views_valid = view_count.is_some_and(|count| {
-            (0..count).all(|index| {
-                let start = 2 + index * width;
-                record
-                    .integer(start)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .and_then(|sequence| entries.get(&sequence).copied())
-                    .is_some_and(|view| {
-                        view.entity_type == 410 && view.status.is_logically_dependent()
-                    })
-                    && (start + 1..=start + 2).all(|index| record.number(index).is_some())
-                    && (entry.form == 0
-                        || match record.value(start + 3) {
-                            None | Some(crate::parameter::TokenValue::Omitted) => true,
-                            _ => record.number(start + 3).is_some(),
-                        })
+        let views_valid = view_count
+            .map(|count| -> Result<bool, CodecError> {
+                ctx.all_by(
+                    0..count,
+                    |index| {
+                        let start = 2 + index * width;
+                        Ok(record
+                            .integer(start)
+                            .and_then(|value| u32::try_from(value).ok())
+                            .and_then(|sequence| entries.get(&sequence).copied())
+                            .is_some_and(|view| {
+                                view.entity_type == 410 && view.status.is_logically_dependent()
+                            })
+                            && (start + 1..=start + 2).all(|index| record.number(index).is_some())
+                            && (entry.form == 0
+                                || match record.value(start + 3) {
+                                    None | Some(crate::parameter::TokenValue::Omitted) => true,
+                                    _ => record.number(start + 3).is_some(),
+                                }))
+                    },
+                    "iges drawing reference traversal",
+                )
             })
-        });
+            .transpose()?
+            .unwrap_or(false);
         let annotation_count_index = 2 + view_count.unwrap_or_default() * width;
         let annotation_count = record.count(annotation_count_index);
-        let annotations_valid = annotation_count.is_some_and(|count| {
-            (0..count).all(|index| {
-                record
-                    .integer(annotation_count_index + 1 + index)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .and_then(|sequence| entries.get(&sequence).copied())
-                    .is_some_and(|annotation| {
-                        annotation.status.use_flag(global.global_table())
-                            == Some(UseFlag::Annotation)
-                            && annotation.status.is_physically_dependent()
-                    })
+        let annotations_valid = annotation_count
+            .map(|count| -> Result<bool, CodecError> {
+                ctx.all_by(
+                    0..count,
+                    |index| {
+                        Ok(record
+                            .integer(annotation_count_index + 1 + index)
+                            .and_then(|value| u32::try_from(value).ok())
+                            .and_then(|sequence| entries.get(&sequence).copied())
+                            .is_some_and(|annotation| {
+                                annotation.status.use_flag(global.global_table())
+                                    == Some(UseFlag::Annotation)
+                                    && annotation.status.is_physically_dependent()
+                            }))
+                    },
+                    "iges drawing reference traversal",
+                )
             })
-        });
+            .transpose()?
+            .unwrap_or(false);
         if drawing_directory_valid(entry, global.global_table()) && views_valid && annotations_valid
         {
             ctx.insert_btree_set(
@@ -357,8 +409,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -379,15 +431,19 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 124 && target.form == 0)
                 });
                 if target_valid {
-                    match resolve_transform(
-                        entry.transform,
-                        &entries,
-                        &records,
-                        global.length_factor_mm(),
-                        global.real_precision(),
-                        &mut BTreeSet::new(),
-                        ctx,
-                    ) {
+                    let mut transform_storage =
+                        ctx.reserve_scoped(0, "iges drawing transform scratch")?;
+                    match transform_storage.with_storage(|| {
+                        resolve_transform(
+                            entry.transform,
+                            entries,
+                            records,
+                            global.length_factor_mm(),
+                            global.real_precision(),
+                            &mut BTreeSet::new(),
+                            ctx,
+                        )
+                    }) {
                         Ok(_) => true,
                         Err(error) => {
                             error.non_resource()?;
@@ -463,8 +519,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 402 && entry.form == 19)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -473,87 +529,88 @@ pub(super) fn project(
         };
         let count = record.count(1).filter(|count| *count > 0);
         let mut last_view = None;
+        let mut closed_view_storage = ctx.reserve_scoped(0, "iges drawing closed view scratch")?;
         let mut closed_views = BTreeSet::new();
         let mut last_breakpoint: Option<FiniteReal> = None;
         let blocks_valid = if let Some(count) = count {
-            let mut valid = true;
-            for index in 0..count {
-                let start = 2 + index * 6;
-                let view = record
-                    .integer(start)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .filter(|sequence| {
-                        entries
-                            .get(sequence)
-                            .is_some_and(|target| target.entity_type == 410)
-                    });
-                if view != last_view {
-                    if let Some(previous) = last_view {
-                        ctx.insert_btree_set(
-                            &mut closed_views,
-                            previous,
-                            "iges drawing closed views",
-                        )?;
+            ctx.all_by(
+                0..count,
+                |index| {
+                    let start = 2 + index * 6;
+                    let view = record
+                        .integer(start)
+                        .and_then(|value| u32::try_from(value).ok())
+                        .filter(|sequence| {
+                            entries
+                                .get(sequence)
+                                .is_some_and(|target| target.entity_type == 410)
+                        });
+                    if view != last_view {
+                        if let Some(previous) = last_view {
+                            closed_view_storage.with_storage(|| {
+                                ctx.insert_btree_set(
+                                    &mut closed_views,
+                                    previous,
+                                    "iges drawing closed views",
+                                )
+                            })?;
+                        }
+                        last_breakpoint = None;
                     }
-                    last_breakpoint = None;
-                }
-                let view_order_valid = view.is_some_and(|view| !closed_views.contains(&view));
-                let breakpoint = record.number(start + 1).and_then(FiniteReal::new);
-                let breakpoint_order_valid = breakpoint.is_some_and(|value| {
-                    last_breakpoint.is_none_or(|previous| value.get() > previous.get())
-                });
-                last_view = view;
-                last_breakpoint = breakpoint;
-                let display_valid = record.integer(start + 2).is_some_and(display_flag_valid);
-                let color_valid = match record.value(start + 3) {
-                    None | Some(crate::parameter::TokenValue::Omitted) => true,
-                    _ => record.integer(start + 3).is_some_and(|value| {
-                        standard_color_valid(value)
-                            || value
-                                .checked_neg()
-                                .and_then(|value| {
-                                    u32::try_from(value).ok().filter(|sequence| {
-                                        entries
-                                            .get(sequence)
-                                            .is_some_and(|target| target.entity_type == 314)
+                    let view_order_valid = view.is_some_and(|view| !closed_views.contains(&view));
+                    let breakpoint = record.number(start + 1).and_then(FiniteReal::new);
+                    let breakpoint_order_valid = breakpoint.is_some_and(|value| {
+                        last_breakpoint.is_none_or(|previous| value.get() > previous.get())
+                    });
+                    last_view = view;
+                    last_breakpoint = breakpoint;
+                    let display_valid = record.integer(start + 2).is_some_and(display_flag_valid);
+                    let color_valid = match record.value(start + 3) {
+                        None | Some(crate::parameter::TokenValue::Omitted) => true,
+                        _ => record.integer(start + 3).is_some_and(|value| {
+                            standard_color_valid(value)
+                                || value
+                                    .checked_neg()
+                                    .and_then(|value| {
+                                        u32::try_from(value).ok().filter(|sequence| {
+                                            entries
+                                                .get(sequence)
+                                                .is_some_and(|target| target.entity_type == 314)
+                                        })
                                     })
-                                })
-                                .is_some()
-                    }),
-                };
-                let font_valid = match record.value(start + 4) {
-                    None | Some(crate::parameter::TokenValue::Omitted) => true,
-                    _ => record.integer(start + 4).is_some_and(|value| {
-                        value == 0
-                            || standard_line_font_valid(value)
-                            || value
-                                .checked_neg()
-                                .and_then(|value| {
-                                    u32::try_from(value).ok().filter(|sequence| {
-                                        entries
-                                            .get(sequence)
-                                            .is_some_and(|target| target.entity_type == 304)
+                                    .is_some()
+                        }),
+                    };
+                    let font_valid = match record.value(start + 4) {
+                        None | Some(crate::parameter::TokenValue::Omitted) => true,
+                        _ => record.integer(start + 4).is_some_and(|value| {
+                            value == 0
+                                || standard_line_font_valid(value)
+                                || value
+                                    .checked_neg()
+                                    .and_then(|value| {
+                                        u32::try_from(value).ok().filter(|sequence| {
+                                            entries
+                                                .get(sequence)
+                                                .is_some_and(|target| target.entity_type == 304)
+                                        })
                                     })
-                                })
-                                .is_some()
-                    }),
-                };
-                let weight_valid = match record.value(start + 5) {
-                    None | Some(crate::parameter::TokenValue::Omitted) => true,
-                    _ => record.integer(start + 5).is_some_and(|value| value >= 0),
-                };
-                if !(view_order_valid
-                    && breakpoint_order_valid
-                    && display_valid
-                    && color_valid
-                    && font_valid
-                    && weight_valid)
-                {
-                    valid = false;
-                    break;
-                }
-            }
-            valid
+                                    .is_some()
+                        }),
+                    };
+                    let weight_valid = match record.value(start + 5) {
+                        None | Some(crate::parameter::TokenValue::Omitted) => true,
+                        _ => record.integer(start + 5).is_some_and(|value| value >= 0),
+                    };
+                    Ok(view_order_valid
+                        && breakpoint_order_valid
+                        && display_valid
+                        && color_valid
+                        && font_valid
+                        && weight_valid)
+                },
+                "iges segmented view traversal",
+            )?
         } else {
             false
         };
@@ -573,8 +630,8 @@ pub(super) fn project(
         }
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges drawing directory traversal")?
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -585,72 +642,99 @@ pub(super) fn project(
         let entity_count =
             crate::parameter::view_visibility_entity_count(record, global.global_table());
         let block_width = if entry.form == 3 { 1 } else { 5 };
-        let views_valid = view_count.is_some_and(|count| {
-            (0..count).all(|index| {
-                let start = 3 + index * block_width;
-                record
-                    .integer(start)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .and_then(|sequence| entries.get(&sequence).copied())
-                    .is_some_and(|view| {
-                        view.entity_type == 410
-                            && records.get(&view.sequence).is_some_and(|view_record| {
-                                trailing_pointer_analysis
-                                    .get(&view_record.directory_sequence)
+        let views_valid = view_count
+            .map(|count| -> Result<bool, CodecError> {
+                ctx.all_by(
+                    0..count,
+                    |index| {
+                        let start = 3 + index * block_width;
+                        Ok(record
+                            .integer(start)
+                            .and_then(|value| u32::try_from(value).ok())
+                            .and_then(|sequence| entries.get(&sequence).copied())
+                            .map(|view| -> Result<bool, CodecError> {
+                                if view.entity_type != 410 {
+                                    return Ok(false);
+                                }
+                                let groups = records
+                                    .get(&view.sequence)
+                                    .and_then(|view_record| {
+                                        trailing_pointer_analysis
+                                            .get(&view_record.directory_sequence)
+                                    })
                                     .and_then(|analysis| match analysis {
                                         TrailingPointerAnalysis::Unambiguous(groups) => {
                                             Some(groups)
                                         }
                                         _ => None,
+                                    });
+                                groups
+                                    .map(|groups| {
+                                        ctx.contains(
+                                            groups.associations(),
+                                            &entry.sequence,
+                                            "iges view association search",
+                                        )
                                     })
-                                    .is_some_and(|groups| {
-                                        groups.associations().contains(&entry.sequence)
-                                    })
+                                    .transpose()
+                                    .map(|valid| valid.unwrap_or(false))
                             })
-                    })
-                    && (entry.form == 3 || {
-                        let line_font = record.integer(start + 1);
-                        let definition = record.integer(start + 2);
-                        let color = record.integer_or(start + 3, 0);
-                        let weight = record.integer(start + 4);
-                        line_font.is_some_and(|value| value == 0 || standard_line_font_valid(value))
-                            && definition.is_some_and(|value| {
-                                if line_font == Some(0) {
-                                    u32::try_from(value).ok().is_some_and(|sequence| {
-                                        entries
-                                            .get(&sequence)
-                                            .is_some_and(|target| target.entity_type == 304)
-                                    })
-                                } else {
-                                    value == 0
-                                }
-                            })
-                            && color.is_some_and(|value| {
-                                standard_color_valid(value)
-                                    || value
-                                        .checked_neg()
-                                        .and_then(|value| {
-                                            u32::try_from(value).ok().filter(|sequence| {
-                                                entries
-                                                    .get(sequence)
-                                                    .is_some_and(|target| target.entity_type == 314)
-                                            })
+                            .transpose()?
+                            .unwrap_or(false)
+                            && (entry.form == 3 || {
+                                let line_font = record.integer(start + 1);
+                                let definition = record.integer(start + 2);
+                                let color = record.integer_or(start + 3, 0);
+                                let weight = record.integer(start + 4);
+                                line_font.is_some_and(|value| {
+                                    value == 0 || standard_line_font_valid(value)
+                                }) && definition.is_some_and(|value| {
+                                    if line_font == Some(0) {
+                                        u32::try_from(value).ok().is_some_and(|sequence| {
+                                            entries
+                                                .get(&sequence)
+                                                .is_some_and(|target| target.entity_type == 304)
                                         })
-                                        .is_some()
-                            })
-                            && weight.is_some_and(|value| value >= 0)
-                    })
+                                    } else {
+                                        value == 0
+                                    }
+                                }) && color.is_some_and(|value| {
+                                    standard_color_valid(value)
+                                        || value
+                                            .checked_neg()
+                                            .and_then(|value| {
+                                                u32::try_from(value).ok().filter(|sequence| {
+                                                    entries.get(sequence).is_some_and(|target| {
+                                                        target.entity_type == 314
+                                                    })
+                                                })
+                                            })
+                                            .is_some()
+                                }) && weight.is_some_and(|value| value >= 0)
+                            }))
+                    },
+                    "iges drawing reference traversal",
+                )
             })
-        });
-        let entities_valid = view_count.zip(entity_count).is_some_and(|(views, count)| {
-            (0..count).all(|index| {
-                record
-                    .integer(3 + views * block_width + index)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .filter(|sequence| sequence % 2 == 1)
-                    .is_some_and(|sequence| entries.contains_key(&sequence))
+            .transpose()?
+            .unwrap_or(false);
+        let entities_valid = view_count
+            .zip(entity_count)
+            .map(|(views, count)| -> Result<bool, CodecError> {
+                ctx.all_by(
+                    0..count,
+                    |index| {
+                        Ok(record
+                            .integer(3 + views * block_width + index)
+                            .and_then(|value| u32::try_from(value).ok())
+                            .filter(|sequence| sequence % 2 == 1)
+                            .is_some_and(|sequence| entries.contains_key(&sequence)))
+                    },
+                    "iges drawing reference traversal",
+                )
             })
-        });
+            .transpose()?
+            .unwrap_or(false);
         if views_visible_directory_valid(entry, global.global_table())
             && views_valid
             && entities_valid
