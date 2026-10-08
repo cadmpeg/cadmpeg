@@ -428,7 +428,8 @@ fn degree_one_nurbs_point_parameter(
                     continue;
                 };
                 match degree_one_nurbs_span_parameter(
-                    ctx, geometry, nurbs, point, tolerance, span, first, second, 1.0, 1.0,
+                    ctx, geometry, nurbs,
+                    DegreeOneSpan { point, tolerance, index: span, endpoints: [first, second], weights: [1.0, 1.0] },
                 )? {
                     DegreeOneSpanParameter::Ambiguous => return Ok(None),
                     DegreeOneSpanParameter::Skipped => {}
@@ -459,13 +460,13 @@ fn degree_one_nurbs_point_parameter(
                     ctx,
                     geometry,
                     nurbs,
-                    point,
-                    tolerance,
-                    span,
-                    first,
-                    second.point,
-                    first_weight,
-                    second.weight.get(),
+                    DegreeOneSpan {
+                        point,
+                        tolerance,
+                        index: span,
+                        endpoints: [first, second.point],
+                        weights: [first_weight, second.weight.get()],
+                    },
                 )? {
                     DegreeOneSpanParameter::Ambiguous => return Ok(None),
                     DegreeOneSpanParameter::Skipped => {}
@@ -507,18 +508,27 @@ fn retain_degree_one_parameter(
     }
 }
 
+struct DegreeOneSpan {
+    point: [f64; 3],
+    tolerance: f64,
+    index: usize,
+    endpoints: [FinitePoint3; 2],
+    weights: [f64; 2],
+}
+
 fn degree_one_nurbs_span_parameter(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     nurbs: &NurbsCurve,
-    point: [f64; 3],
-    tolerance: f64,
-    span_index: usize,
-    first: FinitePoint3,
-    second: FinitePoint3,
-    first_weight: f64,
-    second_weight: f64,
+    span: DegreeOneSpan,
 ) -> Result<DegreeOneSpanParameter, cadmpeg_core::CodecError> {
+    let DegreeOneSpan {
+        point,
+        tolerance,
+        index: span_index,
+        endpoints: [first, second],
+        weights: [first_weight, second_weight],
+    } = span;
     let lower = nurbs.knots()[span_index];
     let upper = nurbs.knots()[span_index + 1];
     if upper <= lower {
