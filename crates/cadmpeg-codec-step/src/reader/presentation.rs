@@ -114,12 +114,10 @@ pub(super) fn decode<'ctx>(
     let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>, BTreeSet<u64>)>::new();
     let mut records = exchange.records().iter();
     while let Some((&id, record)) = ctx.next_charged(&mut records, "STEP decode traversal")? {
-        if record.partial(ctx, "INVISIBILITY")?.is_none() {
+        let Some(invisibility) = record.partial(ctx, "INVISIBILITY")? else {
             continue;
-        }
-        let Some(items) = record
-            .partial(ctx, "INVISIBILITY")?
-            .and_then(|partial| partial.parameters.first())
+        };
+        let Some(items) = invisibility.parameters.first()
             .and_then(ValueExt::list)
         else {
             ctx.push_scoped_vec(
@@ -138,8 +136,10 @@ pub(super) fn decode<'ctx>(
             let Some(target) = ValueExt::reference(value) else {
                 continue;
             };
-            if ctx
-                .get_btree_map(exchange.records(), &target, "STEP presentation record get")?
+            let target_record = ctx.get_btree_map(
+                exchange.records(), &target, "STEP presentation record get",
+            )?;
+            if target_record
                 .map(|record| record.partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT"))
                 .transpose()?
                 .flatten()
@@ -161,8 +161,7 @@ pub(super) fn decode<'ctx>(
                 })?;
                 continue;
             }
-            if ctx
-                .get_btree_map(exchange.records(), &target, "STEP presentation record get")?
+            if target_record
                 .map(|record| styled_item_parts(ctx, record))
                 .transpose()?
                 .flatten()
@@ -184,16 +183,12 @@ pub(super) fn decode<'ctx>(
                 })?;
                 continue;
             }
-            if let Some(record) =
-                ctx.get_btree_map(exchange.records(), &target, "STEP presentation record get")?
-            {
+            if let Some(record) = target_record {
                 if super::drawing::is_supported_invisibility_target(ctx, record)? {
                     continue;
                 }
             }
-            if let Some(record) =
-                ctx.get_btree_map(exchange.records(), &target, "STEP presentation record get")?
-            {
+            if let Some(record) = target_record {
                 if super::pmi::is_supported_invisibility_target(ctx, record)? {
                     continue;
                 }
@@ -240,15 +235,10 @@ pub(super) fn decode<'ctx>(
     }
     let mut records = exchange.records().iter();
     while let Some((&layer_id, layer)) = ctx.next_charged(&mut records, "STEP decode traversal")? {
-        if layer
-            .partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT")?
-            .is_none()
-        {
+        let Some(assignment) = layer.partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT")? else {
             continue;
-        }
-        let Some(assigned_items) = layer
-            .partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT")?
-            .and_then(|partial| partial.parameters.get(2))
+        };
+        let Some(assigned_items) = assignment.parameters.get(2)
             .and_then(ValueExt::list)
         else {
             ctx.push_scoped_vec(
@@ -272,9 +262,7 @@ pub(super) fn decode<'ctx>(
             )?;
             continue;
         }
-        let Some(name) = layer
-            .partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT")?
-            .and_then(|partial| partial.parameters.first())
+        let Some(name) = assignment.parameters.first()
             .map(|value| {
                 decode_output_text(
                     exchange,
@@ -299,9 +287,7 @@ pub(super) fn decode<'ctx>(
             )?;
             continue;
         };
-        let description = layer
-            .partial(ctx, "PRESENTATION_LAYER_ASSIGNMENT")?
-            .and_then(|partial| partial.parameters.get(1))
+        let description = assignment.parameters.get(1)
             .map(|value| {
                 decode_output_text(
                     exchange,
