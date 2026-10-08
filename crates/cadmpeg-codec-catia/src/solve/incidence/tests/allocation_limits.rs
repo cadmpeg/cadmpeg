@@ -151,23 +151,16 @@ fn deferred_cycle_assignment_refuses_each_inner_collection_limit() {
         super::super::deferred_boundary_cycle_matches(ctx, &mesh, &incidence, &missing)
     };
     assert!(crate::test_support::with_service_context(run).expect("service resource budget"));
-    let mut refused = HashSet::new();
-    for cap in 0..32 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(true) => break,
-            other => panic!("unexpected deferred cycle result: {other:?}"),
-        }
-    }
     for operation in [
-        "catia deferred cycle expected edges",
-        "catia deferred cycle actual edges",
         "catia deferred cycle positions",
         "catia deferred cycle boundary uses",
     ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
+        let limit = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| crate::test_support::with_collection_limit(cap, run),
+        );
+        assert!(matches!(limit, CodecError::ResourceLimit(limit) if limit.operation == operation));
     }
 }
 
@@ -475,4 +468,67 @@ fn unordered_cycle_search_refuses_each_collection_limit() {
     ] {
         assert!(operations.contains(operation), "no refusal at {operation}");
     }
+}
+
+#[test]
+fn deferred_cycle_borrowed_projection_preserves_rotations_and_directions() {
+    let use_ = |edge, start| MeshBoundaryEdgeCandidate {
+        edge,
+        start,
+        end: (start + 1) % 6,
+        reversed: None,
+    };
+    let mesh = crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+        length: 6,
+        exact_uses: vec![(use_(0, 0), 1), (use_(1, 2), 1), (use_(2, 4), 1)],
+    };
+    let missing = HashSet::from([3, 4, 5]);
+    let expected = vec![
+        use_(0, 0),
+        use_(3, 1),
+        use_(1, 2),
+        use_(4, 3),
+        use_(2, 4),
+        use_(5, 5),
+    ];
+    for reversed in [false, true] {
+        for rotation in 0..6 {
+            let mut incidence = vec![
+                (0, false),
+                (3, false),
+                (1, false),
+                (4, false),
+                (2, false),
+                (5, false),
+            ];
+            if reversed {
+                incidence.reverse();
+            }
+            incidence.rotate_left(rotation);
+            assert_eq!(
+                crate::test_support::with_service_context(|ctx| {
+                    super::super::deferred_boundary_cycle_assignment(
+                        ctx, &mesh, &incidence, &missing,
+                    )
+                })
+                .expect("cycle projection"),
+                Some(expected.clone())
+            );
+        }
+    }
+    let invalid = [
+        (0, false),
+        (3, false),
+        (1, false),
+        (4, false),
+        (2, false),
+        (9, false),
+    ];
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::deferred_boundary_cycle_assignment(ctx, &mesh, &invalid, &missing)
+        })
+        .expect("unsupported missing edge"),
+        None
+    );
 }

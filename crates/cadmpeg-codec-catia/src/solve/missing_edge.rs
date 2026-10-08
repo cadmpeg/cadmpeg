@@ -43,13 +43,20 @@ fn standard_edge_port_identities_with_namespace(
     bytes: &[u8],
     global: bool,
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
-        return Ok(None);
-    };
-    let after_faces = face_run.after_faces();
-    let Some((edge_rows, scopes, _, _)) =
-        parse_standard_edge_tables_scoped(ctx, bytes, after_faces)?
-    else {
+    let (parsed, _parsed_storage) =
+        ctx.with_scoped_storage("catia_standard_port_rows", || -> Result<_, CodecError> {
+            let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+                return Ok(None);
+            };
+            let after_faces = face_run.after_faces();
+            let Some((edge_rows, scopes, _, _)) =
+                parse_standard_edge_tables_scoped(ctx, bytes, after_faces)?
+            else {
+                return Ok(None);
+            };
+            Ok(Some((edge_rows, scopes)))
+        })?;
+    let Some((edge_rows, scopes)) = parsed else {
         return Ok(None);
     };
     let mut scratch = ctx.reserve_scoped(0, "catia_standard_port_handle_ids")?;
@@ -111,11 +118,19 @@ fn fbb_edge_port_identities_with_namespace(
     bytes: &[u8],
     global: bool,
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    let Some(face_run) = largest_fbb_run(ctx, bytes)? else {
-        return Ok(None);
-    };
-    let after_faces = face_run.after_faces();
-    let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(ctx, bytes, after_faces)? else {
+    let (parsed, _parsed_storage) =
+        ctx.with_scoped_storage("catia_fbb_port_rows", || -> Result<_, CodecError> {
+            let Some(face_run) = largest_fbb_run(ctx, bytes)? else {
+                return Ok(None);
+            };
+            let after_faces = face_run.after_faces();
+            let Some((edge_rows, scopes, _, _)) = parse_fbb_edge_tables(ctx, bytes, after_faces)?
+            else {
+                return Ok(None);
+            };
+            Ok(Some((edge_rows, scopes)))
+        })?;
+    let Some((edge_rows, scopes)) = parsed else {
         return Ok(None);
     };
     let mut scratch = ctx.reserve_scoped(0, "catia_fbb_port_handle_ids")?;
@@ -566,10 +581,18 @@ pub(crate) fn standard_mesh_edge_ports(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+    let (analysis, _analysis_storage) = ctx
+        .with_scoped_storage("catia_mesh_port_analysis", || {
+            standard_mesh_analysis(ctx, bytes)
+        })?;
+    let Some(analysis) = analysis else {
         return Ok(None);
     };
-    let Some(local_ports) = global_edge_port_identities(ctx, bytes)? else {
+    let (local_ports, _local_port_storage) = ctx
+        .with_scoped_storage("catia_mesh_local_ports", || {
+            global_edge_port_identities(ctx, bytes)
+        })?;
+    let Some(local_ports) = local_ports else {
         return Ok(None);
     };
     mesh_edge_ports(ctx, &analysis, &local_ports)
@@ -974,12 +997,19 @@ fn standard_mesh_analysis(
     let Some((edge_rows, handle_width, fixed_complete_row_spans)) = parsed else {
         return Ok(None);
     };
-    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
+    let (trims, _trim_storage) = ctx.with_scoped_storage("catia_mesh_analysis_trims", || {
+        parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)
+    })?;
+    let Some(trims) = trims else {
         return Ok(None);
     };
     let mut cycles = ctx.collection_vec(trims.len(), "catia_mesh_analysis_cycles")?;
     for trim in ctx.admit_iter(&trims, "catia_mesh_analysis_cycles")? {
-        let Some(face) = boundary_cycles(ctx, trim.packet.triangles(ctx)?)? else {
+        let (triangles, _triangle_storage) = ctx
+            .with_scoped_storage("catia_mesh_analysis_triangles", || {
+                trim.packet.triangles(ctx)
+            })?;
+        let Some(face) = boundary_cycles(ctx, triangles)? else {
             return Ok(None);
         };
         cycles.push(face);
@@ -1005,7 +1035,11 @@ pub(crate) fn standard_mesh_edge_runs(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<MeshEdgeRun>>, CodecError> {
-    standard_mesh_analysis(ctx, bytes)?
+    let (analysis, _analysis_storage) = ctx
+        .with_scoped_storage("catia_mesh_run_analysis", || {
+            standard_mesh_analysis(ctx, bytes)
+        })?;
+    analysis
         .map(|analysis| mesh_edge_runs(ctx, &analysis))
         .transpose()
 }
@@ -1035,7 +1069,10 @@ pub(crate) fn resolve_standard_edge_faces(
     bytes: &[u8],
     serialized: &[[usize; 2]],
 ) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
-    let Some(runs) = standard_mesh_edge_runs(ctx, bytes)? else {
+    let (runs, _runs_storage) = ctx.with_scoped_storage("catia_edge_face_run_workspace", || {
+        standard_mesh_edge_runs(ctx, bytes)
+    })?;
+    let Some(runs) = runs else {
         return Ok(Some(
             ctx.copy_slice(serialized, "catia standard serialized edge faces")?,
         ));
@@ -1173,29 +1210,39 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     bytes: &[u8],
     serialized: &[[usize; 2]],
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
-    let Some(face_run) = selected_standard_run(ctx, bytes)? else {
-        return Ok(None);
-    };
-    let face_start = face_run.face_start();
-    let face_count = face_run.face_count();
-    let after_faces = face_run.after_faces();
-    let standard = parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?;
-    let parsed = if let Some((rows, _, width)) = standard {
-        Some((rows, width))
-    } else {
-        parse_fbb_edge_tables(ctx, bytes, after_faces)?.map(|(rows, _, _, width)| (rows, width))
-    };
-    let Some((edge_rows, handle_width)) = parsed else {
-        return Ok(None);
-    };
-    let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
+    let (parsed, _parsed_storage) = ctx.with_scoped_storage(
+        "catia_repeated_face_parse_workspace",
+        || -> Result<_, CodecError> {
+            let Some(face_run) = selected_standard_run(ctx, bytes)? else {
+                return Ok(None);
+            };
+            let face_start = face_run.face_start();
+            let face_count = face_run.face_count();
+            let after_faces = face_run.after_faces();
+            let standard = parse_standard_edge_tables_with_width(ctx, bytes, after_faces)?;
+            let parsed = if let Some((rows, _, width)) = standard {
+                Some((rows, width))
+            } else {
+                parse_fbb_edge_tables(ctx, bytes, after_faces)?
+                    .map(|(rows, _, _, width)| (rows, width))
+            };
+            let Some((edge_rows, handle_width)) = parsed else {
+                return Ok(None);
+            };
+            let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)?
+            else {
+                return Ok(None);
+            };
+            Ok(Some((edge_rows, trims)))
+        },
+    )?;
+    let Some((edge_rows, trims)) = parsed else {
         return Ok(None);
     };
     let (face_handles, _face_handle_storage) =
         ctx.with_scoped_storage("catia repeated edge face handles", || {
             ctx.collect_vec(
-                ctx.admit_iter(&trims, "catia repeated edge face handles")?
-                    .map(|trim| trim.packet.handles()),
+                trims.iter().map(|trim| trim.packet.handles()),
                 "catia repeated edge face handles",
             )
         })?;
@@ -1414,7 +1461,9 @@ pub(crate) fn repeated_face_endpoint_closures(
                         }
                     } else {
                         choices = ctx.collect_vec(
-                            ctx.admit_iter(&self.branches[unassigned_branch].1, OPERATION)?
+                            self.branches[unassigned_branch]
+                                .1
+                                .iter()
                                 .map(|&face| (unassigned_branch, face)),
                             "catia missing-edge search choices",
                         )?;
@@ -1669,55 +1718,50 @@ where
         branches: &[(usize, FaceOptions)],
         at: usize,
         assignment: &mut [[usize; 2]],
-        (states, exhausted): (&mut usize, &mut bool),
-        solutions: &mut Vec<Vec<[usize; 2]>>,
+        states: &WorkBudget<'_>,
+        outcome: &mut SearchOutcome<Vec<[usize; 2]>>,
         valid: &mut F,
     ) -> Result<(), CodecError>
     where
         F: FnMut(&[[usize; 2]]) -> Result<bool, CodecError>,
     {
         let _depth = ctx.enter_nested("catia_duplicate_face_search_depth")?;
-        if *exhausted || solutions.len() > 1 {
+        if outcome.is_closed() {
             return Ok(());
         }
         if at == branches.len() {
-            if valid(assignment)?
-                && !ctx.any_by(
-                    &*solutions,
-                    |solution| {
-                        ctx.equal(
-                            solution.as_slice(),
+            if valid(assignment)? {
+                match outcome {
+                    SearchOutcome::Open => {
+                        *outcome = SearchOutcome::Solved(
+                            ctx.copy_slice(assignment, "catia_duplicate_face_solution")?,
+                        );
+                    }
+                    SearchOutcome::Solved(previous) => {
+                        if !ctx.equal(
+                            previous.as_slice(),
                             &*assignment,
                             "catia_duplicate_face_solution",
-                        )
-                    },
-                    "catia_duplicate_face_solution",
-                )?
-            {
-                let solution = ctx.copy_slice(assignment, "catia_duplicate_face_solution")?;
-                ctx.push_vec(solutions, solution, "catia_duplicate_face_solution_rows")?;
+                        )? {
+                            *outcome = SearchOutcome::Ambiguous;
+                        }
+                    }
+                    SearchOutcome::Ambiguous | SearchOutcome::Exhausted => {}
+                }
             }
             return Ok(());
         }
-        if *states >= MAX_STATES {
-            *exhausted = true;
+        // One local unit visits one nonterminal branch frame.
+        if !states.charge() {
+            outcome.exhaust();
             return Ok(());
         }
-        *states += 1;
         let (edge, options) = &branches[at];
-        for face in options.iter() {
-            ctx.charge_work(1, "catia_duplicate_face_search")?;
+        let mut faces = options.iter();
+        while let Some(face) = ctx.next_charged(&mut faces, "catia_duplicate_face_search")? {
             assignment[*edge][1] = face;
-            search(
-                ctx,
-                branches,
-                at + 1,
-                assignment,
-                (states, exhausted),
-                solutions,
-                valid,
-            )?;
-            if *exhausted || solutions.len() > 1 {
+            search(ctx, branches, at + 1, assignment, states, outcome, valid)?;
+            if outcome.is_closed() {
                 return Ok(());
             }
         }
@@ -1746,7 +1790,8 @@ where
             ctx.copy_slice(serialized, "catia_duplicate_face_serialized")?,
         ));
     }
-    let mut assignment = ctx.copy_slice(serialized, "catia_duplicate_face_serialized")?;
+    let mut assignment =
+        scratch.with_storage(|| ctx.copy_slice(serialized, "catia_duplicate_face_serialized"))?;
     let mut branches = Vec::new();
     for &edge in ctx.admit_iter(&unresolved, "catia_duplicate_face_branches")? {
         let retained = assignment[edge][0];
@@ -1774,22 +1819,30 @@ where
         Ord::cmp,
         "catia missing edge duplicate face branches sort",
     )?;
-    let mut states = 0;
-    let mut exhausted = false;
-    let mut solutions = Vec::new();
-    search(
-        ctx,
-        &branches,
-        0,
-        &mut assignment,
-        (&mut states, &mut exhausted),
-        &mut solutions,
-        &mut valid,
+    let states = ctx.work_budget(cadmpeg_core::decode::u64_from_index(MAX_STATES));
+    let (outcome, outcome_storage) = ctx.with_scoped_storage(
+        "catia_duplicate_face_solution",
+        || -> Result<_, CodecError> {
+            let mut outcome = SearchOutcome::Open;
+            search(
+                ctx,
+                &branches,
+                0,
+                &mut assignment,
+                &states,
+                &mut outcome,
+                &mut valid,
+            )?;
+            Ok(outcome)
+        },
     )?;
-    Ok((!exhausted)
-        .then(|| <[Vec<[usize; 2]>; 1]>::try_from(solutions).ok())
-        .flatten()
-        .map(|[solution]| solution))
+    match outcome {
+        SearchOutcome::Solved(solution) => {
+            outcome_storage.commit()?;
+            Ok(Some(solution))
+        }
+        SearchOutcome::Open | SearchOutcome::Ambiguous | SearchOutcome::Exhausted => Ok(None),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1828,8 +1881,8 @@ where
         F: FnMut(&[[usize; 2]]) -> Result<bool, cadmpeg_core::CodecError>,
     {
         let _depth = ctx.enter_nested("catia_duplicate_face_visit_depth")?;
-        ctx.charge_work(1, "catia_duplicate_face_visit_work")?;
         if at == branches.len() {
+            ctx.charge_work(1, "catia_duplicate_face_visit_work")?;
             if *visited >= max_assignments {
                 return Ok(DuplicateFaceAssignmentVisit::Exhausted);
             }
@@ -1841,7 +1894,8 @@ where
             });
         }
         let (edge, choices) = &branches[at];
-        for &face in choices {
+        let mut choices = choices.iter();
+        while let Some(&face) = ctx.next_charged(&mut choices, "catia_duplicate_face_visit_work")? {
             assignment[*edge][1] = face;
             match visit(
                 ctx,
@@ -1945,8 +1999,8 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     let face_count = face_run.face_count();
     let context = StandardMeshBoundaryContext::parse(ctx, bytes, serialized)?;
     unique_duplicate_face_assignment(ctx, serialized, allowed_faces, face_count, |assignment| {
-        if let Some(base) = context.as_ref() {
-            let Some(context) = base.with_edge_faces(ctx, assignment)? else {
+        if let Some((base, _base_storage)) = context.as_ref() {
+            let Some((context, _context_storage)) = base.with_edge_faces(ctx, assignment)? else {
                 return Ok(false);
             };
             Ok(standard_mesh_boundary_assignments_from_context(ctx, &context, None)?.is_some())
@@ -2029,76 +2083,88 @@ enum MeshFaceAssignmentDomain {
     DeferredValidation(MeshFaceCoverage),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) struct StandardMeshBoundaryContext {
     analysis: Arc<StandardMeshAnalysis>,
     coverage: Vec<MeshFaceCoverage>,
-    edge_ports: Vec<[u32; 2]>,
-    edge_runs: Vec<MeshEdgeRun>,
-    cycle_lengths: Vec<Vec<usize>>,
+    edge_ports: Arc<Vec<[u32; 2]>>,
+    edge_runs: Arc<Vec<MeshEdgeRun>>,
+    cycle_lengths: Arc<Vec<Vec<usize>>>,
 }
 
 impl StandardMeshBoundaryContext {
-    fn parse(
-        ctx: &DecodeContext<'_>,
+    fn parse<'storage>(
+        ctx: &'storage DecodeContext<'_>,
         bytes: &[u8],
         edge_faces: &[[usize; 2]],
-    ) -> Result<Option<Self>, CodecError> {
+    ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'storage>)>, CodecError> {
         Self::parse_ports(ctx, bytes, edge_faces, false)
     }
 
-    pub(super) fn parse_ports(
-        ctx: &DecodeContext<'_>,
+    pub(super) fn parse_ports<'storage>(
+        ctx: &'storage DecodeContext<'_>,
         bytes: &[u8],
         edge_faces: &[[usize; 2]],
         global_handle_ports: bool,
-    ) -> Result<Option<Self>, CodecError> {
-        let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
-            return Ok(None);
-        };
-        let analysis = Arc::new(analysis);
-        if analysis.edge_rows.len() != edge_faces.len() {
-            return Ok(None);
-        }
-        let Some(coverage) = mesh_face_coverage(ctx, &analysis, edge_faces)? else {
-            return Ok(None);
-        };
-        let Some(local_ports) = solver_ports(ctx, bytes, global_handle_ports)? else {
-            return Ok(None);
-        };
-        let Some(edge_ports) = mesh_edge_ports(ctx, &analysis, &local_ports)? else {
-            return Ok(None);
-        };
-        let edge_runs = mesh_edge_runs(ctx, &analysis)?;
-        let cycle_lengths = mesh_cycle_lengths(ctx, &analysis.cycles)?;
-        Ok(Some(Self {
-            analysis,
-            coverage,
-            edge_ports,
-            edge_runs,
-            cycle_lengths,
-        }))
+    ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'storage>)>, CodecError> {
+        let (context, storage) = ctx.with_scoped_storage(
+            "catia_mesh_boundary_context",
+            || -> Result<_, CodecError> {
+                let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+                    return Ok(None);
+                };
+                let analysis = Arc::new(analysis);
+                if analysis.edge_rows.len() != edge_faces.len() {
+                    return Ok(None);
+                }
+                let Some(coverage) = mesh_face_coverage(ctx, &analysis, edge_faces)? else {
+                    return Ok(None);
+                };
+                let (local_ports, _local_port_storage) = ctx
+                    .with_scoped_storage("catia_mesh_context_local_ports", || {
+                        solver_ports(ctx, bytes, global_handle_ports)
+                    })?;
+                let Some(local_ports) = local_ports else {
+                    return Ok(None);
+                };
+                let Some(edge_ports) = mesh_edge_ports(ctx, &analysis, &local_ports)? else {
+                    return Ok(None);
+                };
+                let edge_runs = mesh_edge_runs(ctx, &analysis)?;
+                let cycle_lengths = mesh_cycle_lengths(ctx, &analysis.cycles)?;
+                Ok(Some(Self {
+                    analysis,
+                    coverage,
+                    edge_ports: Arc::new(edge_ports),
+                    edge_runs: Arc::new(edge_runs),
+                    cycle_lengths: Arc::new(cycle_lengths),
+                }))
+            },
+        )?;
+        Ok(context.map(|context| (context, storage)))
     }
 
-    fn with_edge_faces(
+    fn with_edge_faces<'storage>(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         edge_faces: &[[usize; 2]],
-    ) -> Result<Option<Self>, CodecError> {
-        let Some(coverage) = mesh_face_coverage(ctx, &self.analysis, edge_faces)? else {
-            return Ok(None);
-        };
-        Ok(Some(Self {
-            analysis: Arc::clone(&self.analysis),
-            coverage,
-            edge_ports: ctx.copy_slice(&self.edge_ports, "catia_mesh_context_edge_ports")?,
-            edge_runs: ctx.copy_slice(&self.edge_runs, "catia_mesh_context_edge_runs")?,
-            cycle_lengths: ctx.copy_retained_rows(
-                &self.cycle_lengths,
-                "catia_mesh_context_cycle_rows",
-                "catia_mesh_context_cycle_lengths",
-            )?,
-        }))
+    ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'storage>)>, CodecError> {
+        let (context, storage) = ctx.with_scoped_storage(
+            "catia_mesh_boundary_context",
+            || -> Result<_, CodecError> {
+                let Some(coverage) = mesh_face_coverage(ctx, &self.analysis, edge_faces)? else {
+                    return Ok(None);
+                };
+                Ok(Some(Self {
+                    analysis: Arc::clone(&self.analysis),
+                    coverage,
+                    edge_ports: Arc::clone(&self.edge_ports),
+                    edge_runs: Arc::clone(&self.edge_runs),
+                    cycle_lengths: Arc::clone(&self.cycle_lengths),
+                }))
+            },
+        )?;
+        Ok(context.map(|context| (context, storage)))
     }
 }
 
@@ -2217,7 +2283,11 @@ fn standard_mesh_face_coverage(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Result<Option<Vec<MeshFaceCoverage>>, CodecError> {
-    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+    let (analysis, _analysis_storage) = ctx
+        .with_scoped_storage("catia_mesh_coverage_analysis", || {
+            standard_mesh_analysis(ctx, bytes)
+        })?;
+    let Some(analysis) = analysis else {
         return Ok(None);
     };
     mesh_face_coverage(ctx, &analysis, edge_faces)
@@ -2423,6 +2493,10 @@ pub(crate) fn bounded_oriented_trail_orders(
         used: u64,
         edges: &mut Vec<usize>,
         orders: &mut Vec<Vec<usize>>,
+        (edge_storage, order_storage): (
+            &mut cadmpeg_core::decode::ScopedReservation<'_>,
+            &mut cadmpeg_core::decode::ScopedReservation<'_>,
+        ),
     ) -> Result<bool, CodecError> {
         const OPERATION: &str = "catia_oriented_trail_order_work";
         let _depth = ctx.enter_nested("catia_oriented_trail_order_depth")?;
@@ -2431,8 +2505,10 @@ pub(crate) fn bounded_oriented_trail_orders(
             return Ok(false);
         }
         if index_from_u32(used.count_ones()) == trails.len() {
-            let order = ctx.copy_slice(edges, "catia_oriented_trail_order_copy")?;
-            ctx.push_vec(orders, order, "catia_oriented_trail_orders")?;
+            order_storage.with_storage(|| {
+                let order = ctx.copy_slice(edges, "catia_oriented_trail_order_copy")?;
+                ctx.push_vec(orders, order, "catia_oriented_trail_orders")
+            })?;
             return Ok(orders.len() <= limit);
         }
         for (index, trail) in ctx.admit_iter(trails, OPERATION)?.enumerate() {
@@ -2444,11 +2520,21 @@ pub(crate) fn bounded_oriented_trail_orders(
                     continue;
                 }
                 let before = edges.len();
-                ctx.extend_vec(edges, trail, "catia_oriented_trail_scratch")?;
+                edge_storage.with_storage(|| {
+                    ctx.extend_vec(edges, trail, "catia_oriented_trail_scratch")
+                })?;
                 if reversed {
                     ctx.reverse(&mut edges[before..], "catia_oriented_trail_scratch")?;
                 }
-                if !visit(ctx, trails, limit, used | (1 << index), edges, orders)? {
+                if !visit(
+                    ctx,
+                    trails,
+                    limit,
+                    used | (1 << index),
+                    edges,
+                    orders,
+                    (edge_storage, order_storage),
+                )? {
                     return Ok(false);
                 }
                 edges.truncate(before);
@@ -2473,7 +2559,20 @@ pub(crate) fn bounded_oriented_trail_orders(
         Ok::<_, CodecError>(edges)
     })?;
     let mut orders = Vec::new();
-    Ok(visit(ctx, trails, limit, 0, &mut edges, &mut orders)?.then_some(orders))
+    let mut order_storage = ctx.reserve_scoped(0, "catia_oriented_trail_orders")?;
+    if !visit(
+        ctx,
+        trails,
+        limit,
+        0,
+        &mut edges,
+        &mut orders,
+        (&mut scratch, &mut order_storage),
+    )? {
+        return Ok(None);
+    }
+    order_storage.commit()?;
+    Ok(Some(orders))
 }
 
 pub(crate) fn bounded_endpoint_cycle_orders(
@@ -2491,6 +2590,7 @@ pub(crate) fn bounded_endpoint_cycle_orders(
         limit: usize,
         budget: WorkBudget<'a>,
         orders: BTreeSet<Vec<usize>>,
+        order_storage: cadmpeg_core::decode::ScopedReservation<'a>,
     }
 
     impl Search<'_> {
@@ -2514,14 +2614,11 @@ pub(crate) fn bounded_endpoint_cycle_orders(
                         "catia_endpoint_cycle_orders",
                     )?
                 {
-                    let saved = self
-                        .ctx
-                        .copy_slice(order, "catia_endpoint_cycle_order_copy")?;
-                    self.ctx.insert_btree_set(
-                        &mut self.orders,
-                        saved,
-                        "catia_endpoint_cycle_orders",
-                    )?;
+                    let ctx = self.ctx;
+                    self.order_storage.with_storage(|| {
+                        let saved = ctx.copy_slice(order, "catia_endpoint_cycle_order_copy")?;
+                        ctx.insert_btree_set(&mut self.orders, saved, "catia_endpoint_cycle_orders")
+                    })?;
                 }
                 return Ok(self.orders.len() <= self.limit);
             }
@@ -2573,11 +2670,11 @@ pub(crate) fn bounded_endpoint_cycle_orders(
     })?;
     let first_edge = missing[0];
     let mut transitions = BTreeMap::<usize, Vec<(usize, usize)>>::new();
-    for (rank, &edge) in ctx
-        .admit_iter(&missing, "catia_endpoint_cycle_transition_steps")?
+    for (offset, &edge) in ctx
+        .admit_iter(&missing[1..], "catia_endpoint_cycle_transition_steps")?
         .enumerate()
-        .skip(1)
     {
+        let rank = offset + 1;
         for &[left, right] in ctx.admit_iter(
             &edge_candidates[edge],
             "catia_endpoint_cycle_transition_steps",
@@ -2620,14 +2717,13 @@ pub(crate) fn bounded_endpoint_cycle_orders(
             None => return Ok(None),
         },
         orders: BTreeSet::new(),
+        order_storage: ctx.reserve_scoped(0, "catia_endpoint_cycle_orders")?,
     };
     let first_pairs = scratch.with_storage(|| {
         let mut first_pairs = ctx.collect_vec(
-            ctx.admit_iter(
-                &edge_candidates[first_edge],
-                "catia_endpoint_cycle_first_pairs",
-            )?
-            .map(|&[left, right]| [left.min(right), left.max(right)]),
+            edge_candidates[first_edge]
+                .iter()
+                .map(|&[left, right]| [left.min(right), left.max(right)]),
             "catia_endpoint_cycle_first_pairs",
         )?;
         ctx.sort_unstable_by(
@@ -2654,8 +2750,14 @@ pub(crate) fn bounded_endpoint_cycle_orders(
         return Ok(None);
     }
     // The orders come out of the set ascending.
-    ctx.collect_vec(search.orders, "catia_endpoint_cycle_result_rows")
-        .map(Some)
+    ctx.try_collect_vec(
+        search
+            .orders
+            .iter()
+            .map(|order| ctx.copy_slice(order, "catia_endpoint_cycle_result_copy")),
+        "catia_endpoint_cycle_result_rows",
+    )
+    .map(Some)
 }
 
 /// Per-edge endpoint point domains and, for each point, the points an edge
@@ -2668,25 +2770,24 @@ struct EndpointDomains {
 /// The points a gap walk may currently stand on: an edge's endpoint domain,
 /// a bound corner's points, or a set derived during the walk.
 #[derive(Clone, Copy)]
-enum PointSet {
+enum PointSet<'s> {
     Edge(usize),
     Corner(MeshCorner),
-    Derived(usize),
+    Derived(&'s BTreeSet<usize>),
 }
 
 fn point_set<'s>(
     ctx: &DecodeContext<'_>,
     endpoints: Option<&'s EndpointDomains>,
     corner_points: &'s MeshCornerPoints,
-    derived: &'s [BTreeSet<usize>],
-    set: PointSet,
+    set: PointSet<'s>,
 ) -> Result<&'s BTreeSet<usize>, CodecError> {
     let found = match set {
         PointSet::Edge(edge) => endpoints.and_then(|domains| domains.points.get(edge)),
         PointSet::Corner(corner) => {
             ctx.get_hash_map(corner_points, &corner, "catia_gap_corner_points")?
         }
-        PointSet::Derived(index) => derived.get(index),
+        PointSet::Derived(points) => Some(points),
     };
     found.ok_or_else(|| CodecError::malformed("gap point set is missing"))
 }
@@ -2724,7 +2825,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         fixed_complete_row_spans: bool,
         constraints: PlacementConstraints<'input4>,
         canonicalize_spans: bool,
-        remaining_states: &'input5 mut usize,
+        remaining_states: &'input5 WorkBudget<'input5>,
     }
 
     fn enumerate_face(
@@ -2745,42 +2846,37 @@ fn standard_mesh_missing_edge_assignment_domains(
             corner_points: &'a MeshCornerPoints,
             canonical_spans: bool,
             canonical_gap_partitions: bool,
-            /// Point sets derived during the walk, held for the face search.
-            derived: Vec<BTreeSet<usize>>,
-            dead_states: HashSet<DeadState>,
+            dead_states: HashMap<DeadState, cadmpeg_core::decode::ScopedReservation<'a>>,
             storage: cadmpeg_core::decode::ScopedReservation<'a>,
-            remaining_states: &'a mut usize,
+            remaining_states: &'a WorkBudget<'a>,
             states: usize,
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
+            complete_storage: cadmpeg_core::decode::ScopedReservation<'a>,
         }
         struct GapSearchState<'input0> {
             gap: usize,
             offset: usize,
             used: u64,
             current_port: Option<u32>,
-            current_points: Option<PointSet>,
+            current_points: Option<PointSet<'input0>>,
             gap_placed_start: usize,
             placed: &'input0 mut Vec<MeshEdgePlacementCandidate>,
         }
-        impl Search<'_, '_> {
+        impl<'a, 'ctx> Search<'a, 'ctx> {
             fn walk(&mut self, inputs: GapSearchState<'_>) -> Result<Option<()>, CodecError> {
                 let ctx = self.ctx;
-                // The dead-state key lists the current points ascending; it is
-                // kept with the dead states.
-                let points = match inputs.current_points {
-                    Some(set) => {
-                        let current =
-                            point_set(ctx, self.endpoints, self.corner_points, &self.derived, set)?;
-                        self.storage.with_storage(|| {
-                            ctx.collect_vec(
-                                ctx.admit_iter(current, "catia_gap_state_points")?.copied(),
-                                "catia_gap_state_points",
-                            )
-                        })?
-                    }
-                    None => Vec::new(),
-                };
+                let (points, points_storage) =
+                    ctx.with_scoped_storage("catia_gap_state_points", || {
+                        match inputs.current_points {
+                            Some(set) => {
+                                let current =
+                                    point_set(ctx, self.endpoints, self.corner_points, set)?;
+                                ctx.collect_vec(current.iter().copied(), "catia_gap_state_points")
+                            }
+                            None => Ok(Vec::new()),
+                        }
+                    })?;
                 let has_flexible = inputs.placed.len() > inputs.gap_placed_start;
                 let state = (
                     inputs.gap,
@@ -2790,7 +2886,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                     points,
                     has_flexible,
                 );
-                if ctx.contains_hash_set(&self.dead_states, &state, "catia_gap_dead_states")? {
+                if ctx
+                    .get_hash_map(&self.dead_states, &state, "catia_gap_dead_states")?
+                    .is_some()
+                {
                     return Ok(Some(()));
                 }
                 let before = self.assignments;
@@ -2800,7 +2899,12 @@ fn standard_mesh_missing_edge_assignment_domains(
                 if self.assignments == before {
                     let dead_states = &mut self.dead_states;
                     self.storage.with_storage(|| {
-                        ctx.insert_hash_set(dead_states, state, "catia_gap_dead_states")
+                        ctx.insert_hash_map(
+                            dead_states,
+                            state,
+                            points_storage,
+                            "catia_gap_dead_states",
+                        )
                     })?;
                 }
                 Ok(Some(()))
@@ -2819,11 +2923,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                 let ctx = self.ctx;
 
                 let _depth = ctx.enter_nested("catia_gap_assignment_depth")?;
-                ctx.charge_work(1, "catia_gap_assignment_work")?;
-                let Some(remaining) = self.remaining_states.checked_sub(1) else {
+                // One local unit visits one gap-search state across all retries.
+                if !self.remaining_states.charge() {
                     return Ok(None);
-                };
-                *self.remaining_states = remaining;
+                }
                 let Some(states) = self.states.checked_add(1) else {
                     return Ok(None);
                 };
@@ -2837,8 +2940,11 @@ fn standard_mesh_missing_edge_assignment_domains(
                 if gap == self.gaps.len() {
                     if index_from_u32(used.count_ones()) == self.missing.len() {
                         self.assignments += 1;
-                        let copy = ctx.copy_slice(placed, "catia_gap_complete_placement_copy")?;
-                        ctx.push_vec(&mut self.complete, copy, "catia_gap_complete_assignments")?;
+                        self.complete_storage.with_storage(|| {
+                            let copy =
+                                ctx.copy_slice(placed, "catia_gap_complete_placement_copy")?;
+                            ctx.push_vec(&mut self.complete, copy, "catia_gap_complete_assignments")
+                        })?;
                     }
                     return Ok(Some(()));
                 }
@@ -2863,13 +2969,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     )?;
                     let points_close = match current_points.zip(end_points) {
                         Some((set, expected)) => {
-                            let actual = point_set(
-                                ctx,
-                                self.endpoints,
-                                self.corner_points,
-                                &self.derived,
-                                set,
-                            )?;
+                            let actual = point_set(ctx, self.endpoints, self.corner_points, set)?;
                             ctx.any_by(
                                 expected,
                                 |point| {
@@ -2998,17 +3098,18 @@ fn standard_mesh_missing_edge_assignment_domains(
                         }
                         (None, _) => [Some(None), None],
                     };
+                    let derived = match (self.endpoints, current_points) {
+                        (Some(endpoints), Some(set)) if !endpoints.points[edge].is_empty() => {
+                            Some(self.derive_points(endpoints, edge, set)?)
+                        }
+                        _ => None,
+                    };
                     let next_points = match self.endpoints {
                         Some(endpoints) if !endpoints.points[edge].is_empty() => {
-                            match current_points {
+                            match derived.as_ref() {
+                                Some((points, _storage)) if points.is_empty() => continue,
+                                Some((points, _storage)) => Some(PointSet::Derived(points)),
                                 None => Some(PointSet::Edge(edge)),
-                                Some(set) => {
-                                    let derived = self.derive_points(endpoints, edge, set)?;
-                                    if self.derived[derived].is_empty() {
-                                        continue;
-                                    }
-                                    Some(PointSet::Derived(derived))
-                                }
                             }
                         }
                         _ => None,
@@ -3050,25 +3151,20 @@ fn standard_mesh_missing_edge_assignment_domains(
                 Ok(Some(()))
             }
 
-            /// The points an edge leads to from the current points, kept as a
-            /// derived set for the rest of the face search.
+            /// The points an edge leads to from the current points, held by
+            /// the caller while its branch walks that edge.
             fn derive_points(
-                &mut self,
+                &self,
                 endpoints: &EndpointDomains,
                 edge: usize,
-                current: PointSet,
-            ) -> Result<usize, CodecError> {
+                current: PointSet<'_>,
+            ) -> Result<(BTreeSet<usize>, cadmpeg_core::decode::ScopedReservation<'a>), CodecError>
+            {
                 const OPERATION: &str = "catia_gap_transition_points";
                 let ctx = self.ctx;
-                let source = point_set(
-                    ctx,
-                    self.endpoints,
-                    self.corner_points,
-                    &self.derived,
-                    current,
-                )?;
+                let source = point_set(ctx, self.endpoints, self.corner_points, current)?;
                 let transitions = &endpoints.transitions[edge];
-                let next = self.storage.with_storage(|| {
+                ctx.with_scoped_storage(OPERATION, || {
                     let mut next = BTreeSet::new();
                     for point in ctx.admit_iter(source, OPERATION)? {
                         let Some(targets) = ctx.get_btree_map(transitions, point, OPERATION)?
@@ -3080,12 +3176,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                         }
                     }
                     Ok::<_, CodecError>(next)
-                })?;
-                let index = self.derived.len();
-                let derived = &mut self.derived;
-                self.storage
-                    .with_storage(|| ctx.push_vec(derived, next, "catia_gap_transition_set"))?;
-                Ok(index)
+                })
             }
         }
 
@@ -3140,13 +3231,13 @@ fn standard_mesh_missing_edge_assignment_domains(
             // placement API above still enumerates every span allocation.
             canonical_spans: canonicalize_spans,
             canonical_gap_partitions: canonicalize_spans,
-            derived: Vec::new(),
-            dead_states: HashSet::new(),
+            dead_states: HashMap::new(),
             storage,
             remaining_states,
             states: 0,
             assignments: 0,
             complete: Vec::new(),
+            complete_storage: ctx.reserve_scoped(0, "catia_gap_complete_assignments")?,
         };
         if search
             .walk(GapSearchState {
@@ -3165,6 +3256,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
             return Ok(None);
         }
+        search.complete_storage.commit()?;
         Ok(Some(search.complete))
     }
 
@@ -3409,8 +3501,7 @@ fn standard_mesh_missing_edge_assignment_domains(
         }
         let trail_edges = scratch.with_storage(|| {
             ctx.collect_vec(
-                ctx.admit_iter(trails, "catia_trail_order_input_rows")?
-                    .map(|trail| trail.edges),
+                trails.into_iter().map(|trail| trail.edges),
                 "catia_trail_order_input_rows",
             )
         })?;
@@ -3433,15 +3524,15 @@ fn standard_mesh_missing_edge_assignment_domains(
         for order in ctx.admit_iter(orders, "catia_cycle_assignment_rows")? {
             assignments.push(
                 ctx.collect_vec(
-                    ctx.admit_iter(order, "catia_cycle_assignment_placements")?
-                        .enumerate()
-                        .map(|(offset, edge)| MeshEdgePlacementCandidate {
+                    order.into_iter().enumerate().map(|(offset, edge)| {
+                        MeshEdgePlacementCandidate {
                             edge,
                             face,
                             cycle,
                             start: offset,
                             segment_count: 1,
-                        }),
+                        }
+                    }),
                     "catia_cycle_assignment_placements",
                 )?,
             );
@@ -3529,28 +3620,27 @@ fn standard_mesh_missing_edge_assignment_domains(
         None => None,
     };
     let coverage = &context.coverage;
-    let edge_ports = &context.edge_ports;
+    let edge_ports = context.edge_ports.as_slice();
     let complete_boundary_ports = ctx.all_by(
         edge_rows,
         |row| Ok(row.boundary_layout() == EdgeBoundaryLayout::CompleteBoundaryRun),
         "catia_mesh_corner_ports",
     )?;
-    let placement_ports = complete_boundary_ports.then_some(edge_ports.as_slice());
+    let placement_ports = complete_boundary_ports.then_some(edge_ports);
     let singleton_edge_points = match edge_candidates {
         Some(candidates) => Some(scratch.with_storage(|| {
             ctx.collect_vec(
-                ctx.admit_iter(candidates, "catia_mesh_singleton_edge_points")?
-                    .map(|domain| match domain.as_slice() {
-                        [pair] => Some(*pair),
-                        _ => None,
-                    }),
+                candidates.iter().map(|domain| match domain.as_slice() {
+                    [pair] => Some(*pair),
+                    _ => None,
+                }),
                 "catia_mesh_singleton_edge_points",
             )
         })?),
         None => None,
     };
-    let edge_runs = &context.edge_runs;
-    let mut remaining_states = MAX_SEARCH_STATES;
+    let edge_runs = context.edge_runs.as_slice();
+    let remaining_states = ctx.work_budget(u64_from_index(MAX_SEARCH_STATES));
     let mut corner_ports = HashMap::<MeshCorner, u32>::new();
     let mut corner_points = MeshCornerPoints::new();
     for run in ctx.admit_iter(edge_runs, "catia_mesh_corner_ports")? {
@@ -3616,8 +3706,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     } else {
                         scratch.with_storage(|| {
                             let copied = ctx.collect_btree_set(
-                                ctx.admit_iter(&points, "catia_mesh_corner_point_copy")?
-                                    .copied(),
+                                points.iter().copied(),
                                 "catia_mesh_corner_point_copy",
                             )?;
                             ctx.insert_hash_map(
@@ -3725,7 +3814,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
                     constraints,
                     canonicalize_spans,
-                    remaining_states: &mut remaining_states,
+                    remaining_states: &remaining_states,
                 },
             )?;
         }
@@ -3758,7 +3847,9 @@ fn standard_mesh_missing_edge_assignments(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>>, CodecError> {
-    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
+    let Some((context, _context_storage)) =
+        StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)?
+    else {
         return Ok(None);
     };
     let Some((domains, _)) = standard_mesh_missing_edge_assignment_domains(
@@ -3816,7 +3907,9 @@ pub(crate) fn standard_mesh_boundary_assignments(
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
-    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
+    let Some((context, _context_storage)) =
+        StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)?
+    else {
         return Ok(None);
     };
     standard_mesh_boundary_assignments_from_context(ctx, &context, edge_candidates)
@@ -3858,7 +3951,7 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
     else {
         return Ok(None);
     };
-    let cycle_lengths = &context.cycle_lengths;
+    let cycle_lengths = context.cycle_lengths.as_slice();
     let fixed_direction = |edge: usize| {
         edge_candidates.is_none()
             || context.analysis.edge_rows[edge].boundary_layout()
@@ -4337,13 +4430,23 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         return Ok(None);
     };
     let after_faces = face_run.after_faces();
-    let Some((_, vertex_header)) = parse_edge_tables(ctx, bytes, after_faces)? else {
+    let Some(vertex_header) = ({
+        let (rows, _row_storage) = ctx.with_scoped_storage("catia_prune_edge_workspace", || {
+            parse_edge_tables(ctx, bytes, after_faces)
+        })?;
+        rows.map(|(_, header)| header)
+    }) else {
         return Ok(None);
     };
-    let Some(vertex_points) = parse_vertex_table(ctx, bytes, vertex_header)? else {
+    let Some(point_count) = ({
+        let (points, _point_storage) = ctx
+            .with_scoped_storage("catia_prune_vertex_workspace", || {
+                parse_vertex_table(ctx, bytes, vertex_header)
+            })?;
+        points.map(|points| points.len())
+    }) else {
         return Ok(None);
     };
-    let point_count = vertex_points.len();
     let mut scratch = ctx.reserve_scoped(0, "catia_prune_complete_point_pairs")?;
     // An edge without candidates may take any pair of distinct points.
     let complete_domain = if ctx.any_by(
@@ -4379,7 +4482,11 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
         };
         candidates.push(ctx.copy_slice(source, "catia_prune_candidate_pairs")?);
     }
-    let Some(mut faces) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)? else {
+    let (faces, _face_storage) = ctx
+        .with_scoped_storage("catia_prune_boundary_workspace", || {
+            standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)
+        })?;
+    let Some(mut faces) = faces else {
         return Ok(None);
     };
     let budget = ctx.work_budget(u64_from_index(MAX_MESH_CONSTRAINT_OPERATIONS));
@@ -4444,22 +4551,25 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             if evaluated.is_empty() {
                 return Ok(None);
             }
-            let mut retained_assignments =
-                ctx.collection_vec(evaluated.len(), "catia_prune_retained_assignments")?;
-            for (index, _) in ctx.admit_iter(&evaluated, "catia_prune_retained_assignments")? {
-                retained_assignments.push(MeshFaceBoundaryAssignment {
-                    boundaries: ctx.copy_retained_rows(
-                        &assignments[*index].boundaries,
-                        "catia_prune_retained_boundary_rows",
-                        "catia_prune_retained_boundary_uses",
-                    )?,
-                });
+            let mut kept = round_storage.with_storage(|| {
+                ctx.alloc_filled(assignments.len(), false, "catia_prune_assignment_marks")
+            })?;
+            for &(index, _) in ctx.admit_iter(&evaluated, "catia_prune_retained_assignments")? {
+                kept[index] = true;
             }
-            *assignments = retained_assignments;
+            let mut index = 0;
+            ctx.retain_vec(
+                assignments,
+                |_| {
+                    let selected = kept[index];
+                    index += 1;
+                    Ok(selected)
+                },
+                "catia_prune_retained_assignments",
+            )?;
             let support_rows = round_storage.with_storage(|| {
                 ctx.collect_vec(
-                    ctx.admit_iter(evaluated, "catia_prune_assignment_supports")?
-                        .map(|(_, support)| support),
+                    evaluated.into_iter().map(|(_, support)| support),
                     "catia_prune_assignment_supports",
                 )
             })?;
@@ -4557,14 +4667,20 @@ fn standard_mesh_assignment_corner_points(
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<MeshAssignmentCorners>, CodecError> {
     const OPERATION: &str = "catia_corner_point_narrowing";
-    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+    let (analysis, _analysis_storage) = ctx
+        .with_scoped_storage("catia_corner_mesh_analysis", || {
+            standard_mesh_analysis(ctx, bytes)
+        })?;
+    let Some(analysis) = analysis else {
         return Ok(None);
     };
     let edge_rows = &analysis.edge_rows;
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return Ok(None);
     }
-    let runs = mesh_edge_runs(ctx, &analysis)?;
+    let (runs, _run_storage) = ctx.with_scoped_storage("catia_corner_run_workspace", || {
+        mesh_edge_runs(ctx, &analysis)
+    })?;
     let Some(assignments) =
         standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, true)?
     else {
@@ -4641,11 +4757,7 @@ fn standard_mesh_assignment_corner_points(
     })?;
     let mut pending = scratch.with_storage(|| {
         ctx.collect_vec(
-            ctx.admit_iter(
-                &(0..run_constraints.len()),
-                "catia_corner_point_constraint_round",
-            )?
-            .rev(),
+            (0..run_constraints.len()).rev(),
             "catia_corner_point_constraint_round",
         )
     })?;
@@ -4712,11 +4824,15 @@ fn standard_mesh_missing_edge_endpoint_assignments(
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
     const OPERATION: &str = "catia_placement_endpoint_candidate_pairs";
+    let (corners, _corner_storage) = ctx
+        .with_scoped_storage("catia_placement_corner_workspace", || {
+            standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)
+        })?;
     let Some(MeshAssignmentCorners {
         assignments,
         corner_points,
         cycle_lengths,
-    }) = standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)?
+    }) = corners
     else {
         return Ok(None);
     };
@@ -4930,19 +5046,26 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
-    let Some(edge_rows) = standard_edge_rows(ctx, bytes)? else {
+    let (edge_rows, _edge_rows_storage) = ctx
+        .with_scoped_storage("catia_placement_edge_rows", || {
+            standard_edge_rows(ctx, bytes)
+        })?;
+    let Some(edge_rows) = edge_rows else {
         return Ok(None);
     };
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return Ok(None);
     }
-    let Some(assignments) = standard_mesh_pruned_missing_edge_endpoint_assignments(
-        ctx,
-        bytes,
-        edge_faces,
-        edge_points,
-    )?
-    else {
+    let (assignments, _assignment_storage) =
+        ctx.with_scoped_storage("catia_placement_assignment_workspace", || {
+            standard_mesh_pruned_missing_edge_endpoint_assignments(
+                ctx,
+                bytes,
+                edge_faces,
+                edge_points,
+            )
+        })?;
+    let Some(assignments) = assignments else {
         return Ok(None);
     };
     let mut domains =
@@ -5318,9 +5441,11 @@ pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
         Ok::<_, CodecError>((ports, pairs, ordered))
     })?;
     let (ports, pairs, ordered) = rows;
-    let Some(propagated) =
-        propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)?
-    else {
+    let (propagated, _propagated_storage) = ctx
+        .with_scoped_storage("catia_partial_propagation_workspace", || {
+            propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
+        })?;
+    let Some(propagated) = propagated else {
         return Ok(None);
     };
     for ((edge, _), pair) in ctx
@@ -5357,6 +5482,8 @@ fn port_candidate_pair_key(pair: [usize; 2]) -> [usize; 2] {
     }
 }
 
+type PortBindingUndo = [Option<(u32, usize)>; 2];
+
 struct PortCandidateSearch<'a, 'b> {
     ctx: &'a DecodeContext<'b>,
     ports: &'a [[u32; 2]],
@@ -5367,9 +5494,11 @@ struct PortCandidateSearch<'a, 'b> {
     outcome: SearchOutcome<Vec<[usize; 2]>>,
     states: usize,
     mode: PortCandidateSearchMode,
+    map_storage: cadmpeg_core::decode::ScopedReservation<'a>,
+    outcome_storage: cadmpeg_core::decode::ScopedReservation<'a>,
 }
 
-impl PortCandidateSearch<'_, '_> {
+impl<'a, 'b> PortCandidateSearch<'a, 'b> {
     /// The orientations of a candidate pair that agree with the bound ports
     /// (and, under a point bijection, with the bound points).
     fn compatible(
@@ -5409,39 +5538,42 @@ impl PortCandidateSearch<'_, '_> {
         Ok(oriented)
     }
 
-    fn assign(&mut self, edge: usize, points: [usize; 2]) -> Result<Vec<(u32, usize)>, CodecError> {
-        let mut inserted = Vec::new();
-        for (&port, point) in self.ports[edge].iter().zip(points) {
+    fn assign(&mut self, edge: usize, points: [usize; 2]) -> Result<PortBindingUndo, CodecError> {
+        let mut inserted = [None; 2];
+        for (slot, (&port, point)) in self.ports[edge].iter().zip(points).enumerate() {
             if !self.ctx.contains_key_hash_map(
                 &self.port_points,
                 &port,
                 "catia_port_search_points",
             )? {
-                self.ctx.insert_hash_map(
-                    &mut self.port_points,
-                    port,
-                    point,
-                    "catia_port_search_points",
-                )?;
-                if self.mode.enforces_point_bijection() {
+                self.map_storage.with_storage(|| {
                     self.ctx.insert_hash_map(
-                        &mut self.point_ports,
-                        point,
+                        &mut self.port_points,
                         port,
-                        "catia_port_search_reverse_points",
-                    )?;
+                        point,
+                        "catia_port_search_points",
+                    )
+                })?;
+                if self.mode.enforces_point_bijection() {
+                    self.map_storage.with_storage(|| {
+                        self.ctx.insert_hash_map(
+                            &mut self.point_ports,
+                            point,
+                            port,
+                            "catia_port_search_reverse_points",
+                        )
+                    })?;
                 }
-                self.ctx
-                    .push_vec(&mut inserted, (port, point), "catia_port_search_inserted")?;
+                inserted[slot] = Some((port, point));
             }
         }
         self.edge_pairs[edge] = Some(points);
         Ok(inserted)
     }
 
-    fn unassign(&mut self, edge: usize, inserted: Vec<(u32, usize)>) -> Result<(), CodecError> {
+    fn unassign(&mut self, edge: usize, inserted: PortBindingUndo) -> Result<(), CodecError> {
         self.edge_pairs[edge] = None;
-        for (port, point) in inserted {
+        for (port, point) in inserted.into_iter().flatten() {
             self.ctx
                 .remove_hash_map(&mut self.port_points, &port, "catia_port_search_points")?;
             if self.mode.enforces_point_bijection() {
@@ -5455,7 +5587,7 @@ impl PortCandidateSearch<'_, '_> {
         Ok(())
     }
 
-    fn rollback(&mut self, propagated: Vec<(usize, Vec<(u32, usize)>)>) -> Result<(), CodecError> {
+    fn rollback(&mut self, propagated: Vec<(usize, PortBindingUndo)>) -> Result<(), CodecError> {
         for (edge, inserted) in self
             .ctx
             .admit_iter(propagated, "catia_port_search_propagated")?
@@ -5481,6 +5613,7 @@ impl PortCandidateSearch<'_, '_> {
             return Ok(());
         }
         let mut propagated = Vec::new();
+        let mut propagated_storage = ctx.reserve_scoped(0, "catia_port_search_propagated")?;
         // Assign every edge with one compatible orientation until none is
         // forced, then branch on the edge with the fewest.
         let branch = loop {
@@ -5511,11 +5644,13 @@ impl PortCandidateSearch<'_, '_> {
                     continue;
                 }
                 let inserted = self.assign(edge, first)?;
-                ctx.push_vec(
-                    &mut propagated,
-                    (edge, inserted),
-                    "catia_port_search_propagated",
-                )?;
+                propagated_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut propagated,
+                        (edge, inserted),
+                        "catia_port_search_propagated",
+                    )
+                })?;
                 progress = true;
             }
             if !incomplete {
@@ -5527,29 +5662,37 @@ impl PortCandidateSearch<'_, '_> {
             break best.map(|(_, edge)| edge);
         };
         let Some(edge) = branch else {
-            let mut candidate =
-                ctx.collection_vec(self.edge_pairs.len(), "catia_port_search_solution")?;
-            let mut complete = true;
-            for pair in ctx.admit_iter(&self.edge_pairs, "catia_port_search_solution")? {
-                let Some(pair) = *pair else {
-                    complete = false;
-                    break;
-                };
-                candidate.push(pair);
-            }
-            if complete {
-                let equivalent = match &self.outcome {
-                    SearchOutcome::Solved(previous) if previous.len() == candidate.len() => ctx
-                        .all_by(
-                            previous.iter().zip(&candidate),
+            // No branch remains only when every edge is assigned.
+            match &self.outcome {
+                SearchOutcome::Open => {
+                    let candidate = self.outcome_storage.with_storage(|| {
+                        ctx.collect_options(
+                            self.edge_pairs.iter().copied(),
+                            "catia_port_search_solution",
+                        )
+                    })?;
+                    if let Some(candidate) = candidate {
+                        self.outcome = SearchOutcome::Solved(candidate);
+                    }
+                }
+                SearchOutcome::Solved(previous) => {
+                    let equivalent = previous.len() == self.edge_pairs.len()
+                        && ctx.all_by(
+                            previous.iter().zip(&self.edge_pairs),
                             |(&left, &right)| {
-                                Ok(port_candidate_pair_key(left) == port_candidate_pair_key(right))
+                                Ok(right.is_some_and(|right| {
+                                    port_candidate_pair_key(left) == port_candidate_pair_key(right)
+                                }))
                             },
                             "catia_port_search_solution",
-                        )?,
-                    _ => false,
-                };
-                self.outcome.record_solved(candidate, |_, _| equivalent);
+                        )?;
+                    if !equivalent {
+                        self.outcome = SearchOutcome::Ambiguous;
+                        self.outcome_storage =
+                            ctx.reserve_scoped(0, "catia_port_search_solution")?;
+                    }
+                }
+                SearchOutcome::Ambiguous | SearchOutcome::Exhausted => {}
             }
             self.rollback(propagated)?;
             return Ok(());
@@ -5558,9 +5701,8 @@ impl PortCandidateSearch<'_, '_> {
             self.outcome.exhaust();
         } else {
             self.states += 1;
-            'candidates: for candidate in
-                ctx.admit_iter(&(0..self.candidates[edge].len()), OPERATION)?
-            {
+            let mut candidates = 0..self.candidates[edge].len();
+            'candidates: while let Some(candidate) = ctx.next_charged(&mut candidates, OPERATION)? {
                 for points in self
                     .compatible(edge, self.candidates[edge][candidate])?
                     .into_iter()
@@ -5771,6 +5913,8 @@ fn edge_port_candidate_assignment(
                 outcome: SearchOutcome::Open,
                 states: 0,
                 mode,
+                map_storage: ctx.reserve_scoped(0, "catia_port_search_points")?,
+                outcome_storage: ctx.reserve_scoped(0, "catia_port_search_solution")?,
             })
         })?;
         search_storage.with_storage(|| search.search())?;

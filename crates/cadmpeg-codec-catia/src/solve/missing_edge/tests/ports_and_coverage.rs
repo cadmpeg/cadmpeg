@@ -56,7 +56,6 @@ fn port_candidate_search_refuses_collection_depth_and_work_limits() {
         "catia_edge_port_pairs",
         "catia_port_search_points",
         "catia_port_search_reverse_points",
-        "catia_port_search_inserted",
         "catia_port_search_propagated",
         "catia_port_search_solution",
         "catia_port_assignment_result",
@@ -250,6 +249,7 @@ fn mesh_boundary_domain_limit_operation(max_collection_items: u64) -> Option<&'s
         crate::solve::missing_edge::StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
             .expect("service resource budget")
             .expect("quad boundary context")
+            .0
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -831,7 +831,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     )
     .expect("service resource budget")
     .expect("complete ordered boundary assignments");
-    let boundary_context =
+    let (boundary_context, _boundary_context_storage) =
         crate::solve::missing_edge::StandardMeshBoundaryContext::parse(&ctx, &bytes, &[[0, 0]; 4])
             .expect("service resource budget")
             .expect("parsed boundary context");
@@ -1162,8 +1162,7 @@ fn endpoint_pruning_refuses_before_complete_pairs_and_assignment_copies() {
         "catia_prune_complete_point_pairs",
         "catia_prune_candidate_rows",
         "catia_prune_candidate_pairs",
-        "catia_prune_retained_assignments",
-        "catia_prune_retained_boundary_uses",
+        "catia_prune_assignment_marks",
     ] {
         assert!(operations.contains(operation), "no refusal at {operation}");
     }
