@@ -5437,6 +5437,7 @@
         "application_domains": "App,Sketcher",
         "archive_entry_count": "22",
         "document_kind": "application-document",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "object_count": "8",
         "physical_archive_bytes": "12555",

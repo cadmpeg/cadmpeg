@@ -11,7 +11,9 @@ use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{ExportBody, WritePath};
+use cadmpeg_ir::codec::write::{
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody, WritePath,
+};
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
 use cadmpeg_ir::eval::EvaluationFailure;
@@ -157,6 +159,7 @@ pub(crate) mod target;
 fn body(
     bytes: Vec<u8>,
     write_path: WritePath,
+    coverage: ArenaCoverage,
     losses: Vec<LossNote>,
     note: &str,
     counts: BTreeMap<String, usize>,
@@ -168,10 +171,64 @@ fn body(
             counts: cadmpeg_ir::CensusKey::count_map(counts),
         },
         write_path,
+        coverage,
         losses,
         notes: vec![note.into()],
     }
 }
+
+/// What [`synthesize`] does with each model arena.
+///
+/// `reject_unsupported_model` refuses every arena declared `Reported` except
+/// `procedural_curves`, which `procedural_reduction_losses` charges as reduced
+/// to their carriers. Topology and geometry go through the B-rep, trimmed-sheet
+/// or free-geometry entity graph.
+const SYNTHESIS_COVERAGE: ArenaDispositions = {
+    use ArenaDisposition::{Reported, Written};
+    ArenaDispositions {
+        bodies: Written,
+        regions: Written,
+        shells: Written,
+        faces: Written,
+        loops: Written,
+        coedges: Written,
+        edges: Written,
+        vertices: Written,
+        points: Written,
+        surfaces: Written,
+        curves: Written,
+        subds: Reported,
+        pcurves: Written,
+        procedural_surfaces: Written,
+        procedural_curves: Reported,
+        assets: Reported,
+        features: Reported,
+        feature_input_topologies: Reported,
+        feature_result_topologies: Reported,
+        configurations: Reported,
+        parameters: Reported,
+        sketches: Reported,
+        sketch_entities: Reported,
+        sketch_constraints: Reported,
+        spatial_sketches: Reported,
+        spatial_sketch_entities: Reported,
+        spatial_sketch_constraints: Reported,
+        spreadsheets: Reported,
+        product_definitions: Reported,
+        occurrences: Reported,
+        assembly_joints: Reported,
+        drawings: Reported,
+        semantic_annotations: Reported,
+        presentation_documents: Reported,
+        view_presentations: Reported,
+        tessellations: Reported,
+        appearances: Reported,
+        appearance_bindings: Reported,
+        attributes: Reported,
+        pmi: Reported,
+        presentation_layers: Reported,
+    }
+};
 
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
@@ -411,6 +468,20 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             &mut losses,
         )?
     } else {
+        // This branch writes edges, curves, surfaces and points only. A body
+        // other than the decoder's free-geometry wrapper has nothing here that
+        // carries it.
+        if let Some(body) = ir
+            .model
+            .bodies
+            .iter()
+            .find(|body| !is_decoder_free_geometry_body(body))
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES semantic writer does not encode faceless body {}",
+                body.id
+            )));
+        }
         let ownership = ownership::SourceOwnership::build(ctx, ir)?;
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();

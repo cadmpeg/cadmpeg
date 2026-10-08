@@ -15831,6 +15831,7 @@
         "application_domains": "App,Part",
         "archive_entry_count": "16",
         "document_kind": "part",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "object_count": "13",
         "physical_archive_bytes": "12122",

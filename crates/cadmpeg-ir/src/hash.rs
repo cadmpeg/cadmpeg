@@ -137,6 +137,24 @@ pub fn document_local_sha256(
     source_image_id: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
+    document_local_sha256_without_carried(ctx, ir, source, format, source_image_id, &[], operation)
+}
+
+/// [`document_local_sha256`] with the `format` native arenas named in
+/// `carried` left out.
+///
+/// An encoder that handles those native arenas itself, writing or refusing
+/// each of their edits, records and compares this digest, so every other edit
+/// changes the digest.
+pub fn document_local_sha256_without_carried(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    source: Option<&SourceMeta>,
+    format: &str,
+    source_image_id: &str,
+    carried: &[&str],
+    operation: &'static str,
+) -> Result<String, CodecError> {
     let mut storage = ctx.reserve_scoped(0, operation)?;
     let unknowns =
         storage.with_storage(|| reduced_unknowns(ctx, ir, format, source_image_id, operation))?;
@@ -149,7 +167,7 @@ pub fn document_local_sha256(
             units: CanonicalUnitsWire::default(),
             tolerances: &ir.tolerances,
             model: ir.model.sorted(ctx)?,
-            native: normalized_native(ctx, &ir.native, format, &unknowns, operation)?,
+            native: normalized_native(ctx, &ir.native, format, &unknowns, carried, operation)?,
         })
     })?;
     canonical_json_sha256(ctx, &document, operation).map_err(Into::into)
@@ -219,13 +237,14 @@ struct NormalizedDocument<'a> {
 }
 
 /// Borrow every native namespace in canonical order, replacing the `format`
-/// unknown arena with `unknowns` and creating that namespace when the document
-/// has none.
+/// unknown arena with `unknowns`, leaving out the `format` arenas named in
+/// `carried`, and creating that namespace when the document has none.
 fn normalized_native<'a>(
     ctx: &DecodeContext<'_>,
     native: &'a Native,
     format: &'a str,
     unknowns: &'a [NativeRecord],
+    carried: &[&str],
     operation: &'static str,
 ) -> Result<BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>, CodecError> {
     let mut namespaces = BTreeMap::new();
@@ -246,7 +265,7 @@ fn normalized_native<'a>(
                     .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
                 operation,
             )?;
-            if name == format && arena == "unknowns" {
+            if name == format && (arena == "unknowns" || carried.contains(&arena.as_str())) {
                 continue;
             }
             longest_arena = longest_arena.max(arena.len());

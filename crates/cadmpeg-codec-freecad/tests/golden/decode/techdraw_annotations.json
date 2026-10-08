@@ -2415,6 +2415,7 @@
         "application_domains": "App,Part,TechDraw",
         "archive_entry_count": "5",
         "document_kind": "drawing",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "object_count": "8",
         "physical_archive_bytes": "5014",

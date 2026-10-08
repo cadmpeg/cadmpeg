@@ -127,6 +127,7 @@ fn finish(
             counts: input.ir.census(),
         },
         write_path,
+        coverage: written.coverage(),
         losses,
         notes: vec![
             path_note.into(),
