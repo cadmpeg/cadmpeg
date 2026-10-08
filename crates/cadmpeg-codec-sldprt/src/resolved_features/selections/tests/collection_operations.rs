@@ -270,3 +270,20 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
     assert!(classes.has_split_classes(&lane).unwrap());
     assert!(classes.surfaces.get().is_none());
 }
+
+#[test]
+fn split_object_without_source_does_not_search_split_classes() {
+    let lane = crate::records::FeatureInputLane {
+        id: "lane".into(), configuration: None, native_payload: Vec::new(), classes: Vec::new(),
+        names: Vec::new(), scalars: Vec::new(), relation_bindings: Vec::new(),
+        relation_instances: Vec::new(), body_selections: Vec::new(), edge_selections: Vec::new(),
+        surface_selections: Vec::new(), generated_surface_identities: Vec::new(),
+        references: Vec::new(), sketch_entities: Vec::new(),
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
+    assert!(super::super::operation_surface_selection_candidates(
+        &ctx, crate::classification::FeatureClass::SplitFace, &lane, &classes, 0, 0, None,
+    ).unwrap().is_empty());
+    assert!(classes.split_classes.get().is_none());
+}

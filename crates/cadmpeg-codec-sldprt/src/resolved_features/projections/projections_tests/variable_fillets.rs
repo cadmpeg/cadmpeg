@@ -202,13 +202,17 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
             )
         },
     );
-    assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.additional == 1));
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else {
+        panic!("fillet group collection refusal");
+    };
+    assert_eq!(limit.additional, 1);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit.used + limit.additional;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
+        &policy,
     )
     .expect("fillet fixture context");
     super::super::project_compact_edge_selections(
