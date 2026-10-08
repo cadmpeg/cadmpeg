@@ -18,7 +18,7 @@ use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{
-    edge_pcurve_parameters, evaluate_pcurve, pcurve_nurbs_knots, B5Graph, B5Pcurve,
+    edge_pcurve_parameters, evaluate_pcurve, pcurve_knot_expansion_is_finite, pcurve_nurbs_knots, B5Graph, B5Pcurve,
     B5SphereGreatCirclePcurve, B5Surface,
 };
 use super::super::vecmath::{add, components, coordinates, cross, scale};
@@ -420,9 +420,6 @@ pub(super) fn lifted_curve_geometry(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
-    let Some(native_knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
-        return Ok(None);
-    };
     if let B5Surface::Plane {
         origin,
         frame,
@@ -430,6 +427,9 @@ pub(super) fn lifted_curve_geometry(
         ..
     } = surface
     {
+        let Some(native_knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
+            return Ok(None);
+        };
         let knots = ctx.collect_vec(
             native_knots.into_iter().map(FiniteReal::get),
             "catia_b5_lifted_plane_knots",
@@ -465,6 +465,9 @@ pub(super) fn lifted_curve_geometry(
         .ok()
         .map(SolvedCurveGeometry::Nurbs)
         .map(CurveGeometry::Solved));
+    }
+    if !pcurve_knot_expansion_is_finite(ctx, pcurve)? {
+        return Ok(None);
     }
     if let B5Surface::Nurbs(surface) = surface {
         return Ok(nurbs_isocurve(ctx, pcurve, surface)?

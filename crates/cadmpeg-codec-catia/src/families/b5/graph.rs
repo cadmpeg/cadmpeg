@@ -3721,6 +3721,39 @@ fn pcurve_knots(
     Ok(Some(knots))
 }
 
+/// Check the expanded occurrence knots without allocating or visiting repeated
+/// copies of the same distinct knot.
+pub(super) fn pcurve_knot_expansion_is_finite(
+    ctx: &DecodeContext<'_>,
+    pcurve: &B5Pcurve,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(0, "catia_b5_pcurve_knot_validity")?;
+    let mut count = 0usize;
+    let mut index = 0usize;
+    let paired = pcurve.distinct_knots.len().min(pcurve.multiplicities.len());
+    Ok(ctx.all_by_limit(
+        &pcurve.distinct_knots[..paired],
+        |knot| {
+            let multiplicity = pcurve.multiplicities[index];
+            index += 1;
+            let Some(next) = usize::try_from(multiplicity)
+                .ok()
+                .and_then(|multiplicity| count.checked_add(multiplicity))
+            else {
+                return Ok(false);
+            };
+            count = next;
+            Ok(multiplicity == 0 || match pcurve.parameterization {
+                B5PcurveParameterization::Native => true,
+                B5PcurveParameterization::Translated { native_origin } => {
+                    FiniteReal::new(knot.get() - native_origin.get()).is_some()
+                }
+            })
+        },
+        "catia_b5_pcurve_knot_validity",
+    )?)
+}
+
 /// Return the knot vector in the pcurve's occurrence coordinate system. A
 /// translated knot is admitted finite, since the translation can overflow.
 pub(super) fn pcurve_nurbs_knots(
