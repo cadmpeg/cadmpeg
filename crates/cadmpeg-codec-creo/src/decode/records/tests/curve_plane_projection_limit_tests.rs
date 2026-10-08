@@ -140,7 +140,15 @@ use crate::decode::records::{
                 let scan = scan();
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = 0;
+                policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some($operation), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          ($project)(&trial_ctx, &scan).map(|_| ())
+      });
+
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root is admitted");
                 let Err(error) = ($project)(&ctx, &scan) else { panic!("one native record exceeds the collection limit") };

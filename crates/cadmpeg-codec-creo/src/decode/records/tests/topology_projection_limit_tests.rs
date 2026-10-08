@@ -81,13 +81,21 @@ use crate::decode::records::{
     }
 
     macro_rules! collection_limit_test {
-        ($name:ident, $projection:ident, $limit:expr, $operation:literal) => {
+        ($name:ident, $projection:ident, $operation:literal) => {
             #[test]
             fn $name() {
                 let scan = scan();
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = $limit;
+                policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some($operation), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          $projection(&trial_ctx, &scan).map(|_| ())
+      });
+
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root is admitted");
                 let Err(error) = $projection(&ctx, &scan) else { panic!("one native record exceeds the collection limit") };
@@ -101,55 +109,46 @@ use crate::decode::records::{
     collection_limit_test!(
         half_edge_topology_nodes_refuse_limit,
         half_edge_records,
-        0,
         "creo native half edge topology row nodes"
     );
     collection_limit_test!(
         half_edge_records_refuse_limit,
         half_edge_records,
-        1,
         "creo native half edge records"
     );
     collection_limit_test!(
         loop_records_refuse_limit,
         loop_records,
-        0,
         "creo native loop records"
     );
     collection_limit_test!(
         loop_array_frame_count_nodes_refuse_limit,
         loop_array_frame_records,
-        0,
         "creo native loop array frame count nodes"
     );
     collection_limit_test!(
         loop_array_frame_records_refuse_limit,
         loop_array_frame_records,
-        1,
         "creo native loop array frame records"
     );
     collection_limit_test!(
         loop_array_records_refuse_limit,
         loop_array_record_records,
-        0,
         "creo native loop array records"
     );
     collection_limit_test!(
         topological_vertex_records_refuse_limit,
         topological_vertex_records,
-        0,
         "creo native topological vertex records"
     );
     collection_limit_test!(
         half_edge_vertex_incidence_records_refuse_limit,
         half_edge_vertex_incidence_records,
-        0,
         "creo native half edge vertex incidence records"
     );
     collection_limit_test!(
         face_component_records_refuse_limit,
         face_component_records,
-        0,
         "creo native face component records"
     );
 
