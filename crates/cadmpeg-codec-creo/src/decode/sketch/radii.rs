@@ -73,7 +73,9 @@ pub(in crate::decode) fn resolved_section_radii(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeMap<u32, f64>, cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo resolved section radii scratch")?;
     let mut candidates = BTreeMap::<u32, Vec<f64>>::new();
+    let mut invalid_stored_radius_ids = std::collections::HashSet::new();
     if let Some(table) = definition.segments.as_ref() {
         for segment in ctx
             .admit_iter(table.rows.as_slice(), "creo resolved radius circle rows")?
@@ -83,7 +85,7 @@ pub(in crate::decode) fn resolved_section_radii(
             })
         {
             if let Some((_, radius)) = saved_section_circle_values(ctx, definition, segment)? {
-                append_radius_candidate(ctx, &mut candidates, segment.radius_ref, radius)?;
+                scratch.with_storage(|| append_radius_candidate(ctx, &mut candidates, segment.radius_ref, radius))?;
             }
         }
     }
@@ -94,69 +96,71 @@ pub(in crate::decode) fn resolved_section_radii(
     {
         for row in ctx.admit_iter(&variables.rows, "creo radius variable rows")? {
             if row.variable_type == VariableType::Radius {
+                if row.value.value().is_some_and(|value| !value.is_finite() || value <= 0.0) {
+                    scratch.with_storage(|| ctx.insert_hash_set(&mut invalid_stored_radius_ids, row.key, "creo invalid stored radius IDs"))?;
+                }
                 if let Some(value) = row
                     .value
                     .value()
                     .filter(|value| value.is_finite() && *value > 0.0)
                 {
-                    append_radius_candidate(ctx, &mut candidates, row.key, value)?;
+                    scratch.with_storage(|| append_radius_candidate(ctx, &mut candidates, row.key, value))?;
                 }
             }
         }
     }
-    let radial_coordinates = resolved_section_coordinates(ctx, definition)?;
+    let radial_coordinates = scratch.with_storage(|| resolved_section_coordinates(ctx, definition))?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .map(|variables| {
-            variables
-                .reconciled_points(ctx)
+            scratch.with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let radial_constraints = section_equation_radial_constraints(
+    let radial_constraints = scratch.with_storage(|| section_equation_radial_constraints(
         ctx,
         definition,
         &radial_coordinates,
         &ambiguous_point_ids,
-    )?;
+    ))?;
     for constraint in ctx
         .admit_iter(&radial_constraints, "creo radial equation constraints")?
         .copied()
     {
         if constraint.radius.0 == VariableType::Radius {
             if let Some(value) = constraint.radius_value.filter(|value| value.get() > 0.0) {
-                append_radius_candidate(ctx, &mut candidates, constraint.radius.1, value.get())?;
+                scratch.with_storage(|| append_radius_candidate(ctx, &mut candidates, constraint.radius.1, value.get()))?;
             }
         }
     }
-    let distance_values = section_equation_function_six_distance_values(
+    let distance_values = scratch.with_storage(|| section_equation_function_six_distance_values(
         ctx,
         definition,
         &radial_coordinates,
         &ambiguous_point_ids,
-    )?;
+    ))?;
     for (variable, value) in ctx
         .admit_iter(&distance_values, "creo radial distance values")?
         .copied()
     {
         if variable.0 == VariableType::Radius && value.is_finite() && value > 0.0 {
-            append_radius_candidate(ctx, &mut candidates, variable.1, value)?;
+            scratch.with_storage(|| append_radius_candidate(ctx, &mut candidates, variable.1, value))?;
         }
     }
-    let radius_dimensions = section_equation_radius_dimensions(ctx, definition)?;
+    let radius_dimensions = scratch.with_storage(|| section_equation_radius_dimensions(ctx, definition))?;
     for constraint in ctx
         .admit_iter(&radius_dimensions, "creo radius dimensions")?
         .copied()
         .filter(|constraint| constraint.active)
     {
-        append_radius_candidate(
+        scratch.with_storage(|| append_radius_candidate(
             ctx,
             &mut candidates,
             constraint.radius,
             constraint.value.get(),
-        )?;
+        ))?;
     }
     if let Some(relations) = definition
         .relations
@@ -189,16 +193,16 @@ pub(in crate::decode) fn resolved_section_radii(
                 let Some(radius) = PositiveLength::new(radius) else {
                     continue;
                 };
-                append_radius_candidate(ctx, &mut candidates, relation.dimension_id, radius.get())?;
+                scratch.with_storage(|| append_radius_candidate(ctx, &mut candidates, relation.dimension_id, radius.get()))?;
             }
         }
     }
-    let relation_radius_values = section_relation_radius_scalar_values(ctx, definition)?;
+    let relation_radius_values = scratch.with_storage(|| section_relation_radius_scalar_values(ctx, definition))?;
     for ((_, radius_id), value) in ctx
         .admit_iter(&relation_radius_values, "creo scalar radius values")?
         .copied()
     {
-        append_radius_candidate(ctx, &mut candidates, radius_id, value)?;
+        scratch.with_storage(|| append_radius_candidate(ctx, &mut candidates, radius_id, value))?;
     }
     if let Some(dimensions) = definition
         .dimensions
@@ -234,12 +238,12 @@ pub(in crate::decode) fn resolved_section_radii(
                     _ => continue,
                 };
                 if let Some(radius) = PositiveLength::new(radius) {
-                    append_radius_candidate(ctx, &mut candidates, radius_id, radius.get())?;
+                    scratch.with_storage(|| append_radius_candidate(ctx, &mut candidates, radius_id, radius.get()))?;
                 }
             }
         }
     }
-    let points = resolved_section_points(ctx, definition)?;
+    let points = scratch.with_storage(|| resolved_section_points(ctx, definition))?;
     if let Some(table) = definition.segments.as_ref() {
         for segment in ctx
             .admit_iter(table.rows.as_slice(), "creo radius arc rows")?
@@ -289,18 +293,14 @@ pub(in crate::decode) fn resolved_section_radii(
                 .flatten()
                 .all(|candidate| (candidate - radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
             {
-                append_radius_candidate(ctx, &mut candidates, radius_id, radius)?;
+                scratch.with_storage(|| append_radius_candidate(ctx, &mut candidates, radius_id, radius))?;
             }
         }
     }
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut invalid_scalar_radius_ids = BTreeSet::new();
-    if let Some(variables) = definition
-        .variables
-        .as_ref()
-        .filter(|table| table.is_complete())
-    {
-        let components = section_equation_scalar_equality_components(ctx, definition)?;
+    if definition.variables.as_ref().is_some_and(|table| table.is_complete()) {
+        let components = scratch.with_storage(|| section_equation_scalar_equality_components(ctx, definition))?;
         for component in ctx.admit_iter(&components, "creo scalar equality components")? {
             if ctx.any_by(
                 component,
@@ -309,40 +309,23 @@ pub(in crate::decode) fn resolved_section_radii(
             )? {
                 continue;
             }
-            let invalid = ctx.any_by(
-                component,
-                |&(variable_type, radius_id)| {
-                    ctx.any_by(
-                        &variables.rows,
-                        |row| {
-                            Ok(row.variable_type == variable_type
-                                && row.key == radius_id
-                                && row
-                                    .value
-                                    .value()
-                                    .is_some_and(|value| !value.is_finite() || value <= 0.0))
-                        },
-                        "creo scalar radius variable rows",
-                    )
-                },
-                "creo scalar radius validation",
-            )?;
+            let invalid = ctx.any_by(component, |&(_, radius_id)| Ok(invalid_stored_radius_ids.contains(&radius_id)), "creo scalar radius validation")?;
             if invalid {
                 for &(_, radius_id) in
                     ctx.admit_iter(component, "creo invalid scalar radius IDs")?
                 {
-                    ctx.insert_btree_set(
+                    scratch.with_storage(|| ctx.insert_btree_set(
                         &mut invalid_scalar_radius_ids,
                         radius_id,
                         "creo invalid radius nodes",
-                    )?;
+                    ))?;
                 }
                 continue;
             }
             let mut previous = None;
             for &(_, radius_id) in ctx.admit_iter(component, "creo scalar radius links")? {
                 if let Some(first) = previous {
-                    link_radii(ctx, &mut adjacency, first, radius_id)?;
+                    scratch.with_storage(|| link_radii(ctx, &mut adjacency, first, radius_id))?;
                 }
                 previous = Some(radius_id);
             }
@@ -367,11 +350,11 @@ pub(in crate::decode) fn resolved_section_radii(
             };
             match (first_radius, second_radius) {
                 (SectionRadiusSource::Reference(first), SectionRadiusSource::Reference(second)) => {
-                    link_radii(ctx, &mut adjacency, first, second)?;
+                    scratch.with_storage(|| link_radii(ctx, &mut adjacency, first, second))?;
                 }
                 (SectionRadiusSource::Reference(reference), SectionRadiusSource::Value(value))
                 | (SectionRadiusSource::Value(value), SectionRadiusSource::Reference(reference)) => {
-                    append_radius_candidate(ctx, &mut candidates, reference, value.get())?;
+                    scratch.with_storage(|| append_radius_candidate(ctx, &mut candidates, reference, value.get()))?;
                 }
                 (SectionRadiusSource::Value(_), SectionRadiusSource::Value(_)) => {}
             }
@@ -385,13 +368,13 @@ pub(in crate::decode) fn resolved_section_radii(
         .admit_iter(&candidates, "creo radius candidate keys")?
         .map(|(id, _)| id)
     {
-        ctx.insert_btree_set(&mut seeds, *radius_id, "creo remaining radius nodes")?;
+        scratch.with_storage(|| ctx.insert_btree_set(&mut seeds, *radius_id, "creo remaining radius nodes"))?;
     }
     for radius_id in ctx
         .admit_iter(&adjacency, "creo radius adjacency keys")?
         .map(|(id, _)| id)
     {
-        ctx.insert_btree_set(&mut seeds, *radius_id, "creo remaining radius nodes")?;
+        scratch.with_storage(|| ctx.insert_btree_set(&mut seeds, *radius_id, "creo remaining radius nodes"))?;
     }
     let mut reached = BTreeSet::new();
     let mut radii = BTreeMap::new();
@@ -399,28 +382,29 @@ pub(in crate::decode) fn resolved_section_radii(
         if ctx.contains_btree_set(&reached, &seed, "creo reached radius lookup")? {
             continue;
         }
+        let mut component_storage = ctx.reserve_scoped(0, "creo radius component scratch")?;
         let mut component = BTreeSet::new();
-        ctx.insert_btree_set(&mut component, seed, "creo radius component nodes")?;
+        component_storage.with_storage(|| ctx.insert_btree_set(&mut component, seed, "creo radius component nodes"))?;
         let mut pending = std::collections::VecDeque::new();
-        ctx.push_back(&mut pending, seed, "creo pending radius nodes")?;
+        component_storage.with_storage(|| ctx.push_back(&mut pending, seed, "creo pending radius nodes"))?;
         while let Some(radius_id) = pending.pop_front() {
             ctx.charge_work(1, "creo radius graph visits")?;
             if let Some(neighbors) =
                 ctx.get_btree_map(&adjacency, &radius_id, "creo radius adjacency lookup")?
             {
                 for neighbor in ctx.admit_iter(neighbors, "creo radius neighbors")? {
-                    if ctx.insert_btree_set(
+                    if component_storage.with_storage(|| ctx.insert_btree_set(
                         &mut component,
                         *neighbor,
                         "creo radius component nodes",
-                    )? {
-                        ctx.push_back(&mut pending, *neighbor, "creo pending radius nodes")?;
+                    ))? {
+                        component_storage.with_storage(|| ctx.push_back(&mut pending, *neighbor, "creo pending radius nodes"))?;
                     }
                 }
             }
         }
         for &radius_id in ctx.admit_iter(&component, "creo reached radius IDs")? {
-            ctx.insert_btree_set(&mut reached, radius_id, "creo reached radius nodes")?;
+            scratch.with_storage(|| ctx.insert_btree_set(&mut reached, radius_id, "creo reached radius nodes"))?;
         }
         if ctx.any_by(
             &component,
@@ -435,47 +419,20 @@ pub(in crate::decode) fn resolved_section_radii(
         )? {
             continue;
         }
-        let first_value = ctx.find_map(
-            &component,
-            |radius_id| {
-                Ok(ctx
-                    .get_btree_map(&candidates, radius_id, "creo radius candidate lookup")?
-                    .and_then(|values| values.first().copied()))
-            },
-            "creo radius component values",
-        )?;
-        let Some(value) = first_value else {
-            continue;
-        };
-        let mut scale = value;
-        for radius_id in ctx.admit_iter(&component, "creo radius agreement scale")? {
-            if let Some(values) =
-                ctx.get_btree_map(&candidates, radius_id, "creo radius candidate lookup")?
-            {
-                for candidate in ctx.admit_iter(values, "creo radius scale candidates")? {
-                    scale = scale.max(*candidate);
+        let mut first = None;
+        let mut minimum = f64::INFINITY;
+        let mut maximum = f64::NEG_INFINITY;
+        for radius_id in ctx.admit_iter(&component, "creo radius component values")? {
+            if let Some(values) = ctx.get_btree_map(&candidates, radius_id, "creo radius candidate lookup")? {
+                for &value in ctx.admit_iter(values, "creo radius component samples")? {
+                    first.get_or_insert(value);
+                    minimum = minimum.min(value);
+                    maximum = maximum.max(value);
                 }
             }
         }
-        let agrees = ctx.all_by(
-            &component,
-            |radius_id| {
-                let Some(values) =
-                    ctx.get_btree_map(&candidates, radius_id, "creo radius candidate lookup")?
-                else {
-                    return Ok(true);
-                };
-                ctx.all_by(
-                    values,
-                    |candidate| Ok((*candidate - value).abs() <= EPS_RADIUS_AGREEMENT * scale),
-                    "creo radius agreement candidates",
-                )
-            },
-            "creo radius agreement",
-        )?;
-        if !agrees {
-            continue;
-        }
+        let Some(value) = first else { continue; };
+        if (minimum - value).abs().max((maximum - value).abs()) > EPS_RADIUS_AGREEMENT * maximum { continue; }
         for radius_id in ctx.admit_iter(&component, "creo resolved radius IDs")? {
             ctx.insert_btree_map(&mut radii, *radius_id, value, "creo resolved radius nodes")?;
         }
@@ -861,11 +818,10 @@ pub(in crate::decode) fn trim_segment_ids(
     };
     let trim_rows = &trim_table.rows;
     let mut ids = Vec::new();
-    ctx.reserve_vec(&mut ids, trim_rows.len(), OPERATION)?;
     if !trim_table.has_complete_bucket_frame(ctx)? || !trim_table.has_unique_external_ids(ctx)? {
-        ids.resize(trim_rows.len(), None);
-        return Ok(ids);
+        return ctx.alloc_filled(trim_rows.len(), None, OPERATION);
     }
+    ctx.reserve_vec(&mut ids, trim_rows.len(), OPERATION)?;
     let Some(segment_table) = &definition.segments else {
         for row in ctx.admit_iter(trim_rows, OPERATION)? {
             ids.push(Some(row.external_id));
@@ -889,11 +845,11 @@ pub(in crate::decode) fn trim_segment_ids(
         trim_ids.push(row.external_id);
     }
     ctx.sort_unstable_by(&mut trim_ids, |id| id, Ord::cmp, OPERATION)?;
-    let (mut ordinary_ids, _ordinary_storage) =
-        ctx.temporary_vec(segment_table.rows.len(), OPERATION)?;
+    let (mut ordinary_ids, mut ordinary_storage) =
+        ctx.scoped_vector_storage(segment_table.rows.len(), OPERATION)?;
     for segment_row in ctx.admit_iter(segment_table.rows.as_slice(), OPERATION)? {
         if let SegmentRow::Ordinary(segment) = segment_row {
-            ordinary_ids.push(segment.external_id);
+            ordinary_storage.with_storage(|| ctx.push_vec(&mut ordinary_ids, segment.external_id, OPERATION))?;
         }
     }
     // Exactly one ordinary segment and exactly one trim row lack a partner.
@@ -983,18 +939,6 @@ mod tests {
         .expect("test axis line carrier")
     }
 
-    fn with_collection_limit<T>(
-        limit: u64,
-        run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-    ) -> T {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("test input admitted");
-        run(&ctx)
-    }
-
     #[test]
     fn radius_component_scans_refuse_before_component_and_frontier_visits() {
         let definition = arc_radius_definition([3.0, 3.0]);
@@ -1007,49 +951,33 @@ mod tests {
 
     #[test]
     fn radius_candidate_refuses_before_node_and_nested_value() {
-        let run = |limit| {
-            with_collection_limit(limit, |ctx| {
-                let mut candidates = std::collections::BTreeMap::new();
-                append_radius_candidate(ctx, &mut candidates, 42, 3.0)?;
-                Ok::<_, cadmpeg_core::CodecError>(candidates)
-            })
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut candidates = std::collections::BTreeMap::new();
+            append_radius_candidate(ctx, &mut candidates, 42, 3.0)?;
+            Ok::<_, cadmpeg_core::CodecError>(candidates)
         };
-        assert!(
-            matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo radius candidate nodes")
-        );
-        assert!(
-            matches!(run(1), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo radius candidate values")
-        );
-        assert_eq!(
-            run(2).expect("candidate admitted").get(&42),
-            Some(&vec![3.0])
-        );
+        for operation in ["creo radius candidate nodes", "creo radius candidate values"] {
+            let error = crate::test_support::last_refusal_at(&[0], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation, run);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+        }
+        assert_eq!(crate::decode::with_test_decode_ctx(run).expect("candidates admitted").get(&42), Some(&vec![3.0]));
     }
+
 
     #[test]
     fn radius_adjacency_refuses_before_node_and_link() {
-        let run = |limit| {
-            with_collection_limit(limit, |ctx| {
-                let mut adjacency = std::collections::BTreeMap::new();
-                link_radii(ctx, &mut adjacency, 41, 42)?;
-                Ok::<_, cadmpeg_core::CodecError>(adjacency)
-            })
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut adjacency = std::collections::BTreeMap::new();
+            link_radii(ctx, &mut adjacency, 41, 42)?;
+            Ok::<_, cadmpeg_core::CodecError>(adjacency)
         };
-        assert!(
-            matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo radius adjacency nodes")
-        );
-        assert!(
-            matches!(run(1), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "creo radius adjacency links")
-        );
-        assert_eq!(
-            run(4).expect("adjacency admitted").get(&41),
-            Some(&std::collections::BTreeSet::from([42]))
-        );
+        for operation in ["creo radius adjacency nodes", "creo radius adjacency links"] {
+            let error = crate::test_support::last_refusal_at(&[0], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation, run);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+        }
+        assert_eq!(crate::decode::with_test_decode_ctx(run).expect("adjacency admitted").get(&41), Some(&std::collections::BTreeSet::from([42])));
     }
+
 
     fn arc_carrier_segment() -> crate::feature::definitions::FeatureSegment {
         crate::feature::definitions::FeatureSegment {

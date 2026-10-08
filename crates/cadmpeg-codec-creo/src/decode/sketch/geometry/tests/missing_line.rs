@@ -230,29 +230,14 @@ fn missing_line_refuses_endpoint_pair_work() {
 }
 
 #[test]
-fn missing_line_admits_remaining_endpoint_pairs_after_ambiguous_mates() {
+fn missing_line_stops_endpoint_pairs_after_ambiguous_mates() {
     let definition = multiple_mate_fixture();
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
+        "creo missing-line endpoint candidates", |ctx| saved_section_missing_line_geometry(ctx, &definition));
+    let CodecError::ResourceLimit(refusal) = error else { panic!("named endpoint-pair refusal"); };
     let mut policy = DecodePolicy::service();
-    let first_pair_refusal = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "creo missing-line endpoint candidates",
-        |cap| {
-            policy.limits.max_work_units = cap;
-            run_definition(&definition, &policy)
-        },
-    );
-    let CodecError::ResourceLimit(first_pair_refusal) = first_pair_refusal else {
-        panic!("endpoint-pair admission refused with the named resource limit")
-    };
-    // The candidate scan is admitted whole, so once it fits the ambiguous
-    // endpoint is resolved as no geometry rather than a refusal.
-    policy.limits.max_work_units = first_pair_refusal
-        .used
-        .checked_add(first_pair_refusal.additional)
-        .expect("one endpoint's candidates fit");
-    assert!(run_definition(&definition, &policy)
-        .expect("the ambiguous endpoint scan is admitted")
-        .is_none());
+    policy.limits.max_work_units = refusal.used.checked_add(refusal.additional).expect("last visited pair fits");
+    assert!(run_definition(&definition, &policy).expect("the ambiguous endpoint scan is admitted").is_none());
 }
 
 #[test]

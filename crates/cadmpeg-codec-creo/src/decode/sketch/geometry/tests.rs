@@ -105,29 +105,10 @@ fn saved_profile_entity_identity_refuses_retained_limit() {
 }
 
 fn saved_profile_refuses_at_collection_boundary(operation: &'static str) {
-    let mut last_refusal = None;
-    for limit in 0..128 {
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
         let (sketch, geometries) = saved_profile_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        match super::saved_profile_chains(&ctx, &sketch, &geometries) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation =>
-            {
-                return
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
-                last_refusal = Some((limit, resource.dimension, resource.operation));
-            }
-            Err(error) => panic!("unexpected saved-profile error at {limit}: {error:?}"),
-            Ok(_) => panic!("saved profile succeeded before the named {operation} refusal"),
-        }
-    }
-    panic!("the named {operation} boundary was not reached; last refusal: {last_refusal:?}");
+        super::saved_profile_chains(ctx, &sketch, &geometries)
+    });
 }
 
 macro_rules! saved_profile_collection_limit_test {
