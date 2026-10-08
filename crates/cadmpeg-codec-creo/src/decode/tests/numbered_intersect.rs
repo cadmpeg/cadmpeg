@@ -89,7 +89,7 @@ fn service_feature_plane_equations(
             feature_id,
         )
         .map(|result| {
-            result.map(|planes| {
+            result.map(|(planes, _plane_storage)| {
                 planes
                     .into_iter()
                     .map(|plane| (plane.origin, plane.normal))
@@ -105,7 +105,7 @@ fn service_feature_outline_planes(
     feature_id: u32,
 ) -> Option<Vec<crate::decode::sweep::planes::FeatureOutlinePlane>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        crate::decode::sweep::planes::feature_outline_planes(ctx, scan, feature_id)
+        crate::decode::sweep::planes::feature_outline_planes(ctx, scan, feature_id).map(|result| result.map(|(planes, _plane_storage)| planes))
     })
     .expect("service resources")
 }

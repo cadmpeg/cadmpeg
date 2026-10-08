@@ -261,27 +261,29 @@ fn interpolation_controls(
     ctx.reserve_scoped_vec(&mut matrix_storage, &mut matrix, control_count, "creo interpolation matrix rows")?;
     let mut parameters_rows = parameters.iter();
     while let Some(parameter) = ctx.next_charged(&mut parameters_rows, "creo interpolation parameter scan")? {
-        let mut row = matrix_storage.with_storage(|| ctx.alloc_filled(control_count, 0.0, "creo interpolation matrix values"))?;
-        let mut coefficients = row.iter_mut().enumerate();
-    while let Some((index, value)) = ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")? {
+        let mut row = Vec::new();
+        ctx.reserve_scoped_vec(&mut matrix_storage, &mut row, control_count, "creo interpolation matrix values")?;
+        let mut coefficients = 0..control_count;
+        while let Some(index) = ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")? {
             let Some(basis) = bspline_basis(ctx, index, DEGREE, *parameter, knots, control_count)?
             else {
                 return Ok(None);
             };
-            *value = basis;
+            row.push(basis);
         }
         matrix.push(row);
     }
     for parameter in [parameters[0], parameters[parameters.len() - 1]] {
-        let mut row = matrix_storage.with_storage(|| ctx.alloc_filled(control_count, 0.0, "creo interpolation matrix values"))?;
-        let mut coefficients = row.iter_mut().enumerate();
-    while let Some((index, value)) = ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")? {
+        let mut row = Vec::new();
+        ctx.reserve_scoped_vec(&mut matrix_storage, &mut row, control_count, "creo interpolation matrix values")?;
+        let mut coefficients = 0..control_count;
+        while let Some(index) = ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")? {
             let Some(basis) =
                 bspline_basis_derivative(ctx, index, DEGREE, parameter, knots, control_count)?
             else {
                 return Ok(None);
             };
-            *value = basis;
+            row.push(basis);
         }
         matrix.push(row);
     }
@@ -301,6 +303,20 @@ pub(in super::super) fn saved_spline_nurbs(
     spline: &crate::feature::definitions::FeatureSavedSpline,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsCurve>, CodecError> {
+    let Some(curve) = saved_spline_curve(ctx, spline)? else { return Ok(None); };
+    match curve {
+        Ok(curve) => Ok(Some(curve)),
+        Err(error) => {
+            refusal.note_checked(ctx, format_args!("{} NURBS record", saved_spline_record(spline)), &error);
+            Ok(None)
+        }
+    }
+}
+
+fn saved_spline_curve(
+    ctx: &DecodeContext<'_>,
+    spline: &crate::feature::definitions::FeatureSavedSpline,
+) -> Result<Option<Result<NurbsCurve, cadmpeg_ir::geometry::nurbs::NurbsError>>, CodecError> {
     if spline
         .declared_point_count
         .and_then(|count| usize::try_from(count).ok())
@@ -334,17 +350,7 @@ pub(in super::super) fn saved_spline_nurbs(
         "creo saved spline controls",
     )?;
     converted_controls.extend(ctx.admit_iter(control_points, "creo saved spline control projection")?.map(Point3::from));
-    match NurbsCurve::from_lanes(ctx, 3, knots, converted_controls, None, false)? {
-        Ok(curve) => Ok(Some(curve)),
-        Err(error) => {
-            refusal.note_checked(
-                ctx,
-                format_args!("{} NURBS record", saved_spline_record(spline)),
-                &error,
-            );
-            Ok(None)
-        }
-    }
+    NurbsCurve::from_lanes(ctx, 3, knots, converted_controls, None, false).map(Some)
 }
 
 /// The first input of `spline` that states a `z` off the sketch plane, named as
@@ -398,56 +404,41 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         );
         return Ok(None);
     }
-    let Some(nurbs) = saved_spline_nurbs(ctx, spline, refusal)? else {
-        return Ok(None);
+    let (curve, _curve_storage) = ctx.with_scoped_storage("creo saved spline sketch source curve", || saved_spline_curve(ctx, spline))?;
+    let Some(curve) = curve else { return Ok(None); };
+    let nurbs = match curve {
+        Ok(curve) => curve,
+        Err(error) => {
+            refusal.note_checked(ctx, format_args!("{} NURBS record", saved_spline_record(spline)), &error);
+            return Ok(None);
+        }
     };
     let knots = nurbs
         .knots()
         .try_clone_for_decode(ctx, "creo saved spline sketch knots")?;
-    let mut controls = Vec::new();
-    ctx.reserve_vec(
-        &mut controls,
-        nurbs.pole_count(),
-        "creo saved spline sketch controls",
-    )?;
-    let weights = match nurbs.pole_rows() {
+    let poles = match nurbs.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+            let mut controls = Vec::new();
+            ctx.reserve_vec(&mut controls, points.len(), "creo saved spline sketch controls")?;
             for point in ctx.admit_iter(points, "creo NURBS point projection")? {
                 let [x, y, _] = point.coordinates();
                 controls.push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
             }
-            None
+            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: controls }
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-            let mut weights = Vec::new();
-            ctx.reserve_vec(
-                &mut weights,
-                points.len(),
-                "creo saved spline sketch weights",
-            )?;
+            let mut paired = Vec::new();
+            ctx.reserve_vec(&mut paired, points.len(), "creo saved spline sketch paired poles")?;
             for pole in ctx.admit_iter(points, "creo NURBS pole projection")? {
                 let [x, y, _] = pole.point.coordinates();
-                controls.push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
-                weights.push(pole.weight);
+                paired.push(cadmpeg_ir::geometry::pcurve::WeightedPole2 {
+                    point: cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y),
+                    weight: pole.weight,
+                });
             }
-            Some(weights)
+            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: paired }
         }
     };
-    let poles =
-        if let Some(weights) = weights {
-            let mut paired = Vec::new();
-            ctx.reserve_vec(
-                &mut paired,
-                controls.len(),
-                "creo saved spline sketch paired poles",
-            )?;
-            paired.extend(ctx.admit_iter(controls, "creo saved spline pole pairing")?.zip(weights).map(|(point, weight)| {
-                cadmpeg_ir::geometry::pcurve::WeightedPole2 { point, weight }
-            }));
-            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: paired }
-        } else {
-            cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: controls }
-        };
     match cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
         ctx,
         nurbs.degree(),
@@ -1424,38 +1415,25 @@ mod tests {
 
     #[test]
     fn interpolation_basis_refuses_work_and_recursive_depth() {
-        for (work, depth, operation) in [
-            (0, 128, "creo interpolation basis work"),
-            (u64::MAX, 1, "creo interpolation basis depth"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = work;
-            policy.limits.max_recursion_depth = depth;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            for derivative in [false, true] {
-                let result = if derivative {
-                    super::bspline_basis_derivative(
-                        &ctx,
-                        0,
-                        3,
-                        0.5,
-                        &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-                        4,
-                    )
-                } else {
-                    super::bspline_basis(
-                        &ctx,
-                        0,
-                        3,
-                        0.5,
-                        &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-                        4,
-                    )
+        for derivative in [false, true] {
+            for (dimension, operation) in [(ResourceDimension::WorkUnits, "creo interpolation basis work"), (ResourceDimension::RecursionDepth, "creo interpolation basis depth")] {
+                let run = |limit| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    if dimension == ResourceDimension::WorkUnits {
+                        policy.limits.max_work_units = limit;
+                    } else {
+                        policy.limits.max_recursion_depth = limit;
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    if derivative {
+                        super::bspline_basis_derivative(&ctx, 0, 3, 0.5, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], 4)
+                    } else {
+                        super::bspline_basis(&ctx, 0, 3, 0.5, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], 4)
+                    }
                 };
-                assert!(
-                    matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == operation)
-                );
+                let limit = crate::test_support::allocation_limit_at(dimension, Some(operation), &run);
+                assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == operation));
             }
         }
     }
@@ -1809,7 +1787,15 @@ mod tests {
     fn non_planar_saved_spline_refusal_text_obeys_retained_byte_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo lane refusal text"), |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
+            let mut refusal = crate::lane_refusal::LaneRefusals::new();
+            assert!(super::saved_spline_sketch_geometry(&ctx, &planar_or_offset_spline(2.0), &mut refusal).expect("candidate route").is_none());
+            refusal.take_records_checked()
+        });
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();

@@ -277,12 +277,28 @@ pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
     )))
 }
 
+/// One or two cylinder rows in source order.
+#[derive(Debug, Clone, PartialEq)]
+pub(in crate::decode) enum HoleCylinderRows<'a> {
+    One([&'a crate::surface::SurfaceRow; 1]),
+    Two([&'a crate::surface::SurfaceRow; 2]),
+}
+
+impl<'a> HoleCylinderRows<'a> {
+    pub(in crate::decode) fn as_slice(&self) -> &[&'a crate::surface::SurfaceRow] {
+        match self {
+            Self::One(rows) => rows,
+            Self::Two(rows) => rows,
+        }
+    }
+}
+
 /// A solved simple hole: its entry plane, generated cylinder rows, extent and cylinder
 /// carrier. The carrier axis is the drilling direction.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::decode) struct SimpleHoleGeometry<'a> {
     pub(in crate::decode) entry_surface_id: Option<u32>,
-    pub(in crate::decode) cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
+    pub(in crate::decode) cylinder_rows: HoleCylinderRows<'a>,
     pub(in crate::decode) extent: LinearTermination,
     pub(in crate::decode) geometry: CylinderSurface,
 }

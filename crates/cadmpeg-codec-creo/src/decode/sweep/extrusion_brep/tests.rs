@@ -18,7 +18,13 @@ use cadmpeg_ir::AnnotationBuilder;
 fn extrusion_cap_record_refuses_temporary_text_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo extrusion cap record text"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        cap_record(&ctx, 7, 2, "bottom", 3) .map(|(record, _storage)| record)
+    });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error =
@@ -47,7 +53,13 @@ fn extrusion_refused_lane_error_refuses_retained_text_limit() {
     let records = ["first".to_string(), "second".to_string()];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion refused lane error"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        refused_lane_message(&ctx, "cap 7", &records)
+    });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error = refused_lane_message(&ctx, "cap 7", &records)
@@ -69,7 +81,13 @@ fn extrusion_refused_lane_error_refuses_retained_text_limit() {
 fn extrusion_missing_cap_error_refuses_retained_text_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion missing cap error"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        missing_cap_message(&ctx, "cap 7")
+    });
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
     let error =
@@ -432,21 +450,21 @@ fn rejected_extrusion_at_limits(
 
 #[test]
 fn extrusion_rejection_reason_refuses_retained_limit() {
-    assert!(matches!(rejected_extrusion_at_limits(1, 0),
+    assert!(matches!(rejected_extrusion_at_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo extrusion rejection reason"), |cap| rejected_extrusion_at_limits(u64::MAX, cap))),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion rejection reason"));
 }
 
 #[test]
 fn extrusion_rejection_diagnostics_refuse_collection_limit() {
-    assert!(matches!(rejected_extrusion_at_limits(0, u64::MAX),
+    assert!(matches!(rejected_extrusion_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion rejection diagnostics"), |cap| rejected_extrusion_at_limits(cap, u64::MAX)), u64::MAX),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion rejection diagnostics"));
 }
 
 #[test]
 fn extrusion_rejection_preserves_joined_reason_order() {
-    let diagnostics = rejected_extrusion_at_limits(1, u64::MAX).expect("admitted rejection");
+    let diagnostics = rejected_extrusion_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| rejected_extrusion_at_limits(cap, u64::MAX)), u64::MAX).expect("admitted rejection");
     assert_eq!(
         diagnostics.rejected_extrusion_bodies[0].1,
         "refused extrusion side lanes: first refused lane; second refused lane"
@@ -474,7 +492,13 @@ fn generated_extrusion_identity_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion generated identities"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        generated_extrusion_identity::<cadmpeg_ir::ids::BodyId>(&ctx, format_args!("7:body"))
+    });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let result =
         generated_extrusion_identity::<cadmpeg_ir::ids::BodyId>(&ctx, format_args!("7:body"));
@@ -506,7 +530,13 @@ fn extrusion_entity_id_copy_refuses_retained_limit() {
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion entity ID copies"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        copy_extrusion_identity::<cadmpeg_ir::ids::BodyId>(&ctx, source.as_str())
+    });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let result = copy_extrusion_identity::<cadmpeg_ir::ids::BodyId>(&ctx, source.as_str());
     assert!(
@@ -522,7 +552,7 @@ fn extrusion_entity_id_copy_refuses_retained_limit() {
 
 #[test]
 fn bottom_cap_coedge_ids_refuse_collection_limit() {
-    assert!(matches!(cap_ids_at_limits(0, u64::MAX, "bottom-cap", true,
+    assert!(matches!(cap_ids_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion bottom cap coedge IDs"), |cap| cap_ids_at_limits(cap, u64::MAX, "bottom-cap", true, "creo extrusion bottom cap coedge IDs")), u64::MAX, "bottom-cap", true,
         "creo extrusion bottom cap coedge IDs"),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion bottom cap coedge IDs"));
@@ -530,7 +560,7 @@ fn bottom_cap_coedge_ids_refuse_collection_limit() {
 
 #[test]
 fn top_cap_coedge_ids_refuse_collection_limit() {
-    assert!(matches!(cap_ids_at_limits(0, u64::MAX, "top-cap", false,
+    assert!(matches!(cap_ids_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion top cap coedge IDs"), |cap| cap_ids_at_limits(cap, u64::MAX, "top-cap", false, "creo extrusion top cap coedge IDs")), u64::MAX, "top-cap", false,
         "creo extrusion top cap coedge IDs"),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion top cap coedge IDs"));
@@ -539,7 +569,7 @@ fn top_cap_coedge_ids_refuse_collection_limit() {
 #[test]
 fn cap_coedge_identity_refuses_retained_limit() {
     assert!(
-        matches!(cap_ids_at_limits(2, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion generated identities"), |cap| cap_ids_at_limits(2, cap, "bottom-cap", true, "creo extrusion bottom cap coedge IDs")), "bottom-cap", true, "creo extrusion bottom cap coedge IDs"),
+        matches!(cap_ids_at_limits(u64::MAX, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion generated identities"), |cap| cap_ids_at_limits(u64::MAX, cap, "bottom-cap", true, "creo extrusion bottom cap coedge IDs")), "bottom-cap", true, "creo extrusion bottom cap coedge IDs"),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion generated identities")
     );
@@ -548,7 +578,7 @@ fn cap_coedge_identity_refuses_retained_limit() {
 #[test]
 fn cap_coedge_ids_preserve_service_order() {
     let bottom = cap_ids_at_limits(
-        2,
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| cap_ids_at_limits(cap, u64::MAX, "bottom-cap", true, "creo extrusion bottom cap coedge IDs")),
         u64::MAX,
         "bottom-cap",
         true,
@@ -556,7 +586,7 @@ fn cap_coedge_ids_preserve_service_order() {
     )
     .expect("admitted bottom ring");
     let top = cap_ids_at_limits(
-        2,
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| cap_ids_at_limits(cap, u64::MAX, "top-cap", false, "creo extrusion top cap coedge IDs")),
         u64::MAX,
         "top-cap",
         false,
@@ -589,7 +619,7 @@ fn ring_copy_at_limits(
 
 #[test]
 fn bottom_ring_copy_refuses_collection_limit() {
-    assert!(matches!(ring_copy_at_limits(0, u64::MAX,
+    assert!(matches!(ring_copy_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion bottom ring coedge copies"), |cap| ring_copy_at_limits(cap, u64::MAX, "creo extrusion bottom ring coedge copies", "creo extrusion bottom ring coedge identities")), u64::MAX,
         "creo extrusion bottom ring coedge copies", "creo extrusion bottom ring coedge identities"),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion bottom ring coedge copies"));
@@ -598,7 +628,7 @@ fn bottom_ring_copy_refuses_collection_limit() {
 #[test]
 fn bottom_ring_copy_refuses_retained_limit() {
     assert!(
-        matches!(ring_copy_at_limits(1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion bottom ring coedge identities"), |cap| ring_copy_at_limits(1, cap, "creo extrusion bottom ring coedge copies", "creo extrusion bottom ring coedge identities")), "creo extrusion bottom ring coedge copies", "creo extrusion bottom ring coedge identities"),
+        matches!(ring_copy_at_limits(u64::MAX, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion bottom ring coedge identities"), |cap| ring_copy_at_limits(u64::MAX, cap, "creo extrusion bottom ring coedge copies", "creo extrusion bottom ring coedge identities")), "creo extrusion bottom ring coedge copies", "creo extrusion bottom ring coedge identities"),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion bottom ring coedge identities")
     );
@@ -606,7 +636,7 @@ fn bottom_ring_copy_refuses_retained_limit() {
 
 #[test]
 fn top_ring_copy_refuses_collection_limit() {
-    assert!(matches!(ring_copy_at_limits(0, u64::MAX,
+    assert!(matches!(ring_copy_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion top ring coedge copies"), |cap| ring_copy_at_limits(cap, u64::MAX, "creo extrusion top ring coedge copies", "creo extrusion top ring coedge identities")), u64::MAX,
         "creo extrusion top ring coedge copies", "creo extrusion top ring coedge identities"),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion top ring coedge copies"));
@@ -615,7 +645,7 @@ fn top_ring_copy_refuses_collection_limit() {
 #[test]
 fn top_ring_copy_refuses_retained_limit() {
     assert!(
-        matches!(ring_copy_at_limits(1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion top ring coedge identities"), |cap| ring_copy_at_limits(1, cap, "creo extrusion top ring coedge copies", "creo extrusion top ring coedge identities")), "creo extrusion top ring coedge copies", "creo extrusion top ring coedge identities"),
+        matches!(ring_copy_at_limits(u64::MAX, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion top ring coedge identities"), |cap| ring_copy_at_limits(u64::MAX, cap, "creo extrusion top ring coedge copies", "creo extrusion top ring coedge identities")), "creo extrusion top ring coedge copies", "creo extrusion top ring coedge identities"),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion top ring coedge identities")
     );
@@ -623,7 +653,7 @@ fn top_ring_copy_refuses_retained_limit() {
 
 #[test]
 fn side_ring_copy_refuses_collection_limit() {
-    assert!(matches!(ring_copy_at_limits(0, u64::MAX,
+    assert!(matches!(ring_copy_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion side ring coedge copies"), |cap| ring_copy_at_limits(cap, u64::MAX, "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities")), u64::MAX,
         "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities"),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion side ring coedge copies"));
@@ -632,7 +662,7 @@ fn side_ring_copy_refuses_collection_limit() {
 #[test]
 fn side_ring_copy_refuses_retained_limit() {
     assert!(
-        matches!(ring_copy_at_limits(1, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion side ring coedge identities"), |cap| ring_copy_at_limits(1, cap, "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities")), "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities"),
+        matches!(ring_copy_at_limits(u64::MAX, crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo extrusion side ring coedge identities"), |cap| ring_copy_at_limits(u64::MAX, cap, "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities")), "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities"),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion side ring coedge identities")
     );
@@ -641,7 +671,7 @@ fn side_ring_copy_refuses_retained_limit() {
 #[test]
 fn ring_copy_preserves_coedge_identity_order() {
     let ids = ring_copy_at_limits(
-        1,
+        crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| ring_copy_at_limits(cap, u64::MAX, "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities")),
         u64::MAX,
         "creo extrusion side ring coedge copies",
         "creo extrusion side ring coedge identities",
@@ -738,7 +768,7 @@ fn generated_side_coverage_at_limits(
 
 #[test]
 fn generated_side_profile_entity_nodes_refuse_limit() {
-    assert!(matches!(generated_side_coverage_at_limits(0, u64::MAX),
+    assert!(matches!(generated_side_coverage_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion profile entity ID nodes"), |cap| generated_side_coverage_at_limits(cap, u64::MAX)), u64::MAX),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion profile entity ID nodes"));
 }
@@ -752,10 +782,10 @@ fn generated_side_expected_entity_text_refuses_materialized_limit() {
 
 #[test]
 fn generated_side_expected_entity_nodes_refuse_limit() {
-    assert!(matches!(generated_side_coverage_at_limits(1, u64::MAX),
+    assert!(matches!(generated_side_coverage_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extrusion expected entity ID nodes"), |cap| generated_side_coverage_at_limits(cap, u64::MAX)), u64::MAX),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo extrusion expected entity ID nodes"));
-    assert!(generated_side_coverage_at_limits(2, u64::MAX).expect("admitted coverage"));
+    assert!(generated_side_coverage_at_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| generated_side_coverage_at_limits(cap, u64::MAX)), u64::MAX).expect("admitted coverage"));
 }
 
 #[test]

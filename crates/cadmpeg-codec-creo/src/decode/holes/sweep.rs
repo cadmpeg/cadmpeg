@@ -19,7 +19,7 @@ use super::super::sweep::planes::{
 use super::super::uniqueness::exactly_one_by;
 use super::placement::{
     cap_square_center_radius, cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines,
-    hole_placement, plane_envelope_corners, CapOutline, ExtrusionSpan, SimpleHoleGeometry,
+    hole_placement, plane_envelope_corners, CapOutline, ExtrusionSpan, HoleCylinderRows, SimpleHoleGeometry,
 };
 
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
@@ -32,8 +32,7 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Result<Option<SimpleHoleGeometry<'a>>, CodecError> {
-    let (cap_rows, _cap_storage) = ctx.with_scoped_storage("creo hole cap scratch", || feature_outline_planes(ctx, scan, feature_id))?;
-    let Some(cap_rows) = cap_rows else {
+    let Some((cap_rows, _cap_storage)) = feature_outline_planes(ctx, scan, feature_id)? else {
         return Ok(None);
     };
     let [first, second] = cap_rows.as_slice() else { return Ok(None); };
@@ -48,12 +47,9 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
     let Some((_, _, extent)) = hole_placement([first, second].map(|cap| (cap.surface_id, cap.origin, cap.normal))) else { return Ok(None); };
     let Some(geometry) = hole_cylinder_from_cap_outlines([first, second]) else { return Ok(None); };
     let entry_surface_id = entry_plane.entity_id;
-    let mut cylinder_rows = Vec::new();
-    ctx.reserve_vec(&mut cylinder_rows, 2, "creo simple hole cylinder rows")?;
-    cylinder_rows.extend([first_row, second_row]);
     Ok(Some(SimpleHoleGeometry {
         entry_surface_id: Some(entry_surface_id),
-        cylinder_rows,
+        cylinder_rows: HoleCylinderRows::Two([first_row, second_row]),
         extent,
         geometry,
     }))
@@ -184,12 +180,9 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
     let Some(frame) = parameter.positional_cylinder_frame() else { return Ok(None); };
     let Some(length) = frame.length() else { return Ok(None); };
     let Some(row) = scan.surfaces.rows.unique(cylinder_id) else { return Ok(None); };
-    let mut cylinder_rows = Vec::new();
-    ctx.reserve_vec(&mut cylinder_rows, 1, "creo compact hole cylinder rows")?;
-    cylinder_rows.push(row);
     Ok(Some(SimpleHoleGeometry {
         entry_surface_id: None,
-        cylinder_rows,
+        cylinder_rows: HoleCylinderRows::One([row]),
         extent: LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::from(length),
         },
@@ -220,7 +213,7 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
 
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::decode) struct CircularSweepGeometry<'a> {
-    pub(in crate::decode) cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
+    pub(in crate::decode) cylinder_rows: HoleCylinderRows<'a>,
     pub(in crate::decode) section_definition_id: Option<u32>,
     pub(in crate::decode) direction: [f64; 3],
     pub(in crate::decode) extent: ExtrudeExtent,
@@ -249,15 +242,8 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
     let Some((extent, direction)) = extrusion_extent_and_direction(ctx, transform.origin(), transform.normal(), [(plane.1, plane.2)])? else { return Ok(None); };
     let Some(geometry) = cylinder_from_single_cap_outline(cap) else { return Ok(None); };
     let definition_id = transform.definition_id;
-    let mut cylinder_rows = Vec::new();
-    ctx.reserve_vec(
-        &mut cylinder_rows,
-        1,
-        "creo single-cap circular cylinder rows",
-    )?;
-    cylinder_rows.push(cylinder_row);
     Ok(Some(CircularSweepGeometry {
-        cylinder_rows,
+        cylinder_rows: HoleCylinderRows::One([cylinder_row]),
         section_definition_id: Some(definition_id),
         direction,
         extent,
@@ -321,11 +307,8 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
     let extent = ExtrudeExtent::OneSided { side: ExtrudeSide { termination, draft: None } };
     let caps = [cap_outline(ctx, scan, first)?, cap_outline(ctx, scan, second)?];
     let Some(geometry) = circular_sweep_cylinder_from_cap_outlines(ctx, [first, second], caps.into_iter().flatten())? else { return Ok(None); };
-    let mut cylinder_rows = Vec::new();
-    ctx.reserve_vec(&mut cylinder_rows, 1, "creo two-cap circular cylinder rows")?;
-    cylinder_rows.push(cylinder_row);
     Ok(Some(CircularSweepGeometry {
-        cylinder_rows,
+        cylinder_rows: HoleCylinderRows::One([cylinder_row]),
         section_definition_id: None,
         direction,
         extent,

@@ -28,7 +28,7 @@ fn service_feature_plane_equations(
 ) -> Option<Vec<([f64; 3], [f64; 3])>> {
     crate::decode::with_test_decode_ctx(|ctx| {
         super::feature_plane_equations(ctx, scan, ir, source_carriers, feature_id).map(|result| {
-            result.map(|planes| {
+            result.map(|(planes, _plane_storage)| {
                 planes
                     .into_iter()
                     .map(|plane| (plane.origin, plane.normal))
@@ -122,7 +122,7 @@ fn feature_plane_limit_error(operation: &'static str) -> cadmpeg_core::CodecErro
         917,
     )
     .map(|result| {
-        result.map(|planes| {
+        result.map(|(planes, _plane_storage)| {
             planes
                 .into_iter()
                 .map(|plane| (plane.origin, plane.normal))
@@ -141,7 +141,13 @@ fn feature_outline_planes_refuse_collection_limit() {
     scan.planes.outlines.push(plane_outline(31, 2.0));
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature outline planes"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::feature_outline_planes(&ctx, &scan, 917) .map(|result| result.map(|(planes, _storage)| planes))
+    });
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let error =
@@ -256,7 +262,20 @@ fn generated_arc_cylinder_id_nodes_refuse_collection_limit() {
     .expect("section transform");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo generated arc cylinder ID nodes"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::generated_arc_cylinder_extent(
+        &ctx,
+        &scan,
+        &CadIr::empty(),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform,
+    )
+    });
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let error = super::generated_arc_cylinder_extent(
@@ -823,4 +842,27 @@ fn duplicate_parameter_search_does_not_visit_unrelated_tail() {
         |ctx| super::unique_available_positional_cylinder_frame_records(ctx, &ids, &long),
     );
     assert!(result.is_none());
+}
+
+#[test]
+fn feature_plane_storage_stays_live_until_its_collection_is_dropped() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.surfaces.rows.push(plane_row(31));
+    scan.planes.outlines.push(plane_outline(31, 2.0));
+    let ir = CadIr::empty();
+    let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let limit = |hold_first: bool| crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, None, |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let first = super::feature_plane_equations(&ctx, &scan, &ir, &carriers, 917)?.expect("complete planes");
+        assert_eq!(first.0.len(), 1);
+        let held = hold_first.then_some(first);
+        let second = super::feature_plane_equations(&ctx, &scan, &ir, &carriers, 917)?.expect("complete planes");
+        assert_eq!(second.0.len(), 1);
+        drop(held);
+        Ok(())
+    });
+    assert!(limit(true) > limit(false));
 }

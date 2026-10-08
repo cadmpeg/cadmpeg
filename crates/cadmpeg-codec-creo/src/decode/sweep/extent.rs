@@ -34,31 +34,36 @@ enum SourceSurfaceGeometry<'a> {
     Present(&'a SurfaceGeometry),
 }
 
-fn unique_source_surface_geometry<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+type SourceSurfaceIndex<'a> = std::collections::HashMap<u32, Option<&'a SurfaceGeometry>>;
+
+fn source_surface_geometries<'a>(
+    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     source_carriers: &'a crate::decode::source_carriers::SourceUnitCarriers,
-    surface_id: u32,
-) -> Result<Option<SourceSurfaceGeometry<'a>>, cadmpeg_core::CodecError> {
-    let mut found = None;
-    let mut surfaces = ir.model.surfaces.iter();
-    while let Some(surface) = ctx.next_charged(&mut surfaces, "creo numbered identity candidate scan")? {
-        if crate::identity::matches_numbered_identity(
-            surface.id.as_str(),
-            "creo:visibgeom:surface#",
-            surface_id,
-        ) {
-            if found.is_some() {
-                return Ok(None);
-            }
-            found = Some(surface);
-        }
+) -> Result<SourceSurfaceIndex<'a>, CodecError> {
+    const PREFIX: &str = "creo:visibgeom:surface#";
+    let mut geometries = std::collections::HashMap::new();
+    for surface in ctx.admit_iter(&ir.model.surfaces, "creo source surface index scan")? {
+        let Some(suffix) = surface.id.as_str().strip_prefix(PREFIX) else { continue; };
+        if suffix.len() > 10 { continue; }
+        let Ok(id) = suffix.parse::<u32>() else { continue; };
+        if !crate::identity::matches_numbered_identity(surface.id.as_str(), PREFIX, id) { continue; }
+        ctx.entry_hash_map(&mut geometries, id, "creo source surface index")?
+            .and_modify(|geometry| *geometry = None)
+            .or_insert(Some(source_carriers.surface_geometry(surface)));
     }
-    Ok(Some(
-        found.map_or(SourceSurfaceGeometry::Missing, |surface| {
-            SourceSurfaceGeometry::Present(source_carriers.surface_geometry(surface))
-        }),
-    ))
+    Ok(geometries)
+}
+
+fn unique_source_surface_geometry<'a>(
+    geometries: &SourceSurfaceIndex<'a>,
+    surface_id: u32,
+) -> Option<SourceSurfaceGeometry<'a>> {
+    match geometries.get(&surface_id) {
+        Some(Some(geometry)) => Some(SourceSurfaceGeometry::Present(geometry)),
+        Some(None) => None,
+        None => Some(SourceSurfaceGeometry::Missing),
+    }
 }
 
 fn blind_extrusion_from_carriers(
@@ -209,6 +214,26 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     #[test]
+    fn source_surface_index_borrows_canonical_ids_and_keeps_ambiguity() {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        for id in ["creo:visibgeom:surface#7", "creo:visibgeom:surface#07", "creo:visibgeom:surface#8", "creo:visibgeom:surface#8", "test:foreign:surface#7"] {
+            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                id: cadmpeg_ir::ids::SurfaceId::mint(id).expect("identity grammar"),
+                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            });
+        }
+        let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+        let index = crate::test_support::assert_work_boundaries(&["creo source surface index scan", "creo source surface index"], |ctx| super::source_surface_geometries(ctx, &ir, &carriers));
+        assert_eq!(index.len(), 2);
+        let geometry = index.get(&7).copied().flatten().expect("unique geometry");
+        assert!(std::ptr::eq(geometry, &ir.model.surfaces[0].geometry));
+        assert!(index.get(&8).expect("ambiguous geometry").is_none());
+        assert!(super::unique_source_surface_geometry(&index, 8).is_none());
+        assert!(matches!(super::unique_source_surface_geometry(&index, 99), Some(super::SourceSurfaceGeometry::Missing)));
+    }
+
+    #[test]
     fn infinite_carrier_origin_does_not_expand_station_tolerance() {
         let carriers = [
             ExtrusionCarrierSpan {
@@ -235,7 +260,13 @@ mod tests {
         .expect("valid frame");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo bounded cylinder starts"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        bounded_cylinder_span(&ctx, frame, &[])
+    });
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let result = bounded_cylinder_span(&ctx, frame, &[]);
         assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
@@ -267,7 +298,13 @@ mod tests {
         .expect("valid translation surface");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo NURBS translation starts"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        nurbs_translation_span(&ctx, &surface)
+    });
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let result = nurbs_translation_span(&ctx, &surface);
         assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
@@ -493,6 +530,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
+    let mut source_geometries = None;
     enum CylinderExtentSurface {
         Plane,
         Carrier,
@@ -513,8 +551,11 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         if !scan.surfaces.rows.unique(row.id).is_some_and(|unique| std::ptr::eq(unique, row)) {
             return Ok(None);
         }
-        let Some(source_geometry) =
-            unique_source_surface_geometry(ctx, ir, source_carriers, row.id)?
+        if source_geometries.is_none() {
+            source_geometries = Some(scratch.with_storage(|| source_surface_geometries(ctx, ir, source_carriers))?);
+        }
+        let Some(geometries) = &source_geometries else { return Ok(None); };
+        let Some(source_geometry) = unique_source_surface_geometry(geometries, row.id)
         else {
             return Ok(None);
         };
@@ -770,6 +811,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
+    let mut source_geometries = None;
     enum TranslationExtentSurface {
         Plane,
         Carrier,
@@ -790,8 +832,11 @@ pub(in super::super) fn generated_nurbs_translation_extent(
         if !scan.surfaces.rows.unique(row.id).is_some_and(|unique| std::ptr::eq(unique, row)) {
             return Ok(None);
         }
-        let Some(source_geometry) =
-            unique_source_surface_geometry(ctx, ir, source_carriers, row.id)?
+        if source_geometries.is_none() {
+            source_geometries = Some(scratch.with_storage(|| source_surface_geometries(ctx, ir, source_carriers))?);
+        }
+        let Some(geometries) = &source_geometries else { return Ok(None); };
+        let Some(source_geometry) = unique_source_surface_geometry(geometries, row.id)
         else {
             return Ok(None);
         };
@@ -1003,6 +1048,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     section: Option<&crate::feature::definitions::FeatureSection3d>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
+    let mut source_geometries = None;
     let Some(section) = section else {
         return Ok(None);
     };
@@ -1040,8 +1086,11 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         if !scan.surfaces.rows.unique(row.id).is_some_and(|unique| std::ptr::eq(unique, row)) {
             return Ok(None);
         }
-        let Some(SourceSurfaceGeometry::Present(source_geometry)) =
-            unique_source_surface_geometry(ctx, ir, source_carriers, row.id)?
+        if source_geometries.is_none() {
+            source_geometries = Some(scratch.with_storage(|| source_surface_geometries(ctx, ir, source_carriers))?);
+        }
+        let Some(geometries) = &source_geometries else { return Ok(None); };
+        let Some(SourceSurfaceGeometry::Present(source_geometry)) = unique_source_surface_geometry(geometries, row.id)
         else {
             return Ok(None);
         };
@@ -1121,14 +1170,11 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             });
         }
     }
-    if !(families.len() >= 2
-        && ctx
-            .admit_iter(&families, "creo rectilinear family count")?
-            .filter(|family| family.stations.len() >= 2)
-            .count()
-            >= 2)
-    {
-        return Ok(None);
+    let mut family_count = 0;
+    let mut candidates = families.iter();
+    while family_count < 2 {
+        let Some(family) = ctx.next_charged(&mut candidates, "creo rectilinear family count")? else { return Ok(None); };
+        if family.stations.len() >= 2 { family_count += 1; }
     }
 
     match section_plane_evidence(ctx, scan, section_plane_id)? {
@@ -1237,8 +1283,7 @@ pub(in super::super) fn resolved_feature_extrusion_span(
                 derived_blind_extrusion_span(transform, &extent, direction)
             });
     if span.is_none() {
-        let (planes, _plane_storage) = ctx.with_scoped_storage("creo resolved extrusion plane scratch", || feature_plane_equations(ctx, scan, ir, source_carriers, feature_id))?;
-        if let Some(planes) = planes {
+        if let Some((planes, _plane_storage)) = feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)? {
             span = extrusion_span(ctx, transform.origin(), transform.normal(), planes.into_iter().map(|plane| (plane.origin, plane.normal)))?;
         }
     }

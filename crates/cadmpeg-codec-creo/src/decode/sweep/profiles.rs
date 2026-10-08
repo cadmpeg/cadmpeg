@@ -53,7 +53,8 @@ fn sketch_geometry_endpoints(
             Some([seam, seam])
         }
         SketchGeometryDefinition::Nurbs { .. } => {
-            let Some(nurbs) = sketch_nurbs_curve(ctx, geometry)? else {
+            let (nurbs, _nurbs_storage) = ctx.with_scoped_storage("creo profile endpoint curve scratch", || sketch_nurbs_curve(ctx, geometry))?;
+            let Some(nurbs) = nurbs else {
                 return Ok(None);
             };
             let Some(range) = nurbs_intrinsic_parameter_range(&nurbs) else {
@@ -88,16 +89,21 @@ fn unique_profile_sketch<'a>(
         "creo profile sketch lookup")
 }
 
-fn unique_profile_entity<'a>(
+fn profile_entity_index<'ir>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &'a CadIr,
+    ir: &'ir CadIr,
     sketch_id: &SketchId,
-    entity_id: &cadmpeg_ir::sketches::SketchEntityId,
-) -> Result<Option<&'a cadmpeg_ir::sketches::SketchEntity>, cadmpeg_core::CodecError> {
-    super::super::uniqueness::exactly_one_by(ctx, &ir.model.sketch_entities,
-        |entity| Ok(ctx.equal(entity.sketch.as_str(), sketch_id.as_str(), "creo profile entity lookup")?
-            && ctx.equal(entity.id().as_str(), entity_id.as_str(), "creo profile entity lookup")?),
-        "creo profile entity lookup")
+) -> Result<std::collections::HashMap<&'ir str, Option<&'ir cadmpeg_ir::sketches::SketchEntity>>, cadmpeg_core::CodecError> {
+    let mut entities = std::collections::HashMap::new();
+    for entity in ctx.admit_iter(&ir.model.sketch_entities, "creo profile entity index scan")? {
+        if !ctx.equal(entity.sketch.as_str(), sketch_id.as_str(), "creo profile entity sketch comparison")? {
+            continue;
+        }
+        ctx.entry_hash_map(&mut entities, entity.id().as_str(), "creo profile entity index")?
+            .and_modify(|value| *value = None)
+            .or_insert(Some(entity));
+    }
+    Ok(entities)
 }
 
 pub(in super::super) type ProfileVertices = (usize, Vec<[f64; 2]>);
@@ -111,6 +117,8 @@ pub(in super::super) fn connected_sketch_profile_vertices(
     let Some(sketch) = unique_profile_sketch(ctx, ir, sketch_id)? else {
         return Ok(Vec::new());
     };
+    let mut entity_index = None;
+    let mut index_storage = ctx.reserve_scoped(0, "creo profile entity index scratch")?;
     let mut profiles = Vec::new();
     for (profile_index, profile) in ctx.admit_iter(sketch.profiles.as_slice(), "creo connected profile row scan")?.enumerate() {
         if profile.is_empty() {
@@ -120,7 +128,11 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         let mut valid = true;
         let mut entity_uses = profile.iter();
         while let Some(entity_use) = ctx.next_charged(&mut entity_uses, "creo profile entity use scan")? {
-            let Some(geometry) = unique_profile_entity(ctx, ir, sketch_id, &entity_use.entity)?
+            if entity_index.is_none() {
+                entity_index = Some(index_storage.with_storage(|| profile_entity_index(ctx, ir, sketch_id))?);
+            }
+            let Some(index) = &entity_index else { return Ok(Vec::new()); };
+            let Some(geometry) = ctx.get_hash_map(index, entity_use.entity.as_str(), "creo profile entity lookup")?.copied().flatten()
                 .map(|entity| source_carriers.sketch_geometry(entity))
             else {
                 valid = false;
@@ -790,13 +802,19 @@ pub(in super::super) fn resolved_sketch_profiles(
     if sketch.profiles.is_empty() {
         return Ok(None);
     }
+    let mut entity_index = None;
+    let mut index_storage = ctx.reserve_scoped(0, "creo profile entity index scratch")?;
     let mut profiles = Vec::new();
     let mut profile_rows = sketch.profiles.iter();
     while let Some(profile) = ctx.next_charged(&mut profile_rows, "creo resolved profile row scan")? {
         let mut geometries = Vec::new();
         let mut entity_uses = profile.iter();
         while let Some(entity_use) = ctx.next_charged(&mut entity_uses, "creo profile entity use scan")? {
-            let Some(entity) = unique_profile_entity(ctx, ir, sketch_id, &entity_use.entity)?
+            if entity_index.is_none() {
+                entity_index = Some(index_storage.with_storage(|| profile_entity_index(ctx, ir, sketch_id))?);
+            }
+            let Some(index) = &entity_index else { return Ok(None); };
+            let Some(entity) = ctx.get_hash_map(index, entity_use.entity.as_str(), "creo profile entity lookup")?.copied().flatten()
             else {
                 return Ok(None);
             };
