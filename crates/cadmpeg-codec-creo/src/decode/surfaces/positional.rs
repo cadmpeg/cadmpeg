@@ -234,7 +234,7 @@ pub(in super::super) fn transfer_positional_tori(
             || record.has_inline_non_plane_local_system_suffix(ctx)?;
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
             && feature_schema_class(ctx, scan, row.feature_id)? == Some(SchemaClass::Round)
-            && !constant_round_feature_ids.contains(&row.feature_id)
+            && !ctx.contains_btree_set(&constant_round_feature_ids, &row.feature_id, "creo constant round feature ids lookup")?
             && !inline_non_plane
         {
             continue;
@@ -339,7 +339,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         &*scan.surfaces.parameters,
         "creo transfer positional line extrusion planes parameters traversal",
     )? {
-        if replay_bound_surfaces.contains(&record.surface_id) {
+        if ctx.contains_btree_set(&replay_bound_surfaces, &record.surface_id, "creo replay bound surfaces lookup")? {
             continue;
         }
         if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
@@ -568,7 +568,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         &scan.curves.tabulated_cylinder_replays,
         "creo transfer tabulated cylinder spline extrusions tabulated cylinder replays traversal",
     )? {
-        if replay_counts.get(&replay.surface_id) != Some(&1) {
+        if ctx.get_btree_map(&replay_counts, &replay.surface_id, "creo replay counts lookup")? != Some(&1) {
             continue;
         }
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, replay.surface_id)

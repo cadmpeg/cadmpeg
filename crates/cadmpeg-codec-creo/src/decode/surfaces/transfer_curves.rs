@@ -127,27 +127,25 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             continue;
         };
         let (Some(first), Some(second)) = (
-            carriers.get(&first_face.get()).copied(),
-            carriers.get(&second_face.get()).copied(),
+            ctx.get_btree_map(&carriers, &first_face.get(), "creo carriers lookup")?.copied(),
+            ctx.get_btree_map(&carriers, &second_face.get(), "creo carriers lookup")?.copied(),
         ) else {
             continue;
         };
-        let points = (|| {
-            let vertices = edge_vertices.get(&row.id)?;
-            let points = [
-                *solved_vertices.get(&vertices[0].get())?,
-                *solved_vertices.get(&vertices[1].get())?,
-            ];
-            Some(points)
-        })();
+        let points = if let Some(vertices) = ctx.get_btree_map(&edge_vertices, &row.id, "creo edge vertices lookup")? {
+            match (ctx.get_btree_map(&solved_vertices, &vertices[0].get(), "creo solved vertices lookup")?,
+                ctx.get_btree_map(&solved_vertices, &vertices[1].get(), "creo solved vertices lookup")?) {
+                (Some(first), Some(second)) => Some([*first, *second]),
+                _ => None,
+            }
+        } else { None };
         let curve_id = crate::identity::compose_checked::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_CURVE,
             row.id,
             "creo carrier intersection curve identity",
         )?;
-        let allow_unresolved_endpoint_witness = endpoint_evidence
-            .get(&row.id)
+        let allow_unresolved_endpoint_witness = ctx.get_btree_map(&endpoint_evidence, &row.id, "creo endpoint evidence lookup")?
             .is_some_and(|evidence| !evidence.complete)
             && !ctx.contains_btree_set(
                 nurbs_endpoint_witnesses,
@@ -279,12 +277,7 @@ fn append_boundary_fallback_losses(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     fallback_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(
-        losses,
-        fallback_losses.len(),
-        "creo boundary fallback losses",
-    )?;
-    losses.extend(fallback_losses);
+    ctx.extend_vec(losses, fallback_losses, "creo boundary fallback losses")?;
     Ok(())
 }
 

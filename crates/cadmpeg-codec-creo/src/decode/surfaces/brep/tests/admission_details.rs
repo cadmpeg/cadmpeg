@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::FaceAdmissionDetail;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 #[test]
-fn rejection_vertex_lookup_refuses_before_duplicate_skip() {
+fn rejection_incidence_lookup_refuses_before_duplicate_skip() {
     let first = crate::topology::HalfEdgeId {
         curve_id: 4,
         side: crate::topology::Side::Zero,
@@ -27,23 +25,7 @@ fn rejection_vertex_lookup_refuses_before_duplicate_skip() {
         ..first_binding
     };
     let incidence = BTreeMap::from([(first, &first_binding), (second, &second_binding)]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // One loop visit and two half-edge visits precede the duplicate lookup.
-    policy.limits.max_work_units = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = FaceAdmissionDetail::unresolved_boundary(
-        &ctx,
-        17,
-        &[&loop_record],
-        &BTreeMap::new(),
-        &incidence,
-    )
-    .expect_err("duplicate vertex lookup exceeds work limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo B-rep rejection vertex lookup"));
-    let detail = crate::decode::with_test_decode_ctx(|ctx| {
+    let detail = crate::test_support::assert_work_boundaries(&["creo incidence lookup"], |ctx| {
         FaceAdmissionDetail::unresolved_boundary(
             ctx,
             17,
@@ -51,15 +33,13 @@ fn rejection_vertex_lookup_refuses_before_duplicate_skip() {
             &BTreeMap::new(),
             &incidence,
         )
-    })
-    .expect("service rejection detail");
+    });
     assert_eq!(detail.vertex_ids, vec![9]);
     assert_eq!(detail.boundary_half_edges, vec![first, second]);
 }
 
 #[test]
-fn rejection_end_vertex_lookup_refuses_on_first_edge_and_preserves_service_detail() {
-    const LOOKUP: &str = "creo B-rep rejection vertex lookup";
+fn rejection_incidence_lookup_refuses_and_preserves_end_vertices() {
     let first = crate::topology::HalfEdgeId {
         curve_id: 4,
         side: crate::topology::Side::Zero,
@@ -81,29 +61,7 @@ fn rejection_end_vertex_lookup_refuses_on_first_edge_and_preserves_service_detai
         end_vertex_id: std::num::NonZeroU32::new(12),
     };
     let incidence = BTreeMap::from([(first, &first_binding), (second, &second_binding)]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Loop admission spends 1 and half-edge admission spends 2 work units. The
-    // empty start lookup spends none; the first end lookup slot needs one.
-    policy.limits.max_work_units = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = FaceAdmissionDetail::unresolved_boundary(
-        &ctx,
-        17,
-        &[&loop_record],
-        &BTreeMap::new(),
-        &incidence,
-    )
-    .expect_err("first edge end-vertex lookup exceeds work limit");
-    let CodecError::ResourceLimit(resource) = error else {
-        panic!("first edge end-vertex lookup must return its work refusal");
-    };
-    assert_eq!(ctx.resource_refusal().as_ref(), Some(&resource));
-    assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(resource.operation, LOOKUP);
-    assert_eq!((resource.used, resource.additional), (3, 1));
-
-    let detail = crate::decode::with_test_decode_ctx(|ctx| {
+    let detail = crate::test_support::assert_work_boundaries(&["creo incidence lookup"], |ctx| {
         FaceAdmissionDetail::unresolved_boundary(
             ctx,
             17,
@@ -111,8 +69,7 @@ fn rejection_end_vertex_lookup_refuses_on_first_edge_and_preserves_service_detai
             &BTreeMap::new(),
             &incidence,
         )
-    })
-    .expect("service rejection detail");
+    });
     assert_eq!(detail.boundary_half_edges, vec![first, second]);
     assert_eq!(detail.vertex_ids, vec![9, 10, 11, 12]);
 }
