@@ -9,7 +9,7 @@ use crate::records::{
 use crate::resolved_features::selections::{
     cosmetic_thread_component_references, cosmetic_thread_cylinder_marker_reference,
     cosmetic_thread_cylinder_reference_at, cosmetic_thread_cylinder_references,
-    cosmetic_thread_diameter_child_tail, COMPACT_EDGE_VECTOR_MARKER,
+    COMPACT_EDGE_VECTOR_MARKER,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -258,6 +258,10 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
                 0,
                 lane.native_payload.len(),
                 &HashSet::from([0x802f]),
+                &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+                    ctx, &lane,
+                )
+                .unwrap(),
             )
         },
     );
@@ -269,6 +273,10 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
             0,
             lane.native_payload.len(),
             &HashSet::from([0x802f]),
+            &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+                &ctx, &lane
+            )
+            .unwrap()
         )
         .expect("charged cylinder marker scan"),
         vec![crate::resolved_features::selections::CylinderMarkerReference(marker, None)]
@@ -357,7 +365,13 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         sketch_entities: Vec::new(),
     };
     assert_eq!(
-        cosmetic_thread_diameter_child_tail(&references_ctx, &feature, &lane).unwrap(),
+        crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+            &references_ctx,
+            &lane
+        )
+        .unwrap()
+        .tail(&references_ctx, &feature)
+        .unwrap(),
         Some(158..400)
     );
     crate::test_support::work_refusal_at(
@@ -370,6 +384,10 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
                 20,
                 100,
                 &HashSet::from([0x802f]),
+                &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+                    ctx, &lane,
+                )
+                .unwrap(),
             )
         },
     );
@@ -380,6 +398,11 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         20,
         100,
         &HashSet::from([0x802f]),
+        &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+            &references_ctx,
+            &lane,
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(
@@ -410,6 +433,11 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         20,
         100,
         &HashSet::from([0x802f]),
+        &crate::resolved_features::selections::diameter_index::CosmeticDiameterIndex::new(
+            &references_ctx,
+            &lane
+        )
+        .unwrap()
     )
     .unwrap()
     .is_empty());

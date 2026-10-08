@@ -2258,7 +2258,7 @@ fn surface_selection_disagrees_with_payload(
     lane: &FeatureInputLane,
     record: &FeatureInputSurfaceSelection,
     surface_features: &[crate::records::Feature],
-    features_by_source: &crate::resolved_features::component_paths::FeaturesBySource<'_>,
+    features_by_source: &crate::resolved_features::component_paths::FeaturesBySource<'_, '_>,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     let (disagrees, _workspace) = ctx.with_scoped_storage(
         "SLDPRT surface-selection validation workspace",

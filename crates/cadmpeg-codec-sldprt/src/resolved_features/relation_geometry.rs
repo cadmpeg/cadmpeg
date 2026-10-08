@@ -1,6 +1,6 @@
 //! Relation point and solved geometry projection.
 
-use super::curves::slot_curve_and_center_indices;
+use super::curves::{slot_curve_and_center_indices, SlotReferences};
 use super::endpoints::{inferred_point_coordinates_by_index, legacy_undetailed_profile_line};
 use super::grid::{quantize, GridPoint};
 use super::markers::{
@@ -1103,6 +1103,15 @@ pub(crate) fn project_relation_point_geometry(
                 .with_storage(|| ctx.push_vec(&mut marker_roster, marker, operation))?;
         }
         let curve_markers = std::cell::OnceCell::new();
+        let geometry =
+            crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                ctx,
+                &marker_roster,
+                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                    ctx,
+                    &lane.native_payload,
+                )?,
+            )?;
         for marker in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT relation-line markers")? {
             let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind() == SketchInputKind::Arc
@@ -1221,6 +1230,7 @@ pub(crate) fn project_relation_point_geometry(
                         marker,
                         &markers_by_id,
                         curve_index,
+                        &geometry,
                     )
                 })?;
             if endpoints.len() != 2 && linked_curve_handle {
@@ -1615,6 +1625,15 @@ pub(crate) fn project_relation_solved_line_geometry(
             })?;
         let curve_markers = std::cell::OnceCell::new();
         let point_rosters = std::cell::OnceCell::new();
+        let geometry =
+            crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                ctx,
+                &marker_roster,
+                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                    ctx,
+                    &lane.native_payload,
+                )?,
+            )?;
         for relation in ctx.admit_iter(
             &lane.relation_instances,
             "scan SLDPRT solved-line relations",
@@ -1821,6 +1840,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                             marker,
                             markers_by_id,
                             curve_index,
+                            &geometry,
                         )
                     })?;
                 let [first, second] = endpoints.as_slice() else {
@@ -3470,8 +3490,8 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let Ok(marker_offset) = usize::try_from(marker.offset()) else {
         return Ok(None);
     };
-    let Some((_, center_indices)) =
-        slot_curve_and_center_indices(&lane.native_payload, marker_offset)
+    let slots = SlotReferences::new(ctx, &lane.native_payload)?;
+    let Some((_, center_indices)) = slot_curve_and_center_indices(ctx, &slots, marker_offset)?
     else {
         return Ok(None);
     };

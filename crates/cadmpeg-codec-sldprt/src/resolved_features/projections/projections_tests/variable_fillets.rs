@@ -143,25 +143,25 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| {
-        variable_fillet_radius_groups(
-            ctx,
-            "variable",
-            std::slice::from_ref(&history),
-            std::slice::from_ref(&lane),
-            &[&selection],
-        )
-    })
+    let groups_ctx = cadmpeg_test_support::service_decode_context();
+    let groups = variable_fillet_radius_groups(
+        &groups_ctx,
+        "variable",
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+        &[&selection],
+    )
     .expect("fillet resource limits")
     .expect("vertex join");
     assert!(matches!(
         groups.as_slice(),
-        [super::super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
+        [super::super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections, _)]
             if matches!(points.as_slice(), [
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0 && second_parameter.get() == 1.0 && actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
     ));
+    drop(groups);
     lane.edge_selections.push(selection);
     let mut projected = [cadmpeg_ir::features::Feature {
         id: FeatureId::mint("synthetic:test:id#variable").expect("identity grammar"),
@@ -343,14 +343,14 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| {
-        variable_fillet_radius_groups(ctx, "variable", &[history], &[lane], &[&selection])
-    })
-    .expect("fillet resource limits")
-    .expect("legacy edge-control join");
+    let groups_ctx = cadmpeg_test_support::service_decode_context();
+    let groups =
+        variable_fillet_radius_groups(&groups_ctx, "variable", &[history], &[lane], &[&selection])
+            .expect("fillet resource limits")
+            .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
-        [super::super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
+        [super::super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections, _)]
             if matches!(points.as_slice(), [
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
@@ -411,26 +411,26 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| {
-        variable_fillet_radius_groups(
-            ctx,
-            "variable",
-            std::slice::from_ref(&history),
-            &[],
-            &[&selection],
-        )
-    })
+    let groups_ctx = cadmpeg_test_support::service_decode_context();
+    let groups = variable_fillet_radius_groups(
+        &groups_ctx,
+        "variable",
+        std::slice::from_ref(&history),
+        &[],
+        &[&selection],
+    )
     .expect("fillet resource limits")
     .expect("endpoint-less two-control roster");
     assert!(matches!(
         groups.as_slice(),
-        [super::super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
+        [super::super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections, _)]
             if matches!(points.as_slice(), [
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0 && second_parameter.get() == 1.0 && actual_radius.get() == 50.0 && actual_radius_2.get() == 4.0) && selections.len() == 1
     ));
 
+    drop(groups);
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
     assert!(with_projection_context(|ctx| variable_fillet_radius_groups(
@@ -439,7 +439,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         &[history],
         &[],
         &[&collision]
-    ))
-    .expect("fillet resource limits")
-    .is_none());
+    )
+    .map(|groups| groups.is_none()))
+    .expect("fillet resource limits"));
 }

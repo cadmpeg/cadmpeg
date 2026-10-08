@@ -51,12 +51,25 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
     let markers = [&curve, &point_impostor, &first, &second];
 
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let result = roster_curve_endpoint_markers(
+                &ctx,
+                &payload,
+                &curve,
+                &markers,
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                    &ctx,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &ctx, &payload,
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            );
+            result
+        }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -71,12 +84,25 @@ fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {
         SketchInputKind::LineOrCircle,
     );
     let ambiguous = [&curve, &point_impostor, &first, &second, &second_collision];
-    assert!(roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &ambiguous
-    )
+    assert!({
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let result = roster_curve_endpoint_markers(
+            &ctx,
+            &payload,
+            &curve,
+            &ambiguous,
+            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                &ctx,
+                &ambiguous,
+                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                    &ctx, &payload,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+        result
+    }
     .unwrap()
     .is_empty());
 }

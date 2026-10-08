@@ -311,6 +311,10 @@ fn expected_lane_pairs_impl<'a>(
         &native.feature_histories,
         &mut expected_supplemental_lanes,
     )?;
+    let mut selection_history = crate::resolved_features::selections::SelectionHistory::new(
+        ctx,
+        &native.feature_histories,
+    )?;
     for (expected_lane, actual_lane) in ctx
         .admit_iter(
             &mut expected_supplemental_lanes,
@@ -352,7 +356,12 @@ fn expected_lane_pairs_impl<'a>(
         {
             expected.feature_ref = copy_feature_ref(ctx, actual.feature_ref.as_deref())?;
         }
-        finalize_lane_bindings(ctx, &native.feature_histories, expected_lane)?;
+        finalize_lane_bindings(
+            ctx,
+            &native.feature_histories,
+            &mut selection_history,
+            expected_lane,
+        )?;
     }
     Ok(ctx
         .admit_iter(

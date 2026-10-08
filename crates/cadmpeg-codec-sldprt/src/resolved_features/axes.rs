@@ -1665,6 +1665,14 @@ fn profile_roster_construction_axis_in(
             "collect SLDPRT owned profile markers",
         )?
         .map_or(&[][..], Vec::as_slice);
+    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+        ctx,
+        markers,
+        crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+            ctx,
+            &lane.native_payload,
+        )?,
+    )?;
     let construction_axis = |marker: &&SketchInputEntity| {
         let Some(offset) = index_from_u64(marker.offset()) else {
             return Ok(None);
@@ -1673,7 +1681,7 @@ fn profile_roster_construction_axis_in(
             return Ok(None);
         }
         let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, marker, markers)
+            roster_curve_endpoint_markers(ctx, &lane.native_payload, marker, markers, &geometry)
         })?;
         Ok(match endpoints.as_slice() {
             [start, end] => Some([*start, *end]),
@@ -1813,6 +1821,14 @@ fn profile_generated_surface_axis(
         };
         axis.origin = projected_origin;
     }
+    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+        ctx,
+        markers,
+        crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+            ctx,
+            &lane.native_payload,
+        )?,
+    )?;
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut endpoint_ids = HashSet::new();
     let v_axis = normal.cross(u_axis.get());
@@ -1823,7 +1839,7 @@ fn profile_generated_surface_axis(
     let mut negative = false;
     for curve in ctx.admit_iter(owned, OPERATION)? {
         let (curve_endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers)
+            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers, &geometry)
         })?;
         for endpoint in ctx.admit_iter(curve_endpoints, OPERATION)? {
             if endpoint.object_index().is_none()
@@ -1968,10 +1984,18 @@ fn profile_curve_endpoint_ids<'a>(
     indexed_only: bool,
 ) -> Result<BTreeSet<&'a str>, CodecError> {
     const OPERATION: &str = "scan SLDPRT profile curve endpoints";
+    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+        ctx,
+        markers,
+        crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+            ctx,
+            &lane.native_payload,
+        )?,
+    )?;
     let mut ids = BTreeSet::new();
     for curve in ctx.admit_iter(owned, OPERATION)? {
         let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers)
+            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers, &geometry)
         })?;
         for endpoint in ctx.admit_iter(endpoints, OPERATION)? {
             if indexed_only && endpoint.object_index().is_none() {
@@ -2204,8 +2228,16 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     roster: &LaneMarkerIndex<'a, '_>,
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     const OPERATION: &str = "find SLDPRT implicit profile axis";
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let markers = &roster.all;
+    let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+        ctx,
+        markers,
+        crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+            ctx,
+            &lane.native_payload,
+        )?,
+    )?;
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let owned = ctx
         .get_hash_map(
             &roster.by_feature,
@@ -2338,8 +2370,13 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         }) {
             continue;
         }
-        let endpoints =
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, markers)?;
+        let endpoints = roster_curve_endpoint_markers(
+            ctx,
+            &lane.native_payload,
+            candidate,
+            markers,
+            &geometry,
+        )?;
         let [start, end] = endpoints.as_slice() else {
             continue;
         };
@@ -2375,7 +2412,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         return Ok(None);
     };
     let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
-        roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, markers)
+        roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, markers, &geometry)
     })?;
     let [start, end] = endpoints.as_slice() else {
         return Ok(None);

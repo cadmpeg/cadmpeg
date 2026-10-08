@@ -59,20 +59,26 @@ pub(crate) fn sketches(
             continue;
         }
         let source_stream = source.source_stream();
-        let native_ref = ctx.format_retained(
-            format_args!(
-                "sldprt:feature-input:resolved-features#{}",
-                source.ordinal()
-            ),
-            "retain SLDPRT sketch native reference",
-        )?;
+        let (native_ref, _reference_storage) =
+            ctx.with_scoped_storage("hold SLDPRT sketch native reference", || {
+                ctx.format_retained(
+                    format_args!(
+                        "sldprt:feature-input:resolved-features#{}",
+                        source.ordinal()
+                    ),
+                    "retain SLDPRT sketch native reference",
+                )
+            })?;
         for (stream_ordinal, stream) in ctx
             .admit_iter(source.ps_streams(), "project SLDPRT section streams")?
             .enumerate()
         {
             let brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
-            let configuration = configuration(ctx, section)?;
+            let (configuration, _configuration_storage) = ctx
+                .with_scoped_storage("hold SLDPRT sketch configuration", || {
+                    configuration(ctx, section)
+                })?;
             project_brep(
                 ctx,
                 &brep,
@@ -169,12 +175,17 @@ fn project_brep(
         let origin = plane_surface.origin().get();
         let normal = plane_surface.frame().axis().as_raw();
         let u_axis = plane_surface.frame().reference().as_raw();
-        let Some(sketch_id) = mint_formatted::<SketchId>(
-            ctx,
-            format_args!("sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"),
-            "retain SLDPRT projected sketch ID",
-        )?
-        else {
+        let (sketch_id, sketch_id_storage) =
+            ctx.with_scoped_storage("build SLDPRT projected sketch identity", || {
+                mint_formatted::<SketchId>(
+                    ctx,
+                    format_args!(
+                        "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
+                    ),
+                    "retain SLDPRT projected sketch ID",
+                )
+            })?;
+        let Some(sketch_id) = sketch_id else {
             continue;
         };
         let Ok(placement) =
@@ -227,22 +238,24 @@ fn project_brep(
                         )
                     })?;
                 }
-                let entity_id = if let Some(id) = ctx.get_hash_map(
+                let (entity_id, entity_id_storage) = if let Some(id) = ctx.get_hash_map(
                     &edge_entities,
                     &edge.id,
                     "resolve SLDPRT sketch_projection keys",
                 )? {
-                    id.try_clone_for_decode(ctx, "retain SLDPRT sketch entity ID")?
+                    ctx.with_scoped_storage("hold SLDPRT profile entity identity", || {
+                        id.try_clone_for_decode(ctx, "retain SLDPRT sketch entity ID")
+                    })?
                 } else {
-                    let Some(id) = mint_formatted::<SketchEntityId>(
+                    let (id, id_storage) = ctx.with_scoped_storage("hold SLDPRT profile entity identity", || mint_formatted::<SketchEntityId>(
                         ctx,
                         format_args!(
                             "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                             edge_entities.len()
                         ),
                         "retain SLDPRT sketch entity ID",
-                    )?
-                    else {
+                    ))?;
+                    let Some(id) = id else {
                         continue;
                     };
                     let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
@@ -351,7 +364,7 @@ fn project_brep(
                             "resolve SLDPRT sketch_projection keys",
                         )
                     })?;
-                    id
+                    (id, id_storage)
                 };
                 if edge.curve().is_some()
                     || !ctx.equal(
@@ -365,6 +378,7 @@ fn project_brep(
                         entity: entity_id,
                         reversed: coedge.sense == Sense::Reversed,
                     });
+                    entity_id_storage.commit()?;
                 }
             }
             if !profile.is_empty() {
@@ -398,6 +412,11 @@ fn project_brep(
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("count SLDPRT sketch entities", u64::MAX - 1, u64::MAX)
                 })?;
+            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: project_point(*position, origin, *u_axis, v_axis),
+            }) else {
+                continue;
+            };
             let Some(id) = mint_formatted::<SketchEntityId>(
                 ctx,
                 format_args!(
@@ -406,11 +425,6 @@ fn project_brep(
                 "retain SLDPRT sketch point entity ID",
             )?
             else {
-                continue;
-            };
-            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                position: project_point(*position, origin, *u_axis, v_axis),
-            }) else {
                 continue;
             };
             crate::annotations::note(
@@ -482,6 +496,7 @@ fn project_brep(
         let native_ref =
             ctx.copy_retained_text(native_ref, "retain SLDPRT sketch native reference")?;
         ctx.reserve_vec(sketches, 1, "collect SLDPRT projected sketches")?;
+        sketch_id_storage.commit()?;
         sketches.push(Sketch {
             id: sketch_id,
             name,
