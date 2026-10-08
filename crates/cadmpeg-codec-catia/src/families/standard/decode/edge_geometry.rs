@@ -1262,7 +1262,7 @@ fn surface_fingerprint(
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     match geometry {
         SurfaceGeometry::Solved(geometry) => {
-            (0u8, solved_surface_fingerprint(ctx, geometry)?).hash(&mut hash)
+            (0u8, solved_surface_fingerprint(ctx, geometry)?).hash(&mut hash);
         }
         SurfaceGeometry::Procedural {
             construction,
@@ -2047,14 +2047,13 @@ pub(super) fn ensure_native_edge_support_surface(
     Ok(id)
 }
 
-pub(super) fn circle_endpoint_range_choices(
-    _ctx: &DecodeContext<'_>,
+fn circle_endpoint_range_choices(
     center: Point3,
     radius: f64,
     axis: UnitVector3,
     start: Point3,
     end: Point3,
-) -> Result<Option<CircleRangeChoices>, CodecError> {
+) -> Option<CircleRangeChoices> {
     const ENDPOINT_TOLERANCE: f64 = 2e-3;
 
     if !radius.is_finite()
@@ -2062,13 +2061,13 @@ pub(super) fn circle_endpoint_range_choices(
         || (start.distance(center) - radius).abs() > ENDPOINT_TOLERANCE
         || (end.distance(center) - radius).abs() > ENDPOINT_TOLERANCE
     {
-        return Ok(None);
+        return None;
     }
     if start.distance(end) <= ENDPOINT_TOLERANCE {
-        return Ok(Some(CircleRangeChoices {
+        return Some(CircleRangeChoices {
             ranges: [[0.0, std::f64::consts::TAU], [0.0; 2]],
             len: 1,
-        }));
+        });
     }
     let axis = axis.recharted_by_largest_component();
     let reference = cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
@@ -2082,24 +2081,20 @@ pub(super) fn circle_endpoint_range_choices(
     };
     let mut endpoints = [angle(start), angle(end)];
     if endpoints.iter().any(|angle| !angle.is_finite()) {
-        return Ok(None);
+        return None;
     }
     if endpoints[0].total_cmp(&endpoints[1]).is_gt() {
         endpoints.swap(0, 1);
     }
-    let Some(short) = crate::nurbs::canonical_periodic_range(endpoints) else {
-        return Ok(None);
-    };
-    let Some(long) = crate::nurbs::canonical_periodic_range([
+    let short = crate::nurbs::canonical_periodic_range(endpoints)?;
+    let long = crate::nurbs::canonical_periodic_range([
         endpoints[1],
         endpoints[0] + std::f64::consts::TAU,
-    ]) else {
-        return Ok(None);
-    };
-    Ok(Some(CircleRangeChoices {
+    ])?;
+    Some(CircleRangeChoices {
         ranges: [short, long],
         len: 2,
-    }))
+    })
 }
 
 fn circular_segments(range: [f64; 2]) -> [Option<[f64; 2]>; 2] {
@@ -2225,8 +2220,11 @@ impl<'ctx> CircularIntervalIndex<'ctx> {
                         && (bounds[2][0] - range[1]).abs() <= EPS_STANDARD_DECODE_GEOMETRY
                         && (bounds[2][1] - range[1]).abs() <= EPS_STANDARD_DECODE_GEOMETRY;
                     !coincident
-                        && !(bounds[0][1].min(segment[1]) - bounds[0][0].max(segment[0])
-                            <= EPS_STANDARD_DECODE_COARSE_GEOMETRY)
+                        && !matches!(
+                            (bounds[0][1].min(segment[1]) - bounds[0][0].max(segment[0]))
+                                .partial_cmp(&EPS_STANDARD_DECODE_COARSE_GEOMETRY),
+                            Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+                        )
                 })
             };
             let nodes = std::iter::successors((!self.tree.nodes.is_empty()).then_some(0), |&at| {
@@ -3178,6 +3176,10 @@ pub(super) fn standard_limit_curve_point_parameter(
     point: Point3,
     tolerance: f64,
 ) -> Result<Option<f64>, CodecError> {
+    const SPAN_WIDTH: std::num::NonZeroUsize = match std::num::NonZeroUsize::new(6) {
+        Some(width) => width,
+        None => std::num::NonZeroUsize::MIN,
+    };
     let mut storage = ctx.reserve_scoped(0, "catia_limit_curve_parameter_scratch")?;
     storage.with_storage(|| -> Result<_, CodecError> {
         let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } = curve.pole_rows()
@@ -3197,10 +3199,6 @@ pub(super) fn standard_limit_curve_point_parameter(
         };
         let [parameter_start, parameter_end] = domain.endpoints();
         let parameter_span = parameter_end - parameter_start;
-        const SPAN_WIDTH: std::num::NonZeroUsize = match std::num::NonZeroUsize::new(6) {
-            Some(width) => width,
-            None => std::num::NonZeroUsize::MIN,
-        };
         let span_control = |control_points: &[FinitePoint3]| -> BezierSpan {
             std::array::from_fn(|index| control_points[index].get())
         };
@@ -3612,9 +3610,9 @@ impl<'ctx> BoundsIndex<'ctx> {
                 entries,
                 [[f64::INFINITY, f64::NEG_INFINITY]; 3],
                 |mut bounds, entry| {
-                    for axis in 0..3 {
-                        bounds[axis][0] = bounds[axis][0].min(entry.bounds[axis][0]);
-                        bounds[axis][1] = bounds[axis][1].max(entry.bounds[axis][1]);
+                    for (axis, interval) in bounds.iter_mut().enumerate() {
+                        interval[0] = interval[0].min(entry.bounds[axis][0]);
+                        interval[1] = interval[1].max(entry.bounds[axis][1]);
                     }
                     Ok(bounds)
                 },
@@ -3812,10 +3810,7 @@ pub(super) fn same_cone_generator_pair(
     line_distance.is_finite() && line_distance <= EPS_SAME_CONE_GENERATOR
 }
 
-/// Collect plane normals only from trim-packet frame vectors, which carry the
-/// stored normal's signed sense. A target with conflicting frame vectors stays
-/// unresolved.
-
+/// Check a point against face bounds and supported surface geometry.
 pub(super) fn point_on_standard_face(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
@@ -3948,6 +3943,7 @@ fn nurbs_shared_boundary_curves_match(
     right: &NurbsCurve,
 ) -> Result<bool, CodecError> {
     let same_payload = |left: &NurbsCurve, right: &NurbsCurve| -> Result<bool, CodecError> {
+        use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
         if left.degree() != right.degree()
             || left.periodic() != right.periodic()
             || left.knots().len() != right.knots().len()
@@ -3972,7 +3968,6 @@ fn nurbs_shared_boundary_curves_match(
                 .zip([right.x, right.y, right.z])
                 .all(|(left, right)| nurbs_shared_boundary_scalar_matches(left, right))
         };
-        use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
         match (left.pole_rows(), right.pole_rows()) {
             (
                 NurbsPoles3::Polynomial { points: left },
@@ -4262,7 +4257,7 @@ impl<'a, 'ctx> StandardCirclePairConstraint<'a, 'ctx> {
             choices.clear();
         }
         {
-            let mut visits = (supports).into_iter().zip(endpoint_options).zip(pairs);
+            let mut visits = supports.iter().zip(endpoint_options).zip(pairs);
             while let Some(((support, options), pair)) = self
                 .ctx
                 .next_charged(&mut visits, "catia_standard_circle_supports")?
@@ -4319,8 +4314,7 @@ impl<'a, 'ctx> StandardCirclePairConstraint<'a, 'ctx> {
                 }) {
                     return Ok(false);
                 }
-                let Some(choices) =
-                    circle_endpoint_range_choices(self.ctx, center, radius, axis, start, end)?
+                let Some(choices) = circle_endpoint_range_choices(center, radius, axis, start, end)
                 else {
                     continue;
                 };
@@ -4349,7 +4343,7 @@ impl<'a, 'ctx> StandardCirclePairConstraint<'a, 'ctx> {
             }
         }
         {
-            let mut visits = (&*range_choices).into_iter().map(|(_, choices)| choices);
+            let mut visits = range_choices.values();
             while let Some(choices) = self
                 .ctx
                 .next_charged(&mut visits, "catia_standard_circle_range_choices")?
@@ -4496,7 +4490,7 @@ impl StandardLinePairConstraint {
                 let mut entries = Vec::new();
                 let mut projection = None;
                 {
-                    let mut visits = (edges).into_iter().enumerate();
+                    let mut visits = edges.iter().enumerate();
                     while let Some((ordinal, &edge)) =
                         ctx.next_charged(&mut visits, "catia_standard_line_left_edges")?
                     {
@@ -4541,17 +4535,19 @@ impl StandardLinePairConstraint {
                                 let axes = canonical_unoriented_axis(
                                     segment.end.vector_from(segment.start),
                                 )
-                                .map(|axis| {
-                                    let axis = *axis.as_raw();
-                                    let perpendicular =
-                                        cadmpeg_ir::geometry::derive_reference_direction(axis);
-                                    [axis, perpendicular, axis.cross(perpendicular)]
-                                })
-                                .unwrap_or([
-                                    Vector3::new(1.0, 0.0, 0.0),
-                                    Vector3::new(0.0, 1.0, 0.0),
-                                    Vector3::new(0.0, 0.0, 1.0),
-                                ]);
+                                .map_or(
+                                    [
+                                        Vector3::new(1.0, 0.0, 0.0),
+                                        Vector3::new(0.0, 1.0, 0.0),
+                                        Vector3::new(0.0, 0.0, 1.0),
+                                    ],
+                                    |axis| {
+                                        let axis = *axis.as_raw();
+                                        let perpendicular =
+                                            cadmpeg_ir::geometry::derive_reference_direction(axis);
+                                        [axis, perpendicular, axis.cross(perpendicular)]
+                                    },
+                                );
                                 (segment.start, axes)
                             });
                             let start =
@@ -4630,7 +4626,7 @@ impl StandardLinePairConstraint {
                     bounds[entry.item] = entry.bounds;
                 }
                 {
-                    let mut visits = (&segments).into_iter().enumerate();
+                    let mut visits = segments.iter().enumerate();
                     while let Some((group, &(left, first, last))) =
                         ctx.next_charged(&mut visits, "catia_standard_line_left_edges")?
                     {
@@ -4708,7 +4704,7 @@ impl LineEndpointBounds {
                 let order = coordinates[0].total_cmp(&coordinates[1]);
                 (!order.is_eq()).then_some(order)
             })
-            .is_some_and(|order| order.is_gt())
+            .is_some_and(std::cmp::Ordering::is_gt)
         {
             points.swap(0, 1);
         }
