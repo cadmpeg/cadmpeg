@@ -429,16 +429,22 @@ fn scale_feature_operation(
             placement: None, ..
         } => {}
         FeatureOperation::Primitive { solid, .. } => scale_primitive_solid(ctx, solid, scale)?,
-        FeatureOperation::Sweep { shape, .. } => {
-            let count = u64::try_from(shape.additional_section_count())
-                .ok()
-                .and_then(|count| count.checked_add(1))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo unit scaling member work", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(count, "creo unit scaling member work")?;
-            for generated in shape.generated_sections_mut() {
+        FeatureOperation::Sweep {
+            shape: cadmpeg_ir::features::SweepShape::Solid {
+                section, sections, ..
+            },
+            ..
+        } => {
+            if let cadmpeg_ir::features::SweepSection::Generated(generated) = section {
                 scale_sweep_section(ctx, generated, scale)?;
+            }
+            let mut members = sections.iter_mut();
+            while let Some(section) =
+                ctx.next_charged(&mut members, "creo unit scaling member work")?
+            {
+                if let cadmpeg_ir::features::SweepSection::Generated(generated) = section {
+                    scale_sweep_section(ctx, generated, scale)?;
+                }
             }
         }
         FeatureOperation::HelicalSweep { construction, .. } => {
@@ -469,8 +475,10 @@ fn scale_feature_operation(
         } => scale_nonzero_length(ctx, &mut offset.distance, scale)?,
         FeatureOperation::Binder { .. } => {}
         FeatureOperation::Loft { sections, .. } => {
-            for section in sections {
-                ctx.charge_work(1, "creo unit scaling member work")?;
+            let mut members = sections.iter_mut();
+            while let Some(section) =
+                ctx.next_charged(&mut members, "creo unit scaling member work")?
+            {
                 if let cadmpeg_ir::features::LoftSection::Point(
                     cadmpeg_ir::features::LoftPointSection::Point(point),
                 ) = section
@@ -514,15 +522,19 @@ fn scale_feature_operation(
             scale_positive_length(ctx, bend_radius, scale)?;
         }
         FeatureOperation::Fillet { groups } => {
-            for group in groups {
-                ctx.charge_work(1, "creo unit scaling member work")?;
+            let mut members = groups.iter_mut();
+            while let Some(group) =
+                ctx.next_charged(&mut members, "creo unit scaling member work")?
+            {
                 scale_radius_spec(ctx, &mut group.radius, scale)?;
             }
         }
         FeatureOperation::FaceBlend { radius, .. } => scale_radius_spec(ctx, radius, scale)?,
         FeatureOperation::Chamfer { groups, .. } => {
-            for group in groups {
-                ctx.charge_work(1, "creo unit scaling member work")?;
+            let mut members = groups.iter_mut();
+            while let Some(group) =
+                ctx.next_charged(&mut members, "creo unit scaling member work")?
+            {
                 scale_chamfer_spec(ctx, &mut group.spec, scale)?;
             }
         }
@@ -581,9 +593,13 @@ fn scale_feature_operation(
             extent,
             ..
         } => {
-            for placement in placements.iter_mut().flatten() {
-                ctx.charge_work(1, "creo unit scaling member work")?;
-                scale_hole_placement(ctx, placement, scale)?;
+            if let Some(placements) = placements {
+                let mut members = placements.iter_mut();
+                while let Some(placement) =
+                    ctx.next_charged(&mut members, "creo unit scaling member work")?
+                {
+                    scale_hole_placement(ctx, placement, scale)?;
+                }
             }
             scale_hole_shape(ctx, shape, scale)?;
             if let Some(extent) = extent {
@@ -825,7 +841,10 @@ fn scale_sheet_metal_flange_width(
             scale_positive_length(ctx, second, scale)?;
         }
         SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => {
-            for width in widths.as_mut_slice() {
+            let mut members = widths.as_mut_slice().iter_mut();
+            while let Some(width) =
+                ctx.next_charged(&mut members, "creo unit scaling member work")?
+            {
                 scale_positive_length(ctx, &mut width.first, scale)?;
                 scale_positive_length(ctx, &mut width.second, scale)?;
             }
@@ -1411,14 +1430,12 @@ mod tests {
                 .expect("two distinct source points"),
             })
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
-        let mut limited = definition();
-        let error = scale_feature_definition(&ctx, &mut limited, positive(25.4))
-            .expect_err("two scaled points exceed one collection item");
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo scaled feature polyline points",
+            |ctx| scale_feature_definition(ctx, &mut definition(), positive(25.4)),
+        );
         assert!(
             matches!(error, CodecError::ResourceLimit(resource)
             if resource.operation == "creo scaled feature polyline points"),
@@ -2290,14 +2307,18 @@ mod tests {
         run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), CodecError>,
         text: &str,
     ) {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(text.len() - 1).expect("text need");
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "creo unit normalization refusal text"));
+        use cadmpeg_core::decode::ResourceDimension;
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::RetainedBytes,
+            "creo unit normalization refusal text",
+            |ctx| match run(ctx) {
+                Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+                result => Ok(result),
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "creo unit normalization refusal text"));
         assert!(
             matches!(crate::decode::with_test_decode_ctx(|ctx| run(ctx)),
             Err(CodecError::Malformed(message)) if message == text)
@@ -2393,16 +2414,19 @@ mod tests {
             )
             .expect("pattern")
         };
-        for cap in [2, 4, 6] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            assert!(
-                matches!(scale_pattern_kind(&ctx, &mut offsets(), positive(2.0)),
-                Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo pattern offset scaling work")
-            );
-        }
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &["creo pattern offset scaling work"; 3],
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("root");
+                scale_pattern_kind(&ctx, &mut offsets(), positive(2.0))
+            },
+        );
         let composite = || {
             PatternKind::new(PatternTransform::Composite {
                 stages: cadmpeg_ir::features::patterns::CompositePattern::new(vec![
@@ -2429,16 +2453,19 @@ mod tests {
             matches!(scale_pattern_kind(&ctx, &mut composite(), positive(2.0)),
             Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo pattern scaling nesting")
         );
-        // One parent visit and two admitted stage visits precede child scaling work.
-        for cap in [3, 4] {
-            policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            assert!(
-                matches!(scale_pattern_kind(&ctx, &mut composite(), positive(2.0)),
-                Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo pattern scaling work")
-            );
-        }
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &["creo pattern scaling work"; 2],
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("root");
+                scale_pattern_kind(&ctx, &mut composite(), positive(2.0))
+            },
+        );
         policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         policy.limits.max_retained_bytes = 0;
@@ -2549,25 +2576,45 @@ mod tests {
             )
             .expect("placed"),
         );
-        for (depth, work, operation) in [(0, u64::MAX, "nesting"), (1, 1, "work")] {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_recursion_depth = depth;
-            policy.limits.max_work_units = work;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("root");
-            let error =
-                super::curve_parameter_scale(&ctx, &curve, positive(2.0)).expect_err("limit");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("root");
+        let error =
+            super::curve_parameter_scale(&ctx, &curve, positive(2.0)).expect_err("nesting limit");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo curve parameter scale nesting")
+        );
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("root");
+        let error =
+            super::surface_parameter_scales(&ctx, &surface, 2.0).expect_err("nesting limit");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo surface parameter scale nesting")
+        );
+        for (error, operation) in [
+            (
+                crate::test_support::last_refusal_at(
+                    &[],
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                    "creo curve parameter scale work",
+                    |ctx| super::curve_parameter_scale(ctx, &curve, positive(2.0)),
+                ),
+                "creo curve parameter scale work",
+            ),
+            (
+                crate::test_support::last_refusal_at(
+                    &[],
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                    "creo surface parameter scale work",
+                    |ctx| super::surface_parameter_scales(ctx, &surface, 2.0),
+                ),
+                "creo surface parameter scale work",
+            ),
+        ] {
             assert!(
-                matches!(error, CodecError::ResourceLimit(resource) if resource.operation == format!("creo curve parameter scale {operation}"))
-            );
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("root");
-            let error = super::surface_parameter_scales(&ctx, &surface, 2.0).expect_err("limit");
-            assert!(
-                matches!(error, CodecError::ResourceLimit(resource) if resource.operation == format!("creo surface parameter scale {operation}"))
+                matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation)
             );
         }
         assert_eq!(
@@ -2588,15 +2635,15 @@ mod tests {
         );
     }
 
-    fn check_member_work(mut definition: FeatureDefinition, cap: u64) -> FeatureDefinition {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("root");
+    fn check_member_work(mut definition: FeatureDefinition) -> FeatureDefinition {
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "creo unit scaling member work",
+            |ctx| scale_feature_definition(ctx, &mut definition.clone(), positive(2.0)),
+        );
         assert!(
-            matches!(scale_feature_definition(&ctx, &mut definition.clone(), positive(2.0)),
-            Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo unit scaling member work")
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo unit scaling member work")
         );
         crate::decode::with_test_decode_ctx(|ctx| {
             scale_feature_definition(ctx, &mut definition, positive(2.0))
@@ -2620,8 +2667,8 @@ mod tests {
                 },
             )],
         };
-        let mut definition = check_member_work(
-            FeatureDefinition::Operation(FeatureOperation::Sweep {
+        let mut definition =
+            check_member_work(FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape,
                 path: None,
                 orientation: None,
@@ -2635,9 +2682,7 @@ mod tests {
                 taper: None,
                 scale: None,
                 allow_multi_profile_faces: None,
-            }),
-            1,
-        );
+            }));
         let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = &mut definition
         else {
             panic!("fixture");
@@ -2651,22 +2696,19 @@ mod tests {
     fn loft_scaling_refuses_each_member_work() {
         let point =
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point");
-        let result = check_member_work(
-            FeatureDefinition::Operation(FeatureOperation::Loft {
-                sections: vec![cadmpeg_ir::features::LoftSection::Point(
-                    cadmpeg_ir::features::LoftPointSection::Point(point),
-                )],
-                guidance: cadmpeg_ir::features::LoftGuidance::default(),
-                op: cadmpeg_ir::features::BooleanOp::Join,
-                closed: false,
-                solid: true,
-                ruled: false,
-                linearize: false,
-                max_degree: None,
-                allow_multi_profile_faces: None,
-            }),
-            0,
-        );
+        let result = check_member_work(FeatureDefinition::Operation(FeatureOperation::Loft {
+            sections: vec![cadmpeg_ir::features::LoftSection::Point(
+                cadmpeg_ir::features::LoftPointSection::Point(point),
+            )],
+            guidance: cadmpeg_ir::features::LoftGuidance::default(),
+            op: cadmpeg_ir::features::BooleanOp::Join,
+            closed: false,
+            solid: true,
+            ruled: false,
+            linearize: false,
+            max_degree: None,
+            allow_multi_profile_faces: None,
+        }));
         assert!(
             matches!(result, FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. })
             if matches!(&sections[0], cadmpeg_ir::features::LoftSection::Point(cadmpeg_ir::features::LoftPointSection::Point(point)) if point.get().x == 2.0))
@@ -2678,38 +2720,32 @@ mod tests {
         use cadmpeg_ir::features::edge_treatments::{
             ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec,
         };
-        let fillet = check_member_work(
-            FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: vec![FilletGroup {
-                    edges: cadmpeg_ir::features::EdgeSelection::All,
-                    radius: RadiusSpec::Constant {
-                        radius: positive_length(1.0),
-                    },
-                    tangency_weight: None,
-                }]
-                .try_into()
-                .expect("group"),
-            }),
-            0,
-        );
+        let fillet = check_member_work(FeatureDefinition::Operation(FeatureOperation::Fillet {
+            groups: vec![FilletGroup {
+                edges: cadmpeg_ir::features::EdgeSelection::All,
+                radius: RadiusSpec::Constant {
+                    radius: positive_length(1.0),
+                },
+                tangency_weight: None,
+            }]
+            .try_into()
+            .expect("group"),
+        }));
         assert!(
             matches!(fillet, FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(groups[0].radius, RadiusSpec::Constant { radius } if radius.get() == 2.0))
         );
-        let chamfer = check_member_work(
-            FeatureDefinition::Operation(FeatureOperation::Chamfer {
-                groups: vec![ChamferGroup {
-                    edges: cadmpeg_ir::features::EdgeSelection::All,
-                    spec: ChamferSpec::Distance {
-                        distance: positive_length(1.0),
-                    },
-                }]
-                .try_into()
-                .expect("group"),
-                flip_direction: false,
-            }),
-            0,
-        );
+        let chamfer = check_member_work(FeatureDefinition::Operation(FeatureOperation::Chamfer {
+            groups: vec![ChamferGroup {
+                edges: cadmpeg_ir::features::EdgeSelection::All,
+                spec: ChamferSpec::Distance {
+                    distance: positive_length(1.0),
+                },
+            }]
+            .try_into()
+            .expect("group"),
+            flip_direction: false,
+        }));
         assert!(
             matches!(chamfer, FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups[0].spec, ChamferSpec::Distance { distance } if distance.get() == 2.0))
@@ -2721,26 +2757,23 @@ mod tests {
         use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HolePlacement, HoleShape};
         let point =
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point");
-        let result = check_member_work(
-            FeatureDefinition::Operation(FeatureOperation::Hole {
-                profile: None,
-                profile_filter: None,
-                face: None,
-                direction: None,
-                placements: Some(vec![HolePlacement::Axis {
-                    origin: point,
-                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                        .expect("axis"),
-                }]),
-                shape: HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None)
-                    .expect("shape"),
-                extent: None,
-                bottom: None,
-                taper_angle: None,
-                allow_multi_profile_faces: None,
-            }),
-            0,
-        );
+        let result = check_member_work(FeatureDefinition::Operation(FeatureOperation::Hole {
+            profile: None,
+            profile_filter: None,
+            face: None,
+            direction: None,
+            placements: Some(vec![HolePlacement::Axis {
+                origin: point,
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .expect("axis"),
+            }]),
+            shape: HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None)
+                .expect("shape"),
+            extent: None,
+            bottom: None,
+            taper_angle: None,
+            allow_multi_profile_faces: None,
+        }));
         assert!(
             matches!(result, FeatureDefinition::Operation(FeatureOperation::Hole { placements: Some(placements), .. })
             if matches!(&placements[0], HolePlacement::Axis { origin, .. } if origin.get().x == 2.0))
@@ -2758,18 +2791,19 @@ mod tests {
                 .expect("chain"),
             })
         };
-        for cap in [1, 3] {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("root");
-            assert!(
-                matches!(scale_feature_definition(&ctx, &mut definition(), positive(2.0)),
-                Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo unit scaling polyline work")
-            );
-        }
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &["creo unit scaling polyline work"; 2],
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("root");
+                scale_feature_definition(&ctx, &mut definition(), positive(2.0))
+            },
+        );
         let mut result = definition();
         crate::decode::with_test_decode_ctx(|ctx| {
             scale_feature_definition(ctx, &mut result, positive(2.0))

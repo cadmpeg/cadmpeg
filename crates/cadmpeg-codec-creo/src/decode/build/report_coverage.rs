@@ -34,28 +34,12 @@ pub(super) fn push_coverage_drop_losses(
     coverage: &cadmpeg_ir::report::decode::Coverage,
 ) -> Result<(), CodecError> {
     let untransferred_surface_rows =
-        coverage_count(coverage, "untransferred_visible_surface_row_count");
+        coverage_count(ctx, coverage, "untransferred_visible_surface_row_count")?;
     if untransferred_surface_rows != 0 {
         let mut family_counts = SURFACE_KINDS.map(|kind| (surface_family(kind), 0));
-        for (family, count) in &mut family_counts {
-            let mut selected_count = 0;
-            for (key, stored_count) in ctx.admit_iter(
-                &**coverage,
-                "creo untransferred surface family coverage search",
-            )? {
-                let stored_family = key
-                    .strip_prefix("untransferred_visible_")
-                    .and_then(|name| name.strip_suffix("_surface_row_count"));
-                if ctx.equal(
-                    &stored_family,
-                    &Some(*family),
-                    "creo untransferred surface family comparison",
-                )? {
-                    selected_count = *stored_count;
-                    break;
-                }
-            }
-            *count = selected_count;
+        for (kind, (_, count)) in SURFACE_KINDS.into_iter().zip(&mut family_counts) {
+            let key = crate::coverage::surface_family_keys(kind).untransferred;
+            *count = coverage_count(ctx, coverage, key.as_str())?;
         }
         let unresolved_families = CountBreakdown(&family_counts);
         push_report_loss(
@@ -70,7 +54,7 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let untransferred_curve_rows =
-        coverage_count(coverage, "untransferred_visible_curve_row_count");
+        coverage_count(ctx, coverage, "untransferred_visible_curve_row_count")?;
     if untransferred_curve_rows != 0 {
         push_report_loss(
             ctx,
@@ -82,7 +66,8 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let ambiguous_surface_rows = coverage_count(coverage, "ambiguous_visible_surface_row_count");
+    let ambiguous_surface_rows =
+        coverage_count(ctx, coverage, "ambiguous_visible_surface_row_count")?;
     if ambiguous_surface_rows != 0 {
         push_report_loss(
             ctx,
@@ -94,7 +79,7 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let ambiguous_curve_rows = coverage_count(coverage, "ambiguous_visible_curve_row_count");
+    let ambiguous_curve_rows = coverage_count(ctx, coverage, "ambiguous_visible_curve_row_count")?;
     if ambiguous_curve_rows != 0 {
         push_report_loss(
             ctx,
@@ -106,7 +91,7 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let missing_segment_rows = coverage_count(coverage, "missing_feature_segment_row_count");
+    let missing_segment_rows = coverage_count(ctx, coverage, "missing_feature_segment_row_count")?;
     if missing_segment_rows != 0 {
         push_report_loss(
             ctx,
@@ -118,7 +103,8 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let missing_relation_rows = coverage_count(coverage, "missing_feature_relation_row_count");
+    let missing_relation_rows =
+        coverage_count(ctx, coverage, "missing_feature_relation_row_count")?;
     if missing_relation_rows != 0 {
         push_report_loss(
             ctx,
@@ -131,7 +117,7 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let malformed_relation_tables =
-        coverage_count(coverage, "malformed_feature_relation_table_count");
+        coverage_count(ctx, coverage, "malformed_feature_relation_table_count")?;
     if malformed_relation_tables != 0 {
         push_report_loss(
             ctx,
@@ -143,7 +129,7 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let missing_skamp_rows = coverage_count(coverage, "missing_feature_skamp_row_count");
+    let missing_skamp_rows = coverage_count(ctx, coverage, "missing_feature_skamp_row_count")?;
     if missing_skamp_rows != 0 {
         push_report_loss(
             ctx,
@@ -155,7 +141,8 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let missing_triple_rows = coverage_count(coverage, "missing_feature_relation_triple_row_count");
+    let missing_triple_rows =
+        coverage_count(ctx, coverage, "missing_feature_relation_triple_row_count")?;
     if missing_triple_rows != 0 {
         push_report_loss(
             ctx,
@@ -168,7 +155,7 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let unresolved_segment_geometry =
-        coverage_count(coverage, "unresolved_feature_segment_geometry_count");
+        coverage_count(ctx, coverage, "unresolved_feature_segment_geometry_count")?;
     if unresolved_segment_geometry != 0 {
         push_report_loss(
             ctx,
@@ -180,10 +167,13 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let active_native_skamps =
-        coverage_count(coverage, "active_native_feature_skamp_constraint_count");
+    let active_native_skamps = coverage_count(
+        ctx,
+        coverage,
+        "active_native_feature_skamp_constraint_count",
+    )?;
     if active_native_skamps != 0 {
-        let kinds = constraint_kind_breakdown(coverage, "active_native_feature_skamp_type_");
+        let kinds = constraint_kind_breakdown(ctx, coverage, "active_native_feature_skamp_type_")?;
         push_report_loss(
             ctx,
             losses,
@@ -195,10 +185,14 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let active_native_relations =
-        coverage_count(coverage, "active_native_feature_relation_constraint_count");
+    let active_native_relations = coverage_count(
+        ctx,
+        coverage,
+        "active_native_feature_relation_constraint_count",
+    )?;
     if active_native_relations != 0 {
-        let kinds = constraint_kind_breakdown(coverage, "active_native_feature_relation_type_");
+        let kinds =
+            constraint_kind_breakdown(ctx, coverage, "active_native_feature_relation_type_")?;
         push_report_loss(
             ctx,
             losses,
@@ -210,16 +204,25 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let incomplete_sweeps = coverage_count(coverage, "transferred_incomplete_sweep_feature_count");
+    let incomplete_sweeps =
+        coverage_count(ctx, coverage, "transferred_incomplete_sweep_feature_count")?;
     if incomplete_sweeps != 0 {
         let family_counts = [
             (
                 "extrude",
-                coverage_count(coverage, "transferred_incomplete_extrude_feature_count"),
+                coverage_count(
+                    ctx,
+                    coverage,
+                    "transferred_incomplete_extrude_feature_count",
+                )?,
             ),
             (
                 "revolve",
-                coverage_count(coverage, "transferred_incomplete_revolve_feature_count"),
+                coverage_count(
+                    ctx,
+                    coverage,
+                    "transferred_incomplete_revolve_feature_count",
+                )?,
             ),
         ];
         let families = CountBreakdown(&family_counts);
@@ -234,28 +237,35 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let incomplete_surface_operations = coverage_count(
+        ctx,
         coverage,
         "transferred_incomplete_surface_operation_feature_count",
-    );
+    )?;
     if incomplete_surface_operations != 0 {
         let family_counts = [
             (
                 "fill",
                 coverage_count(
+                    ctx,
                     coverage,
                     "transferred_incomplete_filled_surface_feature_count",
-                ),
+                )?,
             ),
             (
                 "knit",
                 coverage_count(
+                    ctx,
                     coverage,
                     "transferred_incomplete_knit_surface_feature_count",
-                ),
+                )?,
             ),
             (
                 "thicken",
-                coverage_count(coverage, "transferred_incomplete_thicken_feature_count"),
+                coverage_count(
+                    ctx,
+                    coverage,
+                    "transferred_incomplete_thicken_feature_count",
+                )?,
             ),
         ];
         let families = CountBreakdown(&family_counts);
@@ -270,25 +280,31 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let incomplete_other_constructions = coverage_count(
+        ctx,
         coverage,
         "transferred_incomplete_other_construction_feature_count",
-    );
+    )?;
     if incomplete_other_constructions != 0 {
         let family_counts = [
             (
                 "section shape",
                 coverage_count(
+                    ctx,
                     coverage,
                     "transferred_incomplete_section_shape_feature_count",
-                ),
+                )?,
             ),
             (
                 "pattern",
-                coverage_count(coverage, "transferred_incomplete_pattern_feature_count"),
+                coverage_count(
+                    ctx,
+                    coverage,
+                    "transferred_incomplete_pattern_feature_count",
+                )?,
             ),
             (
                 "native-axis helix",
-                coverage_count(coverage, "transferred_native_axis_helix_feature_count"),
+                coverage_count(ctx, coverage, "transferred_native_axis_helix_feature_count")?,
             ),
         ];
         let families = CountBreakdown(&family_counts);
@@ -302,25 +318,32 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let incomplete_recognized_features =
-        coverage_count(coverage, "transferred_incomplete_recognized_feature_count");
+    let incomplete_recognized_features = coverage_count(
+        ctx,
+        coverage,
+        "transferred_incomplete_recognized_feature_count",
+    )?;
     if incomplete_recognized_features != 0 {
         let family_counts = [
             (
                 "hole",
-                coverage_count(coverage, "transferred_incomplete_hole_feature_count"),
+                coverage_count(ctx, coverage, "transferred_incomplete_hole_feature_count")?,
             ),
             (
                 "fillet",
-                coverage_count(coverage, "transferred_incomplete_fillet_feature_count"),
+                coverage_count(ctx, coverage, "transferred_incomplete_fillet_feature_count")?,
             ),
             (
                 "chamfer",
-                coverage_count(coverage, "transferred_incomplete_chamfer_feature_count"),
+                coverage_count(
+                    ctx,
+                    coverage,
+                    "transferred_incomplete_chamfer_feature_count",
+                )?,
             ),
             (
                 "draft",
-                coverage_count(coverage, "transferred_incomplete_draft_feature_count"),
+                coverage_count(ctx, coverage, "transferred_incomplete_draft_feature_count")?,
             ),
         ];
         let families = CountBreakdown(&family_counts);
@@ -334,9 +357,12 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let explicitly_unresolved_features =
-        coverage_count(coverage, "transferred_explicitly_unresolved_feature_count");
-    let native_features = coverage_count(coverage, "transferred_native_feature_count");
+    let explicitly_unresolved_features = coverage_count(
+        ctx,
+        coverage,
+        "transferred_explicitly_unresolved_feature_count",
+    )?;
+    let native_features = coverage_count(ctx, coverage, "transferred_native_feature_count")?;
     if native_features != 0 {
         push_report_loss(
             ctx,
@@ -360,18 +386,21 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let unresolved_dimension_driven_variables = coverage_count(
+        ctx,
         coverage,
         "unresolved_feature_dimension_driven_variable_count",
-    );
+    )?;
     if unresolved_dimension_driven_variables != 0 {
         let unresolved_coordinate_variables = coverage_count(
+            ctx,
             coverage,
             "unresolved_feature_dimension_driven_coordinate_variable_count",
-        );
+        )?;
         let other_variables = coverage_count(
+            ctx,
             coverage,
             "unresolved_feature_dimension_driven_other_variable_count",
-        );
+        )?;
         push_report_loss(
             ctx,
             losses,
@@ -385,8 +414,11 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let unresolved_dimension_driven_guesses =
-        coverage_count(coverage, "unresolved_feature_dimension_driven_guess_count");
+    let unresolved_dimension_driven_guesses = coverage_count(
+        ctx,
+        coverage,
+        "unresolved_feature_dimension_driven_guess_count",
+    )?;
     if unresolved_dimension_driven_guesses != 0 {
         push_report_loss(
             ctx,
@@ -399,7 +431,7 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let missing_solver_variables =
-        coverage_count(coverage, "missing_feature_solver_variable_count");
+        coverage_count(ctx, coverage, "missing_feature_solver_variable_count")?;
     if missing_solver_variables != 0 {
         push_report_loss(
             ctx,
@@ -413,7 +445,7 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let unresolved_dimension_values =
-        coverage_count(coverage, "unresolved_feature_dimension_value_count");
+        coverage_count(ctx, coverage, "unresolved_feature_dimension_value_count")?;
     if unresolved_dimension_values != 0 {
         push_report_loss(
             ctx,
@@ -426,13 +458,15 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let unresolved_configuration_driver_tables = coverage_count(
+        ctx,
         coverage,
         "decoded_configuration_driver_table_reference_count",
-    )
+    )?
     .checked_sub(coverage_count(
+        ctx,
         coverage,
         "transferred_configuration_driver_table_count",
-    ))
+    )?)
     .ok_or_else(|| CodecError::malformed("transferred driver count exceeds decoded count"))?;
     if unresolved_configuration_driver_tables != 0 {
         push_report_loss(
@@ -445,8 +479,11 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let prohibited_records =
-        coverage_count(coverage, "prohibited_active_curve_expression_record_count");
+    let prohibited_records = coverage_count(
+        ctx,
+        coverage,
+        "prohibited_active_curve_expression_record_count",
+    )?;
     if prohibited_records != 0 {
         push_report_loss(
             ctx,
@@ -460,13 +497,15 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let unresolved_solve_blocks = coverage_count(
+        ctx,
         coverage,
         "decoded_active_curve_expression_solve_block_count",
-    )
+    )?
     .checked_sub(coverage_count(
+        ctx,
         coverage,
         "evaluated_active_curve_expression_solve_block_count",
-    ))
+    )?)
     .ok_or_else(|| CodecError::malformed("evaluated solve count exceeds decoded count"))?;
     if unresolved_solve_blocks != 0 {
         push_report_loss(
@@ -481,9 +520,10 @@ pub(super) fn push_coverage_drop_losses(
         )?;
     }
     let unresolved_solve_controls = coverage_count(
+        ctx,
         coverage,
         "unresolved_active_curve_expression_solve_control_count",
-    );
+    )?;
     if unresolved_solve_controls != 0 {
         push_report_loss(
             ctx,
@@ -496,8 +536,11 @@ pub(super) fn push_coverage_drop_losses(
             ),
         )?;
     }
-    let prohibited_kinds =
-        coverage_count(coverage, "prohibited_active_curve_expression_kind_count");
+    let prohibited_kinds = coverage_count(
+        ctx,
+        coverage,
+        "prohibited_active_curve_expression_kind_count",
+    )?;
     if prohibited_kinds != 0 {
         push_report_loss(
             ctx,
