@@ -5322,10 +5322,16 @@ pub(crate) fn store_version<'a>(
 /// Decode the zero-prefixed offset-store control form as ordered 24-bit values.
 ///
 /// Each word is serialized `00, value:u24 LE`. The complete form is atomic.
-fn offset_store_control_values(
-    ctx: &DecodeContext<'_>,
+fn offset_store_control_values<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Option<NonEmpty<ControlWord24>>, CodecError> {
+) -> Result<
+    Option<(
+        NonEmpty<ControlWord24>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
+    CodecError,
+> {
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return Ok(None);
     }
@@ -5350,8 +5356,7 @@ fn offset_store_control_values(
             )
         })?;
     }
-    storage.commit()?;
-    Ok(NonEmpty::from_admitted_vec(values))
+    Ok(NonEmpty::from_admitted_vec(values).map(|values| (values, storage)))
 }
 
 /// Decode the distinct leading class-registry identities in an offset-store
@@ -5450,11 +5455,17 @@ fn joined_control_u32_le(control: &[u8], first_record: &[u8], offset: usize) -> 
     )
 }
 
-fn offset_store_product_anchored_form(
-    ctx: &DecodeContext<'_>,
+fn offset_store_product_anchored_form<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     control: &[u8],
     first_record: &[u8],
-) -> Result<Option<OffsetStoreControlForm>, CodecError> {
+) -> Result<
+    Option<(
+        OffsetStoreControlForm,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
+    CodecError,
+> {
     let source = (0..control.len())
         .map(|offset| (&control[offset..], offset))
         .chain(
@@ -5511,11 +5522,13 @@ fn offset_store_product_anchored_form(
     let Some(values) = NonEmpty::from_admitted_vec(values) else {
         return Ok(None);
     };
-    storage.commit()?;
-    Ok(Some(OffsetStoreControlForm::ProductAnchored {
-        leading_value,
-        values,
-    }))
+    Ok(Some((
+        OffsetStoreControlForm::ProductAnchored {
+            leading_value,
+            values,
+        },
+        storage,
+    )))
 }
 
 /// One complete admitted offset-only store control-block form.
@@ -5546,19 +5559,15 @@ pub(crate) fn offset_store_control_form(
     control: &[u8],
     first_record: Option<&[u8]>,
 ) -> Result<Option<OffsetStoreControlForm>, CodecError> {
-    let mut zero_storage = ctx.reserve_scoped(0, "NX zero-prefixed control interpretation")?;
-    let zero = zero_storage.with_storage(|| offset_store_control_values(ctx, control))?;
-    let mut product_storage =
-        ctx.reserve_scoped(0, "NX product-anchored control interpretation")?;
-    let product = product_storage.with_storage(|| {
-        offset_store_product_anchored_form(ctx, control, first_record.unwrap_or_default())
-    })?;
+    let zero = offset_store_control_values(ctx, control)?;
+    let product =
+        offset_store_product_anchored_form(ctx, control, first_record.unwrap_or_default())?;
     match (zero, product) {
-        (Some(values), None) => {
+        (Some((values, zero_storage)), None) => {
             zero_storage.commit()?;
             Ok(Some(OffsetStoreControlForm::ZeroPrefixed { values }))
         }
-        (_, Some(form)) => {
+        (_, Some((form, product_storage))) => {
             product_storage.commit()?;
             Ok(Some(form))
         }
