@@ -53,8 +53,8 @@ pub(crate) fn native_id_charged(
     id.push_str("fcstd:native:");
     id.push_str(kind);
     id.push('#');
+    // One encoding pass writes encoded_len bytes, at least the bytes it reads.
     if !key.is_empty() {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(key.len()), OPERATION)?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(encoded_len), OPERATION)?;
     }
     id.extend(encoded_segment_bytes(key).map(char::from));
@@ -68,8 +68,8 @@ pub(crate) fn encoded_segment_charged(
 ) -> Result<IdentityKey, CodecError> {
     let len = encoded_segment_len(ctx, value, operation)?;
     let mut key = ctx.retained_string(len, operation)?;
+    // One encoding pass writes len bytes, at least the bytes it reads.
     if !value.is_empty() {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(len), operation)?;
     }
     key.extend(encoded_segment_bytes(value).map(char::from));
@@ -118,7 +118,6 @@ pub(crate) fn native_child_id_charged(
     id.push_str(parent_key);
     id.push(':');
     if !child.is_empty() {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(child.len()), OPERATION)?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(child_len), OPERATION)?;
     }
     id.extend(encoded_segment_bytes(child).map(char::from));
@@ -175,7 +174,6 @@ pub(crate) fn model_id_charged_at(
     id.push_str(parent_key);
     id.push(':');
     if !child.is_empty() {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(child.len()), operation)?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(child_len), operation)?;
         id.extend(encoded_segment_bytes(child).map(char::from));
     }
