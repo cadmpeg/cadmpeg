@@ -1038,7 +1038,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     );
 
     let mut missing = table;
-    missing.entries[1] = entry(146, 203, None);
+    missing.entries.edit(1, |slot| *slot = entry(146, 203, None));
     missing.mark_surface_id(146);
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(

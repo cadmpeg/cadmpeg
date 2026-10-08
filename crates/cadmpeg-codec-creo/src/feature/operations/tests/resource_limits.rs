@@ -222,3 +222,17 @@ fn operation_scans_refuse_at_work_boundaries() {
         |ctx| super::super::operations(ctx, CONFLICTING_DISPLAYS),
     );
 }
+
+#[test]
+fn operation_projection_retains_only_the_selected_family() {
+    let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, None,
+        |cap| run(DISPLAY, u64::MAX, cap, |ctx| super::super::operations(ctx, DISPLAY)));
+    let repeated = DISPLAY.repeat(2_000);
+    let operations = run(&repeated, u64::MAX, cap, |ctx| super::super::operations(ctx, &repeated))
+        .expect("discarded display names need no retained bytes");
+    assert_eq!(operations.len(), 1);
+    assert_eq!(operations[0].feature_id, 7);
+    assert_eq!(operations[0].kind.as_str(), "Extrude");
+    assert!(!operations[0].display_name_stored());
+    assert!(operations[0].display_state_conflict);
+}

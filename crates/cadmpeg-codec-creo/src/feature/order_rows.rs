@@ -103,6 +103,11 @@ impl OrderRows {
         self.rows.get((*self.by_external.get(&external_id)?)?)
     }
 
+    /// Membership includes identifiers whose rows are not unique.
+    pub(crate) fn contains_external_id(&self, id: u32) -> bool {
+        self.by_external.contains_key(&id)
+    }
+
     pub(crate) fn as_slice(&self) -> &[FeatureOrderRow] {
         &self.rows
     }

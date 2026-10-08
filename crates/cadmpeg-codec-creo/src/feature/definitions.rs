@@ -2762,6 +2762,84 @@ fn decode_variable_guess(
     Ok(decoded)
 }
 
+struct VariablePrototype {
+    row: FeatureVariableRow,
+    value: (usize, usize),
+    guess: (usize, usize),
+}
+
+fn variable_prototype(ctx: &DecodeContext<'_>, payload: &[u8], cursor: usize, close: usize, cache: &scalar::ScalarCache) -> Result<Option<VariablePrototype>, CodecError> {
+    let Some(type_label) = ctx.find_bytes_in(
+        payload,
+        b"type\0",
+        cursor,
+        close,
+        "find Creo feature definition field",
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(variable_type) = named_compact_int(ctx, payload, b"type\0", cursor, close)? else {
+        return Ok(None);
+    };
+    let Some(key) = named_compact_int(ctx, payload, b"key\0", cursor, close)? else {
+        return Ok(None);
+    };
+    let Some(value_offset) = ctx.find_bytes_in(
+        payload,
+        b"value\0",
+        cursor,
+        close,
+        "find Creo feature definition field",
+    )?
+    else {
+        return Ok(None);
+    };
+    let value_label = value_offset + b"value\0".len();
+    let (value, value_end) =
+        decode_section_coordinate_scalar(ctx, payload, value_label, close, cache)?;
+    let Some(guess_offset) = ctx.find_bytes_in(
+        payload,
+        b"guess\0",
+        cursor,
+        close,
+        "find Creo feature definition field",
+    )?
+    else {
+        return Ok(None);
+    };
+    let guess_label = guess_offset + b"guess\0".len();
+    let (guess, guess_end) =
+        decode_section_coordinate_scalar(ctx, payload, guess_label, close, cache)?;
+    let known = named_compact_int(ctx, payload, b"known\0", cursor, close)?;
+    let homogeneity = named_compact_int(ctx, payload, b"homogeneity\0", cursor, close)?;
+    let uvar_id = named_compact_int(ctx, payload, b"uvar_id\0", cursor, close)?;
+    let Some(offset) = type_label.checked_sub(2) else {
+        return Ok(None);
+    };
+    Ok(Some(VariablePrototype {
+        row: FeatureVariableRow {
+            variable_type: variable_type.into(),
+            key,
+            value,
+            value_body: Vec::new(),
+            guess,
+            guess_body: Vec::new(),
+            known,
+            homogeneity,
+            uvar_id,
+            // The row header is the two bytes before its type label. A label
+            // below offset 2 states a header outside the payload and refuses
+            // the row; the label sits at or after the table opener plus eight,
+            // so the bound holds for every table this scanner reaches.
+            offset,
+        },
+        value: (value_label, value_end),
+        guess: (guess_label, guess_end),
+    }))
+
+}
+
 fn variable_table(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -2802,83 +2880,14 @@ fn variable_table(
     else {
         return Ok(None);
     };
-    let named_row = (|| -> Result<Option<_>, CodecError> {
-        let Some(type_label) = ctx.find_bytes_in(
-            payload,
-            b"type\0",
-            cursor,
-            close,
-            "find Creo feature definition field",
-        )?
-        else {
-            return Ok(None);
-        };
-        let Some(variable_type) = named_compact_int(ctx, payload, b"type\0", cursor, close)? else {
-            return Ok(None);
-        };
-        let Some(key) = named_compact_int(ctx, payload, b"key\0", cursor, close)? else {
-            return Ok(None);
-        };
-        let Some(value_offset) = ctx.find_bytes_in(
-            payload,
-            b"value\0",
-            cursor,
-            close,
-            "find Creo feature definition field",
-        )?
-        else {
-            return Ok(None);
-        };
-        let value_label = value_offset + b"value\0".len();
-        let (value, value_end) =
-            decode_section_coordinate_scalar(ctx, payload, value_label, close, cache)?;
-        let Some(guess_offset) = ctx.find_bytes_in(
-            payload,
-            b"guess\0",
-            cursor,
-            close,
-            "find Creo feature definition field",
-        )?
-        else {
-            return Ok(None);
-        };
-        let guess_label = guess_offset + b"guess\0".len();
-        let (guess, guess_end) =
-            decode_section_coordinate_scalar(ctx, payload, guess_label, close, cache)?;
-        let known = named_compact_int(ctx, payload, b"known\0", cursor, close)?;
-        let homogeneity = named_compact_int(ctx, payload, b"homogeneity\0", cursor, close)?;
-        let uvar_id = named_compact_int(ctx, payload, b"uvar_id\0", cursor, close)?;
-        let Some(offset) = type_label.checked_sub(2) else {
-            return Ok(None);
-        };
-        Ok(Some((
-            FeatureVariableRow {
-                variable_type: variable_type.into(),
-                key,
-                value,
-                value_body: Vec::new(),
-                guess,
-                guess_body: Vec::new(),
-                known,
-                homogeneity,
-                uvar_id,
-                // The row header is the two bytes before its type label. A label
-                // below offset 2 states a header outside the payload and refuses
-                // the row; the label sits at or after the table opener plus eight,
-                // so the bound holds for every table this scanner reaches.
-                offset,
-            },
-            (value_label, value_end),
-            (guess_label, guess_end),
-        )))
-    })()?;
+    let named_row = variable_prototype(ctx, payload, cursor, close, cache)?;
     let (_, after_close_ref) = psb::compact_int(payload, close + 2);
     cursor = after_close_ref;
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
     let mut rows = Vec::new();
-    if let Some((mut row, (value_start, value_end), (guess_start, guess_end))) = named_row {
+    if let Some(VariablePrototype { mut row, value: (value_start, value_end), guess: (guess_start, guess_end) }) = named_row {
         row.value_body =
             ctx.copy_retained(&payload[value_start..value_end], "creo variable value body")?;
         row.guess_body =
@@ -2890,7 +2899,9 @@ fn variable_table(
     // more rows than the unread bytes in the table window.
     let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
     let max_rows = bounded_len(u64::from(declared_count), 1, window).unwrap_or(window);
+    let mut row_steps = std::iter::repeat(());
     while cursor < end && rows.len() < max_rows {
+        ctx.next_charged(&mut row_steps, "creo variable row traversal")?;
         if payload[cursor] == 0xe2 {
             cursor += 1;
             continue;
@@ -2928,7 +2939,7 @@ fn variable_table(
             trailing_count += 1;
             cursor = next;
         }
-        let Some(delimiter) = payload[cursor..end].iter().position(|&byte| byte == 0xe2) else {
+        let Some(delimiter) = ctx.position_by(&payload[cursor..end], |byte| Ok(*byte == 0xe2), "creo variable row separator")? else {
             break;
         };
         cursor += delimiter + 1;
@@ -2965,7 +2976,7 @@ fn positional_variable_table(
     table_class: u32,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<FeatureVariableTable>, CodecError> {
-    let mut candidates = (start..end).filter_map(|table| {
+    let candidate_at = |table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
         (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -2980,29 +2991,22 @@ fn positional_variable_table(
                 &payload[after_count + 1..after_reference],
             )
         })
-    });
-    let Some((table, declared_count, mut cursor, reference_bytes)) = candidates.next() else {
-        return Ok(None);
     };
-    // A positional definition has one variable array. Do not bind the first
-    // header when another array in the same bounded definition matches it.
-    if candidates.next().is_some() || payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Ok(None);
-    }
+    let mut offsets = start..end;
+    let Some((table, declared_count, mut cursor, reference_bytes)) = ctx.find_map(&mut offsets, |table| Ok(candidate_at(table)), "creo positional variable array search")? else { return Ok(None); };
+    if ctx.find_map(offsets, |table| Ok(candidate_at(table)), "creo positional variable array uniqueness")?.is_some()
+        || payload.get(cursor) != Some(&psb::token::ENTITY_REF) { return Ok(None); }
     let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
         return Ok(None);
     };
     cursor = after_row_class;
 
     let row_limit = index_from_u32(declared_count);
-    // Each row consumes at least one byte before its 0xe2 separator, so the row
-    // count cannot exceed the unread bytes in the table window.
-    let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
-    let capacity = bounded_len(u64::from(declared_count), 1, window).unwrap_or(0);
     let mut rows = Vec::new();
-    ctx.reserve_vec(&mut rows, capacity, "creo variable rows")?;
     let prototype_separator_len = 2 + reference_bytes.len() + 1;
+    let mut row_steps = std::iter::repeat(());
     'rows: while cursor < end && rows.len() < row_limit {
+        ctx.next_charged(&mut row_steps, "creo positional variable row traversal")?;
         let row_offset = cursor;
         let (variable_type, next) = psb::compact_int(payload, cursor);
         cursor = next;
@@ -3061,7 +3065,7 @@ fn positional_variable_table(
             uvar_id: trailing[2],
             offset: row_offset,
         };
-        rows.push(row);
+        ctx.push_vec(&mut rows, row, "creo variable rows")?;
     }
     Ok(Some(FeatureVariableTable {
         declared_count,
@@ -3196,11 +3200,14 @@ fn equation_arguments(
     end: usize,
     explicit_count: Option<usize>,
 ) -> Result<Option<Vec<Option<u32>>>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo equation argument candidates")?;
     let mut arguments = Vec::new();
+    let mut steps = std::iter::repeat(());
     while match explicit_count {
         Some(count) => arguments.len() < count,
         None => *offset < end && payload.get(*offset) != Some(&0xf6),
     } {
+        ctx.next_charged(&mut steps, "creo equation argument traversal")?;
         let before = *offset;
         let Some((slots, slot_count)) = equation_argument_slots(payload, offset) else {
             return Ok(None);
@@ -3211,12 +3218,12 @@ fn equation_arguments(
         {
             return Ok(None);
         }
-        ctx.reserve_vec(&mut arguments, slot_count, "creo equation arguments")?;
+        storage.with_storage(|| ctx.reserve_vec(&mut arguments, slot_count, "creo equation arguments"))?;
         arguments.extend_from_slice(&slots[..slot_count]);
     }
-    Ok(explicit_count
-        .is_none_or(|count| arguments.len() == count)
-        .then_some(arguments))
+    if explicit_count.is_some_and(|count| arguments.len() != count) { return Ok(None); }
+    storage.commit()?;
+    Ok(Some(arguments))
 }
 
 /// Decode the structurally framed `eqtn_arr` solver table in one bounded
@@ -9591,305 +9598,192 @@ pub(crate) fn depdb_section_definition(
     .pop())
 }
 
-/// Bind an owner omitted by `feat_id` through the section's unique generated
-/// datum entry. An explicit canonical `feat_id` remains authoritative.
+/// Bind an omitted owner through the section's unique generated datum entry.
 pub(crate) fn bind_definition_owners(
+    ctx: &DecodeContext<'_>,
     mut definitions: Vec<FeatureDefinition>,
     geometry_tables: &[FeatureGeometryTable],
-) -> Vec<FeatureDefinition> {
-    for definition in &mut definitions {
-        if definition.identity.owner_feature_id().is_some() {
-            continue;
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo datum owner index")?;
+    let mut owners = std::collections::HashMap::<u32, Option<u32>>::new();
+    for table in ctx.admit_iter(geometry_tables, "creo datum owner table traversal")? {
+        let Some(ids) = table.kind.datum_ids() else { continue; };
+        for id in ctx.admit_iter(ids, "creo datum owner ID traversal")? {
+            storage.with_storage(|| ctx.entry_hash_map(&mut owners, *id, "creo datum owner nodes"))?
+                .and_modify(|owner| { if *owner != Some(table.feature_id) { *owner = None; } })
+                .or_insert(Some(table.feature_id));
         }
-        let Some(sketch_plane) = definition
-            .section_3d
-            .as_ref()
-            .and_then(|section| section.sketch_plane_entity_id)
-        else {
-            continue;
-        };
-        let mut owners = geometry_tables
-            .iter()
-            .filter(|table| {
-                table
-                    .kind
-                    .datum_ids()
-                    .is_some_and(|ids| ids.contains(&sketch_plane))
-            })
-            .map(|table| table.feature_id);
-        let Some(owner) = owners.next() else {
-            continue;
-        };
-        if owners.any(|candidate| candidate != owner) {
-            continue;
-        }
-        definition.identity = DefinitionIdentity::Parsed {
-            schema_id: definition.identity.schema_id(),
-            owner_feature_id: Some(owner),
-        };
     }
-    definitions
+    for definition in ctx.admit_iter(&mut definitions, "creo datum definition traversal")? {
+        if definition.identity.owner_feature_id().is_some() { continue; }
+        let Some(plane) = definition.section_3d.as_ref().and_then(|section| section.sketch_plane_entity_id) else { continue; };
+        if let Some(owner) = owners.get(&plane).copied().flatten() {
+            definition.identity = DefinitionIdentity::Parsed { schema_id: definition.identity.schema_id(), owner_feature_id: Some(owner) };
+        }
+    }
+    Ok(definitions)
 }
 
-/// Bind instantiated saved sections through the exact set of trimmed section
-/// entities copied into the owning feature's generated-entity table. Schema
-/// identifiers remain unchanged; only the omitted canonical owner is filled.
+/// Bind instantiated saved sections through the exact trimmed source set.
 pub(crate) fn bind_trimmed_definition_owners(
     ctx: &DecodeContext<'_>,
     mut definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo trimmed owner scratch")?;
     let mut claimed_owner_ids = BTreeSet::new();
-    for owner in definitions
-        .iter()
-        .filter_map(|definition| definition.identity.owner_feature_id())
-    {
-        ctx.insert_btree_set(
-            &mut claimed_owner_ids,
-            owner,
-            "creo trimmed claimed owner nodes",
-        )?;
+    for owner in ctx.admit_iter(&definitions, "creo trimmed claimed definition traversal")?.filter_map(|definition| definition.identity.owner_feature_id()) {
+        storage.with_storage(|| ctx.insert_btree_set(&mut claimed_owner_ids, owner, "creo trimmed claimed owner nodes"))?;
     }
+    let mut sources = None;
     let mut candidates = Vec::new();
-    for definition in &definitions {
+    for definition in ctx.admit_iter(&definitions, "creo trimmed definition candidate traversal")? {
         let external_ids = unique_trimmed_external_ids(ctx, definition)?;
         let mut owners = BTreeSet::new();
         if definition.identity.owner_feature_id().is_none() && !external_ids.is_empty() {
-            for table in entity_tables {
-                let owner = table.feature_id;
-                if claimed_owner_ids.contains(&owner) {
-                    continue;
-                }
-                let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
+            if sources.is_none() {
+                sources = Some(storage.with_storage(|| generated_owner_sources(ctx, entity_tables, &claimed_owner_ids))?);
+            }
+            let Some(source_rows) = sources.as_ref() else { continue; };
+            for (owner, source_ids) in ctx.admit_iter(source_rows, "creo trimmed source set traversal")? {
                 if source_ids.len() == external_ids.len()
-                    && source_ids.iter().copied().eq(external_ids.iter().copied())
-                {
-                    ctx.insert_btree_set(&mut owners, owner, "creo trimmed owner candidate nodes")?;
+                    && ctx.all_by(source_ids.iter().zip(external_ids), |(a,b)| Ok(a == b), "creo trimmed source set agreement")? {
+                    storage.with_storage(|| ctx.insert_btree_set(&mut owners, *owner, "creo trimmed owner candidate nodes"))?;
                 }
             }
         }
-        ctx.reserve_vec(&mut candidates, 1, "creo trimmed owner candidate rows")?;
-        candidates.push(owners);
+        storage.with_storage(|| ctx.push_vec(&mut candidates, owners, "creo trimmed owner candidate rows"))?;
     }
-    let mut owner_candidate_counts = BTreeMap::new();
-    for owner in candidates.iter().flat_map(|owners| owners.iter()) {
-        *ctx.entry_btree_map(
-            &mut owner_candidate_counts,
-            *owner,
-            "creo trimmed owner count nodes",
-        )?
-        .or_insert(0usize) += 1;
+    let mut owner_counts = std::collections::HashMap::new();
+    for owners in ctx.admit_iter(&candidates, "creo trimmed candidate row traversal")? {
+        for owner in ctx.admit_iter(owners, "creo trimmed candidate owner traversal")? {
+            *storage.with_storage(|| ctx.entry_hash_map(&mut owner_counts, *owner, "creo trimmed owner count nodes"))?.or_insert(0_usize) += 1;
+        }
     }
-    for (definition, owners) in definitions.iter_mut().zip(candidates) {
-        let Some(owner) = owners
-            .first()
-            .copied()
-            .filter(|_| owners.len() == 1)
-            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-        else {
-            continue;
-        };
-        definition.identity = DefinitionIdentity::Parsed {
-            schema_id: definition.identity.schema_id(),
-            owner_feature_id: Some(owner),
-        };
+    for (definition, owners) in ctx.admit_iter(&mut definitions, "creo trimmed bound definition traversal")?.zip(candidates) {
+        // A singleton tree has a constant-size first-element lookup.
+        if owners.len() != 1 { continue; }
+        let Some(&owner) = owners.first() else { continue; };
+        if owner_counts.get(&owner) != Some(&1) { continue; }
+        definition.identity = DefinitionIdentity::Parsed { schema_id: definition.identity.schema_id(), owner_feature_id: Some(owner) };
     }
     Ok(definitions)
 }
 
-/// Bind unlabeled positional definitions through section-entity IDs in the
-/// owning generated-entity table. A uniquely keyed trimmed-entity roster is
-/// exact; otherwise the generated IDs must be a nonempty subset of the order
-/// table. Empty and non-unique joins remain unbound.
+/// Bind unlabeled positional definitions by exact trim set or order subset.
 pub(crate) fn bind_replay_definition_owners(
     ctx: &DecodeContext<'_>,
     mut definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
     claimed_owner_ids: &BTreeSet<u32>,
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo replay owner scratch")?;
+    let mut sources = None;
     let mut candidates = Vec::new();
-    for definition in &definitions {
+    for definition in ctx.admit_iter(&definitions, "creo replay definition candidate traversal")? {
         let mut owners = BTreeSet::new();
         if definition.identity.owner_feature_id().is_none() {
-            let trimmed_external_ids = unique_trimmed_external_ids(ctx, definition)?;
-            let mut order_external_ids = BTreeSet::new();
-            if let Some(table) = &definition.order_table {
-                for row in &table.rows {
-                    ctx.insert_btree_set(
-                        &mut order_external_ids,
-                        row.external_id,
-                        "creo replay order entity ID nodes",
-                    )?;
+            let trimmed = unique_trimmed_external_ids(ctx, definition)?;
+            let order = definition.order_table.as_ref().map(|table| &table.rows);
+            if !trimmed.is_empty() || order.is_some_and(|rows| !rows.is_empty()) {
+                if sources.is_none() {
+                    sources = Some(storage.with_storage(|| generated_owner_sources(ctx, entity_tables, claimed_owner_ids))?);
                 }
-            }
-            if !trimmed_external_ids.is_empty() || !order_external_ids.is_empty() {
-                for table in entity_tables {
-                    let owner = table.feature_id;
-                    if claimed_owner_ids.contains(&owner) {
-                        continue;
-                    }
-                    let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
-                    if !trimmed_external_ids.is_empty()
-                        && source_ids.len() == trimmed_external_ids.len()
-                        && source_ids
-                            .iter()
-                            .copied()
-                            .eq(trimmed_external_ids.iter().copied())
-                    {
-                        ctx.insert_btree_set(&mut owners, owner, "creo replay exact owner nodes")?;
+                let Some(source_rows) = sources.as_ref() else { continue; };
+                if !trimmed.is_empty() {
+                    for (owner, ids) in ctx.admit_iter(source_rows, "creo replay exact source traversal")? {
+                        if ids.len() == trimmed.len() && ctx.all_by(ids.iter().zip(trimmed), |(a,b)| Ok(a == b), "creo replay exact source agreement")? {
+                            storage.with_storage(|| ctx.insert_btree_set(&mut owners, *owner, "creo replay exact owner nodes"))?;
+                        }
                     }
                 }
                 if owners.is_empty() {
-                    for table in entity_tables {
-                        let owner = table.feature_id;
-                        if claimed_owner_ids.contains(&owner) {
-                            continue;
-                        }
-                        let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
-                        if !source_ids.is_empty() && source_ids.is_subset(&order_external_ids) {
-                            ctx.insert_btree_set(
-                                &mut owners,
-                                owner,
-                                "creo replay subset owner nodes",
-                            )?;
+                    if let Some(order) = order {
+                        for (owner, ids) in ctx.admit_iter(source_rows, "creo replay subset source traversal")? {
+                            if !ids.is_empty() && ctx.all_by(ids, |id| Ok(order.contains_external_id(*id)), "creo replay subset membership")? {
+                                storage.with_storage(|| ctx.insert_btree_set(&mut owners, *owner, "creo replay subset owner nodes"))?;
+                            }
                         }
                     }
                 }
             }
         }
-        ctx.reserve_vec(&mut candidates, 1, "creo replay owner candidate rows")?;
-        candidates.push(owners);
+        storage.with_storage(|| ctx.push_vec(&mut candidates, owners, "creo replay owner candidate rows"))?;
     }
-    let mut owner_candidate_counts = BTreeMap::new();
-    for owner in candidates.iter().flat_map(|owners| owners.iter()) {
-        *ctx.entry_btree_map(
-            &mut owner_candidate_counts,
-            *owner,
-            "creo replay owner count nodes",
-        )?
-        .or_insert(0usize) += 1;
+    let mut owner_counts = std::collections::HashMap::new();
+    for owners in ctx.admit_iter(&candidates, "creo replay candidate row traversal")? {
+        for owner in ctx.admit_iter(owners, "creo replay candidate owner traversal")? {
+            *storage.with_storage(|| ctx.entry_hash_map(&mut owner_counts, *owner, "creo replay owner count nodes"))?.or_insert(0_usize) += 1;
+        }
     }
-    for (definition, owners) in definitions.iter_mut().zip(candidates) {
-        let Some(owner) = owners
-            .first()
-            .copied()
-            .filter(|_| owners.len() == 1)
-            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-        else {
-            continue;
-        };
-        definition.identity = DefinitionIdentity::BoundOwner {
-            schema_id: definition.identity.schema_id(),
-            owner_feature_id: owner,
-        };
+    for (definition, owners) in ctx.admit_iter(&mut definitions, "creo replay bound definition traversal")?.zip(candidates) {
+        if owners.len() != 1 { continue; }
+        let Some(&owner) = owners.first() else { continue; };
+        if owner_counts.get(&owner) != Some(&1) { continue; }
+        definition.identity = DefinitionIdentity::BoundOwner { schema_id: definition.identity.schema_id(), owner_feature_id: owner };
     }
     Ok(definitions)
 }
 
-fn unique_trimmed_external_ids<'a>(
-    ctx: &DecodeContext<'_>,
-    definition: &'a FeatureDefinition,
-) -> Result<&'a [u32], CodecError> {
+fn generated_owner_sources(
+    ctx: &DecodeContext<'_>, tables: &[FeatureEntityTable], claimed: &BTreeSet<u32>,
+) -> Result<Vec<(u32, BTreeSet<u32>)>, CodecError> {
+    let mut sources = Vec::new();
+    for table in ctx.admit_iter(tables, "creo generated owner table traversal")? {
+        if ctx.contains_btree_set(claimed, &table.feature_id, "creo generated owner claimed lookup")? { continue; }
+        let ids = generated_class_200_source_entity_ids(ctx, table)?;
+        ctx.push_vec(&mut sources, (table.feature_id, ids), "creo generated owner source rows")?;
+    }
+    Ok(sources)
+}
+
+fn unique_trimmed_external_ids<'a>(ctx: &DecodeContext<'_>, definition: &'a FeatureDefinition) -> Result<&'a [u32], CodecError> {
     Ok(match definition.trim_entities.as_ref() {
         Some(table) if table.has_unique_external_ids(ctx)? => table.solved_external_ids.as_slice(),
         _ => &[],
     })
 }
 
-/// Bind bounded section definitions through the consecutive recipe, internal
-/// datum, and sketch-plane identifier chain. Repeated definitions for one
-/// plane remain unowned because the current regeneration snapshot is not
-/// established.
+/// Bind section definitions by the consecutive recipe, datum and plane chain.
 pub(crate) fn bind_section_owners(
-    ctx: &DecodeContext<'_>,
-    mut definitions: Vec<FeatureDefinition>,
-    operations: &[FeatureOperation],
-    section_ranges: &[(usize, usize)],
+    ctx: &DecodeContext<'_>, mut definitions: Vec<FeatureDefinition>, operations: &[FeatureOperation], section_ranges: &[(usize, usize)],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    let in_section_range = |offset: usize| {
-        section_ranges
-            .iter()
-            .any(|(start, end)| offset >= *start && offset < *end)
-    };
-    let mut claimed_owner_ids = BTreeSet::new();
-    for owner in definitions
-        .iter()
-        .filter_map(|definition| definition.identity.owner_feature_id())
-    {
-        ctx.insert_btree_set(
-            &mut claimed_owner_ids,
-            owner,
-            "creo section claimed owner nodes",
-        )?;
+    let mut storage = ctx.reserve_scoped(0, "creo section owner scratch")?;
+    let mut claimed = BTreeSet::new();
+    for owner in ctx.admit_iter(&definitions, "creo section claimed definition traversal")?.filter_map(|definition| definition.identity.owner_feature_id()) {
+        storage.with_storage(|| ctx.insert_btree_set(&mut claimed, owner, "creo section claimed owner nodes"))?;
     }
-    let mut definitions_per_plane = BTreeMap::new();
-    for plane_id in definitions.iter().filter_map(|definition| {
-        (definition.identity.owner_feature_id().is_none() && in_section_range(definition.offset))
-            .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
-    }) {
-        *ctx.entry_btree_map(
-            &mut definitions_per_plane,
-            plane_id,
-            "creo section plane count nodes",
-        )?
-        .or_insert(0usize) += 1;
+    let mut planes = BTreeMap::new();
+    let mut eligible = Vec::new();
+    for definition in ctx.admit_iter(&definitions, "creo section eligible definition traversal")? {
+        let in_range = definition.identity.owner_feature_id().is_none() && ctx.any_by(section_ranges, |(start,end)| Ok(definition.offset >= *start && definition.offset < *end), "creo section range search")?;
+        storage.with_storage(|| ctx.push_vec(&mut eligible, in_range, "creo section eligibility rows"))?;
+        if in_range {
+            if let Some(plane) = definition.section_3d.as_ref().and_then(|section| section.sketch_plane_entity_id) {
+                *storage.with_storage(|| ctx.entry_btree_map(&mut planes, plane, "creo section plane count nodes"))?.or_insert(0_usize) += 1;
+            }
+        }
     }
-    let mut ordered_operations =
-        ctx.collect_vec(operations.iter(), "creo section ordered operations")?;
-    ctx.stable_sort_by(
-        ordered_operations.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo bind section owners ordered operations ordering",
-    )?;
-    for definition in &mut definitions {
-        if definition.identity.owner_feature_id().is_some() || !in_section_range(definition.offset)
-        {
-            continue;
+    let mut ordered = storage.with_storage(|| ctx.collect_vec(operations.iter(), "creo section ordered operations"))?;
+    ctx.stable_sort_by(ordered.as_mut_slice(), |operation| &operation.offset, Ord::cmp, "creo bind section owners ordered operations ordering")?;
+    let mut pairs = std::collections::HashMap::new();
+    for index in ctx.admit_iter(0..ordered.len().saturating_sub(1), "creo section owner operation count")? {
+        let owner = ordered[index];
+        let datum = ordered[index + 1];
+        if owner.recipe.resolved().is_some() && datum.recipe.resolved().is_none() && owner.feature_id.checked_add(1) == Some(datum.feature_id) {
+            *storage.with_storage(|| ctx.entry_hash_map(&mut pairs, owner.feature_id, "creo section recipe pair nodes"))?.or_insert(0_usize) += 1;
         }
-        let Some(plane_id) = definition
-            .section_3d
-            .as_ref()
-            .and_then(|section| section.sketch_plane_entity_id)
-            .filter(|plane_id| *plane_id >= 2)
-        else {
-            continue;
+    }
+    for (definition, in_range) in ctx.admit_iter(&mut definitions, "creo section bound definition traversal")?.zip(eligible) {
+        if !in_range { continue; }
+        let Some(plane) = definition.section_3d.as_ref().and_then(|section| section.sketch_plane_entity_id).filter(|plane| *plane >= 2) else { continue; };
+        if ctx.get_btree_map(&planes, &plane, "creo section plane count lookup")? != Some(&1) { continue; }
+        let owner = plane - 2;
+        if ctx.contains_btree_set(&claimed, &owner, "creo section claimed owner lookup")? || pairs.get(&owner) != Some(&1) { continue; }
+        definition.identity = match definition.identity.schema_id() {
+            Some(schema_id) => DefinitionIdentity::Parsed { schema_id: Some(schema_id), owner_feature_id: Some(owner) },
+            None => DefinitionIdentity::BoundOwner { schema_id: None, owner_feature_id: owner },
         };
-        if definitions_per_plane.get(&plane_id) != Some(&1) {
-            continue;
-        }
-        let owner_id = plane_id - 2;
-        let datum_id = plane_id - 1;
-        if claimed_owner_ids.contains(&owner_id) {
-            continue;
-        }
-        let width = std::num::NonZeroUsize::new(2).ok_or_else(|| {
-            ctx.refuse_codec_limit("creo section owner operation window", u64::MAX, u64::MAX)
-        })?;
-        let matches = ctx
-            .admit_iter(&ordered_operations, "creo section owner operation count")?
-            .windows(width)
-            .filter(|pair| {
-                pair[0].feature_id == owner_id
-                    && pair[0].recipe.resolved().is_some()
-                    && pair[1].feature_id == datum_id
-                    && pair[1].recipe.resolved().is_none()
-            })
-            .count();
-        if matches != 1 {
-            continue;
-        }
-        let identity = match definition.identity.schema_id() {
-            Some(schema_id) => DefinitionIdentity::Parsed {
-                schema_id: Some(schema_id),
-                owner_feature_id: Some(owner_id),
-            },
-            None => DefinitionIdentity::BoundOwner {
-                schema_id: None,
-                owner_feature_id: owner_id,
-            },
-        };
-        definition.identity = identity;
     }
     Ok(definitions)
 }
