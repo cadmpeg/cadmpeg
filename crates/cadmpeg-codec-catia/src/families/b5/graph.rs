@@ -7690,7 +7690,10 @@ fn parse_face(
         return Ok(None);
     };
     let mut loop_ids = Vec::new();
-    for &reference in ctx.admit_iter(loop_references, "catia_b5_face_loop_reference_scan")? {
+    let mut references = loop_references.iter();
+    while let Some(&reference) =
+        ctx.next_charged(&mut references, "catia_b5_face_loop_reference_scan")?
+    {
         if ctx.contains_key_btree_map(loops, &reference, OPERATION)? {
             ctx.push_vec(&mut loop_ids, reference, "catia_b5_face_loop_ids")?;
         } else {
