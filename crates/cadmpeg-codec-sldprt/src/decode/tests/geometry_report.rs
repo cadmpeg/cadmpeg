@@ -433,19 +433,22 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         ..SldprtNative::default()
     };
     {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             "index SLDPRT object names by id",
             None,
         );
         assert_eq!(
-            unbound_feature_input_operation_objects(
-                &cadmpeg_test_support::service_decode_context(),
-                &native
-            )
+            unbound_feature_input_operation_objects(&ctx, &native)
             .unwrap(),
             1
         );
+        ctx.finish_session().unwrap();
     }
 
     native.feature_histories.push(FeatureHistory {
