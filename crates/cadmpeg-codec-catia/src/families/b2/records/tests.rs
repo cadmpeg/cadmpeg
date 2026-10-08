@@ -519,33 +519,47 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     let edges = crate::test_support::with_service_context(|ctx| {
         b2_closed_owner_boundary_edges(ctx, &targets, &endpoints)
     })
-    .expect("service profile admits the sort")
+    .expect("service profile admits the fixed boundary work")
     .expect("four class-5e targets close a cycle");
     assert_eq!(edges.map(|edge| edge.slot), [1, 3, 5, 7]);
     assert_eq!(edges[0].endpoint_records, [100, 101]);
 
-    for operation in [
-        "catia_b2_owner_boundary_edge_sort",
-        "catia_b2_owner_boundary_key_sort",
-        "catia_b2_owner_boundary_vertex_sort",
-    ] {
-        let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+    let lookup_operation = "catia_b2_owner_boundary_endpoint_lookup";
+    let refused = crate::test_support::with_work_refusal(lookup_operation, |ctx| {
+        b2_closed_owner_boundary_edges(ctx, &targets, &endpoints)
+    })
+    .expect_err("source-derived endpoint lookup consumes admitted work");
+    let cadmpeg_core::CodecError::ResourceLimit(lookup_limit) = refused else {
+        panic!("endpoint lookup must refuse on work");
+    };
+    assert_eq!(lookup_limit.operation, lookup_operation);
+    let single_lookup = lookup_limit
+        .used
+        .checked_add(lookup_limit.additional)
+        .expect("endpoint lookup work need fits");
+    let four_lookups = single_lookup
+        .checked_mul(4)
+        .expect("four endpoint lookups fit");
+    assert!(crate::test_support::with_work_limit(four_lookups, |ctx| {
+        b2_closed_owner_boundary_edges(ctx, &targets, &endpoints)
+    })
+    .expect("fixed four-edge boundary adds no work beyond its lookups")
+    .is_some());
+    assert!(matches!(
+        crate::test_support::with_work_limit(four_lookups - 1, |ctx| {
             b2_closed_owner_boundary_edges(ctx, &targets, &endpoints)
-        });
-        assert!(matches!(
-            refused,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == operation
-        ));
-    }
+        }),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == lookup_operation
+    ));
 
     let mut open = endpoints.clone();
     open.insert(16, [101, 104]);
     assert!(crate::test_support::with_service_context(|ctx| {
         b2_closed_owner_boundary_edges(ctx, &targets, &open)
     })
-    .expect("service profile admits the sort")
+    .expect("service profile admits fixed boundary work")
     .is_none());
 
     let mut mixed_classes = targets.clone();
@@ -553,7 +567,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     assert!(crate::test_support::with_service_context(|ctx| {
         b2_closed_owner_boundary_edges(ctx, &mixed_classes, &endpoints)
     })
-    .expect("service profile admits the sort")
+    .expect("service profile admits fixed boundary work")
     .is_none());
 
     let mut duplicate = endpoints;
@@ -561,7 +575,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     assert!(crate::test_support::with_service_context(|ctx| {
         b2_closed_owner_boundary_edges(ctx, &targets, &duplicate)
     })
-    .expect("service profile admits the sort")
+    .expect("service profile admits fixed boundary work")
     .is_none());
 }
 
