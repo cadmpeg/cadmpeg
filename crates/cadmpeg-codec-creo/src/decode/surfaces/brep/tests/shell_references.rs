@@ -61,7 +61,7 @@ fn brep_shell_face_identities_refuse_retained_limit() {
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo B-rep shell face identities"),
-                |cap| references_result(16, cap),
+                |cap| references_result(u64::MAX, cap),
             ),
         )
         .err()
@@ -88,7 +88,7 @@ fn brep_shell_edge_identities_refuse_retained_limit() {
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo B-rep shell edge identities"),
-                |cap| references_result(16, cap),
+                |cap| references_result(u64::MAX, cap),
             ),
         )
         .err()
@@ -100,7 +100,7 @@ fn brep_shell_edge_identities_refuse_retained_limit() {
 
 #[test]
 fn brep_shell_references_preserve_service_order() {
-    let references = references_result(16, u64::MAX).expect("service shell references admitted");
+    let references = references_result(u64::MAX, u64::MAX).expect("service shell references admitted");
     assert_eq!(
         references.face_ids,
         vec![FaceId::compose(&crate::identity::VISIBGEOM_FACE, 5)]

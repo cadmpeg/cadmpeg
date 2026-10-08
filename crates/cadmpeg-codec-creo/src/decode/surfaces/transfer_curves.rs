@@ -554,7 +554,12 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(identity.len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo analytic curve branch geometry"), |cap| {
+            let mut policy = DecodePolicy::service(); policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::analytic_curve_branches(&ctx, &geometry, "procedural")
+        });
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = super::analytic_curve_branches(&ctx, &geometry, "procedural")
             .expect_err("copy exceeds retained limit");
@@ -563,7 +568,12 @@ mod tests {
             if resource.dimension == ResourceDimension::RetainedBytes
                 && resource.operation == "creo analytic curve branch geometry")
         );
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(identity.len());
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, None, |cap| {
+            let mut policy = DecodePolicy::service(); policy.limits.max_retained_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::analytic_curve_branches(&ctx, &geometry, "procedural")
+        });
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let branches = super::analytic_curve_branches(&ctx, &geometry, "procedural")
             .expect("exact cap admits branch");

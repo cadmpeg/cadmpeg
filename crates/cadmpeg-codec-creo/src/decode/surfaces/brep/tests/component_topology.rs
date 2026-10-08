@@ -106,7 +106,7 @@ fn brep_adjacency_neighbour_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_component_topology_preserves_service_incidence() {
-    let topology = topology_result(64, true).expect("service topology admitted");
+    let topology = topology_result(u64::MAX, true).expect("service topology admitted");
     assert_eq!(topology.component_face_curves, BTreeSet::from([10]));
     assert_eq!(topology.wire_curves, BTreeSet::from([11]));
     assert_eq!(topology.face_adjacency[&5], BTreeSet::from([6]));

@@ -1168,7 +1168,17 @@ mod tests {
         let (surface, _) = shared_generator_surfaces();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        policy.limits.max_work_units = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, Some("creo NURBS rational grid rows"), |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let mut visited = 0;
+                super::visit_surface_poles(&ctx, &surface, |_, _| {
+            visited += 1;
+            Ok(true)
+        }).map(|_| ())
+            });
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let mut visited = 0;
         let error = super::visit_surface_poles(&ctx, &surface, |_, _| {
@@ -1216,7 +1226,13 @@ mod tests {
         let curve = &boundaries[0];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        policy.limits.max_work_units = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, Some("creo NURBS rational pole matching"), |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                super::nurbs_curves_match(&ctx, curve, curve, false, EPS_TEST_VALUE).map(|_| ())
+            });
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let error = super::nurbs_curves_match(&ctx, curve, curve, false, EPS_TEST_VALUE)
             .expect_err("pole matching needs work");
@@ -1249,8 +1265,10 @@ mod tests {
             "VisibGeom surface row 7 states no cubic-extrusion plane generator carrier: first lane; second lane"
         );
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(service[0].message.len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo cubic generator loss message"), |cap| {
+            let mut policy = DecodePolicy::service(); policy.limits.max_retained_bytes = cap;
+            generator_loss_with_policy(policy)
+        });
         let error = generator_loss_with_policy(policy).expect_err("message exceeds retained cap");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -1268,7 +1286,11 @@ mod tests {
             1
         );
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo cubic generator loss notes"), |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            generator_loss_with_policy(policy)
+        });
         let error = generator_loss_with_policy(policy).expect_err("one loss exceeds item cap");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -1432,7 +1454,22 @@ mod tests {
         .expect("valid plane boundary surface");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo NURBS boundary control points"), |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                super::nurbs_plane_boundary_curve(
+            &ctx,
+            &surface,
+            7,
+            super::PlaneEquation {
+                origin: [0.0; 3],
+                normal: [1.0, 0.0, 0.0],
+            },
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        ).and_then(|candidate| candidate.map(|candidate| candidate.into_geometry()).transpose()).map(|_| ())
+            });
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root fits the collection policy");
         let error = super::nurbs_plane_boundary_curve(

@@ -98,9 +98,9 @@ fn line_extrusion_replay_set_refuses_before_node_insertion() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(1).expect("service admits replay set"), 0);
+    assert_eq!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("service admits replay set"), 0);
     assert!(matches!(
-        run(0),
+        run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo line-extrusion replay surface ids"), run)),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo line-extrusion replay surface ids"
@@ -125,9 +125,9 @@ fn tabulated_replay_counts_refuse_before_node_insertion() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(1).expect("service admits replay count"), 0);
+    assert_eq!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("service admits replay count"), 0);
     assert!(matches!(
-        run(0),
+        run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo tabulated-cylinder replay counts"), run)),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "creo tabulated-cylinder replay counts"

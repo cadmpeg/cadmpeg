@@ -765,10 +765,7 @@ fn split_outline_identity_refuses_retained_limit() {
 #[test]
 fn split_outline_source_object_id_refuses_retained_limit() {
     let scan = split_outline_scan();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo split cylinder source object IDs",
-        |limit| {
+    let run = |limit| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
@@ -782,8 +779,8 @@ fn split_outline_source_object_id_refuses_retained_limit() {
                 &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
-        },
-    );
+        };
+    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo split cylinder source object IDs"), run)).expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -876,10 +873,7 @@ fn active_datum_cylinder_source_id_refuses_retained_limit() {
             .expect("valid datum cylinder frame"),
             offset_in_payload: 0,
         });
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo active datum cylinder source IDs",
-        |limit| {
+    let run = |limit| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
@@ -891,8 +885,8 @@ fn active_datum_cylinder_source_id_refuses_retained_limit() {
                 &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
-        },
-    );
+        };
+    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo active datum cylinder source IDs"), run)).expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo active datum cylinder source IDs")
@@ -903,10 +897,7 @@ fn active_datum_cylinder_source_id_refuses_retained_limit() {
 fn constrained_slot_cylinder_source_id_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = slot_fillet_scan();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo constrained slot cylinder source IDs",
-        |limit| {
+    let run = |limit| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
@@ -918,8 +909,8 @@ fn constrained_slot_cylinder_source_id_refuses_retained_limit() {
                 &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
                 &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
-        },
-    );
+        };
+    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo constrained slot cylinder source IDs"), run)).expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo constrained slot cylinder source IDs")
@@ -1247,11 +1238,8 @@ fn positional_cylinder_identity_refuses_retained_limit() {
 
 #[test]
 fn positional_cylinder_source_id_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo positional cylinder source IDs",
-        |limit| Err::<(), _>(inline_type24_retained_refusal(limit)),
-    );
+    let run = |limit| Err::<(), _>(inline_type24_retained_refusal(limit));
+    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo positional cylinder source IDs"), run)).expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo positional cylinder source IDs")
@@ -1783,11 +1771,8 @@ fn rowless_round_cylinder_identity_refuses_retained_limit() {
 
 #[test]
 fn rowless_round_cylinder_source_id_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo rowless round cylinder source IDs",
-        |limit| Err::<(), _>(rowless_round_retained_refusal(limit)),
-    );
+    let run = |limit| Err::<(), _>(rowless_round_retained_refusal(limit));
+    let error = run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo rowless round cylinder source IDs"), run)).expect_err("named resource boundary");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo rowless round cylinder source IDs")
@@ -1900,12 +1885,7 @@ fn round_envelope_rejects_an_extra_reference_circle() {
     let duplicate_first = circle(369, [0.0, 0.0, 1.0], [3.5, 8.0, -6.0], [5.5, 10.0, -6.0]);
 
     assert!(
-        crate::decode::with_test_decode_ctx(|ctx| super::reference_cap_bound_round_frame(
-            ctx,
-            envelope,
-            &[&first, &second, &duplicate_first],
-        ))
-        .expect("admitted reference cap circles")
+        super::reference_cap_bound_round_frame(envelope, &[&first, &second, &duplicate_first])
         .is_none()
     );
 }

@@ -1401,7 +1401,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             let Some(envelope) = record.type24_scalar_frame_round_envelope() else {
                 return Ok(None);
             };
-            Ok(reference_cap_bound_round_frame(ctx, envelope, &circles)?
+            Ok(reference_cap_bound_round_frame(envelope, &circles)
                 .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap)))
         };
         let (frame, mechanism) = if selector_corner_interval {
@@ -1607,12 +1607,11 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
 }
 
 pub(in super::super) fn reference_cap_bound_round_frame(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     envelope: crate::surface::Type24RoundEnvelope,
     circles: &[&crate::reference::ReferenceCircle],
-) -> Result<Option<crate::surface::PositionalCylinderFrame>, cadmpeg_core::CodecError> {
+) -> Option<crate::surface::PositionalCylinderFrame> {
     let [_, _] = circles else {
-        return Ok(None);
+        return None;
     };
     let [first, second] = envelope.extent_endpoints;
     let scale = first
@@ -1632,7 +1631,7 @@ pub(in super::super) fn reference_cap_bound_round_frame(
     for axis_index in 0..3 {
         let mut radial = (0..3).filter(|index| *index != axis_index);
         let (Some(first_radial), Some(second_radial)) = (radial.next(), radial.next()) else {
-            return Ok(None);
+            return None;
         };
         let radial_indices = [first_radial, second_radial];
         if radial_indices.iter().any(|index| {
@@ -1641,7 +1640,7 @@ pub(in super::super) fn reference_cap_bound_round_frame(
         {
             continue;
         }
-        let cap_pair = |coordinate: f64, crossed: bool| -> Result<bool, cadmpeg_core::CodecError> {
+        let cap_pair = |coordinate: f64, crossed: bool| -> bool {
             let mut first_corner = first;
             let mut second_corner = second;
             first_corner[axis_index] = coordinate;
@@ -1650,7 +1649,7 @@ pub(in super::super) fn reference_cap_bound_round_frame(
                 first_corner[radial_indices[1]] = second[radial_indices[1]];
                 second_corner[radial_indices[1]] = first[radial_indices[1]];
             }
-            for circle in ctx.admit_iter(circles, "creo round reference cap circles")? {
+            for circle in circles {
                 if <[f64; 3]>::from(*circle.axis().as_raw())
                     .iter()
                     .enumerate()
@@ -1666,14 +1665,14 @@ pub(in super::super) fn reference_cap_bound_round_frame(
                         || (point_matches(circle.end().get().into(), first_corner)
                             && point_matches(circle.start().get().into(), second_corner)))
                 {
-                    return Ok(true);
+                    return true;
                 }
             }
-            Ok(false)
+            false
         };
         let mut matching_cap_pair = false;
         for crossed in [false, true] {
-            if cap_pair(first[axis_index], crossed)? && cap_pair(second[axis_index], crossed)? {
+            if cap_pair(first[axis_index], crossed) && cap_pair(second[axis_index], crossed) {
                 matching_cap_pair = true;
                 break;
             }
@@ -1698,14 +1697,14 @@ pub(in super::super) fn reference_cap_bound_round_frame(
             envelope.diameter / 2.0,
             Some((second[axis_index] - first[axis_index]).abs()),
         ) else {
-            return Ok(None);
+            return None;
         };
         if candidate.is_some() {
-            return Ok(None);
+            return None;
         }
         candidate = Some(frame);
     }
-    Ok(candidate)
+    candidate
 }
 
 pub(in super::super) fn transfer_positional_cones(

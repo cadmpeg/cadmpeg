@@ -204,11 +204,8 @@ mod tests {
             "creo product part number",
             "creo occurrence name",
         ] {
-            let error = cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::RetainedBytes,
-                operation,
-                |cap| limited_product(&named_scan(), u64::MAX, cap, false),
-            );
+            let run = |cap| limited_product(&named_scan(), u64::MAX, cap, false);
+    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some(operation), run)).expect_err("named resource boundary");
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::RetainedBytes
@@ -230,7 +227,19 @@ mod tests {
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo product identity"), |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                transfer_part_product(
+            &ctx,
+            &named_scan(),
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ).map(|_| ())
+            });
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let error = transfer_part_product(
@@ -259,11 +268,8 @@ mod tests {
             "{error:?}"
         );
         // Admit annotation and body-reference slots before refusing the copied body identity.
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            "creo product body IDs",
-            |cap| limited_product(&named_scan(), u64::MAX, cap, true),
-        );
+        let run = |cap| limited_product(&named_scan(), u64::MAX, cap, true);
+    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo product body IDs"), run)).expect_err("named resource boundary");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -340,11 +346,8 @@ mod tests {
             .len(),
         );
         // Identity retention follows annotation nodes and product-vector capacity.
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            "creo product identity",
-            |cap| limited_product(&named_scan(), u64::MAX, cap, false),
-        );
+        let run = |cap| limited_product(&named_scan(), u64::MAX, cap, false);
+    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo product identity"), run)).expect_err("named resource boundary");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "creo product identity"
@@ -402,7 +405,13 @@ mod tests {
         let scan = named_scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo native surface identity"), |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                native_surface_id(&ctx, &scan, 17).map(|_| ())
+            });
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let error = native_surface_id(&ctx, &scan, 17).expect_err("surface ID refused");

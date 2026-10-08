@@ -37,7 +37,7 @@ fn assert_refusal(error: &CodecError, dimension: ResourceDimension, operation: &
 #[test]
 fn brep_face_identity_refuses_retained_limit() {
     assert_refusal(
-        &references_result(16, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo B-rep face identity"), |cap| references_result(16, cap))).err().expect("face ID refused"),
+        &references_result(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo B-rep face identity"), |cap| references_result(u64::MAX, cap))).err().expect("face ID refused"),
         ResourceDimension::RetainedBytes,
         "creo B-rep face identity",
     );
@@ -46,7 +46,7 @@ fn brep_face_identity_refuses_retained_limit() {
 #[test]
 fn brep_face_shell_identity_copy_refuses_retained_limit() {
     assert_refusal(
-        &references_result(16, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo B-rep face shell identity copy"), |cap| references_result(16, cap))).err().expect("shell ID refused"),
+        &references_result(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo B-rep face shell identity copy"), |cap| references_result(u64::MAX, cap))).err().expect("shell ID refused"),
         ResourceDimension::RetainedBytes,
         "creo B-rep face shell identity copy",
     );
@@ -71,7 +71,7 @@ fn brep_loop_identities_refuse_retained_limit() {
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo B-rep loop identities"),
-                |cap| references_result(16, cap),
+                |cap| references_result(u64::MAX, cap),
             ),
         )
         .err()
@@ -89,7 +89,7 @@ fn brep_outer_loop_id_copy_refuses_retained_limit() {
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo B-rep outer loop ID copy"),
-                |cap| references_result(16, cap),
+                |cap| references_result(u64::MAX, cap),
             ),
         )
         .err()
@@ -118,7 +118,7 @@ fn brep_inner_loop_id_copies_refuse_retained_limit() {
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo B-rep inner loop ID copies"),
-                |cap| references_result(16, cap),
+                |cap| references_result(u64::MAX, cap),
             ),
         )
         .err()
@@ -130,7 +130,7 @@ fn brep_inner_loop_id_copies_refuse_retained_limit() {
 
 #[test]
 fn brep_face_references_preserve_service_loop_order() {
-    let references = references_result(16, u64::MAX).expect("service face references admitted");
+    let references = references_result(u64::MAX, u64::MAX).expect("service face references admitted");
     assert_eq!(references.face.as_str(), "creo:visibgeom:face#5");
     assert_eq!(references.shell_id.as_str(), "creo:visibgeom:shell#1");
     assert_eq!(

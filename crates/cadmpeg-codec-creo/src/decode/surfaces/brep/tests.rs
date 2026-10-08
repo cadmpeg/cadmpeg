@@ -37,7 +37,19 @@ mod split_shells;
 fn closed_component_refuses_before_curve_traversal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, Some("creo B-rep closed component curve traversal"), |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                component_is_closed(
+        &ctx,
+        &BTreeSet::from([7]),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &[5],
+    ).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = component_is_closed(
         &ctx,
@@ -61,7 +73,13 @@ fn rejection_evidence_refuses_before_diagnostic_count() {
     .expect("service rejection admitted");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, Some("creo B-rep rejection evidence count"), |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        diagnostics.evidence(&ctx, FaceAdmissionRejection::MissingLoops).map(|_| ())
+    });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert!(matches!(
         diagnostics.evidence(&ctx, FaceAdmissionRejection::MissingLoops),
@@ -76,7 +94,14 @@ fn brep_coverage_refuses_before_first_report_node() {
     let diagnostics = BrepTransferDiagnostics::default();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("decode coverage nodes"), |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                diagnostics
+        .record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default()).map(|_| ())
+            });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = diagnostics
         .record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default())
@@ -250,14 +275,8 @@ fn brep_model_surface_count_nodes_refuse_collection_limit() {
 #[test]
 fn brep_boundary_curve_id_nodes_refuse_collection_limit() {
     let scan = face_candidate_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = BrepFaceCandidateIndexes::from_scan(&ctx, &scan, &CadIr::empty())
-        .err()
-        .expect("boundary curve node refused");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems,
+        "creo B-rep boundary curve ID nodes", |ctx| BrepFaceCandidateIndexes::from_scan(ctx, &scan, &CadIr::empty()));
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep boundary curve ID nodes"));
@@ -310,14 +329,14 @@ fn source_index_limit_error(kind: &str) -> CodecError {
         ),
         _ => panic!("unsupported source-index fixture"),
     }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    BrepSourceIndexes::from_scan(&ctx, &carriers, &scan)
-        .err()
-        .expect("source-index node refused")
+    let operation = match kind {
+        "plane" => "creo B-rep plane index nodes",
+        "half_edge" => "creo B-rep half-edge index nodes",
+        "incidence" => "creo B-rep incidence index nodes",
+        _ => panic!("unsupported source-index fixture"),
+    };
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation,
+        |ctx| BrepSourceIndexes::from_scan(ctx, &carriers, &scan))
 }
 
 #[test]
