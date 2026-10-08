@@ -8365,6 +8365,7 @@ pub(crate) struct ProceduralCurveRow {
 
 impl ProceduralSurfaceRow {
     /// The row a construction and its carrier state.
+    #[cfg(test)]
     pub(crate) fn new(surface: SurfaceId, procedural: &ProceduralSurface) -> Self {
         Self {
             id: procedural.id.clone(),
@@ -8384,15 +8385,6 @@ impl ProceduralSurfaceRow {
 }
 
 impl ProceduralCurveRow {
-    /// The row a construction and its carrier state.
-    pub(crate) fn new(curve: CurveId, procedural: &ProceduralCurve) -> Self {
-        Self {
-            id: procedural.id.clone(),
-            curve,
-            definition: procedural.definition.clone(),
-        }
-    }
-
     /// The carrier and the construction this row states.
     pub(crate) fn into_parts(self) -> (CurveId, ProceduralCurve) {
         (

@@ -18,6 +18,7 @@ use crate::{diff, CadIr};
 mod append;
 mod feature_parents;
 mod procedural;
+mod procedural_wire;
 mod unknowns;
 
 #[test]
