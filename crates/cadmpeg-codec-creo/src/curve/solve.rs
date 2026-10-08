@@ -196,17 +196,25 @@ pub(super) fn nonlinear_initial_guesses(
         return Ok(None);
     }
     let mut seeds = Vec::new();
-    let mut add_seed = |seed: Vec<f64>| -> Result<(), cadmpeg_core::CodecError> {
-        if seed.iter().all(|value| value.is_finite()) && !seeds.iter().any(|known| known == &seed) {
-            ctx.reserve_vec(&mut seeds, 1, "creo solve seed rows")?;
-            seeds.push(seed);
-        }
-        Ok(())
-    };
+    let mut add_seed =
+        |seed: &[f64], operation: &'static str| -> Result<(), cadmpeg_core::CodecError> {
+            if seed.iter().all(|value| value.is_finite())
+                && !seeds
+                    .iter()
+                    .any(|known: &Vec<f64>| known.as_slice() == seed)
+            {
+                let mut owned = ctx.alloc_filled(seed.len(), 0.0, operation)?;
+                owned.copy_from_slice(seed);
+                ctx.reserve_vec(&mut seeds, 1, "creo solve seed rows")?;
+                seeds.push(owned);
+            }
+            Ok(())
+        };
     if initial_values.len() != variable_count {
         return Ok(None);
     }
-    let mut initial = ctx.alloc_filled(variable_count, 0.0, "creo solve initial seed")?;
+    let mut frame = [0.0; MAX_NONLINEAR_SOLVE_VARIABLES];
+    let initial = &mut frame[..variable_count];
     for ((slot, value), dimension) in initial
         .iter_mut()
         .zip(initial_values)
@@ -220,20 +228,22 @@ pub(super) fn nonlinear_initial_guesses(
         }
         *slot = number;
     }
-    add_seed(initial)?;
-    add_seed(ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_zero")?)?;
+    add_seed(initial, "creo solve initial seed")?;
+    initial.fill(0.0);
+    add_seed(initial, "creo_solve_seed_zero")?;
     for magnitude in [0.01, 0.1, 1.0, 10.0, 100.0] {
-        add_seed(ctx.alloc_filled(variable_count, magnitude, "creo_solve_seed_magnitude")?)?;
-        add_seed(ctx.alloc_filled(variable_count, -magnitude, "creo_solve_seed_magnitude")?)?;
+        initial.fill(magnitude);
+        add_seed(initial, "creo_solve_seed_magnitude")?;
+        initial.fill(-magnitude);
+        add_seed(initial, "creo_solve_seed_magnitude")?;
     }
     for index in 0..variable_count {
         for magnitude in [0.1, 1.0, 10.0] {
-            let mut positive = ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_axis")?;
-            positive[index] = magnitude;
-            add_seed(positive)?;
-            let mut negative = ctx.alloc_filled(variable_count, 0.0, "creo_solve_seed_axis")?;
-            negative[index] = -magnitude;
-            add_seed(negative)?;
+            initial.fill(0.0);
+            initial[index] = magnitude;
+            add_seed(initial, "creo_solve_seed_axis")?;
+            initial[index] = -magnitude;
+            add_seed(initial, "creo_solve_seed_axis")?;
         }
     }
     Ok(Some(seeds))
@@ -1251,20 +1261,31 @@ pub(super) fn solve_dimension_axis(
     )? {
         return Ok(None);
     }
-    if !ctx.all_by(
-        required_columns,
-        |required| {
-            Ok(ctx
-                .binary_search_by_key(
-                    &pivot_rows,
-                    required,
-                    |&(column, _)| Ok(column),
-                    "creo dimension pivot column lookup",
-                )?
-                .is_ok())
-        },
-        "creo required dimension column traversal",
-    )? {
+    let required_present = if required_columns.len() <= MAX_NONLINEAR_SOLVE_VARIABLES
+        && pivot_rows.len() <= MAX_NONLINEAR_SOLVE_VARIABLES
+    {
+        required_columns.iter().all(|required| {
+            pivot_rows
+                .binary_search_by_key(required, |&(column, _)| column)
+                .is_ok()
+        })
+    } else {
+        ctx.all_by(
+            required_columns,
+            |required| {
+                Ok(ctx
+                    .binary_search_by_key(
+                        &pivot_rows,
+                        required,
+                        |&(column, _)| Ok(column),
+                        "creo dimension pivot column lookup",
+                    )?
+                    .is_ok())
+            },
+            "creo required dimension column traversal",
+        )?
+    };
+    if !required_present {
         return Ok(None);
     }
     let mut solution = ctx.alloc_filled(variable_count, 0.0, "creo_solve_dimension_axis")?;
