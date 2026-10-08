@@ -213,8 +213,11 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -276,8 +279,11 @@ fn malformed_compact_root_does_not_promote_an_operation() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -315,8 +321,11 @@ fn feature_transfer_lookup_refuses_collection_limit() {
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     });
@@ -327,8 +336,11 @@ fn feature_transfer_lookup_refuses_collection_limit() {
     let service = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -349,7 +361,15 @@ fn principal_and_reference_features_refuse_collection_limit() {
     let mut ir = CadIr::empty();
     let mut transfer = DesignFeatureTransfer::default();
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::transfer_principal_plane(ctx, &mut ir, &mut transfer, principal)
+        super::transfer_principal_plane(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
+            &mut ir,
+            &mut transfer,
+            principal,
+        )
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -362,7 +382,15 @@ fn principal_and_reference_features_refuse_collection_limit() {
         declaration_class: "xy-plane",
     };
     crate::test_support::with_service_context(|ctx| {
-        super::transfer_principal_plane(ctx, &mut ir, &mut transfer, principal)
+        super::transfer_principal_plane(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
+            &mut ir,
+            &mut transfer,
+            principal,
+        )
     })
     .expect("service profile admits principal plane");
     assert_eq!(ir.model.features.len(), 1);
@@ -375,14 +403,30 @@ fn principal_and_reference_features_refuse_collection_limit() {
     let mut reference_ir = CadIr::empty();
     let mut reference_transfer = DesignFeatureTransfer::default();
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::transfer_reference_plane(ctx, &mut reference_ir, &mut reference_transfer, &reference)
+        super::transfer_reference_plane(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
+            &mut reference_ir,
+            &mut reference_transfer,
+            &reference,
+        )
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_reference_features")
     );
     crate::test_support::with_service_context(|ctx| {
-        super::transfer_reference_plane(ctx, &mut reference_ir, &mut reference_transfer, &reference)
+        super::transfer_reference_plane(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
+            &mut reference_ir,
+            &mut reference_transfer,
+            &reference,
+        )
     })
     .expect("service profile admits reference plane");
     assert_eq!(reference_ir.model.features.len(), 1);
@@ -417,14 +461,32 @@ fn sketch_and_operation_feature_rows_refuse_collection_limit() {
     let mut ir = CadIr::empty();
     let mut transfer = DesignFeatureTransfer::default();
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::transfer_sketch(ctx, &mut ir, &mut transfer, sketch_object, sketch_record)
+        super::transfer_sketch(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
+            &mut ir,
+            &mut transfer,
+            sketch_object,
+            sketch_record,
+        )
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_sketches")
     );
     crate::test_support::with_service_context(|ctx| {
-        super::transfer_sketch(ctx, &mut ir, &mut transfer, sketch_object, sketch_record)
+        super::transfer_sketch(
+            ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
+            &mut ir,
+            &mut transfer,
+            sketch_object,
+            sketch_record,
+        )
     })
     .expect("service profile admits sketch feature");
     assert_eq!(ir.model.sketches.len(), 1);
@@ -439,7 +501,7 @@ fn sketch_and_operation_feature_rows_refuse_collection_limit() {
     };
     let records = HashMap::from([(operation_record.id.as_str(), &operation_record)]);
     let entities = HashMap::new();
-    let objects = HashMap::from([(operation_object.id.as_str(), &operation_object)]);
+    let objects = BTreeMap::from([(operation_object.id.as_str(), &operation_object)]);
     let object_ids = HashSet::new();
     let sources = super::NativeOperationSources {
         object_records: &records,
@@ -449,9 +511,12 @@ fn sketch_and_operation_feature_rows_refuse_collection_limit() {
     };
     let mut operation_ir = CadIr::empty();
     let mut operation_transfer = DesignFeatureTransfer::default();
-    let refused = crate::test_support::with_collection_limit(1, |ctx| {
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
         super::transfer_native_operation(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut operation_ir,
             &mut operation_transfer,
             &candidate,
@@ -465,6 +530,9 @@ fn sketch_and_operation_feature_rows_refuse_collection_limit() {
     crate::test_support::with_service_context(|ctx| {
         super::transfer_native_operation(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut operation_ir,
             &mut operation_transfer,
             &candidate,
@@ -563,14 +631,22 @@ fn exact_parameter_owner_lookup_refuses_collection_limit() {
     let mut ir = CadIr::empty();
     ir.model.parameters.push(parameter("one", "owner-entity"));
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+        transfer.assign_parameter_owners(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_feature_owner_entities")
+        if limit.operation == "catia_feature_transfer_entities")
     );
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+        transfer.assign_parameter_owners(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .expect("service profile admits owner indexes");
     assert_eq!(ir.model.parameters[0].owner.as_ref(), Some(&feature_id));
@@ -587,43 +663,58 @@ fn feature_dependency_lookup_refuses_collection_limit() {
     let mut ir = CadIr::empty();
     ir.model.features.push(feature("owner", object_id));
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
+        transfer.assign_feature_dependencies(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_feature_dependency_objects")
+        if limit.operation == "catia_feature_transfer_objects")
     );
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
+        transfer.assign_feature_dependencies(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .expect("service profile admits dependency indexes");
     assert!(ir.model.features[0].dependencies.is_empty());
 }
 
 #[test]
-fn native_operation_owned_object_rows_refuse_collection_limit() {
+fn native_operation_owner_selection_is_borrowed_and_refuses_work() {
     let object = design_object("synthetic:test:object#operation", None);
-    let objects = HashMap::from([(object.id.as_str(), &object)]);
+    let objects = BTreeMap::from([(object.id.as_str(), &object)]);
     let records = HashMap::new();
     let entities = HashMap::new();
     let operation_ids = HashSet::new();
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        super::native_operation_definition_properties(
-            ctx,
-            &object,
-            &records,
-            &entities,
-            &objects,
-            &operation_ids,
-        )
-    });
+    let refused =
+        crate::test_support::with_work_refusal("catia_feature_operation_owner_match", |ctx| {
+            super::native_operation_definition_properties(
+                ctx,
+                &mut ctx
+                    .reserve_scoped(0, "catia_test_transfer_membership")
+                    .expect("membership workspace"),
+                &object,
+                &records,
+                &entities,
+                &objects,
+                &operation_ids,
+            )
+        });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_feature_operation_owned_objects")
+        if limit.operation == "catia_feature_operation_owner_match")
     );
-    let admitted = crate::test_support::with_service_context(|ctx| {
+    let admitted = crate::test_support::with_collection_limit(0, |ctx| {
         super::native_operation_definition_properties(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &object,
             &records,
             &entities,
@@ -631,7 +722,7 @@ fn native_operation_owned_object_rows_refuse_collection_limit() {
             &operation_ids,
         )
     })
-    .expect("service profile admits operation owner rows");
+    .expect("service profile admits operation owner search");
     assert!(admitted.source_properties.is_empty());
 }
 
@@ -786,7 +877,11 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     };
 
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
+        transfer.assign_feature_dependencies(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 
@@ -871,8 +966,11 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -946,8 +1044,11 @@ fn design_feature_entity_limit_refuses_before_feature_push() {
     let error = crate::test_support::with_entity_limit(0, |ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     });
@@ -1000,8 +1101,11 @@ fn design_sketch_entity_limit_refuses_before_sketch_push() {
     let error = crate::test_support::with_entity_limit(0, |ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     });
@@ -1023,8 +1127,11 @@ fn design_sketch_feature_limit_refuses_before_feature_push() {
     let error = crate::test_support::with_entity_limit(1, |ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     });
@@ -1134,8 +1241,11 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
     crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -1289,14 +1399,21 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
     .unwrap();
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+        transfer.assign_parameter_owners(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 
@@ -1422,14 +1539,21 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
     .unwrap();
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+        transfer.assign_parameter_owners(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 
@@ -1645,8 +1769,11 @@ fn does_not_promote_an_unadmitted_helper_owner_class() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -1683,8 +1810,11 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         crate::design_feature::transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -1717,8 +1847,11 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         crate::design_feature::transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -1778,8 +1911,11 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         crate::design_feature::transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -1817,7 +1953,11 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
             native_ref: Some(parameter_entity.id.clone()),
         });
     crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+        transfer.assign_parameter_owners(
+            ctx,
+            &mut ir,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
+        )
     })
     .unwrap();
 

@@ -741,7 +741,7 @@ fn consolidated_edge_blocks_from_records(
         let [first_record, second_record, parameter_record] = window else {
             continue;
         };
-        if records_are_contiguous(window)
+        if records_are_contiguous(&[first_record, second_record, parameter_record])
             && first_record.class() == 0x20
             && second_record.class() == 0x20
             && first_record.family() == second_record.family()
@@ -818,7 +818,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
         let [pcurve0, pcurve1, parameters, use0, use1, node] = window else {
             continue;
         };
-        if records_are_contiguous(window)
+        if records_are_contiguous(&[pcurve0, pcurve1, parameters, use0, use1, node])
             && pcurve0.class() == 0x20
             && pcurve1.class() == 0x20
             && pcurve0.family() == pcurve1.family()
@@ -900,7 +900,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             let [parameter, circle, definition, use0, use1, node] = window else {
                 return None;
             };
-            if !records_are_contiguous(window) {
+            if !records_are_contiguous(&[parameter, circle, definition, use0, use1, node]) {
                 return None;
             }
             if parameter.family() != ConsolidatedFamily::B
@@ -1014,7 +1014,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             let [descriptor, definition, use0, use1, node] = window else {
                 return None;
             };
-            if !records_are_contiguous(window) {
+            if !records_are_contiguous(&[descriptor, definition, use0, use1, node]) {
                 return None;
             }
             if descriptor.family() != ConsolidatedFamily::B
@@ -1101,7 +1101,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             let [use0, use1, node] = window else {
                 return None;
             };
-            if !records_are_contiguous(window) {
+            if !records_are_contiguous(&[use0, use1, node]) {
                 return None;
             }
             if use0.family() != ConsolidatedFamily::B
@@ -1181,7 +1181,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             let [node_record, definition_record, use0, use1] = window else {
                 return None;
             };
-            if !records_are_contiguous(window)
+            if !records_are_contiguous(&[node_record, definition_record, use0, use1])
                 || node_record.family() != ConsolidatedFamily::B
                 || node_record.class() != 0x5e
                 || definition_record.family() != ConsolidatedFamily::B
@@ -1307,7 +1307,10 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
             else {
                 continue;
             };
-            if !records_are_contiguous(&records[owner_index..=target_index]) {
+            if !crate::wire::records::record_run_is_contiguous(
+                ctx,
+                &records[owner_index..=target_index],
+            )? {
                 continue;
             }
             let target = &records[target_index];
@@ -1641,7 +1644,10 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                 }
                 let &owner_index = boundary_value!(record_indices.get(&packet.pos));
                 if owner_index <= first_edge_index
-                    || !records_are_contiguous(&records[node_index..=owner_index])
+                    || !crate::wire::records::record_run_is_contiguous(
+                        ctx,
+                        &records[node_index..=owner_index],
+                    )?
                 {
                     return Ok(None);
                 }

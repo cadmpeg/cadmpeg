@@ -682,13 +682,7 @@ fn e5_topology_transfer_refuses_before_reference_maps() {
             Err(error) => panic!("unexpected topology decode refusal: {error}"),
         }
     }
-    for operation in [
-        "catia_e5_transfer_surface_refs",
-        "catia_e5_transfer_vertex_refs",
-        "catia_e5_transfer_point_refs",
-        "catia_e5_transfer_edge_ids",
-        "catia_e5_used_surfaces",
-    ] {
+    for operation in ["catia_e5_transfer_surface_refs", "catia_e5_used_surfaces"] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
 }
@@ -720,8 +714,8 @@ fn e5_topology_emission_refuses_retained_identity_copies() {
         }
     }
     for operation in [
-        "catia_e5_transfer_surface_id",
-        "catia_e5_transfer_vertex_id",
+        "catia_e5_edge_start_id",
+        "catia_e5_vertex_use_id",
         "catia_e5_face_id",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
@@ -787,7 +781,6 @@ fn e5_emitted_rosters_refuse_before_nested_growth() {
         }
     }
     for operation in [
-        "catia_e5_emitted_curve_ids",
         "catia_e5_region_ids",
         "catia_e5_body_regions",
         "catia_e5_region_shells",
@@ -842,7 +835,7 @@ fn e5_route_propagates_station_collection_refusal() {
         append_e5_record(&mut stream, 0xfe, id, &[]);
     }
     let file = object_main_catpart(&stream);
-    let mut cap = 13;
+    let mut cap = 0;
     let mut reached = false;
     for _ in 0..512 {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -855,7 +848,7 @@ fn e5_route_propagates_station_collection_refusal() {
             Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
                 limit,
             ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "decode CATIA E5 rolling-ball stations" =>
+                && limit.operation == "catia_e5_rolling_ball_stations" =>
             {
                 reached = true;
                 break;

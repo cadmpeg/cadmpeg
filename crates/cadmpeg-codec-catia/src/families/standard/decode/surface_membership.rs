@@ -315,10 +315,10 @@ mod tests {
         .expect_err("refinement work refuses");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, "catia surface refinement step");
-        // The two-knot span lane is admitted before its one window is visited.
+        // Each refinement iteration charges one step before it evaluates.
         assert_eq!(
             (original.limit, original.used, original.additional),
-            (0, 0, 2)
+            (0, 0, 1)
         );
         assert_eq!(
             nurbs_surface_point_distance(
@@ -347,8 +347,8 @@ mod tests {
             super::super::point_on_nurbs_surface(&ctx, Point3::new(2.0, 2.0, 2.0), &surface())
                 .expect_err("pole work refuses");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.operation, "catia surface bound pole");
-        // The two-knot span lane is admitted before its one window is visited.
+        assert_eq!(original.operation, "catia surface control bounds");
+        // The two pole rows of the control net are admitted before the first visit.
         assert_eq!(
             (original.limit, original.used, original.additional),
             (0, 0, 2)

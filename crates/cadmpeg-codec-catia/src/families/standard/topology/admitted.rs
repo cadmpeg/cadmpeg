@@ -20,13 +20,16 @@ impl Boundary {
             return Ok(None);
         };
         let mut next_start = first.start_vertex;
-        for coedge in ctx.admit_iter(coedges.as_slice(), "catia_closed_boundary_admission")? {
-            if coedge.start_vertex != next_start {
-                return Ok(None);
-            }
-            next_start = coedge.end_vertex;
-        }
-        if next_start != first.start_vertex {
+        let adjacent = ctx.all_by(
+            coedges.as_slice(),
+            |coedge| {
+                let adjacent = coedge.start_vertex == next_start;
+                next_start = coedge.end_vertex;
+                Ok(adjacent)
+            },
+            "catia_closed_boundary_admission",
+        )?;
+        if !adjacent || next_start != first.start_vertex {
             return Ok(None);
         }
         Ok(Some(Self { coedges }))
@@ -69,7 +72,6 @@ impl StandardTopology {
         } = draft;
         let Some(vertex_points) = ctx.collect_fallible_options(
             vertex_points.into_iter().map(|[x, y, z]| {
-                ctx.charge_work(3, "catia_topology_coordinate_admission")?;
                 Ok::<_, CodecError>(FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z)))
             }),
             "catia_admitted_topology_points",
@@ -78,20 +80,21 @@ impl StandardTopology {
             return Ok(None);
         };
         let mut faces = Vec::new();
-        for face in draft_faces {
+        for face in ctx.admit_iter(draft_faces, "catia_admitted_topology_faces")? {
             let mut boundaries = Vec::new();
-            for boundary in face.boundaries {
+            for boundary in ctx.admit_iter(face.boundaries, "catia_admitted_topology_boundaries")? {
                 let Some(boundary) = Boundary::new(ctx, boundary.coedges)? else {
                     return Ok(None);
                 };
-                if ctx
-                    .admit_iter(boundary.coedges(), "catia_topology_reference_admission")?
-                    .any(|coedge| {
-                        coedge.edge_row >= edge_rows.len()
+                if ctx.any_by(
+                    boundary.coedges(),
+                    |coedge| {
+                        Ok(coedge.edge_row >= edge_rows.len()
                             || coedge.start_vertex >= logical_vertex_count
-                            || coedge.end_vertex >= logical_vertex_count
-                    })
-                {
+                            || coedge.end_vertex >= logical_vertex_count)
+                    },
+                    "catia_topology_reference_admission",
+                )? {
                     return Ok(None);
                 }
                 ctx.push_vec(

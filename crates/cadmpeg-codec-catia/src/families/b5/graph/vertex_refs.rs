@@ -50,13 +50,18 @@ impl B5Vertices {
         if raw.len().checked_add(logical.len()).is_none() {
             return Ok(None);
         }
-        for (_, vertices) in ctx.admit_iter(&edges, "catia_b5_vertex_binding_admission")? {
-            if ctx
-                .admit_iter(vertices, "catia_b5_vertex_binding_admission")?
-                .any(|vertex| !Self::in_range(*vertex, raw.len(), logical.len()))
-            {
-                return Ok(None);
-            }
+        // Each binding holds exactly two endpoints.
+        let in_range = ctx.all_by(
+            &edges,
+            |(_, vertices)| {
+                Ok(vertices
+                    .iter()
+                    .all(|vertex| Self::in_range(*vertex, raw.len(), logical.len())))
+            },
+            "catia_b5_vertex_binding_admission",
+        )?;
+        if !in_range {
+            return Ok(None);
         }
         Ok(Some(Self {
             raw,
@@ -88,8 +93,14 @@ impl B5Vertices {
     }
 
     /// Endpoint coordinates for an admitted edge binding.
-    pub(in crate::families::b5) fn edge_points(&self, edge: u32) -> Option<[[f64; 3]; 2]> {
-        Some(self.edges.get(&edge)?.map(|vertex| vertex.point(self)))
+    pub(in crate::families::b5) fn edge_points(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        edge: u32,
+    ) -> Result<Option<[[f64; 3]; 2]>, cadmpeg_core::CodecError> {
+        Ok(ctx
+            .get_btree_map(&self.edges, &edge, "catia_b5_edge_point_lookup")?
+            .map(|vertices| vertices.map(|vertex| vertex.point(self))))
     }
 
     #[cfg(test)]
@@ -164,7 +175,10 @@ mod tests {
                 .insert_edge(1, [B5VertexRef::Logical(1); 2])
                 .is_err());
             assert_eq!(vertices, original);
-            assert_eq!(vertices.edge_points(1), Some([[0.0; 3], [1.0, 0.0, 0.0]]));
+            assert_eq!(
+                vertices.edge_points(ctx, 1).expect("edge lookup budget"),
+                Some([[0.0; 3], [1.0, 0.0, 0.0]])
+            );
             assert_eq!(
                 vertices.edges()[&1]
                     .map(|vertex| vertex.combined_index(vertices.raw_points().len())),
@@ -175,7 +189,7 @@ mod tests {
 
     #[test]
     fn vertex_binding_admission_propagates_endpoint_scan_refusal() {
-        crate::test_support::with_work_limit(2, |ctx| {
+        crate::test_support::with_work_limit(1, |ctx| {
             let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = B5Vertices::try_new(
                 ctx,
                 vec![crate::test_support::test_b5::point([0.0; 3])],
@@ -186,11 +200,12 @@ mod tests {
             };
             assert_eq!(limit.operation, "catia_b5_vertex_binding_admission");
             assert_eq!(limit.used, 1);
-            assert_eq!(limit.additional, 2);
+            assert_eq!(limit.additional, 1);
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
-        // One edge-map entry and two endpoint references.
-        let vertices = crate::test_support::with_work_limit(3, |ctx| {
+        // One edge-map entry and the end of the scan; the two endpoint
+        // references of an edge are a fixed-width check.
+        let vertices = crate::test_support::with_work_limit(2, |ctx| {
             B5Vertices::try_new(
                 ctx,
                 vec![crate::test_support::test_b5::point([0.0; 3])],
@@ -198,8 +213,13 @@ mod tests {
                 BTreeMap::from([(1, [B5VertexRef::Raw(0); 2])]),
             )
         })
-        .expect("one edge and two endpoints fit the work budget")
+        .expect("one edge fits the work budget")
         .expect("valid vertex bindings");
-        assert_eq!(vertices.edge_points(1), Some([[0.0; 3]; 2]));
+        crate::test_support::with_service_context(|ctx| {
+            assert_eq!(
+                vertices.edge_points(ctx, 1).expect("edge lookup budget"),
+                Some([[0.0; 3]; 2])
+            );
+        });
     }
 }

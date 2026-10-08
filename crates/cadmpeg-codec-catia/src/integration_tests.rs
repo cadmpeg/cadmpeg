@@ -494,3 +494,28 @@ fn fuzz_crash_container_bytes_do_not_panic() {
     let _probe = CatiaCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
     let _probe = CatiaCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
 }
+
+#[test]
+fn fixed_magic_detection_does_not_charge_the_unused_prefix_tail() {
+    let mut prefix = vec![0; 4_096];
+    prefix[..crate::container::OUTER_MAGIC.len()].copy_from_slice(crate::container::OUTER_MAGIC);
+    let detected = crate::test_support::with_work_limit(0, |ctx| {
+        cadmpeg_ir::codec::CodecBackend::detect_impl(
+            &CatiaCodec,
+            ctx,
+            cadmpeg_core::decode::View::over_retained(&prefix),
+        )
+    })
+    .expect("fixed magic has no input-sized work");
+    assert_eq!(detected, Confidence::High);
+    prefix[0] = 0;
+    let detected = crate::test_support::with_work_limit(0, |ctx| {
+        cadmpeg_ir::codec::CodecBackend::detect_impl(
+            &CatiaCodec,
+            ctx,
+            cadmpeg_core::decode::View::over_retained(&prefix),
+        )
+    })
+    .expect("fixed magic rejection has no input-sized work");
+    assert_eq!(detected, Confidence::No);
+}

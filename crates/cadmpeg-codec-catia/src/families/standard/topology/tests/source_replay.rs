@@ -53,8 +53,8 @@ fn standard_body_orientation_kind_source_preserves_work_refusal() {
 }
 
 #[test]
-fn standard_vertex_domain_initialization_source_preserves_work_refusal() {
-    assert_saved_work_refusal("catia_standard_vertex_domain_initialization", |ctx| {
+fn standard_vertex_domain_entries_source_preserves_work_refusal() {
+    assert_saved_work_refusal("catia standard vertex point domain entries", |ctx| {
         one_edge_topology().bind_vertex_points(ctx, &[[0, 1]])?;
         Ok(())
     });
