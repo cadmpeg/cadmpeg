@@ -1832,5 +1832,7 @@ fn external_references_stream() -> Vec<u8> {
     bytes
 }
 
+mod fixed_text;
+mod kernel_retention;
 mod placement;
 mod protein;
