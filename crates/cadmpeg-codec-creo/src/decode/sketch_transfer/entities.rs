@@ -82,7 +82,7 @@ fn copied_or_native_geometry(
     offset: usize,
     kind: &str,
 ) -> Result<SketchGeometry, cadmpeg_core::CodecError> {
-    match geometries.get(&offset) {
+    match ctx.get_btree_map(geometries, &offset, "creo section entity geometry lookup")? {
         Some(geometry) => geometry.try_clone_for_decode(ctx, "creo section geometry copy"),
         None => native_section_geometry(ctx, kind),
     }
@@ -197,7 +197,7 @@ pub(super) fn transfer_section_entities(
         source_carriers,
     } = transfer;
     let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-        if let Some(geometry) = segment_geometries.get(&segment.offset).and_then(Option::as_ref) {
+        if let Some(geometry) = ctx.get_btree_map(segment_geometries, &segment.offset, "creo section entity geometry lookup")?.and_then(Option::as_ref) {
             return geometry.try_clone_for_decode(ctx, "creo section entity geometry copy").map(Some);
         }
         if section_degenerate_axis_line(ctx, definition, segment)? {
@@ -256,8 +256,8 @@ pub(super) fn transfer_section_entities(
         let construction = matches!(
             geometry.definition(),
             SketchGeometryDefinition::ReferenceLine { .. }
-        ) || !unique_segment_ids.contains(&segment.external_id)
-            || (!solved.contains(&segment.external_id)
+        ) || !ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?
+            || (!ctx.contains_btree_set(solved, &segment.external_id, "creo section entity ID membership")?
                 && !ctx.contains_btree_set(
                     profile_entities,
                     &id,
@@ -297,8 +297,7 @@ pub(super) fn transfer_section_entities(
     }
     for segment in ctx.admit_iter(segments, "creo unresolved section segment rows")? {
         if section_degenerate_axis_line(ctx, definition, segment)?
-            || segment_geometries
-                .get(&segment.offset)
+            || ctx.get_btree_map(segment_geometries, &segment.offset, "creo section entity geometry lookup")?
                 .and_then(Option::as_ref)
                 .is_some()
         {
@@ -353,9 +352,9 @@ pub(super) fn transfer_section_entities(
                 _ => None,
             })
         {
-            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
-                && materialized_saved_section_external_ids.contains(&segment.external_id)
+                && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
             {
                 continue;
             }
@@ -421,9 +420,9 @@ pub(super) fn transfer_section_entities(
                 _ => None,
             })
         {
-            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
-                && materialized_saved_section_external_ids.contains(&segment.external_id)
+                && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
             {
                 continue;
             }
@@ -491,9 +490,9 @@ pub(super) fn transfer_section_entities(
                 _ => None,
             })
         {
-            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
-                && materialized_saved_section_external_ids.contains(&segment.external_id)
+                && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
             {
                 continue;
             }
@@ -556,9 +555,9 @@ pub(super) fn transfer_section_entities(
                 _ => None,
             })
         {
-            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
-                && materialized_saved_section_external_ids.contains(&segment.external_id)
+                && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
             {
                 continue;
             }
@@ -628,9 +627,9 @@ pub(super) fn transfer_section_entities(
                 _ => None,
             })
         {
-            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
-                && materialized_saved_section_external_ids.contains(&segment.external_id)
+                && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
             {
                 continue;
             }
@@ -682,9 +681,9 @@ pub(super) fn transfer_section_entities(
                 _ => None,
             })
         {
-            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
-                && materialized_saved_section_external_ids.contains(&segment.external_id)
+                && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
             {
                 continue;
             }
@@ -728,9 +727,9 @@ pub(super) fn transfer_section_entities(
                 _ => None,
             })
         {
-            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
-                && materialized_saved_section_external_ids.contains(&segment.external_id)
+                && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
             {
                 continue;
             }
@@ -801,6 +800,13 @@ pub(super) fn transfer_section_entities(
             )?;
         }
     }
+    let mut identity_storage = ctx.reserve_scoped(0, "creo saved entity identity index")?;
+    let mut entity_ids = std::collections::HashSet::<String>::new();
+    for entity in ctx.admit_iter(&entities, "creo saved entity identity sources")? {
+        identity_storage.with_storage(|| ctx.insert_hash_set(&mut entity_ids,
+            ctx.copy_retained_text(entity.id().as_str(), "creo saved identity index keys")?,
+            "creo saved identity index nodes"))?;
+    }
     let mut saved_section_geometries = Vec::new();
     let mut generated_saved_geometries = Vec::new();
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
@@ -843,17 +849,7 @@ pub(super) fn transfer_section_entities(
         let Some(entity_id) = sketch_entity_id_admitted(ctx, sketch_id, &suffix)? else {
             return Ok(ControlFlow::Continue(()));
         };
-        let mut already_present = false;
-        for entity in ctx.admit_iter(&entities, "creo saved section entity identities")? {
-            if ctx.equal(
-                entity.id(),
-                &entity_id,
-                "creo saved section entity identity comparison",
-            )? {
-                already_present = true;
-                break;
-            }
-        }
+        let already_present = ctx.contains_hash_set(&entity_ids, entity_id.as_str(), "creo saved identity index membership")?;
         if already_present {
             return Ok(ControlFlow::Continue(()));
         }
@@ -914,6 +910,9 @@ pub(super) fn transfer_section_entities(
         .with_geometry_ref(placed_sketch_curve_ref(
             ctx, transform, sketch_id, &suffix, &geometry,
         )?);
+        identity_storage.with_storage(|| ctx.insert_hash_set(&mut entity_ids,
+            ctx.copy_retained_text(entity.id().as_str(), "creo saved identity index keys")?,
+            "creo saved identity index nodes"))?;
         push_section_entity(ctx, &mut entities, entity)?;
         ctx.reserve_vec(
             &mut saved_section_geometries,
@@ -1027,17 +1026,7 @@ pub(super) fn transfer_section_entities(
         let curve_id = CurveId::try_from(curve_text).map_err(|_| {
             cadmpeg_core::CodecError::malformed("saved spline curve identity is invalid")
         })?;
-        let mut already_present = false;
-        for entity in ctx.admit_iter(&entities, "creo saved spline entity identities")? {
-            if ctx.equal(
-                entity.id(),
-                &entity_id,
-                "creo saved spline entity identity comparison",
-            )? {
-                already_present = true;
-                break;
-            }
-        }
+        let already_present = ctx.contains_hash_set(&entity_ids, entity_id.as_str(), "creo saved identity index membership")?;
         if already_present {
             return Ok(ControlFlow::Continue(()));
         }
@@ -1070,6 +1059,9 @@ pub(super) fn transfer_section_entities(
         .with_construction(!generated)
         .with_native_ref(Some(native_ref))
         .with_geometry_ref(geometry_ref);
+        identity_storage.with_storage(|| ctx.insert_hash_set(&mut entity_ids,
+            ctx.copy_retained_text(entity.id().as_str(), "creo saved identity index keys")?,
+            "creo saved identity index nodes"))?;
         push_section_entity(ctx, &mut entities, entity)?;
         if let Some(external_id) = external_id.filter(|_| generated) {
             ctx.reserve_vec(
@@ -1095,17 +1087,7 @@ pub(super) fn transfer_section_entities(
         else {
             return Ok(ControlFlow::Continue(()));
         };
-        let mut already_present = false;
-        for existing in ctx.admit_iter(&entities, "creo unresolved entity identities")? {
-            if ctx.equal(
-                existing.id(),
-                entity.id(),
-                "creo unresolved saved section entity identity comparison",
-            )? {
-                already_present = true;
-                break;
-            }
-        }
+        let already_present = ctx.contains_hash_set(&entity_ids, entity.id().as_str(), "creo saved identity index membership")?;
         if already_present {
             return Ok(ControlFlow::Continue(()));
         }
@@ -1118,35 +1100,29 @@ pub(super) fn transfer_section_entities(
             "unresolved_saved_section_entity",
             Exactness::ByteExact,
         )?;
+        identity_storage.with_storage(|| ctx.insert_hash_set(&mut entity_ids,
+            ctx.copy_retained_text(entity.id().as_str(), "creo saved identity index keys")?,
+            "creo saved identity index nodes"))?;
         push_section_entity(ctx, &mut entities, entity)?;
         Ok(ControlFlow::Continue(()))
     })?;
     let saved_profiles = saved_profile_chains(ctx, sketch_id, &generated_saved_geometries)?;
-    ctx.reserve_vec(
-        &mut profiles,
-        saved_profiles.len(),
-        "creo saved section profile rows",
-    )?;
-    profiles.extend(saved_profiles);
+    ctx.extend_vec(&mut profiles, saved_profiles, "creo saved section profile rows")?;
     if let Some(transform) = transform {
+        let mut curve_identity_storage = ctx.reserve_scoped(0, "creo placed curve identity index")?;
+        let mut curve_ids = std::collections::HashSet::<String>::new();
+        for curve in ctx.admit_iter(&ir.model.curves, "creo placed curve identity sources")? {
+            curve_identity_storage.with_storage(|| ctx.insert_hash_set(&mut curve_ids,
+                ctx.copy_retained_text(curve.id.as_str(), "creo placed curve index keys")?,
+                "creo placed curve index nodes"))?;
+        }
         for segment in ctx.admit_iter(segments, "creo placed section segment rows")? {
-            let Some(section_geometry) = resolved_segment_geometries
-                .get(&segment.offset)
-                .and_then(Option::as_ref)
-                .or_else(|| {
-                    segment_geometries
-                        .get(&segment.offset)
-                        .and_then(Option::as_ref)
-                        .filter(|geometry| {
-                            matches!(
-                                geometry.definition(),
-                                SketchGeometryDefinition::ReferenceLine { .. }
-                            )
-                        })
-                })
-            else {
-                continue;
+            let section_geometry = match ctx.get_btree_map(resolved_segment_geometries, &segment.offset, "creo placed resolved geometry lookup")?.and_then(Option::as_ref) {
+                Some(geometry) => Some(geometry),
+                None => ctx.get_btree_map(segment_geometries, &segment.offset, "creo placed fallback geometry lookup")?
+                    .and_then(Option::as_ref).filter(|geometry| matches!(geometry.definition(), SketchGeometryDefinition::ReferenceLine { .. })),
             };
+            let Some(section_geometry) = section_geometry else { continue; };
             let Some(geometry) = placed_section_geometry_curve(transform, section_geometry) else {
                 continue;
             };
@@ -1155,19 +1131,7 @@ pub(super) fn transfer_section_entities(
             let Some(id) = typed_sketch_section_curve_id_admitted(ctx, sketch_id, &suffix)? else {
                 continue;
             };
-            let mut already_present = false;
-            for existing in
-                ctx.admit_iter(&ir.model.curves, "creo existing placed section curves")?
-            {
-                if ctx.equal(
-                    &existing.id,
-                    &id,
-                    "creo existing placed section curve ID comparison",
-                )? {
-                    already_present = true;
-                    break;
-                }
-            }
+            let already_present = ctx.contains_hash_set(&curve_ids, id.as_str(), "creo placed curve index membership")?;
             if already_present {
                 continue;
             }
@@ -1181,6 +1145,9 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
+            curve_identity_storage.with_storage(|| ctx.insert_hash_set(&mut curve_ids,
+                ctx.copy_retained_text(id.as_str(), "creo placed curve index keys")?,
+                "creo placed curve index nodes"))?;
             source_carriers.admit_curve(
                 ctx,
                 ir,
@@ -1205,7 +1172,7 @@ pub(super) fn transfer_section_entities(
                     _ => None,
                 })
             {
-                let Some(section_geometry) = circle_geometries.get(&segment.offset) else {
+                let Some(section_geometry) = ctx.get_btree_map(circle_geometries, &segment.offset, "creo section entity geometry lookup")? else {
                     continue;
                 };
                 let Some(geometry) = placed_section_geometry_curve(transform, section_geometry)
@@ -1214,7 +1181,7 @@ pub(super) fn transfer_section_entities(
                 };
                 let suffix = section_row_suffix(
                     ctx,
-                    unique_segment_ids.contains(&segment.external_id),
+                    ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?,
                     segment.external_id,
                     "circle",
                     segment.offset,
@@ -1223,19 +1190,7 @@ pub(super) fn transfer_section_entities(
                 else {
                     continue;
                 };
-                let mut already_present = false;
-                for existing in
-                    ctx.admit_iter(&ir.model.curves, "creo existing placed circle curves")?
-                {
-                    if ctx.equal(
-                        &existing.id,
-                        &id,
-                        "creo existing placed circle curve ID comparison",
-                    )? {
-                        already_present = true;
-                        break;
-                    }
-                }
+                let already_present = ctx.contains_hash_set(&curve_ids, id.as_str(), "creo placed curve index membership")?;
                 if already_present {
                     continue;
                 }
@@ -1249,6 +1204,9 @@ pub(super) fn transfer_section_entities(
                     Exactness::Derived,
                 )?;
                 ctx.charge_entities(1, "admit Creo model curves")?;
+                curve_identity_storage.with_storage(|| ctx.insert_hash_set(&mut curve_ids,
+                    ctx.copy_retained_text(id.as_str(), "creo placed curve index keys")?,
+                    "creo placed curve index nodes"))?;
                 source_carriers.admit_curve(
                     ctx,
                     ir,
@@ -1277,7 +1235,7 @@ pub(super) fn transfer_section_entities(
                     _ => None,
                 })
             {
-                let Some(section_geometry) = centered_line_geometries.get(&segment.offset) else {
+                let Some(section_geometry) = ctx.get_btree_map(centered_line_geometries, &segment.offset, "creo section entity geometry lookup")? else {
                     continue;
                 };
                 let Some(geometry) = placed_section_geometry_curve(transform, section_geometry)
@@ -1286,7 +1244,7 @@ pub(super) fn transfer_section_entities(
                 };
                 let suffix = section_row_suffix(
                     ctx,
-                    unique_segment_ids.contains(&segment.external_id),
+                    ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?,
                     segment.external_id,
                     "centered_line",
                     segment.offset,
@@ -1295,20 +1253,7 @@ pub(super) fn transfer_section_entities(
                 else {
                     continue;
                 };
-                let mut already_present = false;
-                for existing in ctx.admit_iter(
-                    &ir.model.curves,
-                    "creo existing placed centered-line curves",
-                )? {
-                    if ctx.equal(
-                        &existing.id,
-                        &id,
-                        "creo existing placed centered-line curve ID comparison",
-                    )? {
-                        already_present = true;
-                        break;
-                    }
-                }
+                let already_present = ctx.contains_hash_set(&curve_ids, id.as_str(), "creo placed curve index membership")?;
                 if already_present {
                     continue;
                 }
@@ -1322,6 +1267,9 @@ pub(super) fn transfer_section_entities(
                     Exactness::Derived,
                 )?;
                 ctx.charge_entities(1, "admit Creo model curves")?;
+                curve_identity_storage.with_storage(|| ctx.insert_hash_set(&mut curve_ids,
+                    ctx.copy_retained_text(id.as_str(), "creo placed curve index keys")?,
+                    "creo placed curve index nodes"))?;
                 source_carriers.admit_curve(
                     ctx,
                     ir,
@@ -1339,18 +1287,8 @@ pub(super) fn transfer_section_entities(
                 )?;
             }
         }
-        for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries {
-            let mut already_present = false;
-            for existing in ctx.admit_iter(&ir.model.curves, "creo existing placed saved curves")? {
-                if ctx.equal(
-                    &existing.id,
-                    &id,
-                    "creo existing placed saved curve ID comparison",
-                )? {
-                    already_present = true;
-                    break;
-                }
-            }
+        for (internal_id, external_id, section_geometry, offset, id) in ctx.admit_iter(saved_section_geometries, "creo placed saved geometry rows")? {
+            let already_present = ctx.contains_hash_set(&curve_ids, id.as_str(), "creo placed curve index membership")?;
             if already_present {
                 continue;
             }
@@ -1367,6 +1305,9 @@ pub(super) fn transfer_section_entities(
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
+            curve_identity_storage.with_storage(|| ctx.insert_hash_set(&mut curve_ids,
+                ctx.copy_retained_text(id.as_str(), "creo placed curve index keys")?,
+                "creo placed curve index nodes"))?;
             source_carriers.admit_curve(
                 ctx,
                 ir,

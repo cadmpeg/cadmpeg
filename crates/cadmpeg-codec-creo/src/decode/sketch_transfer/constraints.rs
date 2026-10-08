@@ -225,28 +225,10 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         }
         SketchConstraintDefinitionInput::Coincident { entities }
         | SketchConstraintDefinitionInput::Distance { entities, .. } => {
-            let mut all_emitted = true;
-            for entity in ctx.admit_iter(entities, "creo constraint entity references")? {
-                if !ctx.contains_btree_set(
-                    emitted,
-                    entity,
-                    "creo constraint emitted entity membership",
-                )? {
-                    all_emitted = false;
-                    break;
-                }
-            }
-            all_emitted
+            ctx.all_by(entities, |entity| ctx.contains_btree_set(emitted, entity, "creo constraint emitted entity membership"), "creo constraint entity references")?
         }
         SketchConstraintDefinitionInput::CoincidentLoci { loci } => {
-            let mut all_emitted = true;
-            for locus in ctx.admit_iter(loci, "creo coincident constraint loci")? {
-                if !locus_emitted(locus)? {
-                    all_emitted = false;
-                    break;
-                }
-            }
-            all_emitted
+            ctx.all_by(loci, |locus| locus_emitted(locus), "creo coincident constraint loci")?
         }
         SketchConstraintDefinitionInput::SameCoordinate { relation } => {
             locus_emitted(relation.first())? && locus_emitted(relation.second())?
@@ -377,14 +359,7 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         }
         SketchConstraintDefinitionInput::Group { elements }
         | SketchConstraintDefinitionInput::Text { elements, .. } => {
-            let mut all_emitted = true;
-            for locus in ctx.admit_iter(elements, "creo grouped constraint loci")? {
-                if !locus_emitted(locus)? {
-                    all_emitted = false;
-                    break;
-                }
-            }
-            all_emitted
+            ctx.all_by(elements, |locus| locus_emitted(locus), "creo grouped constraint loci")?
         }
         SketchConstraintDefinitionInput::Disabled {} => true,
         _ => true,
@@ -706,7 +681,6 @@ fn section_angular_entities(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-    segments: &[&crate::feature::definitions::FeatureSegment],
     vectors: [[Option<u32>; 4]; 3],
     known_entities: &BTreeSet<u32>,
 ) -> Result<Option<[SketchEntityId; 2]>, cadmpeg_core::CodecError> {
@@ -720,20 +694,9 @@ fn section_angular_entities(
         let Some(external_id) = order_table.external_id(internal_id) else {
             return Ok(None);
         };
-        let matching_segments = ctx
-            .admit_iter(segments, "creo angular segment candidates")?
-            .filter(|segment| {
-                segment.external_id == external_id
-                    && matches!(
-                        segment.kind,
-                        crate::feature::definitions::FeatureSegmentKind::Line(_)
-                    )
-            })
-            .count();
-        Ok(
-            (known_entities.contains(&external_id) && matching_segments == 1)
-                .then_some(external_id),
-        )
+        let is_line = unique_decoded_section_segment(definition, external_id)
+            .is_some_and(|segment| matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_)));
+        Ok((ctx.contains_btree_set(known_entities, &external_id, "creo angular entity membership")? && is_line).then_some(external_id))
     };
     let first = external_id(first_internal)?;
     let second = external_id(second_internal)?;
@@ -909,7 +872,8 @@ fn section_segment_radius_bindings(
             _ => None,
         })
     {
-        let suffix = if unique_segment_ids.contains(&segment.external_id) {
+        let unique_id = ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo radius binding identity membership")?;
+        let suffix = if unique_id {
             ctx.format_retained(
                 format_args!("{}", segment.external_id),
                 "creo radius circle suffix",
@@ -920,7 +884,7 @@ fn section_segment_radius_bindings(
                 "creo radius circle suffix",
             )?
         };
-        let typed_circle = if unique_segment_ids.contains(&segment.external_id) {
+        let typed_circle = if unique_id {
             match (
                 usize::try_from(segment.radius_ref).ok(),
                 definition.dimensions.as_ref(),
@@ -1153,13 +1117,9 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             SegmentRow::Ordinary(segment) => Some(segment),
             _ => None,
         })
-        .filter(|segment| {
-            matches!(
-                segment.kind,
-                crate::feature::definitions::FeatureSegmentKind::Arc(_)
-            ) && unique_segment_ids.contains(&segment.external_id)
-        })
     {
+        if !matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Arc(_))
+            || !ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo radius segment identity membership")? { continue; }
         if let Some(radius) = segment.radius_ref {
             let entities = ctx
                 .entry_btree_map(
@@ -1178,8 +1138,8 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             SegmentRow::Circle(segment) => Some(segment),
             _ => None,
         })
-        .filter(|segment| unique_segment_ids.contains(&segment.external_id))
     {
+        if !ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo radius segment identity membership")? { continue; }
         let entities = ctx
             .entry_btree_map(
                 &mut entities_by_radius,
@@ -1216,7 +1176,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         {
             continue;
         }
-        let Some(entities) = entities_by_radius.get(&equation.radius) else {
+        let Some(entities) = ctx.get_btree_map(&entities_by_radius, &equation.radius, "creo equation radius group lookup")? else {
             continue;
         };
         for &external_id in ctx.admit_iter(entities, "creo radius equation entities")? {
@@ -1366,24 +1326,17 @@ fn section_equation_radius_dimension_parameters(
         }
         let candidate = (parameter, dimension_value);
         for variable in [equation.radius_variable, equation.scalar] {
-            if let Some(slot) = dimension_parameters.get_mut(&variable) {
-                if !ctx.equal(
-                    &slot.as_ref(),
-                    &Some(&candidate),
-                    "creo equation dimension parameter agreement",
-                )? {
-                    *slot = None;
+            match ctx.entry_btree_map(&mut dimension_parameters, variable, "creo equation dimension parameter nodes")? {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let slot = entry.get_mut();
+                    if !ctx.equal(&slot.as_ref(), &Some(&candidate), "creo equation dimension parameter agreement")? {
+                        *slot = None;
+                    }
                 }
-            } else {
-                let copied_parameter = candidate
-                    .0
-                    .try_clone_for_decode(ctx, "creo equation dimension parameter copy")?;
-                ctx.insert_btree_map(
-                    &mut dimension_parameters,
-                    variable,
-                    Some((copied_parameter, candidate.1)),
-                    "creo equation dimension parameter nodes",
-                )?;
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let copied_parameter = candidate.0.try_clone_for_decode(ctx, "creo equation dimension parameter copy")?;
+                    entry.insert(Some((copied_parameter, candidate.1)));
+                }
             }
         }
     }
@@ -1396,7 +1349,7 @@ fn section_equation_dimension_parameter(
     variable: SectionScalarVariable,
     value: f64,
 ) -> Result<Option<ParameterId>, cadmpeg_core::CodecError> {
-    let Some(Some((parameter, dimension_value))) = parameters.get(&variable) else {
+    let Some(Some((parameter, dimension_value))) = ctx.get_btree_map(parameters, &variable, "creo equation dimension parameter lookup")? else {
         return Ok(None);
     };
     if (FiniteReal::new(*dimension_value))
@@ -1867,7 +1820,7 @@ pub(in super::super) fn section_equation_native_constraints(
     };
     let mut constraints = Vec::new();
     for equation in ctx.admit_iter(&table.rows, "creo native equation rows")? {
-        if typed_offsets.contains(&equation.offset) {
+        if ctx.contains_btree_set(typed_offsets, &equation.offset, "creo typed equation offset membership")? {
             continue;
         }
         let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
@@ -2068,7 +2021,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                 if matches!(
                     segment.kind,
                     crate::feature::definitions::FeatureSegmentKind::Line(_)
-                ) && unique_segment_ids.contains(&segment.external_id)
+                ) && ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo constraint segment identity membership")?
                     && (segment.point_ids() == [equation.first, equation.second]
                         || segment.point_ids() == [equation.second, equation.first])
                     && line_external_id.replace(segment.external_id).is_some()
@@ -2091,7 +2044,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                         _ => None,
                     })
                 {
-                    if unique_segment_ids.contains(&segment.external_id)
+                    if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo constraint segment identity membership")?
                         && (segment.point_ids == [Some(equation.first), Some(equation.second)]
                             || segment.point_ids == [Some(equation.second), Some(equation.first)])
                         && line_external_id.replace(segment.external_id).is_some()
@@ -2115,7 +2068,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                         _ => None,
                     })
                 {
-                    if unique_segment_ids.contains(&segment.external_id)
+                    if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo constraint segment identity membership")?
                         && matches!([equation.first, equation.second], [0, 1] | [1, 0])
                         && line_external_id.replace(segment.external_id).is_some()
                     {
@@ -2651,7 +2604,6 @@ pub(in super::super) fn section_dimension_constraints(
                                 ctx,
                                 definition,
                                 sketch,
-                                &segments,
                                 relation.operand_vectors?,
                                 &known_entities,
                             ),
@@ -2696,7 +2648,7 @@ pub(in super::super) fn section_dimension_constraints(
                             ) && (measured.point_ids() == [first_id, second_id]
                                 || measured.point_ids() == [second_id, first_id])
                                 && measured.vertical_horizontal == Some(expected_coordinate)
-                                && known_entities.contains(&measured.external_id)
+                                && capture_constraint_refusal(&mut coordinate_refusal, ctx.contains_btree_set(&known_entities, &measured.external_id, "creo dimension known entity membership"))?
                             {
                                 let entity = capture_constraint_refusal(
                                     &mut coordinate_refusal,
@@ -2780,7 +2732,7 @@ pub(in super::super) fn section_dimension_constraints(
                         .flatten() else {
                             return None;
                         };
-                        known_entities.contains(&external_id).then_some(())?;
+                        capture_constraint_refusal(&mut coordinate_refusal, ctx.contains_btree_set(&known_entities, &external_id, "creo dimension known entity membership"))?.then_some(())?;
                         return Some(circular_dimension_constraint(
                             capture_constraint_refusal(
                                 &mut coordinate_refusal,
@@ -2821,7 +2773,7 @@ pub(in super::super) fn section_dimension_constraints(
                                     if matches!(
                                         measured.kind,
                                         crate::feature::definitions::FeatureSegmentKind::Line(_)
-                                    ) && known_entities.contains(&measured.external_id)
+                                    ) && capture_constraint_refusal(&mut coordinate_refusal, ctx.contains_btree_set(&known_entities, &measured.external_id, "creo dimension known entity membership"))?
                                     {
                                         let entity = capture_constraint_refusal(
                                             &mut coordinate_refusal,

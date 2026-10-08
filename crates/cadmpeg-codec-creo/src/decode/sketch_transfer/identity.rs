@@ -507,7 +507,7 @@ pub(in super::super) fn section_segment_identity_suffix_admitted(
     unique_external_ids: &BTreeSet<u32>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    if unique_external_ids.contains(&segment.external_id) {
+    if ctx.contains_btree_set(unique_external_ids, &segment.external_id, "creo section suffix identity membership")? {
         ctx.format_retained(
             format_args!("{}", segment.external_id),
             "creo section entity suffix",
@@ -525,7 +525,7 @@ pub(super) fn opaque_section_segment_identity_suffix_admitted(
     unique_external_ids: &BTreeSet<u32>,
     segment: &crate::feature::definitions::FeatureOpaqueSegment,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    if unique_external_ids.contains(&segment.external_id) {
+    if ctx.contains_btree_set(unique_external_ids, &segment.external_id, "creo section suffix identity membership")? {
         ctx.format_retained(
             format_args!("{}", segment.external_id),
             "creo opaque entity suffix",
