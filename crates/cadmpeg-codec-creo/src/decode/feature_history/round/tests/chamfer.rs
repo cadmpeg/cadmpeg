@@ -87,7 +87,19 @@ fn equal_distance_chamfer_setback_propagates_scan_refusal() {
     }];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        Some("creo chamfer cone support pairs"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+
+            equal_distance_chamfer_setback(&ctx, &cones, &supports).map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
 
@@ -220,23 +232,23 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
     );
 }
 
-fn chamfer_limit_error(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn chamfer_limit_error(operation: &'static str) {
     let scan = chamfer_scan();
     let ir = CadIr::empty();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = chamfer_constant_distance(
-        &ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        914,
-    )
-    .expect_err("chamfer witnesses exceed the collection limit");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            chamfer_constant_distance(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                914,
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -246,17 +258,17 @@ fn chamfer_limit_error(limit: u64, operation: &'static str) {
 
 #[test]
 fn chamfer_cone_witnesses_refuse_collection_limit() {
-    chamfer_limit_error(0, "creo chamfer cone witnesses");
+    chamfer_limit_error("creo chamfer cone witnesses");
 }
 
 #[test]
 fn chamfer_support_plane_ids_refuse_collection_limit() {
-    chamfer_limit_error(4, "creo chamfer support plane IDs");
+    chamfer_limit_error("creo chamfer support plane IDs");
 }
 
 #[test]
 fn chamfer_support_planes_refuse_collection_limit() {
-    chamfer_limit_error(5, "creo chamfer support planes");
+    chamfer_limit_error("creo chamfer support planes");
 }
 
 #[test]
@@ -266,7 +278,27 @@ fn chamfer_feature_definition_propagates_cone_limit() {
     let ir = CadIr::empty();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo chamfer cone witnesses"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            crate::decode::feature_history::draft::schema_feature_definition(
+                &ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                914,
+                Some(crate::feature::schema::SchemaClass::Chamfer),
+                "Chamfer",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = crate::decode::feature_history::draft::schema_feature_definition(

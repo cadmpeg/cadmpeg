@@ -64,24 +64,6 @@ fn push_feature_source_parameter(
     content: &mut cadmpeg_ir::features::FeatureContent,
     id: ParameterId,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(content.len()),
-        "creo feature source content",
-    )?;
-    for entry in ctx.admit_iter(&**content, "creo feature source content uniqueness")? {
-        if let FeatureSourceContent::Parameter(existing) = entry {
-            if ctx.equal(
-                existing,
-                &id,
-                "creo feature source parameter identity comparison",
-            )? {
-                return Err(cadmpeg_core::CodecError::Malformed(
-                    "source_content repeats a parameter or child-feature reference".into(),
-                ));
-            }
-        }
-    }
-    content.reserve_for_decode(ctx, 1, "creo feature source content")?;
     content
         .push(
             FeatureSourceContent::Parameter(id),
@@ -147,6 +129,10 @@ fn feature_dimension_parameter_row_id_admitted(
             "creo dimension parameter identity",
         )?
     };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(text.len()),
+        "creo dimension parameter identity validation",
+    )?;
     Ok(ParameterId::try_from(text).ok())
 }
 
@@ -192,12 +178,14 @@ pub(in super::super) fn resolved_feature_dimension_parameter_admitted<'a>(
     let Some(dimension) = table.rows.get(ordinal) else {
         return Ok(None);
     };
-    let unique = ctx
-        .admit_iter(&table.rows, "creo admitted dimension uniqueness")?
-        .filter(|candidate| candidate.external_id == dimension.external_id)
-        .count()
-        == 1;
-    if !unique {
+    if crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        &table.rows,
+        |candidate| Ok(candidate.external_id == dimension.external_id),
+        "creo admitted dimension uniqueness",
+    )?
+    .is_none()
+    {
         return Ok(None);
     }
     Ok(
@@ -224,13 +212,21 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
         if !feature_dimension_table_complete(table) {
             continue;
         }
+        let mut scratch = ctx.reserve_scoped(0, "creo planned dimension identity index")?;
+        let mut counts = std::collections::HashMap::<u32, usize>::new();
+        for dimension in ctx.admit_iter(&table.rows, "creo planned dimension ID uniqueness")? {
+            *scratch
+                .with_storage(|| {
+                    ctx.entry_hash_map(
+                        &mut counts,
+                        dimension.external_id,
+                        "creo planned dimension identity count nodes",
+                    )
+                })?
+                .or_default() += 1;
+        }
         for dimension in ctx.admit_iter(&table.rows, "creo planned dimension rows")? {
-            if ctx
-                .admit_iter(&table.rows, "creo planned dimension ID uniqueness")?
-                .filter(|candidate| candidate.external_id == dimension.external_id)
-                .count()
-                != 1
-            {
+            if counts.get(&dimension.external_id) != Some(&1) {
                 continue;
             }
             let text = ctx.format_retained(
@@ -240,6 +236,10 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
                     dimension.external_id,
                 ),
                 "creo planned dimension parameter identity",
+            )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(text.len()),
+                "creo planned dimension parameter identity validation",
             )?;
             let Ok(parameter) = ParameterId::try_from(text) else {
                 continue;
@@ -304,30 +304,45 @@ pub(in super::super) fn feature_skamp_table_complete(
         .is_none_or(SolverSubtable::is_complete)
 }
 
-pub(in super::super) fn feature_dimension_parameter_layout(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+#[derive(Debug)]
+pub(in super::super) struct DimensionParameterLayout<'ctx> {
+    pub(in super::super) rows: Vec<(u32, String, Option<usize>)>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+pub(in super::super) fn feature_dimension_parameter_layout<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     keys: &[(SketchId, u32)],
-) -> Result<
-    Option<impl ExactSizeIterator<Item = (u32, String, Option<usize>)> + std::fmt::Debug>,
-    cadmpeg_core::CodecError,
-> {
+) -> Result<Option<DimensionParameterLayout<'ctx>>, cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo dimension layout scratch")?;
     let mut local_counts = BTreeMap::<(&SketchId, u32), usize>::new();
     for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout keys")? {
         let key = (sketch, *external_id);
-        *ctx.entry_btree_map(&mut local_counts, key, "creo dimension layout count nodes")?
+        *scratch
+            .with_storage(|| {
+                ctx.entry_btree_map(&mut local_counts, key, "creo dimension layout count nodes")
+            })?
             .or_insert(0) += 1;
     }
     let mut next_ordinals = BTreeMap::<&SketchId, u32>::new();
     let mut local_occurrences = BTreeMap::<(&SketchId, u32), usize>::new();
     let mut layout = Vec::new();
-    ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")?;
-    for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout entries")? {
-        let ordinal = ctx
-            .entry_btree_map(
-                &mut next_ordinals,
-                sketch,
-                "creo dimension layout ordinal nodes",
-            )?
+    let mut layout_storage = ctx.reserve_scoped(0, "creo dimension layout rows")?;
+    layout_storage.with_storage(|| {
+        ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")
+    })?;
+    let mut items = keys.iter();
+    while let Some((sketch, external_id)) =
+        ctx.next_charged(&mut items, "creo dimension layout entries")?
+    {
+        let ordinal = scratch
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut next_ordinals,
+                    sketch,
+                    "creo dimension layout ordinal nodes",
+                )
+            })?
             .or_default();
         let assigned = *ordinal;
         let Some(next) = ordinal.checked_add(1) else {
@@ -335,13 +350,19 @@ pub(in super::super) fn feature_dimension_parameter_layout(
         };
         *ordinal = next;
         let key = (sketch, *external_id);
-        let occurrence = if local_counts[&key] > 1 {
-            let next = ctx
-                .entry_btree_map(
-                    &mut local_occurrences,
-                    key,
-                    "creo dimension layout occurrence nodes",
-                )?
+        let count = ctx
+            .get_btree_map(&local_counts, &key, "creo dimension layout count lookup")?
+            .copied()
+            .unwrap_or_default();
+        let occurrence = if count > 1 {
+            let next = scratch
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut local_occurrences,
+                        key,
+                        "creo dimension layout occurrence nodes",
+                    )
+                })?
                 .or_insert(0);
             let assigned = *next;
             *next += 1;
@@ -349,7 +370,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
         } else {
             None
         };
-        let name = if local_counts[&key] == 1 {
+        let name = if count == 1 {
             ctx.format_retained(
                 format_args!("d{external_id}"),
                 "creo dimension parameter name",
@@ -372,7 +393,10 @@ pub(in super::super) fn feature_dimension_parameter_layout(
         };
         layout.push((assigned, name, occurrence));
     }
-    Ok(Some(layout.into_iter()))
+    Ok(Some(DimensionParameterLayout {
+        rows: layout,
+        storage: layout_storage,
+    }))
 }
 
 pub(in super::super) fn transfer_feature_dimensions(
@@ -382,6 +406,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     annotations: &mut AnnotationBuilder,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, BTreeMap<String, ParameterId>), cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo dimension transfer staging")?;
     let mut feature_ids = BTreeSet::new();
     for feature in ctx.admit_iter(&ir.model.features, "creo dimension owner features")? {
         if !ctx.contains_btree_set(
@@ -389,13 +414,15 @@ pub(in super::super) fn transfer_feature_dimensions(
             &feature.id,
             "creo dimension owner feature ID lookup",
         )? {
-            ctx.insert_btree_set(
-                &mut feature_ids,
-                feature
-                    .id
-                    .try_clone_for_decode(ctx, "creo dimension owner feature IDs")?,
-                "creo dimension owner feature ID nodes",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut feature_ids,
+                    feature
+                        .id
+                        .try_clone_for_decode(ctx, "creo dimension owner feature IDs")?,
+                    "creo dimension owner feature ID nodes",
+                )
+            })?;
         }
     }
     let mut candidates = Vec::new();
@@ -420,9 +447,13 @@ pub(in super::super) fn transfer_feature_dimensions(
             .admit_iter(&table.rows, "creo source dimension rows")?
             .enumerate()
         {
-            ctx.reserve_vec(&mut candidates, 1, "creo dimension candidates")?;
+            scratch.with_storage(|| {
+                ctx.reserve_vec(&mut candidates, 1, "creo dimension candidates")
+            })?;
             candidates.push((
-                sketch.try_clone_for_decode(ctx, "creo dimension candidate sketch IDs")?,
+                scratch.with_storage(|| {
+                    sketch.try_clone_for_decode(ctx, "creo dimension candidate sketch IDs")
+                })?,
                 definition,
                 source_ordinal,
                 dimension,
@@ -436,12 +467,16 @@ pub(in super::super) fn transfer_feature_dimensions(
         "creo transfer feature dimensions candidates ordering",
     )?;
     let mut keys = Vec::new();
-    ctx.reserve_vec(&mut keys, candidates.len(), "creo dimension layout keys")?;
+    scratch.with_storage(|| {
+        ctx.reserve_vec(&mut keys, candidates.len(), "creo dimension layout keys")
+    })?;
     for (sketch, _, _, dimension) in
         ctx.admit_iter(&candidates, "creo dimension layout candidates")?
     {
         keys.push((
-            sketch.try_clone_for_decode(ctx, "creo dimension layout sketch IDs")?,
+            scratch.with_storage(|| {
+                sketch.try_clone_for_decode(ctx, "creo dimension layout sketch IDs")
+            })?,
             dimension.external_id,
         ));
     }
@@ -450,17 +485,22 @@ pub(in super::super) fn transfer_feature_dimensions(
     };
     let mut unique_external_ids = BTreeMap::new();
     for (_, external_id) in ctx.admit_iter(&keys, "creo unique dimension external IDs")? {
-        *ctx.entry_btree_map(
-            &mut unique_external_ids,
-            *external_id,
-            "creo unique dimension external ID nodes",
-        )?
-        .or_insert(0usize) += 1;
+        *scratch
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut unique_external_ids,
+                    *external_id,
+                    "creo unique dimension external ID nodes",
+                )
+            })?
+            .or_insert(0usize) += 1;
     }
-    let transferred = layout.len();
+    let transferred = layout.rows.len();
+    let _layout_storage = layout.storage;
     let mut relation_parameters = BTreeMap::new();
-    for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
-        candidates.into_iter().zip(layout)
+    for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in ctx
+        .admit_iter(candidates, "creo dimension candidate transfer")?
+        .zip(ctx.admit_iter(layout.rows, "creo dimension layout transfer")?)
     {
         let Some(owner_id) =
             section_owner_feature_id(ctx, scan, definition.identity.id(), &sketch)?
@@ -476,7 +516,12 @@ pub(in super::super) fn transfer_feature_dimensions(
         else {
             continue;
         };
-        if unique_external_ids[&dimension.external_id] == 1 {
+        if ctx.get_btree_map(
+            &unique_external_ids,
+            &dimension.external_id,
+            "creo unique dimension external ID lookup",
+        )? == Some(&1)
+        {
             ctx.insert_btree_map(
                 &mut relation_parameters,
                 ctx.format_retained(
@@ -615,9 +660,9 @@ pub(in super::super) fn transfer_feature_dimensions(
             },
         )?;
         let mut owner_index = None;
-        for (index, feature) in ctx
-            .admit_iter(&ir.model.features, "creo dimension owner feature lookup")?
-            .enumerate()
+        let mut items = ir.model.features.iter().enumerate();
+        while let Some((index, feature)) =
+            ctx.next_charged(&mut items, "creo dimension owner feature lookup")?
         {
             if !ctx.equal(
                 &feature.id,

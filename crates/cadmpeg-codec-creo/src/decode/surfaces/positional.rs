@@ -104,7 +104,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             continue;
         };
         let Some(center) =
-            paired_five_coordinate_sphere_center(ctx, [first_envelope, second_envelope], radius)?
+            paired_five_coordinate_sphere_center([first_envelope, second_envelope], radius)
         else {
             continue;
         };

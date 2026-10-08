@@ -18,8 +18,7 @@ use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
-    current_feature_operation, feature_recipe_effect, feature_revolution_extent,
-    feature_schema_class, feature_section_sweep_semantics_conflict,
+    feature_revolution_extent, feature_schema_class, feature_section_sweep_semantics_conflict,
 };
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
@@ -69,8 +68,7 @@ pub(in super::super) fn named_feature_definition(
 /// The definition a feature name alone establishes, before the schema class
 /// is consulted.
 ///
-/// Every answer here comes from the name and the scan, so the function has no
-/// failure of its own; `None` means the name establishes nothing.
+/// `None` means the name establishes no definition.
 fn name_only_feature_definition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -113,7 +111,8 @@ fn name_only_feature_definition(
             source_carriers,
             feature_id,
             section_sweep_boolean_operation(
-                feature_recipe_effect(scan, feature_id),
+                super::operations::feature_recipe(ctx, scan, feature_id)?
+                    .map(crate::feature::operations::FeatureRecipe::effect),
                 kind,
                 false,
                 preceding_features_establish_body(ctx, ir)?,
@@ -156,7 +155,8 @@ fn name_only_feature_definition(
     if kind == "Extrude" || numbered_feature_name_has_family(ctx, kind, "Extrude")? {
         let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            super::operations::feature_recipe(ctx, scan, feature_id)?
+                .map(crate::feature::operations::FeatureRecipe::effect),
             kind,
             output_kind.is_some(),
             preceding_features_establish_body(ctx, ir)?,
@@ -173,7 +173,8 @@ fn name_only_feature_definition(
     if kind == "Revolve" || numbered_feature_name_has_family(ctx, kind, "Revolve")? {
         let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
         let op = section_sweep_boolean_operation(
-            feature_recipe_effect(scan, feature_id),
+            super::operations::feature_recipe(ctx, scan, feature_id)?
+                .map(crate::feature::operations::FeatureRecipe::effect),
             kind,
             output_kind.is_some(),
             preceding_features_establish_body(ctx, ir)?,
@@ -204,8 +205,13 @@ pub(in super::super) fn named_or_referenced_feature_definition(
         return Ok(Some(definition));
     }
     if kind == "Native Feature"
-        && current_feature_operation(&scan.features.operations, feature_id)
-            .is_some_and(|operation| operation.display_state_conflict)
+        && crate::decode::uniqueness::exactly_one_by(
+            ctx,
+            &scan.features.operations,
+            |operation| Ok(operation.feature_id == feature_id),
+            "creo current feature operation lookup",
+        )?
+        .is_some_and(|operation| operation.display_state_conflict)
     {
         return Ok(None);
     }
@@ -370,16 +376,18 @@ fn surface_intersect_feature_definition(
         return Ok(None);
     }
     let mut eligible_table = None;
-    for table in ctx.admit_iter(&scan.features.entity_tables, "creo intersect entity tables")? {
+    let mut table_iter = scan.features.entity_tables.iter();
+    while let Some(table) = ctx.next_charged(&mut table_iter, "creo intersect entity tables")? {
         if table.feature_id != feature_id || table.table_class_id != 29 {
             continue;
         }
         let mut surface_count = 0usize;
         let mut all_surfaces_owned = true;
-        for entry in ctx
-            .admit_iter(table.entries.as_slice(), "creo intersect table entries")?
-            .filter(|entry| table.contains_surface_id(entry.entity_id))
-        {
+        let mut entry_iter = table.entries.iter();
+        while let Some(entry) = ctx.next_charged(&mut entry_iter, "creo intersect table entries")? {
+            if !table.contains_surface_id(entry.entity_id) {
+                continue;
+            }
             surface_count = surface_count.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit("creo intersect surface count", u64::MAX, u64::MAX)
             })?;
