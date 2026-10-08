@@ -225,6 +225,9 @@ pub(super) fn store_arena<T: Serialize>(
     key: CreoArena,
     records: &[T],
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     if records.is_empty() {
         return Ok(());
     }
@@ -293,6 +296,28 @@ pub(super) fn emit_uniform<T: Serialize>(
 #[cfg(test)]
 mod tests {
     use super::CreoArena;
+
+    #[test]
+    fn empty_native_arena_is_free_and_keeps_original_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        super::store_arena::<u32>(&ctx, &mut ir, CreoArena::ExpandedSections, &[])
+            .expect("empty arena performs no work");
+        assert!(ir.native.namespace("creo").is_none());
+        let original = ctx.charge_work_limit(1, "prior native refusal").expect_err("refusal");
+        assert!(matches!(super::store_arena::<u32>(
+            &ctx, &mut ir, CreoArena::ExpandedSections, &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+        assert!(ir.native.namespace("creo").is_none());
+    }
 
     #[test]
     fn closed_arena_variants_preserve_unique_wire_names() {
