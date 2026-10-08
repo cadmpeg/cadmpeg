@@ -48,7 +48,10 @@ fn legacy_side_entry_name_refuses_at_matching_retained_limit() {
                 ctx,
                 xml.root_element(),
                 1,
-                &std::collections::BTreeMap::default(),
+                &mut super::EntryLookup {
+                    entries: &[],
+                    index: None,
+                },
             )
         },
     );
@@ -974,3 +977,5 @@ fn legacy_string_id_count_is_bounded_before_vector_allocation() {
         Err(CodecError::Malformed(_))
     ));
 }
+
+mod repairs;

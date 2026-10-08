@@ -400,3 +400,67 @@ fn topology_binding_group_index_is_scoped_and_dedup_keeps_no_new_identity() {
         .unwrap();
     assert_eq!(input, nodes);
 }
+
+#[test]
+fn legacy_root_node_allocation_releases_the_consumed_group_tree() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (groups, group_storage) = ctx
+        .collect_scoped_btree_map(
+            ["A", "B", "C", "D", "E", "F", "G", "H"].into_iter().map(|family| {
+                (family.to_owned(), vec![vec![ElementMappedName {
+                    encoded: "stable".into(),
+                    resolved: Some("stable".into()),
+                    string_ids: Vec::new(),
+                    topology_ids: Vec::new(),
+                }]])
+            }),
+            "test legacy group tree",
+        )
+        .unwrap();
+    // The group tree plus root-group vector establishes the live peak.
+    // After consuming the tree, the smaller root node cannot raise that peak.
+    // Keeping the dead tree reservation would add this node to the peak.
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "FreeCAD legacy root map node",
+        None,
+    );
+    let (data, storage) = ctx
+        .with_scoped_storage("test legacy root output", || {
+            ElementMapNodes::from_root_names(
+                &ctx,
+                3,
+                super::ScopedData {
+                    data: groups,
+                    _storage: group_storage,
+                },
+            )
+        })
+        .unwrap();
+    let nodes = super::ScopedData {
+        data,
+        _storage: storage,
+    };
+    drop(probe);
+    assert_eq!(nodes.data.root().map_id, 3);
+    assert_eq!(nodes.data.root().groups.len(), 8);
+    for (group, family) in nodes
+        .data
+        .root()
+        .groups
+        .iter()
+        .zip(["A", "B", "C", "D", "E", "F", "G", "H"])
+    {
+        assert_eq!(group.indexed_name, family);
+        assert!(group.children.is_empty());
+        assert_eq!(group.names.len(), 1);
+        assert_eq!(group.names[0][0].encoded, "stable");
+        assert_eq!(group.names[0][0].resolved.as_deref(), Some("stable"));
+        assert!(group.names[0][0].string_ids.is_empty());
+        assert!(group.names[0][0].topology_ids.is_empty());
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+    drop(nodes);
+}

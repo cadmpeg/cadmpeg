@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted native element-map nodes and persistent-name bindings.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
+
+/// Owns scoped scratch data and releases it before its reservation.
+pub(crate) struct ScopedData<'ctx, T> {
+    pub(crate) data: T,
+    pub(crate) _storage: ScopedReservation<'ctx>,
+}
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -241,16 +247,18 @@ impl ElementMapNodes {
     pub(crate) fn from_root_names(
         ctx: &DecodeContext<'_>,
         map_id: u64,
-        groups: BTreeMap<String, Vec<Vec<ElementMappedName>>>,
+        mut groups: ScopedData<'_, BTreeMap<String, Vec<Vec<ElementMappedName>>>>,
     ) -> Result<Self, CodecError> {
-        let mut root_groups = ctx.collection_vec(groups.len(), "FreeCAD legacy root map groups")?;
-        for (indexed_name, names) in ctx.admit_iter(groups, "FreeCAD legacy root map group scan")? {
+        let mut root_groups = ctx.collection_vec(groups.data.len(), "FreeCAD legacy root map groups")?;
+        let values = std::mem::take(&mut groups.data);
+        for (indexed_name, names) in ctx.admit_iter(values, "FreeCAD legacy root map group scan")? {
             root_groups.push(ElementMapGroup {
                 indexed_name,
                 children: Vec::new(),
                 names,
             });
         }
+        drop(groups);
         let mut nodes = ctx.collection_vec(1, "FreeCAD legacy root map node")?;
         nodes.push(ElementMapNode {
             map_id,
@@ -271,12 +279,12 @@ impl ElementMapNodes {
         bindings: impl IntoIterator<Item = (&'a str, usize, &'a str)>,
     ) -> Result<(), CodecError> {
         let root = self.0.len() - 1;
-        let mut groups = BTreeMap::new();
         let mut group_storage = ctx.reserve_scoped(0, "FreeCAD element topology group index")?;
-        for group in ctx.admit_iter(
-            &mut self.0[root].groups,
-            "FreeCAD element topology group scan",
-        )? {
+        let mut groups = BTreeMap::new();
+        let mut source_groups = self.0[root].groups.iter_mut();
+        while let Some(group) =
+            ctx.next_charged(&mut source_groups, "FreeCAD element topology group scan")?
+        {
             group_storage.with_storage(|| {
                 ctx.push_btree_group(
                     &mut groups,
@@ -299,11 +307,17 @@ impl ElementMapNodes {
             else {
                 continue;
             };
-            for names in ctx.admit_iter(matches, "FreeCAD element topology matching groups")? {
+            let mut matching_groups = matches.iter_mut();
+            while let Some(names) =
+                ctx.next_charged(&mut matching_groups, "FreeCAD element topology matching groups")?
+            {
                 let Some(names) = names.get_mut(source_index) else {
                     continue;
                 };
-                for name in ctx.admit_iter(names, "FreeCAD element topology name scan")? {
+                let mut name_iter = names.iter_mut();
+                while let Some(name) =
+                    ctx.next_charged(&mut name_iter, "FreeCAD element topology name scan")?
+                {
                     if !ctx.any_by(
                         &name.topology_ids,
                         |existing| {

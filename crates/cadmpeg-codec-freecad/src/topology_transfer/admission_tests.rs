@@ -2,7 +2,7 @@
 
 use super::tests::{
     assert_codec_collection_refusal, assert_codec_retained_refusal, assert_codec_work_refusal,
-    triangulated_face_archive,
+    repeated_shape_roots_archive, triangulated_face_archive,
 };
 use super::{
     connected_components, pcurve_geometry, pcurve_loss, source_topology_indices, transform_curve,
@@ -140,6 +140,17 @@ fn connected_component_comparison_refuses_at_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         &[],
         "FreeCAD connected-component comparison",
+        |ctx| connected_components(ctx, &[connected.clone(), connected.clone()]),
+    );
+}
+
+#[test]
+fn connected_component_member_scan_refuses_at_work_limit() {
+    let connected = std::collections::BTreeSet::from(["edge".to_owned()]);
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD connected-component members",
         |ctx| connected_components(ctx, &[connected.clone(), connected.clone()]),
     );
 }
@@ -415,6 +426,33 @@ fn topology_occurrence_property_refuses_at_retained_limit() {
 }
 
 #[test]
+fn element_map_demand_admits_returned_topology_occurrences() {
+    assert_codec_collection_refusal(
+        &repeated_shape_roots_archive(true),
+        "FreeCAD topology occurrences",
+    );
+}
+
+#[test]
+fn element_map_demand_charges_occurrence_copies_when_they_are_built() {
+    let input = repeated_shape_roots_archive(true);
+    for operation in [
+        "FreeCAD topology occurrence property",
+        "FreeCAD topology occurrence identity",
+    ] {
+        assert_codec_work_refusal(&input, operation);
+    }
+}
+
+#[test]
+fn identity_edge_reads_the_curve_position_index_without_an_element_map() {
+    assert_codec_work_refusal(
+        &repeated_shape_roots_archive(false),
+        "FreeCAD curve index scan",
+    );
+}
+
+#[test]
 fn polygonal_surface_identity_refuses_at_retained_limit() {
     assert_codec_retained_refusal(
         &triangulated_face_archive(),
@@ -471,8 +509,9 @@ fn triangulated_surface_emitted_identity_refuses_at_materialized_limit() {
             ctx,
             &payload,
             tables,
-            cadmpeg_core::text::NonBlankString::try_from("MeshShape".to_owned()).unwrap(),
-            super::GeometryIndexes::new(ctx, &CadIr::empty())?,
+            test_source_object(ctx)?,
+            super::GeometryIndexes::new(ctx)?,
+            None,
         )?;
         builder.append_face(
             &mut CadIr::empty(),
@@ -904,11 +943,11 @@ fn cached_vertices_refuse_at_collection_limit() {
     assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD cached vertices");
 }
 
-fn empty_builder<'a, 'c, 'r>(
+fn empty_builder<'a, 'c, 'r, 'occ>(
     ctx: &'c DecodeContext<'r>,
     payload: &'a ShapePayloadRecord,
     tshapes: &'a TextTShapes,
-) -> Result<Builder<'a, 'c, 'r>, CodecError> {
+) -> Result<Builder<'a, 'c, 'r, 'occ>, CodecError> {
     Builder::new(
         ctx,
         payload,
@@ -923,14 +962,25 @@ fn empty_builder<'a, 'c, 'r>(
             triangulations: &[],
             roots: &[],
         },
-        cadmpeg_core::text::NonBlankString::try_from("Object".to_owned()).unwrap(),
-        super::GeometryIndexes::new(ctx, &CadIr::empty())?,
+        test_source_object(ctx)?,
+        super::GeometryIndexes::new(ctx)?,
+        None,
     )
+}
+
+fn test_source_object<'c>(
+    ctx: &'c DecodeContext<'_>,
+) -> Result<super::ScopedData<'c, cadmpeg_core::text::NonBlankString>, CodecError> {
+    Ok(super::ScopedData {
+        data: cadmpeg_core::text::NonBlankString::try_from("Object".to_owned())
+            .map_err(CodecError::malformed)?,
+        _storage: ctx.reserve_scoped(0, "test topology source object")?,
+    })
 }
 
 fn assert_empty_builder_refusal(
     operation: &str,
-    call: impl Fn(&mut Builder<'_, '_, '_>) -> Result<(), CodecError>,
+    call: impl Fn(&mut Builder<'_, '_, '_, '_>) -> Result<(), CodecError>,
 ) {
     let payload = ShapePayloadRecord {
         id: "fcstd:native:entry#Payload".to_owned(),
@@ -947,7 +997,7 @@ fn assert_empty_builder_refusal(
 
 fn assert_empty_builder_materialized_refusal(
     operation: &str,
-    call: impl Fn(&mut Builder<'_, '_, '_>) -> Result<(), CodecError>,
+    call: impl Fn(&mut Builder<'_, '_, '_, '_>) -> Result<(), CodecError>,
 ) {
     let payload = ShapePayloadRecord {
         id: "fcstd:native:entry#Payload".to_owned(),
@@ -964,7 +1014,7 @@ fn assert_empty_builder_materialized_refusal(
 
 fn assert_empty_builder_collection_refusal(
     operation: &str,
-    call: impl Fn(&mut Builder<'_, '_, '_>) -> Result<(), CodecError>,
+    call: impl Fn(&mut Builder<'_, '_, '_, '_>) -> Result<(), CodecError>,
 ) {
     let payload = ShapePayloadRecord {
         id: "fcstd:native:entry#Payload".to_owned(),
@@ -1166,8 +1216,9 @@ fn assert_standalone_polygon_refusal(
                 triangulations: &[],
                 roots: &[],
             },
-            cadmpeg_core::text::NonBlankString::try_from("Object".to_owned()).unwrap(),
-            super::GeometryIndexes::new(ctx, &CadIr::empty())?,
+            test_source_object(ctx)?,
+            super::GeometryIndexes::new(ctx)?,
+            None,
         )?;
         let edge = EdgeId::mint("fcstd:model:edge#Payload:1").unwrap();
         builder.polygon_curve(
@@ -1284,22 +1335,24 @@ fn geometry_position_indexes_charge_work_and_scoped_storage() {
         &[],
         "FreeCAD curve position lookup",
         |ctx| {
-            let indexes = super::GeometryIndexes::new(ctx, &ir)?;
-            ctx.get_btree_map(&indexes.curves, &id, "FreeCAD curve position lookup")
+            let mut indexes = super::GeometryIndexes::new(ctx)?;
+            indexes
+                .curve_position(ctx, &ir, &id)
                 .map(|_| ())
         },
     );
     crate::test_support::materialized_refusal_at("FreeCAD curve position key", |ctx| {
-        super::GeometryIndexes::new(ctx, &ir).map(|_| ())
+        let mut indexes = super::GeometryIndexes::new(ctx)?;
+        indexes.curve_position(ctx, &ir, &id).map(|_| ())
     });
     crate::test_support::with_service_context(&[], |ctx| {
-        let mut indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
-        assert_eq!(indexes.curves.get(&id), Some(&0));
+        let mut indexes = super::GeometryIndexes::new(ctx).unwrap();
+        assert_eq!(indexes.curve_position(ctx, &ir, &id).unwrap(), Some(0));
         indexes.index_curve(ctx, &id, 9).unwrap();
-        assert_eq!(indexes.curves.get(&id), Some(&0));
+        assert_eq!(indexes.curve_position(ctx, &ir, &id).unwrap(), Some(0));
         let next = cadmpeg_ir::ids::CurveId::mint("fcstd:model:curve#Index:2").unwrap();
         indexes.index_curve(ctx, &next, 1).unwrap();
-        assert_eq!(indexes.curves.get(&next), Some(&1));
+        assert_eq!(indexes.curve_position(ctx, &ir, &next).unwrap(), Some(1));
     });
 }
 
@@ -1349,17 +1402,23 @@ fn procedural_indexes_keep_presence_and_reject_ambiguous_owners() {
         None,
     ));
     crate::test_support::with_service_context(&[], |ctx| {
-        let mut indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
-        assert!(indexes.procedural_surfaces.contains(&construction));
-        assert_eq!(indexes.construction_owners.get(&construction), Some(&None));
+        let mut indexes = super::GeometryIndexes::new(ctx).unwrap();
+        indexes.ensure_procedural(ctx, &ir).unwrap();
+        assert!(indexes.procedural.as_ref().unwrap().procedural_surfaces.contains(&construction));
+        assert_eq!(indexes.procedural.as_ref().unwrap().construction_owners.get(&construction), Some(&None));
         assert_eq!(ir.model.procedural_surface_owner(&construction), None);
+        assert_eq!(indexes.surface_position(ctx, &ir, &first).unwrap(), Some(0));
         indexes.index_surface(ctx, &first, 9).unwrap();
-        assert_eq!(indexes.surfaces.get(&first), Some(&0));
+        assert_eq!(indexes.surface_position(ctx, &ir, &first).unwrap(), Some(0));
+        let appended = SurfaceId::mint("fcstd:model:surface#Index:appended").unwrap();
+        indexes.index_surface(ctx, &appended, ir.model.surfaces.len()).unwrap();
+        assert_eq!(indexes.surface_position(ctx, &ir, &appended).unwrap(), Some(2));
 
         ir.model.surfaces.pop();
-        let indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
+        let mut indexes = super::GeometryIndexes::new(ctx).unwrap();
+        indexes.ensure_procedural(ctx, &ir).unwrap();
         assert_eq!(
-            indexes.construction_owners.get(&construction),
+            indexes.procedural.as_ref().unwrap().construction_owners.get(&construction),
             Some(&Some(0))
         );
         assert_eq!(
