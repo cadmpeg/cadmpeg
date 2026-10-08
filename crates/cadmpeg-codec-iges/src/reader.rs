@@ -191,11 +191,15 @@ fn projection_directory<'ctx>(
     }
     let (mut projected, storage) =
         ctx.temporary_vec(directory.len(), "iges projected directory entries")?;
-    projected.extend(
-        ctx.admit_iter(directory, "iges projected directory entries")?
-            .filter(|entry| !quarantined.contains(&entry.sequence))
-            .copied(),
-    );
+    for entry in ctx.admit_iter(directory, "iges projected directory entries")? {
+        if !ctx.contains_btree_set(
+            quarantined,
+            &entry.sequence,
+            "iges projected directory quarantine lookup",
+        )? {
+            projected.push(*entry);
+        }
+    }
     Ok(Some((projected, storage)))
 }
 
@@ -237,6 +241,7 @@ fn append_generic_losses(
     projection: &entities::geometry::Projection<'_>,
     attributed: &mut BTreeSet<u32>,
     global_table: global::GlobalTable,
+    attribution_storage: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     for entry in ctx
         .admit_iter(directory, "iges generic loss directory entries")?
@@ -245,9 +250,12 @@ fn append_generic_losses(
         let admitted =
             crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table);
         if admitted
-            && (projection.decoded.contains(&entry.sequence)
-                || projection.consumed.contains(&entry.sequence)
-                || attributed.contains(&entry.sequence))
+            && (ctx.contains_btree_set(&projection.decoded, &entry.sequence,
+                    "iges generic loss decoded lookup")?
+                || ctx.contains_btree_set(&projection.consumed, &entry.sequence,
+                    "iges generic loss consumed lookup")?
+                || ctx.contains_btree_set(attributed, &entry.sequence,
+                    "iges generic loss attributed lookup")?)
         {
             continue;
         }
@@ -280,7 +288,9 @@ fn append_generic_losses(
             code.note(message)
                 .with_provenance(entry.admitted_loss_provenance(ctx)?),
         );
-        ctx.insert_btree_set(attributed, entry.sequence, "iges attributed loss sequences")?;
+        attribution_storage.with_storage(|| {
+            ctx.insert_btree_set(attributed, entry.sequence, "iges attributed loss sequences")
+        })?;
     }
     Ok(())
 }
@@ -565,11 +575,13 @@ fn decode_with_occurrence_limits(
 ) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx, ParseMode::Decode)?;
     let length_context = parse.global.length_context();
-    let quarantined_parameter_sequences =
-        quarantined_parameter_sequences(&parse.quarantined_parameters, ctx)?;
-    let projected_directory =
+    let mut quarantine_storage = ctx.reserve_scoped(0, "iges parameter quarantine index")?;
+    let quarantined_parameter_sequences = quarantine_storage.with_storage(|| {
+        quarantined_parameter_sequences(&parse.quarantined_parameters, ctx)
+    })?;
+    let projection_directory_storage =
         projection_directory(&parse.directory, &quarantined_parameter_sequences, ctx)?;
-    let projected_directory = projected_directory
+    let projected_directory = projection_directory_storage
         .as_ref()
         .map_or(parse.directory.as_slice(), |(entries, _)| {
             entries.as_slice()
@@ -602,6 +614,9 @@ fn decode_with_occurrence_limits(
         &parse.directory,
         &quarantined_parameter_sequences,
     )?;
+    drop(quarantined_parameter_sequences);
+    drop(quarantine_storage);
+    drop(projection_directory_storage);
     let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
     let native::NativeStoreResult {
         definition_storage,
@@ -753,10 +768,11 @@ fn decode_with_occurrence_limits(
     }
     drop(attribute_storage);
     let global_table = parse.global.global_table();
+    let mut attribution_storage = ctx.reserve_scoped(0, "iges attributed loss index")?;
     let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {
-        let mut attributed = attributed_sequences(&losses, ctx)?;
+        let mut attributed = attribution_storage.with_storage(|| attributed_sequences(&losses, ctx))?;
         append_generic_losses(
             ctx,
             &mut losses,
@@ -764,6 +780,7 @@ fn decode_with_occurrence_limits(
             &projection,
             &mut attributed,
             global_table,
+            &mut attribution_storage,
         )?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
@@ -777,24 +794,30 @@ fn decode_with_occurrence_limits(
         .admit_iter(&parse.directory, "iges transfer ledger directory records")?
         .filter(|entry| entry.entity_type != 0)
     {
-        let attributed_loss = attributed.contains(&entry.sequence);
         let note = if ctx.container_only() {
             "native record retained; semantic projection was not requested"
         } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
             "native record retained; entity is outside the declared read envelope"
-        } else if projection.decoded.contains(&entry.sequence) && attributed_loss {
-            "native record retained; semantic projection emitted with an attributed loss"
-        } else if projection.decoded.contains(&entry.sequence) {
-            "native record retained; semantic projection emitted"
-        } else if attributed_loss {
-            "native record retained; semantic projection omitted with an attributed loss"
-        } else if projection.consumed.contains(&entry.sequence) {
-            "native record retained; record was consumed as construction support"
         } else {
-            // The generic pass attributes every envelope-admitted record that
-            // is neither decoded nor consumed, so no decode reaches this arm;
-            // it names that state truthfully if a later pass admits it.
-            "native record retained; no standalone neutral projection was required"
+            let decoded = ctx.contains_btree_set(&projection.decoded, &entry.sequence,
+                "iges transfer decoded lookup")?;
+            let attributed_loss = ctx.contains_btree_set(&attributed, &entry.sequence,
+                "iges transfer attributed lookup")?;
+            if decoded && attributed_loss {
+                "native record retained; semantic projection emitted with an attributed loss"
+            } else if decoded {
+                "native record retained; semantic projection emitted"
+            } else if attributed_loss {
+                "native record retained; semantic projection omitted with an attributed loss"
+            } else if ctx.contains_btree_set(&projection.consumed, &entry.sequence,
+                "iges transfer consumed lookup")? {
+                "native record retained; record was consumed as construction support"
+            } else {
+                // The generic pass attributes every envelope-admitted record that
+                // is neither decoded nor consumed, so no decode reaches this arm;
+                // it names that state truthfully if a later pass admits it.
+                "native record retained; no standalone neutral projection was required"
+            }
         };
         let source = ctx.format_retained(
             format_args!("D{}", entry.sequence),
@@ -806,6 +829,8 @@ fn decode_with_occurrence_limits(
         )?;
         record_retained_transfer(ctx, &mut transfer_ledger, source, target, note)?;
     }
+    drop(attributed);
+    drop(attribution_storage);
     for record in ctx.admit_iter(
         &parse.quarantined_directory,
         "iges transfer ledger quarantined records",
