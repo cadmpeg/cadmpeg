@@ -256,8 +256,8 @@ fn finite_geometry_construction_admits_final_knot_conversion_in_the_caller() {
 
 #[test]
 fn checked_geometry_construction_releases_raw_pairing_and_keeps_only_final_storage() {
-    // Curves use 4 pairing visits, 3 pole probes and 9 knot probes.
-    // Surfaces use 12 pairing visits, 2 shape probes, 9 pole probes and 18 knot probes.
+    // Curves use 4 pairing visits, 3 pole collection probes, 4 finite knots and 3 order pairs.
+    // Surfaces use 12 pairing visits, 1 row width, 9 pole collection probes and 2*(4+3) knot visits.
     for surface in [false, true] {
         let rows = if surface { 2 } else { 0 };
         let poles = if surface { 4 } else { 2 };
@@ -274,7 +274,7 @@ fn checked_geometry_construction_releases_raw_pairing_and_keeps_only_final_stora
         policy.limits.max_retained_bytes = u64::try_from(retained).expect("small fixture");
         policy.limits.max_materialized_bytes = u64::try_from(temporary).expect("small fixture");
         policy.limits.max_collection_items = if surface { 12 } else { 4 };
-        policy.limits.max_work_units = if surface { 41 } else { 16 };
+        policy.limits.max_work_units = if surface { 36 } else { 14 };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         if surface {
             let mut refusal_policy = policy;

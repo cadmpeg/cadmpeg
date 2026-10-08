@@ -12,7 +12,6 @@ fn knot_edit_preserves_original_curve_storage_on_caller_refusal() {
         "IR NURBS knot edit",
         "IR NURBS knot finiteness",
         "IR NURBS knot order",
-        "IR NURBS knot edit copy back",
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::WorkUnits,
@@ -42,12 +41,16 @@ fn knot_edit_preserves_original_curve_storage_on_caller_refusal() {
         );
     }
     for dimension in [
+        ResourceDimension::RetainedBytes,
         ResourceDimension::MaterializedBytes,
         ResourceDimension::CollectionItems,
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
+            ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = u64::try_from(count * 8 - 1).expect("bytes");
+            }
             ResourceDimension::MaterializedBytes => {
                 policy.limits.max_materialized_bytes = u64::try_from(count * 8 - 1).expect("bytes");
             }
@@ -77,10 +80,10 @@ fn knot_edit_copies_validated_candidate_and_keeps_geometry_error_order() {
     let count = curve.knots().len();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = u64::try_from(count * 8).expect("bytes");
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = policy.limits.max_materialized_bytes;
     policy.limits.max_collection_items = u64::try_from(count).expect("slots");
-    // Copy, callback, two searches (including their end probes), then inline copy back.
-    policy.limits.max_work_units = u64::try_from(count * 13 + 1).expect("admitted passes");
+    // Copy n knots, edit n knots, check n finite values and compare n-1 adjacent pairs.
+    policy.limits.max_work_units = u64::try_from(count * 4 - 1).expect("admitted passes");
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     curve
@@ -135,7 +138,7 @@ fn knot_replacement_moves_admitted_output_without_copying_poles() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
-    policy.limits.max_work_units = u64::try_from(count * 2 + 1).expect("two invariant searches");
+    policy.limits.max_work_units = u64::try_from(count * 2 - 1).expect("n finite values and n-1 order pairs");
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let curve = original

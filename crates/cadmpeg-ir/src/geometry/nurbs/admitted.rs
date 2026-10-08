@@ -84,14 +84,14 @@ impl super::NurbsAdmission for DecodeContext<'_> {
             .map_err(|limit| ConstructionError::Resource(limit.into()))
     }
 
-    fn find_by<'a, T>(
+    fn all_by<T>(
         &self,
-        values: &'a [T],
+        values: &[T],
         operation: &'static str,
         mut predicate: impl FnMut(&T) -> bool,
-    ) -> Result<Option<&'a T>, Self::Error> {
-        DecodeContext::find_by(self, values, |value| Ok(predicate(value)), operation)
-            .map_err(Into::into)
+    ) -> Result<bool, Self::Error> {
+        DecodeContext::all_by_limit(self, values, |value| Ok(predicate(value)), operation)
+            .map_err(|limit| ConstructionError::Resource(limit.into()))
     }
 
     fn structure(&self, message: std::fmt::Arguments<'_>) -> Result<Self::Error, Self::Error> {

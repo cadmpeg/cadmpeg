@@ -143,7 +143,8 @@ fn pcurve_construction_accounts_pair_storage_final_storage_and_scratch_lifetime(
         policy.limits.max_retained_bytes = u64::try_from(retained).expect("fixture");
         policy.limits.max_materialized_bytes = u64::try_from(temporary).expect("fixture");
         policy.limits.max_collection_items = 4;
-        policy.limits.max_work_units = 16;
+        // Two owned pairing lanes: 4 visits; pole collection: 3; knots: 4 finite + 3 order.
+        policy.limits.max_work_units = 14;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         if polar {
             let result = PolarPcurveNurbs::from_checked_lanes(

@@ -367,12 +367,12 @@ pub(crate) trait NurbsAdmission {
         operation: &'static str,
     ) -> Result<impl Iterator<Item = <S::Iter as Iterator>::Item>, Self::Error>;
 
-    fn find_by<'a, T>(
+    fn all_by<T>(
         &self,
-        values: &'a [T],
+        values: &[T],
         operation: &'static str,
         predicate: impl FnMut(&T) -> bool,
-    ) -> Result<Option<&'a T>, Self::Error>;
+    ) -> Result<bool, Self::Error>;
 
     fn structure(&self, message: std::fmt::Arguments<'_>) -> Result<Self::Error, Self::Error>;
 }
@@ -419,13 +419,13 @@ impl NurbsAdmission for StandardNurbsAdmission {
         Ok(values.source_iter())
     }
 
-    fn find_by<'a, T>(
+    fn all_by<T>(
         &self,
-        values: &'a [T],
+        values: &[T],
         _operation: &'static str,
-        mut predicate: impl FnMut(&T) -> bool,
-    ) -> Result<Option<&'a T>, Self::Error> {
-        Ok(values.iter().find(|value| predicate(value)))
+        predicate: impl FnMut(&T) -> bool,
+    ) -> Result<bool, Self::Error> {
+        Ok(values.iter().all(predicate))
     }
 
     fn structure(&self, message: std::fmt::Arguments<'_>) -> Result<Self::Error, Self::Error> {
@@ -1179,14 +1179,17 @@ fn require_rectangular_grid<T, S: NurbsAdmission>(
     rows: &[Vec<T>],
 ) -> Result<(), S::Error> {
     let width = rows.first().map_or(0, Vec::len);
-    if let Some(row) = admission.find_by(
+    let mut row_length = width;
+    if !admission.all_by(
         rows.get(1..).unwrap_or_default(),
         "IR NURBS grid row shape",
-        |row| row.len() != width,
+        |row| {
+            row_length = row.len();
+            row_length == width
+        },
     )? {
         return Err(admission.structure(format_args!(
-            "{field} row must contain {width} values, found {}",
-            row.len(),
+            "{field} row must contain {width} values, found {row_length}",
         ))?);
     }
     Ok(())
@@ -1267,12 +1270,7 @@ fn require_finite_scalars<S: NurbsAdmission>(
     prefix: &str,
     values: &[f64],
 ) -> Result<(), S::Error> {
-    if admission
-        .find_by(values, "IR NURBS knot finiteness", |value| {
-            !value.is_finite()
-        })?
-        .is_some()
-    {
+    if !admission.all_by(values, "IR NURBS knot finiteness", |value| value.is_finite())? {
         return Err(admission.structure(format_args!("{prefix}knots contains a non-finite value"))?);
     }
     Ok(())
@@ -1285,16 +1283,15 @@ fn require_knot_order<S: NurbsAdmission>(
 ) -> Result<(), S::Error> {
     let mut previous = knots.first().copied();
     if admission
-        .find_by(
+        .all_by(
             knots.get(1..).unwrap_or_default(),
             "IR NURBS knot order",
             |value| {
                 let ordered = previous.is_none_or(|previous| previous <= *value);
                 previous = Some(*value);
-                !ordered
+                ordered
             },
         )?
-        .is_none()
     {
         Ok(())
     } else {
@@ -1928,7 +1925,7 @@ impl NurbsCurve {
         edit: impl FnOnce(&mut [f64]),
     ) -> Result<Result<(), NurbsError>, CodecError> {
         admitted::finish((|| {
-            let (mut values, _storage) = ctx
+            let (mut values, storage) = ctx
                 .copy_temporary_slice(self.knots.as_slice(), "IR NURBS edited knots")
                 .map_err(CodecError::from)?;
             ctx.charge_work(
@@ -1937,7 +1934,8 @@ impl NurbsCurve {
             )?;
             edit(&mut values);
             let knots = build_raw_knots(ctx, values, "")?;
-            ctx.copy_into(&mut self.knots.0, &knots.0, "IR NURBS knot edit copy back")?;
+            storage.commit()?;
+            self.knots = knots;
             Ok(())
         })())
     }
