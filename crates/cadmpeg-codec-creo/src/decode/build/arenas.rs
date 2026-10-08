@@ -331,9 +331,9 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let fc05_circles = fc05_circle_records(ctx, scan)?;
+    let (fc05_circles, _fc05_circles_storage) = fc05_circle_records(ctx, scan)?;
     store_arena(ctx, ir, CreoArena::Fc05Circles, &fc05_circles)?;
-    let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(ctx, scan)?;
+    let (fc05_cylinder_cap_pairs, _fc05_cylinder_cap_pairs_storage) = fc05_cylinder_cap_pair_records(ctx, scan)?;
     store_arena(
         ctx,
         ir,
@@ -753,7 +753,7 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let feature_surface_replays = feature_surface_replay_associations(ctx, scan)?;
+    let (feature_surface_replays, _feature_surface_replays_storage) = feature_surface_replay_associations(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
