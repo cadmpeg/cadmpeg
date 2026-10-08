@@ -8477,10 +8477,10 @@ fn depdb_gsec2d_starts(
         if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
             continue;
         }
-        let Ok(text) = ctx.validate_utf8(digits, "creo UTF-8 validation")? else {
-            continue;
-        };
-        let Ok(id) = ctx.parse_text::<u32>(text, "creo scalar text parsing")? else {
+        let Some(id) = std::str::from_utf8(digits)
+            .ok()
+            .and_then(|text| text.parse::<u32>().ok())
+        else {
             continue;
         };
         let candidate = DefinitionStart {
@@ -8819,10 +8819,10 @@ pub(crate) fn depdb_section_definition(
     if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
         return Ok(None);
     }
-    let Ok(text) = ctx.validate_utf8(digits, "creo UTF-8 validation")? else {
-        return Ok(None);
-    };
-    let Ok(section_id) = ctx.parse_text::<u32>(text, "creo scalar text parsing")? else {
+    let Some(section_id) = std::str::from_utf8(digits)
+        .ok()
+        .and_then(|text| text.parse::<u32>().ok())
+    else {
         return Ok(None);
     };
     let end = ctx
