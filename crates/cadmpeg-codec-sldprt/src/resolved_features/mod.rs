@@ -69,13 +69,12 @@ fn sorted_classes<'l>(
     name: &str,
     operation: &'static str,
 ) -> Result<Vec<&'l crate::records::FeatureInputClass>, cadmpeg_core::CodecError> {
-    let mut classes = storage.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(&lane.classes, operation)?
-                .filter(|class| class.name == name),
-            operation,
-        )
-    })?;
+    let mut classes = Vec::new();
+    for class in ctx.admit_iter(&lane.classes, operation)? {
+        if ctx.equal(class.name.as_str(), name, operation)? {
+            storage.with_storage(|| ctx.push_vec(&mut classes, class, operation))?;
+        }
+    }
     ctx.stable_sort_by(&mut classes, |class| &class.offset, Ord::cmp, operation)?;
     Ok(classes)
 }

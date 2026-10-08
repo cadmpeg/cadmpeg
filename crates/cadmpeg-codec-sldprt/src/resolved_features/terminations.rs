@@ -302,11 +302,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
         let lane_key = ctx
             .rsplit_once(&lane.id, "#", OPERATION)?
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let scan_end = lane
-            .native_payload
-            .len()
-            .checked_sub(103)
-            .unwrap_or_default();
+        let scan_end = lane.native_payload.len().saturating_sub(103);
         let mut grouped_blind = HashMap::<String, Vec<()>>::new();
         for offset in ctx.admit_iter(&(0..scan_end), OPERATION)? {
             if !compact_extrusion_blind_at(&lane.native_payload, offset) {
@@ -1112,7 +1108,7 @@ pub(crate) fn project_surface_sweep_profiles(
     for lane in ctx.admit_iter(lanes, OPERATION)? {
         let Some(reference_class) = ctx.find_by(
             &lane.classes,
-            |class| ctx.equal(class.name.as_str(), "moCompReferenceCurve_c", OPERATION),
+            |class| Ok(class.name.as_str() == "moCompReferenceCurve_c"),
             OPERATION,
         )?
         else {
@@ -1351,7 +1347,6 @@ fn compact_body_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
-    ctx.charge_work(32, "decode SLDPRT body component path")?;
     let count = (|| {
         if marker < 12
             || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
@@ -1403,14 +1398,12 @@ fn compact_body_component_entries_at(
         else {
             return Ok(None);
         };
-        ctx.charge_work(
-            u64_from_index(components.len()),
+        let mixed = ctx.any_by(
+            &components,
+            |component| Ok(component.instance.is_none() || component.local_id.is_none()),
             "decode SLDPRT body mixed path",
         )?;
-        Ok(components
-            .iter()
-            .any(|component| component.instance.is_none() || component.local_id.is_none())
-            .then_some((components, end)))
+        Ok(mixed.then_some((components, end)))
     };
     if let Some((components, _)) = parse(count)? {
         return Ok(Some(components));
@@ -2038,14 +2031,24 @@ fn compact_termination_reference_offsets(
 ) -> Result<ReferenceOffsets, cadmpeg_core::CodecError> {
     let end = super::DeclaredEnd::of(end, payload.len()).map_or(start, super::DeclaredEnd::get);
     let mut candidates = ReferenceOffsets::Empty;
-    for marker in ctx.admit_iter(&(start..end), "scan SLDPRT termination reference offsets")? {
+    let mut markers = start..end;
+    while let Some(marker) =
+        ctx.next_charged(&mut markers, "scan SLDPRT termination reference offsets")?
+    {
         let present = if require_path {
-            compact_termination_reference_path_at(ctx, payload, marker)?.is_some()
+            let (path, _storage) = ctx
+                .with_scoped_storage("SLDPRT termination reference candidate", || {
+                    compact_termination_reference_path_at(ctx, payload, marker)
+                })?;
+            path.is_some()
         } else {
             compact_termination_reference_frame_at(payload, marker).is_some()
         };
         if present {
             candidates.insert(marker);
+            if matches!(candidates, ReferenceOffsets::Ambiguous) {
+                break;
+            }
         }
     }
     Ok(candidates)
@@ -2198,7 +2201,7 @@ impl LegacyFacePathSearch<'_, '_> {
         }
         let ctx = self.ctx;
         let _depth = ctx.enter_nested(OPERATION)?;
-        ctx.charge_work(256, OPERATION)?;
+        ctx.charge_work(1, OPERATION)?;
         if remaining == 0 {
             if !self.terminal_at(cursor) {
                 return Ok(());
@@ -2208,10 +2211,7 @@ impl LegacyFacePathSearch<'_, '_> {
                     self.ambiguous = true;
                 }
             } else {
-                let mut complete = Vec::new();
-                ctx.reserve_vec(&mut complete, self.entries.len(), OPERATION)?;
-                complete.extend_from_slice(&self.entries);
-                self.complete = Some(complete);
+                self.complete = Some(ctx.collect_vec(self.entries.iter().cloned(), OPERATION)?);
             }
             return Ok(());
         }
@@ -2230,8 +2230,7 @@ impl LegacyFacePathSearch<'_, '_> {
                 cursor + 16
             };
             let entry_count = self.entries.len();
-            ctx.reserve_vec(&mut self.entries, 1, OPERATION)?;
-            self.entries.push(entry);
+            ctx.push_vec(&mut self.entries, entry, OPERATION)?;
             for slot_bytes in [0usize, 4] {
                 if slot_bytes == 4
                     && (!has_path_slots
@@ -2260,7 +2259,6 @@ fn legacy_single_face_reference_path_at(
     payload: &[u8],
     body: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
-    ctx.charge_work(32, "decode SLDPRT legacy face header")?;
     let header_valid = (|| {
         let header = payload.get(body..body + 19)?;
         let class_token = View::u16_le_at(header, 0)?;
@@ -2281,63 +2279,72 @@ fn legacy_single_face_reference_path_at(
     if header_valid.is_none() {
         return Ok(None);
     }
-    let mut search = LegacyFacePathSearch {
-        ctx,
-        payload,
-        entries: Vec::new(),
-        complete: None,
-        ambiguous: false,
-    };
-    for control in [body + 44, body + 48, body + 84, body + 88] {
-        let Some(prefix) = payload.get(control..control + 40) else {
-            continue;
-        };
-        let Some(filler) = payload.get(body + 19..control) else {
-            continue;
-        };
-        // The filler lies between the header and a control at most 69 bytes
-        // later, so these checks read a bounded number of bytes.
-        let padded = filler.windows(16).enumerate().any(|(start, window)| {
-            window.iter().all(|byte| *byte == 0xff)
-                && filler[..start].iter().all(|byte| *byte == 0)
-                && filler[start + 16..].iter().all(|byte| *byte == 0)
-        });
-        let all_zero = filler.iter().all(|byte| *byte == 0);
-        if !all_zero && !padded {
-            continue;
-        }
-        let Some(token) = View::u16_le_at(prefix, 0) else {
-            return Ok(None);
-        };
-        let Some(count) = View::u32_le_at(prefix, 10).and_then(|count| usize::try_from(count).ok())
-        else {
-            return Ok(None);
-        };
-        if !is_class_token(token)
-            || prefix[2..6] != 1u32.to_le_bytes()
-            || prefix[6..10] != [0; 4]
-            || !(1..=64).contains(&count)
-            || !is_component_vector_selector(&prefix[14..18])
-            || prefix[22..30] != prefix[30..38]
-            || prefix[38..40] != [0, 0]
-        {
-            continue;
-        }
-        for serialized_roots in [0usize, 2] {
-            let Some(entry_count) = count
-                .checked_sub(serialized_roots)
-                .filter(|count| *count > 0)
-            else {
-                continue;
+    let (selected, _storage) = ctx.with_scoped_storage(
+        "SLDPRT legacy face path workspace",
+        || -> Result<_, cadmpeg_core::CodecError> {
+            let mut search = LegacyFacePathSearch {
+                ctx,
+                payload,
+                entries: Vec::new(),
+                complete: None,
+                ambiguous: false,
             };
-            search.visit(control + 40, entry_count, prefix[15] == 3)?;
-        }
-    }
-    Ok(if search.ambiguous {
-        None
-    } else {
-        search.complete
-    })
+            for control in [body + 44, body + 48, body + 84, body + 88] {
+                let Some(prefix) = payload.get(control..control + 40) else {
+                    continue;
+                };
+                let Some(filler) = payload.get(body + 19..control) else {
+                    continue;
+                };
+                // The filler lies between the header and a control at most 69 bytes
+                // later, so these checks read a bounded number of bytes.
+                let padded = filler.windows(16).enumerate().any(|(start, window)| {
+                    window.iter().all(|byte| *byte == 0xff)
+                        && filler[..start].iter().all(|byte| *byte == 0)
+                        && filler[start + 16..].iter().all(|byte| *byte == 0)
+                });
+                let all_zero = filler.iter().all(|byte| *byte == 0);
+                if !all_zero && !padded {
+                    continue;
+                }
+                let Some(token) = View::u16_le_at(prefix, 0) else {
+                    return Ok(None);
+                };
+                let Some(count) =
+                    View::u32_le_at(prefix, 10).and_then(|count| usize::try_from(count).ok())
+                else {
+                    return Ok(None);
+                };
+                if !is_class_token(token)
+                    || prefix[2..6] != 1u32.to_le_bytes()
+                    || prefix[6..10] != [0; 4]
+                    || !(1..=64).contains(&count)
+                    || !is_component_vector_selector(&prefix[14..18])
+                    || prefix[22..30] != prefix[30..38]
+                    || prefix[38..40] != [0, 0]
+                {
+                    continue;
+                }
+                for serialized_roots in [0usize, 2] {
+                    let Some(entry_count) = count
+                        .checked_sub(serialized_roots)
+                        .filter(|count| *count > 0)
+                    else {
+                        continue;
+                    };
+                    search.visit(control + 40, entry_count, prefix[15] == 3)?;
+                }
+            }
+            Ok(if search.ambiguous {
+                None
+            } else {
+                search.complete
+            })
+        },
+    )?;
+    selected
+        .map(|entries| ctx.collect_vec(entries.iter().cloned(), "retain SLDPRT legacy face path"))
+        .transpose()
 }
 
 pub(super) fn compact_single_face_reference_record_at(
@@ -2345,7 +2352,6 @@ pub(super) fn compact_single_face_reference_record_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<super::selections::ComponentPathReference>, cadmpeg_core::CodecError> {
-    ctx.charge_work(32, "decode SLDPRT single face record")?;
     let count = (|| {
         let count = marker
             .checked_sub(12)
@@ -2391,7 +2397,6 @@ pub(super) fn compact_single_face_reference_record_at(
         else {
             continue;
         };
-        ctx.charge_work(128, "decode SLDPRT single face terminal")?;
         let source = [0usize, 4, 8].into_iter().find_map(|gap| {
             let filler = match gap {
                 0 => true,
@@ -2475,7 +2480,7 @@ pub(super) fn compact_termination_reference_path_at(
     }
     let mut entries = Vec::new();
     while entries.len() < count {
-        ctx.charge_work(128, OPERATION)?;
+        ctx.charge_work(1, OPERATION)?;
         let ordinal_gap = payload
             .get(cursor..cursor + 4)
             .and_then(|bytes| {
@@ -2489,8 +2494,7 @@ pub(super) fn compact_termination_reference_path_at(
             continue;
         }
         if let Some(entry) = entry_at(cursor) {
-            ctx.reserve_vec(&mut entries, 1, OPERATION)?;
-            entries.push(entry);
+            ctx.push_vec(&mut entries, entry, OPERATION)?;
             cursor += 20;
             continue;
         }

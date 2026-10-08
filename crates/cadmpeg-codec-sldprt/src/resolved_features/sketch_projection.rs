@@ -1,6 +1,5 @@
 //! Sketch projection from B-rep geometry.
 
-use super::assembly::contains_ascii_case_insensitive;
 use super::names::configuration;
 use super::profiles::mint_formatted;
 use super::sketch_edges::{
@@ -52,7 +51,11 @@ pub(crate) fn sketches(
         let Some(section) = source.name() else {
             continue;
         };
-        if !contains_ascii_case_insensitive(section, "resolvedfeatures") {
+        if !ctx.any_by(
+            section.as_bytes().windows(b"resolvedfeatures".len()),
+            |window| Ok(window.eq_ignore_ascii_case(b"resolvedfeatures")),
+            "classify SLDPRT resolved feature section",
+        )? {
             continue;
         }
         let source_stream = source.source_stream();

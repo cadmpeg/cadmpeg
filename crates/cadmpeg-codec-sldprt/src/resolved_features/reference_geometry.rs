@@ -5,7 +5,7 @@ use super::curves::{
     sketch_plane_frames, SketchPlaneUAxisSource, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
     REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::selections::{
     compact_component_path_end_at, component_face_reference_in_record, COMPACT_EDGE_VECTOR_MARKER,
 };
@@ -80,26 +80,6 @@ fn reconcile_reference_plane_frame_with_source(
     } else {
         Some((constraint, SketchPlaneUAxisSource::ConstructedMidPlane))
     }
-}
-
-/// Insert a charged frame candidate at a feature index.
-fn push_reference_plane_candidate<T>(
-    ctx: &DecodeContext<'_>,
-    candidates: &mut BTreeMap<(usize, usize), Vec<T>>,
-    index: (usize, usize),
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(values) = candidates.get_mut(&index) {
-        ctx.reserve_vec(values, 1, operation)?;
-        values.push(value);
-    } else {
-        let mut values = Vec::new();
-        ctx.reserve_vec(&mut values, 1, operation)?;
-        values.push(value);
-        ctx.insert_btree_map(candidates, index, values, operation)?;
-    }
-    Ok(())
 }
 
 fn insert_reference_plane_property(
@@ -189,7 +169,11 @@ pub(crate) fn enrich_history_reference_planes(
                 )
             })?;
             if classify(feature) == Some(FeatureClass::ReferencePlane)
-                && !reference_sources.contains(&source)
+                && !ctx.contains_hash_set(
+                    &reference_sources,
+                    &source,
+                    "index SLDPRT reference plane targets",
+                )?
             {
                 temporary_storage.with_storage(|| {
                     ctx.insert_hash_set(
@@ -200,26 +184,40 @@ pub(crate) fn enrich_history_reference_planes(
                 })?;
             }
         }
-        ctx.reserve_vec(
-            &mut known_sources,
-            1,
-            "collect SLDPRT reference plane source indexes",
-        )?;
-        known_sources.push(sources);
-        ctx.reserve_vec(
-            &mut features_by_source,
-            1,
-            "collect SLDPRT reference plane feature indexes",
-        )?;
-        features_by_source.push(by_source);
-        ctx.reserve_vec(
-            &mut known_reference_plane_sources,
-            1,
-            "collect SLDPRT reference plane target indexes",
-        )?;
-        known_reference_plane_sources.push(reference_sources);
+        temporary_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut known_sources,
+                sources,
+                "collect SLDPRT reference plane source indexes",
+            )
+        })?;
+        temporary_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut features_by_source,
+                by_source,
+                "collect SLDPRT reference plane feature indexes",
+            )
+        })?;
+        temporary_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut known_reference_plane_sources,
+                reference_sources,
+                "collect SLDPRT reference plane target indexes",
+            )
+        })?;
     }
     for lane in ctx.admit_iter(lanes, "scan SLDPRT reference plane lanes")? {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT reference lane workspace")?;
+        let object_names = ObjectNames::new(ctx, lane)?;
+        let mut classes = lane_storage.with_storage(|| {
+            ctx.collect_vec(lane.classes.iter(), "index SLDPRT reference plane classes")
+        })?;
+        ctx.stable_sort_by(
+            &mut classes,
+            |class| &class.offset,
+            Ord::cmp,
+            "sort SLDPRT reference plane classes",
+        )?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT reference plane features")?
@@ -229,9 +227,14 @@ pub(crate) fn enrich_history_reference_planes(
                 .admit_iter(&history.features, "scan SLDPRT reference plane features")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT reference plane starts")?;
-                    starts.push((name.offset, history_index, feature_index));
+                if let Some(name) = object_names.of(ctx, feature)? {
+                    lane_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut starts,
+                            (name.offset, history_index, feature_index),
+                            "collect SLDPRT reference plane starts",
+                        )
+                    })?;
                 }
             }
         }
@@ -248,9 +251,21 @@ pub(crate) fn enrich_history_reference_planes(
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::ReferencePlane)
                 || principal_plane_in_layout(principal_layouts[history_index], feature).is_some()
-                || feature.properties.contains_key("Origin")
-                || feature.properties.contains_key("Normal")
-                || feature.properties.contains_key("UAxis")
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Origin",
+                    "find SLDPRT reference geometry property",
+                )?
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Normal",
+                    "find SLDPRT reference geometry property",
+                )?
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "UAxis",
+                    "find SLDPRT reference geometry property",
+                )?
             {
                 continue;
             }
@@ -284,72 +299,92 @@ pub(crate) fn enrich_history_reference_planes(
                         "index SLDPRT explicit plane references",
                     )
                 })?;
-                let source = ctx.format_retained(
-                    format_args!("{source}"),
-                    "retain SLDPRT reference plane source",
-                )?;
-                push_reference_plane_candidate(
-                    ctx,
-                    &mut reference_candidates,
-                    index,
-                    source,
-                    "collect SLDPRT reference plane sources",
-                )?;
+                let source = temporary_storage.with_storage(|| {
+                    ctx.format_retained(
+                        format_args!("{source}"),
+                        "retain SLDPRT reference plane source",
+                    )
+                })?;
+                temporary_storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut reference_candidates,
+                        index,
+                        source,
+                        "collect SLDPRT reference plane sources",
+                        "collect SLDPRT reference plane sources",
+                    )
+                })?;
             }
             if let Some((relative_offset, owner)) = legacy_offset_plane_face_alias(ctx, bytes)? {
-                let native = ctx.format_retained(
-                    format_args!(
-                        "sldprt:feature-input:legacy-face-alias#{}:{}:{}",
-                        lane.id,
-                        start + relative_offset,
-                        owner,
-                    ),
-                    "retain SLDPRT legacy face alias",
-                )?;
-                push_reference_plane_candidate(
-                    ctx,
-                    &mut face_native_candidates,
-                    (history_index, feature_index),
-                    native,
-                    "collect SLDPRT native face references",
-                )?;
-                if let Some(&target_index) = features_by_source[history_index].get(&owner) {
-                    let target = &histories[history_index].features[target_index].id;
-                    let target = ctx.format_retained(
-                        format_args!("{target}"),
-                        "retain SLDPRT face feature reference",
-                    )?;
-                    push_reference_plane_candidate(
-                        ctx,
-                        &mut face_feature_candidates,
+                let native = temporary_storage.with_storage(|| {
+                    ctx.format_retained(
+                        format_args!(
+                            "sldprt:feature-input:legacy-face-alias#{}:{}:{}",
+                            lane.id,
+                            start + relative_offset,
+                            owner,
+                        ),
+                        "retain SLDPRT legacy face alias",
+                    )
+                })?;
+                temporary_storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut face_native_candidates,
                         (history_index, feature_index),
-                        target,
-                        "collect SLDPRT face feature references",
-                    )?;
+                        native,
+                        "collect SLDPRT native face references",
+                        "collect SLDPRT native face references",
+                    )
+                })?;
+                if let Some(&target_index) = ctx.get_hash_map(
+                    &features_by_source[history_index],
+                    &owner,
+                    "find SLDPRT face owner feature",
+                )? {
+                    let target = &histories[history_index].features[target_index].id;
+                    let target = temporary_storage.with_storage(|| {
+                        ctx.format_retained(
+                            format_args!("{target}"),
+                            "retain SLDPRT face feature reference",
+                        )
+                    })?;
+                    temporary_storage.with_storage(|| {
+                        ctx.push_btree_group(
+                            &mut face_feature_candidates,
+                            (history_index, feature_index),
+                            target,
+                            "collect SLDPRT face feature references",
+                            "collect SLDPRT face feature references",
+                        )
+                    })?;
                 }
             }
             if let Some((relative_offset, components)) =
                 component_face_reference_in_record(ctx, bytes)?
             {
-                let mut native = ctx.format_retained(
-                    format_args!(
-                        "sldprt:feature-input:surface-component-ids#{}:{}:",
-                        lane.id,
-                        start + relative_offset,
-                    ),
-                    "retain SLDPRT component face reference",
-                )?;
-                for (position, local_id) in components
-                    .iter()
+                let mut native = temporary_storage.with_storage(|| {
+                    ctx.format_retained(
+                        format_args!(
+                            "sldprt:feature-input:surface-component-ids#{}:{}:",
+                            lane.id,
+                            start + relative_offset,
+                        ),
+                        "retain SLDPRT component face reference",
+                    )
+                })?;
+                for (position, local_id) in ctx
+                    .admit_iter(&components, "scan SLDPRT component face references")?
                     .filter_map(|component| component.local_id)
                     .enumerate()
                 {
                     if position > 0 {
-                        ctx.push_retained_char(
-                            &mut native,
-                            ',',
-                            "retain SLDPRT component face reference",
-                        )?;
+                        temporary_storage.with_storage(|| {
+                            ctx.push_retained_char(
+                                &mut native,
+                                ',',
+                                "retain SLDPRT component face reference",
+                            )
+                        })?;
                     }
                     let digits =
                         usize::try_from(local_id.checked_ilog10().unwrap_or(0)).map_err(|_| {
@@ -359,11 +394,13 @@ pub(crate) fn enrich_history_reference_planes(
                                 u64::MAX,
                             )
                         })? + 1;
-                    ctx.try_reserve_retained_text(
-                        &mut native,
-                        digits,
-                        "retain SLDPRT component face reference",
-                    )?;
+                    temporary_storage.with_storage(|| {
+                        ctx.try_reserve_retained_text(
+                            &mut native,
+                            digits,
+                            "retain SLDPRT component face reference",
+                        )
+                    })?;
                     std::fmt::Write::write_fmt(&mut native, format_args!("{local_id}")).map_err(
                         |_| {
                             ctx.refuse_codec_limit(
@@ -374,49 +411,75 @@ pub(crate) fn enrich_history_reference_planes(
                         },
                     )?;
                 }
-                push_reference_plane_candidate(
-                    ctx,
-                    &mut face_native_candidates,
-                    (history_index, feature_index),
-                    native,
-                    "collect SLDPRT native face references",
-                )?;
+                temporary_storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut face_native_candidates,
+                        (history_index, feature_index),
+                        native,
+                        "collect SLDPRT native face references",
+                        "collect SLDPRT native face references",
+                    )
+                })?;
             }
-            let offset_frames = feature
-                .parameters
-                .get("D1")
-                .and_then(|value| crate::history::literals::parse_dimension_length_mm(value));
+            let offset_frames = crate::history::literals::named_literal(
+                ctx,
+                &feature.parameters,
+                "D1",
+                "parse SLDPRT plane distance parameter",
+            )?
+            .and_then(crate::history::literals::parse_dimension_length_mm);
             let offset_frames = match offset_frames {
                 Some(distance) => offset_reference_plane_frame_pair(ctx, bytes, distance)?,
                 None => None,
             };
             if let Some((offset, reference)) = offset_frames {
                 let index = (history_index, feature_index);
-                push_reference_plane_candidate(
-                    ctx,
-                    &mut reference_frame_candidates,
-                    index,
-                    reference,
-                    "collect SLDPRT reference plane frame candidates",
-                )?;
-                push_reference_plane_candidate(
-                    ctx,
-                    &mut candidates,
-                    index,
-                    offset,
-                    "collect SLDPRT plane frame candidates",
-                )?;
-                push_reference_plane_candidate(
-                    ctx,
-                    &mut candidate_sources,
-                    index,
-                    SketchPlaneUAxisSource::Native,
-                    "collect SLDPRT plane U-axis sources",
-                )?;
+                temporary_storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut reference_frame_candidates,
+                        index,
+                        reference,
+                        "collect SLDPRT reference plane frame candidates",
+                        "collect SLDPRT reference plane frame candidates",
+                    )
+                })?;
+                temporary_storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut candidates,
+                        index,
+                        offset,
+                        "collect SLDPRT plane frame candidates",
+                        "collect SLDPRT plane frame candidates",
+                    )
+                })?;
+                temporary_storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut candidate_sources,
+                        index,
+                        SketchPlaneUAxisSource::Native,
+                        "collect SLDPRT plane U-axis sources",
+                        "collect SLDPRT plane U-axis sources",
+                    )
+                })?;
             }
             let constraint = constraint_midplane_frame(ctx, bytes)?;
+            let mut frame_storage =
+                ctx.reserve_scoped(0, "SLDPRT anchored reference frame workspace")?;
             let mut anchored_frames = Vec::new();
-            for class in ctx.admit_iter(&lane.classes, "scan SLDPRT reference plane classes")? {
+            let first_class = ctx.partition_point(
+                &classes,
+                |class| Ok(class.offset < u64_from_index(start)),
+                "find SLDPRT reference plane classes",
+            )?;
+            let last_class = ctx.partition_point(
+                &classes,
+                |class| Ok(class.offset < u64_from_index(end)),
+                "find SLDPRT reference plane classes",
+            )?;
+            for class in ctx.admit_iter(
+                &classes[first_class..last_class],
+                "scan SLDPRT reference plane classes",
+            )? {
                 let frame = (|| {
                     let offset = usize::try_from(class.offset).ok()?;
                     (start..end).contains(&offset).then(|| {
@@ -424,12 +487,13 @@ pub(crate) fn enrich_history_reference_planes(
                     })?
                 })();
                 if let Some(frame) = frame {
-                    ctx.reserve_vec(
-                        &mut anchored_frames,
-                        1,
-                        "collect SLDPRT anchored plane frames",
-                    )?;
-                    anchored_frames.push(frame);
+                    frame_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut anchored_frames,
+                            frame,
+                            "collect SLDPRT anchored plane frames",
+                        )
+                    })?;
                 }
             }
             ctx.stable_sort_by_key(
@@ -464,20 +528,24 @@ pub(crate) fn enrich_history_reference_planes(
             };
             let (origin, normal, u_axis) = frame;
             let index = (history_index, feature_index);
-            push_reference_plane_candidate(
-                ctx,
-                &mut candidates,
-                index,
-                (origin, normal, u_axis),
-                "collect SLDPRT plane frame candidates",
-            )?;
-            push_reference_plane_candidate(
-                ctx,
-                &mut candidate_sources,
-                index,
-                u_axis_source,
-                "collect SLDPRT plane U-axis sources",
-            )?;
+            temporary_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut candidates,
+                    index,
+                    (origin, normal, u_axis),
+                    "collect SLDPRT plane frame candidates",
+                    "collect SLDPRT plane frame candidates",
+                )
+            })?;
+            temporary_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut candidate_sources,
+                    index,
+                    u_axis_source,
+                    "collect SLDPRT plane U-axis sources",
+                    "collect SLDPRT plane U-axis sources",
+                )
+            })?;
         }
     }
     let mut face_reference_indices = BTreeSet::new();
@@ -498,10 +566,21 @@ pub(crate) fn enrich_history_reference_planes(
         })?;
     }
     for index in ctx.admit_iter(&face_reference_indices, "clear SLDPRT face references")? {
-        reference_candidates.remove(index);
-        explicit_reference_indices.remove(index);
+        ctx.remove_btree_map(
+            &mut reference_candidates,
+            index,
+            "clear SLDPRT face references",
+        )?;
+        ctx.remove_hash_set(
+            &mut explicit_reference_indices,
+            index,
+            "clear SLDPRT face references",
+        )?;
     }
-    for ((history_index, feature_index), mut native) in face_native_candidates {
+    for ((history_index, feature_index), mut native) in ctx.admit_iter(
+        face_native_candidates,
+        "apply SLDPRT face native references",
+    )? {
         ctx.sort_unstable_by(
             &mut native,
             |value| value,
@@ -518,7 +597,10 @@ pub(crate) fn enrich_history_reference_planes(
             )?;
         }
     }
-    for ((history_index, feature_index), mut targets) in face_feature_candidates {
+    for ((history_index, feature_index), mut targets) in ctx.admit_iter(
+        face_feature_candidates,
+        "apply SLDPRT face feature references",
+    )? {
         ctx.sort_unstable_by(
             &mut targets,
             |value| value,
@@ -559,8 +641,11 @@ pub(crate) fn enrich_history_reference_planes(
         ctx.admit_iter(&candidate_sources, "select SLDPRT plane U-axis sources")?
     {
         let source = ctx
-            .admit_iter(sources, "select SLDPRT plane U-axis sources")?
-            .find(|source| **source == SketchPlaneUAxisSource::Native)
+            .find_by(
+                sources,
+                |source| Ok(**source == SketchPlaneUAxisSource::Native),
+                "select SLDPRT plane U-axis sources",
+            )?
             .copied()
             .or_else(|| sources.first().copied());
         if let Some(source) = source {
@@ -580,10 +665,11 @@ pub(crate) fn enrich_history_reference_planes(
         "select SLDPRT unique reference frames",
     )? {
         if let Some(&frame) = frames.first() {
-            if ctx
-                .admit_iter(&frames[1..], "compare SLDPRT reference frame candidates")?
-                .all(|candidate| *candidate == frame)
-            {
+            if ctx.all_by(
+                &frames[1..],
+                |candidate| Ok(*candidate == frame),
+                "compare SLDPRT reference frame candidates",
+            )? {
                 temporary_storage.with_storage(|| {
                     ctx.insert_btree_map(
                         &mut unique_reference_frames,
@@ -608,40 +694,52 @@ pub(crate) fn enrich_history_reference_planes(
             else {
                 continue;
             };
-            let reference = retained_plane_frame_source(ctx, feature)?;
-            ctx.reserve_vec(
-                &mut frames_by_reference,
-                1,
-                "collect SLDPRT reference frames",
-            )?;
-            frames_by_reference.push(ReferencePlaneFrameCandidate {
-                source: reference,
-                history_index,
-                feature_index,
-                frame: principal_sketch_frame(plane),
-            });
+            let reference =
+                temporary_storage.with_storage(|| retained_plane_frame_source(ctx, feature))?;
+            temporary_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut frames_by_reference,
+                    ReferencePlaneFrameCandidate {
+                        source: reference,
+                        history_index,
+                        feature_index,
+                        frame: principal_sketch_frame(plane),
+                    },
+                    "collect SLDPRT reference frames",
+                )
+            })?;
         }
     }
     for (&index, &frame) in ctx.admit_iter(&unique_frames, "collect SLDPRT reference frames")? {
         let feature = &histories[index.0].features[index.1];
-        let reference = retained_plane_frame_source(ctx, feature)?;
-        ctx.reserve_vec(
-            &mut frames_by_reference,
-            1,
-            "collect SLDPRT reference frames",
-        )?;
-        frames_by_reference.push(ReferencePlaneFrameCandidate {
-            source: reference,
-            history_index: index.0,
-            feature_index: index.1,
-            frame,
-        });
+        let reference =
+            temporary_storage.with_storage(|| retained_plane_frame_source(ctx, feature))?;
+        temporary_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut frames_by_reference,
+                ReferencePlaneFrameCandidate {
+                    source: reference,
+                    history_index: index.0,
+                    feature_index: index.1,
+                    frame,
+                },
+                "collect SLDPRT reference frames",
+            )
+        })?;
     }
     for (&index, frames) in ctx.admit_iter(
         &reference_frame_candidates,
         "match SLDPRT reference plane frames",
     )? {
-        if reference_candidates.contains_key(&index) || face_reference_indices.contains(&index) {
+        if ctx.contains_key_btree_map(
+            &reference_candidates,
+            &index,
+            "find SLDPRT reference plane candidate",
+        )? || ctx.contains_btree_set(
+            &face_reference_indices,
+            &index,
+            "find SLDPRT face reference",
+        )? {
             continue;
         }
         let mut sources = Vec::new();
@@ -663,8 +761,13 @@ pub(crate) fn enrich_history_reference_planes(
                 "select SLDPRT inferred plane reference",
             )?;
             if let Some(source) = selected {
-                ctx.reserve_vec(&mut sources, 1, "collect SLDPRT inferred plane sources")?;
-                sources.push(source);
+                temporary_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut sources,
+                        source,
+                        "collect SLDPRT inferred plane sources",
+                    )
+                })?;
             }
         }
         ctx.sort_unstable_by(
@@ -675,32 +778,47 @@ pub(crate) fn enrich_history_reference_planes(
         )?;
         ctx.dedup_vec(&mut sources, "deduplicate SLDPRT inferred plane sources")?;
         if let [source] = sources.as_slice() {
-            let source = ctx.format_retained(
-                format_args!("{source}"),
-                "retain SLDPRT inferred plane source",
-            )?;
-            push_reference_plane_candidate(
-                ctx,
-                &mut reference_candidates,
-                index,
-                source,
-                "collect SLDPRT reference plane sources",
-            )?;
+            let source = temporary_storage.with_storage(|| {
+                ctx.format_retained(
+                    format_args!("{source}"),
+                    "retain SLDPRT inferred plane source",
+                )
+            })?;
+            temporary_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut reference_candidates,
+                    index,
+                    source,
+                    "collect SLDPRT reference plane sources",
+                    "collect SLDPRT reference plane sources",
+                )
+            })?;
         }
     }
     for (&index, &frame) in ctx.admit_iter(&unique_frames, "match SLDPRT offset plane frames")? {
         let feature = &histories[index.0].features[index.1];
-        if !feature.parameters.contains_key("D1")
-            || reference_candidates.contains_key(&index)
-            || face_reference_indices.contains(&index)
-        {
+        if !ctx.contains_key_btree_map(
+            &feature.parameters,
+            "D1",
+            "find SLDPRT plane distance parameter",
+        )? || ctx.contains_key_btree_map(
+            &reference_candidates,
+            &index,
+            "find SLDPRT reference plane candidate",
+        )? || ctx.contains_btree_set(
+            &face_reference_indices,
+            &index,
+            "find SLDPRT face reference",
+        )? {
             continue;
         }
-        let Some(distance) = feature
-            .parameters
-            .get("D1")
-            .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
-        else {
+        let Some(distance) = crate::history::literals::named_literal(
+            ctx,
+            &feature.parameters,
+            "D1",
+            "parse SLDPRT plane distance parameter",
+        )?
+        .and_then(crate::history::literals::parse_dimension_length_mm) else {
             continue;
         };
         if let Some(source) = select_reference_plane_frame_source(
@@ -712,58 +830,68 @@ pub(crate) fn enrich_history_reference_planes(
             },
             "select SLDPRT offset plane reference",
         )? {
-            let source = ctx.format_retained(
-                format_args!("{source}"),
-                "retain SLDPRT offset plane source",
-            )?;
-            push_reference_plane_candidate(
-                ctx,
-                &mut reference_candidates,
-                index,
-                source,
-                "collect SLDPRT reference plane sources",
-            )?;
+            let source = temporary_storage.with_storage(|| {
+                ctx.format_retained(
+                    format_args!("{source}"),
+                    "retain SLDPRT offset plane source",
+                )
+            })?;
+            temporary_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut reference_candidates,
+                    index,
+                    source,
+                    "collect SLDPRT reference plane sources",
+                    "collect SLDPRT reference plane sources",
+                )
+            })?;
         }
     }
-    for ((history_index, feature_index), mut sources) in reference_candidates {
+    for ((history_index, feature_index), mut sources) in ctx.admit_iter(
+        reference_candidates,
+        "apply SLDPRT reference plane candidates",
+    )? {
         let index = (history_index, feature_index);
-        if !explicit_reference_indices.contains(&index) {
-            if let Some(offset) = unique_frames.get(&index) {
-                if let Some(distance) = histories[history_index].features[feature_index]
-                    .parameters
-                    .get("D1")
-                    .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
+        if !ctx.contains_hash_set(
+            &explicit_reference_indices,
+            &index,
+            "find SLDPRT explicit plane reference",
+        )? {
+            if let Some(offset) =
+                ctx.get_btree_map(&unique_frames, &index, "find SLDPRT reference plane frame")?
+            {
+                if let Some(distance) = crate::history::literals::named_literal(
+                    ctx,
+                    &histories[history_index].features[feature_index].parameters,
+                    "D1",
+                    "parse SLDPRT plane distance parameter",
+                )?
+                .and_then(crate::history::literals::parse_dimension_length_mm)
                 {
                     let compatible = |source: &String| -> Result<bool, CodecError> {
-                        for candidate in ctx.admit_iter(
+                        ctx.any_by(
                             &frames_by_reference,
+                            |candidate| {
+                                Ok(candidate.history_index == history_index
+                                    && ctx.equal(
+                                        &candidate.source,
+                                        source,
+                                        "compare SLDPRT compatible plane sources",
+                                    )?
+                                    && offset_plane_reference_frame_matches(
+                                        candidate.frame,
+                                        *offset,
+                                        distance.get(),
+                                    ))
+                            },
                             "match SLDPRT compatible plane sources",
-                        )? {
-                            if ctx.equal(
-                                &candidate.source,
-                                source,
-                                "compare SLDPRT compatible plane sources",
-                            )? && candidate.history_index == history_index
-                                && offset_plane_reference_frame_matches(
-                                    candidate.frame,
-                                    *offset,
-                                    distance.get(),
-                                )
-                            {
-                                return Ok(true);
-                            }
-                        }
-                        Ok(false)
+                        )
                     };
-                    let mut has_compatible = false;
-                    for source in
-                        ctx.admit_iter(&sources, "select SLDPRT compatible plane sources")?
-                    {
-                        if compatible(source)? {
-                            has_compatible = true;
-                            break;
-                        }
-                    }
+                    let has_compatible = ctx.any_by(
+                        &sources,
+                        compatible,
+                        "select SLDPRT compatible plane sources",
+                    )?;
                     if has_compatible {
                         ctx.retain_vec(
                             &mut sources,
@@ -822,20 +950,11 @@ pub(crate) fn enrich_history_reference_planes(
             continue;
         };
         let first_key = reference_plane_frame_key(first_frame);
-        let mut unique = true;
-        for candidate in
-            ctx.admit_iter(&frames[1..], "select unique SLDPRT reference plane frame")?
-        {
-            if !ctx.equal(
-                &reference_plane_frame_key(candidate),
-                &first_key,
-                "compare SLDPRT reference plane frames",
-            )? {
-                unique = false;
-                break;
-            }
-        }
-        if !unique {
+        if !ctx.all_by(
+            &frames[1..],
+            |candidate| Ok(reference_plane_frame_key(candidate) == first_key),
+            "select unique SLDPRT reference plane frame",
+        )? {
             continue;
         }
         let feature = &mut histories[history_index].features[feature_index];
@@ -857,8 +976,11 @@ pub(crate) fn enrich_history_reference_planes(
             cadmpeg_core::nonblank_literal!("UAxis"),
             format_args!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
         )?;
-        if unique_u_axis_sources.get(&(history_index, feature_index))
-            == Some(&SketchPlaneUAxisSource::ConstructedMidPlane)
+        if ctx.get_hash_map(
+            &unique_u_axis_sources,
+            &(history_index, feature_index),
+            "find SLDPRT plane U-axis provenance",
+        )? == Some(&SketchPlaneUAxisSource::ConstructedMidPlane)
         {
             insert_reference_plane_property(
                 ctx,
@@ -867,9 +989,11 @@ pub(crate) fn enrich_history_reference_planes(
                 format_args!("{CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE}"),
             )?;
         } else {
-            feature
-                .properties
-                .remove(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY);
+            ctx.remove_btree_map(
+                &mut feature.properties,
+                REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+                "remove SLDPRT plane U-axis source",
+            )?;
         }
     }
     Ok(())
@@ -881,8 +1005,11 @@ pub(crate) fn enrich_history_reference_points(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT reference point workspace")?;
     let mut candidates = BTreeMap::<(usize, usize), Option<Point3>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT reference point lanes")? {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT reference lane workspace")?;
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT reference point features")?
@@ -892,9 +1019,14 @@ pub(crate) fn enrich_history_reference_points(
                 .admit_iter(&history.features, "scan SLDPRT reference point features")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT reference point starts")?;
-                    starts.push((name.offset, history_index, feature_index));
+                if let Some(name) = object_names.of(ctx, feature)? {
+                    lane_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut starts,
+                            (name.offset, history_index, feature_index),
+                            "collect SLDPRT reference point starts",
+                        )
+                    })?;
                 }
             }
         }
@@ -910,11 +1042,15 @@ pub(crate) fn enrich_history_reference_points(
         {
             let feature = &histories[history_index].features[feature_index];
             if feature.input_class.as_deref() != Some("moRefPoint_c")
-                || feature.properties.contains_key("Position")
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Position",
+                    "find SLDPRT reference geometry property",
+                )?
             {
                 continue;
             }
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = object_names.of(ctx, feature)? else {
                 continue;
             };
             let record_end = starts
@@ -925,19 +1061,25 @@ pub(crate) fn enrich_history_reference_points(
                 resolved_reference_point(ctx, &lane.native_payload, name, record_end)?
             {
                 let key = (history_index, feature_index);
-                if let Some(existing) = candidates.get_mut(&key) {
+                if let Some(existing) = ctx.get_mut_btree_map(
+                    &mut candidates,
+                    &key,
+                    "merge SLDPRT reference geometry candidates",
+                )? {
                     if existing.is_some_and(|existing| {
                         reference_point_key(&existing) != reference_point_key(&point)
                     }) {
                         *existing = None;
                     }
                 } else {
-                    ctx.insert_btree_map(
-                        &mut candidates,
-                        key,
-                        Some(point),
-                        "collect SLDPRT reference point candidates",
-                    )?;
+                    temporary_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut candidates,
+                            key,
+                            Some(point),
+                            "collect SLDPRT reference point candidates",
+                        )
+                    })?;
                 }
             }
         }
@@ -1073,9 +1215,12 @@ pub(crate) fn enrich_history_coordinate_systems(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT coordinate system workspace")?;
     let mut candidates =
         BTreeMap::<(usize, usize), Option<(Point3, Vector3, Vector3, Vector3)>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT coordinate system lanes")? {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT reference lane workspace")?;
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT coordinate system features")?
@@ -1085,9 +1230,14 @@ pub(crate) fn enrich_history_coordinate_systems(
                 .admit_iter(&history.features, "scan SLDPRT coordinate system features")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT coordinate system starts")?;
-                    starts.push((name.offset, history_index, feature_index));
+                if let Some(name) = object_names.of(ctx, feature)? {
+                    lane_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut starts,
+                            (name.offset, history_index, feature_index),
+                            "collect SLDPRT coordinate system starts",
+                        )
+                    })?;
                 }
             }
         }
@@ -1103,10 +1253,26 @@ pub(crate) fn enrich_history_coordinate_systems(
         {
             let feature = &histories[history_index].features[feature_index];
             if feature.input_class.as_deref() != Some("moCoordSys_c")
-                || feature.properties.contains_key("Origin")
-                || feature.properties.contains_key("XAxis")
-                || feature.properties.contains_key("YAxis")
-                || feature.properties.contains_key("ZAxis")
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Origin",
+                    "find SLDPRT reference geometry property",
+                )?
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "XAxis",
+                    "find SLDPRT reference geometry property",
+                )?
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "YAxis",
+                    "find SLDPRT reference geometry property",
+                )?
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "ZAxis",
+                    "find SLDPRT reference geometry property",
+                )?
             {
                 continue;
             }
@@ -1122,7 +1288,11 @@ pub(crate) fn enrich_history_coordinate_systems(
             };
             if let Some(frame) = resolved_coordinate_system(ctx, record)? {
                 let key = (history_index, feature_index);
-                if let Some(existing) = candidates.get_mut(&key) {
+                if let Some(existing) = ctx.get_mut_btree_map(
+                    &mut candidates,
+                    &key,
+                    "merge SLDPRT reference geometry candidates",
+                )? {
                     if existing.is_some_and(|existing| {
                         coordinate_system_frame_key(&existing)
                             != coordinate_system_frame_key(&frame)
@@ -1130,12 +1300,14 @@ pub(crate) fn enrich_history_coordinate_systems(
                         *existing = None;
                     }
                 } else {
-                    ctx.insert_btree_map(
-                        &mut candidates,
-                        key,
-                        Some(frame),
-                        "collect SLDPRT coordinate system candidates",
-                    )?;
+                    temporary_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut candidates,
+                            key,
+                            Some(frame),
+                            "collect SLDPRT coordinate system candidates",
+                        )
+                    })?;
                 }
             }
         }
@@ -1189,9 +1361,8 @@ fn resolved_coordinate_system(
         return Ok(None);
     };
     let mut axes = coordinate_system_line_axes(ctx, record, generation, origin_end)?;
-    let Some(first_axis) = axes.next() else {
-        let Some((x_axis, y_axis)) =
-            coordinate_system_ordinal_axes(ctx, record, origin_end, origin)?
+    let Some(first_axis) = axes.next().transpose()? else {
+        let Some((x_axis, y_axis)) = coordinate_system_ordinal_axes(record, origin_end, origin)
         else {
             return Ok(None);
         };
@@ -1200,11 +1371,11 @@ fn resolved_coordinate_system(
         };
         return Ok(Some((origin, x_axis, y_axis, z_axis)));
     };
+    let second_axis = axes.next().transpose()?;
+    if axes.next().transpose()?.is_some() {
+        return Ok(None);
+    }
     Ok((|| {
-        let second_axis = axes.next();
-        if axes.next().is_some() {
-            return None;
-        }
         let (mut x_axis, mut y_axis, tail_offsets) = match (first_axis, second_axis) {
             ((offset, point, direction), None) => (
                 direction,
@@ -1250,55 +1421,41 @@ fn resolved_coordinate_system(
 }
 
 fn coordinate_system_ordinal_axes(
-    ctx: &DecodeContext<'_>,
     record: &[u8],
     origin_end: usize,
     origin: Point3,
-) -> Result<Option<(Vector3, Vector3)>, CodecError> {
-    let Some(tail) = record.get(origin_end..) else {
-        return Ok(None);
-    };
+) -> Option<(Vector3, Vector3)> {
+    let tail = record.get(origin_end..)?;
     if !matches!(tail.len(), 37 | 39)
         || tail.get(ordinal_tail::ZERO_BEFORE_ORIGIN_Z..ordinal_tail::ORIGIN_Z) != Some(&[0; 23])
     {
-        return Ok(None);
+        return None;
     }
-    let Some(ordinal_bytes) = tail.get(ordinal_tail::LEN..) else {
-        return Ok(None);
-    };
-    let Some(chunk_width) = std::num::NonZeroUsize::new(2) else {
-        return Err(ctx.refuse_codec_limit("scan SLDPRT coordinate system axis ordinals", 1, 0));
-    };
-    if ctx
-        .admit_iter(ordinal_bytes, "scan SLDPRT coordinate system axis ordinals")?
-        .chunks(chunk_width)
-        .any(|token| token == [0, 0])
-    {
-        return Ok(None);
+    let ordinal_bytes = tail.get(ordinal_tail::LEN..)?;
+    if ordinal_bytes.chunks(2).any(|token| token == [0, 0]) {
+        return None;
     }
     let (Some(x_ordinal), Some(y_ordinal)) = (
         View::u16_le_at(tail, ordinal_tail::X_AXIS_ORDINAL),
         View::u16_le_at(tail, ordinal_tail::Y_AXIS_ORDINAL),
     ) else {
-        return Ok(None);
+        return None;
     };
     let ordinals = [usize::from(x_ordinal), usize::from(y_ordinal)];
     if ordinals[0] == ordinals[1] || ordinals.iter().any(|ordinal| !(1..=3).contains(ordinal)) {
-        return Ok(None);
+        return None;
     }
-    let Some(repeated_z) = finite_f64(tail, ordinal_tail::ORIGIN_Z) else {
-        return Ok(None);
-    };
+    let repeated_z = finite_f64(tail, ordinal_tail::ORIGIN_Z)?;
     let repeated_z = repeated_z * 1000.0;
     if (repeated_z + 0.0).to_bits() != (origin.z + 0.0).to_bits() {
-        return Ok(None);
+        return None;
     }
     let basis = [
         Vector3::new(1.0, 0.0, 0.0),
         Vector3::new(0.0, 1.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
     ];
-    Ok(Some((basis[ordinals[0] - 1], basis[ordinals[1] - 1])))
+    Some((basis[ordinals[0] - 1], basis[ordinals[1] - 1]))
 }
 
 fn coordinate_system_tail(
@@ -1373,16 +1530,12 @@ fn coordinate_system_endpoint_origins<'a>(
     let Some(window_width) = std::num::NonZeroUsize::new(COMPACT_EDGE_VECTOR_MARKER.len()) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT coordinate system origins", 1, 0));
     };
-    Ok(ctx
-        .admit_iter(record, "scan SLDPRT coordinate system origins")?
-        .windows(window_width)
-        .enumerate()
-        .map(
-            move |(marker, bytes)| -> Result<Option<CoordinateSystemOrigin>, CodecError> {
+    let mut windows = record.windows(window_width.get()).enumerate();
+    let mut parse = move |(marker, bytes): (usize, &[u8])| -> Result<Option<CoordinateSystemOrigin>, CodecError> {
                 if bytes != COMPACT_EDGE_VECTOR_MARKER {
                     return Ok(None);
                 }
-                ctx.charge_work(256, "parse SLDPRT coordinate system origin")?;
+
                 let header = (|| {
                     let prefix = marker.checked_sub(ep_path_pre::COMPONENT_MARKER)?;
                     if record.get(prefix..prefix + ep_path_pre::ZERO_HEADER)? != PREFIX
@@ -1468,9 +1621,22 @@ fn coordinate_system_endpoint_origins<'a>(
                         extended: false,
                     })
                 })())
-            },
-        )
-        .filter_map(Result::transpose))
+            };
+    let mut done = false;
+    Ok(std::iter::from_fn(move || {
+        if done {
+            return None;
+        }
+        let found = ctx.find_map(
+            windows.by_ref(),
+            &mut parse,
+            "scan SLDPRT coordinate system origins",
+        );
+        if !matches!(found, Ok(Some(_))) {
+            done = true;
+        }
+        found.transpose()
+    }))
 }
 
 fn coordinate_system_origins<'a>(
@@ -1482,16 +1648,12 @@ fn coordinate_system_origins<'a>(
     let Some(window_width) = std::num::NonZeroUsize::new(PREFIX_SUFFIX.len() + 1) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT coordinate system origins", 1, 0));
     };
-    Ok(ctx
-        .admit_iter(record, "scan SLDPRT coordinate system origins")?
-        .windows(window_width)
-        .enumerate()
-        .map(
-            move |(prefix, bytes)| -> Result<Option<CoordinateSystemOrigin>, CodecError> {
+    let mut windows = record.windows(window_width.get()).enumerate();
+    let mut parse = move |(prefix, bytes): (usize, &[u8])| -> Result<Option<CoordinateSystemOrigin>, CodecError> {
                 if !(matches!(bytes[0], 0x2d | 0x2f) && bytes[1..] == *PREFIX_SUFFIX) {
                     return Ok(None);
                 }
-                ctx.charge_work(256, "parse SLDPRT coordinate system origin")?;
+
                 let header = (|| {
                     if record.get(prefix + cs_pt::ZERO_HEADER..prefix + cs_pt::SENTINEL)
                         != Some(&[0; 35])
@@ -1606,9 +1768,22 @@ fn coordinate_system_origins<'a>(
                         extended,
                     })
                 })())
-            },
-        )
-        .filter_map(Result::transpose))
+            };
+    let mut done = false;
+    Ok(std::iter::from_fn(move || {
+        if done {
+            return None;
+        }
+        let found = ctx.find_map(
+            windows.by_ref(),
+            &mut parse,
+            "scan SLDPRT coordinate system origins",
+        );
+        if !matches!(found, Ok(Some(_))) {
+            done = true;
+        }
+        found.transpose()
+    }))
 }
 
 fn coordinate_system_two_point_frame(
@@ -1769,58 +1944,74 @@ fn coordinate_system_line_axes<'a>(
     record: &'a [u8],
     generation: u32,
     origin_end: usize,
-) -> Result<impl Iterator<Item = (usize, Point3, Vector3)> + 'a, CodecError> {
+) -> Result<impl Iterator<Item = Result<(usize, Point3, Vector3), CodecError>> + 'a, CodecError> {
     const PREFIX: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let Some(window_width) = std::num::NonZeroUsize::new(PREFIX.len()) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT coordinate system line axes", 1, 0));
     };
-    Ok(ctx
-        .admit_iter(record, "scan SLDPRT coordinate system line axes")?
-        .windows(window_width)
-        .enumerate()
-        .filter(move |(prefix, bytes)| *prefix >= origin_end && *bytes == PREFIX)
-        .filter_map(move |(prefix, _)| {
-            if record
-                .get(prefix + line_axis::ZERO_BEFORE_GENERATION..prefix + line_axis::GENERATION)
-                != Some(&[0; 4])
-                || record
-                    .get(prefix + line_axis::GENERATION..prefix + line_axis::ZERO_BEFORE_SCALAR)
-                    != Some(&generation.to_le_bytes())
-                || record
-                    .get(prefix + line_axis::ZERO_BEFORE_SCALAR..prefix + line_axis::CARRIER_SCALAR)
-                    != Some(&[0; 16])
-                || record.get(prefix + line_axis::SEPARATOR) != Some(&0)
-            {
-                return None;
-            }
-            let scalar = finite_f64(record, prefix + line_axis::CARRIER_SCALAR)?;
-            let point = Point3::new(
-                finite_f64(record, prefix + line_axis::LINE_POINT)? * 1000.0,
-                finite_f64(record, prefix + line_axis::LINE_POINT + 8)? * 1000.0,
-                finite_f64(record, prefix + line_axis::LINE_POINT + 16)? * 1000.0,
-            );
-            let direction = Vector3::new(
-                finite_f64(record, prefix + line_axis::DIRECTION)?,
-                finite_f64(record, prefix + line_axis::DIRECTION + 8)?,
-                finite_f64(record, prefix + line_axis::DIRECTION + 16)?,
-            );
-            let repeated = Vector3::new(
-                finite_f64(record, prefix + line_axis::REPEATED_DIRECTION)?,
-                finite_f64(record, prefix + line_axis::REPEATED_DIRECTION + 8)?,
-                finite_f64(record, prefix + line_axis::REPEATED_DIRECTION + 16)?,
-            );
-            let repeated_matches = (direction.x - repeated.x).abs()
-                <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12
-                && (direction.y - repeated.y).abs()
-                    <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12
-                && (direction.z - repeated.z).abs()
-                    <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12;
-            (scalar > 0.0
-                && (direction.norm() - 1.0).abs()
-                    <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E9
-                && repeated_matches)
-                .then_some((prefix, point, direction))
-        }))
+    let mut windows = record.windows(window_width.get()).enumerate();
+    let mut done = false;
+    Ok(std::iter::from_fn(move || {
+        if done {
+            return None;
+        }
+        let found = ctx.find_map(
+            windows.by_ref(),
+            |(prefix, bytes)| {
+                if prefix < origin_end || bytes != PREFIX {
+                    return Ok(None);
+                }
+                Ok((|| {
+                    if record.get(
+                        prefix + line_axis::ZERO_BEFORE_GENERATION..prefix + line_axis::GENERATION,
+                    ) != Some(&[0; 4])
+                        || record.get(
+                            prefix + line_axis::GENERATION..prefix + line_axis::ZERO_BEFORE_SCALAR,
+                        ) != Some(&generation.to_le_bytes())
+                        || record.get(
+                            prefix + line_axis::ZERO_BEFORE_SCALAR
+                                ..prefix + line_axis::CARRIER_SCALAR,
+                        ) != Some(&[0; 16])
+                        || record.get(prefix + line_axis::SEPARATOR) != Some(&0)
+                    {
+                        return None;
+                    }
+                    let scalar = finite_f64(record, prefix + line_axis::CARRIER_SCALAR)?;
+                    let point = Point3::new(
+                        finite_f64(record, prefix + line_axis::LINE_POINT)? * 1000.0,
+                        finite_f64(record, prefix + line_axis::LINE_POINT + 8)? * 1000.0,
+                        finite_f64(record, prefix + line_axis::LINE_POINT + 16)? * 1000.0,
+                    );
+                    let direction = Vector3::new(
+                        finite_f64(record, prefix + line_axis::DIRECTION)?,
+                        finite_f64(record, prefix + line_axis::DIRECTION + 8)?,
+                        finite_f64(record, prefix + line_axis::DIRECTION + 16)?,
+                    );
+                    let repeated = Vector3::new(
+                        finite_f64(record, prefix + line_axis::REPEATED_DIRECTION)?,
+                        finite_f64(record, prefix + line_axis::REPEATED_DIRECTION + 8)?,
+                        finite_f64(record, prefix + line_axis::REPEATED_DIRECTION + 16)?,
+                    );
+                    let repeated_matches = (direction.x - repeated.x).abs()
+                        <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12
+                        && (direction.y - repeated.y).abs()
+                            <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12
+                        && (direction.z - repeated.z).abs()
+                            <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12;
+                    (scalar > 0.0
+                        && (direction.norm() - 1.0).abs()
+                            <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E9
+                        && repeated_matches)
+                        .then_some((prefix, point, direction))
+                })())
+            },
+            "scan SLDPRT coordinate system line axes",
+        );
+        if !matches!(found, Ok(Some(_))) {
+            done = true;
+        }
+        found.transpose()
+    }))
 }
 
 fn finite_f64(bytes: &[u8], offset: usize) -> Option<f64> {
@@ -1862,20 +2053,20 @@ fn select_reference_plane_frame_source<'a>(
     operation: &'static str,
 ) -> Result<Option<&'a str>, CodecError> {
     let mut selected = None;
-    let mut consistent = true;
-    for candidate in ctx.admit_iter(candidates, operation)? {
+    let mut values = candidates.iter();
+    while let Some(candidate) = ctx.next_charged(&mut values, operation)? {
         if !include(candidate) {
             continue;
         }
         if let Some(first) = selected {
             if !ctx.equal(first, candidate.source.as_str(), operation)? {
-                consistent = false;
+                return Ok(None);
             }
         } else {
             selected = Some(candidate.source.as_str());
         }
     }
-    Ok(if consistent { selected } else { None })
+    Ok(selected)
 }
 
 fn offset_plane_reference_frame_matches(
@@ -1904,38 +2095,17 @@ fn offset_plane_reference_frame_matches(
             <= EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E8
 }
 
-/// Append a charged sketch-block candidate to an indexed list.
-fn push_sketch_block_candidate<T>(
-    ctx: &DecodeContext<'_>,
-    candidates: &mut HashMap<usize, Vec<T>>,
-    index: usize,
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(values) = candidates.get_mut(&index) {
-        ctx.reserve_vec(values, 1, operation)?;
-        values.push(value);
-    } else {
-        let mut values = Vec::new();
-        ctx.reserve_vec(&mut values, 1, operation)?;
-        values.push(value);
-        ctx.insert_hash_map(candidates, index, values, operation)?;
-    }
-    Ok(())
-}
-
 /// Resolve sketch-block definition ownership and placement from typed object records.
 pub(crate) fn enrich_history_sketch_block_references(
     ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
-    let mut temporary_storage =
-        ctx.reserve_scoped(0, "SLDPRT reference_geometry temporary storage")?;
-
     for history_index in
         ctx.admit_iter(&(0..histories.len()), "scan SLDPRT sketch-block histories")?
     {
+        let mut temporary_storage =
+            ctx.reserve_scoped(0, "SLDPRT sketch block history workspace")?;
         let history = &mut histories[history_index];
         let mut by_source = HashMap::<u32, Option<(usize, NativeClassKind)>>::new();
         for (feature_index, feature) in ctx
@@ -1949,24 +2119,25 @@ pub(crate) fn enrich_history_sketch_block_references(
                 feature_index,
                 native_object_class(feature.input_class.as_deref().unwrap_or_default()),
             );
-            if !by_source.contains_key(&source) {
-                ctx.reserve_map(&mut by_source, 1, "index SLDPRT sketch block sources")?;
-            }
-            by_source
-                .entry(source)
-                .and_modify(|entry| *entry = None)
-                .or_insert(Some(identity));
+            temporary_storage.with_storage(|| {
+                ctx.entry_hash_map(&mut by_source, source, "index SLDPRT sketch block sources")?
+                    .and_modify(|entry| *entry = None)
+                    .or_insert(Some(identity));
+                Ok::<_, CodecError>(())
+            })?;
         }
-        let mut candidates = HashMap::<usize, Vec<u32>>::new();
-        let mut placement_candidates = HashMap::<usize, Vec<Point3>>::new();
+        let mut candidates = BTreeMap::<usize, Vec<u32>>::new();
+        let mut placement_candidates = BTreeMap::<usize, Vec<Point3>>::new();
         let Some(pair_width) = std::num::NonZeroUsize::new(2) else {
             return Err(ctx.refuse_codec_limit("scan SLDPRT sketch block name pairs", 1, 0));
         };
         for lane in ctx.admit_iter(lanes, "scan SLDPRT sketch block lanes")? {
+            let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT sketch block lane workspace")?;
             let mut names = Vec::new();
             for name in ctx.admit_iter(&lane.names, "collect SLDPRT sketch block names")? {
-                ctx.reserve_vec(&mut names, 1, "collect SLDPRT sketch block names")?;
-                names.push(name);
+                lane_storage.with_storage(|| {
+                    ctx.push_vec(&mut names, name, "collect SLDPRT sketch block names")
+                })?;
             }
             ctx.stable_sort_by(
                 &mut names,
@@ -1979,17 +2150,20 @@ pub(crate) fn enrich_history_sketch_block_references(
                 let Some(source) = name.object_id.and_then(ObjectId::value) else {
                     continue;
                 };
-                let Some((feature_index, kind)) = by_source.get(&source).and_then(|entry| *entry)
+                let Some((feature_index, kind)) = ctx
+                    .get_hash_map(&by_source, &source, "find SLDPRT sketch block source")?
+                    .and_then(|entry| *entry)
                 else {
                     continue;
                 };
                 if kind == NativeClassKind::SketchBlockInstance {
-                    ctx.reserve_vec(
-                        &mut instance_names,
-                        1,
-                        "collect SLDPRT sketch block instances",
-                    )?;
-                    instance_names.push((name, feature_index));
+                    lane_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut instance_names,
+                            (name, feature_index),
+                            "collect SLDPRT sketch block instances",
+                        )
+                    })?;
                 }
             }
             let mut definitions_by_local_id = HashMap::<u16, Option<u32>>::new();
@@ -1997,22 +2171,28 @@ pub(crate) fn enrich_history_sketch_block_references(
                 .admit_iter(&instance_names, "scan SLDPRT sketch block instances")?
                 .enumerate()
             {
-                let Some(next) = ctx
-                    .admit_iter(&names, "find SLDPRT sketch block definition name")?
-                    .find(|next| next.offset > name.offset)
-                else {
+                let next_index = ctx.partition_point(
+                    &names,
+                    |next| Ok(next.offset <= name.offset),
+                    "find SLDPRT sketch block definition name",
+                )?;
+                let Some(next) = names.get(next_index) else {
                     continue;
                 };
-                let Some(definition_source) =
-                    next.object_id.and_then(ObjectId::value).filter(|source| {
-                        by_source
-                            .get(source)
-                            .and_then(|entry| *entry)
-                            .is_some_and(|(_, kind)| kind == NativeClassKind::SketchBlockDefinition)
-                    })
-                else {
+                let Some(definition_source) = next.object_id.and_then(ObjectId::value) else {
                     continue;
                 };
+                if !ctx
+                    .get_hash_map(
+                        &by_source,
+                        &definition_source,
+                        "find SLDPRT sketch block definition source",
+                    )?
+                    .and_then(|entry| *entry)
+                    .is_some_and(|(_, kind)| kind == NativeClassKind::SketchBlockDefinition)
+                {
+                    continue;
+                }
                 let end = instance_names
                     .get(position + 1)
                     .and_then(|(next, _)| usize::try_from(next.offset).ok())
@@ -2025,17 +2205,16 @@ pub(crate) fn enrich_history_sketch_block_references(
                 else {
                     continue;
                 };
-                if !definitions_by_local_id.contains_key(&local_id) {
-                    ctx.reserve_map(
+                lane_storage.with_storage(|| {
+                    ctx.entry_hash_map(
                         &mut definitions_by_local_id,
-                        1,
+                        local_id,
                         "index SLDPRT sketch block local IDs",
-                    )?;
-                }
-                definitions_by_local_id
-                    .entry(local_id)
+                    )?
                     .and_modify(|entry| *entry = None)
                     .or_insert(Some(definition_source));
+                    Ok::<_, CodecError>(())
+                })?;
             }
             for (position, (name, instance_index)) in ctx
                 .admit_iter(&instance_names, "scan SLDPRT sketch block placements")?
@@ -2049,16 +2228,22 @@ pub(crate) fn enrich_history_sketch_block_references(
                     continue;
                 };
                 let origin = sketch_block_record_origin(ctx, &lane.native_payload, start, end)?;
-                let origin = origin.or_else(|| {
-                    sketch_block_identity_normalization_origin(&lane.native_payload, start, end)
-                });
+                let origin = match origin {
+                    Some(origin) => Some(origin),
+                    None => sketch_block_identity_normalization_origin(
+                        ctx,
+                        &lane.native_payload,
+                        start,
+                        end,
+                    )?,
+                };
                 if let Some(origin) = origin {
                     temporary_storage.with_storage(|| {
-                        push_sketch_block_candidate(
-                            ctx,
+                        ctx.push_btree_group(
                             &mut placement_candidates,
                             *instance_index,
                             origin,
+                            "collect SLDPRT sketch block placements",
                             "collect SLDPRT sketch block placements",
                         )
                     })?;
@@ -2074,22 +2259,32 @@ pub(crate) fn enrich_history_sketch_block_references(
                 ) else {
                     continue;
                 };
-                let Some((instance_index, NativeClassKind::SketchBlockInstance)) =
-                    by_source.get(&instance_source).and_then(|entry| *entry)
+                let Some((instance_index, NativeClassKind::SketchBlockInstance)) = ctx
+                    .get_hash_map(
+                        &by_source,
+                        &instance_source,
+                        "find SLDPRT sketch block instance source",
+                    )?
+                    .and_then(|entry| *entry)
                 else {
                     continue;
                 };
-                let Some((_, NativeClassKind::SketchBlockDefinition)) =
-                    by_source.get(&definition_source).and_then(|entry| *entry)
+                let Some((_, NativeClassKind::SketchBlockDefinition)) = ctx
+                    .get_hash_map(
+                        &by_source,
+                        &definition_source,
+                        "find SLDPRT sketch block definition source",
+                    )?
+                    .and_then(|entry| *entry)
                 else {
                     continue;
                 };
                 temporary_storage.with_storage(|| {
-                    push_sketch_block_candidate(
-                        ctx,
+                    ctx.push_btree_group(
                         &mut candidates,
                         instance_index,
                         definition_source,
+                        "collect SLDPRT sketch block definitions",
                         "collect SLDPRT sketch block definitions",
                     )
                 })?;
@@ -2110,24 +2305,30 @@ pub(crate) fn enrich_history_sketch_block_references(
                 else {
                     continue;
                 };
-                let Some(definition_source) = definitions_by_local_id
-                    .get(&local_id)
+                let Some(definition_source) = ctx
+                    .get_hash_map(
+                        &definitions_by_local_id,
+                        &local_id,
+                        "find SLDPRT sketch block local ID",
+                    )?
                     .and_then(|entry| *entry)
                 else {
                     continue;
                 };
                 temporary_storage.with_storage(|| {
-                    push_sketch_block_candidate(
-                        ctx,
+                    ctx.push_btree_group(
                         &mut candidates,
                         *instance_index,
                         definition_source,
+                        "collect SLDPRT sketch block definitions",
                         "collect SLDPRT sketch block definitions",
                     )
                 })?;
             }
         }
-        for (feature_index, mut sources) in candidates {
+        for (feature_index, mut sources) in
+            ctx.admit_iter(candidates, "apply SLDPRT sketch block definitions")?
+        {
             ctx.sort_unstable_by(
                 &mut sources,
                 |value| value,
@@ -2150,7 +2351,9 @@ pub(crate) fn enrich_history_sketch_block_references(
                 "insert SLDPRT sketch block definition",
             )?;
         }
-        for (feature_index, mut origins) in placement_candidates {
+        for (feature_index, mut origins) in
+            ctx.admit_iter(placement_candidates, "apply SLDPRT sketch block placements")?
+        {
             ctx.stable_sort_by(
                 &mut origins,
                 |value| value,
@@ -2195,20 +2398,21 @@ fn sketch_block_record_identity(
     let Some(window_width) = std::num::NonZeroUsize::new(44) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT sketch block identity", 1, 0));
     };
-    let identity = ctx
-        .admit_iter(bytes, "scan SLDPRT sketch block identity")?
-        .windows(window_width)
-        .enumerate()
-        .rev()
-        .find_map(|(relative, window)| {
-            let local_id = View::u16_le_at(window, 18)?;
-            (window.get(..4) == Some(&[0xff; 4])
-                && window.get(12..18) == Some(&[0x02, 0, 0, 0, 0, 0])
-                && local_id != 0
-                && window.get(40..44) == Some(&[0, 0, 1, 0]))
-            .then_some((local_id, start + relative))
-        });
-    Ok(identity)
+    ctx.find_map(
+        bytes.windows(window_width.get()).enumerate().rev(),
+        |(relative, window)| {
+            let identity = (|| {
+                let local_id = View::u16_le_at(window, 18)?;
+                (window.get(..4) == Some(&[0xff; 4])
+                    && window.get(12..18) == Some(&[0x02, 0, 0, 0, 0, 0])
+                    && local_id != 0
+                    && window.get(40..44) == Some(&[0, 0, 1, 0]))
+                .then_some((local_id, start + relative))
+            })();
+            Ok(identity)
+        },
+        "scan SLDPRT sketch block identity",
+    )
 }
 
 fn sketch_block_record_local_id(
@@ -2263,58 +2467,66 @@ fn sketch_block_record_origin(
 }
 
 fn sketch_block_identity_normalization_origin(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<Point3> {
+) -> Result<Option<Point3>, CodecError> {
+    const OPERATION: &str = "scan SLDPRT sketch block identity placement";
     const CLASS: &[u8] = b"sgBlock";
     const NATIVE_TO_IR: f64 = 1000.0;
 
-    let bytes = payload.get(start..end)?;
-    let record_len = CLASS_MARKER.len() + 2 + CLASS.len();
-    let class_len = u16::try_from(CLASS.len()).ok()?.to_le_bytes();
-    let mut records = bytes
-        .windows(record_len)
-        .enumerate()
-        .filter_map(|(relative, record)| {
-            (record.get(..CLASS_MARKER.len()) == Some(CLASS_MARKER)
-                && record.get(CLASS_MARKER.len()..CLASS_MARKER.len() + 2) == Some(&class_len)
-                && record.get(CLASS_MARKER.len() + 2..) == Some(CLASS))
-            .then_some(start + relative + record_len)
-        });
-    let body = records.next()?;
-    if records.next().is_some() {
-        return None;
-    }
-    let scalar = |relative: usize| {
-        let value = View::f64_le_at(payload, body + relative)?;
-        value.is_finite().then_some(value)
+    let Some(bytes) = payload.get(start..end) else {
+        return Ok(None);
     };
-    let basis = [
-        scalar(72)?,
-        scalar(80)?,
-        scalar(88)?,
-        scalar(96)?,
-        scalar(104)?,
-        scalar(112)?,
-        scalar(120)?,
-        scalar(128)?,
-        scalar(136)?,
-    ];
-    if basis != [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-        || payload.get(body + 144..body + 152) != Some(&1_u64.to_le_bytes())
-        || scalar(176)? != 1.0
-    {
-        return None;
+    let record_len = CLASS_MARKER.len() + 2 + CLASS.len();
+    let class_len = u16::try_from(CLASS.len())
+        .map_err(|_| CodecError::malformed("SLDPRT sketch block class is too long"))?
+        .to_le_bytes();
+    let mut records = bytes.windows(record_len).enumerate();
+    let matches = |(relative, record): (usize, &[u8])| {
+        Ok((record.get(..CLASS_MARKER.len()) == Some(CLASS_MARKER)
+            && record.get(CLASS_MARKER.len()..CLASS_MARKER.len() + 2) == Some(&class_len)
+            && record.get(CLASS_MARKER.len() + 2..) == Some(CLASS))
+        .then_some(start + relative + record_len))
+    };
+    let Some(body) = ctx.find_map(&mut records, matches, OPERATION)? else {
+        return Ok(None);
+    };
+    if ctx.find_map(&mut records, matches, OPERATION)?.is_some() {
+        return Ok(None);
     }
-    let translation = [scalar(152)?, scalar(160)?, scalar(168)?];
-    (translation.iter().all(|value| value.abs() <= 1.0e6)).then(|| {
-        Point3::new(
-            -translation[0] * NATIVE_TO_IR,
-            -translation[1] * NATIVE_TO_IR,
-            -translation[2] * NATIVE_TO_IR,
-        )
-    })
+    Ok((|| {
+        let scalar = |relative: usize| {
+            let value = View::f64_le_at(payload, body + relative)?;
+            value.is_finite().then_some(value)
+        };
+        let basis = [
+            scalar(72)?,
+            scalar(80)?,
+            scalar(88)?,
+            scalar(96)?,
+            scalar(104)?,
+            scalar(112)?,
+            scalar(120)?,
+            scalar(128)?,
+            scalar(136)?,
+        ];
+        if basis != [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            || payload.get(body + 144..body + 152) != Some(&1_u64.to_le_bytes())
+            || scalar(176)? != 1.0
+        {
+            return None;
+        }
+        let translation = [scalar(152)?, scalar(160)?, scalar(168)?];
+        (translation.iter().all(|value| value.abs() <= 1.0e6)).then(|| {
+            Point3::new(
+                -translation[0] * NATIVE_TO_IR,
+                -translation[1] * NATIVE_TO_IR,
+                -translation[2] * NATIVE_TO_IR,
+            )
+        })
+    })())
 }
 
 fn sketch_block_compact_local_id(
@@ -2401,6 +2613,29 @@ pub(crate) fn enrich_history_reference_axes(
         }
     }
     for lane in ctx.admit_iter(lanes, "scan SLDPRT reference axis lanes")? {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT reference lane workspace")?;
+        let object_names = ObjectNames::new(ctx, lane)?;
+        let mut axis_data_classes = Vec::new();
+        for class in ctx.admit_iter(&lane.classes, "scan SLDPRT reference axis classes")? {
+            if matches!(
+                class.name.as_str(),
+                "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
+            ) {
+                lane_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut axis_data_classes,
+                        class,
+                        "collect SLDPRT reference axis data classes",
+                    )
+                })?;
+            }
+        }
+        ctx.stable_sort_by(
+            &mut axis_data_classes,
+            |class| &class.offset,
+            Ord::cmp,
+            "sort SLDPRT reference axis classes",
+        )?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "collect SLDPRT reference axis starts")?
@@ -2410,9 +2645,14 @@ pub(crate) fn enrich_history_reference_axes(
                 .admit_iter(&history.features, "collect SLDPRT reference axis starts")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_vec(&mut starts, 1, "collect SLDPRT reference axis starts")?;
-                    starts.push((name.offset, history_index, feature_index));
+                if let Some(name) = object_names.of(ctx, feature)? {
+                    lane_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut starts,
+                            (name.offset, history_index, feature_index),
+                            "collect SLDPRT reference axis starts",
+                        )
+                    })?;
                 }
             }
         }
@@ -2429,7 +2669,11 @@ pub(crate) fn enrich_history_reference_axes(
             let feature = &histories[history_index].features[feature_index];
             if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::ReferenceAxis
-                || feature.properties.contains_key("Planes")
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Planes",
+                    "find SLDPRT reference geometry property",
+                )?
             {
                 continue;
             }
@@ -2447,24 +2691,22 @@ pub(crate) fn enrich_history_reference_axes(
             let Some(bytes) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            let mut axis_data_classes = Vec::new();
-            for class in ctx.admit_iter(&lane.classes, "scan SLDPRT reference axis classes")? {
-                if matches!(
-                    class.name.as_str(),
-                    "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
-                ) && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-                {
-                    ctx.reserve_vec(
-                        &mut axis_data_classes,
-                        1,
-                        "collect SLDPRT reference axis data classes",
-                    )?;
-                    axis_data_classes.push(class);
-                }
-            }
+            let first_class = ctx.partition_point(
+                &axis_data_classes,
+                |class| Ok(class.offset < u64_from_index(start)),
+                "find SLDPRT reference axis classes",
+            )?;
+            let last_class = ctx.partition_point(
+                &axis_data_classes,
+                |class| Ok(class.offset < u64_from_index(end)),
+                "find SLDPRT reference axis classes",
+            )?;
+            let axis_data_classes = &axis_data_classes[first_class..last_class];
+            let mut frame_storage =
+                ctx.reserve_scoped(0, "SLDPRT anchored reference frame workspace")?;
             let mut anchored_frames = Vec::new();
             for class in ctx.admit_iter(
-                &axis_data_classes,
+                axis_data_classes,
                 "scan SLDPRT anchored reference axis classes",
             )? {
                 let Some(body) = usize::try_from(class.offset)
@@ -2480,12 +2722,13 @@ pub(crate) fn enrich_history_reference_axes(
                     continue;
                 };
                 if let Some(frame) = explicit_reference_axis_frame(ctx, payload)? {
-                    ctx.reserve_vec(
-                        &mut anchored_frames,
-                        1,
-                        "collect SLDPRT anchored reference axis frames",
-                    )?;
-                    anchored_frames.push(frame);
+                    frame_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut anchored_frames,
+                            frame,
+                            "collect SLDPRT anchored reference axis frames",
+                        )
+                    })?;
                 }
             }
             ctx.stable_sort_by_key(
@@ -2542,13 +2785,18 @@ pub(crate) fn enrich_history_reference_axes(
         "apply SLDPRT legacy reference-axis histories",
     )? {
         let history = &mut histories[history_index];
-        let triads = legacy_reference_axis_triads(ctx, &history.features)?;
+        let triads = temporary_storage
+            .with_storage(|| legacy_reference_axis_triads(ctx, &history.features))?;
         for ReferenceAxisTriad(axes, pairs) in
             ctx.admit_iter(&triads, "apply SLDPRT legacy reference axis triads")?
         {
             for (&axis_index, &planes) in axes.iter().zip(pairs) {
                 let axis = &mut history.features[axis_index];
-                if !axis.properties.contains_key("Planes") {
+                if !ctx.contains_key_btree_map(
+                    &axis.properties,
+                    "Planes",
+                    "find SLDPRT reference geometry property",
+                )? {
                     insert_reference_axis_property(
                         ctx,
                         axis,
@@ -2577,21 +2825,45 @@ pub(crate) fn enrich_history_reference_axes(
             let feature = &mut histories[history_index].features[feature_index];
             if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 != NativeClassKind::ReferenceAxis
-                || feature.properties.contains_key("Origin")
-                || feature.properties.contains_key("Direction")
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Origin",
+                    "find SLDPRT reference geometry property",
+                )?
+                || ctx.contains_key_btree_map(
+                    &feature.properties,
+                    "Direction",
+                    "find SLDPRT reference geometry property",
+                )?
             {
                 continue;
             }
-            let Some([first, second]) = feature.properties.get("Planes").and_then(|planes| {
-                let mut sources = planes.split(',').map(str::parse::<u32>);
-                let pair = [sources.next()?.ok()?, sources.next()?.ok()?];
-                sources.next().is_none().then_some(pair)
-            }) else {
+            let Some(planes) = ctx.get_btree_map(
+                &feature.properties,
+                "Planes",
+                "find SLDPRT reference axis planes",
+            )?
+            else {
                 continue;
             };
-            let Some(frame) = plane_frames
-                .get(&first)
-                .zip(plane_frames.get(&second))
+            let Some((first, second)) =
+                ctx.split_once(planes.as_str(), ",", "split SLDPRT reference axis planes")?
+            else {
+                continue;
+            };
+            let (Ok(first), Ok(second)) = (
+                ctx.parse_text::<u32>(first, "parse SLDPRT reference axis plane")?,
+                ctx.parse_text::<u32>(second, "parse SLDPRT reference axis plane")?,
+            ) else {
+                continue;
+            };
+            let Some(frame) = ctx
+                .get_hash_map(&plane_frames, &first, "find SLDPRT reference axis plane")?
+                .zip(ctx.get_hash_map(
+                    &plane_frames,
+                    &second,
+                    "find SLDPRT reference axis plane",
+                )?)
                 .and_then(|(first, second)| {
                     plane_intersection_axis_frame(first.as_tuple(), second.as_tuple())
                 })
@@ -2618,32 +2890,49 @@ pub(crate) fn enrich_history_reference_axes(
         "complete SLDPRT reference-axis histories",
     )? {
         let history = &mut histories[history_index];
+        let mut history_storage = ctx.reserve_scoped(0, "SLDPRT reference axis triad workspace")?;
         let mut completions = Vec::new();
-        let triads = legacy_reference_axis_triads(ctx, &history.features)?;
+        let triads = history_storage
+            .with_storage(|| legacy_reference_axis_triads(ctx, &history.features))?;
         for ReferenceAxisTriad(indices, _) in
             ctx.admit_iter(&triads, "complete SLDPRT legacy reference axis triads")?
         {
-            let frames = indices.map(|index| {
+            let mut frames = [None; 3];
+            for (slot, &index) in indices.iter().enumerate() {
                 let feature = &history.features[index];
-                Some((
-                    crate::history::literals::parse_point3_mm(feature.properties.get("Origin")?)?
-                        .get(),
-                    crate::history::literals::parse_vector3(feature.properties.get("Direction")?)?,
-                ))
-            });
-            let Some(completion) = complete_reference_axis_triad(ctx, frames)? else {
+                let origin = crate::history::literals::named_literal(
+                    ctx,
+                    &feature.properties,
+                    "Origin",
+                    "parse SLDPRT reference axis origin",
+                )?
+                .and_then(crate::history::literals::parse_point3_mm);
+                let Some(origin) = origin else {
+                    continue;
+                };
+                let direction = crate::history::literals::named_literal(
+                    ctx,
+                    &feature.properties,
+                    "Direction",
+                    "parse SLDPRT reference axis direction",
+                )?
+                .and_then(crate::history::literals::parse_vector3);
+                frames[slot] = direction.map(|direction| (origin.get(), direction));
+            }
+            let Some(completion) = complete_reference_axis_triad(frames) else {
                 continue;
             };
             let completion = (
                 indices[completion.axis_index],
                 (completion.origin, completion.direction),
             );
-            ctx.reserve_vec(
-                &mut completions,
-                1,
-                "collect SLDPRT reference axis completions",
-            )?;
-            completions.push(completion);
+            history_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut completions,
+                    completion,
+                    "collect SLDPRT reference axis completions",
+                )
+            })?;
         }
         for &(index, (origin, direction)) in
             ctx.admit_iter(&completions, "write SLDPRT reference axis completions")?
@@ -2674,9 +2963,8 @@ struct ReferenceAxisCompletion {
 }
 
 fn complete_reference_axis_triad(
-    ctx: &DecodeContext<'_>,
     frames: [Option<(Point3, Vector3)>; 3],
-) -> Result<Option<ReferenceAxisCompletion>, CodecError> {
+) -> Option<ReferenceAxisCompletion> {
     const ANGULAR_TOLERANCE: f64 = 1e-9;
     const POSITION_TOLERANCE_MM: f64 = 1e-8;
 
@@ -2684,10 +2972,7 @@ fn complete_reference_axis_triad(
     let mut missing_count = 0usize;
     let mut present = [None, None];
     let mut present_count = 0usize;
-    for (index, frame) in ctx
-        .admit_iter(&frames, "complete SLDPRT reference axis triad")?
-        .enumerate()
-    {
+    for (index, frame) in frames.iter().enumerate() {
         if let Some(frame) = frame {
             if present_count < present.len() {
                 present[present_count] = Some((index, frame));
@@ -2699,89 +2984,83 @@ fn complete_reference_axis_triad(
         }
     }
     if missing_count != 1 {
-        return Ok(None);
+        return None;
     }
-    let Some(missing) = missing else {
-        return Ok(None);
-    };
+    let missing = missing?;
     let [Some((_, (first_origin, first_direction))), Some((_, (second_origin, second_direction)))] =
         &present
     else {
-        return Ok(None);
+        return None;
     };
-    let completed = (|| {
-        let normalize = |direction: Vector3| {
-            let length = direction.norm();
-            (length.is_finite()
-                && length > EPS_REFERENCE_GEOMETRY_COMPLETE_REFERENCE_AXIS_TRIAD_E12)
-                .then(|| {
-                    Vector3::new(
-                        direction.x / length,
-                        direction.y / length,
-                        direction.z / length,
-                    )
-                })
-        };
-        let first_direction = normalize(*first_direction)?;
-        let second_direction = normalize(*second_direction)?;
-        if first_direction.dot(second_direction).abs() > ANGULAR_TOLERANCE {
-            return None;
-        }
-        let displacement = Vector3::new(
-            second_origin.x - first_origin.x,
-            second_origin.y - first_origin.y,
-            second_origin.z - first_origin.z,
-        );
-        let first_along = displacement.dot(first_direction);
-        let first_point = Point3::new(
-            first_origin.x + first_direction.x * first_along,
-            first_origin.y + first_direction.y * first_along,
-            first_origin.z + first_direction.z * first_along,
-        );
-        let second_along = displacement.dot(second_direction);
-        let second_point = Point3::new(
-            second_origin.x - second_direction.x * second_along,
-            second_origin.y - second_direction.y * second_along,
-            second_origin.z - second_direction.z * second_along,
-        );
-        let separation = Vector3::new(
-            first_point.x - second_point.x,
-            first_point.y - second_point.y,
-            first_point.z - second_point.z,
-        );
-        let scale = [
-            first_point.x,
-            first_point.y,
-            first_point.z,
-            second_point.x,
-            second_point.y,
-            second_point.z,
-        ]
-        .into_iter()
-        .map(f64::abs)
-        .fold(1.0_f64, f64::max);
-        if separation.norm() > POSITION_TOLERANCE_MM * scale {
-            return None;
-        }
-        let origin = Point3::new(
-            (first_point.x + second_point.x) * 0.5,
-            (first_point.y + second_point.y) * 0.5,
-            (first_point.z + second_point.z) * 0.5,
-        );
-        let directions = frames.map(|frame| frame.and_then(|(_, direction)| normalize(direction)));
-        let direction = match missing {
-            0 => directions[2]?.cross(directions[1]?),
-            1 => directions[0]?.cross(directions[2]?),
-            2 => directions[1]?.cross(directions[0]?),
-            _ => return None,
-        };
-        Some(ReferenceAxisCompletion {
-            axis_index: missing,
-            origin,
-            direction: normalize(direction)?,
-        })
-    })();
-    Ok(completed)
+    let normalize = |direction: Vector3| {
+        let length = direction.norm();
+        (length.is_finite() && length > EPS_REFERENCE_GEOMETRY_COMPLETE_REFERENCE_AXIS_TRIAD_E12)
+            .then(|| {
+                Vector3::new(
+                    direction.x / length,
+                    direction.y / length,
+                    direction.z / length,
+                )
+            })
+    };
+    let first_direction = normalize(*first_direction)?;
+    let second_direction = normalize(*second_direction)?;
+    if first_direction.dot(second_direction).abs() > ANGULAR_TOLERANCE {
+        return None;
+    }
+    let displacement = Vector3::new(
+        second_origin.x - first_origin.x,
+        second_origin.y - first_origin.y,
+        second_origin.z - first_origin.z,
+    );
+    let first_along = displacement.dot(first_direction);
+    let first_point = Point3::new(
+        first_origin.x + first_direction.x * first_along,
+        first_origin.y + first_direction.y * first_along,
+        first_origin.z + first_direction.z * first_along,
+    );
+    let second_along = displacement.dot(second_direction);
+    let second_point = Point3::new(
+        second_origin.x - second_direction.x * second_along,
+        second_origin.y - second_direction.y * second_along,
+        second_origin.z - second_direction.z * second_along,
+    );
+    let separation = Vector3::new(
+        first_point.x - second_point.x,
+        first_point.y - second_point.y,
+        first_point.z - second_point.z,
+    );
+    let scale = [
+        first_point.x,
+        first_point.y,
+        first_point.z,
+        second_point.x,
+        second_point.y,
+        second_point.z,
+    ]
+    .into_iter()
+    .map(f64::abs)
+    .fold(1.0_f64, f64::max);
+    if separation.norm() > POSITION_TOLERANCE_MM * scale {
+        return None;
+    }
+    let origin = Point3::new(
+        (first_point.x + second_point.x) * 0.5,
+        (first_point.y + second_point.y) * 0.5,
+        (first_point.z + second_point.z) * 0.5,
+    );
+    let directions = frames.map(|frame| frame.and_then(|(_, direction)| normalize(direction)));
+    let direction = match missing {
+        0 => directions[2]?.cross(directions[1]?),
+        1 => directions[0]?.cross(directions[2]?),
+        2 => directions[1]?.cross(directions[0]?),
+        _ => return None,
+    };
+    Some(ReferenceAxisCompletion {
+        axis_index: missing,
+        origin,
+        direction: normalize(direction)?,
+    })
 }
 
 fn explicit_reference_axis_frame(
@@ -2850,8 +3129,11 @@ fn explicit_reference_axis_frame(
         ))
     };
     let mut unique = None;
-    for bytes in payload.windows(88) {
-        ctx.charge_work(1, "scan SLDPRT explicit reference axis windows")?;
+    let mut source_items = payload.windows(88);
+    while let Some(bytes) = ctx.next_charged(
+        &mut source_items,
+        "scan SLDPRT explicit reference axis windows",
+    )? {
         let Some(frame) = candidate(bytes) else {
             continue;
         };
@@ -2897,7 +3179,9 @@ fn legacy_reference_axis_triads(
         let Some(source) = feature.source_value() else {
             continue;
         };
-        if let Some(existing) = by_source.get_mut(&source) {
+        if let Some(existing) =
+            ctx.get_mut_hash_map(&mut by_source, &source, "index SLDPRT reference sources")?
+        {
             *existing = None;
         } else {
             temporary_storage.with_storage(|| {
@@ -2925,25 +3209,29 @@ fn legacy_reference_axis_triads(
                 complete = false;
                 break;
             };
-            let Some(candidate_index) = by_source.get(&candidate_source).copied().flatten() else {
+            let Some(candidate_index) = ctx
+                .get_hash_map(
+                    &by_source,
+                    &candidate_source,
+                    "find SLDPRT reference axis triad source",
+                )?
+                .copied()
+                .flatten()
+            else {
                 complete = false;
                 break;
             };
             *index = candidate_index;
         }
         if !complete
-            || ctx
-                .admit_iter(&indices[..3], "validate SLDPRT reference plane triad")?
-                .any(|index| {
-                    native_object_class(features[*index].input_class.as_deref().unwrap_or_default())
-                        != NativeClassKind::ReferencePlane
-                })
-            || ctx
-                .admit_iter(&indices[3..], "validate SLDPRT reference axis triad")?
-                .any(|index| {
-                    native_object_class(features[*index].input_class.as_deref().unwrap_or_default())
-                        != NativeClassKind::ReferenceAxis
-                })
+            || indices[..3].iter().any(|index| {
+                native_object_class(features[*index].input_class.as_deref().unwrap_or_default())
+                    != NativeClassKind::ReferencePlane
+            })
+            || indices[3..].iter().any(|index| {
+                native_object_class(features[*index].input_class.as_deref().unwrap_or_default())
+                    != NativeClassKind::ReferenceAxis
+            })
         {
             continue;
         }
@@ -3019,12 +3307,14 @@ fn plane_intersection_axis_sources(
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let mut sources = [0; 2];
     let mut source_count = 0;
-    for bytes in payload.windows(RECORD_LEN) {
-        ctx.charge_work(1, "scan SLDPRT plane intersection axis records")?;
+    let mut source_items = payload.windows(RECORD_LEN);
+    while let Some(bytes) = ctx.next_charged(
+        &mut source_items,
+        "scan SLDPRT plane intersection axis records",
+    )? {
         let source = (|| {
             let source = View::u32_le_at(bytes, 0)?;
-            (known_sources.contains(&source)
-                && bytes.get(8..14)?.iter().all(|byte| *byte == 0)
+            (bytes.get(8..14)?.iter().all(|byte| *byte == 0)
                 && bytes.get(14..16) == Some(&[1, 0])
                 && bytes.get(16..22)?.iter().all(|byte| *byte == 0)
                 && bytes.get(22).is_some_and(|object| *object != 0xff)
@@ -3035,6 +3325,13 @@ fn plane_intersection_axis_sources(
             .then_some(source)
         })();
         if let Some(source) = source {
+            if !ctx.contains_hash_set(
+                known_sources,
+                &source,
+                "find SLDPRT plane intersection axis source",
+            )? {
+                continue;
+            }
             if sources[..source_count].contains(&source) {
                 continue;
             }
@@ -3060,10 +3357,8 @@ fn compact_offset_plane_source(
         return Err(ctx.refuse_codec_limit("scan SLDPRT compact plane source", 1, 0));
     };
     let mut unique = None;
-    for bytes in ctx
-        .admit_iter(payload, "scan SLDPRT compact plane source")?
-        .windows(window_width)
-    {
+    let mut windows = payload.windows(window_width.get());
+    while let Some(bytes) = ctx.next_charged(&mut windows, "scan SLDPRT compact plane source")? {
         let Some(source) = View::u32_le_at(bytes, 0) else {
             continue;
         };
@@ -3089,9 +3384,9 @@ fn for_each_structured_offset_plane_source(
     let Some(window_width) = std::num::NonZeroUsize::new(RECORD_LEN) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT structured plane sources", 1, 0));
     };
-    for bytes in ctx
-        .admit_iter(payload, "scan SLDPRT structured plane sources")?
-        .windows(window_width)
+    let mut windows = payload.windows(window_width.get());
+    while let Some(bytes) =
+        ctx.next_charged(&mut windows, "scan SLDPRT structured plane sources")?
     {
         let source = (|| {
             let header = bytes.get(4..8)?;
@@ -3138,10 +3433,8 @@ fn for_each_classed_offset_plane_source(
     let Some(window_width) = std::num::NonZeroUsize::new(4 + TRAILER.len()) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT classed plane sources", 1, 0));
     };
-    for bytes in ctx
-        .admit_iter(payload, "scan SLDPRT classed plane sources")?
-        .windows(window_width)
-    {
+    let mut windows = payload.windows(window_width.get());
+    while let Some(bytes) = ctx.next_charged(&mut windows, "scan SLDPRT classed plane sources")? {
         let Some(source) = View::u32_le_at(bytes, 0) else {
             continue;
         };
@@ -3166,7 +3459,9 @@ fn offset_plane_reference_source(
     };
     let mut unique = None;
     let mut observe = |source: u32| -> Result<bool, CodecError> {
-        if Some(source) == self_source || !known_sources.contains(&source) {
+        if Some(source) == self_source
+            || !ctx.contains_hash_set(known_sources, &source, "find SLDPRT known plane source")?
+        {
             return Ok(true);
         }
         match unique {
@@ -3178,9 +3473,9 @@ fn offset_plane_reference_source(
             Some(_) => Ok(true),
         }
     };
-    for bytes in ctx
-        .admit_iter(payload, "scan SLDPRT typed offset plane sources")?
-        .windows(window_width)
+    let mut windows = payload.windows(window_width.get());
+    while let Some(bytes) =
+        ctx.next_charged(&mut windows, "scan SLDPRT typed offset plane sources")?
     {
         let Some(source) = View::u32_le_at(bytes, 0) else {
             continue;
@@ -3189,8 +3484,11 @@ fn offset_plane_reference_source(
         else {
             continue;
         };
-        if known_reference_plane_sources.contains(&source)
-            && Some(source) != self_source
+        if ctx.contains_hash_set(
+            known_reference_plane_sources,
+            &source,
+            "find SLDPRT known reference plane source",
+        )? && Some(source) != self_source
             && signature != [0; 4]
             && bytes.get(8..10) == Some(&[0, 0])
             && selector <= 3
@@ -3204,7 +3502,10 @@ fn offset_plane_reference_source(
         }
     }
     if let Some(source) = compact_offset_plane_source(ctx, payload)? {
-        if Some(source) != self_source && known_sources.contains(&source) && !observe(source)? {
+        if Some(source) != self_source
+            && ctx.contains_hash_set(known_sources, &source, "find SLDPRT known plane source")?
+            && !observe(source)?
+        {
             return Ok(None);
         }
     }
@@ -3234,10 +3535,9 @@ fn legacy_offset_plane_face_alias(
         return Err(ctx.refuse_codec_limit("scan SLDPRT legacy face aliases", 1, 0));
     };
     let mut unique = None;
-    for (offset, body) in ctx
-        .admit_iter(payload, "scan SLDPRT legacy face aliases")?
-        .windows(window_width)
-        .enumerate()
+    let mut windows = payload.windows(window_width.get()).enumerate();
+    while let Some((offset, body)) =
+        ctx.next_charged(&mut windows, "scan SLDPRT legacy face aliases")?
     {
         let alias = (|| {
             let token = View::u16_le_at(body, 0)?;
@@ -3319,7 +3619,7 @@ pub(super) fn explicit_reference_plane_frame(
         return Ok(Err(()));
     }
     for_each_angled_reference_plane_frame(ctx, payload, |offset, frame| {
-        if strong_reference_plane_overlap(ctx, payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN)? {
+        if strong_reference_plane_overlap(payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN) {
             return Ok(true);
         }
         if include_reference_plane_frame(&mut first, frame) {
@@ -3344,8 +3644,7 @@ pub(super) fn explicit_reference_plane_frame(
         return Ok(Err(()));
     }
     for_each_compact_reference_plane_frame(ctx, payload, |offset, frame| {
-        if strong_reference_plane_overlap(ctx, payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN)?
-        {
+        if strong_reference_plane_overlap(payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN) {
             return Ok(true);
         }
         if include_reference_plane_frame(&mut first, frame) {
@@ -3361,33 +3660,20 @@ pub(super) fn explicit_reference_plane_frame(
     Ok(Ok(first))
 }
 
-fn strong_reference_plane_overlap(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    offset: usize,
-    len: usize,
-) -> Result<bool, CodecError> {
+fn strong_reference_plane_overlap(payload: &[u8], offset: usize, len: usize) -> bool {
+    // Callers supply a literal frame width, so the overlap search is bounded.
     let preceding_bytes = matrix_plane::LEN.max(fixed_plane::LEN) - 1;
     let start = offset
         .checked_sub(preceding_bytes)
         .map_or(0, std::convert::identity);
     let end = offset
         .checked_add(len)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "scan SLDPRT strong reference plane overlap",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?
+        .unwrap_or(payload.len())
         .min(payload.len());
     let Some(strong_starts) = payload.get(start..end) else {
-        return Ok(false);
+        return false;
     };
-    for (relative, _) in ctx
-        .admit_iter(strong_starts, "scan SLDPRT strong reference plane overlap")?
-        .enumerate()
-    {
+    for (relative, _) in strong_starts.iter().enumerate() {
         let strong_offset = start + relative;
         let matrix = strong_offset
             .checked_add(matrix_plane::LEN)
@@ -3397,7 +3683,7 @@ fn strong_reference_plane_overlap(
                 .and_then(matrix_reference_plane_frame_record)
                 .is_some()
         {
-            return Ok(true);
+            return true;
         }
         let fixed = strong_offset
             .checked_add(fixed_plane::LEN)
@@ -3410,38 +3696,25 @@ fn strong_reference_plane_overlap(
                 })
                 .is_some()
         {
-            return Ok(true);
+            return true;
         }
     }
-    Ok(false)
+    false
 }
 
-fn fixed_reference_plane_overlap(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    offset: usize,
-    len: usize,
-) -> Result<bool, CodecError> {
+fn fixed_reference_plane_overlap(payload: &[u8], offset: usize, len: usize) -> bool {
+    // The caller supplies the angled-frame width.
     let start = offset
         .checked_sub(fixed_plane::LEN - 1)
         .map_or(0, std::convert::identity);
     let end = offset
         .checked_add(len)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "scan SLDPRT fixed reference plane overlap",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?
+        .unwrap_or(payload.len())
         .min(payload.len());
     let Some(fixed_starts) = payload.get(start..end) else {
-        return Ok(false);
+        return false;
     };
-    for (relative, _) in ctx
-        .admit_iter(fixed_starts, "scan SLDPRT fixed reference plane overlap")?
-        .enumerate()
-    {
+    for (relative, _) in fixed_starts.iter().enumerate() {
         let fixed_offset = start + relative;
         let fixed = fixed_offset
             .checked_add(fixed_plane::LEN)
@@ -3454,10 +3727,10 @@ fn fixed_reference_plane_overlap(
                 })
                 .is_some()
         {
-            return Ok(true);
+            return true;
         }
     }
-    Ok(false)
+    false
 }
 
 fn constraint_reference_plane_frame(
@@ -3616,10 +3889,9 @@ fn for_each_fixed_reference_plane_frame(
     let Some(window_width) = std::num::NonZeroUsize::new(fixed_plane::LEN) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT fixed reference plane frames", 1, 0));
     };
-    for (offset, bytes) in ctx
-        .admit_iter(payload, "scan SLDPRT fixed reference plane frames")?
-        .windows(window_width)
-        .enumerate()
+    let mut windows = payload.windows(window_width.get()).enumerate();
+    while let Some((offset, bytes)) =
+        ctx.next_charged(&mut windows, "scan SLDPRT fixed reference plane frames")?
     {
         let matrix = offset
             .checked_add(matrix_plane::LEN)
@@ -3649,24 +3921,27 @@ fn offset_reference_plane_frame_pair(
         offset_plane_reference_frame_matches(reference, result, distance.get())
             .then_some((result, reference))
     };
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT offset frame workspace")?;
     let mut matrix_candidates = Vec::new();
     for_each_matrix_reference_plane_frame(ctx, payload, |offset, frame| {
-        ctx.reserve_vec(
-            &mut matrix_candidates,
-            1,
-            "collect SLDPRT matrix plane frames",
-        )?;
-        matrix_candidates.push((offset, frame));
+        temporary_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut matrix_candidates,
+                (offset, frame),
+                "collect SLDPRT matrix plane frames",
+            )
+        })?;
         Ok(true)
     })?;
     let mut fixed_candidates = Vec::new();
     for_each_fixed_reference_plane_frame(ctx, payload, |offset, frame| {
-        ctx.reserve_vec(
-            &mut fixed_candidates,
-            1,
-            "collect SLDPRT fixed plane frames",
-        )?;
-        fixed_candidates.push((offset, frame));
+        temporary_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut fixed_candidates,
+                (offset, frame),
+                "collect SLDPRT fixed plane frames",
+            )
+        })?;
         Ok(true)
     })?;
     if let [(_, result), (_, reference)] = fixed_candidates.as_slice() {
@@ -3674,8 +3949,9 @@ fn offset_reference_plane_frame_pair(
     }
     let mut matrix_unique = [None; 3];
     let mut matrix_count = 0;
-    for (_, frame) in
-        ctx.admit_iter(&matrix_candidates, "deduplicate SLDPRT matrix plane frames")?
+    let mut matrices = matrix_candidates.iter();
+    while let Some((_, frame)) =
+        ctx.next_charged(&mut matrices, "deduplicate SLDPRT matrix plane frames")?
     {
         if matrix_unique[..matrix_count].contains(&Some(*frame)) {
             continue;
@@ -3690,16 +3966,24 @@ fn offset_reference_plane_frame_pair(
         return Ok(valid_pair(result, reference));
     }
     let mut frames = Vec::new();
+    let mut fixed_cursor = 0;
+    let mut matrix_cursor = 0;
     for (offset, _) in ctx
         .admit_iter(payload, "scan SLDPRT offset plane frame positions")?
         .enumerate()
     {
-        let fixed = ctx
-            .admit_iter(&fixed_candidates, "find SLDPRT fixed offset plane frame")?
-            .find_map(|(fixed_offset, frame)| (*fixed_offset == offset).then_some(*frame));
-        let matrix = ctx
-            .admit_iter(&matrix_candidates, "find SLDPRT matrix offset plane frame")?
-            .find_map(|(matrix_offset, frame)| (*matrix_offset == offset).then_some(*frame));
+        let fixed = fixed_candidates
+            .get(fixed_cursor)
+            .and_then(|(candidate_offset, frame)| (*candidate_offset == offset).then_some(*frame));
+        if fixed.is_some() {
+            fixed_cursor += 1;
+        }
+        let matrix = matrix_candidates
+            .get(matrix_cursor)
+            .and_then(|(candidate_offset, frame)| (*candidate_offset == offset).then_some(*frame));
+        if matrix.is_some() {
+            matrix_cursor += 1;
+        }
         let compact = match payload.get(offset..offset + COMPACT_REFERENCE_PLANE_FRAME_LEN) {
             Some(window) => compact_reference_plane_frame(ctx, window)?,
             None => None,
@@ -3712,48 +3996,48 @@ fn offset_reference_plane_frame_pair(
                 .and_then(minimal_reference_plane_frame_record),
             compact,
         ];
+        let mut unique = [None; 4];
+        let mut count = 0;
         for frame in candidates.into_iter().flatten() {
-            let mut duplicate = false;
-            for (existing_offset, existing_frame) in
-                ctx.admit_iter(&frames, "deduplicate SLDPRT offset plane frames")?
-            {
-                if *existing_offset == offset && *existing_frame == frame {
-                    duplicate = true;
-                    break;
-                }
+            if unique[..count].contains(&Some(frame)) {
+                continue;
             }
-            if !duplicate {
-                ctx.reserve_vec(&mut frames, 1, "collect SLDPRT offset plane frames")?;
-                frames.push((offset, frame));
-            }
+            unique[count] = Some(frame);
+            count += 1;
+            temporary_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut frames,
+                    (offset, frame),
+                    "collect SLDPRT offset plane frames",
+                )
+            })?;
         }
     }
     let mut unique_pair = None;
-    let mut ambiguous = false;
-    for (result_index, (result_offset, result)) in ctx
-        .admit_iter(&frames, "match SLDPRT offset plane frame pairs")?
-        .enumerate()
+    let mut results = frames.iter().enumerate();
+    while let Some((result_index, (result_offset, result))) =
+        ctx.next_charged(&mut results, "match SLDPRT offset plane frame pairs")?
     {
         let Some(reference_candidates) = frames.get(result_index + 1..) else {
             continue;
         };
-        for (reference_offset, reference) in ctx.admit_iter(
-            reference_candidates,
-            "match SLDPRT offset plane frame pairs",
-        )? {
+        let mut references = reference_candidates.iter();
+        while let Some((reference_offset, reference)) =
+            ctx.next_charged(&mut references, "match SLDPRT offset plane frame pairs")?
+        {
             if result_offset >= reference_offset {
                 continue;
             }
             if let Some(pair) = valid_pair(*result, *reference) {
                 match unique_pair {
                     None => unique_pair = Some(pair),
-                    Some(previous) if previous != pair => ambiguous = true,
+                    Some(previous) if previous != pair => return Ok(None),
                     Some(_) => {}
                 }
             }
         }
     }
-    Ok(if ambiguous { None } else { unique_pair })
+    Ok(unique_pair)
 }
 
 fn constraint_midplane_frame(
@@ -3767,9 +4051,10 @@ fn constraint_midplane_frame(
         .map_err(|_| CodecError::malformed("SLDPRT midplane constraint class name is too long"))?
         .to_le_bytes();
     let mut unique = None;
-    let mut ambiguous = false;
-    for (offset, bytes) in payload.windows(record_len).enumerate() {
-        ctx.charge_work(1, "scan SLDPRT midplane constraints")?;
+    let mut source_items = payload.windows(record_len).enumerate();
+    while let Some((offset, bytes)) =
+        ctx.next_charged(&mut source_items, "scan SLDPRT midplane constraints")?
+    {
         if bytes.get(..CLASS_MARKER.len()) != Some(CLASS_MARKER)
             || bytes.get(CLASS_MARKER.len()..CLASS_MARKER.len() + 2) != Some(&class_len)
             || bytes.get(CLASS_MARKER.len() + 2..) != Some(CLASS)
@@ -3827,12 +4112,12 @@ fn constraint_midplane_frame(
         if let Some(frame) = frame {
             match unique {
                 None => unique = Some(frame),
-                Some(previous) if previous != frame => ambiguous = true,
+                Some(previous) if previous != frame => return Ok(None),
                 Some(_) => {}
             }
         }
     }
-    Ok(if ambiguous { None } else { unique })
+    Ok(unique)
 }
 
 fn for_each_angled_reference_plane_frame(
@@ -3847,18 +4132,15 @@ fn for_each_angled_reference_plane_frame(
     let Some(window_width) = std::num::NonZeroUsize::new(ANGLED_REFERENCE_PLANE_FRAME_LEN) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT angled reference plane frames", 1, 0));
     };
-    for (offset, bytes) in ctx
-        .admit_iter(payload, "scan SLDPRT angled reference plane frames")?
-        .windows(window_width)
-        .enumerate()
+    let mut windows = payload.windows(window_width.get()).enumerate();
+    while let Some((offset, bytes)) =
+        ctx.next_charged(&mut windows, "scan SLDPRT angled reference plane frames")?
     {
         if bytes.get(16) != Some(&1) {
             continue;
         }
         let padding_nonzero = match bytes.get(89..113) {
-            Some(padding) => ctx
-                .admit_iter(padding, "scan SLDPRT angled reference plane padding")?
-                .any(|byte| *byte != 0),
+            Some(padding) => padding.iter().any(|byte| *byte != 0),
             None => true,
         };
         if padding_nonzero || scalar(bytes, 113) != Some(1.0) {
@@ -3889,21 +4171,13 @@ fn for_each_angled_reference_plane_frame(
         if normal.x != 0.0
             || origin_z.to_bits() != normal.z.to_bits()
             || origin_y.to_bits() != normal.y.to_bits()
-            || ctx
-                .admit_iter(&directions, "validate SLDPRT angled reference plane frame")?
-                .any(|vector| {
-                    (vector.norm() - 1.0).abs()
-                        > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
-                })
+            || directions.iter().any(|vector| {
+                (vector.norm() - 1.0).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
+            })
             || u_axis.dot(normal).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
             || u_axis.dot(v_axis).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
             || normal.dot(v_axis).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
-            || fixed_reference_plane_overlap(
-                ctx,
-                payload,
-                offset,
-                ANGLED_REFERENCE_PLANE_FRAME_LEN,
-            )?
+            || fixed_reference_plane_overlap(payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN)
         {
             continue;
         }
@@ -3941,10 +4215,9 @@ fn for_each_matrix_reference_plane_frame(
     let Some(window_width) = std::num::NonZeroUsize::new(matrix_plane::LEN) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT matrix reference plane frames", 1, 0));
     };
-    for (offset, bytes) in ctx
-        .admit_iter(payload, "scan SLDPRT matrix reference plane frames")?
-        .windows(window_width)
-        .enumerate()
+    let mut windows = payload.windows(window_width.get()).enumerate();
+    while let Some((offset, bytes)) =
+        ctx.next_charged(&mut windows, "scan SLDPRT matrix reference plane frames")?
     {
         let Some(frame) = matrix_reference_plane_frame_record(bytes) else {
             continue;
@@ -4043,10 +4316,9 @@ fn for_each_minimal_reference_plane_frame(
     let Some(window_width) = std::num::NonZeroUsize::new(MINIMAL_REFERENCE_PLANE_FRAME_LEN) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT minimal reference plane frames", 1, 0));
     };
-    for (offset, bytes) in ctx
-        .admit_iter(payload, "scan SLDPRT minimal reference plane frames")?
-        .windows(window_width)
-        .enumerate()
+    let mut windows = payload.windows(window_width.get()).enumerate();
+    while let Some((offset, bytes)) =
+        ctx.next_charged(&mut windows, "scan SLDPRT minimal reference plane frames")?
     {
         if let Some(frame) = minimal_reference_plane_frame_record(bytes) {
             if !visit(offset, frame)? {
@@ -4119,10 +4391,9 @@ fn for_each_compact_reference_plane_frame(
     let Some(window_width) = std::num::NonZeroUsize::new(COMPACT_REFERENCE_PLANE_FRAME_LEN) else {
         return Err(ctx.refuse_codec_limit("scan SLDPRT compact reference plane frames", 1, 0));
     };
-    for (offset, bytes) in ctx
-        .admit_iter(payload, "scan SLDPRT compact reference plane frames")?
-        .windows(window_width)
-        .enumerate()
+    let mut windows = payload.windows(window_width.get()).enumerate();
+    while let Some((offset, bytes)) =
+        ctx.next_charged(&mut windows, "scan SLDPRT compact reference plane frames")?
     {
         if bytes[64] != 0 || bytes[81] != 0 {
             continue;
@@ -4164,16 +4435,14 @@ fn for_each_compact_reference_plane_frame(
         let Some(mut pair) = candidates else {
             continue;
         };
-        ctx.stable_sort_by_key(
-            &mut pair,
-            |value| {
-                value
-                    .as_ref()
-                    .map_or([u64::MAX; 9], |(_, frame)| reference_plane_frame_key(frame))
-            },
-            Ord::cmp,
-            "sldprt compact reference plane frame pair sort",
-        )?;
+        let key = |value: &Option<(usize, ReferencePlaneFrame)>| {
+            value
+                .as_ref()
+                .map_or([u64::MAX; 9], |(_, frame)| reference_plane_frame_key(frame))
+        };
+        if key(&pair[1]) < key(&pair[0]) {
+            pair.swap(0, 1);
+        }
         for candidate in pair.into_iter().flatten() {
             if !visit(candidate.0, candidate.1)? {
                 return Ok(());

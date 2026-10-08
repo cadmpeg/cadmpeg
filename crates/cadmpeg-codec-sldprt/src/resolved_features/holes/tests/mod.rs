@@ -189,6 +189,7 @@ mod axial_profile;
 mod feature_ranges;
 mod hole_axis;
 mod position;
+mod position_patterns;
 mod writer;
 
 mod child_references;

@@ -23,12 +23,17 @@ fn topology(surfaces: &[Surface]) -> HoleTopology<'_> {
 
 #[test]
 fn hole_position_axes_refuse_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
-        .unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "index SLDPRT hole position features",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "index SLDPRT hole position features"));
@@ -36,13 +41,17 @@ fn hole_position_axes_refuse_collection_limit() {
 
 #[test]
 fn hole_position_axes_refuse_work_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    // Admit the history and its single feature before refusing index-key work.
-    policy.limits.max_work_units = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
-        .unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT hole position features",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            project_hole_axes(&ctx, &mut [], &[], &topology(&[]), &[native_history()], &[])
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT hole position features"));
@@ -58,16 +67,20 @@ fn hole_position_axes_refuse_scoped_materialized_limit() {
                 SketchId::mint("synthetic:test:id#position").unwrap(),
             )),
         }));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    // The copied sketch identity belongs to the temporary model-sketch index.
-    policy.limits.max_materialized_bytes =
-        u64::try_from(feature.native_ref.as_ref().unwrap().len()).unwrap() - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_hole_axes(&ctx, &mut [feature], &[], &topology(&[]), &[], &[]).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "resolve SLDPRT holes keys",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            project_hole_axes(&ctx, &mut [feature.clone()], &[], &topology(&[]), &[], &[])
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "index SLDPRT hole position features"));
+            && limit.operation == "resolve SLDPRT holes keys"));
 }
 
 #[test]

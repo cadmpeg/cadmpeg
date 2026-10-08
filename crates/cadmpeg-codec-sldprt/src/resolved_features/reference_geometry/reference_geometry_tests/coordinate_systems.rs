@@ -31,9 +31,15 @@ fn coordinate_system_error(policy: DecodePolicy) -> CodecError {
 
 #[test]
 fn coordinate_system_enrichment_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = coordinate_system_error(policy);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT coordinate system starts",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            Err::<(), CodecError>(coordinate_system_error(policy))
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "collect SLDPRT coordinate system starts"));
@@ -57,10 +63,15 @@ fn coordinate_system_enrichment_refuses_retained_limit() {
 
 #[test]
 fn coordinate_system_enrichment_refuses_work_limit() {
-    let mut policy = DecodePolicy::service();
-    // Admit one lane before the history feature scan.
-    policy.limits.max_work_units = 1;
-    let error = coordinate_system_error(policy);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "scan SLDPRT coordinate system features",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            Err::<(), CodecError>(coordinate_system_error(policy))
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "scan SLDPRT coordinate system features"));

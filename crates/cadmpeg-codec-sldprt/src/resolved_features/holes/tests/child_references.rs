@@ -13,7 +13,6 @@ fn hole_child_tokens_preserve_unicode_and_empty_parts() {
         ("α,", vec!["α", ""]),
     ] {
         let tokens = hole_child_tokens(&ctx, text)
-            .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(tokens, expected);
@@ -21,15 +20,21 @@ fn hole_child_tokens_preserve_unicode_and_empty_parts() {
 }
 
 #[test]
-fn hole_child_tokens_refuse_before_visiting_text() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = hole_child_tokens(&ctx, "α,β").err().unwrap();
+fn hole_child_tokens_refuse_on_first_text_visit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "scan SLDPRT hole child references",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut children = hole_child_tokens(&ctx, "α,β");
+            children.next().unwrap()
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.reason == ResourceFailure::BudgetExceeded
-            && limit.used == 0 && limit.additional == 5 && limit.limit == 0
             && limit.operation == "scan SLDPRT hole child references"));
 }
