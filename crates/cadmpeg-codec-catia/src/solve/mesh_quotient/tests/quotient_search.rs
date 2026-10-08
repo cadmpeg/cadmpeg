@@ -510,7 +510,7 @@ fn coordinate_root_candidate_copy_and_changed_edge_refuse_before_growth() {
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
                 operations.insert(refusal.operation);
             }
-            Ok(Some(_)) => break,
+            Ok(Some(())) => break,
             Ok(None) => panic!("fixture must retain a coordinate matching"),
             Err(error) => panic!("unexpected coordinate refusal: {error}"),
         }
@@ -836,7 +836,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                 refused.insert(error.operation.to_owned());
             }
-            Ok(Some(_)) => break,
+            Ok(Some(())) => break,
             Ok(None) => panic!("closed corner cycle must admit equations"),
             Err(error) => panic!("unexpected refusal: {error}"),
         }
@@ -1488,8 +1488,7 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
         ],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -1604,8 +1603,7 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
         ],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -1663,8 +1661,7 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
         selected: vec![Some((0, vec![vec![false, false]])), None, None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -1736,8 +1733,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -1852,8 +1848,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
         selected: vec![None; 2],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,

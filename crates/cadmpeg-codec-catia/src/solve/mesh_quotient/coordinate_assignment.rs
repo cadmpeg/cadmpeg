@@ -356,6 +356,8 @@ pub(in crate::solve) struct MeshImplicitEdgeCandidates<'storage> {
     pub(super) source: MeshImplicitEdgeCandidateSource<'storage>,
 }
 
+type RequiredCandidatePlan = ([Option<usize>; 2], bool);
+
 #[derive(Clone)]
 pub(super) enum MeshImplicitEdgeCandidateSource<'storage> {
     Cartesian {
@@ -369,7 +371,7 @@ pub(super) enum MeshImplicitEdgeCandidateSource<'storage> {
     Required {
         domains: Rc<ScopedValue<'storage, Vec<Vec<usize>>>>,
         roots: [usize; 2],
-        plan: Cell<Option<([Option<usize>; 2], bool)>>,
+        plan: Cell<Option<RequiredCandidatePlan>>,
         indexes: [usize; 2],
         required: usize,
     },
@@ -382,7 +384,7 @@ fn required_candidate_plan(
     domains: &[Vec<usize>],
     [left, right]: [usize; 2],
     required: usize,
-    plan: &Cell<Option<([Option<usize>; 2], bool)>>,
+    plan: &Cell<Option<RequiredCandidatePlan>>,
 ) -> Result<([Option<usize>; 2], bool), CodecError> {
     if let Some(resolved) = plan.get() {
         return Ok(resolved);
@@ -1003,6 +1005,7 @@ impl<'storage> MeshCoordinateRootDomains<'storage> {
     }
 }
 
+#[derive(Clone, Copy)]
 struct CoordinateRefinementInputs<'input> {
     edges: &'input [[usize; 2]],
     root_edges: &'input [Vec<usize>],
@@ -3576,7 +3579,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 while let Some((support, &root)) =
                     ctx.next_charged(&mut matches, "catia_coordinate_closure_forced_matches")?
                 {
-                    if {
+                    let excluded_match_impossible = {
                         let mut scratch =
                             ctx.reserve_scoped(0, "catia_coordinate_matching_probe")?;
                         scratch.with_storage(|| {
@@ -3591,7 +3594,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                                 .is_none(),
                             )
                         })?
-                    } {
+                    };
+                    if excluded_match_impossible {
                         if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                             break;
                         }
@@ -3613,7 +3617,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                             if matching[support] == root {
                                 continue;
                             }
-                            if {
+                            let required_match_impossible = {
                                 let mut scratch =
                                     ctx.reserve_scoped(0, "catia_coordinate_matching_probe")?;
                                 scratch.with_storage(|| {
@@ -3628,7 +3632,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                                         .is_none(),
                                     )
                                 })?
-                            } {
+                            };
+                            if required_match_impossible {
                                 if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                                     break 'supports;
                                 }
@@ -5398,7 +5403,7 @@ mod tests {
                 Err(CodecError::ResourceLimit(limit)) => {
                     refused.insert(limit.operation);
                 }
-                Ok(Some(_)) => break,
+                Ok(Some(())) => break,
                 _ => panic!("unexpected Hall refinement result"),
             }
         }

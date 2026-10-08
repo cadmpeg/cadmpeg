@@ -166,7 +166,7 @@ fn mesh_selection_completion_refuses_collection_limit() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&service_ctx)
+            service_ctx
                 .reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
