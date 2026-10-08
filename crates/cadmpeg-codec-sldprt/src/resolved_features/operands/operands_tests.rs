@@ -1182,3 +1182,28 @@ fn compatibility_families_match_acceptance_catalog() {
         }
     }
 }
+
+#[test]
+fn line_handle_without_endpoints_skips_id_index() {
+    let marker = SketchInputEntity::new("handle", "lane", 0, 0, SketchInputKind::Point)
+        .with_test_identity(Some(7), Some(7));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT scalar operand links",
+        None,
+    );
+    let resolved = resolve_operand_marker_excluding(
+        &ctx,
+        &[&marker],
+        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
+        7,
+        |_| Ok(false),
+    )
+    .unwrap();
+    drop(probe);
+    assert!(resolved.is_none());
+}
