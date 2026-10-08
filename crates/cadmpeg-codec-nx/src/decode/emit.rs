@@ -2400,7 +2400,8 @@ pub(super) fn source_meta(
         "plain_streams",
         scan.count(ctx, StreamKind::Plain)?,
     )?;
-    let (external_reference_paths, _paths_storage) = scan.container.external_reference_paths(ctx)?;
+    let (external_reference_paths, _paths_storage) =
+        scan.container.external_reference_paths(ctx)?;
     for (index, path) in ctx
         .admit_iter(external_reference_paths, "nx external reference attributes")?
         .enumerate()

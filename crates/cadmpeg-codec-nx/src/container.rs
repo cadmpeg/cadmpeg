@@ -690,7 +690,8 @@ impl<'a> Container<'a> {
             let Some(payload) = self.data.get(offset..end) else {
                 continue;
             };
-            let Some(((_, strings), _table_storage)) = parse_extref_string_table(ctx, payload)? else {
+            let Some(((_, strings), _table_storage)) = parse_extref_string_table(ctx, payload)?
+            else {
                 continue;
             };
             for (relative, value) in
@@ -971,14 +972,10 @@ fn locate_extref_string_table(
 }
 
 type ExternalReferencePaths<'ctx> = (Vec<String>, ScopedReservation<'ctx>);
-type ExternalReferenceStrings<'a, 'ctx> = (
-    Vec<(&'a DirEntry, usize, &'a str)>,
-    ScopedReservation<'ctx>,
-);
-type ExtrefStringTable<'bytes, 'ctx> = (
-    (usize, Vec<(usize, &'bytes str)>),
-    ScopedReservation<'ctx>,
-);
+type ExternalReferenceStrings<'a, 'ctx> =
+    (Vec<(&'a DirEntry, usize, &'a str)>, ScopedReservation<'ctx>);
+type ExtrefStringTable<'bytes, 'ctx> =
+    ((usize, Vec<(usize, &'bytes str)>), ScopedReservation<'ctx>);
 
 fn parse_extref_string_table<'bytes, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
