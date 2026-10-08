@@ -82,8 +82,9 @@ pub(crate) struct ParameterRecord {
     /// accessors stop at this boundary.
     parameter_end: usize,
     pub(crate) comment: Vec<u8>,
-    /// Ascending indices of the real tokens spelled with a `D` exponent.
-    double_precision_reals: Vec<usize>,
+    /// Bit `i` is set when token `i` is a real spelled with a `D` exponent.
+    /// The words stop after the last set bit, so an empty set means none.
+    double_precision_reals: Vec<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -284,17 +285,17 @@ impl ParameterRecord {
         tokens: Vec<Token>,
         comment: Vec<u8>,
     ) -> Self {
-        let double_precision_reals = tokens
-            .iter()
-            .enumerate()
-            .filter(|(_, token)| {
-                matches!(token.value, TokenValue::Real(_))
-                    && bytes
-                        .get(token.span.clone())
-                        .is_some_and(|text| text.iter().any(|byte| matches!(byte, b'D' | b'd')))
-            })
-            .map(|(index, _)| index)
-            .collect();
+        let mut double_precision_reals = Vec::new();
+        for (index, token) in tokens.iter().enumerate() {
+            if matches!(token.value, TokenValue::Real(_))
+                && bytes
+                    .get(token.span.clone())
+                    .is_some_and(|text| text.iter().any(|byte| matches!(byte, b'D' | b'd')))
+            {
+                double_precision_reals.resize(index / 64 + 1, 0);
+                double_precision_reals[index / 64] |= 1 << (index % 64);
+            }
+        }
         Self {
             directory_sequence,
             line_range,
@@ -395,7 +396,11 @@ impl ParameterRecord {
         if !matches!(token.value, TokenValue::Real(_)) {
             return None;
         }
-        if self.double_precision_reals.binary_search(&index).is_ok() {
+        if self
+            .double_precision_reals
+            .get(index / 64)
+            .is_some_and(|word| word >> (index % 64) & 1 == 1)
+        {
             Some(precision.double_significance)
         } else {
             Some(precision.single_significance)
@@ -3825,7 +3830,7 @@ fn numeric_with_limits(
 }
 
 /// Tokenize one ordinary record. Returns the tokens, the offset after the
-/// record delimiter, and the ascending indices of `D`-exponent reals.
+/// record delimiter, and the `D`-exponent real bitset of the record.
 fn tokenize_with_limits(
     bytes: &[u8],
     card_boundaries: &[usize],
@@ -3834,7 +3839,7 @@ fn tokenize_with_limits(
     global_table: GlobalTable,
     limits: NumericLimits,
     ctx: &DecodeContext<'_>,
-) -> Result<(Vec<Token>, usize, Vec<usize>), TokenizeFailure> {
+) -> Result<(Vec<Token>, usize, Vec<u64>), TokenizeFailure> {
     let mut tokens = Vec::new();
     let mut double_precision_reals = Vec::new();
     let mut cursor = 0_usize;
@@ -3905,12 +3910,17 @@ fn tokenize_with_limits(
                 }
                 let (token, double_precision) = numeric_with_limits(bytes, span, limits, ctx)?;
                 if double_precision {
-                    ctx.push_vec(
-                        &mut double_precision_reals,
-                        tokens.len(),
-                        "iges double-precision real indices",
-                    )
-                    .map_err(TokenizeFailure::Refusal)?;
+                    // One word per 64 tokens, grown only up to the last set bit.
+                    let word = tokens.len() / 64;
+                    while double_precision_reals.len() <= word {
+                        ctx.push_vec(
+                            &mut double_precision_reals,
+                            0_u64,
+                            "iges double-precision real words",
+                        )
+                        .map_err(TokenizeFailure::Refusal)?;
+                    }
+                    double_precision_reals[word] |= 1 << (tokens.len() % 64);
                 }
                 (token, end)
             };

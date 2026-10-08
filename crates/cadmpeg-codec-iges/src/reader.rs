@@ -365,24 +365,6 @@ enum ParseMode {
     Inspect,
 }
 
-fn parameter_tokens(
-    records: &[parameter::ParameterRecord],
-    ctx: &DecodeContext<'_>,
-) -> Result<u64, CodecError> {
-    ctx.fold(
-        records,
-        0_u64,
-        |total, record| {
-            total
-                .checked_add(cadmpeg_core::decode::u64_from_index(record.tokens().len()))
-                .ok_or_else(|| {
-                    cadmpeg_core::decode::refuse_local_limit("iges parameter tokens", u64::MAX, 1)
-                })
-        },
-        "iges parameter token census",
-    )
-}
-
 struct PhysicalParse<'a, 'ctx> {
     scan: card::CardScan<'a>,
     global: global::ResolvedGlobal,
@@ -592,7 +574,6 @@ fn decode_with_occurrence_limits(
         .map_or(parse.directory.as_slice(), |(entries, _)| {
             entries.as_slice()
         });
-    let parameter_tokens = parameter_tokens(&parse.parameters, ctx)?;
     let source_fidelity = source_fidelity(source_bytes, ctx)?;
 
     let primary = crate::dialect::classify(ctx, representation, &parse.global)?;
@@ -605,17 +586,14 @@ fn decode_with_occurrence_limits(
         }
     }
     let mut projection = match length_context.filter(|_| !ctx.container_only()) {
-        Some(context) => {
-            charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
-            entities::geometry::project_geometry(
-                &mut ir,
-                projected_directory,
-                &parse.parameters,
-                &parse.trailing_pointer_analysis,
-                &context,
-                ctx,
-            )?
-        }
+        Some(context) => entities::geometry::project_geometry(
+            &mut ir,
+            projected_directory,
+            &parse.parameters,
+            &parse.trailing_pointer_analysis,
+            &context,
+            ctx,
+        )?,
         None => entities::geometry::Projection::default(),
     };
     mark_quarantined_placements(
@@ -625,7 +603,6 @@ fn decode_with_occurrence_limits(
         &quarantined_parameter_sequences,
     )?;
     let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
-    charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
         definition_storage,
         placement_storage,
@@ -788,8 +765,7 @@ fn decode_with_occurrence_limits(
             &mut attributed,
             global_table,
         )?;
-        charge_work(
-            ctx,
+        ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             "iges_semantic_validation",
         )?;
@@ -994,14 +970,6 @@ pub(crate) fn decode_with_test_occurrence_limits(
         &mut std::io::Cursor::new(bytes),
         &options,
     )
-}
-
-fn charge_work(
-    ctx: &DecodeContext<'_>,
-    units: u64,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_work(units, operation)
 }
 
 #[cfg(test)]
