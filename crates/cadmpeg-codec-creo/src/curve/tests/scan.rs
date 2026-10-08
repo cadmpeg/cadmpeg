@@ -46,17 +46,17 @@ fn fc05_circle_parameter() -> crate::curve::CurveParameterRecord {
     scan.curves.parameters.remove(0)
 }
 
-fn assert_fc05_circle_collection_refusal(limit: u64, operation: &'static str) {
+fn assert_fc05_circle_collection_refusal(operation: &'static str) {
     let parameter = fc05_circle_parameter();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = crate::curve::fc05_circles(&ctx, &[parameter])
-        .expect_err("one four-point circle exceeds limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| crate::curve::fc05_circles(ctx, std::slice::from_ref(&parameter)),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation)
+    );
 }
 
 fn fc_curve_parameter() -> crate::curve::CurveParameterRecord {
@@ -72,28 +72,20 @@ fn fc_curve_parameter() -> crate::curve::CurveParameterRecord {
     scan.curves.parameters.remove(0)
 }
 
-fn fc_coordinates_with_limits(
-    collection_limit: u64,
-    retained_limit: u64,
-) -> Result<Vec<crate::curve::FcCurveCoordinates>, CodecError> {
+fn assert_fc_coordinate_collection_refusal(operation: &'static str) {
     let parameter = fc_curve_parameter();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    crate::curve::fc_coordinates(&ctx, &[parameter])
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| crate::curve::fc_coordinates(ctx, std::slice::from_ref(&parameter)),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation)
+    );
 }
 
-fn assert_fc_coordinate_collection_refusal(limit: u64, operation: &'static str) {
-    let error = fc_coordinates_with_limits(limit, u64::MAX)
-        .expect_err("one FC coordinate row exceeds collection limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
-}
-
-fn assert_fc_coordinate_retained_refusal(_limit: u64, operation: &'static str) {
+fn assert_fc_coordinate_retained_refusal(operation: &'static str) {
     let parameter = fc_curve_parameter();
     let error = crate::test_support::last_refusal_at(
         &[],
@@ -107,69 +99,72 @@ fn assert_fc_coordinate_retained_refusal(_limit: u64, operation: &'static str) {
             && resource.operation == operation));
 }
 
-#[test]
-fn fc_coordinates_refuse_unique_parameter_count_node() {
-    assert_fc_coordinate_collection_refusal(0, "creo unique-row count nodes");
+fn assert_fc_coordinate_materialized_refusal(operation: &'static str) {
+    let parameter = fc_curve_parameter();
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        operation,
+        |ctx| crate::curve::fc_coordinates(ctx, std::slice::from_ref(&parameter)),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::MaterializedBytes && resource.operation == operation)
+    );
 }
 
 #[test]
-fn fc_coordinates_refuse_unique_parameter_projection() {
-    assert_fc_coordinate_collection_refusal(1, "creo unique-row projection");
+fn fc_coordinates_refuse_unique_parameter_count_node() {
+    assert_fc_coordinate_collection_refusal("creo unique-row count nodes");
 }
 
 #[test]
 fn fc_coordinates_refuse_token_vector() {
-    assert_fc_coordinate_collection_refusal(2, "creo fc coordinate tokens");
+    assert_fc_coordinate_collection_refusal("creo fc coordinate tokens");
 }
 
 #[test]
 fn fc_coordinates_refuse_opaque_span_vector() {
-    assert_fc_coordinate_collection_refusal(6, "creo fc opaque spans");
+    assert_fc_coordinate_collection_refusal("creo fc opaque spans");
 }
 
 #[test]
 fn fc_coordinates_refuse_value_vector() {
-    assert_fc_coordinate_collection_refusal(8, "creo fc coordinate values");
+    assert_fc_coordinate_collection_refusal("creo fc coordinate values");
 }
 
 #[test]
 fn fc_coordinates_refuse_output_vector() {
-    assert_fc_coordinate_collection_refusal(12, "creo fc coordinate rows");
+    assert_fc_coordinate_collection_refusal("creo fc coordinate rows");
 }
 
 #[test]
 fn fc_coordinates_refuse_token_retained_bytes() {
-    assert_fc_coordinate_retained_refusal(0, "creo fc coordinate token bytes");
+    assert_fc_coordinate_materialized_refusal("creo fc coordinate token bytes");
 }
 
 #[test]
 fn fc_coordinates_refuse_span_retained_bytes() {
-    assert_fc_coordinate_retained_refusal(32, "creo fc opaque span bytes");
+    assert_fc_coordinate_retained_refusal("creo fc opaque span bytes");
 }
 
 #[test]
 fn fc_coordinates_refuse_body_retained_bytes() {
-    assert_fc_coordinate_retained_refusal(35, "creo fc coordinate body");
+    assert_fc_coordinate_retained_refusal("creo fc coordinate body");
 }
 
 #[test]
 fn fc05_circles_refuse_unique_parameter_count_node() {
-    assert_fc05_circle_collection_refusal(0, "creo unique-row count nodes");
-}
-
-#[test]
-fn fc05_circles_refuse_unique_parameter_projection() {
-    assert_fc05_circle_collection_refusal(1, "creo unique-row projection");
+    assert_fc05_circle_collection_refusal("creo unique-row count nodes");
 }
 
 #[test]
 fn fc05_circles_refuse_point_rows() {
-    assert_fc05_circle_collection_refusal(2, "creo fc05 point rows");
+    assert_fc05_circle_collection_refusal("creo fc05 point rows");
 }
 
 #[test]
 fn fc05_circles_refuse_output_vector() {
-    assert_fc05_circle_collection_refusal(6, "creo fc05 circles");
+    assert_fc05_circle_collection_refusal("creo fc05 circles");
 }
 
 #[test]
@@ -854,7 +849,16 @@ fn prototype_topology_rows_refuse_collection_limit() {
     payload.extend_from_slice(b"topol_ref_data\0");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo prototype topology rows"),
+        |cap| {
+            let mut trial = policy;
+            trial.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
+            crate::curve::prototype_topology(&ctx, &payload)
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = crate::curve::prototype_topology(&ctx, &payload)
         .expect_err("one labeled topology exceeds collection limit");

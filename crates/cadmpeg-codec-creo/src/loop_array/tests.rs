@@ -248,7 +248,7 @@ fn loop_array_framing_and_token_walks_refuse_work() {
             "creo loop array discovery",
             "creo loop frame boundaries",
             "creo loop prototype scan",
-            "creo loop row token walk",
+            "creo PSB token traversal",
         ],
         |ctx| super::scan(ctx, &bytes),
     );

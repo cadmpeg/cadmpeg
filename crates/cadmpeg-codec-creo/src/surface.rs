@@ -3832,7 +3832,8 @@ fn named_prototype_frames<'a>(
             }
         }
         let mut named = Vec::new();
-        for token in psb::tokens(&payload[close + 2..record_end]) {
+        for token in psb::tokens(ctx, &payload[close + 2..record_end]) {
+            let token = token?;
             let token_offset = close + 2 + token.offset;
             if token.kind == psb::TokenKind::NamedRecord
                 && named_record_length(payload, token_offset) == Some(token.length)
@@ -3914,8 +3915,12 @@ fn named_prototype_frames<'a>(
                 &cache,
             ) {
                 value_end = value_offset + length;
-            } else if let Some(compound_close) = psb::tokens(&payload[value_offset..value_end])
-                .find(|token| token.kind == psb::TokenKind::CompoundClose)
+            } else if let Some(compound_close) = psb::tokens(ctx, &payload[value_offset..value_end])
+                .find(|token| match token {
+                    Ok(token) => token.kind == psb::TokenKind::CompoundClose,
+                    Err(_) => true,
+                })
+                .transpose()?
             {
                 value_end = value_offset + compound_close.offset;
             }
@@ -5662,7 +5667,7 @@ fn contour_records_for_rows(
                 continue;
             };
             let Some(local_system_close) =
-                first_compound_close(payload, local_system_start, row_end)
+                first_compound_close(ctx, payload, local_system_start, row_end)?
             else {
                 continue;
             };
@@ -6337,31 +6342,38 @@ fn surface_body_compound_close(
     Ok(None)
 }
 
-fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usize> {
+fn first_compound_close(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<usize>, CodecError> {
     const OUTLINE_PAIR_SEPARATOR: &[u8] = &[0x00, 0x0c, 0x98];
-
-    let separator_close = payload
-        .get(start..end)?
+    let Some(body) = payload.get(start..end) else {
+        return Ok(None);
+    };
+    let separator_close = body
         .windows(OUTLINE_PAIR_SEPARATOR.len() + 1)
         .position(|window| {
             window.starts_with(OUTLINE_PAIR_SEPARATOR)
                 && window.last() == Some(&psb::token::COMPOUND_CLOSE)
         })
         .map(|offset| start + offset + OUTLINE_PAIR_SEPARATOR.len());
-    for token in psb::tokens(payload.get(start..end)?) {
+    for token in psb::tokens(ctx, body) {
+        let token = token?;
         match token.kind {
             psb::TokenKind::CompoundClose => {
-                return Some(
-                    separator_close.map_or(start + token.offset, |separator_close| {
-                        separator_close.min(start + token.offset)
+                return Ok(Some(
+                    separator_close.map_or(start + token.offset, |separator| {
+                        separator.min(start + token.offset)
                     }),
-                );
+                ))
             }
-            psb::TokenKind::NamedRecord => return separator_close,
+            psb::TokenKind::NamedRecord => return Ok(separator_close),
             _ => {}
         }
     }
-    separator_close
+    Ok(separator_close)
 }
 
 fn plane_local_system_compound_close(
@@ -6375,7 +6387,7 @@ fn plane_local_system_compound_close(
     // systems contain an e0 byte inside a numeric token; in that case the
     // generic scanner can stop without finding the following e3. Validate a
     // complete frame only as the recovery path for that false boundary.
-    if let Some(close) = first_compound_close(payload, start, end) {
+    if let Some(close) = first_compound_close(ctx, payload, start, end)? {
         return Ok(Some(close));
     }
     for close in start..end {
@@ -7574,7 +7586,7 @@ fn plane_local_systems_for_rows(
         let parameter_close = parameter
             .filter(|parameter| parameter.boundary == SurfaceBodyBoundary::CompoundClose)
             .map(|parameter| parameter.body_offset + parameter.body.len());
-        let scanner_close = first_compound_close(payload, envelope_start, row_end);
+        let scanner_close = first_compound_close(ctx, payload, envelope_start, row_end)?;
         let envelope_closes = match (scanner_close, parameter_close) {
             (Some(first), Some(second)) if first < second => [Some(first), Some(second)],
             (Some(first), Some(second)) if second < first => [Some(second), Some(first)],

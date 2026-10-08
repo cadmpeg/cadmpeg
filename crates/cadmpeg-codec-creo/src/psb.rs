@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Context-independent PSB tokens and primitive numeric encodings.
+//! Budgeted PSB tokens and primitive numeric encodings.
 //!
 //! [`tokens`] walks forms whose lengths are known without a parent record
 //! grammar. [`compact_int`], [`reference_id`], and [`short_form_float`] decode
@@ -86,23 +86,51 @@ pub(crate) enum TokenKind {
 ///
 /// Numeric forms that depend on a parent grammar remain compact or unknown
 /// tokens.
-pub(crate) fn tokens(data: &[u8]) -> impl Iterator<Item = Token> + '_ {
+pub(crate) fn tokens<'a>(
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
+    data: &'a [u8],
+) -> impl Iterator<Item = Result<Token, cadmpeg_core::CodecError>> + 'a {
     let mut offset = 0;
     std::iter::from_fn(move || {
-        let token = token_at(data, offset)?;
-        offset += token.length;
-        Some(token)
+        if offset == data.len() {
+            return None;
+        }
+        match token_at(ctx, data, offset) {
+            Ok(Some(token)) => {
+                offset += token.length;
+                Some(Ok(token))
+            }
+            Ok(None) => {
+                offset = data.len();
+                None
+            }
+            Err(error) => {
+                offset = data.len();
+                Some(Err(error))
+            }
+        }
     })
 }
 
 /// Decode one byte-self-delimiting PSB token at `offset`.
-pub(crate) fn token_at(data: &[u8], offset: usize) -> Option<Token> {
-    let &head = data.get(offset)?;
+pub(crate) fn token_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    offset: usize,
+) -> Result<Option<Token>, cadmpeg_core::CodecError> {
+    let Some(tail) = data.get(offset..) else {
+        return Ok(None);
+    };
+    let Some(&head) = ctx.next_charged(&mut tail.iter(), "creo PSB token traversal")? else {
+        return Ok(None);
+    };
     let (length, kind) = match head {
-        token::NAMED_RECORD => match data
-            .get(offset + 2..)
-            .and_then(|rest| rest.iter().position(|&b| b == 0))
-        {
+        token::NAMED_RECORD => match match data.get(offset + 2..) {
+            Some(rest) => {
+                ctx.position_by(rest, |&byte| Ok(byte == 0), "creo PSB record name scan")?
+            }
+            None => None,
+        } {
             Some(name_len) => (name_len + 3, TokenKind::NamedRecord),
             None => (data.len() - offset, TokenKind::Truncated(head)),
         },
@@ -148,11 +176,11 @@ pub(crate) fn token_at(data: &[u8], offset: usize) -> Option<Token> {
         }
         _ => (1, TokenKind::Unknown(head)),
     };
-    Some(Token {
+    Ok(Some(Token {
         offset,
         length,
         kind,
-    })
+    }))
 }
 
 /// Decode a complete compact integer, excluding control bytes and incomplete heads.
@@ -342,8 +370,20 @@ impl<'a> Cursor<'a> {
 mod tests {
     use super::{
         compact_int, complete_compact_int, is_short_form_float, reference_id, short_form_float,
-        token, token_at, tokens, Token, TokenKind,
+        token, Token, TokenKind,
     };
+
+    fn token_at(data: &[u8], offset: usize) -> Option<Token> {
+        crate::decode::with_test_decode_ctx(|ctx| super::token_at(ctx, data, offset))
+            .expect("token admission")
+    }
+    fn tokens(data: &[u8]) -> std::vec::IntoIter<Token> {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::tokens(ctx, data).collect::<Result<Vec<_>, _>>()
+        })
+        .expect("token admission")
+        .into_iter()
+    }
 
     #[test]
     fn compact_int_one_byte() {
