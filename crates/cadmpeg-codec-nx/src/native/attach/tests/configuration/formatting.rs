@@ -27,7 +27,7 @@ fn selection_index_separator_refusal_propagates() {
             "nx:om-object-indices#0"
         );
         assert_eq!(
-            selection_indices_native(ctx, None, &[] as &[u32], |value| *value).unwrap(),
+            selection_indices_native(ctx, None, &[], |value: &u32| *value).unwrap(),
             "nx:om-object-indices#"
         );
     });
