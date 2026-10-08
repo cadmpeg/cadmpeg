@@ -85,16 +85,14 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
     pub fn with_text_replacements<K: AsRef<str> + 'ctx, S>(
         mut self,
         replacements: S,
-        project: impl FnMut(<S::Iter as Iterator>::Item) -> (&'ctx K, &'ctx String),
     ) -> Result<Self, CodecError>
     where
         S: cadmpeg_core::decode::iter_source::IterSource,
-        S::Iter: ExactSizeIterator,
+        S::Iter: ExactSizeIterator<Item = (&'ctx K, &'ctx String)>,
     {
         self.text_index = Some(ReplacementIndex::build(
             self.context,
             replacements,
-            project,
             &mut self.storage,
             self.operation,
         )?);

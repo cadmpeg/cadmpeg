@@ -435,11 +435,7 @@ impl Coverage {
         name: String,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if !ctx.equal_bytes(
-            name.as_bytes(),
-            key.0.as_bytes(),
-            "decode coverage name admission",
-        )? {
+        if name != key.0 {
             return Err(cadmpeg_core::CodecError::malformed(
                 "coverage name does not match its declared key",
             ));
@@ -458,16 +454,12 @@ impl Coverage {
     }
 
     /// Build a coverage map through the charged insertion operation.
-    pub fn from_iter_for_decode<S>(
+    pub fn from_iter_for_decode(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        entries: S,
-    ) -> Result<Self, cadmpeg_core::CodecError>
-    where
-        S: cadmpeg_core::decode::iter_source::IterSource,
-        S::Iter: Iterator<Item = (CoverageKey, usize)>,
-    {
+        entries: impl IntoIterator<Item = (CoverageKey, usize)>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut coverage = Self::default();
-        for (key, count) in ctx.admit_iter(entries, "decode coverage entries")? {
+        for (key, count) in entries {
             coverage.record(ctx, key, count)?;
         }
         Ok(coverage)

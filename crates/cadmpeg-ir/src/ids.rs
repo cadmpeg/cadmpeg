@@ -370,25 +370,6 @@ const fn valid_key_text(value: &str) -> bool {
     true
 }
 
-/// Scan component scalars, admitting each step before it advances.
-fn check_component<E>(value: &str, mut visit: impl FnMut(u64) -> Result<(), E>) -> Result<bool, E> {
-    visit(0)?;
-    if value.is_empty() {
-        return Ok(false);
-    }
-    let mut characters = value.chars();
-    while !characters.as_str().is_empty() {
-        visit(1)?;
-        let Some(character) = characters.next() else {
-            break;
-        };
-        if character.is_whitespace() || matches!(character, ':' | '#') {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
 /// A static component whose grammar was admitted during const evaluation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StaticIdentityComponent {
@@ -419,9 +400,13 @@ impl IdentityComponent {
     /// Admit component text and retain a useful error for the source route.
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdentityError> {
         let value = value.into();
-        match Self::admit_text(value, |_| Ok::<(), std::convert::Infallible>(())) {
-            Ok(result) => result,
-            Err(error) => match error {},
+        if valid_component_text(&value) {
+            Ok(Self(std::borrow::Cow::Owned(value)))
+        } else {
+            Err(IdentityError::InvalidComponent {
+                label: "component",
+                value,
+            })
         }
     }
 
@@ -436,21 +421,8 @@ impl IdentityComponent {
             std::borrow::Cow::Owned(value) => value,
             std::borrow::Cow::Borrowed(value) => ctx.copy_retained_text(value, operation)?,
         };
-        Self::admit_text(value, |work| ctx.charge_work(work, operation))
-    }
-
-    fn admit_text<E>(
-        value: String,
-        visit: impl FnMut(u64) -> Result<(), E>,
-    ) -> Result<Result<Self, IdentityError>, E> {
-        Ok(if check_component(&value, visit)? {
-            Ok(Self(std::borrow::Cow::Owned(value)))
-        } else {
-            Err(IdentityError::InvalidComponent {
-                label: "component",
-                value,
-            })
-        })
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+        Ok(Self::try_new(value))
     }
 
     /// Construct a component from a static proof.

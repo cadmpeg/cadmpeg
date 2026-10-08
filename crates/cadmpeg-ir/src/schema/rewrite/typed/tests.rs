@@ -86,6 +86,10 @@ fn typed_identity_cache_comparison_refusal_cannot_return_a_cached_target() {
                 panic!("comparison must refuse");
             };
             assert_eq!(original.operation, "refused identity comparison");
+            assert_eq!(
+                original.additional,
+                cadmpeg_core::decode::u64_from_index(source.len())
+            );
             assert!(
                 matches!(map.identity(&ctx, "another identity"), Err(CodecError::ResourceLimit(limit)) if limit == *original)
             );
@@ -185,7 +189,7 @@ fn typed_text_rewrite_only_changes_owned_identity_text() {
         ctx.copy_retained_text(source, "test unchanged identity")
     })
     .unwrap()
-    .with_text_replacements(&replacements, |(source, target)| (source, target))
+    .with_text_replacements(&replacements)
     .unwrap();
     let text = vec![
         "test:model:point#one".to_owned(),
@@ -220,7 +224,7 @@ fn typed_text_rewrite_preserves_its_first_refusal() {
         ctx.copy_retained_text(source, "test identity")
     })
     .unwrap()
-    .with_text_replacements(&replacements, |(source, target)| (source, target))
+    .with_text_replacements(&replacements)
     .unwrap();
     let CodecError::ResourceLimit(first) = "test:model:point#one"
         .to_owned()

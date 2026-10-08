@@ -172,28 +172,6 @@ pub struct ValidationReport {
 }
 
 impl ValidationReport {
-    /// Counts error and blocking findings after admitting the full traversal.
-    pub fn error_count_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<usize, cadmpeg_core::CodecError> {
-        Ok(ctx
-            .admit_iter(&self.findings, "decode report error count")?
-            .filter(|finding| finding.severity >= Severity::Error)
-            .count())
-    }
-
-    /// Counts warning findings after admitting the full traversal.
-    pub fn warning_count_for_decode(
-        &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<usize, cadmpeg_core::CodecError> {
-        Ok(ctx
-            .admit_iter(&self.findings, "decode report warning count")?
-            .filter(|finding| finding.severity == Severity::Warning)
-            .count())
-    }
-
     /// Stops at the first error or blocking finding.
     pub fn is_ok_for_decode(
         &self,
@@ -244,7 +222,7 @@ mod tests {
         );
     }
     #[test]
-    fn decode_report_counts_and_search_admit_their_sources() {
+    fn decode_report_search_admits_its_source() {
         use super::{Finding, ValidationReport};
         use crate::report::Severity;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -267,40 +245,18 @@ mod tests {
             losses: Vec::new(),
         };
         let ctx = cadmpeg_test_support::service_decode_context();
-        assert_eq!(
-            report.error_count_for_decode(&ctx).unwrap(),
-            report.error_count()
-        );
-        assert_eq!(
-            report.warning_count_for_decode(&ctx).unwrap(),
-            report.warning_count()
-        );
         assert_eq!(report.is_ok_for_decode(&ctx).unwrap(), report.is_ok());
-        for operation in [
-            "decode report error count",
-            "decode report warning count",
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
             "decode report error search",
-        ] {
-            cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::WorkUnits,
-                operation,
-                |cap| {
-                    let arena = DecodeArena::new();
-                    let mut policy = DecodePolicy::service();
-                    policy.limits.max_work_units = cap;
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                    match operation {
-                        "decode report error count" => {
-                            report.error_count_for_decode(&ctx).map(|_| ())
-                        }
-                        "decode report warning count" => {
-                            report.warning_count_for_decode(&ctx).map(|_| ())
-                        }
-                        _ => report.is_ok_for_decode(&ctx).map(|_| ()),
-                    }
-                },
-            );
-        }
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                report.is_ok_for_decode(&ctx).map(|_| ())
+            },
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 1;

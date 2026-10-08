@@ -18,15 +18,14 @@ impl<'ctx> ReplacementIndex<'ctx> {
     pub(super) fn build<K: AsRef<str> + 'ctx, S>(
         ctx: &DecodeContext<'_>,
         replacements: S,
-        project: impl FnMut(<S::Iter as Iterator>::Item) -> (&'ctx K, &'ctx String),
         storage: &mut ScopedReservation<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError>
     where
         S: cadmpeg_core::decode::iter_source::IterSource,
-        S::Iter: ExactSizeIterator,
+        S::Iter: ExactSizeIterator<Item = (&'ctx K, &'ctx String)>,
     {
-        let replacements = ctx.admit_iter(replacements, operation)?.map(project);
+        let replacements = ctx.admit_iter(replacements, operation)?;
         let mut values: Vec<(&'ctx str, &'ctx str)> = Vec::new();
         ctx.reserve_scoped_vec(storage, &mut values, replacements.len(), operation)?;
         for (source, target) in replacements {

@@ -739,7 +739,7 @@ impl<'a> DecodeContext<'a> {
                             )?)))
                         }
                     };
-                    if !validation.is_ok() {
+                    if !validation.is_ok_for_decode(session)? {
                         return Ok(Err(CandidateError::Validation(validation_findings(
                             session,
                             &validation,
