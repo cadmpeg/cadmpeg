@@ -537,11 +537,7 @@ mod tests {
                 crate::test_support::with_decode_context(|ctx| block.into_status_table(ctx))
                     .unwrap()
                     .unwrap();
-            let positioned: Vec<_> = table
-                .into_entries(ctx)
-                .unwrap()
-                .collect::<Result<_, _>>()
-                .unwrap();
+            let positioned: Vec<_> = table.into_entries(ctx).collect::<Result<_, _>>().unwrap();
             assert_eq!(
                 positioned
                     .iter()

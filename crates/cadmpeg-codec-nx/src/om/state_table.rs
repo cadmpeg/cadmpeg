@@ -66,18 +66,15 @@ impl<'a> OperationStateStatusTable<'a> {
     pub(crate) fn into_entries<'ctx, 'policy>(
         self,
         ctx: &'ctx DecodeContext<'policy>,
-    ) -> Result<
-        impl Iterator<Item = Result<(usize, StateTableEntry<'a>), CodecError>>
-            + 'ctx
-            + use<'a, 'ctx, 'policy>,
-        CodecError,
-    >
+    ) -> impl Iterator<Item = Result<(usize, StateTableEntry<'a>), CodecError>>
+           + 'ctx
+           + use<'a, 'ctx, 'policy>
     where
         'a: 'ctx,
     {
         let mut offset = self.offset;
         let (initial, last) = self.entries.into_parts();
-        Ok(initial
+        initial
             .into_iter()
             .chain(std::iter::once(last))
             .map(move |entry| {
@@ -86,7 +83,7 @@ impl<'a> OperationStateStatusTable<'a> {
                     ctx.refuse_codec_limit("NX status table extent", u64::MAX, u64::MAX)
                 })?;
                 Ok((start, entry))
-            }))
+            })
     }
 
     #[cfg(test)]
