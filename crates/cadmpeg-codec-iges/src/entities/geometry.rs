@@ -585,21 +585,15 @@ pub(super) fn declared_affine_progression(
         || ctx.any_by(
             values.iter().zip(uncertainties),
             |(value, uncertainty)| {
-                Ok(!value.is_finite() || !uncertainty.is_finite() || *uncertainty < 0.0)
+                if !value.is_finite() || !uncertainty.is_finite() || *uncertainty < 0.0 {
+                    return Ok(true);
+                }
+                let interval = DeclaredInterval::around(*value, *uncertainty);
+                Ok(!interval.lower.is_finite() || !interval.upper.is_finite())
             },
             "iges affine progression finite values",
         )?
     {
-        return Ok(false);
-    }
-    if ctx.any_by(
-        values.iter().zip(uncertainties),
-        |(value, uncertainty)| {
-            let interval = DeclaredInterval::around(*value, *uncertainty);
-            Ok(!interval.lower.is_finite() || !interval.upper.is_finite())
-        },
-        "iges affine progression finite intervals",
-    )? {
         return Ok(false);
     }
     let mut lower = f64::NEG_INFINITY;
@@ -622,6 +616,9 @@ pub(super) fn declared_affine_progression(
             }
             lower = lower.max(pair_lower);
             upper = upper.min(pair_upper);
+            if lower > upper {
+                return Ok(false);
+            }
         }
     }
     Ok(lower <= upper)
@@ -3285,7 +3282,9 @@ pub(crate) fn project_geometry<'ctx>(
             kind: BodyKind::Wire,
             regions: body_regions,
             transform: None,
-            name: Some("IGES free geometry".into()),
+            name: Some(ctx.copy_retained_text(
+                "IGES free geometry", "iges free geometry body name",
+            )?),
             color: None,
             visible: None,
         });

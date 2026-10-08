@@ -747,3 +747,42 @@ fn copious_path_positions_preserve_retained_byte_refusal() {
     let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
     assert_copious_retained_refusal(&bytes, "iges copious positioned points");
 }
+
+#[test]
+fn copious_duplicate_index_queries_refuse_work() {
+    let points = [
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+    ];
+    for (resolution, operation) in [
+        (0.0, "iges copious exact-point index"),
+        (0.001, "iges copious proximity lookup"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                    has_forbidden_form_63_duplicate(&points, resolution, ctx)
+                })
+            },
+        );
+        crate::test_support::with_service_context(&[], |ctx| {
+            assert!(!has_forbidden_form_63_duplicate(&points, resolution, ctx).unwrap());
+        });
+    }
+    let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "iges copious parameter lookup", |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
+                policy, ..DecodeOptions::default()
+            }).map_err(|error| match error {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("{other:?}"),
+            })
+        },
+    );
+}
