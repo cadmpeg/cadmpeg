@@ -1581,7 +1581,7 @@ fn project_extrusion(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    let source_tag = match admit_projected_feature(ctx, source, "extrude") {
+    let source_tag = match admit_projected_feature(ctx, "extrude") {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
@@ -1628,16 +1628,9 @@ fn project_extrusion(
 
 fn admit_projected_feature(
     ctx: &DecodeContext<'_>,
-    source: &PmDcFeature,
     tag: &'static str,
 ) -> Result<String, CodecError> {
     ctx.charge_entities(1, "project Inventor feature")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(source.id_len().ok_or_else(|| {
-            CodecError::Malformed("Inventor identifier length exceeds address space".into())
-        })?),
-        "retain Inventor projected feature native id",
-    )?;
     ctx.copy_retained_text(tag, "retain Inventor projected feature tag")
 }
 
@@ -1760,7 +1753,7 @@ fn project_fillet(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    let source_tag = match admit_projected_feature(ctx, source, "fillet") {
+    let source_tag = match admit_projected_feature(ctx, "fillet") {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
@@ -1835,7 +1828,7 @@ fn project_chamfer(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    let source_tag = match admit_projected_feature(ctx, source, "chamfer") {
+    let source_tag = match admit_projected_feature(ctx, "chamfer") {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
@@ -1974,7 +1967,7 @@ fn project_hole(
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
-    let source_tag = match admit_projected_feature(ctx, source, "hole") {
+    let source_tag = match admit_projected_feature(ctx, "hole") {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
@@ -2702,16 +2695,41 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         policy.limits.max_entities = 1;
-        // Copying the seven tag bytes uses seven work units.
+        // The tag copy retains seven bytes and uses seven work units; no native ID exists yet.
         policy.limits.max_work_units = 7;
+        policy.limits.max_retained_bytes = 7;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert_eq!(
-            super::admit_projected_feature(&ctx, &source, "extrude").expect("charged tag copy"),
+            super::admit_projected_feature(&ctx, "extrude").expect("charged tag copy"),
             "extrude"
         );
         assert!(matches!(ctx.charge_work(1, "probe"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits && limit.used == 7));
+
+        let native_id = "inventor:pmdc:feature#generated-0";
+        // The caller retains the tag and one formatted native ID: 7 + ID length bytes.
+        let retained_needed = "extrude".len() + native_id.len();
+        policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_entities = 1;
+        for shortfall in [1, 0] {
+            policy.limits.max_retained_bytes =
+                u64::try_from(retained_needed - shortfall).expect("feature budget fits");
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            assert_eq!(
+                super::admit_projected_feature(&ctx, "extrude").expect("charged tag copy"),
+                "extrude"
+            );
+            let id = source.id(&ctx);
+            if shortfall == 0 {
+                assert_eq!(id.expect("single native ID charge"), native_id);
+            } else {
+                assert!(matches!(id, Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "retain Inventor PmDc record identity"));
+            }
+        }
     }
 
     #[test]
@@ -2724,14 +2742,18 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
-            super::admit_projected_feature(&ctx, &source, "extrude"),
+            super::admit_projected_feature(&ctx, "extrude"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
                     && limit.operation == "project Inventor feature"
         ));
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
-        assert!(super::admit_projected_feature(&ctx, &source, "extrude").is_ok());
+        assert!(super::admit_projected_feature(&ctx, "extrude").is_ok());
+        assert_eq!(
+            source.id(&ctx).expect("caller retains the native ID"),
+            "inventor:pmdc:feature#generated-0"
+        );
     }
 
     fn inventory_with_record(
