@@ -401,21 +401,25 @@ pub(super) fn standard_surface_record_groups(
         if *has_prior {
             continue;
         }
+        let mut group_storage = ctx.reserve_scoped(0, "catia_surface_group_candidate")?;
         let mut current = Some(start);
         let mut group = Vec::new();
         while let Some(index) = current {
             ctx.charge_work(1, "catia_surface_group_records")?;
-            ctx.push_vec(
-                &mut group,
-                table.records[index],
-                "catia_surface_group_records",
-            )?;
+            group_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut group,
+                    table.records[index],
+                    "catia_surface_group_records",
+                )
+            })?;
             current = table.successors[index];
         }
         if group
             .last()
             .is_some_and(|last| brep.get(last.end()) == Some(&0x60))
         {
+            group_storage.commit()?;
             ctx.push_vec(&mut groups, group, "catia_surface_record_groups")?;
         }
     }
@@ -540,27 +544,27 @@ pub(super) fn standard_surface_records(
         Ok(jumps)
     })?;
     let mut solution_start = None;
-    for (start, _) in ctx
-        .admit_iter(ordered_records, "catia_standard_iteration")?
-        .enumerate()
     {
-        let mut current = Some(start);
-        let mut steps = remaining_steps;
-        let mut level = 0;
-        while steps != 0 {
-            if steps & 1 != 0 {
-                current = current.and_then(|index| jumps[level][index]);
+        let mut visits = (ordered_records).into_iter().enumerate();
+        while let Some((start, _)) = ctx.next_charged(&mut visits, "catia_standard_iteration")? {
+            let mut current = Some(start);
+            let mut steps = remaining_steps;
+            let mut level = 0;
+            while steps != 0 {
+                if steps & 1 != 0 {
+                    current = current.and_then(|index| jumps[level][index]);
+                }
+                steps >>= 1;
+                level += 1;
             }
-            steps >>= 1;
-            level += 1;
-        }
-        let Some(last) = current else {
-            continue;
-        };
-        if brep.get(ordered_records[last].end()) == Some(&0x60)
-            && solution_start.replace(start).is_some()
-        {
-            return Ok(None);
+            let Some(last) = current else {
+                continue;
+            };
+            if brep.get(ordered_records[last].end()) == Some(&0x60)
+                && solution_start.replace(start).is_some()
+            {
+                return Ok(None);
+            }
         }
     }
 
@@ -569,13 +573,16 @@ pub(super) fn standard_surface_records(
     };
     let mut chain = Vec::new();
     ctx.reserve_vec(&mut chain, face_count, "catia_surface_record_chain")?;
-    for ordinal in ctx.admit_iter(0..face_count, "catia_surface_record_chain")? {
-        chain.push(ordered_records[current]);
-        if ordinal + 1 < face_count {
-            let Some(next) = successors[current] else {
-                return Ok(None);
-            };
-            current = next;
+    {
+        let mut visits = (0..face_count).into_iter();
+        while let Some(ordinal) = ctx.next_charged(&mut visits, "catia_surface_record_chain")? {
+            chain.push(ordered_records[current]);
+            if ordinal + 1 < face_count {
+                let Some(next) = successors[current] else {
+                    return Ok(None);
+                };
+                current = next;
+            }
         }
     }
     Ok(Some(chain))
@@ -608,6 +615,7 @@ pub(super) fn standard_vertex_roster(
     if vertex_count == 0 {
         return Ok(None);
     }
+    let mut solution_storage = ctx.reserve_scoped(0, "catia_vertex_roster_solutions")?;
     let mut solutions = Vec::new();
     let mut position = 0usize;
     while position + vertex_roster::LEN <= source.len() {
@@ -619,14 +627,9 @@ pub(super) fn standard_vertex_roster(
             position += 1;
             continue;
         }
-        let start = position;
+        let mut candidate_storage = ctx.reserve_scoped(0, "catia_vertex_roster_candidate")?;
         let mut identities = Vec::new();
-        while position + vertex_roster::LEN <= source.len()
-            && source[position + vertex_roster::MARKER] == 0x54
-            && source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
-                == [0, 0, 0]
-        {
-            ctx.charge_work(1, "catia_vertex_roster_scan")?;
+        loop {
             let Some(identity) = View::u24_le_at(source, position + vertex_roster::TAG) else {
                 return Ok(None);
             };
@@ -636,19 +639,36 @@ pub(super) fn standard_vertex_roster(
             {
                 break;
             }
-            ctx.push_vec(&mut identities, identity, "catia_vertex_roster_identities")?;
+            candidate_storage.with_storage(|| {
+                ctx.push_vec(&mut identities, identity, "catia_vertex_roster_identities")
+            })?;
             position += vertex_roster::LEN;
+            if position + vertex_roster::LEN > source.len() {
+                break;
+            }
+            ctx.charge_work(1, "catia_vertex_roster_scan")?;
+            if source[position + vertex_roster::MARKER] != 0x54
+                || source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
+                    != [0, 0, 0]
+            {
+                break;
+            }
         }
         if identities.len() == vertex_count {
-            ctx.push_vec(&mut solutions, identities, "catia_vertex_roster_solutions")?;
-        }
-        if position == start {
-            position += 1;
+            solution_storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut solutions,
+                    (identities, candidate_storage),
+                    "catia_vertex_roster_solutions",
+                )
+            })?;
         }
     }
-    Ok(<[Vec<u32>; 1]>::try_from(solutions)
-        .ok()
-        .map(|[identities]| identities))
+    let Ok([(identities, storage)]) = <[_; 1]>::try_from(solutions) else {
+        return Ok(None);
+    };
+    storage.commit()?;
+    Ok(Some(identities))
 }
 
 /// Locate every per-face analytic surface record by the strict 5-byte template
@@ -709,6 +729,7 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
     const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
 
     let mut out = Vec::new();
+    let mut target_storage = ctx.reserve_scoped(0, "catia_plane_target_scratch")?;
     let mut duplicate_targets = HashSet::new();
     let mut seen_targets = HashSet::new();
     // The marker has no proper prefix equal to a suffix, so the
@@ -723,12 +744,16 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
             continue;
         };
         let target = u24_le(brep, pos - 3);
-        if !ctx.insert_hash_set(&mut seen_targets, target, "catia_plane_seen_targets")? {
-            ctx.insert_hash_set(
-                &mut duplicate_targets,
-                target,
-                "catia_plane_duplicate_targets",
-            )?;
+        if !target_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut seen_targets, target, "catia_plane_seen_targets")
+        })? {
+            target_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut duplicate_targets,
+                    target,
+                    "catia_plane_duplicate_targets",
+                )
+            })?;
         }
         let Some(&normal) = ctx.get_hash_map(normals, &target, "catia_plane_normal_lookup")? else {
             continue;
@@ -1338,5 +1363,37 @@ mod tests {
             .expect("complete stored NaN")
             .is_nan());
         assert_eq!(super::f32_le(&1.5_f32.to_le_bytes(), 0), Some(1.5));
+    }
+    #[test]
+    fn vertex_roster_retains_only_the_unique_result() {
+        let row = |identity: u32| {
+            let mut row = vec![0x54];
+            row.extend_from_slice(&identity.to_le_bytes()[..3]);
+            row.extend_from_slice(&[0; 3]);
+            row
+        };
+        let mut source = row(9);
+        source.push(0xff);
+        for identity in [11, 12, 13] {
+            source.extend(row(identity));
+        }
+        let bytes = 4 * std::mem::size_of::<u32>() as u64;
+        crate::test_support::with_retained_limit(bytes, |ctx| {
+            assert_eq!(
+                super::standard_vertex_roster(ctx, &source, 3).expect("only output retained"),
+                Some(vec![11, 12, 13])
+            );
+        });
+        source.push(0xff);
+        for identity in [21, 22, 23] {
+            source.extend(row(identity));
+        }
+        crate::test_support::with_retained_limit(0, |ctx| {
+            assert_eq!(
+                super::standard_vertex_roster(ctx, &source, 3)
+                    .expect("ambiguous candidates are scratch"),
+                None
+            );
+        });
     }
 }

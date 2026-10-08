@@ -1409,3 +1409,26 @@ fn duplicate_face_groups_index_rows_and_preserve_nontransitive_stars() {
         );
     });
 }
+
+#[test]
+fn body_group_validation_stops_before_trailing_coedges_and_groups() {
+    let face = super::FaceTopologyDraft {
+        boundaries: vec![super::BoundaryDraft::new(vec![
+            super::CoedgeUse {
+                edge_row: 1,
+                reversed: false,
+                start_vertex: 0,
+                end_vertex: 1
+            };
+            1025
+        ])
+        .expect("nonempty boundary")],
+    };
+    let groups = vec![vec![face]; 1025];
+    crate::test_support::with_work_limit(64, |ctx| {
+        assert_eq!(
+            super::classify_body_groups(ctx, &groups, 1).expect("first invalid coedge"),
+            None
+        );
+    });
+}

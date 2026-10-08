@@ -1999,3 +1999,17 @@ fn owner_carrier_helper_preserves_session_depth_refusal() {
         assert_eq!(owner_matches_a5_carrier(ctx, &tail, &surface), Err(limit));
     });
 }
+
+#[test]
+fn native_endpoint_evidence_stops_before_trailing_conflicts() {
+    let graph = vec![Some([0, 1]); 1025];
+    let mut roster = vec![None; 1025];
+    roster[0] = Some([1, 0]);
+    crate::test_support::with_work_limit(64, |ctx| {
+        assert_eq!(
+            merge_native_endpoint_evidence(ctx, Some(&graph), Some(&roster))
+                .expect("first conflicting pair"),
+            Err("conflicting native endpoint evidence")
+        );
+    });
+}
