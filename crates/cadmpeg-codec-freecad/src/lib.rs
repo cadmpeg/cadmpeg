@@ -85,6 +85,7 @@ impl FcstdCodec {
 const FINDINGS: &str = "FreeCAD native validation findings";
 
 fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, CodecError> {
+    const IDENTITIES: &str = "FreeCAD validation identities";
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(Vec::new());
     };
@@ -187,7 +188,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         Ok((expected, _expected_storage)) => {
             match first_difference(ctx, &design_census, &expected, "FreeCAD design census comparison")? {
                 None => {}
-                Some(Some(index)) => push_finding(
+                Some(SliceDifference::Pair(index)) => push_finding(
                     ctx,
                     findings,
                     Check::ReferentialIntegrity,
@@ -197,7 +198,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                     ),
                     None,
                 )?,
-                Some(None) => push_finding(
+                Some(SliceDifference::Length) => push_finding(
                     ctx,
                     findings,
                     Check::ReferentialIntegrity,
@@ -221,7 +222,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     // Identity sets borrow the records; their scoped storage ends with the
     // validation.
-    const IDENTITIES: &str = "FreeCAD validation identities";
     let object_ids = reader_storage.with_storage(|| {
         ctx.collect_hash_set(
             objects.iter().map(|record| record.id().as_str()),
@@ -1122,14 +1122,19 @@ fn validate_logical_ledger(
     Ok(())
 }
 
-/// The index of the first differing pair, `Some(None)` for equal prefixes of
-/// different lengths, or `None` for equal slices; each pair compared is charged.
+enum SliceDifference {
+    Pair(usize),
+    Length,
+}
+
+/// The first differing pair or different lengths after an equal prefix;
+/// equal slices have no difference. Each pair compared is charged.
 fn first_difference<T: PartialEq + cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     stored: &[T],
     derived: &[T],
     operation: &'static str,
-) -> Result<Option<Option<usize>>, CodecError> {
+) -> Result<Option<SliceDifference>, CodecError> {
     let mut derived_values = derived.iter();
     let index = ctx.position_by(
         stored.iter().take(derived.len()),
@@ -1142,8 +1147,8 @@ fn first_difference<T: PartialEq + cadmpeg_core::decode::cost::DecodeCost>(
         operation,
     )?;
     Ok(match index {
-        Some(index) => Some(Some(index)),
-        None if stored.len() != derived.len() => Some(None),
+        Some(index) => Some(SliceDifference::Pair(index)),
+        None if stored.len() != derived.len() => Some(SliceDifference::Length),
         None => None,
     })
 }

@@ -120,13 +120,10 @@ impl ElementMapNodes {
                         ("mapIndex", map),
                     ] {
                         admit(word.len(), "FreeCAD element-map child number")?;
-                        let value = match word.parse::<i64>() {
-                            Ok(value) => value,
-                            Err(_) => {
-                                return Ok(Err(diagnostic(format_args!(
+                        let Ok(value) = word.parse::<i64>() else {
+                            return Ok(Err(diagnostic(format_args!(
                                     "element-map node {node_index} group {group_name} child {child_index} has an invalid {name}"
                                 ))?));
-                            }
                         };
                         if name != "tag" && i32::try_from(value).is_err() {
                             return Ok(Err(diagnostic(format_args!(

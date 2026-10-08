@@ -2401,7 +2401,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .body_scope
             .compose(local)
             .map_err(location_transform_error)?;
-        let (label, _base_storage) = if is_identity(transform) {
+        let (label, base_storage) = if is_identity(transform) {
             self.ctx
                 .format_scoped(format_args!("{shape}"), "FreeCAD topology label")?
         } else {
@@ -2415,7 +2415,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 format_args!("{label}~root{ordinal}"),
                 "FreeCAD topology root label",
             ),
-            None => Ok((label, _base_storage)),
+            None => Ok((label, base_storage)),
         }
     }
 }

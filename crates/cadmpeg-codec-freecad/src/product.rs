@@ -579,7 +579,7 @@ pub(crate) fn transfer_neutral(
             )
         })?;
     }
-    let mut body_owners = Vec::new();
+    let mut body_owners = BTreeMap::new();
     for payload in ctx.admit_iter(payloads, "fcstd product shape payloads")? {
         if let Some(owner) = ctx.get_hash_map(
             &property_owner,
@@ -589,9 +589,10 @@ pub(crate) fn transfer_neutral(
             let prefix = storage
                 .with_storage(|| crate::native::model_id_charged(ctx, "body", &payload.id, ""))?;
             storage.with_storage(|| {
-                ctx.push_vec(
+                ctx.insert_btree_map(
                     &mut body_owners,
-                    (prefix, *owner),
+                    prefix,
+                    *owner,
                     "fcstd product body owners",
                 )
             })?;
@@ -600,26 +601,25 @@ pub(crate) fn transfer_neutral(
     let mut bodies_by_owner = BTreeMap::new();
     if !component_objects.is_empty() {
         for body in ctx.admit_iter(bodies, "fcstd product source bodies")? {
-            let mut matched_storage = ctx.reserve_scoped(0, "fcstd product body matching")?;
-            let mut matched = BTreeSet::new();
-            for (prefix, owner) in ctx.admit_iter(&body_owners, "fcstd product body owner scan")? {
-                if ctx.starts_with(
-                    body.id.as_str(),
-                    prefix.as_str(),
-                    "fcstd product body prefix match",
-                )? && matched_storage.with_storage(|| {
-                    ctx.insert_btree_set(&mut matched, *owner, "fcstd product body matched owners")
-                })? {
-                    storage.with_storage(|| {
-                        ctx.push_btree_group(
-                            &mut bodies_by_owner,
-                            *owner,
-                            body,
-                            "fcstd product body owner index",
-                            "fcstd product owner bodies",
-                        )
-                    })?;
-                }
+            // The child label is one encoded segment after the payload key.
+            let Some((parent, _)) =
+                ctx.rsplit_once(body.id.as_str(), ":", "fcstd product body payload prefix")?
+            else {
+                continue;
+            };
+            let prefix = &body.id.as_str()[..=parent.len()];
+            if let Some(&owner) =
+                ctx.get_btree_map(&body_owners, prefix, "fcstd product body owner lookup")?
+            {
+                storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut bodies_by_owner,
+                        owner,
+                        body,
+                        "fcstd product body owner index",
+                        "fcstd product owner bodies",
+                    )
+                })?;
             }
         }
     }
@@ -1361,17 +1361,22 @@ fn copy_on_change_property(
             "fcstd product missing enumeration",
         )?));
     };
-    NativeCopyOnChangePolicy::from_raw(ctx.copy_retained_text(raw, "fcstd copy on change policy")?)
-        .map(Some)
-        .or_else(|_| {
-            Err(CodecError::Malformed(ctx.format_retained(
-                format_args!(
-                    "product property {} has an invalid enumeration Integer value",
-                    property.id
-                ),
-                "fcstd product invalid enumeration",
-            )?))
-        })
+    NativeCopyOnChangePolicy::from_raw_with_admission(
+        ctx.copy_retained_text(raw, "fcstd copy on change policy")?,
+        |length, operation| {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+        },
+    )?
+    .map(Some)
+    .or_else(|_| {
+        Err(CodecError::Malformed(ctx.format_retained(
+            format_args!(
+                "product property {} has an invalid enumeration Integer value",
+                property.id
+            ),
+            "fcstd product invalid enumeration",
+        )?))
+    })
 }
 
 fn linked_target(
