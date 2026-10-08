@@ -76,7 +76,7 @@ fn header_string_refusal_reaches_parse_caller() {
         let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
             .expect("root fits retained policy");
         matches!(
-            crate::parse::parse_with_context(SOURCE, &ctx),
+            crate::parse::parse_retained(SOURCE, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "step_string_text"
@@ -84,7 +84,7 @@ fn header_string_refusal_reaches_parse_caller() {
     });
     assert!(
         refused,
-        "header text must refuse through parse_with_context"
+        "header text must refuse through parse_retained"
     );
 }
 
@@ -392,7 +392,7 @@ fn header_record_vector_refuses_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits selected policy");
         matches!(
-            crate::parse::parse_with_context(source, &ctx),
+            crate::parse::parse_retained(source, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_parse_header_records"
@@ -412,7 +412,7 @@ fn collection_refusal_reaches_parser(source: &[u8], operation: &str) {
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits selected policy");
         matches!(
-            crate::parse::parse_with_context(source, &ctx),
+            crate::parse::parse_retained(source, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
@@ -557,7 +557,7 @@ fn complex_partial_diagnostic_text_refuses_retained_limit() {
                     DecodeContext::from_root_bytes(COMPLEX_VECTOR_SOURCE, &arena, &policy)
                         .expect("input fits retained policy");
 
-                (crate::parse::parse_with_context(COMPLEX_VECTOR_SOURCE, &ctx)).map(|_| ())
+                (crate::parse::parse_retained(COMPLEX_VECTOR_SOURCE, &ctx)).map(|_| ())
             },
         );
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
@@ -936,7 +936,7 @@ fn parser_uses_the_decode_session_work_budget() {
     policy.limits.max_work_units = 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits the test policy");
-    let error = crate::parse::parse_with_context(source, &ctx).expect_err("budget must refuse");
+    let error = crate::parse::parse_retained(source, &ctx).expect_err("budget must refuse");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -955,7 +955,7 @@ fn parser_accounts_for_owned_value_storage() {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
                 .expect("root fits the test policy");
-        let error = crate::parse::parse_with_context(source, &ctx)
+        let error = crate::parse::parse_retained(source, &ctx)
             .expect_err("owned value storage must consume retained bytes");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
@@ -996,7 +996,7 @@ fn parser_accounts_for_record_table_storage() {
             &policy,
         )
         .expect("root fits the test policy");
-        let error = crate::parse::parse_with_context(source.as_bytes(), &ctx)
+        let error = crate::parse::parse_retained(source.as_bytes(), &ctx)
             .expect_err("record-table storage must consume retained bytes");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
@@ -1028,7 +1028,7 @@ fn parser_accounts_for_anchor_tag_collection_storage() {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
                 .expect("root fits the test policy");
-        let error = crate::parse::parse_with_context(source, &ctx)
+        let error = crate::parse::parse_retained(source, &ctx)
             .expect_err("anchor-tag storage must consume retained bytes");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
@@ -1056,7 +1056,7 @@ fn anchor_materialization_uses_the_decode_session_budget() {
         "step_anchor_materialization",
         |source, ctx| {
             ctx.with_scoped_storage("temporary parser result", || {
-                crate::parse::parse_with_context(source, ctx)
+                crate::parse::parse_retained(source, ctx)
             })
             .map(|_| ())
         },
@@ -1082,7 +1082,7 @@ fn local_reference_materialization_uses_the_decode_session_budget() {
         "step_reference_materialization",
         |source, ctx| {
             ctx.with_scoped_storage("temporary parser result", || {
-                crate::parse::parse_with_context(source, ctx)
+                crate::parse::parse_retained(source, ctx)
             })
             .map(|_| ())
         },

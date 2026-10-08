@@ -38,7 +38,7 @@ pub fn parse_entity_count(data: &[u8]) -> Result<usize, cadmpeg_core::CodecError
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)?;
-    crate::parse::parse_scoped(data, &ctx, "STEP benchmark parsed graph storage")
+    crate::parse::parse_with_context(data, &ctx, "STEP benchmark parsed graph storage")
         .map(|parsed| parsed.exchange.records().len())
 }
 

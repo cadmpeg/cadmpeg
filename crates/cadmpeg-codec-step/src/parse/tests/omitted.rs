@@ -14,7 +14,7 @@ fn omitted_name_recovery_item_refuses_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
             .expect("root fits selected policy");
         matches!(
-            crate::parse::parse_with_context(SOURCE, &ctx),
+            crate::parse::parse_retained(SOURCE, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_omitted_name_recovery_item"
@@ -40,7 +40,7 @@ fn user_defined_name_prefix_refuses_retained_limit() {
                 let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
                     .expect("root fits selected policy");
 
-                (crate::parse::parse_with_context(SOURCE, &ctx)).map(|_| ())
+                (crate::parse::parse_retained(SOURCE, &ctx)).map(|_| ())
             },
         );
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
@@ -67,7 +67,7 @@ fn expected_name_error_refuses_retained_limit() {
                 let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
                     .expect("root fits retained policy");
 
-                (crate::parse::parse_with_context(SOURCE, &ctx)).map(|_| ())
+                (crate::parse::parse_retained(SOURCE, &ctx)).map(|_| ())
             },
         );
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
@@ -98,7 +98,7 @@ fn omitted_name_recovery_accounts_for_inserted_parameter_storage() {
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
                     .expect("root fits the test policy");
-            crate::parse::parse_with_context(source, &ctx)
+            crate::parse::parse_retained(source, &ctx)
         },
     );
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {

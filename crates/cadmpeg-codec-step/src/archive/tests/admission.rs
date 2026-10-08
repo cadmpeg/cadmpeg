@@ -15,7 +15,7 @@ fn missing_first_member_does_not_admit_later_references() {
         let bytes = super::step_zip(&[(super::ROOT_NAME, root.as_bytes(), CompressionMethod::Stored)]);
         crate::test_support::with_service_context(&bytes, |source, service| {
             let opened = crate::archive::open_root(service, cadmpeg_core::decode::View::over_retained(source)).expect("root archive");
-            let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), service).expect("root references");
+            let (exchange, _) = crate::parse::parse_retained(opened.view.window(), service).expect("root references");
             crate::test_support::with_service_context(&[], |_, ctx| {
                 assert!(matches!(crate::archive::root_reference_notes(ctx, &opened.archive, &exchange),
                     Err(CodecError::Malformed(message)) if message.contains("has no archive member")));

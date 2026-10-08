@@ -607,8 +607,9 @@ pub(crate) struct ParseDiagnostic {
     pub(crate) message: String,
 }
 
-/// Parse one exchange structure while charging the caller's decode session.
-pub(crate) fn parse_with_context(
+/// Parse a session-retained graph for storage admission tests.
+#[cfg(test)]
+pub(crate) fn parse_retained(
     input: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), CodecError> {
@@ -623,7 +624,7 @@ pub(crate) struct ScopedExchange<'ctx> {
     _storage: ScopedReservation<'ctx>,
 }
 
-pub(crate) fn parse_scoped<'ctx>(
+pub(crate) fn parse_with_context<'ctx>(
     input: &[u8],
     ctx: &'ctx DecodeContext<'_>,
     operation: &'static str,

@@ -110,14 +110,7 @@ impl CodecBackend for StepCodec {
         if self.detect_impl(ctx, root)? == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        let parsed = parse::parse_scoped(bytes, ctx, "STEP bare parsed graph storage")?;
-        reader::decode_exchange(
-            bytes,
-            parsed.exchange,
-            &parsed.diagnostics,
-            ctx,
-            reader::Packaging::Bare,
-        )
+        reader::decode(bytes, ctx, reader::Packaging::Bare)
     }
 }
 
@@ -166,7 +159,7 @@ fn inspect_exchange(
     if codec.detect_impl(ctx, root)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
-    let mut parsed = parse::parse_scoped(bytes, ctx, "STEP inspect parsed graph storage")?;
+    let mut parsed = parse::parse_with_context(bytes, ctx, "STEP inspect parsed graph storage")?;
     inspect_parsed_exchange(bytes, ctx, &mut parsed.exchange, &parsed.diagnostics)
 }
 
@@ -501,7 +494,7 @@ fn inspect_zip(
     if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
-    let mut parsed = parse::parse_scoped(root_bytes, ctx, "STEP inspect parsed graph storage")?;
+    let mut parsed = parse::parse_with_context(root_bytes, ctx, "STEP inspect parsed graph storage")?;
     let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange);
     let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut parsed.exchange, &parsed.diagnostics)?;
     let resource_notes = resource_notes?;
@@ -597,7 +590,7 @@ fn decode_zip(
     let archive = &opened.archive;
     let root_view = opened.view;
     let root_data_offset = opened.data_start;
-    let parsed = parse::parse_scoped(root_view.window(), ctx, "STEP ZIP parsed graph storage")?;
+    let parsed = parse::parse_with_context(root_view.window(), ctx, "STEP ZIP parsed graph storage")?;
     let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange)?;
     let entry_count = archive.entries().len();
     let mut decoded = reader::decode_exchange(
@@ -961,7 +954,7 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 1_048_576;
         crate::test_support::with_policy_context(INSPECTION_TEXT_SOURCE, &policy, |source, ctx| {
-            let parsed = crate::parse::parse_scoped(source, ctx, "test parsed graph")
+            let parsed = crate::parse::parse_with_context(source, ctx, "test parsed graph")
                 .expect("temporary graph needs no retained allowance");
             assert_eq!(parsed.exchange.records().len(), 1);
             drop(parsed);
@@ -986,7 +979,8 @@ mod tests {
             let decoded = if scoped {
                 StepCodec::default().decode_impl(ctx, cadmpeg_core::decode::View::over_retained(source))
             } else {
-                crate::reader::decode(source, ctx, crate::reader::Packaging::Bare)
+                let (exchange, diagnostics) = crate::parse::parse_retained(source, ctx).expect("unscoped control graph");
+                crate::reader::decode_exchange(source, exchange, &diagnostics, ctx, crate::reader::Packaging::Bare)
             }.expect("valid points decode");
             assert_eq!(decoded.ir.model.points.len(), 128);
             let CodecError::ResourceLimit(refusal) = ctx.charge_retained(u64::MAX, "test retained storage")

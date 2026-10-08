@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 #[test]
 fn ber_cursor_past_input_refuses_remaining_length() {
-    let mut ber = super::Ber::new(b"");
+    let mut ber = super::Ber::new(super::BerValue::root(b""));
     ber.at = 1;
     assert_eq!(super::require_empty(&ber), Err("BER cursor exceeds input"));
 }
@@ -137,20 +137,20 @@ fn accepts_cms_ber_indefinite_lengths() {
 #[test]
 fn accepts_ber_contextual_subject_key_identifier_and_octet_string() {
     assert_eq!(
-        crate::test_support::with_service_context(&[], |_, ctx| super::validate_signer_identifier(
-            ctx,
-            0x80,
-            &[0x01, 0x02, 0x03]
-        ))
+        crate::test_support::with_service_context(&[], |_, ctx| {
+            let mut extents = super::BerExtents::new(ctx)?;
+            super::validate_signer_identifier(ctx, &mut extents, 0x80,
+                super::BerValue::root(&[0x01, 0x02, 0x03]))
+        })
         .map_err(|error| error.to_string()),
         Ok(())
     );
     assert_eq!(
-        crate::test_support::with_service_context(&[], |_, ctx| super::validate_octet_string(
-            ctx,
-            0x24,
-            &[0x04, 0x01, 0xaa]
-        ))
+        crate::test_support::with_service_context(&[], |_, ctx| {
+            let mut extents = super::BerExtents::new(ctx)?;
+            super::validate_octet_string(ctx, &mut extents, 0x24,
+                super::BerValue::root(&[0x04, 0x01, 0xaa]))
+        })
         .map_err(|error| error.to_string()),
         Ok(())
     );
@@ -495,3 +495,5 @@ fn ber_cursor_and_nested_values_preserve_resource_refusal() {
         });
     }
 }
+
+mod extent_index;

@@ -176,7 +176,7 @@ fn binding_and_reference_snapshot_text_are_admitted_once_per_copy() {
     // Lexeme, binding, anchor output, snapshot, anchor reference pass, record output.
     policy.limits.max_retained_bytes = 6 * u64_from_index(text.len()) + 4096;
     with_policy_context(source.as_bytes(), &policy, |source, ctx| {
-        let (exchange, _) = crate::parse::parse_with_context(source, ctx)
+        let (exchange, _) = crate::parse::parse_retained(source, ctx)
             .expect("six text buffers plus fixed structures fit");
         assert_eq!(
             exchange.records()[&1].partials[0].parameters,
