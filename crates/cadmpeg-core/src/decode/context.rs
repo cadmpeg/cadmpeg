@@ -126,7 +126,7 @@ impl<'a> DecodeContext<'a> {
         self.budget.decompression_allowance()
     }
 
-    fn per_expand_allowance(&self) -> u64 {
+    pub(super) fn per_expand_allowance(&self) -> u64 {
         let policy_limit = self
             .budget
             .policy()
@@ -636,6 +636,17 @@ impl<'a> DecodeContext<'a> {
     /// Begins an expansion whose output is charged incrementally and becomes
     /// available only after successful finalization.
     pub fn begin_expand(&self, spec: ExpandSpec) -> Result<ExpandWriter<'_, 'a>, CodecError> {
+        self.check_expansion_start(spec)?;
+        Ok(ExpandWriter {
+            ctx: self,
+            spec,
+            buffer: Vec::new(),
+        })
+    }
+
+    /// Checks the common expansion declaration without allocating output or
+    /// debiting bytes that have not been produced.
+    pub(super) fn check_expansion_start(&self, spec: ExpandSpec) -> Result<(), CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -662,11 +673,7 @@ impl<'a> DecodeContext<'a> {
                 ));
             }
         }
-        Ok(ExpandWriter {
-            ctx: self,
-            spec,
-            buffer: Vec::new(),
-        })
+        Ok(())
     }
 
     /// Copies several input extents into one derived view.
