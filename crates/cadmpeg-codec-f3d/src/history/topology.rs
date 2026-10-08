@@ -2006,8 +2006,9 @@ fn walk_body_closures(
                         return Ok(false);
                     }
                 }
-                for &vertex in
-                    decode.admit_iter(free_vertices, "scan F3D historical shell vertices")?
+                let mut vertices = IntoIterator::into_iter(free_vertices);
+                while let Some(&vertex) =
+                    decode.next_charged(&mut vertices, "scan F3D historical shell vertices")?
                 {
                     visit(body, vertex)?;
                     visit(

@@ -310,6 +310,7 @@ fn external_body_materialized(
             std::slice::from_ref(&region),
             std::slice::from_ref(&shell),
         )?;
+        external.face_owners(setup)?;
         Ok(
             super::super::unique_external_body_candidate(&ctx, &operands[0], source, &external)?
                 .cloned(),
@@ -783,4 +784,70 @@ fn external_body_preserves_selected_identity() {
             .as_str(),
         "f3d:brep:body#1"
     );
+}
+
+#[test]
+fn persistent_body_link_without_face_lane_skips_face_ownership() {
+    use crate::records::identity::RecordedValue;
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+        ConstructionRecipeSelector,
+    };
+    let (_, _, mut operands, _) = selection_fixture();
+    for reference in operands[0].reference_bindings_mut() {
+        reference.candidate_faces.clear();
+    }
+    let (body, region, shell) = face_geometry();
+    let recipe = ConstructionRecipe {
+        id: operands[0].recipe_id.clone(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Body,
+        design: Some(ConstructionRecipeDesign {
+            id: RecordedValue {
+                value: "301".into(),
+                offset: 0,
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: 9,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: Some(RecordedValue {
+            value: 24,
+            offset: 0,
+        }),
+    };
+    let link = crate::records::sketch_links::PersistentDesignLink {
+        id: "link".into(),
+        target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+        design_id: "301".to_owned().try_into().unwrap(),
+        design_reference: 9,
+        ordinal: 0,
+    };
+    let inputs = super::super::FeatureBodySelectionInputs {
+        scopes: &[],
+        groups: &[],
+        body_recipe_operands: &operands,
+        construction_recipes: &[recipe],
+        persistent_design_links: &[link],
+        histories: &[],
+        bodies: std::slice::from_ref(&body),
+        regions: &[region],
+        shells: &[shell],
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "index F3D external body regions",
+            None,
+        );
+        let index = super::super::BodySelectionIndex::new(&inputs);
+        assert_eq!(
+            super::super::direct_body_recipe_candidate(ctx, &operands[0], &index).unwrap(),
+            Some(&body.id),
+        );
+    });
 }

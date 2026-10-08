@@ -412,3 +412,26 @@ fn hem_geometry_fixture() -> (
     }];
     (scope, histories)
 }
+
+#[test]
+fn hem_direction_keeps_incident_loops_in_scratch() {
+    let (previous, transition, cylinders) = hem_source_fixture();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let direction = crate::test_support::with_decode_policy(&policy, |ctx| {
+        super::super::super::hem_direction_from_transition(
+            ctx,
+            7,
+            &cylinders,
+            &[12],
+            None,
+            &previous,
+            &transition,
+        )
+    })
+    .unwrap();
+    assert_eq!(
+        direction,
+        Some(cadmpeg_ir::features::SheetMetalHemDirection::Forward)
+    );
+}

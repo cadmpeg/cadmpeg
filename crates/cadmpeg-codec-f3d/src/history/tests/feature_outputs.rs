@@ -47,16 +47,40 @@ fn feature_output_error(
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = u64::MAX;
-    // Temporary copied body IDs stay in the live scoped reservation.
+    // Borrowed lookup tables keep their backing storage in live scratch reservations.
     policy.limits.max_materialized_bytes = max_materialized_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    crate::history::bind_feature_outputs(&ctx, &mut [], &[], histories, bodies).unwrap_err()
+    let (mut feature, scope, fallback, _) = output_binding_inputs();
+    let histories = if histories.is_empty() {
+        std::slice::from_ref(&fallback)
+    } else {
+        histories
+    };
+    crate::history::bind_feature_outputs(
+        &ctx,
+        std::slice::from_mut(&mut feature),
+        &[scope],
+        histories,
+        bodies,
+    )
+    .unwrap_err()
 }
 
 #[test]
 fn feature_output_history_nodes_refuse_collection_limit() {
     let history = empty_transition_history();
-    let error = feature_output_error(&[history], &[], 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D feature output history nodes",
+        |cap| {
+            Err::<(), _>(feature_output_error(
+                std::slice::from_ref(&history),
+                &[],
+                cap,
+                u64::MAX,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D feature output history nodes")
@@ -83,7 +107,18 @@ fn feature_output_states_refuse_collection_limit() {
 #[test]
 fn feature_output_active_body_refuses_collection_limit() {
     let body = active_body();
-    let error = feature_output_error(&[], &[body], 0, u64::MAX);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D active feature output bodies",
+        |cap| {
+            Err::<(), _>(feature_output_error(
+                &[],
+                std::slice::from_ref(&body),
+                cap,
+                u64::MAX,
+            ))
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D active feature output bodies")
@@ -236,6 +271,70 @@ fn feature_output_binding_uses_first_scope_with_repeated_id() {
         &[scope, other],
         &[history],
         std::slice::from_ref(&body),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(feature.evaluation.outputs().as_slice(), &[body.id]);
+}
+
+#[test]
+fn empty_feature_outputs_skip_all_indexes() {
+    let (_, scope, history, body) = output_binding_inputs();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        crate::history::bind_feature_outputs(ctx, &mut [], &[scope], &[history], &[body])
+    })
+    .unwrap();
+}
+
+#[test]
+fn feature_outputs_without_native_reference_skip_all_indexes() {
+    let (mut feature, scope, history, body) = output_binding_inputs();
+    feature.native_ref = None;
+    let original = feature.clone();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        crate::history::bind_feature_outputs(
+            ctx,
+            std::slice::from_mut(&mut feature),
+            &[scope],
+            &[history],
+            &[body],
+        )
+    })
+    .unwrap();
+    assert_eq!(feature, original);
+}
+
+#[test]
+fn feature_outputs_with_empty_body_lane_skip_active_index() {
+    let (mut feature, scope, mut history, body) = output_binding_inputs();
+    history.states[0].topology_cache = crate::history_records::AsmTopologyCache::Complete(
+        crate::history_records::AsmHistoricalTopology::default(),
+    );
+    history.states[0].transition.as_mut().unwrap().topology = Default::default();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D active bodies",
+            None,
+        );
+        crate::history::bind_feature_outputs(
+            ctx,
+            std::slice::from_mut(&mut feature),
+            &[scope],
+            &[history],
+            &[body],
+        )
+    })
+    .unwrap();
+    assert!(feature.evaluation.outputs().is_empty());
 }

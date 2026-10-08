@@ -1638,7 +1638,8 @@ fn scope_group_filters_roles_before_uniqueness() {
     let index = crate::history::group_index(&groups);
     let found = crate::history::scope_group(&ctx, &index, &scope, id, |group| {
         group.role() == DesignOperandRole::ROLE_0X5
-    }).unwrap();
+    })
+    .unwrap();
     assert!(std::ptr::eq(found.unwrap(), &raw const groups[1]));
 }
 
@@ -1650,15 +1651,27 @@ fn scope_group_rejects_repeated_eligible_groups() {
     let groups = [group.clone(), group];
     let ctx = cadmpeg_test_support::service_decode_context();
     let index = crate::history::group_index(&groups);
-    assert!(crate::history::scope_group(&ctx, &index, &scope, id, |_| true).unwrap().is_none());
+    assert!(
+        crate::history::scope_group(&ctx, &index, &scope, id, |_| true)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
 fn scope_group_rejects_other_stream() {
     let scope = face_selection_scope();
     let id = "f3d:Design/OtherStream.dat:operand-group#100";
-    let groups = [face_selection_group(id, DesignOperandRole::ROLE_0X5, Vec::new())];
+    let groups = [face_selection_group(
+        id,
+        DesignOperandRole::ROLE_0X5,
+        Vec::new(),
+    )];
     let ctx = cadmpeg_test_support::service_decode_context();
     let index = crate::history::group_index(&groups);
-    assert!(crate::history::scope_group(&ctx, &index, &scope, id, |_| true).unwrap().is_none());
+    assert!(
+        crate::history::scope_group(&ctx, &index, &scope, id, |_| true)
+            .unwrap()
+            .is_none()
+    );
 }

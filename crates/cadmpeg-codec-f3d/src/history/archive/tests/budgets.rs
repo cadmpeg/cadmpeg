@@ -1321,3 +1321,68 @@ fn empty_transition_delta_needs_no_work_or_collection_admission() {
         crate::history_records::AsmHistoricalEntityDelta::default()
     );
 }
+
+#[test]
+fn framed_history_retains_output_without_token_workspace() {
+    fn retained(bytes: &[u8]) -> u64 {
+        crate::test_support::with_decode_context(|ctx| {
+            let records = crate::history::archive::decode_history_records(
+                ctx,
+                bytes,
+                0,
+                None,
+                "history",
+                "state",
+                cadmpeg_asm::kernel_header::RefWidth::Four,
+            )
+            .unwrap();
+            assert_eq!(records.len(), 1);
+            assert!(matches!(&records[0].framing,
+                crate::history_records::AsmHistoryRecordFraming::Framed {
+                    name, entity_references, ..
+                } if name == "x" && entity_references == &[3]));
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+                .charge_retained(u64::MAX, "measure history output")
+                .unwrap_err()
+            else {
+                panic!("retained-byte refusal");
+            };
+            limit.used
+        })
+    }
+    let short = one_framed_history_record();
+    let mut long = short.clone();
+    long.pop();
+    for _ in 0..64 {
+        long.push(0x04);
+        long.extend_from_slice(&0_i32.to_le_bytes());
+    }
+    long.push(0x11);
+    assert_eq!(
+        retained(&long) - retained(&short),
+        cadmpeg_core::decode::u64_from_index(long.len() - short.len())
+    );
+}
+
+#[test]
+fn active_record_revision_range_refuses_work() {
+    let operation = "scan F3D active record revisions";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            crate::history::archive::historical_record_archive(
+                ctx,
+                &[],
+                &[archive_record()],
+                std::collections::BTreeMap::new(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation)
+    );
+}
