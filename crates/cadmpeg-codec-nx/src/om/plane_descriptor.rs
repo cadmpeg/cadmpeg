@@ -13,48 +13,37 @@ pub(crate) struct PlaneDescriptor {
 }
 
 impl PlaneDescriptor {
-    fn parse<'a, E, I: Iterator<Item = &'a u8>>(
-        bytes: &'a [u8],
-        mut admit: impl FnMut(&'a [u8]) -> Result<I, E>,
-    ) -> Result<Option<(&'a [u8], CompactIndexAtom, &'a [u8])>, E> {
-        (|| {
-            if bytes.len() != 40 {
-                return None;
-            }
-            let delimiter = propagate_resource!(admit(bytes)).position(|byte| *byte == b'?')?;
-            let identity = bytes.get(..delimiter)?;
-            if identity.is_empty()
-                || !propagate_resource!(admit(identity))
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
-            {
-                return None;
-            }
-            let suffix = bytes.get(delimiter..)?;
-            if suffix.get(..2) != Some(b"?A") {
-                return None;
-            }
-            let schema = CompactIndexAtom::read(suffix.get(2..)?)?;
-            let label_start = 2 + schema.raw().len() + 3;
-            if suffix.get(2 + schema.raw().len()..label_start) != Some(&[0xff, 0x02, 0x01]) {
-                return None;
-            }
-            let label = suffix.get(label_start..)?;
-            if label.is_empty() || !propagate_resource!(admit(label)).all(u8::is_ascii_graphic) {
-                return None;
-            }
-            Some(Ok((identity, schema, label)))
-        })()
-        .transpose()
+    fn parse(bytes: &[u8]) -> Option<(&[u8], CompactIndexAtom, &[u8])> {
+        if bytes.len() != 40 {
+            return None;
+        }
+        let delimiter = bytes.iter().position(|byte| *byte == b'?')?;
+        let identity = bytes.get(..delimiter)?;
+        if identity.is_empty()
+            || !identity
+                .iter()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        {
+            return None;
+        }
+        let suffix = bytes.get(delimiter..)?;
+        if suffix.get(..2) != Some(b"?A") {
+            return None;
+        }
+        let schema = CompactIndexAtom::read(suffix.get(2..)?)?;
+        let label_start = 2 + schema.raw().len() + 3;
+        if suffix.get(2 + schema.raw().len()..label_start) != Some(&[0xff, 0x02, 0x01]) {
+            return None;
+        }
+        let label = suffix.get(label_start..)?;
+        if label.is_empty() || !label.iter().all(u8::is_ascii_graphic) {
+            return None;
+        }
+        Some((identity, schema, label))
     }
 
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
-        let parsed = match Self::parse(bytes, |bytes| {
-            Ok::<_, std::convert::Infallible>(bytes.iter())
-        }) {
-            Ok(parsed) => parsed,
-            Err(error) => match error {},
-        };
-        let (identity, schema, label) = parsed?;
+        let (identity, schema, label) = Self::parse(bytes)?;
         Some(Self {
             identity: identity.iter().copied().map(char::from).collect(),
             schema,
@@ -66,14 +55,11 @@ impl PlaneDescriptor {
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
     ) -> Result<Option<Self>, CodecError> {
-        let Some((identity, schema, label)) = Self::parse(bytes, |bytes| {
-            ctx.admit_iter(bytes, "NX datum plane descriptor validation")
-        })?
-        else {
+        let Some((identity, schema, label)) = Self::parse(bytes) else {
             return Ok(None);
         };
-        let identity = ctx.validate_utf8(identity, "NX datum plane identity UTF-8 validation")?;
-        let label = ctx.validate_utf8(label, "NX datum plane label UTF-8 validation")?;
+        let identity = std::str::from_utf8(identity);
+        let label = std::str::from_utf8(label);
         let (Ok(identity), Ok(label)) = (identity, label) else {
             return Ok(None);
         };
@@ -136,7 +122,7 @@ mod tests {
     use super::PlaneDescriptor;
 
     #[test]
-    fn plane_descriptor_utf8_refusals_propagate() {
+    fn plane_descriptor_text_copy_refusals_propagate() {
         let bytes = b"012345678901234567890123456789?A\x00\xff\x02\x01abcd";
         let descriptor =
             crate::test_support::with_decode_context(|ctx| PlaneDescriptor::from_bytes(ctx, bytes))
@@ -146,8 +132,8 @@ mod tests {
         assert_eq!(descriptor.label(), "abcd");
         assert_eq!(descriptor.schema_index(), 0);
         for (operation, additional) in [
-            ("NX datum plane identity UTF-8 validation", 30),
-            ("NX datum plane label UTF-8 validation", 4),
+            ("NX datum plane descriptor identity", 30),
+            ("NX datum plane descriptor label", 4),
         ] {
             let error = crate::test_support::resource_refusal_at(
                 &[],
@@ -194,13 +180,13 @@ mod tests {
     }
 
     #[test]
-    fn plane_descriptor_iteration_refusal_propagates() {
+    fn plane_descriptor_identity_copy_refusal_propagates() {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
         let error = crate::test_support::resource_refusal_at(
             &[],
             ResourceDimension::WorkUnits,
-            "NX datum plane descriptor validation",
+            "NX datum plane descriptor identity",
             |ctx| {
                 PlaneDescriptor::from_bytes(
                     ctx,
@@ -209,6 +195,6 @@ mod tests {
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX datum plane descriptor validation"));
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX datum plane descriptor identity"));
     }
 }
