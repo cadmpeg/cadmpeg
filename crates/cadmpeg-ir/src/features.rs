@@ -1613,12 +1613,12 @@ impl FeatureEvaluation {
         &self.outputs.0
     }
 
-    /// Edit the semantics and the produced bodies together.
-    pub fn edit(
+    /// Edit the semantics and the produced bodies together, returning the callback result.
+    pub fn edit<R>(
         &mut self,
-        edit: impl FnOnce(&mut FeatureDefinition, &mut DistinctMembers<BodyId>),
-    ) {
-        edit(&mut self.definition, &mut self.outputs);
+        edit: impl FnOnce(&mut FeatureDefinition, &mut DistinctMembers<BodyId>) -> R,
+    ) -> R {
+        edit(&mut self.definition, &mut self.outputs)
     }
 
     /// Replace the construction semantics.
