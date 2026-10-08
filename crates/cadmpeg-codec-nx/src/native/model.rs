@@ -649,7 +649,7 @@ pub(crate) fn terminal_feature_body_ids(
     bindings: &[SegmentBodyBinding],
     statuses: &[SegmentBodyLineageStatus],
 ) -> Result<Option<BTreeSet<BodyId>>, CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "nx terminal body workspace")?;
+    let mut statuses_storage = ctx.reserve_scoped(0, "nx terminal body workspace")?;
     let mut statuses_by_binding = BTreeMap::new();
     let mut status_records = statuses.iter();
     while status_records.len() != 0 {
@@ -664,7 +664,7 @@ pub(crate) fn terminal_feature_body_ids(
         )? {
             return Ok(None);
         }
-        storage.with_storage(|| {
+        statuses_storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut statuses_by_binding,
                 status.segment_body_binding.as_str(),
@@ -673,8 +673,10 @@ pub(crate) fn terminal_feature_body_ids(
             )
         })?;
     }
-    let mut mapped = BTreeSet::new();
-    let mut selected = BTreeSet::new();
+    let mut mapping_storage = ctx.reserve_scoped(0, "nx terminal body mapping workspace")?;
+    let mut mapped = BTreeMap::<&BodyId, (bool, Option<&BodyId>)>::new();
+    let mut first_selected = None;
+    let mut last_selected = None;
     let mut binding_records = bindings.iter();
     while binding_records.len() != 0 {
         let Some(binding) =
@@ -690,30 +692,69 @@ pub(crate) fn terminal_feature_body_ids(
         else {
             return Ok(None);
         };
-        let (prefix, _prefix_storage) = ctx.format_scoped(
+        let (candidate_prefix, _prefix_storage) = ctx.format_scoped(
             format_args!("nx:s{}:", binding.stream_ordinal),
             "nx terminal body prefix",
         )?;
-        for body in ctx.admit_iter(emitted, "nx terminal body scan")? {
+        let prefix = candidate_prefix;
+        let mut body_records = emitted.iter();
+        while body_records.len() != 0 {
+            let Some(body) = ctx.next_charged(&mut body_records, "nx terminal body scan")? else {
+                break;
+            };
             if !ctx.starts_with(body.as_str(), &prefix, "nx terminal body scan")? {
                 continue;
             }
-            storage.with_storage(|| {
-                ctx.insert_btree_set(&mut mapped, body, "nx mapped terminal body")
-            })?;
-            if status.terminal
-                && !ctx.contains_btree_set(&selected, body, "nx selected terminal body")?
-            {
-                let body_id =
-                    body.try_clone_for_decode(ctx, "nx selected terminal body identity")?;
-                ctx.insert_btree_set(&mut selected, body_id, "nx selected terminal body")?;
+            let newly_selected = if let Some((terminal, _)) = ctx.get_mut_btree_map(
+                &mut mapped, body, "nx mapped terminal body",
+            )? {
+                let newly_selected = status.terminal && !*terminal;
+                *terminal |= status.terminal;
+                newly_selected
+            } else {
+                mapping_storage.with_storage(|| {
+                    ctx.insert_btree_map(&mut mapped, body, (status.terminal, None), "nx mapped terminal body")
+                })?;
+                status.terminal
+            };
+            if newly_selected {
+                if let Some(previous) = last_selected {
+                    let Some((_, next)) = ctx.get_mut_btree_map(
+                        &mut mapped, previous, "nx terminal body selection link",
+                    )? else {
+                        return Err(CodecError::malformed("NX terminal body selection link is absent"));
+                    };
+                    *next = Some(body);
+                } else {
+                    first_selected = Some(body);
+                }
+                last_selected = Some(body);
             }
         }
     }
-    Ok(
-        (statuses_by_binding.is_empty() && mapped.len() == emitted.len() && !selected.is_empty())
-            .then_some(selected),
-    )
+    let complete = statuses_by_binding.is_empty() && mapped.len() == emitted.len() && first_selected.is_some();
+    drop(statuses_by_binding);
+    drop(statuses_storage);
+    if !complete {
+        return Ok(None);
+    }
+    let mut selected = BTreeSet::new();
+    // Follow first terminal matches in binding order. Body-id ordering alone
+    // does not preserve the original identity-copy refusal order.
+    let mut next_selected = first_selected;
+    while let Some(body) = next_selected {
+        let Some(&(_, next)) = ctx.get_btree_map(
+            &mapped, body, "nx selected terminal body traversal",
+        )? else {
+            return Err(CodecError::malformed("NX selected terminal body is absent"));
+        };
+        let body_id = body.try_clone_for_decode(ctx, "nx selected terminal body identity")?;
+        ctx.insert_btree_set(&mut selected, body_id, "nx selected terminal body")?;
+        next_selected = next;
+    }
+    drop(mapped);
+    drop(mapping_storage);
+    Ok(Some(selected))
 }
 
 impl NativeModel {
