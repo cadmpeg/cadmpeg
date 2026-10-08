@@ -140,6 +140,8 @@ fn check_fixture(name: &str) {
             | "adapter_receipts"
             | "matrix_iteration"
             | "hash_tables"
+            | "admission"
+            | "rpitit_trait"
             | "member_keys"
             | "serde_storage"
             | "collection_sources"
@@ -244,6 +246,7 @@ fn check_fixture(name: &str) {
             | "work_integer_ranges"
             | "work_admitted"
             | "bounded_slices"
+            | "rpitit_trait"
     ) {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
     }
@@ -395,6 +398,7 @@ fn check_fixture(name: &str) {
                     | "fixed_text"
                     | "encoding"
                     | "borrowed_identities"
+                    | "rpitit_trait"
                     | "iteration_sources"
                     | "model_index"
                     | "core_operations"
@@ -404,6 +408,7 @@ fn check_fixture(name: &str) {
                     | "adapter_receipts"
                     | "matrix_iteration"
                     | "hash_tables"
+                    | "admission"
                     | "serde_storage"
                     | "collection_sources"
                     | "archive_probe"
@@ -1181,4 +1186,14 @@ fn owned_and_mutable_collection_sources_preserve_admission() {
 #[test]
 fn archive_name_probe_keeps_concrete_callback_obligations() {
     check_fixture("archive_probe");
+}
+
+#[test]
+fn admission_calls_are_checked_as_the_core_operations_they_forward_to() {
+    check_fixture("admission");
+}
+
+#[test]
+fn opaque_trait_items_do_not_panic_local_trait_lookup() {
+    check_fixture("rpitit_trait");
 }
