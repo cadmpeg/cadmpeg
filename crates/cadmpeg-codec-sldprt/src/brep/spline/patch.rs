@@ -620,3 +620,6 @@ pub(crate) fn patch_nurbs_surface(
     patch_f64_span(ctx, bytes, v_knot_span, &new_v)
 }
 
+
+#[cfg(test)]
+mod tests;
