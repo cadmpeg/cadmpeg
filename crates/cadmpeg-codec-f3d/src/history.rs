@@ -5164,8 +5164,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     | crate::design::DesignFeatureFamily::Split
             )
         ))
-        .then(|| grouped_reference_face_candidate(decode, operand, topology, &changed_faces))
-        .transpose()?
+        .then(|| grouped_reference_face_candidate(operand, topology, &changed_faces))
         .flatten()
         .map(|face| vec![face]);
         let legacy_face_candidates = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
@@ -5759,18 +5758,16 @@ fn resolve_thread_face_by_transition(
 }
 
 fn grouped_reference_face_candidate(
-    decode: &cadmpeg_core::decode::DecodeContext<'_>,
     operand: &crate::records::topology::face::DesignFaceOperand,
     topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
-) -> Result<Option<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
+) -> Option<cadmpeg_ir::ids::FaceId> {
     if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
         || !crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(
-            decode,
             &operand.recipe_prefix_bytes,
-        )?
+        )
     {
-        return Ok(None);
+        return None;
     }
     let mut candidates = operand
         .recipe_references
@@ -5779,12 +5776,10 @@ fn grouped_reference_face_candidate(
         .filter(|reference| {
             topology.faces.contains(reference) && changed_faces.contains(reference)
         });
-    let Some(face) = candidates.next() else {
-        return Ok(None);
-    };
-    Ok(candidates
+    let face = candidates.next()?;
+    candidates
         .all(|candidate| candidate == face)
-        .then(|| crate::ids::brep_face_id(face)))
+        .then(|| crate::ids::brep_face_id(face))
 }
 
 fn relation_members(
@@ -6593,11 +6588,10 @@ fn bind_profile_face_group_cardinality(
                 continue;
             };
             let paired_aggregate = crate::design::face_resolve::is_paired_extrude_profile_aggregate(
-                decode,
                 group,
                 operand_groups,
                 operands,
-            )?;
+            );
             let faces =
                 if paired_aggregate {
                     if let Some(transition) = state.transition.as_ref().filter(|transition| {

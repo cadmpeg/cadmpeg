@@ -4,30 +4,28 @@
 use super::blend::{
     blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget,
     blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache,
-    blend_surface_definition_with_index, blend_surface_parameters_for_fit_with_grid_and_budget,
+    blend_surface_definition_with_index, blend_surface_parameter_grid_with_index_and_budget,
+    blend_surface_parameters_for_fit_with_grid_and_budget,
     blend_surface_parameters_for_fit_with_source_continuation_and_budget,
     blend_surface_parameters_from_grid_for_fit_and_budget,
     blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget,
     blend_surface_parameters_from_point_with_index_and_budget,
     decoded_surface_point_with_geometry_and_budget, spine_contact_pcurve_with_index,
-    BlendContactSeedCache, BlendParameterGrid, BlendParameterGridCache, BoundaryInverseTarget,
-    CircularBlendDefinition,
+    BlendContactSeedCache, BlendParameterGrid, BoundaryInverseTarget, CircularBlendDefinition,
 };
-use super::emit::procedural_curve_owners;
-use super::geometry_work::{same_text, GeometryWorkBudget};
+use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
     coarse_model_surface_parameters,
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache,
     offset_surface_parameters_with_tolerance_with_index_and_budget,
     refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
-    surface_parameters, ParameterLanes,
+    surface_parameters,
 };
 use super::pcurves::{
     blend_boundary_parameter_from_support_spine_with_index_and_budget,
     endpoint_witness_for_candidate, linear_nurbs_curve_endpoint_witness_with_index,
     pcurve_edge_endpoint_contract_with_index, pcurve_matches_edge_endpoint_contract,
-    pcurve_surface_endpoints_with_index_and_budget, procedural_curve_owner,
-    procedural_curve_position, procedural_curve_positions,
+    pcurve_surface_endpoints_with_index_and_budget,
     surface_parameters_for_fit_with_index_and_budget, EndpointWitnesses,
 };
 use super::MISSING_TOLERANCE;
@@ -184,7 +182,7 @@ fn linear_pcurve_geometry(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<PcurveGeometry, cadmpeg_core::CodecError> {
     let mut points = ctx.collection_vec(controls.len(), "nx support UV admitted controls")?;
-    for control in ctx.admit_iter(controls, "nx support UV control admission")? {
+    for control in controls {
         points.push(FinitePoint2::new(*control).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("control_points contains a non-finite point")
         })?);
@@ -228,24 +226,20 @@ pub(super) fn assign_ext11_support_uv_with_index(
         lanes,
     } = serialized_support_uv;
 
-    let mut surface_ids = [None, None];
-    for (support, surface_id) in supports.into_iter().zip(&mut surface_ids) {
-        let Some(support) = support else {
-            continue;
-        };
-        *surface_id = ctx.get_btree_map(
-            surfaces_by_xmt,
-            &u32::from(support),
-            "nx EXT11 support identity lookup",
-        )?;
-    }
+    let [first, second] = supports.map(|support| {
+        support
+            .and_then(|support| surfaces_by_xmt.get(&u32::from(support)))
+            .map(|surface| surface.try_clone_for_decode(ctx, "nx EXT11 support identity"))
+            .transpose()
+    });
+    let surface_ids = [first?, second?];
     let [Some(first_surface), Some(second_surface)] = surface_ids else {
         return Ok(None);
     };
     assign_ext11_support_uv_to_surfaces_with_index(
         ctx,
         index,
-        [first_surface, second_surface],
+        [&first_surface, &second_surface],
         points,
         fit_tolerance,
         lanes,
@@ -271,14 +265,8 @@ pub(super) fn validate_serialized_support_uv_with_index(
 
     let mut admitted = [None, None];
     for side in 0..2 {
-        let Some(support) = supports[side] else {
-            continue;
-        };
-        let Some(surface) = ctx.get_btree_map(
-            surfaces_by_xmt,
-            &u32::from(support),
-            "nx serialized support identity lookup",
-        )?
+        let Some(surface) =
+            supports[side].and_then(|support| surfaces_by_xmt.get(&u32::from(support)))
         else {
             continue;
         };
@@ -333,11 +321,7 @@ fn support_uv_lane_matches_surface_with_budget(
     else {
         return Ok(false);
     };
-    for sample in geometry_budget.charges.admit_iter(
-        &(0..values.len().min(points.len())),
-        "nx support UV lane fit traversal",
-    )? {
-        let (uv, point) = (&values[sample], &points[sample]);
+    for (uv, point) in values.iter().zip(points) {
         if geometry_budget.exhausted() {
             refuse_geometry_work(geometry_budget)?;
             return Ok(false);
@@ -452,12 +436,7 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
             .transpose()?;
         assigned_lanes[support] = Some(lane);
     }
-    let distinct_surfaces = !ctx.equal(
-        surfaces[0].as_str(),
-        surfaces[1].as_str(),
-        "nx EXT11 support identity comparison",
-    )?;
-    if distinct_surfaces && assigned.iter().filter(|lane| lane.is_some()).count() == 1 {
+    if surfaces[0] != surfaces[1] && assigned.iter().filter(|lane| lane.is_some()).count() == 1 {
         let Some(assigned_support) = assigned.iter().position(Option::is_some) else {
             return Ok(None);
         };
@@ -543,28 +522,21 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
     pending: &[PendingExt11SupportUv],
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
 ) -> Result<EndpointWitnesses, cadmpeg_core::CodecError> {
-    let (procedural_by_id, _procedural_storage) = ctx.unique_index(
-        ir.model
-            .procedural_curves
-            .iter()
-            .map(|procedural| (procedural.id.as_str(), procedural)),
-        "nx validated procedural index",
-    )?;
-    let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
+    let mut procedural_by_id = BTreeMap::new();
+    for procedural in &ir.model.procedural_curves {
+        ctx.insert_btree_map(
+            &mut procedural_by_id,
+            &procedural.id,
+            procedural,
+            "nx validated procedural index",
+        )?;
+    }
     let mut witnesses: EndpointWitnesses = BTreeMap::new();
-    for (procedural_id, samples, _, _) in ctx.admit_iter(pending, "nx validated lane traversal")? {
-        let Some(procedural) = ctx
-            .get_hash_map(
-                &procedural_by_id,
-                procedural_id.as_str(),
-                "nx validated procedural lookup",
-            )?
-            .copied()
-            .flatten()
-        else {
+    for (procedural_id, samples, _, _) in pending {
+        let Some(procedural) = procedural_by_id.get(procedural_id).copied() else {
             continue;
         };
-        let Some(owner) = procedural_curve_owner(ctx, &owners, &procedural.id)? else {
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
             continue;
         };
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -576,12 +548,12 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
             continue;
         }
         for (side, support) in context.sides().iter().enumerate() {
-            if !validated_lane(ctx, validated_lanes, procedural_id, side)?
-                || pcurve_requires_completion(
-                    ctx,
-                    support.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
-                )?
-            {
+            if !validated_lanes.contains(&(
+                procedural_id.try_clone_for_decode(ctx, "nx validated lane lookup")?,
+                side,
+            )) || pcurve_requires_completion(
+                support.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
+            ) {
                 continue;
             }
             let Some(surface) = &support.surface else {
@@ -594,19 +566,19 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
                 owner.try_clone_for_decode(ctx, "nx validated witness owner")?,
                 surface.try_clone_for_decode(ctx, "nx validated witness surface")?,
             );
-            ctx.push_btree_group(
-                &mut witnesses,
-                key,
-                (
-                    pcurve
-                        .geometry
-                        .try_clone_for_decode(ctx, "nx validated witness pcurve")?,
-                    context.parameter_range().endpoints(),
-                    samples.endpoints(),
-                ),
-                "nx validated witness index",
-                "nx validated endpoint witnesses",
-            )?;
+            ctx.admit_btree_entry(&witnesses, &key, "nx validated witness index")?;
+            let entries = match witnesses.entry(key) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
+            };
+            ctx.reserve_vec(entries, 1, "nx validated endpoint witnesses")?;
+            entries.push((
+                pcurve
+                    .geometry
+                    .try_clone_for_decode(ctx, "nx validated witness pcurve")?,
+                context.parameter_range().endpoints(),
+                samples.endpoints(),
+            ));
         }
     }
     Ok(witnesses)
@@ -616,49 +588,15 @@ pub(super) fn missing_support_parameter(value: f64) -> bool {
     value.to_bits() == MISSING_TOLERANCE.to_bits()
 }
 
-/// Whether a lane still needs a support pcurve: it has none, or a NURBS pcurve
-/// whose control points carry the missing-parameter marker. The marker search
-/// reads the poles in place, charges each pole it reads and stops at the first
-/// marker.
-pub(super) fn pcurve_requires_completion(
-    ctx: &DecodeContext<'_>,
-    pcurve: Option<&PcurveGeometry>,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+pub(super) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> bool {
     match pcurve {
-        None => Ok(true),
-        Some(PcurveGeometry::Nurbs { nurbs }) => {
-            let poles = nurbs.pole_rows();
-            for index in 0..poles.count() {
-                ctx.charge_work_limit(1, "nx support UV missing parameter search")?;
-                if poles.point_at(index).is_some_and(|point| {
-                    missing_support_parameter(point.u) || missing_support_parameter(point.v)
-                }) {
-                    return Ok(true);
-                }
-            }
-            Ok(false)
-        }
-        Some(_) => Ok(false),
+        None => true,
+        Some(PcurveGeometry::Nurbs { nurbs }) => nurbs
+            .control_points()
+            .iter()
+            .any(|point| missing_support_parameter(point.u) || missing_support_parameter(point.v)),
+        Some(_) => false,
     }
-}
-
-/// Whether `validated_lanes` holds the lane `side` of `procedural`. The lookup
-/// key is a temporary copy of the identity, held under its own scoped
-/// reservation.
-fn validated_lane(
-    ctx: &DecodeContext<'_>,
-    validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
-    procedural: &ProceduralCurveId,
-    side: usize,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut key_storage = ctx.reserve_scoped(0, "nx validated lane lookup key")?;
-    let key = key_storage.with_storage(|| {
-        Ok::<_, cadmpeg_core::CodecError>((
-            procedural.try_clone_for_decode(ctx, "nx validated lane lookup key")?,
-            side,
-        ))
-    })?;
-    ctx.contains_btree_set(validated_lanes, &key, "nx validated lane lookup")
 }
 
 fn pcurve_control_point_seed(pcurve: Option<&PcurveGeometry>, index: usize) -> Option<Point2> {
@@ -666,9 +604,9 @@ fn pcurve_control_point_seed(pcurve: Option<&PcurveGeometry>, index: usize) -> O
         return None;
     };
     nurbs
-        .pole_rows()
-        .point_at(index)
-        .map(FinitePoint2::get)
+        .control_points()
+        .get(index)
+        .map(|point| point.get())
         .filter(|point| !missing_support_parameter(point.u) && !missing_support_parameter(point.v))
 }
 
@@ -819,125 +757,121 @@ pub(super) fn complete_ext11_support_uv_with_budget(
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let mut replacements = Vec::new();
-    let mut replacement_storage = ctx.reserve_scoped(0, "nx serialized support UV replacements")?;
-    {
-        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-        let (positions, _position_storage) = procedural_curve_positions(ctx, ir)?;
-        for (procedural_id, samples, fit_tolerance, serialized) in
-            ctx.admit_iter(pending, "nx serialized support UV traversal")?
-        {
-            let points = &samples.points_charged(ctx)?;
-            let parameters = &samples.parameters_charged(ctx)?;
-            let Some(procedural) =
-                model_index.procedural_curves(procedural_id.as_str(), geometry_budget.charges)?
-            else {
-                continue;
-            };
-            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-            else {
-                continue;
-            };
-            let [first, second] = context.sides();
-            let (Some(first_surface), Some(second_surface)) =
-                (first.surface.as_ref(), second.surface.as_ref())
-            else {
-                continue;
-            };
-            let surfaces = [first_surface, second_surface];
-            let missing = [
-                pcurve_requires_completion(
-                    ctx,
-                    first.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
-                )?,
-                pcurve_requires_completion(
-                    ctx,
-                    second.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
-                )?,
-            ];
-            if !missing.into_iter().any(|missing| missing) {
-                continue;
-            }
-            let Some(assigned) = assign_ext11_support_uv_to_surfaces_with_index(
-                ctx,
-                &model_index,
-                surfaces,
-                points,
-                *fit_tolerance,
-                &serialized.ext11,
-                geometry_budget,
-            )?
-            else {
-                continue;
-            };
-            let Some(position) = procedural_curve_position(ctx, &positions, procedural_id)? else {
-                continue;
-            };
-            for side in 0..2 {
-                if !missing[side] {
-                    continue;
-                }
-                let Some(surface_geometry) = model_index
-                    .surfaces(surfaces[side].as_str(), geometry_budget.charges)?
-                    .map(|surface| &surface.geometry)
-                else {
-                    continue;
-                };
-                let Some(values) = assigned[side].as_ref() else {
-                    continue;
-                };
-                if ctx.any_by(
-                    values.as_slice(),
-                    |pair| Ok(pair.iter().any(|value| missing_support_parameter(*value))),
-                    "nx serialized support UV missing parameter search",
-                )? {
-                    continue;
-                }
-                let mut control_storage =
-                    ctx.reserve_scoped(0, "nx serialized support UV controls")?;
-                let mut controls = Vec::new();
-                ctx.reserve_scoped_vec(
-                    &mut control_storage,
-                    &mut controls,
-                    values.len(),
-                    "nx serialized support UV controls",
-                )?;
-                let mut valid = true;
-                for uv in ctx.admit_iter(values.as_slice(), "nx serialized support UV controls")? {
-                    if let Some(point) = surface_parameters(ctx, surface_geometry, **uv)? {
-                        controls.push(point.get());
-                    } else {
-                        valid = false;
-                        break;
-                    }
-                }
-                if !valid {
-                    continue;
-                }
-                let replacement =
-                    linear_pcurve_geometry(ctx, parameters, &controls, geometry_budget)?;
-                ctx.reserve_scoped_vec(
-                    &mut replacement_storage,
-                    &mut replacements,
-                    1,
-                    "nx serialized support UV replacements",
-                )?;
-                replacements.push((position, side, replacement));
-            }
-        }
-    }
-    for (position, side, replacement) in ctx.admit_iter(
-        replacements,
-        "nx serialized support UV replacement traversal",
-    )? {
-        let Some(context) = ir
-            .model
-            .procedural_curves
-            .get_mut(position)
-            .and_then(|procedural| procedural.intersection_context_mut())
+    for (procedural_id, samples, fit_tolerance, serialized) in pending {
+        let points = &samples.points_charged(ctx)?;
+        let parameters = &samples.parameters_charged(ctx)?;
+        let Some(procedural) =
+            model_index.procedural_curves(procedural_id.as_str(), geometry_budget.charges)?
         else {
             continue;
         };
+        let (surfaces, missing) = match procedural.definition() {
+            ProceduralCurveDefinition::Intersection { context, .. } => {
+                let [Some(first), Some(second)] =
+                    context.sides().each_ref().map(|side| side.surface.as_ref())
+                else {
+                    continue;
+                };
+                (
+                    [first, second],
+                    context.sides().each_ref().map(|side| {
+                        pcurve_requires_completion(
+                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
+                        )
+                    }),
+                )
+            }
+            _ => continue,
+        };
+        if !missing.into_iter().any(|missing| missing) {
+            continue;
+        }
+        let Some(assigned) = assign_ext11_support_uv_to_surfaces_with_index(
+            ctx,
+            &model_index,
+            [surfaces[0], surfaces[1]],
+            points,
+            *fit_tolerance,
+            &serialized.ext11,
+            geometry_budget,
+        )?
+        else {
+            continue;
+        };
+        let mut side_lanes: [Option<Vec<Point2>>; 2] = [None, None];
+        for side in 0..2 {
+            if !missing[side] {
+                continue;
+            }
+            let Some(surface_geometry) = model_index
+                .surfaces(surfaces[side].as_str(), geometry_budget.charges)?
+                .map(|surface| &surface.geometry)
+            else {
+                continue;
+            };
+            let Some(values) = assigned[side].as_ref() else {
+                continue;
+            };
+            if values
+                .iter()
+                .flat_map(|pair| pair.iter())
+                .any(|value| missing_support_parameter(*value))
+            {
+                continue;
+            }
+            let mut controls = Vec::new();
+            ctx.reserve_vec(
+                &mut controls,
+                values.len(),
+                "nx serialized support UV controls",
+            )?;
+            let mut valid = true;
+            for uv in values.iter() {
+                if let Some(point) = surface_parameters(ctx, surface_geometry, **uv)? {
+                    controls.push(point.get());
+                } else {
+                    valid = false;
+                    break;
+                }
+            }
+            if valid {
+                side_lanes[side] = Some(controls);
+            }
+        }
+        for (side, control_points) in side_lanes.into_iter().enumerate() {
+            let Some(control_points) = control_points else {
+                continue;
+            };
+            let replacement =
+                linear_pcurve_geometry(ctx, parameters, &control_points, geometry_budget)?;
+            ctx.reserve_vec(
+                &mut replacements,
+                1,
+                "nx serialized support UV replacements",
+            )?;
+            replacements.push((
+                procedural_id.try_clone_for_decode(ctx, "nx serialized support UV owner")?,
+                side,
+                replacement,
+            ));
+        }
+    }
+    drop(model_index);
+    for (procedural_id, side, replacement) in replacements {
+        let Some(procedural) = ir
+            .model
+            .procedural_curves
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
+        else {
+            continue;
+        };
+        let Some(context) = procedural.intersection_context_mut() else {
+            continue;
+        };
+
         context.set_unmapped_pcurve(side, Some(replacement));
     }
     Ok(())
@@ -1002,20 +936,8 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
     let mut failed_coupled_attempts =
         BTreeMap::<ProceduralCurveId, [Option<cadmpeg_ir::geometry::SupportPcurve>; 2]>::new();
     let mut lane_geometry_exhausted = false;
-    // Completion edits procedurals in place, so the pending procedurals keep
-    // the arena positions resolved here across every wave.
-    let (pending_positions, _pending_storage) = {
-        let (positions, _position_storage) = procedural_curve_positions(ctx, ir)?;
-        let (mut pending_positions, pending_storage) =
-            ctx.temporary_vec(pending.len(), "nx pending support lane positions")?;
-        for (procedural_id, ..) in ctx.admit_iter(pending, "nx pending support lane positions")? {
-            pending_positions.push(procedural_curve_position(ctx, &positions, procedural_id)?);
-        }
-        (pending_positions, pending_storage)
-    };
     loop {
-        ctx.charge_work(1, "nx support UV completion wave pass")?;
-        let before = pending_support_lanes_requiring_completion(ctx, ir, &pending_positions)?;
+        let before = pending_support_lanes_requiring_completion(ctx, ir, pending)?;
         if support_uv_budget_exhausted(support_budget) {
             break;
         }
@@ -1035,7 +957,7 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
             coupled_support_budget,
             coupled_geometry_budget,
         )?;
-        let after = pending_support_lanes_requiring_completion(ctx, ir, &pending_positions)?;
+        let after = pending_support_lanes_requiring_completion(ctx, ir, pending)?;
         if after >= before || support_uv_budget_exhausted(support_budget) {
             break;
         }
@@ -1083,17 +1005,12 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     geometry_budget: &GeometryWorkBudget<'_>,
     isolate_lanes: bool,
 ) -> Result<SupportUvValidationResult, cadmpeg_core::CodecError> {
-    let mut invalid_storage = ctx.reserve_scoped(0, "nx inconsistent support UV lanes")?;
     let (invalid, endpoint_witnesses, lane_geometry_exhausted) = {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
-        let (positions, _position_storage) = procedural_curve_positions(ctx, ir)?;
         let mut invalid = Vec::new();
         let mut endpoint_witnesses: EndpointWitnesses = BTreeMap::new();
         let mut lane_geometry_exhausted = false;
-        for (procedural_id, samples, fit_tolerance, _) in
-            ctx.admit_iter(pending, "nx support UV validation traversal")?
-        {
+        for (procedural_id, samples, fit_tolerance, _) in pending {
             let points = &samples.points_charged(ctx)?;
             let parameters = &samples.parameters_charged(ctx)?;
             if geometry_budget.exhausted() {
@@ -1108,7 +1025,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
             else {
                 continue;
             };
-            let Some(owner) = procedural_curve_owner(ctx, &owners, &procedural.id)? else {
+            let Some(owner) = index.ir().model.procedural_curve_owner(&procedural.id) else {
                 continue;
             };
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -1123,7 +1040,10 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                 if support_uv_budget_exhausted(support_budget) {
                     break;
                 }
-                if validated_lane(ctx, validated_lanes, procedural_id, side)? {
+                if validated_lanes.contains(&(
+                    procedural_id.try_clone_for_decode(ctx, "nx validation lane lookup")?,
+                    side,
+                )) {
                     continue;
                 }
                 let (Some(surface), Some(pcurve)) = (&support.surface, &support.pcurve) else {
@@ -1215,51 +1135,56 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     lane_geometry_exhausted |= child_exhausted || parent_exhausted;
                 }
                 if inconsistent {
-                    if let Some(position) =
-                        procedural_curve_position(ctx, &positions, procedural_id)?
-                    {
-                        ctx.reserve_scoped_vec(
-                            &mut invalid_storage,
-                            &mut invalid,
-                            1,
-                            "nx inconsistent support UV lanes",
-                        )?;
-                        invalid.push((position, side));
-                    }
+                    ctx.reserve_vec(&mut invalid, 1, "nx inconsistent support UV lanes")?;
+                    invalid.push((
+                        procedural_id
+                            .try_clone_for_decode(ctx, "nx inconsistent support UV owner")?,
+                        side,
+                    ));
                 } else if fully_validated {
                     if let [Some(first), Some(last)] = endpoints {
                         let key = (
                             owner.try_clone_for_decode(ctx, "nx validated endpoint owner")?,
                             surface.try_clone_for_decode(ctx, "nx validated endpoint support")?,
                         );
-                        ctx.push_btree_group(
-                            &mut endpoint_witnesses,
-                            key,
-                            (
-                                pcurve
-                                    .geometry
-                                    .try_clone_for_decode(ctx, "nx validated endpoint pcurve")?,
-                                context.parameter_range().endpoints(),
-                                [first, last],
-                            ),
+                        ctx.admit_btree_entry(
+                            &endpoint_witnesses,
+                            &key,
                             "nx validated endpoint index",
-                            "nx validated endpoint witnesses",
                         )?;
+                        let entries = match endpoint_witnesses.entry(key) {
+                            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                entry.insert(Vec::new())
+                            }
+                        };
+                        ctx.reserve_vec(entries, 1, "nx validated endpoint witnesses")?;
+                        entries.push((
+                            pcurve
+                                .geometry
+                                .try_clone_for_decode(ctx, "nx validated endpoint pcurve")?,
+                            context.parameter_range().endpoints(),
+                            [first, last],
+                        ));
                     }
                 }
             }
         }
         (invalid, endpoint_witnesses, lane_geometry_exhausted)
     };
-    for &(position, side) in ctx.admit_iter(&invalid, "nx inconsistent support UV traversal")? {
-        let Some(context) = ir
+    for (procedural_id, side) in invalid {
+        let Some(procedural) = ir
             .model
             .procedural_curves
-            .get_mut(position)
-            .and_then(|procedural| procedural.intersection_context_mut())
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
         else {
             continue;
         };
+        let Some(context) = procedural.intersection_context_mut() else {
+            continue;
+        };
+
         context.set_unmapped_pcurve(side, None);
     }
     Ok(SupportUvValidationResult {
@@ -1268,32 +1193,32 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     })
 }
 
-/// The lanes still requiring a support pcurve among the pending procedurals at
-/// `positions`.
 fn pending_support_lanes_requiring_completion(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
-    positions: &[Option<usize>],
+    pending: &[PendingExt11SupportUv],
 ) -> Result<usize, cadmpeg_core::CodecError> {
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
     let mut count = 0usize;
-    for position in ctx.admit_iter(positions, "NX pending support lane scan")? {
-        let Some(procedural) =
-            position.and_then(|position| ir.model.procedural_curves.get(position))
-        else {
+    for (procedural_id, ..) in pending {
+        ctx.charge_work(1, "NX pending support lane scan")?;
+        let Some(procedural) = index.procedural_curves(procedural_id.as_str(), ctx)? else {
             continue;
         };
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
             continue;
         };
-        for side in context.sides() {
-            if pcurve_requires_completion(ctx, side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))?
-            {
-                count = count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("NX pending support lane count", u64::MAX - 1, u64::MAX)
-                })?;
-            }
-        }
+        let lanes = context
+            .sides()
+            .iter()
+            .filter(|side| {
+                pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
+            })
+            .count();
+        count = count.checked_add(lanes).ok_or_else(|| {
+            ctx.refuse_codec_limit("NX pending support lane count", u64::MAX - 1, u64::MAX)
+        })?;
     }
     Ok(count)
 }
@@ -1330,235 +1255,196 @@ fn complete_support_uv_wave(
     refuse_geometry_work(geometry_budget)?;
     if !support_uv_budget_exhausted(support_budget) && !geometry_exhausted {
         let mut replacements = Vec::new();
-        let mut replacement_storage = ctx.reserve_scoped(0, "nx support UV replacements")?;
-        {
-            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-            let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
-            let (positions, _position_storage) = procedural_curve_positions(ctx, ir)?;
-            let (cache_backed_constructions, _cache_backed_storage) = ctx
-                .collect_scoped_string_set(
-                    0,
-                    ctx.admit_iter(&ir.model.curves, "nx support UV cache backed curve scan")?
-                        .filter(|curve| curve.geometry.solved_cache().is_some())
-                        .filter_map(|curve| {
-                            curve
-                                .geometry
-                                .procedural_construction()
-                                .map(ProceduralCurveId::as_str)
-                        }),
-                    "nx support UV cache backed constructions",
-                )?;
-            let mut blend_parameter_grids = BlendParameterGridCache::new(ctx)?;
-            for (procedural_id, samples, fit_tolerance, serialized) in
-                ctx.admit_iter(pending, "nx support UV completion traversal")?
-            {
+        let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
+        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+        for (procedural_id, samples, fit_tolerance, serialized) in pending {
+            let points = &samples.points_charged(ctx)?;
+            let parameters = &samples.parameters_charged(ctx)?;
+            if support_uv_budget_exhausted(support_budget) {
+                break;
+            }
+            let Some(procedural) =
+                model_index.procedural_curves(procedural_id.as_str(), geometry_budget.charges)?
+            else {
+                continue;
+            };
+            let Some(owner) = model_index
+                .ir()
+                .model
+                .procedural_curve_owner(&procedural.id)
+            else {
+                continue;
+            };
+            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+            else {
+                continue;
+            };
+            for side in 0..2 {
                 if support_uv_budget_exhausted(support_budget) {
                     break;
                 }
-                let points = &samples.points_charged(ctx)?;
-                let parameters = &samples.parameters_charged(ctx)?;
-                let Some(procedural) = model_index
-                    .procedural_curves(procedural_id.as_str(), geometry_budget.charges)?
+                if !pcurve_requires_completion(
+                    context.sides()[side]
+                        .pcurve
+                        .as_ref()
+                        .map(|pcurve| &pcurve.geometry),
+                ) {
+                    continue;
+                }
+                let Some(surface_id) = &context.sides()[side].surface else {
+                    continue;
+                };
+                let attempt_key = (
+                    procedural_id.try_clone_for_decode(ctx, "nx support UV retry identity")?,
+                    side,
+                );
+                let source_pcurve = context.sides()[1 - side].pcurve.as_ref();
+                let other_surface_id = context.sides()[1 - side].surface.as_ref();
+                if failed_attempts.get(&attempt_key).is_some_and(|previous| {
+                    previous.as_ref() == source_pcurve.map(|pcurve| &pcurve.geometry)
+                }) {
+                    continue;
+                }
+                let Some(surface) =
+                    model_index.surfaces(surface_id.as_str(), geometry_budget.charges)?
                 else {
                     continue;
                 };
-                let Some(owner) = procedural_curve_owner(ctx, &owners, &procedural.id)? else {
-                    continue;
+                let source_chart_available = source_pcurve
+                    .is_some_and(|pcurve| !pcurve_requires_completion(Some(&pcurve.geometry)));
+                let linear_offset_surface = match &surface.geometry {
+                    SurfaceGeometry::Procedural { construction, .. } => model_index
+                        .procedural_surfaces(construction.as_str(), geometry_budget.charges)?
+                        .is_some_and(|procedural| match procedural.definition() {
+                            ProceduralSurfaceDefinition::Offset(matched_payload) => {
+                                matched_payload.linear_support_extension()
+                            }
+                            _ => false,
+                        }),
+                    SurfaceGeometry::Solved(_) => false,
                 };
-                let ProceduralCurveDefinition::Intersection { context, .. } =
-                    procedural.definition()
-                else {
-                    continue;
+                let effective_fit_tolerance = blend_spine_cache_fit_tolerance_with_index(
+                    &model_index,
+                    surface_id,
+                    *fit_tolerance,
+                    geometry_budget.charges,
+                )?;
+                let other_support = match context.sides()[1 - side]
+                    .surface
+                    .as_ref()
+                    .zip(context.sides()[1 - side].pcurve.as_ref())
+                {
+                    Some((other_surface, other_pcurve)) => model_index
+                        .surfaces(other_surface.as_str(), geometry_budget.charges)?
+                        .map(|surface| (other_surface, &other_pcurve.geometry, &surface.geometry)),
+                    None => None,
                 };
-                let missing = [
-                    pcurve_requires_completion(
-                        ctx,
-                        context.sides()[0]
-                            .pcurve
-                            .as_ref()
-                            .map(|pcurve| &pcurve.geometry),
-                    )?,
-                    pcurve_requires_completion(
-                        ctx,
-                        context.sides()[1]
-                            .pcurve
-                            .as_ref()
-                            .map(|pcurve| &pcurve.geometry),
-                    )?,
-                ];
-                for side in 0..2 {
-                    if support_uv_budget_exhausted(support_budget) {
-                        break;
-                    }
-                    if !missing[side] {
-                        continue;
-                    }
-                    let Some(surface_id) = &context.sides()[side].surface else {
-                        continue;
+                let other_contact = (|| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
+                    let Some((other_surface, other_pcurve, other_geometry)) = other_support else {
+                        return Ok(None);
                     };
-                    let attempt_key = (
-                        procedural_id.try_clone_for_decode(ctx, "nx support UV retry identity")?,
-                        side,
-                    );
-                    let source_pcurve = context.sides()[1 - side].pcurve.as_ref();
-                    let other_surface_id = context.sides()[1 - side].surface.as_ref();
-                    if ctx
-                        .get_btree_map(failed_attempts, &attempt_key, "nx support UV retry lookup")?
-                        .is_some_and(|previous| {
-                            previous.as_ref() == source_pcurve.map(|pcurve| &pcurve.geometry)
-                        })
-                    {
-                        continue;
-                    }
-                    let Some(surface) =
-                        model_index.surfaces(surface_id.as_str(), geometry_budget.charges)?
-                    else {
-                        continue;
-                    };
-                    // An absent pcurve requires completion, so an available
-                    // source chart is also a present one.
-                    let source_chart_available = !missing[1 - side];
-                    let linear_offset_surface = match &surface.geometry {
-                        SurfaceGeometry::Procedural { construction, .. } => model_index
-                            .procedural_surfaces(construction.as_str(), geometry_budget.charges)?
-                            .is_some_and(|procedural| match procedural.definition() {
-                                ProceduralSurfaceDefinition::Offset(matched_payload) => {
-                                    matched_payload.linear_support_extension()
-                                }
-                                _ => false,
-                            }),
-                        SurfaceGeometry::Solved(_) => false,
-                    };
-                    let effective_fit_tolerance = blend_spine_cache_fit_tolerance_with_index(
+                    let Some(CircularBlendDefinition {
+                        supports,
+                        spine,
+                        radius,
+                        ..
+                    }) = blend_surface_definition_with_index(
                         &model_index,
                         surface_id,
-                        *fit_tolerance,
                         geometry_budget.charges,
-                    )?;
-                    let other_support = match context.sides()[1 - side]
-                        .surface
-                        .as_ref()
-                        .zip(context.sides()[1 - side].pcurve.as_ref())
-                    {
-                        Some((other_surface, other_pcurve)) => model_index
-                            .surfaces(other_surface.as_str(), geometry_budget.charges)?
-                            .map(|surface| {
-                                (other_surface, &other_pcurve.geometry, &surface.geometry)
-                            }),
-                        None => None,
+                    )?
+                    else {
+                        return Ok(None);
                     };
-                    let other_contact = (|| -> Result<_, cadmpeg_core::decode::ResourceLimit> {
-                        let Some((other_surface, other_pcurve, other_geometry)) = other_support
-                        else {
-                            return Ok(None);
-                        };
-                        let Some(CircularBlendDefinition {
-                            supports,
-                            spine,
-                            radius,
-                            ..
-                        }) = blend_surface_definition_with_index(
+                    let mut selected = None;
+                    for (boundary, candidate) in supports.into_iter().enumerate() {
+                        if parameterization_equivalent_surfaces_with_index(
                             &model_index,
-                            surface_id,
+                            candidate,
+                            other_surface,
                             geometry_budget.charges,
-                        )?
-                        else {
+                        )? && selected.replace(boundary).is_some()
+                        {
                             return Ok(None);
-                        };
-                        let mut selected = None;
-                        for (boundary, candidate) in supports.into_iter().enumerate() {
-                            if parameterization_equivalent_surfaces_with_index(
-                                &model_index,
-                                candidate,
-                                other_surface,
-                                geometry_budget.charges,
-                            )? && selected.replace(boundary).is_some()
-                            {
-                                return Ok(None);
-                            }
                         }
-                        let Some(boundary) = selected else {
+                    }
+                    let Some(boundary) = selected else {
+                        return Ok(None);
+                    };
+                    let Some(contact_pcurve) = spine_contact_pcurve_with_index(
+                        &model_index,
+                        other_surface,
+                        spine,
+                        radius,
+                        0,
+                        geometry_budget.charges,
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    Ok(Some((
+                        other_surface,
+                        other_pcurve,
+                        other_geometry,
+                        contact_pcurve,
+                        boundary,
+                    )))
+                })()?;
+                let parent_geometry_budget = geometry_budget;
+                let lane_geometry_budget =
+                    parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
+                        ctx,
+                        points.len(),
+                        parent_geometry_budget.remaining(),
+                    )?);
+                let geometry_budget = &lane_geometry_budget;
+                let mut contact_seeds = BlendContactSeedCache::default();
+                let uv = (|| -> Result<Option<(Vec<Point2>, bool)>, cadmpeg_core::CodecError> {
+                    let mut uv = Vec::new();
+                    let mut all_parameters_certified = true;
+                    for (point_index, point) in points.iter().enumerate() {
+                        if !support_budget.charge() {
+                            if let Some(limit) = ctx.resource_refusal() {
+                                return Err(limit.into());
+                            }
                             return Ok(None);
-                        };
-                        let Some(contact_pcurve) = spine_contact_pcurve_with_index(
-                            &model_index,
-                            other_surface,
-                            spine,
-                            radius,
-                            0,
-                            geometry_budget.charges,
-                        )?
-                        else {
-                            return Ok(None);
-                        };
-                        Ok(Some((
-                            other_surface,
-                            other_pcurve,
-                            other_geometry,
-                            contact_pcurve,
-                            boundary,
-                        )))
-                    })()?;
-                    let parent_geometry_budget = geometry_budget;
-                    let lane_geometry_budget =
-                        parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
+                        }
+                        let serialized_seeds = serialized_support_uv_seed_candidates(
                             ctx,
-                            points.len(),
-                            parent_geometry_budget.remaining(),
-                        )?);
-                    let geometry_budget = &lane_geometry_budget;
-                    let mut contact_seeds = BlendContactSeedCache::default();
-                    let mut uv_storage =
-                        ctx.reserve_scoped(0, "nx support UV fitted parameters")?;
-                    let uv =
-                        (|| -> Result<Option<(Vec<Point2>, bool)>, cadmpeg_core::CodecError> {
-                            let mut uv = Vec::new();
-                            let mut all_parameters_certified = true;
-                            for (point_index, point) in points.iter().enumerate() {
-                                if !support_budget.charge() {
-                                    if let Some(limit) = ctx.resource_refusal() {
-                                        return Err(limit.into());
-                                    }
-                                    return Ok(None);
+                            &surface.geometry,
+                            serialized,
+                            side,
+                            point_index,
+                        )?;
+                        let continuation_seed = uv.last().copied();
+                        let retained_pcurve_seed = pcurve_control_point_seed(
+                            context.sides()[side]
+                                .pcurve
+                                .as_ref()
+                                .map(|pcurve| &pcurve.geometry),
+                            point_index,
+                        );
+                        let seed_candidates = ordered_support_uv_seed_candidates(
+                            serialized_seeds,
+                            retained_pcurve_seed,
+                            continuation_seed,
+                            linear_offset_surface,
+                        )
+                        .into_iter();
+                        let mut attempted_without_seed = false;
+                        let mut solved = None;
+                        for seed in seed_candidates {
+                            if seed.is_none() {
+                                if attempted_without_seed {
+                                    continue;
                                 }
-                                let serialized_seeds = serialized_support_uv_seed_candidates(
-                                    ctx,
-                                    &surface.geometry,
-                                    serialized,
-                                    side,
-                                    point_index,
-                                )?;
-                                let continuation_seed = uv.last().copied();
-                                let retained_pcurve_seed = pcurve_control_point_seed(
-                                    context.sides()[side]
-                                        .pcurve
-                                        .as_ref()
-                                        .map(|pcurve| &pcurve.geometry),
-                                    point_index,
-                                );
-                                let seed_candidates = ordered_support_uv_seed_candidates(
-                                    serialized_seeds,
-                                    retained_pcurve_seed,
-                                    continuation_seed,
-                                    linear_offset_surface,
-                                )
-                                .into_iter();
-                                let mut attempted_without_seed = false;
-                                let mut solved = None;
-                                for seed in seed_candidates {
-                                    if seed.is_none() {
-                                        if attempted_without_seed {
-                                            continue;
-                                        }
-                                        attempted_without_seed = true;
-                                    }
-                                    let sample_parameter = parameters[point_index];
-                                    let candidate = match &surface.geometry {
-                                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                                            nurbs,
-                                        )) => {
-                                            if let Some(seed) = seed {
-                                                nurbs_surface_parameter_within_tolerance_with_budget(
+                                attempted_without_seed = true;
+                            }
+                            let sample_parameter = parameters[point_index];
+                            let candidate = match &surface.geometry {
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                                    if let Some(seed) = seed {
+                                        nurbs_surface_parameter_within_tolerance_with_budget(
                                             geometry_budget.charges,
                                             nurbs,
                                             *point,
@@ -1567,8 +1453,8 @@ fn complete_support_uv_wave(
                                             geometry_budget,
                                         )?
                                         .map(|parameters| (parameters.get(), true))
-                                            } else {
-                                                unseeded_nurbs_surface_parameters_with_index_and_budget(
+                                    } else {
+                                        unseeded_nurbs_surface_parameters_with_index_and_budget(
                                             &model_index,
                                             surface_id,
                                             &surface.geometry,
@@ -1578,15 +1464,25 @@ fn complete_support_uv_wave(
                                             geometry_budget,
                                         )?
                                         .map(|parameters| (parameters, true))
-                                            }
-                                        }
-                                        SurfaceGeometry::Procedural { .. } => {
-                                            let mut parameters = None;
-                                            if source_chart_available {
-                                                if let Some((source_pcurve, source_surface)) =
-                                                    source_pcurve.zip(other_surface_id)
-                                                {
-                                                    parameters = blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
+                                    }
+                                }
+                                SurfaceGeometry::Procedural { .. } => {
+                                    let solve_blend_parameters = if source_chart_available {
+                                        blend_surface_parameters_for_fit_with_source_continuation_and_budget
+                                    } else {
+                                        blend_surface_parameters_for_fit_with_grid_and_budget
+                                    };
+                                    let solve_grid_parameters = if source_chart_available {
+                                        blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget
+                                    } else {
+                                        blend_surface_parameters_from_grid_for_fit_and_budget
+                                    };
+                                    let mut parameters = None;
+                                    if source_chart_available {
+                                        if let Some((source_pcurve, source_surface)) =
+                                            source_pcurve.zip(other_surface_id)
+                                        {
+                                            parameters = blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
 &model_index,
 &crate::decode::blend::SourcePcurveSample { blend: source_surface, support: surface_id, source_pcurve: &source_pcurve.geometry, curve_parameter: sample_parameter },
 BoundaryInverseTarget {
@@ -1597,18 +1493,18 @@ BoundaryInverseTarget {
 &mut contact_seeds,
 geometry_budget,
 )?;
-                                                }
-                                            }
-                                            if parameters.is_none() {
-                                                if let Some((
-                                                    other_surface,
-                                                    other_pcurve,
-                                                    other_geometry,
-                                                    contact_pcurve,
-                                                    boundary,
-                                                )) = other_contact
-                                                {
-                                                    parameters = blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
+                                        }
+                                    }
+                                    if parameters.is_none() {
+                                        if let Some((
+                                            other_surface,
+                                            other_pcurve,
+                                            other_geometry,
+                                            contact_pcurve,
+                                            boundary,
+                                        )) = other_contact
+                                        {
+                                            parameters = blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
 &model_index,
 &crate::decode::blend::ContactCurveSample { support: other_surface, support_geometry: other_geometry, contact_pcurve, boundary, support_pcurve: other_pcurve, curve_parameter: sample_parameter },
 BoundaryInverseTarget {
@@ -1618,26 +1514,26 @@ BoundaryInverseTarget {
                                                 },
 geometry_budget,
 )?;
-                                                }
-                                            }
-                                            if parameters.is_none() {
-                                                parameters = blend_surface_parameters_from_point_with_index_and_budget(
+                                        }
+                                    }
+                                    if parameters.is_none() {
+                                        parameters = blend_surface_parameters_from_point_with_index_and_budget(
                                             &model_index, surface_id, *point, seed,
                                             effective_fit_tolerance, &mut contact_seeds,
                                             geometry_budget,
                                         )?;
-                                            }
-                                            if parameters.is_none() {
-                                                if let Some(other_surface) = other_surface_id {
-                                                    parameters = blend_boundary_parameter_from_support_spine_with_index_and_budget(
+                                    }
+                                    if parameters.is_none() {
+                                        if let Some(other_surface) = other_surface_id {
+                                            parameters = blend_boundary_parameter_from_support_spine_with_index_and_budget(
                                                 &model_index, surface_id, other_surface, *point,
                                                 seed, effective_fit_tolerance, geometry_budget,
                                             )?;
-                                                }
-                                            }
-                                            if parameters.is_none() {
-                                                parameters = if let Some(seed) = seed {
-                                                    refine_offset_surface_parameters_with_index_and_budget(
+                                        }
+                                    }
+                                    if parameters.is_none() {
+                                        parameters = if let Some(seed) = seed {
+                                            refine_offset_surface_parameters_with_index_and_budget(
                                                 &model_index,
                                                 surface_id,
                                                 *point,
@@ -1645,258 +1541,79 @@ geometry_budget,
                                                 effective_fit_tolerance,
                                                 geometry_budget,
                                             )?
-                                                } else {
-                                                    offset_surface_parameters_with_tolerance_with_index_and_budget(
+                                        } else {
+                                            offset_surface_parameters_with_tolerance_with_index_and_budget(
                                                 &model_index, surface_id, *point, None,
                                                 Some(effective_fit_tolerance), geometry_budget,
                                             )?
-                                                };
-                                            }
-                                            if parameters.is_none() {
-                                                parameters = if source_chart_available {
-                                                    blend_surface_parameters_for_fit_with_source_continuation_and_budget(
-                                                    &model_index,
-                                                    surface_id,
-                                                    *point,
-                                                    seed,
-                                                    effective_fit_tolerance,
-                                                    BlendParameterGrid::Disabled,
-                                                    geometry_budget,
-                                                                                                    )?
-                                                } else {
-                                                    blend_surface_parameters_for_fit_with_grid_and_budget(
-                                                    &model_index,
-                                                    surface_id,
-                                                    *point,
-                                                    seed,
-                                                    effective_fit_tolerance,
-                                                    BlendParameterGrid::Disabled,
-                                                    geometry_budget,
-                                                                                                    )?
-                                                };
-                                            }
-                                            if parameters.is_none() {
-                                                if let BlendParameterGrid::Provided(grid) =
-                                                    blend_parameter_grids.grid(
-                                                        &model_index,
-                                                        surface_id,
-                                                        geometry_budget,
-                                                    )?
-                                                {
-                                                    parameters = if source_chart_available {
-                                                        blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget(
-                                                        &model_index,
-                                                        surface_id,
-                                                        *point,
-                                                        effective_fit_tolerance,
-                                                        grid,
-                                                        geometry_budget,
-                                                                                                            )?
-                                                    } else {
-                                                        blend_surface_parameters_from_grid_for_fit_and_budget(
-                                                        &model_index,
-                                                        surface_id,
-                                                        *point,
-                                                        effective_fit_tolerance,
-                                                        grid,
-                                                        geometry_budget,
-                                                                                                            )?
-                                                    };
-                                                }
-                                            }
-                                            parameters.map(|parameters| (parameters, true))
-                                        }
-                                        geometry @ SurfaceGeometry::Solved(_) => {
-                                            analytic_surface_parameters(geometry, *point)
-                                                .map(|parameters| (Point2::from(parameters), false))
-                                        }
-                                    };
-                                    if candidate.is_some() {
-                                        solved = candidate;
-                                        break;
+                                        };
                                     }
+                                    if parameters.is_none() {
+                                        parameters = solve_blend_parameters(
+                                            &model_index,
+                                            surface_id,
+                                            *point,
+                                            seed,
+                                            effective_fit_tolerance,
+                                            BlendParameterGrid::Disabled,
+                                            geometry_budget,
+                                        )?;
+                                    }
+                                    if parameters.is_none() {
+                                        if !blend_parameter_grids.contains_key(surface_id) {
+                                            let grid =
+                                                blend_surface_parameter_grid_with_index_and_budget(
+                                                    &model_index,
+                                                    surface_id,
+                                                    0,
+                                                    geometry_budget,
+                                                )?;
+                                            ctx.insert_btree_map(
+                                                &mut blend_parameter_grids,
+                                                surface_id.try_clone_for_decode(
+                                                    ctx,
+                                                    "nx support UV blend grid identity",
+                                                )?,
+                                                grid,
+                                                "nx support UV blend grid index",
+                                            )?;
+                                        }
+                                        if let Some(grid) = blend_parameter_grids
+                                            .get(surface_id)
+                                            .and_then(Option::as_deref)
+                                        {
+                                            parameters = solve_grid_parameters(
+                                                &model_index,
+                                                surface_id,
+                                                *point,
+                                                effective_fit_tolerance,
+                                                grid,
+                                                geometry_budget,
+                                            )?;
+                                        }
+                                    }
+                                    parameters.map(|parameters| (parameters, true))
                                 }
-                                let Some((parameters, certified)) = solved else {
-                                    return Ok(None);
-                                };
-                                all_parameters_certified &= certified;
-                                ctx.reserve_scoped_vec(
-                                    &mut uv_storage,
-                                    &mut uv,
-                                    1,
-                                    "nx support UV fitted parameters",
-                                )?;
-                                uv.push(parameters);
-                            }
-                            Ok(Some((uv, all_parameters_certified)))
-                        })();
-                    let Some((mut uv, all_parameters_certified)) = uv? else {
-                        let parent_exhausted = parent_geometry_budget
-                            .consume_child(&lane_geometry_budget)
-                            .is_err();
-                        let child_exhausted = lane_geometry_budget.exhausted();
-                        refuse_geometry_work(&lane_geometry_budget)?;
-                        refuse_geometry_work(parent_geometry_budget)?;
-                        lane_geometry_exhausted |= child_exhausted || parent_exhausted;
-                        ctx.insert_btree_map(
-                            failed_attempts,
-                            attempt_key,
-                            source_pcurve
-                                .map(|pcurve| {
-                                    pcurve
-                                        .geometry
-                                        .try_clone_for_decode(ctx, "nx support UV retry pcurve")
-                                })
-                                .transpose()?,
-                            "nx support UV failed retries",
-                        )?;
-                        continue;
-                    };
-                    if matches!(
-                        surface.geometry,
-                        SurfaceGeometry::Solved(
-                            SolvedSurfaceGeometry::Cylinder(_)
-                                | SolvedSurfaceGeometry::Cone(_)
-                                | SolvedSurfaceGeometry::Sphere(_)
-                                | SolvedSurfaceGeometry::Torus(_)
-                        )
-                    ) {
-                        for index in ctx.admit_iter(&(1..uv.len()), "nx support UV turn lifting")? {
-                            let turns =
-                                ((uv[index - 1].u - uv[index].u) / std::f64::consts::TAU).round();
-                            uv[index].u += turns * std::f64::consts::TAU;
-                        }
-                    }
-                    let mut endpoint_values = [None, None];
-                    let reproduces_chart = if all_parameters_certified {
-                        true
-                    } else {
-                        let mut reproduces = true;
-                        for sample_index in ctx.admit_iter(
-                            &(0..uv.len().min(points.len())),
-                            "nx support UV chart reproduction",
-                        )? {
-                            let (sample_uv, point) = (&uv[sample_index], &points[sample_index]);
-                            let Some(actual) = decoded_surface_point_with_geometry_and_budget(
-                                &model_index,
-                                surface_id,
-                                &surface.geometry,
-                                sample_uv.u,
-                                sample_uv.v,
-                                0,
-                                geometry_budget,
-                            )?
-                            else {
-                                reproduces = false;
-                                break;
+                                geometry @ SurfaceGeometry::Solved(_) => {
+                                    analytic_surface_parameters(geometry, *point)
+                                        .map(|parameters| (Point2::from(parameters), false))
+                                }
                             };
-                            if sample_index == 0 {
-                                endpoint_values[0] = Some(actual);
-                            }
-                            if sample_index + 1 == points.len() {
-                                endpoint_values[1] = Some(actual);
-                            }
-                            if Point3::distance(actual, *point) > effective_fit_tolerance {
-                                reproduces = false;
+                            if candidate.is_some() {
+                                solved = candidate;
                                 break;
                             }
                         }
-                        reproduces
-                    };
-                    let admitted_fit_tolerance =
-                        cadmpeg_ir::geometry::FitTolerance::try_new(effective_fit_tolerance).ok();
-                    if let Some(admitted_fit_tolerance) =
-                        admitted_fit_tolerance.filter(|_| reproduces_chart)
-                    {
-                        if all_parameters_certified {
-                            endpoint_values = [
-                                if let Some(sample_uv) = uv.first() {
-                                    decoded_surface_point_with_geometry_and_budget(
-                                        &model_index,
-                                        surface_id,
-                                        &surface.geometry,
-                                        sample_uv.u,
-                                        sample_uv.v,
-                                        0,
-                                        geometry_budget,
-                                    )?
-                                } else {
-                                    None
-                                },
-                                if let Some(sample_uv) = uv.last() {
-                                    decoded_surface_point_with_geometry_and_budget(
-                                        &model_index,
-                                        surface_id,
-                                        &surface.geometry,
-                                        sample_uv.u,
-                                        sample_uv.v,
-                                        0,
-                                        geometry_budget,
-                                    )?
-                                } else {
-                                    None
-                                },
-                            ];
-                        }
-                        let parameter_range = samples.parameter_range();
-                        let pcurve = linear_pcurve_geometry(ctx, parameters, &uv, geometry_budget)?;
-                        if let [Some(first), Some(last)] = endpoint_values {
-                            let key = (
-                                owner.try_clone_for_decode(ctx, "nx support UV witness owner")?,
-                                surface_id
-                                    .try_clone_for_decode(ctx, "nx support UV witness surface")?,
-                            );
-                            ctx.push_btree_group(
-                                endpoint_witnesses,
-                                key,
-                                (
-                                    pcurve.try_clone_for_decode(
-                                        ctx,
-                                        "nx support UV witness pcurve",
-                                    )?,
-                                    parameter_range,
-                                    [first, last],
-                                ),
-                                "nx support UV witness index",
-                                "nx support UV endpoint witnesses",
-                            )?;
-                        }
-                        if let Some(position) =
-                            procedural_curve_position(ctx, &positions, procedural_id)?
-                        {
-                            let cache_backed = ctx.contains_hash_set(
-                                &cache_backed_constructions,
-                                procedural.id.as_str(),
-                                "nx support UV cache backed lookup",
-                            )?;
-                            ctx.reserve_scoped_vec(
-                                &mut replacement_storage,
-                                &mut replacements,
-                                1,
-                                "nx support UV replacements",
-                            )?;
-                            replacements.push((
-                                position,
-                                side,
-                                pcurve,
-                                admitted_fit_tolerance,
-                                cache_backed,
-                            ));
-                        }
-                    } else {
-                        ctx.insert_btree_map(
-                            failed_attempts,
-                            attempt_key,
-                            source_pcurve
-                                .map(|pcurve| {
-                                    pcurve
-                                        .geometry
-                                        .try_clone_for_decode(ctx, "nx support UV retry pcurve")
-                                })
-                                .transpose()?,
-                            "nx support UV failed retries",
-                        )?;
+                        let Some((parameters, certified)) = solved else {
+                            return Ok(None);
+                        };
+                        all_parameters_certified &= certified;
+                        ctx.reserve_vec(&mut uv, 1, "nx support UV fitted parameters")?;
+                        uv.push(parameters);
                     }
+                    Ok(Some((uv, all_parameters_certified)))
+                })();
+                let Some((mut uv, all_parameters_certified)) = uv? else {
                     let parent_exhausted = parent_geometry_budget
                         .consume_child(&lane_geometry_budget)
                         .is_err();
@@ -1904,35 +1621,200 @@ geometry_budget,
                     refuse_geometry_work(&lane_geometry_budget)?;
                     refuse_geometry_work(parent_geometry_budget)?;
                     lane_geometry_exhausted |= child_exhausted || parent_exhausted;
+                    ctx.insert_btree_map(
+                        failed_attempts,
+                        attempt_key,
+                        source_pcurve
+                            .map(|pcurve| {
+                                pcurve
+                                    .geometry
+                                    .try_clone_for_decode(ctx, "nx support UV retry pcurve")
+                            })
+                            .transpose()?,
+                        "nx support UV failed retries",
+                    )?;
+                    continue;
+                };
+                if matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(
+                        SolvedSurfaceGeometry::Cylinder(_)
+                            | SolvedSurfaceGeometry::Cone(_)
+                            | SolvedSurfaceGeometry::Sphere(_)
+                            | SolvedSurfaceGeometry::Torus(_)
+                    )
+                ) {
+                    for index in 1..uv.len() {
+                        let turns =
+                            ((uv[index - 1].u - uv[index].u) / std::f64::consts::TAU).round();
+                        uv[index].u += turns * std::f64::consts::TAU;
+                    }
                 }
+                let mut endpoint_values = [None, None];
+                let reproduces_chart = if all_parameters_certified {
+                    true
+                } else {
+                    let mut reproduces = true;
+                    for (sample_index, (sample_uv, point)) in uv.iter().zip(points).enumerate() {
+                        let Some(actual) = decoded_surface_point_with_geometry_and_budget(
+                            &model_index,
+                            surface_id,
+                            &surface.geometry,
+                            sample_uv.u,
+                            sample_uv.v,
+                            0,
+                            geometry_budget,
+                        )?
+                        else {
+                            reproduces = false;
+                            break;
+                        };
+                        if sample_index == 0 {
+                            endpoint_values[0] = Some(actual);
+                        }
+                        if sample_index + 1 == points.len() {
+                            endpoint_values[1] = Some(actual);
+                        }
+                        if Point3::distance(actual, *point) > effective_fit_tolerance {
+                            reproduces = false;
+                            break;
+                        }
+                    }
+                    reproduces
+                };
+                let admitted_fit_tolerance =
+                    cadmpeg_ir::geometry::FitTolerance::try_new(effective_fit_tolerance).ok();
+                if let Some(admitted_fit_tolerance) =
+                    admitted_fit_tolerance.filter(|_| reproduces_chart)
+                {
+                    if all_parameters_certified {
+                        endpoint_values = [
+                            if let Some(sample_uv) = uv.first() {
+                                decoded_surface_point_with_geometry_and_budget(
+                                    &model_index,
+                                    surface_id,
+                                    &surface.geometry,
+                                    sample_uv.u,
+                                    sample_uv.v,
+                                    0,
+                                    geometry_budget,
+                                )?
+                            } else {
+                                None
+                            },
+                            if let Some(sample_uv) = uv.last() {
+                                decoded_surface_point_with_geometry_and_budget(
+                                    &model_index,
+                                    surface_id,
+                                    &surface.geometry,
+                                    sample_uv.u,
+                                    sample_uv.v,
+                                    0,
+                                    geometry_budget,
+                                )?
+                            } else {
+                                None
+                            },
+                        ];
+                    }
+                    let parameter_range = samples.parameter_range();
+                    let pcurve = linear_pcurve_geometry(ctx, parameters, &uv, geometry_budget)?;
+                    if let [Some(first), Some(last)] = endpoint_values {
+                        let key = (
+                            owner.try_clone_for_decode(ctx, "nx support UV witness owner")?,
+                            surface_id
+                                .try_clone_for_decode(ctx, "nx support UV witness surface")?,
+                        );
+                        ctx.admit_btree_entry(
+                            endpoint_witnesses,
+                            &key,
+                            "nx support UV witness index",
+                        )?;
+                        let entries = match endpoint_witnesses.entry(key) {
+                            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                entry.insert(Vec::new())
+                            }
+                        };
+                        ctx.reserve_vec(entries, 1, "nx support UV endpoint witnesses")?;
+                        entries.push((
+                            pcurve.try_clone_for_decode(ctx, "nx support UV witness pcurve")?,
+                            parameter_range,
+                            [first, last],
+                        ));
+                    }
+                    ctx.reserve_vec(&mut replacements, 1, "nx support UV replacements")?;
+                    replacements.push((
+                        procedural_id
+                            .try_clone_for_decode(ctx, "nx support UV replacement owner")?,
+                        side,
+                        pcurve,
+                        admitted_fit_tolerance,
+                    ));
+                } else {
+                    ctx.insert_btree_map(
+                        failed_attempts,
+                        attempt_key,
+                        source_pcurve
+                            .map(|pcurve| {
+                                pcurve
+                                    .geometry
+                                    .try_clone_for_decode(ctx, "nx support UV retry pcurve")
+                            })
+                            .transpose()?,
+                        "nx support UV failed retries",
+                    )?;
+                }
+                let parent_exhausted = parent_geometry_budget
+                    .consume_child(&lane_geometry_budget)
+                    .is_err();
+                let child_exhausted = lane_geometry_budget.exhausted();
+                refuse_geometry_work(&lane_geometry_budget)?;
+                refuse_geometry_work(parent_geometry_budget)?;
+                lane_geometry_exhausted |= child_exhausted || parent_exhausted;
             }
         }
-        for (position, side, pcurve, effective_fit_tolerance, cache_backed) in
-            ctx.admit_iter(replacements, "nx support UV replacement traversal")?
-        {
-            let Some(procedural) = ir.model.procedural_curves.get_mut(position) else {
+        let mut cache_backed_constructions = BTreeSet::<ProceduralCurveId>::new();
+        for curve in &ir.model.curves {
+            if curve.geometry.solved_cache().is_none() {
+                continue;
+            }
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                ctx.insert_btree_set(
+                    &mut cache_backed_constructions,
+                    construction
+                        .try_clone_for_decode(ctx, "nx support UV cache backed identity")?,
+                    "nx support UV cache backed constructions",
+                )?;
+            }
+        }
+        drop(model_index);
+        for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
+            let Some(procedural) = ir
+                .model
+                .procedural_curves
+                .iter_mut()
+                .find(|procedural| procedural.id == procedural_id)
+            else {
                 continue;
             };
-            let completed = procedural.edit_definition(
-                |definition| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-                    let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
-                        return Ok(false);
-                    };
-                    if pcurve_requires_completion(
-                        ctx,
-                        context.sides()[side]
-                            .pcurve
-                            .as_ref()
-                            .map(|pcurve| &pcurve.geometry),
-                    )? {
-                        context.set_unmapped_pcurve(side, Some(pcurve));
-                        Ok(true)
-                    } else {
-                        Ok(false)
-                    }
-                },
-            )?;
-            if completed && cache_backed {
+            let completed = procedural.edit_definition(|definition| {
+                let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                    return false;
+                };
+                if pcurve_requires_completion(
+                    context.sides()[side]
+                        .pcurve
+                        .as_ref()
+                        .map(|pcurve| &pcurve.geometry),
+                ) {
+                    context.set_unmapped_pcurve(side, Some(pcurve));
+                    true
+                } else {
+                    false
+                }
+            });
+            if completed && cache_backed_constructions.contains(&procedural.id) {
                 procedural.require_cache_fit_tolerance(effective_fit_tolerance)?;
             }
         }
@@ -1992,19 +1874,15 @@ pub(super) fn blend_spine_cache_fit_tolerance_with_index(
         .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance.get()))
 }
 
-/// Fit both lanes of a blend-boundary intersection. The lanes come back with
-/// the scoped reservation that holds their storage. The caller admits one
-/// sample per point and missing lane through its coupled support budget.
-fn complete_blend_boundary_support_uv_with_index_and_budget<'a, 'ctx>(
+fn complete_blend_boundary_support_uv_with_index_and_budget(
+    ctx: &DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surfaces: [&'a SurfaceId; 2],
+    surfaces: [&SurfaceId; 2],
     points: &[Point3],
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
-    geometry_budget: &GeometryWorkBudget<'ctx>,
-    blend_parameter_grids: &mut BlendParameterGridCache<'a, '_>,
-) -> Result<Option<ParameterLanes<'ctx>>, cadmpeg_core::CodecError> {
-    let ctx = geometry_budget.charges;
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::CodecError> {
     let mut selected_sides = None;
     for blend_side in 0..2 {
         let Some(CircularBlendDefinition { supports, .. }) = blend_surface_definition_with_index(
@@ -2035,7 +1913,6 @@ fn complete_blend_boundary_support_uv_with_index_and_budget<'a, 'ctx>(
         return Ok(None);
     };
     let mut lanes = [Vec::new(), Vec::new()];
-    let mut lane_storage = ctx.reserve_scoped(0, "nx coupled support UV boundary lanes")?;
     for point in points {
         let blend_seed = lanes[blend_side].last().copied().or(seeds[blend_side]);
         let support_seed = lanes[support_side].last().copied().or(seeds[support_side]);
@@ -2059,23 +1936,18 @@ fn complete_blend_boundary_support_uv_with_index_and_budget<'a, 'ctx>(
             support_seed,
             fit_tolerance,
             geometry_budget,
-            blend_parameter_grids,
         )?
         else {
             return Ok(None);
         };
+        ctx.charge_collection_items(2, "nx coupled support UV boundary lanes")?;
         for lane in &mut lanes {
-            ctx.reserve_scoped_vec(
-                &mut lane_storage,
-                lane,
-                1,
-                "nx coupled support UV boundary lanes",
-            )?;
+            ctx.reserve_capacity(lane, 1, "nx coupled support UV boundary lanes")?;
         }
         lanes[blend_side].push(blend_parameters);
         lanes[support_side].push(support_parameters);
     }
-    Ok(Some((lanes, lane_storage)))
+    Ok(Some(lanes))
 }
 
 fn complete_coupled_support_uv(
@@ -2096,165 +1968,166 @@ fn complete_coupled_support_uv(
     }
     let mut lane_geometry_exhausted = false;
     let mut replacements = Vec::new();
-    let mut replacement_storage = ctx.reserve_scoped(0, "nx coupled support UV replacements")?;
-    {
-        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
-        let (positions, _position_storage) = procedural_curve_positions(ctx, ir)?;
-        let mut blend_parameter_grids = BlendParameterGridCache::new(ctx)?;
-        for (procedural_id, samples, fit_tolerance, serialized) in
-            ctx.admit_iter(pending, "nx coupled support UV traversal")?
+    let mut blend_parameter_grids = BTreeMap::<&str, Option<Vec<(Point2, Point3)>>>::new();
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+    for (procedural_id, samples, fit_tolerance, serialized) in pending {
+        let points = &samples.points_charged(ctx)?;
+        let parameters = &samples.parameters_charged(ctx)?;
+        let Some(procedural) =
+            model_index.procedural_curves(procedural_id.as_str(), geometry_budget.charges)?
+        else {
+            continue;
+        };
+        let Some(owner) = model_index
+            .ir()
+            .model
+            .procedural_curve_owner(&procedural.id)
+        else {
+            continue;
+        };
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
+            continue;
+        };
+        let [first_state, second_state] = context.sides().each_ref().map(|side| {
+            side.pcurve
+                .as_ref()
+                .map(|pcurve| {
+                    Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::geometry::SupportPcurve::new(
+                        pcurve
+                            .geometry
+                            .try_clone_for_decode(ctx, "nx coupled support UV retry pcurve")?,
+                        pcurve.parameter_range,
+                    ))
+                })
+                .transpose()
+        });
+        let lane_state = [first_state?, second_state?];
+        if failed_attempts
+            .get(procedural_id)
+            .is_some_and(|previous| previous == &lane_state)
         {
-            let points = &samples.points_charged(ctx)?;
-            let parameters = &samples.parameters_charged(ctx)?;
-            let Some(procedural) =
-                model_index.procedural_curves(procedural_id.as_str(), geometry_budget.charges)?
-            else {
-                continue;
-            };
-            let Some(owner) = procedural_curve_owner(ctx, &owners, &procedural.id)? else {
-                continue;
-            };
-            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-            else {
-                continue;
-            };
-            // A retry is skipped while both lanes still hold the state that
-            // failed; the state is copied only when this attempt fails.
-            if ctx
-                .get_btree_map(
-                    failed_attempts,
-                    procedural_id,
-                    "nx coupled support UV retry lookup",
-                )?
-                .is_some_and(|previous| {
-                    previous
-                        .iter()
-                        .zip(context.sides())
-                        .all(|(previous, side)| previous.as_ref() == side.pcurve.as_ref())
+            continue;
+        }
+        let missing = context.sides().each_ref().map(|side| {
+            pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
+        });
+        let [Some(first_surface), Some(second_surface)] =
+            context.sides().each_ref().map(|side| side.surface.as_ref())
+        else {
+            continue;
+        };
+        let surfaces = [first_surface, second_surface];
+        let both_lanes_missing = missing == [true, true];
+        let mut has_procedural_support = false;
+        for surface in &surfaces {
+            if model_index
+                .surfaces(surface.as_str(), geometry_budget.charges)?
+                .is_some_and(|surface| {
+                    matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
                 })
             {
-                continue;
+                has_procedural_support = true;
+                break;
             }
-            let missing = [
-                pcurve_requires_completion(
-                    ctx,
-                    context.sides()[0]
+        }
+        let mut seeded_procedural_support = false;
+        for side in 0..2 {
+            if missing[side]
+                && pcurve_control_point_seed(
+                    context.sides()[side]
                         .pcurve
                         .as_ref()
                         .map(|pcurve| &pcurve.geometry),
-                )?,
-                pcurve_requires_completion(
-                    ctx,
-                    context.sides()[1]
-                        .pcurve
-                        .as_ref()
-                        .map(|pcurve| &pcurve.geometry),
-                )?,
-            ];
-            let [Some(first_surface), Some(second_surface)] =
-                context.sides().each_ref().map(|side| side.surface.as_ref())
-            else {
-                continue;
-            };
-            let surfaces = [first_surface, second_surface];
-            let both_lanes_missing = missing == [true, true];
-            let mut has_procedural_support = false;
-            for surface in &surfaces {
-                if model_index
-                    .surfaces(surface.as_str(), geometry_budget.charges)?
+                    0,
+                )
+                .is_some()
+                && model_index
+                    .surfaces(surfaces[side].as_str(), geometry_budget.charges)?
                     .is_some_and(|surface| {
                         matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
                     })
-                {
-                    has_procedural_support = true;
-                    break;
-                }
-            }
-            let mut seeded_procedural_support = false;
-            for side in 0..2 {
-                if missing[side]
-                    && pcurve_control_point_seed(
-                        context.sides()[side]
-                            .pcurve
-                            .as_ref()
-                            .map(|pcurve| &pcurve.geometry),
-                        0,
-                    )
-                    .is_some()
-                    && model_index
-                        .surfaces(surfaces[side].as_str(), geometry_budget.charges)?
-                        .is_some_and(|surface| {
-                            matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
-                        })
-                {
-                    seeded_procedural_support = true;
-                    break;
-                }
-            }
-            let mut sourced_procedural_support = false;
-            for side in 0..2 {
-                if missing[side]
-                    && !missing[1 - side]
-                    && model_index
-                        .surfaces(surfaces[side].as_str(), geometry_budget.charges)?
-                        .is_some_and(|surface| {
-                            matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
-                        })
-                {
-                    sourced_procedural_support = true;
-                    break;
-                }
-            }
-            if !(seeded_procedural_support
-                || sourced_procedural_support
-                || (both_lanes_missing && has_procedural_support))
             {
-                continue;
-            }
-            let missing_lanes = missing.iter().filter(|missing| **missing).count();
-            let sample_work = points.len().checked_mul(missing_lanes).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "nx coupled support UV samples",
-                    u64::MAX,
-                    cadmpeg_core::decode::u64_from_index(points.len()),
-                )
-            })?;
-            if !coupled_support_budget.charge_by(work_units(sample_work)) {
-                if let Some(limit) = ctx.resource_refusal() {
-                    return Err(limit.into());
-                }
+                seeded_procedural_support = true;
                 break;
             }
-            let mut seeds = [None; 2];
-            for (side, seed) in seeds.iter_mut().enumerate() {
-                let support = &context.sides()[side];
-                *seed = pcurve_control_point_seed(
-                    support.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
-                    0,
-                );
-                if seed.is_none() {
-                    if let Some(surface) =
-                        model_index.surfaces(surfaces[side].as_str(), geometry_budget.charges)?
-                    {
-                        *seed = serialized_support_uv_seed_for_side(
-                            ctx,
-                            &surface.geometry,
-                            serialized,
-                            side,
-                        )?;
-                    }
+        }
+        let mut sourced_procedural_support = false;
+        for side in 0..2 {
+            if missing[side]
+                && context.sides()[1 - side]
+                    .pcurve
+                    .as_ref()
+                    .is_some_and(|pcurve| !pcurve_requires_completion(Some(&pcurve.geometry)))
+                && model_index
+                    .surfaces(surfaces[side].as_str(), geometry_budget.charges)?
+                    .is_some_and(|surface| {
+                        matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
+                    })
+            {
+                sourced_procedural_support = true;
+                break;
+            }
+        }
+        if !(seeded_procedural_support
+            || sourced_procedural_support
+            || (both_lanes_missing && has_procedural_support))
+        {
+            continue;
+        }
+        let missing_lanes = missing.iter().filter(|missing| **missing).count();
+        let sample_work = points.len().checked_mul(missing_lanes).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "nx coupled support UV samples",
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(points.len()),
+            )
+        })?;
+        if !coupled_support_budget.charge_by(work_units(sample_work)) {
+            if let Some(limit) = ctx.resource_refusal() {
+                return Err(limit.into());
+            }
+            break;
+        }
+        let mut seeds = [None; 2];
+        for (side, seed) in seeds.iter_mut().enumerate() {
+            let support = &context.sides()[side];
+            *seed = pcurve_control_point_seed(
+                support.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
+                0,
+            );
+            if seed.is_none() {
+                if let Some(surface) =
+                    model_index.surfaces(surfaces[side].as_str(), geometry_budget.charges)?
+                {
+                    *seed = serialized_support_uv_seed_for_side(
+                        ctx,
+                        &surface.geometry,
+                        serialized,
+                        side,
+                    )?;
                 }
             }
-            let parent_geometry_budget = geometry_budget;
-            let lane_geometry_budget =
-                parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
-                    ctx,
-                    points.len(),
-                    parent_geometry_budget.remaining(),
-                )?);
-            let geometry_budget = &lane_geometry_budget;
-            let mut lanes = complete_blend_boundary_support_uv_with_index_and_budget(
+        }
+        let parent_geometry_budget = geometry_budget;
+        let lane_geometry_budget =
+            parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
+                ctx,
+                points.len(),
+                parent_geometry_budget.remaining(),
+            )?);
+        let geometry_budget = &lane_geometry_budget;
+        let mut lanes = complete_blend_boundary_support_uv_with_index_and_budget(
+            ctx,
+            &model_index,
+            surfaces,
+            points,
+            *fit_tolerance,
+            seeds,
+            geometry_budget,
+        )?;
+        if lanes.is_none() {
+            lanes = continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
                 &model_index,
                 surfaces,
                 points,
@@ -2263,127 +2136,14 @@ fn complete_coupled_support_uv(
                 geometry_budget,
                 &mut blend_parameter_grids,
             )?;
-            if lanes.is_none() {
-                lanes = continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
-                &model_index,
-                surfaces,
-                points,
-                *fit_tolerance,
-                seeds,
-                geometry_budget,
-                &mut blend_parameter_grids,
+        }
+        let Some(lanes) = lanes else {
+            ctx.insert_btree_map(
+                failed_attempts,
+                procedural_id.try_clone_for_decode(ctx, "nx coupled support UV retry identity")?,
+                lane_state,
+                "nx coupled support UV failed retries",
             )?;
-            }
-            let Some((lanes, _lane_storage)) = lanes else {
-                let mut lane_state = [None, None];
-                for (state, side) in lane_state.iter_mut().zip(context.sides()) {
-                    *state = side
-                        .pcurve
-                        .as_ref()
-                        .map(|pcurve| {
-                            Ok::<_, cadmpeg_core::CodecError>(
-                                cadmpeg_ir::geometry::SupportPcurve::new(
-                                    pcurve.geometry.try_clone_for_decode(
-                                        ctx,
-                                        "nx coupled support UV retry pcurve",
-                                    )?,
-                                    pcurve.parameter_range,
-                                ),
-                            )
-                        })
-                        .transpose()?;
-                }
-                ctx.insert_btree_map(
-                    failed_attempts,
-                    procedural_id
-                        .try_clone_for_decode(ctx, "nx coupled support UV retry identity")?,
-                    lane_state,
-                    "nx coupled support UV failed retries",
-                )?;
-                let parent_exhausted = parent_geometry_budget
-                    .consume_child(&lane_geometry_budget)
-                    .is_err();
-                let child_exhausted = lane_geometry_budget.exhausted();
-                refuse_geometry_work(&lane_geometry_budget)?;
-                refuse_geometry_work(parent_geometry_budget)?;
-                lane_geometry_exhausted |= child_exhausted || parent_exhausted;
-                continue;
-            };
-            for side in 0..2 {
-                if missing[side] {
-                    let endpoint_values = if let Some(surface) =
-                        model_index.surfaces(surfaces[side].as_str(), geometry_budget.charges)?
-                    {
-                        let first = if let Some(parameters) = lanes[side].first() {
-                            decoded_surface_point_with_geometry_and_budget(
-                                &model_index,
-                                surfaces[side],
-                                &surface.geometry,
-                                parameters.u,
-                                parameters.v,
-                                0,
-                                geometry_budget,
-                            )?
-                        } else {
-                            None
-                        };
-                        let last = if let Some(parameters) = lanes[side].last() {
-                            decoded_surface_point_with_geometry_and_budget(
-                                &model_index,
-                                surfaces[side],
-                                &surface.geometry,
-                                parameters.u,
-                                parameters.v,
-                                0,
-                                geometry_budget,
-                            )?
-                        } else {
-                            None
-                        };
-                        Some([first, last])
-                    } else {
-                        None
-                    };
-                    let parameter_range = samples.parameter_range();
-                    let pcurve =
-                        linear_pcurve_geometry(ctx, parameters, &lanes[side], geometry_budget)?;
-                    if let Some([Some(first), Some(last)]) = endpoint_values {
-                        let key = (
-                            owner
-                                .try_clone_for_decode(ctx, "nx coupled support UV witness owner")?,
-                            surfaces[side].try_clone_for_decode(
-                                ctx,
-                                "nx coupled support UV witness surface",
-                            )?,
-                        );
-                        ctx.push_btree_group(
-                            endpoint_witnesses,
-                            key,
-                            (
-                                pcurve.try_clone_for_decode(
-                                    ctx,
-                                    "nx coupled support UV witness pcurve",
-                                )?,
-                                parameter_range,
-                                [first, last],
-                            ),
-                            "nx coupled support UV witness index",
-                            "nx coupled support UV endpoint witnesses",
-                        )?;
-                    }
-                    if let Some(position) =
-                        procedural_curve_position(ctx, &positions, procedural_id)?
-                    {
-                        ctx.reserve_scoped_vec(
-                            &mut replacement_storage,
-                            &mut replacements,
-                            1,
-                            "nx coupled support UV replacements",
-                        )?;
-                        replacements.push((position, side, pcurve));
-                    }
-                }
-            }
             let parent_exhausted = parent_geometry_budget
                 .consume_child(&lane_geometry_budget)
                 .is_err();
@@ -2391,26 +2151,107 @@ fn complete_coupled_support_uv(
             refuse_geometry_work(&lane_geometry_budget)?;
             refuse_geometry_work(parent_geometry_budget)?;
             lane_geometry_exhausted |= child_exhausted || parent_exhausted;
+            continue;
+        };
+        for side in 0..2 {
+            if missing[side] {
+                let endpoint_values = if let Some(surface) =
+                    model_index.surfaces(surfaces[side].as_str(), geometry_budget.charges)?
+                {
+                    let first = if let Some(parameters) = lanes[side].first() {
+                        decoded_surface_point_with_geometry_and_budget(
+                            &model_index,
+                            surfaces[side],
+                            &surface.geometry,
+                            parameters.u,
+                            parameters.v,
+                            0,
+                            geometry_budget,
+                        )?
+                    } else {
+                        None
+                    };
+                    let last = if let Some(parameters) = lanes[side].last() {
+                        decoded_surface_point_with_geometry_and_budget(
+                            &model_index,
+                            surfaces[side],
+                            &surface.geometry,
+                            parameters.u,
+                            parameters.v,
+                            0,
+                            geometry_budget,
+                        )?
+                    } else {
+                        None
+                    };
+                    Some([first, last])
+                } else {
+                    None
+                };
+                let parameter_range = samples.parameter_range();
+                let pcurve =
+                    linear_pcurve_geometry(ctx, parameters, &lanes[side], geometry_budget)?;
+                if let Some([Some(first), Some(last)]) = endpoint_values {
+                    let key = (
+                        owner.try_clone_for_decode(ctx, "nx coupled support UV witness owner")?,
+                        surfaces[side]
+                            .try_clone_for_decode(ctx, "nx coupled support UV witness surface")?,
+                    );
+                    ctx.admit_btree_entry(
+                        endpoint_witnesses,
+                        &key,
+                        "nx coupled support UV witness index",
+                    )?;
+                    let entries = match endpoint_witnesses.entry(key) {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(Vec::new())
+                        }
+                    };
+                    ctx.reserve_vec(entries, 1, "nx coupled support UV endpoint witnesses")?;
+                    entries.push((
+                        pcurve.try_clone_for_decode(ctx, "nx coupled support UV witness pcurve")?,
+                        parameter_range,
+                        [first, last],
+                    ));
+                }
+                ctx.reserve_vec(&mut replacements, 1, "nx coupled support UV replacements")?;
+                replacements.push((
+                    procedural_id
+                        .try_clone_for_decode(ctx, "nx coupled support UV replacement owner")?,
+                    side,
+                    pcurve,
+                ));
+            }
         }
+        let parent_exhausted = parent_geometry_budget
+            .consume_child(&lane_geometry_budget)
+            .is_err();
+        let child_exhausted = lane_geometry_budget.exhausted();
+        refuse_geometry_work(&lane_geometry_budget)?;
+        refuse_geometry_work(parent_geometry_budget)?;
+        lane_geometry_exhausted |= child_exhausted || parent_exhausted;
     }
-    for (position, side, pcurve) in
-        ctx.admit_iter(replacements, "nx coupled support UV replacement traversal")?
-    {
-        let Some(context) = ir
+    drop(model_index);
+    for (procedural_id, side, pcurve) in replacements {
+        let Some(procedural) = ir
             .model
             .procedural_curves
-            .get_mut(position)
-            .and_then(|procedural| procedural.intersection_context_mut())
+            .iter_mut()
+            .find(|procedural| procedural.id == procedural_id)
         else {
             continue;
         };
+        let Some(context) = procedural.intersection_context_mut() else {
+            continue;
+        };
+
         if pcurve_requires_completion(
-            ctx,
             context.sides()[side]
                 .pcurve
                 .as_ref()
                 .map(|pcurve| &pcurve.geometry),
-        )? {
+        ) {
             context.set_unmapped_pcurve(side, Some(pcurve));
         }
     }
@@ -2459,37 +2300,17 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut replacement_storage = ctx.reserve_scoped(0, "nx equivalent support UV replacements")?;
     let replacements = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
         let mut replacements = Vec::new();
-        for (procedural_index, procedural) in ctx
-            .admit_iter(
-                &ir.model.procedural_curves,
-                "nx equivalent support UV traversal",
-            )?
-            .enumerate()
-        {
+        for (procedural_index, procedural) in ir.model.procedural_curves.iter().enumerate() {
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 continue;
             };
-            let missing = [
-                pcurve_requires_completion(
-                    ctx,
-                    context.sides()[0]
-                        .pcurve
-                        .as_ref()
-                        .map(|pcurve| &pcurve.geometry),
-                )?,
-                pcurve_requires_completion(
-                    ctx,
-                    context.sides()[1]
-                        .pcurve
-                        .as_ref()
-                        .map(|pcurve| &pcurve.geometry),
-                )?,
-            ];
+            let missing = context.sides().each_ref().map(|side| {
+                pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
+            });
             let target = match missing {
                 [true, false] => 0,
                 [false, true] => 1,
@@ -2509,8 +2330,7 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
                 source_surface,
                 ctx,
             )? {
-                ctx.reserve_scoped_vec(
-                    &mut replacement_storage,
+                ctx.reserve_vec(
                     &mut replacements,
                     1,
                     "nx equivalent support UV replacements",
@@ -2520,21 +2340,18 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
         }
         replacements
     };
-    for &(procedural_index, side, source) in ctx.admit_iter(
-        &replacements,
-        "nx equivalent support UV replacement traversal",
-    )? {
+    for (procedural_index, side, source) in replacements {
         let Some(context) = ir.model.procedural_curves[procedural_index].intersection_context_mut()
         else {
             continue;
         };
+
         if pcurve_requires_completion(
-            ctx,
             context.sides()[side]
                 .pcurve
                 .as_ref()
                 .map(|pcurve| &pcurve.geometry),
-        )? {
+        ) {
             context.try_copy_pcurve_for_decode(ctx, source, side)?;
         }
     }
@@ -2575,12 +2392,7 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
         second: &'a SurfaceId,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Step<'a>, cadmpeg_core::decode::ResourceLimit> {
-        if same_text(
-            ctx,
-            first.as_str(),
-            second.as_str(),
-            "NX equivalent surface identity comparison",
-        )? {
+        if first == second {
             return Ok(Step::Equal);
         }
         let (Some(first_geometry), Some(second_geometry)) = (
@@ -2650,17 +2462,7 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
                 Step::Follow(first, second) => (first, second),
             };
         }
-        if same_text(
-            ctx,
-            slow.0.as_str(),
-            fast.0.as_str(),
-            "NX equivalent surface cycle comparison",
-        )? && same_text(
-            ctx,
-            slow.1.as_str(),
-            fast.1.as_str(),
-            "NX equivalent surface cycle comparison",
-        )? {
+        if slow == fast {
             return Ok(false);
         }
     }
@@ -2676,16 +2478,9 @@ pub(super) struct IntersectionCompletionSource<'a> {
     pub(super) procedural_start: usize,
 }
 
-/// Whether `id` lies in the stream namespace `prefix`: the prefix followed by
-/// the namespace separator.
-fn stream_owns_id(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-    prefix: &str,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(ctx
-        .strip_prefix(id, prefix, "nx completion stream ownership")?
-        .is_some_and(|suffix| suffix.starts_with(':')))
+fn stream_owns_id(id: &str, prefix: &str) -> bool {
+    id.strip_prefix(prefix)
+        .is_some_and(|suffix| suffix.starts_with(':'))
 }
 
 pub(super) struct IntersectionStream<'inputs> {
@@ -2754,25 +2549,6 @@ pub(super) fn attach_completed_intersection_pcurves_for_model_with_budget(
     Ok(())
 }
 
-/// The first source, in order, that owns a record of `id` at `position`.
-/// Each visited source is charged before its ownership test.
-fn owning_source(
-    ctx: &DecodeContext<'_>,
-    sources: &[IntersectionCompletionSource<'_>],
-    prefixes: &[String],
-    id: &str,
-    position: usize,
-    start: impl Fn(&IntersectionCompletionSource<'_>) -> usize,
-) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    for (index, (source, prefix)) in sources.iter().zip(prefixes).enumerate() {
-        ctx.charge_work(1, "nx completion source search")?;
-        if position >= start(source) && stream_owns_id(ctx, id, prefix)? {
-            return Ok(Some(index));
-        }
-    }
-    Ok(None)
-}
-
 fn attach_completed_intersection_pcurves_for_sources_with_budget(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -2781,226 +2557,170 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     validated_endpoint_witnesses: &EndpointWitnesses,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    // Every table and list below is dropped before return.
-    let mut storage = ctx.reserve_scoped(0, "nx completion tables")?;
-    let mut source_prefixes = Vec::new();
-    ctx.reserve_scoped_vec(
-        &mut storage,
-        &mut source_prefixes,
-        sources.len(),
-        "nx completion source prefixes",
-    )?;
-    for source in ctx.admit_iter(sources, "nx completion source prefixes")? {
-        let prefix = storage.with_storage(|| source.scope.prefix_charged(ctx))?;
-        source_prefixes.push(prefix);
+    let mut source_prefixes = ctx.collection_vec(sources.len(), "nx completion source prefixes")?;
+    for source in sources {
+        source_prefixes.push(source.scope.prefix_charged(ctx)?);
     }
-    let replacements = {
-        let (loop_faces, _loop_storage) = ctx.unique_index(
-            ir.model
-                .loops
-                .iter()
-                .map(|loop_| (loop_.id.as_str(), &loop_.face)),
+    let mut loop_faces = BTreeMap::new();
+    for loop_ in &ir.model.loops {
+        ctx.insert_btree_map(
+            &mut loop_faces,
+            &loop_.id,
+            &loop_.face,
             "nx completion loop-face index",
         )?;
-        let (face_surfaces, _face_storage) = ctx.unique_index(
-            ir.model
-                .faces
-                .iter()
-                .map(|face| (face.id.as_str(), &face.surface)),
+    }
+    let mut face_surfaces = BTreeMap::new();
+    for face in &ir.model.faces {
+        ctx.insert_btree_map(
+            &mut face_surfaces,
+            &face.id,
+            &face.surface,
             "nx completion face-surface index",
         )?;
-        let (edges_by_id, _edge_storage) = ctx.unique_index(
-            ir.model.edges.iter().map(|edge| (edge.id.as_str(), edge)),
-            "nx completion edge index",
-        )?;
-        let mut coedge_candidates = Vec::new();
-        for (index, coedge) in ctx
-            .admit_iter(&ir.model.coedges, "nx completion coedge traversal")?
-            .enumerate()
-        {
-            if !coedge.pcurves.is_empty() {
-                continue;
-            }
-            let Some(source_index) = owning_source(
-                ctx,
-                sources,
-                &source_prefixes,
-                coedge.id.as_str(),
-                index,
-                |source| source.coedge_start,
-            )?
-            else {
-                continue;
-            };
-            let Some(face) = ctx
-                .get_hash_map(
-                    &loop_faces,
-                    coedge.owner_loop.as_str(),
-                    "nx completion loop-face lookup",
-                )?
-                .copied()
-                .flatten()
-            else {
-                continue;
-            };
-            let Some(surface) = ctx
-                .get_hash_map(
-                    &face_surfaces,
-                    face.as_str(),
-                    "nx completion face-surface lookup",
-                )?
-                .copied()
-                .flatten()
-            else {
-                continue;
-            };
-            let Some(edge) = ctx
-                .get_hash_map(
-                    &edges_by_id,
-                    coedge.edge.as_str(),
-                    "nx completion edge lookup",
-                )?
-                .copied()
-                .flatten()
-            else {
-                continue;
-            };
-            let Some(curve) = edge.curve() else {
-                continue;
-            };
-            ctx.reserve_scoped_vec(
-                &mut storage,
-                &mut coedge_candidates,
-                1,
-                "nx completion coedge candidates",
-            )?;
-            coedge_candidates.push((
-                index,
-                &coedge.edge,
+    }
+    let mut edge_curves = BTreeMap::new();
+    let mut edge_tolerances = BTreeMap::new();
+    for edge in &ir.model.edges {
+        if let Some(curve) = edge.curve() {
+            ctx.insert_btree_map(
+                &mut edge_curves,
+                &edge.id,
                 curve,
-                surface,
-                edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
-                source_index,
-            ));
+                "nx completion edge-curve index",
+            )?;
         }
-        if coedge_candidates.is_empty() {
-            return Ok(());
+        if let Some(tolerance) = edge.tolerance {
+            ctx.insert_btree_map(
+                &mut edge_tolerances,
+                &edge.id,
+                tolerance.get(),
+                "nx completion edge-tolerance index",
+            )?;
         }
-        let mut required_keys = BTreeSet::new();
-        for &(_, _, curve, surface, _, _) in
-            ctx.admit_iter(&coedge_candidates, "nx completion required chart keys")?
+    }
+    let mut coedge_candidates = Vec::new();
+    for (index, coedge) in ir.model.coedges.iter().enumerate() {
+        if !coedge.pcurves.is_empty() {
+            continue;
+        }
+        let Some(source_index) =
+            sources
+                .iter()
+                .zip(&source_prefixes)
+                .position(|(source, prefix)| {
+                    index >= source.coedge_start && stream_owns_id(coedge.id.as_str(), prefix)
+                })
+        else {
+            continue;
+        };
+        let Some(surface) = loop_faces
+            .get(&coedge.owner_loop)
+            .and_then(|face| face_surfaces.get(*face))
+        else {
+            continue;
+        };
+        let Some(curve) = edge_curves.get(&coedge.edge) else {
+            continue;
+        };
+        ctx.reserve_vec(&mut coedge_candidates, 1, "nx completion coedge candidates")?;
+        coedge_candidates.push((
+            coedge
+                .id
+                .try_clone_for_decode(ctx, "nx completion coedge identity")?,
+            coedge
+                .edge
+                .try_clone_for_decode(ctx, "nx completion edge identity")?,
+            curve.try_clone_for_decode(ctx, "nx completion curve identity")?,
+            surface.try_clone_for_decode(ctx, "nx completion surface identity")?,
+            edge_tolerances.get(&coedge.edge).copied(),
+            source_index,
+        ));
+    }
+    if coedge_candidates.is_empty() {
+        return Ok(());
+    }
+    let mut required_keys = BTreeSet::new();
+    for (_, _, curve, surface, _, _) in &coedge_candidates {
+        ctx.insert_btree_set(
+            &mut required_keys,
+            (
+                curve.try_clone_for_decode(ctx, "nx completion required curve")?,
+                surface.try_clone_for_decode(ctx, "nx completion required surface")?,
+            ),
+            "nx completion required chart keys",
+        )?;
+    }
+    let mut candidates =
+        BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], Option<f64>)>>::new();
+    let procedural_start = sources
+        .iter()
+        .map(|source| source.procedural_start)
+        .min()
+        .unwrap_or(0);
+    let multiple_sources = sources.len() > 1;
+    for (index, procedural) in ir
+        .model
+        .procedural_curves
+        .iter()
+        .enumerate()
+        .skip(procedural_start)
+    {
+        if multiple_sources
+            && !sources
+                .iter()
+                .zip(&source_prefixes)
+                .any(|(source, prefix)| {
+                    index >= source.procedural_start
+                        && stream_owns_id(procedural.id.as_str(), prefix)
+                })
         {
-            storage.with_storage(|| {
-                ctx.insert_btree_set(
-                    &mut required_keys,
-                    (curve, surface),
-                    "nx completion required chart keys",
-                )
-            })?;
+            continue;
         }
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
-        let mut candidates =
-            BTreeMap::<(&CurveId, &SurfaceId), Vec<(&PcurveGeometry, [f64; 2], Option<f64>)>>::new(
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
+            continue;
+        };
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
+        for side in context.sides() {
+            let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
+                continue;
+            };
+            let key = (
+                owner.try_clone_for_decode(ctx, "nx completion candidate owner")?,
+                surface.try_clone_for_decode(ctx, "nx completion candidate surface")?,
             );
-        let procedural_start = ctx
-            .min_by_key(
-                sources,
-                |source| Ok(source.procedural_start),
-                |first, second| Ok(first.cmp(second)),
-                "nx completion procedural start",
-            )?
-            .map_or(0, |source| source.procedural_start);
-        let multiple_sources = sources.len() > 1;
-        let procedurals = ir
-            .model
-            .procedural_curves
-            .get(procedural_start..)
-            .unwrap_or_default();
-        for (offset, procedural) in ctx
-            .admit_iter(procedurals, "nx completion procedural traversal")?
-            .enumerate()
-        {
-            let index = procedural_start + offset;
-            if multiple_sources
-                && owning_source(
-                    ctx,
-                    sources,
-                    &source_prefixes,
-                    procedural.id.as_str(),
-                    index,
-                    |source| source.procedural_start,
-                )?
-                .is_none()
-            {
+            if !required_keys.contains(&key) {
                 continue;
             }
-            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-            else {
-                continue;
+            ctx.admit_btree_entry(&candidates, &key, "nx completion candidate keys")?;
+            let values = match candidates.entry(key) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
             };
-            let Some(owner) = procedural_curve_owner(ctx, &owners, &procedural.id)? else {
-                continue;
-            };
-            for side in context.sides() {
-                let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
-                    continue;
-                };
-                let key = (owner, surface);
-                if !ctx.contains_btree_set(&required_keys, &key, "nx completion chart key test")? {
-                    continue;
-                }
-                let candidate = (
-                    &pcurve.geometry,
-                    context.parameter_range().endpoints(),
-                    procedural
-                        .cache_fit_tolerance()
-                        .map(cadmpeg_ir::geometry::FitTolerance::get),
-                );
-                match ctx.get_mut_btree_map(
-                    &mut candidates,
-                    &key,
-                    "nx completion candidate keys",
-                )? {
-                    Some(values) => {
-                        // Equal candidates are recorded once; the search stops
-                        // at the first equal value.
-                        let mut recorded = false;
-                        for value in values.iter() {
-                            ctx.charge_work(1, "nx completion candidate search")?;
-                            if *value == candidate {
-                                recorded = true;
-                                break;
-                            }
-                        }
-                        if !recorded {
-                            storage.with_storage(|| {
-                                ctx.push_vec(values, candidate, "nx completion candidate values")
-                            })?;
-                        }
-                    }
-                    None => storage.with_storage(|| {
-                        ctx.push_btree_group(
-                            &mut candidates,
-                            key,
-                            candidate,
-                            "nx completion candidate keys",
-                            "nx completion candidate values",
-                        )
-                    })?,
-                }
+            let candidate = (
+                pcurve
+                    .geometry
+                    .try_clone_for_decode(ctx, "nx completion candidate pcurve")?,
+                context.parameter_range().endpoints(),
+                procedural
+                    .cache_fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
+            );
+            if !values.contains(&candidate) {
+                ctx.reserve_vec(values, 1, "nx completion candidate values")?;
+                values.push(candidate);
             }
         }
+    }
 
+    let replacements = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
         let mut edge_endpoint_contracts = BTreeMap::new();
-        for &(_, edge_id, ..) in
-            ctx.admit_iter(&coedge_candidates, "nx completion edge endpoint contracts")?
-        {
-            if ctx.contains_key_btree_map(
-                &edge_endpoint_contracts,
-                edge_id.as_str(),
-                "nx completion edge endpoint contract lookup",
-            )? {
+        for (_, edge_id, ..) in &coedge_candidates {
+            if edge_endpoint_contracts.contains_key(edge_id) {
                 continue;
             }
             if let Some(contract) = pcurve_edge_endpoint_contract_with_index(
@@ -3008,27 +2728,24 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 edge_id,
                 geometry_budget.charges,
             )? {
-                storage.with_storage(|| {
-                    ctx.insert_btree_map(
-                        &mut edge_endpoint_contracts,
-                        edge_id.as_str(),
-                        contract,
-                        "nx completion edge endpoint contracts",
-                    )
-                })?;
+                ctx.insert_btree_map(
+                    &mut edge_endpoint_contracts,
+                    edge_id.try_clone_for_decode(ctx, "nx completion contract edge")?,
+                    contract,
+                    "nx completion edge endpoint contracts",
+                )?;
             }
         }
         // A chart carrier's serialized endpoint witnesses are a necessary
         // edge-incidence condition. Reuse a prior sample-wise proof; evaluate
         // the face surface only for keys without that proof.
         let mut endpoint_admissible_keys = BTreeSet::new();
-        for &(_, edge_id, curve, surface, edge_tolerance, _) in
-            ctx.admit_iter(&coedge_candidates, "nx completion admissible chart keys")?
-        {
-            let key = (curve, surface);
-            let Some(values) =
-                ctx.get_btree_map(&candidates, &key, "nx completion candidate lookup")?
-            else {
+        for (_, edge_id, curve, surface, edge_tolerance, _) in &coedge_candidates {
+            let key = (
+                curve.try_clone_for_decode(ctx, "nx completion admissible curve")?,
+                surface.try_clone_for_decode(ctx, "nx completion admissible surface")?,
+            );
+            let Some(values) = candidates.get(&key) else {
                 continue;
             };
             let [candidate] = values.as_slice() else {
@@ -3039,15 +2756,12 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 curve,
                 geometry_budget.charges,
             )? {
-                let Some(&(edge_endpoints, edge_allowance)) = ctx.get_btree_map(
-                    &edge_endpoint_contracts,
-                    edge_id.as_str(),
-                    "nx completion edge endpoint contract lookup",
-                )?
+                let Some((edge_endpoints, edge_allowance)) =
+                    edge_endpoint_contracts.get(edge_id).copied()
                 else {
                     continue;
                 };
-                let fit_tolerance = candidate.2.or(edge_tolerance);
+                let fit_tolerance = candidate.2.or(*edge_tolerance);
                 pcurve_matches_edge_endpoint_contract(
                     witness,
                     edge_endpoints,
@@ -3058,94 +2772,82 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 true
             };
             if admissible {
-                storage.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut endpoint_admissible_keys,
-                        key,
-                        "nx completion admissible chart keys",
-                    )
-                })?;
+                ctx.insert_btree_set(
+                    &mut endpoint_admissible_keys,
+                    key,
+                    "nx completion admissible chart keys",
+                )?;
             }
         }
         let mut witnessed_keys = BTreeSet::new();
         let mut candidate_endpoints = BTreeMap::new();
-        for (key, values) in ctx.admit_iter(&candidates, "nx completion candidate endpoints")? {
-            if !ctx.contains_btree_set(
-                &endpoint_admissible_keys,
-                key,
-                "nx completion admissible chart key test",
-            )? {
+        for (key, values) in &candidates {
+            if !endpoint_admissible_keys.contains(key) {
                 continue;
             }
             let [candidate] = values.as_slice() else {
                 continue;
             };
             let witness = endpoint_witness_for_candidate(
-                ctx,
                 validated_endpoint_witnesses,
-                *key,
-                candidate.0,
+                key,
+                &candidate.0,
                 candidate.1,
-            )?;
+            );
             if witness.is_some() {
-                storage.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut witnessed_keys,
-                        *key,
-                        "nx completion witnessed chart keys",
-                    )
-                })?;
+                ctx.insert_btree_set(
+                    &mut witnessed_keys,
+                    (
+                        key.0
+                            .try_clone_for_decode(ctx, "nx completion witnessed curve")?,
+                        key.1
+                            .try_clone_for_decode(ctx, "nx completion witnessed surface")?,
+                    ),
+                    "nx completion witnessed chart keys",
+                )?;
             }
             let endpoints = if witness.is_some() {
                 witness
             } else {
                 pcurve_surface_endpoints_with_index_and_budget(
                     &model_index,
-                    key.1,
-                    candidate.0,
+                    &key.1,
+                    &candidate.0,
                     None,
                     geometry_budget,
                 )?
             };
-            storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut candidate_endpoints,
-                    *key,
-                    endpoints,
-                    "nx completion candidate endpoints",
-                )
-            })?;
+            ctx.insert_btree_map(
+                &mut candidate_endpoints,
+                (
+                    key.0
+                        .try_clone_for_decode(ctx, "nx completion endpoint curve")?,
+                    key.1
+                        .try_clone_for_decode(ctx, "nx completion endpoint surface")?,
+                ),
+                endpoints,
+                "nx completion candidate endpoints",
+            )?;
         }
         let mut replacements = Vec::new();
-        for &(coedge_index, edge_id, curve, surface, edge_tolerance, source_index) in
-            ctx.admit_iter(&coedge_candidates, "nx completion replacements")?
+        for (coedge_id, edge_id, curve, surface, edge_tolerance, source_index) in coedge_candidates
         {
             let key = (curve, surface);
-            let Some(candidate_values) =
-                ctx.get_btree_map(&candidates, &key, "nx completion candidate lookup")?
-            else {
+            let Some(candidate_values) = candidates.get(&key) else {
                 continue;
             };
             let [candidate] = candidate_values.as_slice() else {
                 continue;
             };
-            let Some(&(edge_endpoints, edge_allowance)) = ctx.get_btree_map(
-                &edge_endpoint_contracts,
-                edge_id.as_str(),
-                "nx completion edge endpoint contract lookup",
-            )?
+            let Some((edge_endpoints, edge_allowance)) =
+                edge_endpoint_contracts.get(&edge_id).copied()
             else {
                 continue;
             };
             let fit_tolerance = candidate.2.or(edge_tolerance);
             let matches = {
-                let Some(coincident_surface) = ctx
-                    .get_btree_map(
-                        &candidate_endpoints,
-                        &key,
-                        "nx completion candidate endpoint lookup",
-                    )?
-                    .and_then(Option::as_ref)
+                let Some(coincident_surface) =
+                    candidate_endpoints.get(&key).and_then(Option::as_ref)
                 else {
                     continue;
                 };
@@ -3157,28 +2859,19 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 )
             };
             if !matches {
-                if !ctx.remove_btree_set(
-                    &mut witnessed_keys,
-                    &key,
-                    "nx completion witnessed chart key removal",
-                )? {
+                if !witnessed_keys.remove(&key) {
                     continue;
                 }
                 // A witness from another geometry phase is a shortcut. The
                 // endpoint evaluator resolves a disagreement with that proof.
                 let fallback = pcurve_surface_endpoints_with_index_and_budget(
                     &model_index,
-                    key.1,
-                    candidate.0,
+                    &key.1,
+                    &candidate.0,
                     None,
                     geometry_budget,
                 )?;
-                let Some(slot) = ctx.get_mut_btree_map(
-                    &mut candidate_endpoints,
-                    &key,
-                    "nx completion candidate endpoint lookup",
-                )?
-                else {
+                let Some(slot) = candidate_endpoints.get_mut(&key) else {
                     continue;
                 };
                 *slot = fallback;
@@ -3207,14 +2900,9 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             let Some(metadata) = metadata else {
                 continue;
             };
-            ctx.reserve_scoped_vec(
-                &mut storage,
-                &mut replacements,
-                1,
-                "nx completion pcurve replacements",
-            )?;
+            ctx.reserve_vec(&mut replacements, 1, "nx completion pcurve replacements")?;
             replacements.push((
-                coedge_index,
+                coedge_id,
                 source_index,
                 (
                     candidate
@@ -3226,67 +2914,23 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         }
         replacements
     };
-
-    // Each replacement names its completed pcurve from its coedge's fin. A
-    // name already present, before or earlier in this batch, adds nothing.
-    let mut prepared = Vec::new();
-    {
-        let (existing_pcurves, _existing_storage) = ctx.collect_scoped_string_set(
-            0,
-            ir.model.pcurves.iter().map(|pcurve| pcurve.id.as_str()),
-            "nx completion existing pcurve identities",
+    for (coedge_id, source_index, (geometry, metadata)) in replacements {
+        let source = &sources[source_index];
+        let Some(fin_xmt) = coedge_id
+            .as_str()
+            .rsplit_once('#')
+            .and_then(|(_, value)| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let pcurve_id: PcurveId = source.scope.id_charged(
+            ctx,
+            &cadmpeg_ir::identity_component!("intersection-pcurve-completed"),
+            fin_xmt,
         )?;
-        for (coedge_index, source_index, completed) in
-            ctx.admit_iter(replacements, "nx completion replacement naming")?
-        {
-            let Some(coedge) = ir.model.coedges.get(coedge_index) else {
-                continue;
-            };
-            let source = &sources[source_index];
-            let Some((_, value)) =
-                ctx.rsplit_once(coedge.id.as_str(), "#", "nx completion coedge XMT")?
-            else {
-                continue;
-            };
-            let Ok(fin_xmt) = ctx.parse_text::<u32>(value, "nx completion coedge XMT")? else {
-                continue;
-            };
-            let pcurve_id: PcurveId = source.scope.id_charged(
-                ctx,
-                &cadmpeg_ir::identity_component!("intersection-pcurve-completed"),
-                fin_xmt,
-            )?;
-            if ctx.contains_hash_set(
-                &existing_pcurves,
-                pcurve_id.as_str(),
-                "nx completion existing pcurve lookup",
-            )? {
-                continue;
-            }
-            ctx.reserve_scoped_vec(
-                &mut storage,
-                &mut prepared,
-                1,
-                "nx completion named pcurves",
-            )?;
-            prepared.push((coedge_index, source_index, fin_xmt, pcurve_id, completed));
-        }
-    }
-    let mut named = BTreeSet::new();
-    for (coedge_index, source_index, fin_xmt, pcurve_id, (geometry, metadata)) in
-        ctx.admit_iter(prepared, "nx completed pcurve attachment")?
-    {
-        // Two coedges of one fin name the same pcurve; the first one attaches it.
-        if !storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut named,
-                pcurve_id.try_clone_for_decode(ctx, "nx completion batch pcurve identity")?,
-                "nx completion batch pcurve identities",
-            )
-        })? {
+        if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
             continue;
         }
-        let source = &sources[source_index];
         let source_offset = source
             .graph
             .get(NodeKind::Fin, fin_xmt)
@@ -3318,8 +2962,8 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         if let Some(coedge) = ir
             .model
             .coedges
-            .get_mut(coedge_index)
-            .filter(|coedge| coedge.pcurves.is_empty())
+            .iter_mut()
+            .find(|coedge| coedge.id == coedge_id && coedge.pcurves.is_empty())
         {
             ctx.reserve_vec(&mut coedge.pcurves, 1, "nx completed coedge pcurve uses")?;
             coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
@@ -3560,40 +3204,6 @@ mod tests {
                     if limit.dimension == ResourceDimension::Codec("nx adaptive geometry work")
             ));
         });
-    }
-
-    #[test]
-    fn support_uv_completion_refuses_first_wave_work_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        let ir = CadIr::empty();
-        let error = crate::test_support::resource_refusal_at(
-            &[],
-            ResourceDimension::WorkUnits,
-            "nx support UV completion wave pass",
-            |ctx| {
-                let support_budget = ctx.work_budget(10);
-                let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
-                let mut ir = ir.clone();
-                let mut endpoint_witnesses = BTreeMap::new();
-
-                complete_support_uv_with_budget_and_endpoint_witnesses(
-                    ctx,
-                    &mut ir,
-                    &[],
-                    (&support_budget, &geometry_budget),
-                    (&support_budget, &geometry_budget),
-                    &mut endpoint_witnesses,
-                )
-                .map(|_| ())
-            },
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "nx support UV completion wave pass"
-        ));
     }
 
     #[test]

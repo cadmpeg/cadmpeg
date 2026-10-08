@@ -1029,8 +1029,7 @@ pub(crate) fn decode_design_assignments(
         else {
             continue;
         };
-        let (body_map, _body_map_storage) =
-            crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
+        let body_map = crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
         for presentation in
             crate::design::decode::presentation::body_presentations(ctx, bytes, &metadata)?
         {
@@ -1125,8 +1124,7 @@ fn decode_body_appearance_overrides(
         else {
             continue;
         };
-        let (body_map, _body_map_storage) =
-            crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
+        let body_map = crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
         let mut appearances = browser_body_appearances(ctx, bytes)?;
         for presentation in
             crate::design::decode::presentation::body_presentations(ctx, bytes, &metadata)?
@@ -1540,8 +1538,7 @@ fn browser_body_appearances(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<(u64, DesignVisualToken)>, CodecError> {
-    let (nodes, _nodes_storage) =
-        crate::design::decode::body::scanned_browser_node_entities(ctx, bytes)?;
+    let nodes = crate::design::decode::body::scanned_browser_node_entities(ctx, bytes)?;
     let strings = lp_utf16_strings(ctx, bytes)?;
     let mut out = Vec::new();
     for (index, (_, marker)) in strings.iter().enumerate() {

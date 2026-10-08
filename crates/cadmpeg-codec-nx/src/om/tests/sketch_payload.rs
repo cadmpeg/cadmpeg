@@ -362,7 +362,7 @@ fn sketch_scalar_mapping_refusal(
             configure(policy);
         },
         |ctx| {
-            lane.try_map_locations(ctx, |offset, ()| Ok(Some(offset)))
+            lane.try_map_locations(ctx, |offset, ()| Some(offset))
                 .unwrap_err()
         },
     )

@@ -62,7 +62,6 @@ impl TryFrom<String> for DesignEntityId {
 }
 
 impl DesignEntityId {
-    #[cfg(test)]
     pub(crate) fn from_parts(prefix: &str, suffix: u64) -> Self {
         Self {
             text: format!("{prefix}_{suffix}"),
@@ -129,14 +128,6 @@ impl<T, O> ReferenceRun<T, O> {
     /// A run whose values each carry an encoding location.
     pub(crate) fn located(rows: Vec<Located<T, O>>) -> Self {
         Self(ReferenceRunData::Located(rows))
-    }
-
-    /// Unlocated values when this run has no encoding locations.
-    pub(crate) fn unlocated_values(&self) -> Option<&[T]> {
-        match &self.0 {
-            ReferenceRunData::Unlocated(values) => Some(values),
-            ReferenceRunData::Located(_) => None,
-        }
     }
 
     pub(crate) fn located_rows(&self) -> Option<&[Located<T, O>]> {

@@ -88,7 +88,7 @@ fn direct_sketch_point_selection_reads_owner_and_persistent_ids() {
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             parse_work_point_sketch_point_frame(&ctx, &bytes, record_index, 0),
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
                 if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                     && failure.operation == "f3d Design UTF-16 text"
         ));

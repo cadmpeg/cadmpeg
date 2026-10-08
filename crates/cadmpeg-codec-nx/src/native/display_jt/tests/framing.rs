@@ -112,11 +112,17 @@ fn compressed_jt_fixture() -> (Vec<u8>, super::super::DisplayJtSegment) {
     (data, segment)
 }
 
-fn compressed_jt_container(data: &[u8]) -> crate::container::Container<'_> {
+fn assert_compressed_jt_limit(
+    adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &'static str,
+) {
     use crate::container::{Container, DirEntry, Region};
 
-    Container {
-        data: data.into(),
+    let (data, segment) = compressed_jt_fixture();
+
+    let container = Container {
+        data: data.as_slice().into(),
         physical_size: cadmpeg_core::decode::u64_from_index(data.len()),
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
@@ -130,41 +136,7 @@ fn compressed_jt_container(data: &[u8]) -> crate::container::Container<'_> {
         fastload_table: None,
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
-    }
-}
-
-/// Walks the work cap until the named compressed-sequence operation refuses.
-fn assert_compressed_jt_work_refusal(operation: &'static str) {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let (data, segment) = compressed_jt_fixture();
-    let container = compressed_jt_container(&data);
-    let error = crate::test_support::resource_refusal_at(
-        &data,
-        ResourceDimension::WorkUnits,
-        operation,
-        |ctx| {
-            super::super::display_jt_compressed_element_sequences(
-                ctx,
-                &container,
-                std::slice::from_ref(&segment),
-            )
-        },
-    );
-    assert!(
-        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation),
-        "{error}"
-    );
-}
-
-fn assert_compressed_jt_limit(
-    adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-    dimension: cadmpeg_core::decode::ResourceDimension,
-    operation: &'static str,
-) {
-    let (data, segment) = compressed_jt_fixture();
-    let container = compressed_jt_container(&data);
+    };
     crate::test_support::with_decode_context_over(
         &data,
         |policy| {
@@ -262,23 +234,22 @@ fn jt_compressed_element_fields_refuse_before_string_allocation() {
 }
 
 #[test]
-fn jt_decoded_sequence_keeps_its_computed_tail_digest() {
-    let (_, segment) = compressed_jt_fixture();
-    let wire = super::super::DisplayJtCompressedElementSequenceWire {
-        id: "sequence".into(),
-        segment: segment.id.clone(),
-        segment_type: 7,
-        elements: Vec::new(),
-        framed_byte_len: 20,
-        tail: vec![6, 5],
-        tail_sha256: Sha256Digest::digest(&[]),
-        source_offset: 24,
+fn jt_sequence_tail_hash_refuses_before_scoped_validation_allocation() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+            framed_jt_element().len()
+                + 3
+                + 2
+                + 4 * std::mem::size_of::<super::super::ParsedJtElement<'_>>()
+                + 63,
+        );
     };
-    // Decode computes the digest from the tail it retains, so construction
-    // from that digest does not hash the tail again.
-    let sequence =
-        super::super::DisplayJtCompressedElementSequence::with_tail_digest(wire).unwrap();
-    assert_eq!(sequence.tail, [6, 5]);
+    assert_compressed_jt_limit(
+        adjust_policy,
+        ResourceDimension::MaterializedBytes,
+        "check DisplayJT sequence tail hash",
+    );
 }
 
 struct CompressedJtRetainedStages {
@@ -381,13 +352,74 @@ fn jt_compressed_sequence_tail_refuses_before_copy() {
 
 #[test]
 fn jt_compressed_element_hash_refuses_before_body_work() {
-    assert_compressed_jt_work_refusal("zlib compressed input");
-    assert_compressed_jt_work_refusal("hash DisplayJT compressed element body");
+    use cadmpeg_core::decode::ResourceDimension;
+    assert_compressed_jt_limit(
+        |policy| policy.limits.max_work_units = 2 + 8192 + 1,
+        ResourceDimension::WorkUnits,
+        "zlib compressed input",
+    );
+    let (data, _) = compressed_jt_fixture();
+    // The member finishes in one 8192-byte expansion step. The owned payload
+    // is hashed while its scoped storage remains live. One visit and both output copies are charged.
+    let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
+    let expansion_work =
+        cadmpeg_core::decode::u64_from_index(data.len() - 33) + 8192 + 1 + 2 * expanded_len;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_work_units = expansion_work + expanded_len + 2;
+    };
+    assert_compressed_jt_limit(
+        adjust_policy,
+        ResourceDimension::WorkUnits,
+        "hash DisplayJT compressed element body",
+    );
 }
 
 #[test]
 fn jt_compressed_sequence_hash_refuses_before_tail_work() {
-    assert_compressed_jt_work_refusal("hash DisplayJT compressed sequence tail");
+    use cadmpeg_core::decode::ResourceDimension;
+    assert_compressed_jt_limit(
+        |policy| policy.limits.max_work_units = 5 + 8192 + 1,
+        ResourceDimension::WorkUnits,
+        "zlib compressed input",
+    );
+    let (data, _) = compressed_jt_fixture();
+    // The member finishes in one 8192-byte expansion step. The owned payload
+    // is hashed while its scoped storage remains live. One visit and both output copies are charged.
+    let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
+    let expansion_work =
+        cadmpeg_core::decode::u64_from_index(data.len() - 33) + 8192 + 1 + 2 * expanded_len;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_work_units = expansion_work + expanded_len + 5 + 64 + 2 + 2 + 64;
+    };
+    assert_compressed_jt_limit(
+        adjust_policy,
+        ResourceDimension::WorkUnits,
+        "hash DisplayJT compressed sequence tail",
+    );
+}
+
+#[test]
+fn jt_compressed_sequence_validation_refuses_before_second_hash() {
+    use cadmpeg_core::decode::ResourceDimension;
+    assert_compressed_jt_limit(
+        |policy| policy.limits.max_work_units = 7 + 8192 + 1,
+        ResourceDimension::WorkUnits,
+        "zlib compressed input",
+    );
+    let (data, _) = compressed_jt_fixture();
+    // The member finishes in one 8192-byte expansion step. The owned payload
+    // is hashed while its scoped storage remains live. One visit and both output copies are charged.
+    let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
+    let expansion_work =
+        cadmpeg_core::decode::u64_from_index(data.len() - 33) + 8192 + 1 + 2 * expanded_len;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_work_units = expansion_work + expanded_len + 7 + 2 + 64;
+    };
+    assert_compressed_jt_limit(
+        adjust_policy,
+        ResourceDimension::WorkUnits,
+        "check DisplayJT compressed sequence tail hash",
+    );
 }
 
 #[test]

@@ -33,7 +33,7 @@ fn parse_edge_operand(
         recipes,
         terminal_group_limit,
     )
-    .expect("recipe allocation admitted")
+    .map(|result| result.expect("recipe allocation admitted"))
 }
 
 fn parse_face_operand(
@@ -62,7 +62,7 @@ fn parse_face_operand(
         },
         recipes,
     )
-    .expect("recipe allocation admitted")
+    .map(|result| result.expect("recipe allocation admitted"))
 }
 
 fn parse_vertex_recipe(
@@ -79,7 +79,7 @@ fn parse_vertex_recipe(
     crate::design::decode::operands::parse_vertex_recipe(
         &ctx, bytes, records, stream, header, recipes,
     )
-    .expect("recipe allocation admitted")
+    .map(|result| result.expect("recipe allocation admitted"))
 }
 
 #[test]
@@ -197,17 +197,15 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
         indexed_header(&mut ordinary, *b"306", record_index);
     }
     let ordinary_position = ordinary.len() - 11;
-    let ordinary_boundary = crate::design::test_support::with_test_decode_context(|ctx| {
+    assert_eq!(
         crate::design::decode::operands::face_recipe_next_boundary(
-            ctx,
             &ordinary,
             ordinary_position,
             100,
             None,
-        )
-    })
-    .expect("ordinary face recipe boundary scan");
-    assert_eq!(ordinary_boundary, Some((ordinary_position, 104)));
+        ),
+        Some((ordinary_position, 104))
+    );
 
     let mut omitted = Vec::new();
     for record_index in 100..=103 {
@@ -217,13 +215,10 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     indexed_header(&mut omitted, *b"124", 0);
     let next = omitted.len();
     indexed_header(&mut omitted, *b"317", 105);
-    let omitted_boundary = crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_next_boundary(
-            ctx, &omitted, position, 100, None,
-        )
-    })
-    .expect("omitted face recipe boundary scan");
-    assert_eq!(omitted_boundary, Some((next, 105)));
+    assert_eq!(
+        crate::design::decode::operands::face_recipe_next_boundary(&omitted, position, 100, None),
+        Some((next, 105))
+    );
 
     let mut arbitrary = Vec::new();
     for record_index in 100..=103 {
@@ -231,17 +226,15 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     }
     let arbitrary_position = arbitrary.len();
     indexed_header(&mut arbitrary, *b"124", 205);
-    let arbitrary_boundary = crate::design::test_support::with_test_decode_context(|ctx| {
+    assert_eq!(
         crate::design::decode::operands::face_recipe_next_boundary(
-            ctx,
             &arbitrary,
             arbitrary_position,
             100,
             None,
-        )
-    })
-    .expect("arbitrary face recipe boundary scan");
-    assert_eq!(arbitrary_boundary, Some((arbitrary_position, 205)));
+        ),
+        Some((arbitrary_position, 205))
+    );
 }
 
 mod nested_records;

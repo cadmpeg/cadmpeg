@@ -4,51 +4,14 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-/// Copy a borrowed three-digit class tag into retained storage. Text that is
-/// not three ASCII digits is no class tag; the test reads at most three bytes.
+/// Validate a borrowed three-digit class tag before making its fixed-size copy.
 pub(in crate::design::decode) fn class_tag_from_view(
-    ctx: &DecodeContext<'_>,
     value: &str,
-) -> Result<Option<crate::records::references::DesignClassTag>, CodecError> {
-    let Some(digits) = value.as_bytes().first_chunk::<3>() else {
-        return Ok(None);
-    };
-    if value.len() != 3 || !digits.iter().all(u8::is_ascii_digit) {
-        return Ok(None);
+) -> Result<crate::records::references::DesignClassTag, String> {
+    if value.len() != 3 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("class_tag must contain three ASCII digits".into());
     }
-    Ok(crate::records::references::DesignClassTag::try_from(
-        ctx.copy_retained_text(value, "copy F3D class tag")?,
-    )
-    .ok())
-}
-
-/// Split `text` at its last ASCII `separator` without allocating either half.
-/// The byte search admits the text and the one-byte pattern.
-pub(in crate::design::decode) fn rsplit_once_ascii<'text>(
-    ctx: &DecodeContext<'_>,
-    text: &'text str,
-    separator: u8,
-    operation: &'static str,
-) -> Result<Option<(&'text str, &'text str)>, CodecError> {
-    debug_assert!(separator.is_ascii());
-    let Some(at) = ctx.rfind_bytes(text.as_bytes(), &[separator], operation)? else {
-        return Ok(None);
-    };
-    // An ASCII byte is a character boundary on both sides.
-    Ok(text.get(..at).zip(text.get(at + 1..)))
-}
-
-/// Copy a three-digit class tag that an indexed-header read already
-/// validated into retained storage.
-pub(in crate::design::decode) fn retain_class_tag(
-    ctx: &DecodeContext<'_>,
-    value: [u8; 3],
-    operation: &'static str,
-) -> Result<crate::records::references::DesignClassTag, CodecError> {
-    let text = std::str::from_utf8(&value)
-        .map_err(|_| CodecError::malformed("F3D class tag must be three ASCII digits"))?;
-    crate::records::references::DesignClassTag::try_from(ctx.copy_retained_text(text, operation)?)
-        .map_err(CodecError::Malformed)
+    crate::records::references::DesignClassTag::try_from(value.to_owned())
 }
 
 /// Compose a native scope and record suffix under the retained text budget.
@@ -64,28 +27,22 @@ pub(in crate::design::decode) fn design_record_id_charged(
     Ok(id)
 }
 
-/// Whether a UTF-16LE code unit holds a relaxed GUID character.
-fn relaxed_guid_unit(unit: &[u8]) -> bool {
-    unit[1] == 0 && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
-}
-
-/// Validate an exact 36-code-unit relaxed GUID into a fixed ASCII array. The
-/// test reads at most the 76-byte counted field.
+/// Validate an exact 36-code-unit relaxed GUID into a fixed ASCII array.
 pub(in crate::design::decode) fn fixed_guid_ascii(
     bytes: &[u8],
     count_at: usize,
 ) -> Option<([u8; 36], usize)> {
     (View::u32_le_at(bytes, count_at)? == 36).then_some(())?;
     let start = count_at.checked_add(4)?;
-    let units = super::byte_fields::bytes_at::<72>(bytes, start)?;
+    let end = start.checked_add(72)?;
     let mut guid = [0; 36];
-    for (unit, slot) in units.chunks_exact(2).zip(guid.iter_mut()) {
-        if !relaxed_guid_unit(unit) {
+    for (slot, unit) in guid.iter_mut().zip(bytes.get(start..end)?.chunks_exact(2)) {
+        if unit[1] != 0 || !(unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_')) {
             return None;
         }
         *slot = unit[0];
     }
-    Some((guid, start + 72))
+    Some((guid, end))
 }
 
 /// Read a fixed-width relaxed GUID into its native value after code-unit validation.
@@ -94,9 +51,12 @@ pub(in crate::design::decode) fn fixed_relaxed_guid_text(
     bytes: &[u8],
     count_at: usize,
 ) -> Result<Option<(crate::records::mesh::DesignRelaxedGuidText, usize)>, CodecError> {
+    ctx.charge_work(36, "validate F3D relaxed GUID code units")?;
     let Some((guid, end)) = fixed_guid_ascii(bytes, count_at) else {
         return Ok(None);
     };
+    // UTF-8 validation, copy, GUID validation, and identity-key validation.
+    ctx.charge_work(36 * 4, "copy and admit F3D relaxed GUID")?;
     let guid = std::str::from_utf8(&guid)
         .map_err(|_| CodecError::malformed("validated F3D relaxed GUID is not ASCII"))?;
     let text = ctx.copy_retained_text(guid, "retain F3D relaxed GUID")?;
@@ -110,28 +70,28 @@ pub(in crate::design::decode) fn fixed_guid_end(bytes: &[u8], count_at: usize) -
     fixed_guid_ascii(bytes, count_at).map(|(_, end)| end)
 }
 
-/// Validate a counted relaxed GUID of 36 to 38 code units without allocating
-/// its text. The test reads at most the 80-byte counted field.
+/// Validate a counted relaxed GUID without allocating its text.
 pub(in crate::design::decode) fn relaxed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
     let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
     if !(36..=38).contains(&count) {
         return None;
     }
     let start = count_at.checked_add(4)?;
-    let end = start.checked_add(count * 2)?;
+    let end = start.checked_add(count.checked_mul(2)?)?;
     bytes
         .get(start..end)?
         .chunks_exact(2)
-        .all(relaxed_guid_unit)
+        .all(|unit| {
+            unit[1] == 0 && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
+        })
         .then_some(end)
 }
 
-/// Match an ASCII literal encoded as a counted UTF-16LE field without copying
-/// it. The test reads at most the literal's code units.
+/// Match an ASCII literal encoded as a counted UTF-16LE field without copying it.
 pub(in crate::design::decode) fn fixed_utf16_ascii_eq(
     bytes: &[u8],
     count_at: usize,
-    expected: &'static str,
+    expected: &str,
 ) -> Option<usize> {
     if !expected.is_ascii()
         || usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected.len()
@@ -143,8 +103,8 @@ pub(in crate::design::decode) fn fixed_utf16_ascii_eq(
     bytes
         .get(start..end)?
         .chunks_exact(2)
-        .zip(expected.as_bytes())
-        .all(|(unit, byte)| unit == [*byte, 0])
+        .zip(expected.bytes())
+        .all(|(unit, expected_byte)| unit == [expected_byte, 0])
         .then_some(end)
 }
 
@@ -177,6 +137,19 @@ mod tests {
                 assert!(ctx.charge_retained(1, "after GUID copy").is_err());
             }
         }
+    }
+
+    #[test]
+    fn fixed_relaxed_guid_text_refuses_work_before_scanning() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let bytes = crate::bytes::lp_utf16_bytes("ABCDEF12-3456-7890-ABCD-EF1234567890").unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::fixed_relaxed_guid_text(&ctx, &bytes, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits));
     }
 
     #[test]
@@ -306,29 +279,9 @@ mod tests {
     fn borrowed_class_tag_conversion_matches_owned_conversion() {
         for value in ["123", "000", "12", "1234", "12a", "éé"] {
             assert_eq!(
-                class_tag_from_view(&cadmpeg_test_support::service_decode_context(), value)
-                    .unwrap(),
-                crate::records::references::DesignClassTag::try_from(value.to_owned()).ok()
+                class_tag_from_view(value),
+                crate::records::references::DesignClassTag::try_from(value.to_owned())
             );
         }
-    }
-
-    #[test]
-    fn borrowed_class_tag_refuses_retained_text_before_copy() {
-        use cadmpeg_core::decode::ResourceDimension;
-
-        let refusal = crate::test_support::resource_refusal_at(
-            ResourceDimension::RetainedBytes,
-            "copy F3D class tag",
-            0,
-            |ctx| class_tag_from_view(ctx, "123").map(|_| ()),
-        );
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "copy F3D class tag"
-                    && limit.additional == 3
-        ));
     }
 }

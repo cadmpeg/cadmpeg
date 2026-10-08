@@ -9,6 +9,7 @@ use crate::container::{Container, SegmentStreamWrapper};
 use crate::parasolid::{Stream, StreamKind};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::fmt::Write;
 
 use crate::native::features::{
     FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation, FeatureInputBlock,
@@ -19,40 +20,41 @@ pub(super) mod om_location;
 use om_location::OmLocation;
 mod row_wire;
 
+fn decimal_digits(mut value: usize) -> usize {
+    let mut digits = 1;
+    while value >= 10 {
+        value /= 10;
+        digits += 1;
+    }
+    digits
+}
+
 /// Classify the semantic role of one linked OM registry.
 ///
 /// `UGS::OM::SaveAuditTrail` is a common class declaration carried by the
 /// specialized model registries. It identifies an audit-only registry only
 /// when no specialized marker is present. Multiple specialized markers are
 /// unresolved because no role-specific extractor can select one safely.
-fn classify_om_schema_role(
-    ctx: &DecodeContext<'_>,
-    section: &crate::om::Section<'_>,
-) -> Result<OmSchemaRole, CodecError> {
-    let (mut feature_history, mut expressions, mut model, mut audit_trail) =
-        (false, false, false, false);
-    for definition in ctx.admit_iter(&*section.types, "classify NX OM schema role")? {
-        match definition.name {
-            "UGS::FEATURE_RECORD" => feature_history = true,
-            "UGS::EXP_expression" => expressions = true,
-            "UGS::Solid::Topol" => model = true,
-            "UGS::OM::SaveAuditTrail" => audit_trail = true,
-            _ => {}
-        }
-    }
-    let mut roles = [
-        (feature_history, OmSchemaRole::FeatureHistory),
-        (expressions, OmSchemaRole::Expressions),
-        (model, OmSchemaRole::Model),
+fn classify_om_schema_role(section: &crate::om::Section<'_>) -> OmSchemaRole {
+    let has = |name| {
+        section
+            .types
+            .iter()
+            .any(|definition| definition.name == name)
+    };
+    let mut specialized_roles = [
+        ("UGS::FEATURE_RECORD", OmSchemaRole::FeatureHistory),
+        ("UGS::EXP_expression", OmSchemaRole::Expressions),
+        ("UGS::Solid::Topol", OmSchemaRole::Model),
     ]
     .into_iter()
-    .filter_map(|(present, role)| present.then_some(role));
-    Ok(match (roles.next(), roles.next()) {
+    .filter_map(|(name, role)| has(name).then_some(role));
+    match (specialized_roles.next(), specialized_roles.next()) {
         (Some(role), None) => role,
-        (None, _) if audit_trail => OmSchemaRole::AuditTrail,
+        (None, _) if has("UGS::OM::SaveAuditTrail") => OmSchemaRole::AuditTrail,
         (None, _) => OmSchemaRole::Other,
         _ => OmSchemaRole::Ambiguous,
-    })
+    }
 }
 
 /// One row retained from the canonical `UG_PART` segment index.
@@ -83,28 +85,37 @@ pub(super) fn segment_index_rows(
         return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+    let count = index.rows().count();
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    ctx.charge_collection_items(count_u64, "nx segment index rows")?;
+    ctx.charge_entities(count_u64, "nx segment index rows")?;
     let mut rows = Vec::new();
+    ctx.reserve_capacity(&mut rows, count, "nx segment index rows")?;
     for (ordinal, row) in index.rows().enumerate() {
-        ctx.charge_work(1, "nx segment index rows")?;
-        ctx.charge_entities(1, "nx segment index rows")?;
-        ctx.reserve_vec(&mut rows, 1, "nx segment index rows")?;
-        let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
+        let ordinal_u32 = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("nx segment index ordinal", 0, count_u64))?;
+        let digits = decimal_digits(ordinal);
+        let prefix = "nx:segment-index:row#";
+        let id_len = prefix
+            .len()
+            .checked_add(digits)
+            .ok_or_else(|| ctx.refuse_codec_limit("nx segment index row identity", 0, count_u64))?;
+        let mut id = ctx.retained_string(id_len, "nx segment index row identity")?;
+        write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
-                "nx segment index ordinal",
-                u64::from(u32::MAX),
-                cadmpeg_core::decode::u64_from_index(ordinal),
+                "nx segment index row identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
-        let id = ctx.format_retained(
-            format_args!("nx:segment-index:row#{ordinal}"),
-            "nx segment index row identity",
-        )?;
-        let source_entry = ctx.copy_retained_text(&entry.name, "nx segment index source entry")?;
+        let name_len = entry.name.len();
+        let mut source_entry = ctx.retained_string(name_len, "nx segment index source entry")?;
+        source_entry.push_str(&entry.name);
         let byte_offset = ordinal
             .checked_mul(12)
             .and_then(|offset| u64::try_from(offset).ok())
             .and_then(|offset| entry_offset.checked_add(offset))
-            .ok_or_else(|| ctx.refuse_codec_limit("nx segment index row offset", 0, u64::MAX))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("nx segment index row offset", 0, count_u64))?;
         rows.push(SegmentIndexRow {
             id,
             ordinal: ordinal_u32,
@@ -171,17 +182,15 @@ fn segment_stream_candidates<'a>(
             2 => SegmentIndexSlot::Value,
             _ => return Ok(None),
         };
-        let Some(stream_ordinal) = ctx.position_by(
-            streams,
-            |stream| Ok(stream.file_offset == wrapper.zlib_offset),
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(streams.len()),
             "nx segment stream matching",
-        )?
-        else {
-            return Ok(None);
-        };
+        )?;
         Ok(streams
-            .get(stream_ordinal)
-            .map(|stream| SegmentStreamCandidate {
+            .iter()
+            .enumerate()
+            .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
+            .map(|(stream_ordinal, stream)| SegmentStreamCandidate {
                 wrapper,
                 slot,
                 stream_ordinal,
@@ -236,14 +245,15 @@ pub(crate) struct SegmentBodyBinding {
 ///
 /// A primary-body or operand relation is valid only when the index matches
 /// exactly one alias pair. Zero matches and alias collisions are unresolved.
-pub(super) fn unique_segment_body_binding<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn unique_segment_body_binding(
     object_index: u32,
-    bindings: &'a [SegmentBodyBinding],
-) -> Result<Option<&'a SegmentBodyBinding>, CodecError> {
-    unique_binding(ctx, bindings, |binding| {
+    bindings: &[SegmentBodyBinding],
+) -> Option<&SegmentBodyBinding> {
+    let mut matches = bindings.iter().filter(|binding| {
         binding.body_object_index == object_index || binding.body_alias_object_index == object_index
-    })
+    });
+    let binding = matches.next()?;
+    matches.next().is_none().then_some(binding)
 }
 
 /// Return one segment body binding whose alias identity is unique.
@@ -252,46 +262,21 @@ pub(super) fn unique_segment_body_binding<'a>(
 /// object index. Callers use this function only when another native field
 /// carries the alias identity and must not silently accept a primary-index
 /// collision from a different body.
-pub(super) fn unique_segment_body_alias_binding<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn unique_segment_body_alias_binding(
     object_index: u32,
-    bindings: &'a [SegmentBodyBinding],
-) -> Result<Option<&'a SegmentBodyBinding>, CodecError> {
-    if ctx.any_by(
-        bindings,
-        |binding| Ok(binding.body_object_index == object_index),
-        "match NX segment body bindings",
-    )? {
-        return Ok(None);
+    bindings: &[SegmentBodyBinding],
+) -> Option<&SegmentBodyBinding> {
+    if bindings
+        .iter()
+        .any(|binding| binding.body_object_index == object_index)
+    {
+        return None;
     }
-    unique_binding(ctx, bindings, |binding| {
-        binding.body_alias_object_index == object_index
-    })
-}
-
-fn unique_binding<'a>(
-    ctx: &DecodeContext<'_>,
-    bindings: &'a [SegmentBodyBinding],
-    matches: impl Fn(&SegmentBodyBinding) -> bool,
-) -> Result<Option<&'a SegmentBodyBinding>, CodecError> {
-    super::unique_by(
-        ctx,
-        bindings,
-        |binding| Ok(matches(binding)),
-        "match NX segment body bindings",
-    )
-}
-
-/// Return the only plain-stream binding whose alias identity is `object_index`.
-pub(super) fn unique_plain_alias_binding<'a>(
-    ctx: &DecodeContext<'_>,
-    object_index: u32,
-    bindings: &'a [SegmentBodyBinding],
-) -> Result<Option<&'a SegmentBodyBinding>, CodecError> {
-    unique_binding(ctx, bindings, |binding| {
-        binding.stream_kind == crate::parasolid::StreamKind::Plain
-            && binding.body_alias_object_index == object_index
-    })
+    let mut matches = bindings
+        .iter()
+        .filter(|binding| binding.body_alias_object_index == object_index);
+    let binding = matches.next()?;
+    matches.next().is_none().then_some(binding)
 }
 
 /// Unambiguous terminal status of one segment-bound body image.
@@ -361,10 +346,19 @@ fn terminal_feature_body_indices(
         inputs,
     } = body_lineage_inputs;
 
+    let scan_work = references
+        .len()
+        .checked_mul(references.len())
+        .and_then(|count| count.checked_add(references.len().checked_mul(data_block_uses.len())?))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX terminal body references", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_work),
+        "scan NX terminal body references",
+    )?;
     let mut offset_store_reservation =
         ctx.reserve_scoped(0, "NX terminal offset-store references")?;
     let mut offset_store_references = BTreeSet::new();
-    for use_ in ctx.admit_iter(data_block_uses, "NX terminal offset-store references")? {
+    for use_ in data_block_uses {
         offset_store_reservation.with_storage(|| {
             ctx.insert_btree_set(
                 &mut offset_store_references,
@@ -383,19 +377,10 @@ fn terminal_feature_body_indices(
         })?;
     let mut object_reservation = ctx.reserve_scoped(0, "NX terminal body object references")?;
     let mut object_references = Vec::new();
-    for &reference in ctx
-        .admit_iter(&unique_references, "NX terminal body object references")?
-        .map(|(_, reference)| reference)
-    {
-        if ctx.contains_btree_set(
-            &offset_store_references,
-            reference.id.as_str(),
-            "NX terminal offset-store references",
-        )? || ctx.contains_btree_set(
-            &offset_store_operations,
-            reference.operation_label.as_str(),
-            "NX offset-store operations",
-        )? {
+    for (_, reference) in unique_references {
+        if offset_store_references.contains(reference.id.as_str())
+            || offset_store_operations.contains(reference.operation_label.as_str())
+        {
             continue;
         }
         ctx.reserve_scoped_vec(
@@ -415,12 +400,7 @@ fn terminal_feature_body_indices(
         })?;
     let mut positions_reservation = ctx.reserve_scoped(0, "NX terminal label positions")?;
     let mut positions = BTreeMap::new();
-    let mut kinds_reservation = ctx.reserve_scoped(0, "NX terminal operation kinds")?;
-    let mut operation_kinds = BTreeMap::new();
-    for (position, label) in ctx
-        .admit_iter(&chronological_labels, "NX terminal label positions")?
-        .enumerate()
-    {
+    for (position, label) in chronological_labels.iter().enumerate() {
         positions_reservation.with_storage(|| {
             ctx.insert_btree_map(
                 &mut positions,
@@ -429,6 +409,19 @@ fn terminal_feature_body_indices(
                 "NX terminal label positions",
             )
         })?;
+    }
+    let (aliases, _aliases_storage) = ctx
+        .with_scoped_storage("NX local aliases storage", || {
+            body_alias_roots(ctx, bindings)
+        })?;
+    let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
+    let (segment_boolean_operations, _segment_boolean_storage) = ctx
+        .with_scoped_storage("NX segment Boolean operation labels", || {
+            segment_boolean_operation_labels(ctx, booleans, data_blocks)
+        })?;
+    let mut kinds_reservation = ctx.reserve_scoped(0, "NX terminal operation kinds")?;
+    let mut operation_kinds = BTreeMap::new();
+    for label in &chronological_labels {
         kinds_reservation.with_storage(|| {
             ctx.insert_btree_map(
                 &mut operation_kinds,
@@ -438,46 +431,14 @@ fn terminal_feature_body_indices(
             )
         })?;
     }
-    let (aliases, _aliases_storage) = ctx
-        .with_scoped_storage("NX local aliases storage", || {
-            body_alias_roots(ctx, bindings)
-        })?;
-    let canonical = |identity: u32| -> Result<u32, CodecError> {
-        Ok(ctx
-            .get_btree_map(&aliases, &identity, "NX canonical segment body")?
-            .copied()
-            .unwrap_or(identity))
-    };
-    let position_of = |label: &str| -> Result<Option<usize>, CodecError> {
-        Ok(ctx
-            .get_btree_map(&positions, label, "NX terminal label positions")?
-            .copied())
-    };
-    let kind_of = |label: &str| -> Result<Option<&str>, CodecError> {
-        Ok(ctx
-            .get_btree_map(&operation_kinds, label, "NX terminal operation kinds")?
-            .copied())
-    };
-    let (segment_boolean_operations, _segment_boolean_storage) = ctx
-        .with_scoped_storage("NX segment Boolean operation labels", || {
-            segment_boolean_operation_labels(ctx, booleans, data_blocks)
-        })?;
-    let is_segment_boolean = |operation: &FeatureBooleanOperation| {
-        ctx.contains_btree_set(
-            &segment_boolean_operations,
-            operation.operation_label.as_str(),
-            "NX segment Boolean operation labels",
-        )
-    };
     let mut writers_reservation = ctx.reserve_scoped(0, "NX terminal last writers")?;
     let mut last_writers = BTreeMap::<u32, Option<usize>>::new();
-    for binding in ctx.admit_iter(bindings, "NX terminal last writers")? {
+    for binding in bindings {
         for identity in [binding.body_object_index, binding.body_alias_object_index] {
-            let identity = canonical(identity)?;
             writers_reservation.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut last_writers,
-                    identity,
+                    canonical(identity),
                     None,
                     "NX terminal last writers",
                 )
@@ -486,109 +447,113 @@ fn terminal_feature_body_indices(
     }
     {
         let mut record_writer = |body, position| -> Result<(), cadmpeg_core::CodecError> {
-            let writer = writers_reservation.with_storage(|| {
-                ctx.entry_btree_map(&mut last_writers, body, "NX terminal last writers")
+            writers_reservation.with_storage(|| {
+                ctx.admit_btree_entry(&last_writers, &body, "NX terminal last writers")
             })?;
-            let writer = writer.or_default();
+
+            let writer = last_writers.entry(body).or_default();
             if writer.is_none_or(|writer| writer < position) {
                 *writer = Some(position);
             }
             Ok(())
         };
-        for reference in ctx.admit_iter(&object_references, "NX terminal body writers")? {
-            let Some(position) = position_of(reference.operation_label.as_str())? else {
+        for reference in &object_references {
+            let Some(&position) = positions.get(reference.operation_label.as_str()) else {
                 return Ok(None);
             };
-            if matches!(kind_of(reference.operation_label.as_str())?, Some("DELETE")) {
+            if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
                 continue;
             }
-            record_writer(canonical(reference.body.value())?, position)?;
+            record_writer(canonical(reference.body.value()), position)?;
         }
-        for operation in ctx.admit_iter(booleans, "NX terminal Boolean writers")? {
-            if !is_segment_boolean(operation)? {
-                continue;
-            }
-            let Some(position) = position_of(operation.operation_label.as_str())? else {
+        for operation in booleans
+            .iter()
+            .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
+        {
+            let Some(&position) = positions.get(operation.operation_label.as_str()) else {
                 return Ok(None);
             };
-            record_writer(canonical(operation.target.token.value())?, position)?;
+            record_writer(canonical(operation.target.token.value()), position)?;
         }
     }
-    let precedes_writer = |body: u32, position: usize| -> Result<bool, CodecError> {
-        Ok(ctx
-            .get_btree_map(&last_writers, &body, "NX terminal last writers")?
-            .is_some_and(|writer| writer.is_none_or(|writer| writer < position)))
-    };
     let mut consumed = BTreeSet::new();
     let mut consumed_reservation = ctx.reserve_scoped(0, "NX consumed segment bodies")?;
-    for operation in ctx.admit_iter(booleans, "NX consumed segment bodies")? {
-        if !is_segment_boolean(operation)? {
-            continue;
-        }
-        let Some(position) = position_of(operation.operation_label.as_str())? else {
+    for operation in booleans
+        .iter()
+        .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
+    {
+        let Some(&position) = positions.get(operation.operation_label.as_str()) else {
             return Ok(None);
         };
-        for tool in ctx.admit_iter(&operation.tools, "NX consumed segment bodies")? {
-            let tool = canonical(tool.token.value())?;
-            if precedes_writer(tool, position)? {
+        for tool in &operation.tools {
+            let tool = canonical(tool.token.value());
+            if last_writers
+                .get(&tool)
+                .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
+            {
                 consumed_reservation.with_storage(|| {
                     ctx.insert_btree_set(&mut consumed, tool, "NX consumed segment bodies")
                 })?;
             }
         }
     }
-    for reference in ctx.admit_iter(&object_references, "NX consumed segment bodies")? {
-        if !matches!(kind_of(reference.operation_label.as_str())?, Some("DELETE")) {
-            continue;
-        }
-        let Some(position) = position_of(reference.operation_label.as_str())? else {
-            return Ok(None);
-        };
-        let body = canonical(reference.body.value())?;
-        if precedes_writer(body, position)? {
-            consumed_reservation.with_storage(|| {
-                ctx.insert_btree_set(&mut consumed, body, "NX consumed segment bodies")
-            })?;
+    for reference in &object_references {
+        if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
+            let Some(&position) = positions.get(reference.operation_label.as_str()) else {
+                return Ok(None);
+            };
+            let body = canonical(reference.body.value());
+            if last_writers
+                .get(&body)
+                .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
+            {
+                consumed_reservation.with_storage(|| {
+                    ctx.insert_btree_set(&mut consumed, body, "NX consumed segment bodies")
+                })?;
+            }
         }
     }
-    for operand in ctx.admit_iter(operands, "NX consumed segment bodies")? {
+    for operand in operands {
         // Offset-store operands use the operation-body namespace, even when
         // their serialized index happens to equal a segment-body identity.
         // Only the resolved segment-binding lane can consume a segment image.
         if operand.segment_body_bindings.is_empty()
             || !matches!(
-                kind_of(operand.operation_label.as_str())?,
-                Some("SEW" | "TRIM BODY")
+                operation_kinds.get(operand.operation_label.as_str()),
+                Some(&("SEW" | "TRIM BODY"))
             )
         {
             continue;
         }
-        let Some(position) = position_of(operand.operation_label.as_str())? else {
+        let Some(&position) = positions.get(operand.operation_label.as_str()) else {
             return Ok(None);
         };
-        let body = canonical(operand.operand.atom.value())?;
-        if precedes_writer(body, position)? {
+        let body = canonical(operand.operand.atom.value());
+        if last_writers
+            .get(&body)
+            .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
+        {
             consumed_reservation.with_storage(|| {
                 ctx.insert_btree_set(&mut consumed, body, "NX consumed segment bodies")
             })?;
         }
     }
     let mut terminal = BTreeSet::new();
-    let mut retain_terminal = |identity: u32| -> Result<(), CodecError> {
-        let root = canonical(identity)?;
-        if ctx.contains_key_btree_map(&last_writers, &root, "NX terminal last writers")?
-            && !ctx.contains_btree_set(&consumed, &root, "NX consumed segment bodies")?
-        {
-            ctx.insert_btree_set(&mut terminal, identity, "NX terminal segment bodies")?;
+    for identity in object_references
+        .iter()
+        .map(|reference| reference.body.value())
+        .chain(
+            bindings
+                .iter()
+                .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index]),
+        )
+    {
+        let root = canonical(identity);
+        if !last_writers.contains_key(&root) || consumed.contains(&root) {
+            continue;
         }
-        Ok(())
-    };
-    for reference in ctx.admit_iter(&object_references, "NX terminal segment bodies")? {
-        retain_terminal(reference.body.value())?;
-    }
-    for binding in ctx.admit_iter(bindings, "NX terminal segment bodies")? {
-        retain_terminal(binding.body_object_index)?;
-        retain_terminal(binding.body_alias_object_index)?;
+
+        ctx.insert_btree_set(&mut terminal, identity, "NX terminal segment bodies")?;
     }
     Ok(Some(terminal))
 }
@@ -606,38 +571,36 @@ pub(super) fn segment_body_lineage_statuses(
         return Ok(None);
     };
     let mut output = Vec::new();
-    for binding in ctx.admit_iter(body_lineage_inputs.bindings, "NX segment lineage statuses")? {
-        let mut statuses = [false; 2];
-        for (status, identity) in statuses
-            .iter_mut()
-            .zip([binding.body_object_index, binding.body_alias_object_index])
-        {
-            *status = ctx.contains_btree_set(&terminal, &identity, "NX terminal segment bodies")?;
-        }
+    for binding in body_lineage_inputs.bindings {
+        let statuses = [binding.body_object_index, binding.body_alias_object_index]
+            .map(|identity| terminal.contains(&identity));
         if statuses[0] != statuses[1] {
             return Ok(None);
         }
-        let key = ctx
-            .rsplit_once(&binding.id, "#", "NX segment lineage status identity")?
+        let key = binding
+            .id
+            .rsplit_once('#')
             .map_or(binding.id.as_str(), |(_, key)| key);
-        let id = ctx.format_retained(
-            format_args!("nx:segment-body-lineage:status#{key}"),
-            "NX segment lineage status identity",
-        )?;
-        let segment_body_binding =
-            ctx.copy_retained_text(&binding.id, "NX segment lineage binding identity")?;
-        ctx.push_vec(
-            &mut output,
-            SegmentBodyLineageStatus {
-                id,
-                segment_body_binding,
-                body_object_index: binding.body_object_index,
-                body_alias_object_index: binding.body_alias_object_index,
-                terminal: statuses[0],
-                source_offset: binding.source_offset,
-            },
-            "NX segment lineage statuses",
-        )?;
+        let prefix = "nx:segment-body-lineage:status#";
+        let id_len = prefix
+            .len()
+            .checked_add(key.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX segment lineage status identity", 0, 1))?;
+        let mut id = ctx.retained_string(id_len, "NX segment lineage status identity")?;
+        id.push_str(prefix);
+        id.push_str(key);
+        let mut segment_body_binding =
+            ctx.retained_string(binding.id.len(), "NX segment lineage binding identity")?;
+        segment_body_binding.push_str(&binding.id);
+        ctx.reserve_vec(&mut output, 1, "NX segment lineage statuses")?;
+        output.push(SegmentBodyLineageStatus {
+            id,
+            segment_body_binding,
+            body_object_index: binding.body_object_index,
+            body_alias_object_index: binding.body_alias_object_index,
+            terminal: statuses[0],
+            source_offset: binding.source_offset,
+        });
     }
     Ok(Some(output))
 }
@@ -662,60 +625,60 @@ pub(super) fn boolean_offset_store_resolution(
     operation: &FeatureBooleanOperation,
     data_blocks: &[DataBlock],
 ) -> Result<BooleanOffsetStoreResolution, cadmpeg_core::CodecError> {
-    let operation_name = "scan NX Boolean participants";
-    let mut participants = Vec::new();
-    let mut participant_reservation = ctx.reserve_scoped(0, operation_name)?;
+    let participant_count = operation
+        .tools
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX Boolean participants", 0, 1))?;
+    let work = participant_count
+        .checked_mul(data_blocks.len())
+        .and_then(|count| count.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX Boolean participants", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "scan NX Boolean participants",
+    )?;
+    let participants = std::iter::once(operation.target.token.value())
+        .chain(operation.tools.iter().map(|token| token.token.value()));
     let mut has_offset_store_evidence = false;
-    let mut every_participant_resolved = true;
+    let mut resolved_count = 0usize;
     let mut section_ordinal = None;
-    // Returns true when the participant set cannot have a one-store relation.
-    let mut conflicts = |object_index: u32| -> Result<bool, CodecError> {
-        let is_column_block = |block: &DataBlock| {
-            Ok(block.role == DataBlockRole::Column && block.block_ordinal == object_index)
-        };
-        let Some(first) = ctx.position_by(data_blocks, is_column_block, operation_name)? else {
-            every_participant_resolved = false;
-            return Ok(false);
+    for object_index in participants.clone() {
+        let mut matches = data_blocks.iter().filter(|block| {
+            block.role == DataBlockRole::Column && block.block_ordinal == object_index
+        });
+        let Some(block) = matches.next() else {
+            continue;
         };
         has_offset_store_evidence = true;
-        let (found, rest) = data_blocks.split_at(first + 1);
-        let Some(block) = found.last() else {
-            return Ok(true);
-        };
-        if ctx.any_by(rest, is_column_block, operation_name)?
+        if matches.next().is_some()
             || section_ordinal.is_some_and(|section| section != block.section_ordinal)
         {
-            return Ok(true);
-        }
-        section_ordinal = Some(block.section_ordinal);
-        ctx.reserve_scoped_vec(
-            &mut participant_reservation,
-            &mut participants,
-            1,
-            operation_name,
-        )?;
-        participants.push((object_index, block));
-        Ok(false)
-    };
-    if conflicts(operation.target.token.value())? {
-        return Ok(BooleanOffsetStoreResolution::Unresolved);
-    }
-    for tool in ctx.admit_iter(&operation.tools, operation_name)? {
-        if conflicts(tool.token.value())? {
             return Ok(BooleanOffsetStoreResolution::Unresolved);
         }
+        section_ordinal = Some(block.section_ordinal);
+        resolved_count += 1;
     }
     if !has_offset_store_evidence {
         return Ok(BooleanOffsetStoreResolution::None);
     }
-    if !every_participant_resolved {
+    if resolved_count != participant_count {
         return Ok(BooleanOffsetStoreResolution::Unresolved);
     }
     let mut complete = BTreeMap::new();
-    for &(object_index, block) in
-        ctx.admit_iter(&participants, "NX Boolean offset-store participants")?
-    {
-        let id = ctx.copy_retained_text(&block.id, "NX Boolean offset-store block identity")?;
+    for object_index in participants {
+        let Some(block) = data_blocks.iter().find(|block| {
+            block.role == DataBlockRole::Column && block.block_ordinal == object_index
+        }) else {
+            return Ok(BooleanOffsetStoreResolution::Unresolved);
+        };
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, String)>() * 4),
+            "NX Boolean offset-store participant slots",
+        )?;
+        let mut id =
+            ctx.retained_string(block.id.len(), "NX Boolean offset-store block identity")?;
+        id.push_str(&block.id);
         ctx.insert_btree_map(
             &mut complete,
             object_index,
@@ -738,17 +701,21 @@ fn segment_boolean_operation_labels(
 ) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
     let mut labels = BTreeSet::new();
 
-    for operation in ctx.admit_iter(booleans, "NX segment Boolean operation labels")? {
+    for operation in booleans {
         if !matches!(
             boolean_offset_store_resolution(ctx, operation, data_blocks)?,
             BooleanOffsetStoreResolution::None
         ) {
             continue;
         }
-        let label = ctx.copy_retained_text(
-            &operation.operation_label,
+
+        let mut label = String::new();
+        ctx.try_reserve_retained_text(
+            &mut label,
+            operation.operation_label.len(),
             "allocate NX segment Boolean operation label",
         )?;
+        label.push_str(&operation.operation_label);
         ctx.insert_btree_set(&mut labels, label, "NX segment Boolean operation labels")?;
     }
     Ok(labels)
@@ -761,25 +728,56 @@ pub(super) fn body_alias_roots(
 ) -> Result<BTreeMap<u32, u32>, cadmpeg_core::CodecError> {
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut adjacency_reservation = ctx.reserve_scoped(0, "NX segment alias adjacency")?;
-    for binding in ctx.admit_iter(bindings, "NX segment alias adjacency")? {
-        for (identity, alias) in [
-            (binding.body_object_index, binding.body_alias_object_index),
-            (binding.body_alias_object_index, binding.body_object_index),
-        ] {
-            adjacency_reservation.with_storage(|| {
-                let neighbors = ctx
-                    .entry_btree_map(&mut adjacency, identity, "NX segment alias identities")?
-                    .or_default();
-                ctx.insert_btree_set(neighbors, alias, "NX segment alias links")
-            })?;
-        }
+    for binding in bindings {
+        ctx.charge_collection_items(2, "NX segment alias identities")?;
+
+        adjacency_reservation.with_storage(|| {
+            if !adjacency.contains_key(&binding.body_object_index) {
+                ctx.admit_btree_node_storage::<u32, BTreeSet<u32>>(
+                    adjacency.len(),
+                    "NX segment alias identities",
+                )?;
+            }
+            let neighbors = adjacency.entry(binding.body_object_index).or_default();
+            if !neighbors.contains(&binding.body_alias_object_index) {
+                ctx.admit_btree_node_storage::<u32, ()>(
+                    neighbors.len(),
+                    "NX segment alias identities",
+                )?;
+            }
+            neighbors.insert(binding.body_alias_object_index);
+            Ok::<(), cadmpeg_core::CodecError>(())
+        })?;
+        ctx.charge_collection_items(2, "NX segment alias links")?;
+
+        adjacency_reservation.with_storage(|| {
+            if !adjacency.contains_key(&binding.body_alias_object_index) {
+                ctx.admit_btree_node_storage::<u32, BTreeSet<u32>>(
+                    adjacency.len(),
+                    "NX segment alias links",
+                )?;
+            }
+            let neighbors = adjacency
+                .entry(binding.body_alias_object_index)
+                .or_default();
+            if !neighbors.contains(&binding.body_object_index) {
+                ctx.admit_btree_node_storage::<u32, ()>(neighbors.len(), "NX segment alias links")?;
+            }
+            neighbors.insert(binding.body_object_index);
+            Ok::<(), cadmpeg_core::CodecError>(())
+        })?;
     }
+    let work = bindings
+        .len()
+        .checked_mul(8)
+        .ok_or_else(|| ctx.refuse_codec_limit("walk NX segment aliases", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "walk NX segment aliases",
+    )?;
     let mut roots = BTreeMap::new();
-    for &identity in ctx
-        .admit_iter(&adjacency, "NX segment alias components")?
-        .map(|(identity, _)| identity)
-    {
-        if ctx.contains_key_btree_map(&roots, &identity, "NX segment alias roots")? {
+    for identity in adjacency.keys().copied() {
+        if roots.contains_key(&identity) {
             continue;
         }
         let mut component = BTreeSet::new();
@@ -793,23 +791,14 @@ pub(super) fn body_alias_roots(
             "NX segment alias traversal",
         )?;
         pending.push(identity);
-        loop {
-            ctx.charge_work(1, "walk NX segment alias pending queue")?;
-            let Some(member) = pending.pop() else {
-                break;
-            };
+        while let Some(member) = pending.pop() {
             if !component_reservation.with_storage(|| {
                 ctx.insert_btree_set(&mut component, member, "NX segment alias component")
             })? {
                 continue;
             }
-            let Some(neighbors) =
-                ctx.get_btree_map(&adjacency, &member, "NX segment alias adjacency")?
-            else {
-                continue;
-            };
-            for neighbor in ctx.admit_iter(neighbors, "NX segment alias traversal")? {
-                if ctx.contains_btree_set(&component, neighbor, "NX segment alias component")? {
+            for neighbor in adjacency.get(&member).into_iter().flatten() {
+                if component.contains(neighbor) {
                     continue;
                 }
                 ctx.reserve_scoped_vec(
@@ -821,11 +810,8 @@ pub(super) fn body_alias_roots(
                 pending.push(*neighbor);
             }
         }
-        let root = ctx
-            .admit_iter(&component, "NX segment alias component root")?
-            .copied()
-            .fold(identity, u32::min);
-        for &member in ctx.admit_iter(&component, "NX segment alias roots")? {
+        let root = component.iter().copied().fold(identity, u32::min);
+        for member in component {
             ctx.insert_btree_map(&mut roots, member, root, "NX segment alias roots")?;
         }
     }
@@ -842,9 +828,29 @@ pub(super) fn segment_om_links(
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     let sections = container.om_sections(ctx)?;
+    let type_count = sections
+        .iter()
+        .try_fold(0usize, |count, (_, section)| {
+            count.checked_add(section.types.len())
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
+    let per_lookup = type_count
+        .checked_mul(4)
+        .and_then(|count| count.checked_add(sections.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
+    let work = index
+        .rows()
+        .count()
+        .checked_mul(3)
+        .and_then(|count| count.checked_mul(2))
+        .and_then(|count| count.checked_mul(per_lookup))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "scan NX segment OM links",
+    )?;
     let mut links = Vec::new();
     for (row_ordinal, row) in index.rows().enumerate() {
-        ctx.charge_work(1, "NX segment OM index rows")?;
         for (slot, relative) in [
             (SegmentIndexSlot::TypeCode, row.type_code),
             (SegmentIndexSlot::SubtypeCode, row.subtype_code),
@@ -862,28 +868,22 @@ pub(super) fn segment_om_links(
                     .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]),
                 None => false,
             };
-            let role_at = |offset| -> Result<Option<OmSchemaRole>, CodecError> {
-                for (candidate, section) in sections.iter().rev() {
-                    ctx.charge_work(1, "NX segment OM section lookup")?;
-                    if section.offset == offset
-                        && ctx.equal_bytes(
-                            candidate.name.as_bytes(),
-                            entry.name.as_bytes(),
-                            "NX segment OM section entry",
-                        )?
-                    {
-                        return classify_om_schema_role(ctx, section).map(Some);
-                    }
-                }
-                Ok(None)
+            let role_at = |offset| {
+                sections
+                    .iter()
+                    .rev()
+                    .find(|(candidate, section)| {
+                        candidate.name == entry.name && section.offset == offset
+                    })
+                    .map(|(_, section)| classify_om_schema_role(section))
             };
-            let (separator_byte_len, schema_role) = if let Some(role) = role_at(relative)? {
+            let (separator_byte_len, schema_role) = if let Some(role) = role_at(relative) {
                 (0usize, role)
             } else if separated_marker {
                 let Some(offset) = relative.checked_add(4) else {
                     continue;
                 };
-                let Some(role) = role_at(offset)? else {
+                let Some(role) = role_at(offset) else {
                     continue;
                 };
                 (4, role)
@@ -915,10 +915,14 @@ fn segment_link_identity(
     prefix: &str,
     ordinal: usize,
 ) -> Result<String, CodecError> {
-    ctx.format_retained(
-        format_args!("{prefix}{ordinal}"),
-        "retain NX segment link identity",
-    )
+    let length = prefix
+        .len()
+        .checked_add(decimal_digits(ordinal))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX segment link identity length", 0, 1))?;
+    let mut identity = ctx.retained_string(length, "retain NX segment link identity")?;
+    write!(identity, "{prefix}{ordinal}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX segment link identity", 0, 1))?;
+    Ok(identity)
 }
 
 /// Resolve segment-index words that point to validated compressed wrappers.
@@ -929,23 +933,32 @@ pub(super) fn segment_stream_links(
 ) -> Result<Vec<SegmentStreamLink>, CodecError> {
     let mut links = Vec::new();
     for candidate in segment_stream_candidates(ctx, container, streams) {
-        ctx.charge_work(1, "nx segment stream links")?;
         let Some(candidate) = candidate? else {
             continue;
         };
         let ordinal = links.len();
+        let digits = decimal_digits(ordinal);
+        let prefix = "nx:segment-stream-links:link#";
+        let id_len = prefix.len().checked_add(digits).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx segment stream link identity", 0, u64::MAX)
+        })?;
         let stream_ordinal = u32::try_from(candidate.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx segment stream ordinal", 0, u64::MAX))?;
         let wrapper_byte_len = u32::try_from(candidate.wrapper.wrapper_byte_len)
             .map_err(|_| ctx.refuse_codec_limit("nx segment wrapper size", 0, u64::MAX))?;
         let source_offset = u64::try_from(candidate.wrapper.wrapper_offset)
             .map_err(|_| ctx.refuse_codec_limit("nx segment wrapper offset", 0, u64::MAX))?;
+        ctx.charge_collection_items(1, "nx segment stream links")?;
         ctx.charge_entities(1, "nx segment stream links")?;
-        ctx.reserve_vec(&mut links, 1, "nx segment stream links")?;
-        let id = ctx.format_retained(
-            format_args!("nx:segment-stream-links:link#{ordinal}"),
-            "nx segment stream link identity",
-        )?;
+        ctx.reserve_capacity(&mut links, 1, "nx segment stream links")?;
+        let mut id = ctx.retained_string(id_len, "nx segment stream link identity")?;
+        write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
+            ctx.refuse_codec_limit(
+                "nx segment stream link identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(id_len),
+            )
+        })?;
         links.push(SegmentStreamLink {
             id,
             row: candidate.wrapper.row_ordinal,
@@ -980,7 +993,6 @@ pub(super) fn segment_body_bindings(
     let mut bindings = Vec::new();
     let mut link_ordinal = 0usize;
     for candidate in segment_stream_candidates(ctx, container, streams) {
-        ctx.charge_work(1, "nx segment body bindings")?;
         let Some(candidate) = candidate? else {
             continue;
         };
@@ -1028,18 +1040,43 @@ pub(super) fn segment_body_bindings(
         else {
             continue;
         };
+        let link_prefix = "nx:segment-stream-links:link#";
+        let binding_prefix = "nx:segment-body-bindings:binding#";
+        let digits = decimal_digits(ordinal);
+        let id_len = binding_prefix.len().checked_add(digits).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx segment body binding identity", 0, u64::MAX)
+        })?;
+        let link_len = link_prefix.len().checked_add(digits).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx segment body stream link identity", 0, u64::MAX)
+        })?;
         let stream_ordinal = u32::try_from(candidate.stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx segment stream ordinal", 0, u64::MAX))?;
+        ctx.charge_collection_items(1, "nx segment body bindings")?;
         ctx.charge_entities(1, "nx segment body bindings")?;
-        ctx.reserve_vec(&mut bindings, 1, "nx segment body bindings")?;
-        let id = ctx.format_retained(
-            format_args!("nx:segment-body-bindings:binding#{ordinal}"),
-            "nx segment body binding identity",
-        )?;
-        let stream_link = ctx.format_retained(
-            format_args!("nx:segment-stream-links:link#{ordinal}"),
+        ctx.reserve_capacity(&mut bindings, 1, "nx segment body bindings")?;
+
+        let mut id = String::new();
+        ctx.try_reserve_retained_text(&mut id, id_len, "nx segment body binding identity")?;
+        write!(&mut id, "{binding_prefix}{ordinal}").map_err(|_| {
+            ctx.refuse_codec_limit(
+                "nx segment body binding identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(id_len),
+            )
+        })?;
+        let mut stream_link = String::new();
+        ctx.try_reserve_retained_text(
+            &mut stream_link,
+            link_len,
             "nx segment body stream link identity",
         )?;
+        write!(&mut stream_link, "{link_prefix}{ordinal}").map_err(|_| {
+            ctx.refuse_codec_limit(
+                "nx segment body stream link identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(link_len),
+            )
+        })?;
         bindings.push(SegmentBodyBinding {
             id,
             stream_link,
@@ -2735,33 +2772,5 @@ mod tests {
             .expect("admitted terminal body lineage"),
             Some([20, 30].into_iter().collect())
         );
-    }
-
-    #[test]
-    fn body_alias_roots_refuses_work_limit_at_pending_pop() {
-        let bindings = [super::SegmentBodyBinding {
-            id: "binding#0".to_string(),
-            stream_link: "stream#0".to_string(),
-            stream_ordinal: 0,
-            stream_kind: crate::parasolid::StreamKind::Partition,
-            body_object_index: 10,
-            body_alias_object_index: 11,
-            stream_role: 19,
-            source_offset: 0,
-        }];
-        let error = crate::test_support::resource_refusal_at(
-            &[],
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "walk NX segment alias pending queue",
-            |ctx| super::body_alias_roots(ctx, &bindings),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "walk NX segment alias pending queue"
-                    && limit.used == limit.limit
-                    && limit.additional == 1
-        ));
     }
 }

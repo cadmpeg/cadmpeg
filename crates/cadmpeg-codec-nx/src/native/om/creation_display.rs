@@ -4,7 +4,7 @@
 use super::{rmfastload_target_object_id, RmFastLoadObjectId};
 use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
@@ -111,8 +111,7 @@ fn finalize_relations(
         Ord::cmp,
         "sort NX creation display relations",
     )?;
-    for ordinal in ctx.admit_iter(&(0..relations.len()), "NX creation display output ordinals")? {
-        let relation = &mut relations[ordinal];
+    for (ordinal, relation) in relations.iter_mut().enumerate() {
         relation.ordinal = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX creation display ordinal", 0, 1))?;
         relation.id = retained_identity(
@@ -133,33 +132,35 @@ pub(in crate::native) fn rm_creation_display_data_relations(
     object_ids: &[RmFastLoadObjectId],
 ) -> Result<Vec<RmCreationDisplayDataRelation>, CodecError> {
     let mut relations = Vec::new();
-    let sections = container.om_sections(ctx)?;
-    for (entry, section) in ctx
-        .admit_iter(&sections, "NX creation display input sections")?
+    for (entry, section) in container
+        .om_sections(ctx)?
+        .into_iter()
         .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
     {
         let Some(record_area) = section.record_area else {
             continue;
         };
+        ctx.charge_work(
+            u64_from_index(section.types.len()),
+            "find NX creation display class",
+        )?;
         let record_area_offset = record_area.offset;
         let record_area = record_area.bytes;
-        let Some(class_ordinal) = ctx.position_by(
-            &*section.types,
-            |definition| Ok(definition.name == CLASS_NAME),
-            "find NX creation display class",
-        )?
+        let Some((class_ordinal, definition)) = section
+            .types
+            .iter()
+            .enumerate()
+            .find(|(_, definition)| definition.name == CLASS_NAME)
         else {
             continue;
         };
-        let definition = &section.types[class_ordinal];
         let Ok(class_ordinal) = u32::try_from(class_ordinal) else {
             continue;
         };
         let entry_index = entry.index();
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + cadmpeg_core::decode::u64_from_index(record_area_offset);
-        let index_rows = crate::om::column_row::scan::index_rows(ctx, record_area)?;
-        for row in ctx.admit_iter(index_rows, "NX creation display index rows visits")? {
+        for row in crate::om::column_row::scan::index_rows(ctx, record_area)? {
             if row.indices()[3].atom.value() != class_ordinal {
                 continue;
             }
@@ -175,8 +176,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
                 &entry.name,
             )?;
         }
-        let linked_rows = crate::om::column_row::scan::linked_rows(ctx, record_area)?;
-        for row in ctx.admit_iter(linked_rows, "NX creation display linked rows visits")? {
+        for row in crate::om::column_row::scan::linked_rows(ctx, record_area)? {
             if row.indices()[2].atom.value() != class_ordinal {
                 continue;
             }
@@ -197,8 +197,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
                 &entry.name,
             )?;
         }
-        let target_rows = crate::om::column_row::scan::target_rows(ctx, record_area)?;
-        for row in ctx.admit_iter(target_rows, "NX creation display target rows visits")? {
+        for row in crate::om::column_row::scan::target_rows(ctx, record_area)? {
             if row.indices()[2].atom.value() != class_ordinal {
                 continue;
             }

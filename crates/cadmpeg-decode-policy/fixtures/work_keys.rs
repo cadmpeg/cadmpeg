@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 pub mod decode {
-    pub mod context {
-        pub struct DecodeContext;
-    }
     pub mod cost {
         pub trait DecodeCost {}
         impl<T: ?Sized> DecodeCost for T {}
     }
 }
-pub use decode::context::DecodeContext;
+pub struct DecodeContext;
 impl DecodeContext {
     fn charge_key<T: decode::cost::DecodeCost + ?Sized>(
         &self,
@@ -311,26 +308,4 @@ pub fn heap_sifts(
     replacement = changed;
     heap.push(replacement); // finding: uncharged_decode_work
     Ok(())
-}
-
-impl DecodeContext {
-    // The charged removal itself performs the raw removal it names.
-    pub fn remove_hash_map(
-        &self,
-        values: &mut std::collections::HashMap<String, u8>,
-        key: &str,
-    ) -> Result<Option<u8>, ()> {
-        self.charge_key(key, 1, "remove")?;
-        Ok(values.remove(key))
-    }
-
-    // Any other core body reports a raw removal, even after charging its key.
-    pub fn evict(
-        &self,
-        values: &mut std::collections::HashMap<String, u8>,
-        key: &str,
-    ) -> Result<Option<u8>, ()> {
-        self.charge_key(key, 1, "evict")?;
-        Ok(values.remove(key)) // finding: uncharged_decode_work
-    }
 }

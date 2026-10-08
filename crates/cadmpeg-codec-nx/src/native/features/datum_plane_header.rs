@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-plane common headers and atomic construction references.
 
-use super::construction_records::OperationInputStores;
-use super::payload_content::block_store;
 use super::{
-    charged_unique_offset_data_block, format_feature_history_id, DatumPlaneBlockLane,
-    FeatureHistory, FeatureInputBlock,
+    charged_unique_offset_data_block, feature_input_blocks, format_feature_history_id,
+    visit_feature_history_operation_records, DatumPlaneBlockLane,
 };
+use crate::container::Container;
 use crate::om::compact::CompactIndexAtom;
 use crate::om::datum_plane_header::{
     self, DatumPlaneBranch, DatumPlaneFrame, DoubleForm, SingleForm,
@@ -16,6 +15,7 @@ use serde::{
     ser::{SerializeSeq, SerializeStruct},
     Deserialize, Serialize,
 };
+use std::collections::BTreeSet;
 
 /// A retained common header with an optional decoded construction branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,132 +39,159 @@ enum Construction {
 }
 
 impl FeatureDatumPlaneHeader {
-    pub(super) fn resolved_data_block_slots(
+    pub(super) fn resolved_data_blocks(
         &self,
         lane: DatumPlaneBlockLane,
-    ) -> [Option<&String>; 2] {
-        let Construction::Resolved(frame) = &self.construction else {
-            return [None, None];
+    ) -> impl Iterator<Item = &String> {
+        let frame = match &self.construction {
+            Construction::Resolved(frame) => Some(frame),
+            Construction::Unresolved(_) | Construction::HeaderOnly { .. } => None,
         };
-        match lane {
-            DatumPlaneBlockLane::Descriptor => {
-                [frame.descriptor().map(|(_, block, _)| block), None]
+        frame.into_iter().flat_map(move |frame| {
+            let descriptor = frame.descriptor().map(|(_, block, _)| block);
+            let mut objects = frame.objects().map(|(_, block, _)| block);
+            match lane {
+                DatumPlaneBlockLane::Descriptor => [descriptor, None],
+                DatumPlaneBlockLane::Object => [objects.next(), objects.next()],
             }
-            DatumPlaneBlockLane::Object => {
-                let mut objects = frame.objects();
-                [
-                    objects.next().map(|(_, block, _)| block),
-                    objects.next().map(|(_, block, _)| block),
-                ]
-            }
-        }
+            .into_iter()
+            .flatten()
+        })
     }
 }
 
 /// Decode common datum-plane payload headers from feature-history records.
 pub(in crate::native) fn feature_datum_plane_headers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    history: &FeatureHistory<'_, '_, '_>,
-    inputs: &[FeatureInputBlock],
+    container: &Container,
 ) -> Result<Vec<FeatureDatumPlaneHeader>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
-    let input_stores = OperationInputStores::new(ctx, inputs)?;
+    let indexed = container.indexed_om_sections(ctx)?;
+    let inputs = feature_input_blocks(ctx, container)?;
     let mut headers = Vec::new();
-    for history_section in
-        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
-    {
-        let section_key = history_section.key.as_str();
-        let entry_offset = history_section.entry_offset;
-        for &(operation_ordinal, record) in ctx.admit_iter(
-            &history_section.records,
-            "visit NX feature operation records",
-        )? {
-            let Some(header) =
-                datum_plane_header::datum_plane_payload_header(record.payload_view())
-            else {
-                continue;
-            };
-            let Some(source_offset) = entry_offset.checked_add(
-                cadmpeg_core::decode::u64_from_index(record.payload_offset()),
-            ) else {
-                continue;
-            };
-            let parsed =
-                datum_plane_header::datum_plane_descriptor_reference_branch(record.payload_view())
-                    .or_else(|| {
-                        datum_plane_header::datum_plane_double_reference_branch(
-                            record.payload_view(),
-                        )
-                    });
-            let branch = match parsed {
-                Some(frame) => {
-                    let Some(frame) = frame.relocate(entry_offset) else {
+    let mut failure = None;
+    visit_feature_history_operation_records(
+        ctx,
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
+            let projected = (|| -> Result<(), cadmpeg_core::CodecError> {
+                let Some(header) =
+                    datum_plane_header::datum_plane_payload_header(record.payload_view())
+                else {
+                    return Ok(());
+                };
+                let Some(source_offset) = entry_offset.checked_add(
+                    cadmpeg_core::decode::u64_from_index(record.payload_offset()),
+                ) else {
+                    return Ok(());
+                };
+                let parsed = datum_plane_header::datum_plane_descriptor_reference_branch(
+                    record.payload_view(),
+                )
+                .or_else(|| {
+                    datum_plane_header::datum_plane_double_reference_branch(record.payload_view())
+                });
+                let branch = match parsed {
+                    Some(frame) => {
+                        let Some(frame) = frame.relocate(entry_offset) else {
+                            return Ok(());
+                        };
+                        Some(frame)
+                    }
+                    None => None,
+                };
+                let operation_label = format_feature_history_id(
+                    ctx,
+                    "operation-label",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                )?;
+                let scratch_bytes = inputs.len().checked_mul(128).ok_or_else(|| {
+                    ctx.refuse_codec_limit("index NX datum-plane input prefixes", 0, 1)
+                })?;
+                let _prefixes = ctx.reserve_scoped(
+                    cadmpeg_core::decode::u64_from_index(scratch_bytes),
+                    "index NX datum-plane input prefixes",
+                )?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(inputs.len()),
+                    "scan NX datum-plane input prefixes",
+                )?;
+                let mut input_prefixes = BTreeSet::new();
+                for input in inputs
+                    .iter()
+                    .filter(|input| input.operation_label == operation_label)
+                {
+                    let Some((prefix, _)) = input.data_block.rsplit_once(":block#") else {
                         continue;
                     };
-                    Some(frame)
+                    ctx.insert_btree_set(
+                        &mut input_prefixes,
+                        prefix,
+                        "NX datum-plane input prefixes",
+                    )?;
                 }
-                None => None,
-            };
-            let operation_label = format_feature_history_id(
-                ctx,
-                "operation-label",
-                section_key,
-                operation_ordinal,
-                None,
-            )?;
-            let (_, input_prefix) = input_stores.get(ctx, &operation_label)?;
-            let branch = branch
-                .map(|branch| -> Result<Construction, cadmpeg_core::CodecError> {
-                    let resolved = if let Some(input_prefix) = input_prefix {
-                        branch.resolve(
-                            |index| -> Result<Option<String>, cadmpeg_core::CodecError> {
-                                let Some(data_block) =
-                                    charged_unique_offset_data_block(ctx, &indexed, index)?
-                                else {
-                                    return Ok(None);
-                                };
-                                let in_store = match block_store(
-                                    ctx,
-                                    &data_block,
-                                    "check NX datum-plane block store",
-                                )? {
-                                    Some(prefix) => ctx.equal(
-                                        prefix,
-                                        input_prefix,
-                                        "compare NX datum-plane block store",
-                                    )?,
-                                    None => false,
-                                };
-                                Ok(in_store.then_some(data_block))
-                            },
-                        )?
-                    } else {
-                        None
-                    };
-                    Ok(resolved
-                        .map_or_else(|| Construction::Unresolved(branch), Construction::Resolved))
-                })
-                .transpose()?;
-            let id = format_feature_history_id(
-                ctx,
-                "datum-plane-header",
-                section_key,
-                operation_ordinal,
-                None,
-            )?;
-            ctx.charge_entities(1, "NX datum-plane header")?;
-            ctx.reserve_vec(&mut headers, 1, "NX datum-plane headers")?;
-            headers.push(FeatureDatumPlaneHeader {
-                id,
-                operation_label,
-                control: header.control,
-                construction: branch.unwrap_or(Construction::HeaderOnly {
-                    declared_count: header.declared_count,
-                    branch_tag: header.branch_tag,
-                    source_offset,
-                }),
-            });
-        }
+                let branch = branch
+                    .map(|branch| -> Result<Construction, cadmpeg_core::CodecError> {
+                        let resolved = if input_prefixes.len() == 1 {
+                            let input_prefix =
+                                input_prefixes.iter().next().copied().ok_or_else(|| {
+                                    ctx.refuse_codec_limit(
+                                        "resolve NX datum-plane input prefix",
+                                        0,
+                                        1,
+                                    )
+                                })?;
+                            branch.resolve(
+                                |index| -> Result<Option<String>, cadmpeg_core::CodecError> {
+                                    Ok(charged_unique_offset_data_block(ctx, &indexed, index)?
+                                        .filter(|data_block| {
+                                            data_block
+                                                .rsplit_once(":block#")
+                                                .is_some_and(|(prefix, _)| prefix == input_prefix)
+                                        }))
+                                },
+                            )?
+                        } else {
+                            None
+                        };
+                        Ok(resolved.map_or_else(
+                            || Construction::Unresolved(branch),
+                            Construction::Resolved,
+                        ))
+                    })
+                    .transpose()?;
+                let id = format_feature_history_id(
+                    ctx,
+                    "datum-plane-header",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                )?;
+                ctx.charge_entities(1, "NX datum-plane header")?;
+                ctx.reserve_vec(&mut headers, 1, "NX datum-plane headers")?;
+                headers.push(FeatureDatumPlaneHeader {
+                    id,
+                    operation_label,
+                    control: header.control,
+                    construction: branch.unwrap_or(Construction::HeaderOnly {
+                        declared_count: header.declared_count,
+                        branch_tag: header.branch_tag,
+                        source_offset,
+                    }),
+                });
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
+        },
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
     }
     Ok(headers)
 }
@@ -545,9 +572,7 @@ mod tests {
         })
         .expect("composed datum plane container");
         let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
-            let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-            super::feature_datum_plane_headers(ctx, &history, &inputs)
+            super::feature_datum_plane_headers(ctx, &container)
         };
         let headers = crate::test_support::with_decode_context(|ctx| decode(ctx))
             .expect("admitted datum plane headers");
@@ -626,9 +651,7 @@ mod tests {
     fn datum_plane_header_route_preserves_header_only_record() {
         let container = datum_plane_container();
         let headers = crate::test_support::with_decode_context(|ctx| {
-            let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
-            let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-            super::feature_datum_plane_headers(ctx, &history, &inputs)
+            super::feature_datum_plane_headers(ctx, &container)
         })
         .unwrap();
         assert_eq!(headers.len(), 1);
@@ -647,12 +670,7 @@ mod tests {
                 policy.limits.max_collection_items = 0;
             },
             |ctx| {
-                let error = crate::native::features::FeatureHistory::new(ctx, &container)
-                    .and_then(|history| {
-                        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-                        super::feature_datum_plane_headers(ctx, &history, &inputs)
-                    })
-                    .unwrap_err();
+                let error = super::feature_datum_plane_headers(ctx, &container).unwrap_err();
                 assert!(
                     matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
@@ -671,12 +689,7 @@ mod tests {
                 policy.limits.max_retained_bytes = 0;
             },
             |ctx| {
-                let error = crate::native::features::FeatureHistory::new(ctx, &container)
-                    .and_then(|history| {
-                        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-                        super::feature_datum_plane_headers(ctx, &history, &inputs)
-                    })
-                    .unwrap_err();
+                let error = super::feature_datum_plane_headers(ctx, &container).unwrap_err();
                 assert!(
                     matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
@@ -747,18 +760,14 @@ mod tests {
         assert_eq!(serde_json::to_string(&header).unwrap(), json);
         assert_eq!(
             header
-                .resolved_data_block_slots(super::DatumPlaneBlockLane::Descriptor)
-                .into_iter()
-                .flatten()
+                .resolved_data_blocks(super::DatumPlaneBlockLane::Descriptor)
                 .map(String::as_str)
                 .collect::<Vec<_>>(),
             ["descriptor"]
         );
         assert_eq!(
             header
-                .resolved_data_block_slots(super::DatumPlaneBlockLane::Object)
-                .into_iter()
-                .flatten()
+                .resolved_data_blocks(super::DatumPlaneBlockLane::Object)
                 .map(String::as_str)
                 .collect::<Vec<_>>(),
             ["object"]

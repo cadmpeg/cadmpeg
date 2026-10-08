@@ -776,9 +776,9 @@ fn incomplete_chamfer_construction_does_not_change_its_body_identity_effect() {
         }),
     ));
 
-    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
-        feature_completeness::chamfer_definition_is_incomplete(ctx, &ir.model.features[1])
-    }));
+    assert!(feature_completeness::chamfer_definition_is_incomplete(
+        &ir.model.features[1]
+    ));
     assert_eq!(
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::verified(vec![body]).unwrap()
@@ -955,20 +955,10 @@ fn output_free_surface_edits_are_body_identity_neutral() {
         ));
         assert!(match ir.model.features[1].evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. }) => {
-                crate::decode::feature_completeness::decode_check(|ctx| {
-                    feature_completeness::trim_surface_definition_is_incomplete(
-                        ctx,
-                        &ir.model.features[1],
-                    )
-                })
+                feature_completeness::trim_surface_definition_is_incomplete(&ir.model.features[1])
             }
             FeatureDefinition::Operation(FeatureOperation::ExtendSurface { .. }) => {
-                crate::decode::feature_completeness::decode_check(|ctx| {
-                    feature_completeness::extend_surface_definition_is_incomplete(
-                        ctx,
-                        &ir.model.features[1],
-                    )
-                })
+                feature_completeness::extend_surface_definition_is_incomplete(&ir.model.features[1])
             }
             _ => unreachable!("surface edit fixture"),
         });

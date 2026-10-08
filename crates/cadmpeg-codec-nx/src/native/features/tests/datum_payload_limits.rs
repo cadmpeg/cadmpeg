@@ -24,16 +24,8 @@ fn datum_payload_refusal(
     .expect("composed feature-history container");
     let (constructions, headers) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
-            {
-                let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
-                let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-                feature_datum_csys_constructions(ctx, &history, &inputs)
-            }?,
-            {
-                let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
-                let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-                feature_datum_plane_headers(ctx, &history, &inputs)
-            }?,
+            feature_datum_csys_constructions(ctx, &container)?,
+            feature_datum_plane_headers(ctx, &container)?,
         ))
     })
     .expect("datum construction inputs");

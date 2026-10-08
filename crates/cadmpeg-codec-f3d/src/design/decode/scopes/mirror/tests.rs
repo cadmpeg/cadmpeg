@@ -46,7 +46,62 @@ fn compact_reference_fixture() -> (Vec<u8>, DesignRecordHeader, usize, u32) {
     (bytes, header, identity, reference)
 }
 
-fn class_413_tolerance_fixture() -> (Vec<u8>, DesignParameterScope) {
+#[test]
+fn compact_mirror_reference_uses_the_identity_record_lane() {
+    let (mut bytes, header, identity, reference) = compact_reference_fixture();
+    assert_eq!(
+        compact_feature_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &header
+        )
+        .unwrap(),
+        Some((reference, u64_from_index(identity + 21)))
+    );
+    bytes[identity + 20] = 1;
+    assert_eq!(
+        compact_feature_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &header
+        )
+        .unwrap(),
+        None
+    );
+}
+
+#[test]
+fn compact_mirror_reference_refuses_guid_text_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, header, identity, reference) = compact_reference_fixture();
+    for cap in [35, 71] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = cap;
+
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = compact_feature_reference(&ctx, &bytes, &header);
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Design UTF-16 text"
+        ));
+    }
+    assert_eq!(
+        compact_feature_reference(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &header
+        )
+        .unwrap(),
+        Some((reference, u64_from_index(identity + 21)))
+    );
+}
+
+#[test]
+fn class_413_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 32 + 89];
     let mut scope = DesignParameterScope::empty(
         "scope",
@@ -73,64 +128,6 @@ fn class_413_tolerance_fixture() -> (Vec<u8>, DesignParameterScope) {
     bytes[32 + 64..32 + 68].copy_from_slice(&12_u32.to_le_bytes());
     bytes[32 + 76] = 1;
     bytes[32 + 77..32 + 81].copy_from_slice(&11_u32.to_le_bytes());
-    (bytes, scope)
-}
-
-#[test]
-fn compact_mirror_reference_uses_the_identity_record_lane() {
-    let (mut bytes, header, identity, reference) = compact_reference_fixture();
-    assert_eq!(
-        compact_feature_reference(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &header
-        )
-        .unwrap(),
-        Some((reference, u64_from_index(identity + 21)))
-    );
-    bytes[identity + 20] = 1;
-    assert_eq!(
-        compact_feature_reference(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &header
-        )
-        .unwrap(),
-        None
-    );
-}
-
-#[test]
-fn compact_mirror_reference_validates_guids_in_place() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let (bytes, header, identity, reference) = compact_reference_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(
-        compact_feature_reference(&ctx, &bytes, &header).unwrap(),
-        Some((reference, u64_from_index(identity + 21)))
-    );
-    let operation = "find F3D indexed record header";
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits,
-        operation,
-        0,
-        |ctx| compact_feature_reference(ctx, &bytes, &header),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == operation
-    ));
-}
-
-#[test]
-fn class_413_mirror_scope_decodes_inline_tolerance() {
-    let (bytes, scope) = class_413_tolerance_fixture();
     let (value, offset, carrier) =
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-413 tolerance");
     assert_eq!(value.get(), 0.25);
@@ -346,13 +343,7 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
     assert_eq!(
-        exact_legacy_mirror_scope_count(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            &records,
-            &scope
-        )
-        .unwrap(),
+        exact_legacy_mirror_scope_count(&bytes, &records, &scope),
         Some((count_record_index, 40))
     );
 }
@@ -363,14 +354,6 @@ fn mirror_header_index_refuses_collection_limit() {
     use std::io::Cursor;
     use zip::CompressionMethod;
 
-    // The header index is built for the first Mirror scope.
-    let mirror_scope = || {
-        DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#2",
-            crate::records::feature::scope::DesignFeatureKind::Mirror,
-            2,
-        )
-    };
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record-header#1".into(),
         record_index: 1,
@@ -389,7 +372,7 @@ fn mirror_header_index_refuses_collection_limit() {
         let refusal = super::bind_mirror_constructions(
             &limited,
             scan,
-            &mut [mirror_scope()],
+            &mut [],
             &[],
             std::slice::from_ref(&header),
             &[],
@@ -404,84 +387,28 @@ fn mirror_header_index_refuses_collection_limit() {
         super::bind_mirror_constructions(
             &cadmpeg_test_support::service_decode_context(),
             scan,
-            &mut [mirror_scope()],
+            &mut [],
             &[],
-            std::slice::from_ref(&header),
+            &[header],
             &[],
             &[],
         )
         .unwrap();
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "scan F3D Mirror record headers",
-            0,
-            |ctx| {
-                super::bind_mirror_constructions(
-                    ctx,
-                    scan,
-                    &mut [mirror_scope()],
-                    &[],
-                    std::slice::from_ref(&header),
-                    &[],
-                    &[],
-                )
-            },
-        );
-        assert!(matches!(
-                    error,
-                    cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-        && limit.operation == "scan F3D Mirror record headers"
-        && limit.additional == 1
-                ));
     });
 }
 
 #[test]
 fn mirror_unique_match_preserves_zero_one_and_many() {
-    let ctx = cadmpeg_test_support::service_decode_context();
-    // The number of selected values, up to two, and the only one.
-    let select = |values: &[u32]| match super::unique_match(
-        &ctx,
-        values,
-        |value| Ok(*value >= 7),
-        "find test values",
-    )
-    .unwrap()
-    {
-        super::UniqueMatch::Zero => (0, None),
-        super::UniqueMatch::One(value) => (1, Some(*value)),
-        super::UniqueMatch::Many => (2, None),
-    };
-    assert_eq!(select(&[]), (0, None));
-    assert_eq!(select(&[1, 7, 2]), (1, Some(7)));
-    assert_eq!(select(&[7, 8]), (2, None));
-}
-
-#[test]
-fn mirror_unique_match_charges_only_the_values_it_visits() {
-    // The second match is the third value, so three work units decide the
-    // search and the fourth value is never read.
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 3;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let found = super::unique_match(
-            ctx,
-            &[1, 7, 8, 9],
-            |value| Ok(*value >= 7),
-            "find test values",
-        )
-        .unwrap();
-        assert!(matches!(found, super::UniqueMatch::Many));
-    });
-    policy.limits.max_work_units = 2;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(super::unique_match(
-            ctx,
-            &[1, 7, 8, 9],
-            |value| Ok(*value >= 7),
-            "find test values"
-        )
-        .is_err());
-    });
+    assert!(matches!(
+        super::unique_match(std::iter::empty::<u32>()),
+        super::UniqueMatch::Zero
+    ));
+    assert!(matches!(
+        super::unique_match([7].into_iter()),
+        super::UniqueMatch::One(7)
+    ));
+    assert!(matches!(
+        super::unique_match([7, 8].into_iter()),
+        super::UniqueMatch::Many
+    ));
 }

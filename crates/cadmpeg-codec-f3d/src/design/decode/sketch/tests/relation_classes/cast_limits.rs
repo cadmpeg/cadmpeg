@@ -29,7 +29,7 @@ fn refuses_wrapped_offset(
             "BulkStream.dat",
             &header,
             &payload,
-            &parsed,
+            parsed,
             definition,
         )
         .expect_err("offset above u32 must be refused before it wraps");

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
-use crate::bytes::lp_utf16_bounded_scoped;
+use crate::bytes::{lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
 use cadmpeg_core::decode::u64_from_index;
 
 use super::assembly_alignment::exact_assembly_alignment;
@@ -23,7 +23,6 @@ use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::draft::exact_draft_operation_with_owners;
 use super::extrude::exact_extrude_prologue;
-use super::extrude::ExtrudeScopeFrame;
 use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
@@ -44,17 +43,16 @@ use super::thread::exact_thread_construction;
 use super::work_geometry::exact_joint_origin_frame;
 use super::work_geometry::exact_work_axis_construction;
 use super::work_geometry::exact_work_plane_frame;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
-use crate::design::decode::byte_fields::{bytes_at, zeros_at};
-use crate::design::decode::record_streams::record_stream;
-use crate::design::decode::sketch::{
-    indexed_record_header_at, native_scope_charged, IndexedRecordOffsets,
-};
+use crate::design::decode::operands::RecordFrame;
+use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
 use crate::design::decode::text::design_record_id_charged;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
+use crate::ids::native_stream;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
 use crate::records::feature::direct_face;
@@ -72,66 +70,438 @@ pub(crate) fn decode_parameter_scopes(
     scan: &ContainerScan,
     native: &crate::native::F3dNative,
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
-    const STREAMS_OPERATION: &str = "f3d Design parameter-scope streams";
+    let entities = &native.design_entity_headers;
     let types = &native.design_types;
-    let mut sketch_entities = None;
+    let parameters = &native.design_parameters;
+    let parameter_owners = &native.design_parameter_owners;
+    let component_occurrences = &native.design_component_occurrences;
+    let recipes = &native.construction_recipes;
     let mut out = Vec::new();
-    // Each Design stream decodes once: a repeated entry name names the same
-    // payload and would repeat every scope ID.
-    let mut names_storage = ctx.reserve_scoped(0, STREAMS_OPERATION)?;
-    let mut names = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D parameter-scope streams")?
+    for entry in scan
+        .entries
+        .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        names_storage
-            .with_storage(|| ctx.push_vec(&mut names, entry.name.as_str(), STREAMS_OPERATION))?;
-    }
-    ctx.sort_unstable_by(&mut names, |name| *name, Ord::cmp, STREAMS_OPERATION)?;
-    ctx.dedup_vec(&mut names, STREAMS_OPERATION)?;
-    for name in ctx.admit_iter(&names, STREAMS_OPERATION)? {
-        let bytes = scan.entry_bytes(name)?;
-        // The stream scope, record index and type table live for this stream only.
-        let (stream, _stream_storage) = ctx
-            .with_scoped_storage("f3d Design parameter-scope stream", || {
-                native_scope_charged(ctx, name)
-            })?;
-        let (records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
-        let (stream_types, _stream_types_storage) = ctx
-            .with_scoped_storage("f3d Design parameter-scope stream types", || {
-                crate::design::decode::meta::stream_types_by_entity(ctx, types, name)
-            })?;
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let stream = native_scope_charged(ctx, &entry.name)?;
+        let records = IndexedRecordOffsets::build(ctx, bytes)?;
+        let stream_types =
+            crate::design::decode::meta::stream_types_by_entity(ctx, types, &entry.name)?;
         let stream_scope_start = out.len();
-        // A scope is delimited by two headers carrying its record index; any
-        // header can open one, and the last of its index finds no pair.
-        for (record_index, offsets) in records.records(ctx)? {
-            for &start in ctx.admit_iter(offsets, "scan F3D parameter-scope record frames")? {
-                let Some(header) = indexed_record_header_at(bytes, start) else {
-                    continue;
-                };
-                let Some(mut scope) =
-                    parse_scope_at(ctx, bytes, &records, record_index, *header.class_tag, start)?
-                else {
-                    continue;
-                };
-                scope.id = design_record_id_charged(
-                    ctx,
-                    name,
-                    ":design-parameter-scope#",
-                    scope.byte_offset(),
-                    "f3d Design parameter scope ID",
-                )?;
-                bind_sketch_entity(
+        for header in parameter_scope_candidate_headers(ctx, bytes, &records)? {
+            let Some(mut scope) = parse_parameter_scope(
+                ctx,
+                bytes,
+                &records,
+                header.record_index,
+                &header.class_tag,
+                header.byte_offset,
+            )?
+            else {
+                continue;
+            };
+            scope.id = design_record_id_charged(
+                ctx,
+                &entry.name,
+                ":design-parameter-scope#",
+                scope.byte_offset(),
+                "f3d Design parameter scope ID",
+            )?;
+            bind_coil_extent_from_parameters(ctx, &mut scope, parameters, parameter_owners)?;
+            bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
+            if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
+                let start = usize::try_from(scope.byte_offset()).ok();
+                let end = usize::try_from(scope.paired_byte_offset()).ok();
+                let frame = start
+                    .zip(end)
+                    .and_then(|(start, end)| bytes.get(start..end));
+                let mut unique_match = None;
+                let mut multiple_matches = false;
+                if let Some(frame) = frame {
+                    // One pass over the frame: the first offset of every
+                    // marked reference (a one byte, a u32 suffix, six zero
+                    // bytes), then each eligible entity looks its suffix up.
+                    let first_at = first_marked_reference_offsets(ctx, frame)?;
+                    for entity in entities {
+                        if native_stream(&entity.id) != Some(stream.as_str())
+                            || !entity.in_sketch_module()
+                            || entity.entity_id.suffix() > u64::from(u32::MAX)
+                        {
+                            continue;
+                        }
+                        let Ok(suffix) = u32::try_from(entity.entity_id.suffix()) else {
+                            continue;
+                        };
+                        if let Some(at) = first_at.get(&suffix) {
+                            if unique_match.replace((entity, at + 1)).is_some() {
+                                multiple_matches = true;
+                            }
+                        }
+                    }
+                }
+                if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches)
+                {
+                    let Some(entity_reference_offset) = scope
+                        .byte_offset()
+                        .checked_add(u64_from_index(relative_offset))
+                    else {
+                        continue;
+                    };
+                    if let scope::DesignScopePayloadMut::Sketch(slot)
+                    | scope::DesignScopePayloadMut::Esquisse(slot)
+                    | scope::DesignScopePayloadMut::Skizze(slot)
+                    | scope::DesignScopePayloadMut::Esboco(slot) = scope.payload_mut()
+                    {
+                        let entity_id = copy_sketch_entity_id(ctx, &entity.entity_id)?;
+                        *slot = Some(scope::DesignSketchEntityBinding {
+                            entity_id,
+                            entity_reference_offset,
+                        });
+                    }
+                }
+            }
+            if scope.kind() == scope::DesignFeatureKind::WorkPlane {
+                if let Some(frame) = exact_work_plane_frame(bytes, &records, &scope) {
+                    if let scope::DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
+                        *slot = Some(scope::DesignWorkPlaneTransform {
+                            work_plane_transform: frame.transform,
+                            work_plane_transform_offset: frame.transform_offset,
+                            reference: frame.reference.map(|(record_index, offset)| {
+                                scope::DesignWorkPlaneReference {
+                                    work_plane_reference: record_index,
+                                    work_plane_reference_offset: offset,
+                                }
+                            }),
+                            work_plane_construction: None,
+                        });
+                    }
+                }
+            }
+            if let Some(construction) = exact_work_axis_construction(bytes, &records, &scope) {
+                if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
+                    *slot = Some(construction);
+                }
+            }
+            if scope.kind() == scope::DesignFeatureKind::JointOrigin {
+                if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
+                    if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
+                        *slot = Some(scope::DesignJointOriginTransform {
+                            joint_origin_transform: frame.transform,
+                            joint_origin_transform_offset: frame.transform_offset,
+                            reference: frame.reference.map(|(record_index, offset)| {
+                                scope::DesignJointOriginReference {
+                                    joint_origin_reference: record_index,
+                                    joint_origin_reference_offset: offset,
+                                }
+                            }),
+                        });
+                    }
+                }
+            }
+            {
+                let construction =
+                    exact_work_point_construction(ctx, bytes, &records, &scope, &stream_types)?;
+                if let scope::DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_hole_construction(
                     ctx,
                     bytes,
-                    &mut scope,
-                    &stream,
-                    &native.design_entity_headers,
-                    &mut sketch_entities,
+                    &records,
+                    &scope,
+                    &stream_types,
+                    &scope::DesignFeatureKind::Hole,
                 )?;
-                bind_scope_constructions(ctx, bytes, &records, &mut scope, &stream_types, native)?;
-                ctx.push_vec(&mut out, scope, "f3d Design parameter scopes")?;
+                if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
             }
+            if let Some(placement) = exact_coil_placement(ctx, bytes, &records, &scope, recipes)? {
+                if let scope::DesignScopePayloadMut::SpirePrimitive(slot)
+                | scope::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
+                {
+                    slot.get_or_insert_with(Default::default).placement = Some(placement);
+                }
+            }
+            if let Some(construction) =
+                exact_solid_primitive(bytes, &records, &scope, parameter_owners)
+            {
+                match (scope.payload_mut(), construction) {
+                    (
+                        scope::DesignScopePayloadMut::SpherePrimitive(slot),
+                        crate::records::feature::primitives::DesignSolidPrimitive::Sphere(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::TorusPrimitive(slot),
+                        crate::records::feature::primitives::DesignSolidPrimitive::Torus(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::BoxPrimitive(slot),
+                        crate::records::feature::primitives::DesignSolidPrimitive::Box(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::CylinderPrimitive(slot),
+                        crate::records::feature::primitives::DesignSolidPrimitive::Cylinder(value),
+                    ) => *slot = Some(value),
+                    _ => {
+                        return Err(CodecError::NotImplemented(
+                            "F3D solid primitive payload kind mismatch".into(),
+                        ))
+                    }
+                }
+            }
+            {
+                let construction = exact_direct_face_operation(bytes, &records, &scope);
+                match (scope.payload_mut(), construction) {
+                    (
+                        scope::DesignScopePayloadMut::OffsetFaces(slot)
+                        | scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                        Some(direct_face::DesignDirectFaceOperation::OffsetFaces(value)),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::Shell(slot)
+                        | scope::DesignScopePayloadMut::Schale(slot),
+                        Some(direct_face::DesignDirectFaceOperation::Shell(value)),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::Thicken(slot),
+                        Some(direct_face::DesignDirectFaceOperation::Thicken(value)),
+                    ) => *slot = Some(value),
+                    _ => {}
+                }
+            }
+            {
+                let construction = exact_move_operation(bytes, &records, &scope);
+                if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction =
+                    exact_scale_operation(ctx, bytes, &records, &scope, &stream_types)?;
+                if let scope::DesignScopePayloadMut::Scale(slot)
+                | scope::DesignScopePayloadMut::Massstab(slot) = scope.payload_mut()
+                {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_surface_extend_operation(ctx, bytes, &records, &scope)?;
+                if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_surface_offset_operation(ctx, bytes, &records, &scope)?;
+                if let scope::DesignScopePayloadMut::SurfaceOffset(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            if let Some(parameters) = exact_fixed_extrude_parameters(
+                bytes,
+                &records,
+                &scope,
+                parameters,
+                parameter_owners,
+            ) {
+                {
+                    let value = Some(parameters);
+                    if let scope::DesignScopePayloadMut::Extrude(slot)
+                    | scope::DesignScopePayloadMut::Extrusion(slot)
+                    | scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+                    {
+                        slot.get_or_insert_with(Default::default)
+                            .fixed_extrude_parameters = value;
+                    }
+                }
+            }
+            {
+                let construction = exact_fixed_fillet_parameters(ctx, bytes, &records, &scope)?;
+                if let scope::DesignScopePayloadMut::Fillet(slot)
+                | scope::DesignScopePayloadMut::Conge(slot)
+                | scope::DesignScopePayloadMut::Abrundung(slot)
+                | scope::DesignScopePayloadMut::Arredondamento(slot) = scope.payload_mut()
+                {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction =
+                    exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
+                if let scope::DesignScopePayloadMut::Chamfer(slot)
+                | scope::DesignScopePayloadMut::Chanfrein(slot) = scope.payload_mut()
+                {
+                    *slot = construction;
+                }
+            }
+            if let Some(construction) =
+                exact_path_feature_construction(bytes, &records, &scope, parameter_owners)
+            {
+                match (scope.payload_mut(), construction) {
+                    (
+                        scope::DesignScopePayloadMut::Revolve(slot),
+                        crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::Loft(slot),
+                        crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::Pipe(slot),
+                        crate::records::feature::path_features::DesignPathFeatureConstruction::Pipe(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::Sweep(slot),
+                        crate::records::feature::path_features::DesignPathFeatureConstruction::Sweep(value),
+                    ) => *slot = Some(scope::DesignSweepScope {
+                        construction: Some(value),
+                        sweep_profile: None,
+                    }),
+                    _ => return Err(CodecError::NotImplemented("F3D path feature payload kind mismatch".into())),
+                }
+            }
+            {
+                let construction = exact_combine_operation(ctx, bytes, &records, &scope)?;
+                if let scope::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_thread_construction(ctx, bytes, &scope)?;
+                if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction =
+                    exact_draft_operation_with_owners(bytes, &records, &scope, parameter_owners);
+                if let scope::DesignScopePayloadMut::Draft(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_circular_pattern_construction_with_owners(
+                    ctx,
+                    bytes,
+                    &records,
+                    &scope,
+                    parameter_owners,
+                )?;
+                if let scope::DesignScopePayloadMut::CPattern(slot)
+                | scope::DesignScopePayloadMut::CircularPattern(slot)
+                | scope::DesignScopePayloadMut::ReseauC(slot) = scope.payload_mut()
+                {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_rectangular_pattern_construction(
+                    ctx,
+                    bytes,
+                    &records,
+                    &scope,
+                    parameter_owners,
+                )?;
+                if let scope::DesignScopePayloadMut::RPattern(slot)
+                | scope::DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut()
+                {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction =
+                    exact_assembly_alignment(ctx, bytes, &records, &scope, parameter_owners)?;
+                if let scope::DesignScopePayloadMut::Assemble(slot)
+                | scope::DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut()
+                {
+                    *slot = construction;
+                }
+            }
+            let legacy_form = scope
+                .assembly_alignment()
+                .and_then(|alignment| {
+                    let assembly::DesignAssemblyAlignmentForm::SolvedOnly {
+                        solved_frame,
+                        limits,
+                    } = alignment.form.as_ref()?
+                    else {
+                        return None;
+                    };
+                    let carriers = match exact_legacy_as_built_421_operands(
+                        ctx,
+                        bytes,
+                        &records,
+                        &scope,
+                        &stream_types,
+                        recipes,
+                        solved_frame,
+                    ) {
+                        Ok(Some(carriers)) => carriers,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    Some(Ok(
+                        assembly::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                            carriers,
+                            solved_frame: solved_frame.clone(),
+                            limits: limits.clone(),
+                            frames_field_present: true,
+                        },
+                    ))
+                })
+                .transpose()?;
+            if let (Some(alignment), Some(form)) = (scope.assembly_alignment_mut(), legacy_form) {
+                alignment.form = Some(form);
+            }
+            {
+                let construction =
+                    exact_component_insert_construction(ctx, bytes, &records, &scope)?;
+                if let scope::DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_derived_instance_construction(
+                    ctx,
+                    bytes,
+                    &records,
+                    &scope,
+                    component_occurrences,
+                )?;
+                if let scope::DesignScopePayloadMut::DerivedInstance(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_copy_paste_component_operation(
+                    ctx,
+                    bytes,
+                    &records,
+                    &scope,
+                    component_occurrences,
+                )?;
+                if let scope::DesignScopePayloadMut::CopyPaste(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            bind_component_pattern_occurrences(ctx, &mut scope, component_occurrences)?;
+            {
+                let construction = exact_copy_paste_bodies_operation(ctx, bytes, &records, &scope)?;
+                if let scope::DesignScopePayloadMut::CopyPasteBodies(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_base_feature_construction(ctx, bytes, &scope)?;
+                if let scope::DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+
+            ctx.reserve_vec(&mut out, 1, "f3d Design parameter scopes")?;
+            out.push(scope);
         }
         bind_joint_origin_frames_from_assemblies(ctx, bytes, &mut out[stream_scope_start..])?;
         bind_axial_assembly_operand_targets(ctx, bytes, &records, &mut out[stream_scope_start..])?;
@@ -142,517 +512,36 @@ pub(crate) fn decode_parameter_scopes(
         Ord::cmp,
         "sort f3d design parameter_scope 1",
     )?;
+    out.dedup_by(|a, b| a.id == b.id);
     Ok(out)
 }
 
-/// Sketch-module entity headers keyed by stream scope and `u32` entity
-/// suffix, with the scoped storage that holds the index.
-struct SketchEntityIndex<'entities, 'ctx> {
-    by_suffix: HashMap<(&'entities str, u32), SketchEntityMatch<'entities>>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
-
-/// The entity headers that share one stream scope and suffix.
-#[derive(Clone, Copy)]
-enum SketchEntityMatch<'entities> {
-    Unique(&'entities crate::records::entity_header::DesignEntityHeader),
-    Multiple,
-}
-
-/// Index every sketch-module entity header whose suffix fits in `u32` under
-/// its stream scope and suffix. Each header is visited once.
-fn sketch_entity_index<'entities, 'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-    entities: &'entities [crate::records::entity_header::DesignEntityHeader],
-) -> Result<SketchEntityIndex<'entities, 'ctx>, CodecError> {
-    const OPERATION: &str = "index F3D sketch entity headers";
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut by_suffix = HashMap::new();
-    for entity in ctx.admit_iter(entities, OPERATION)? {
-        if !entity.in_sketch_module() {
-            continue;
-        }
-        let Ok(suffix) = u32::try_from(entity.entity_id.suffix()) else {
-            continue;
-        };
-        let Some(stream) = record_stream(ctx, &entity.id)? else {
-            continue;
-        };
-        let key = (stream, suffix);
-        if let Some(found) = ctx.get_mut_hash_map(&mut by_suffix, &key, OPERATION)? {
-            *found = SketchEntityMatch::Multiple;
-            continue;
-        }
-        storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut by_suffix,
-                key,
-                SketchEntityMatch::Unique(entity),
-                OPERATION,
-            )
-        })?;
-    }
-    Ok(SketchEntityIndex {
-        by_suffix,
-        _storage: storage,
-    })
-}
-
-/// The only sketch-module entity of `stream` whose suffix a marked reference
-/// in `frame` names (a one byte, a `u32` suffix, six zero bytes), with the
-/// frame-relative offset of the suffix at its first reference. Two matching
-/// entities leave the binding unresolved, and the scan stops there.
-fn unique_sketch_entity_reference<'entities>(
+fn first_marked_reference_offsets(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     frame: &[u8],
-    stream: &str,
-    index: &SketchEntityIndex<'entities, '_>,
-) -> Result<
-    Option<(
-        &'entities crate::records::entity_header::DesignEntityHeader,
-        usize,
-    )>,
-    CodecError,
-> {
-    const OPERATION: &str = "scan F3D sketch scope marked references";
-    let mut found = None;
-    let mut multiple = false;
-    let mut at = 0;
-    ctx.position_by(
-        frame,
-        |byte| {
-            let here = at;
-            at += 1;
-            if *byte != 1 || !zeros_at::<6>(frame, here + 5) {
-                return Ok(false);
-            }
-            let Some(suffix) = View::u32_le_at(frame, here + 1) else {
-                return Ok(false);
-            };
-            if matches!(found, Some((found_suffix, _, _)) if found_suffix == suffix) {
-                return Ok(false);
-            }
-            match ctx.get_hash_map(&index.by_suffix, &(stream, suffix), OPERATION)? {
-                None => {}
-                Some(SketchEntityMatch::Multiple) => multiple = true,
-                Some(SketchEntityMatch::Unique(entity))
-                    if found.replace((suffix, *entity, here + 1)).is_some() =>
-                {
-                    multiple = true;
+) -> Result<HashMap<u32, usize>, CodecError> {
+    let mut first_at = HashMap::new();
+    for at in memchr::memchr_iter(1, frame) {
+        if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
+            if let Some(suffix) = View::u32_le_at(frame, at + 1) {
+                if !first_at.contains_key(&suffix) {
+                    ctx.reserve_map(&mut first_at, 1, "f3d Sketch scope reference offsets")?;
+                    first_at.insert(suffix, at);
                 }
-                Some(SketchEntityMatch::Unique(_)) => {}
-            }
-            Ok(multiple)
-        },
-        OPERATION,
-    )?;
-    if multiple {
-        return Ok(None);
-    }
-    Ok(found.map(|(_, entity, suffix_at)| (entity, suffix_at)))
-}
-
-/// Bind a sketch scope to the only sketch-module entity of its stream that a
-/// marked reference in its frame names.
-fn bind_sketch_entity<'entities, 'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    scope: &mut DesignParameterScope,
-    stream: &str,
-    entities: &'entities [crate::records::entity_header::DesignEntityHeader],
-    sketch_entities: &mut Option<SketchEntityIndex<'entities, 'ctx>>,
-) -> Result<(), CodecError> {
-    if !matches!(
-        scope.payload(),
-        scope::DesignScopePayload::Sketch(_)
-            | scope::DesignScopePayload::Esquisse(_)
-            | scope::DesignScopePayload::Skizze(_)
-            | scope::DesignScopePayload::Esboco(_)
-    ) {
-        return Ok(());
-    }
-    let Some(frame) = usize::try_from(scope.byte_offset())
-        .ok()
-        .zip(usize::try_from(scope.paired_byte_offset()).ok())
-        .and_then(|(start, end)| bytes.get(start..end))
-    else {
-        return Ok(());
-    };
-    let index = match sketch_entities {
-        Some(index) => index,
-        None => sketch_entities.insert(sketch_entity_index(ctx, entities)?),
-    };
-    let Some((entity, relative_offset)) =
-        unique_sketch_entity_reference(ctx, frame, stream, index)?
-    else {
-        return Ok(());
-    };
-    let Some(entity_reference_offset) = scope
-        .byte_offset()
-        .checked_add(u64_from_index(relative_offset))
-    else {
-        return Ok(());
-    };
-    let entity_id = copy_sketch_entity_id(ctx, &entity.entity_id)?;
-    if let scope::DesignScopePayloadMut::Sketch(slot)
-    | scope::DesignScopePayloadMut::Esquisse(slot)
-    | scope::DesignScopePayloadMut::Skizze(slot)
-    | scope::DesignScopePayloadMut::Esboco(slot) = scope.payload_mut()
-    {
-        *slot = Some(scope::DesignSketchEntityBinding {
-            entity_id,
-            entity_reference_offset,
-        });
-    }
-    Ok(())
-}
-
-/// Bind the specialized construction fields that each scope family decodes
-/// beside its generic envelope.
-fn bind_scope_constructions(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    scope: &mut DesignParameterScope,
-    stream_types: &HashMap<u64, (&str, u32)>,
-    native: &crate::native::F3dNative,
-) -> Result<(), CodecError> {
-    let parameters = &native.design_parameters;
-    let parameter_owners = &native.design_parameter_owners;
-    let component_occurrences = &native.design_component_occurrences;
-    let recipes = &native.construction_recipes;
-    bind_coil_extent_from_parameters(ctx, scope, parameters, parameter_owners)?;
-    bind_hem_operation_from_parameters(ctx, bytes, scope, parameters, parameter_owners)?;
-    if matches!(scope.payload(), scope::DesignScopePayload::WorkPlane(_)) {
-        if let Some(frame) = exact_work_plane_frame(ctx, bytes, records, scope)? {
-            if let scope::DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
-                *slot = Some(scope::DesignWorkPlaneTransform {
-                    work_plane_transform: frame.transform,
-                    work_plane_transform_offset: frame.transform_offset,
-                    reference: frame.reference.map(|(record_index, offset)| {
-                        scope::DesignWorkPlaneReference {
-                            work_plane_reference: record_index,
-                            work_plane_reference_offset: offset,
-                        }
-                    }),
-                    work_plane_construction: None,
-                });
             }
         }
     }
-    if let Some(construction) = exact_work_axis_construction(bytes, records, scope) {
-        if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
-            *slot = Some(construction);
-        }
-    }
-    if matches!(scope.payload(), scope::DesignScopePayload::JointOrigin(_)) {
-        if let Some(frame) = exact_joint_origin_frame(ctx, bytes, records, scope)? {
-            if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
-                *slot = Some(scope::DesignJointOriginTransform {
-                    joint_origin_transform: frame.transform,
-                    joint_origin_transform_offset: frame.transform_offset,
-                    reference: frame.reference.map(|(record_index, offset)| {
-                        scope::DesignJointOriginReference {
-                            joint_origin_reference: record_index,
-                            joint_origin_reference_offset: offset,
-                        }
-                    }),
-                });
-            }
-        }
-    }
-    {
-        let construction = exact_work_point_construction(ctx, bytes, records, scope, stream_types)?;
-        if let scope::DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    {
-        let construction = exact_hole_construction(
-            ctx,
-            bytes,
-            records,
-            scope,
-            stream_types,
-            &scope::DesignFeatureKind::Hole,
-        )?;
-        if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    if let Some(placement) = exact_coil_placement(ctx, bytes, records, scope, recipes)? {
-        if let scope::DesignScopePayloadMut::SpirePrimitive(slot)
-        | scope::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
-        {
-            slot.get_or_insert_with(Default::default).placement = Some(placement);
-        }
-    }
-    if let Some(construction) = exact_solid_primitive(ctx, bytes, records, scope, parameter_owners)?
-    {
-        match (scope.payload_mut(), construction) {
-            (
-                scope::DesignScopePayloadMut::SpherePrimitive(slot),
-                crate::records::feature::primitives::DesignSolidPrimitive::Sphere(value),
-            ) => *slot = Some(value),
-            (
-                scope::DesignScopePayloadMut::TorusPrimitive(slot),
-                crate::records::feature::primitives::DesignSolidPrimitive::Torus(value),
-            ) => *slot = Some(value),
-            (
-                scope::DesignScopePayloadMut::BoxPrimitive(slot),
-                crate::records::feature::primitives::DesignSolidPrimitive::Box(value),
-            ) => *slot = Some(value),
-            (
-                scope::DesignScopePayloadMut::CylinderPrimitive(slot),
-                crate::records::feature::primitives::DesignSolidPrimitive::Cylinder(value),
-            ) => *slot = Some(value),
-            _ => {
-                return Err(CodecError::NotImplemented(
-                    "F3D solid primitive payload kind mismatch".into(),
-                ))
-            }
-        }
-    }
-    {
-        let construction = exact_direct_face_operation(ctx, bytes, records, scope)?;
-        match (scope.payload_mut(), construction) {
-            (
-                scope::DesignScopePayloadMut::OffsetFaces(slot)
-                | scope::DesignScopePayloadMut::DecalerLesFaces(slot),
-                Some(direct_face::DesignDirectFaceOperation::OffsetFaces(value)),
-            ) => *slot = Some(value),
-            (
-                scope::DesignScopePayloadMut::Shell(slot)
-                | scope::DesignScopePayloadMut::Schale(slot),
-                Some(direct_face::DesignDirectFaceOperation::Shell(value)),
-            ) => *slot = Some(value),
-            (
-                scope::DesignScopePayloadMut::Thicken(slot),
-                Some(direct_face::DesignDirectFaceOperation::Thicken(value)),
-            ) => *slot = Some(value),
-            _ => {}
-        }
-    }
-    {
-        let construction = exact_move_operation(ctx, bytes, records, scope)?;
-        if let scope::DesignScopePayloadMut::Move(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    {
-        let construction = exact_scale_operation(ctx, bytes, records, scope, stream_types)?;
-        if let scope::DesignScopePayloadMut::Scale(slot)
-        | scope::DesignScopePayloadMut::Massstab(slot) = scope.payload_mut()
-        {
-            *slot = construction;
-        }
-    }
-    {
-        let construction = exact_surface_extend_operation(ctx, bytes, records, scope)?;
-        if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    {
-        let construction = exact_surface_offset_operation(ctx, bytes, records, scope)?;
-        if let scope::DesignScopePayloadMut::SurfaceOffset(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    if let Some(parameters) =
-        exact_fixed_extrude_parameters(ctx, bytes, records, scope, parameters, parameter_owners)?
-    {
-        {
-            let value = Some(parameters);
-            if let scope::DesignScopePayloadMut::Extrude(slot)
-            | scope::DesignScopePayloadMut::Extrusion(slot)
-            | scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
-            {
-                slot.get_or_insert_with(Default::default)
-                    .fixed_extrude_parameters = value;
-            }
-        }
-    }
-    {
-        let construction = exact_fixed_fillet_parameters(ctx, bytes, records, scope)?;
-        if let scope::DesignScopePayloadMut::Fillet(slot)
-        | scope::DesignScopePayloadMut::Conge(slot)
-        | scope::DesignScopePayloadMut::Abrundung(slot)
-        | scope::DesignScopePayloadMut::Arredondamento(slot) = scope.payload_mut()
-        {
-            *slot = construction;
-        }
-    }
-    {
-        let construction =
-            exact_fixed_chamfer_parameters(ctx, bytes, records, scope, parameter_owners)?;
-        if let scope::DesignScopePayloadMut::Chamfer(slot)
-        | scope::DesignScopePayloadMut::Chanfrein(slot) = scope.payload_mut()
-        {
-            *slot = construction;
-        }
-    }
-    if let Some(construction) =
-        exact_path_feature_construction(ctx, bytes, records, scope, parameter_owners)?
-    {
-        match (scope.payload_mut(), construction) {
-            (
-                scope::DesignScopePayloadMut::Revolve(slot),
-                crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(
-                    value,
-                ),
-            ) => *slot = Some(value),
-            (
-                scope::DesignScopePayloadMut::Loft(slot),
-                crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(value),
-            ) => *slot = Some(value),
-            (
-                scope::DesignScopePayloadMut::Pipe(slot),
-                crate::records::feature::path_features::DesignPathFeatureConstruction::Pipe(value),
-            ) => *slot = Some(value),
-            (
-                scope::DesignScopePayloadMut::Sweep(slot),
-                crate::records::feature::path_features::DesignPathFeatureConstruction::Sweep(value),
-            ) => {
-                *slot = Some(scope::DesignSweepScope {
-                    construction: Some(value),
-                    sweep_profile: None,
-                });
-            }
-            _ => {
-                return Err(CodecError::NotImplemented(
-                    "F3D path feature payload kind mismatch".into(),
-                ))
-            }
-        }
-    }
-    {
-        let construction = exact_combine_operation(ctx, bytes, records, scope)?;
-        if let scope::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    {
-        let construction = exact_thread_construction(ctx, bytes, scope)?;
-        if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    {
-        let construction =
-            exact_draft_operation_with_owners(ctx, bytes, records, scope, parameter_owners)?;
-        if let scope::DesignScopePayloadMut::Draft(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    {
-        let construction = exact_circular_pattern_construction_with_owners(
-            ctx,
-            bytes,
-            records,
-            scope,
-            parameter_owners,
-        )?;
-        if let scope::DesignScopePayloadMut::CPattern(slot)
-        | scope::DesignScopePayloadMut::CircularPattern(slot)
-        | scope::DesignScopePayloadMut::ReseauC(slot) = scope.payload_mut()
-        {
-            *slot = construction;
-        }
-    }
-    {
-        let construction =
-            exact_rectangular_pattern_construction(ctx, bytes, records, scope, parameter_owners)?;
-        if let scope::DesignScopePayloadMut::RPattern(slot)
-        | scope::DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut()
-        {
-            *slot = construction;
-        }
-    }
-    {
-        let construction = exact_assembly_alignment(ctx, bytes, records, scope, parameter_owners)?;
-        if let scope::DesignScopePayloadMut::Assemble(slot)
-        | scope::DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut()
-        {
-            *slot = construction;
-        }
-    }
-    let carriers = match scope.assembly_alignment() {
-        Some(assembly::DesignAssemblyAlignment {
-            form: Some(assembly::DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, .. }),
-            ..
-        }) => exact_legacy_as_built_421_operands(
-            ctx,
-            bytes,
-            records,
-            scope,
-            stream_types,
-            recipes,
-            solved_frame,
-        )?,
-        _ => None,
-    };
-    if let (Some(carriers), Some(alignment)) = (carriers, scope.assembly_alignment_mut()) {
-        alignment.form = match alignment.form.take() {
-            Some(assembly::DesignAssemblyAlignmentForm::SolvedOnly {
-                solved_frame,
-                limits,
-            }) => Some(assembly::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
-                carriers,
-                solved_frame,
-                limits,
-                frames_field_present: true,
-            }),
-            form => form,
-        };
-    }
-    {
-        let construction = exact_component_insert_construction(ctx, bytes, records, scope)?;
-        if let scope::DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    {
-        let construction =
-            exact_derived_instance_construction(ctx, bytes, records, scope, component_occurrences)?;
-        if let scope::DesignScopePayloadMut::DerivedInstance(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    {
-        let construction = exact_copy_paste_component_operation(
-            ctx,
-            bytes,
-            records,
-            scope,
-            component_occurrences,
-        )?;
-        if let scope::DesignScopePayloadMut::CopyPaste(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    bind_component_pattern_occurrences(ctx, scope, component_occurrences)?;
-    {
-        let construction = exact_copy_paste_bodies_operation(ctx, bytes, records, scope)?;
-        if let scope::DesignScopePayloadMut::CopyPasteBodies(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-    {
-        let construction = exact_base_feature_construction(ctx, bytes, scope)?;
-        if let scope::DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
-            *slot = construction;
-        }
-    }
-
-    Ok(())
+    Ok(first_at)
 }
 
 fn copy_sketch_entity_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &crate::records::identity::DesignEntityId,
 ) -> Result<crate::records::identity::DesignEntityId, CodecError> {
-    let text = ctx.copy_retained_text(source.as_str(), "f3d Sketch scope entity ID")?;
+    let text = String::from_utf8(
+        ctx.copy_retained(source.as_str().as_bytes(), "f3d Sketch scope entity ID")?,
+    )
+    .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
     crate::records::identity::DesignEntityId::try_from(text).map_err(CodecError::NotImplemented)
 }
 
@@ -667,65 +556,95 @@ pub(crate) fn admit_history_bound_scope_variants(
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<(), CodecError> {
-    const OPERATION: &str = "f3d scope admission";
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut admitted = storage.with_storage(|| {
-        ctx.collect_indexed_vec(scopes.len(), "f3d scope admission flags", |_| Ok(true))
-    })?;
-    {
-        let mut identities = storage.with_storage(|| {
-            ctx.collect_indexed_vec(scopes.len(), "f3d scope admission identities", |index| {
-                let scope = &scopes[index];
-                let stream = record_stream(ctx, &scope.id)?.unwrap_or(ids::DEFAULT_STREAM);
-                Ok((stream, scope.record_index, index))
-            })
+    let (mut admitted, _admitted_storage) =
+        ctx.temporary_vec(scopes.len(), "f3d scope admission")?;
+    admitted.extend(std::iter::repeat_n(true, scopes.len()));
+    let mut group_storage = ctx.reserve_scoped(0, "f3d scope admission groups")?;
+    let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
+    for (index, scope) in scopes.iter().enumerate() {
+        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        let key = (stream, scope.record_index);
+        group_storage.with_storage(|| {
+            ctx.push_hash_group(
+                &mut groups,
+                key,
+                index,
+                "f3d scope admission groups",
+                "f3d scope admission group indices",
+            )
         })?;
-        ctx.stable_sort_by_key(
-            &mut identities,
-            |(stream, record_index, _)| (*stream, *record_index),
-            Ord::cmp,
-            "sort F3D scope admission identities",
-        )?;
-        let mut rest = identities.as_slice();
-        while let Some(((stream, record_index, _), following)) = rest.split_first() {
-            ctx.charge_work(1, "group F3D scope admission identities")?;
-            let group_length = 1 + ctx
-                .position_by(
-                    following,
-                    |(other_stream, other_record_index, _)| {
-                        Ok(other_record_index != record_index
-                            || !ctx.equal_bytes(
-                                other_stream.as_bytes(),
-                                stream.as_bytes(),
-                                "group F3D scope admission identities",
-                            )?)
-                    },
-                    "group F3D scope admission identities",
-                )?
-                .unwrap_or(following.len());
-            let (group, tail) = rest.split_at(group_length);
-            rest = tail;
-            if let Some(keep) = admitted_scope_variant(ctx, scopes, group, histories)? {
-                for (_, _, index) in
-                    ctx.admit_iter(group, "mark F3D retained scope admission candidate")?
-                {
-                    admitted[*index] = *index == keep;
+    }
+
+    for indices in groups.values() {
+        let [first, following @ ..] = indices.as_slice() else {
+            continue;
+        };
+        if following.is_empty() {
+            continue;
+        }
+        let mut history_bound = None;
+        let mut multiple_history_bounds = false;
+        for index in indices {
+            let scope = &scopes[*index];
+            let Some(state_id) = scope.history_state_id() else {
+                continue;
+            };
+            let Some(previous_state_id) =
+                crate::history::effective_scope_previous_history_state_id(scope, histories)
+            else {
+                continue;
+            };
+            if crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
+                .is_some()
+                && history_bound.replace(*index).is_some()
+            {
+                multiple_history_bounds = true;
+                break;
+            }
+        }
+        let mut equivalent_payload = history_bound.is_none() && !multiple_history_bounds;
+        if equivalent_payload {
+            for index in following {
+                if !equivalent_scope_variant_payload(ctx, &scopes[*first], &scopes[*index])? {
+                    equivalent_payload = false;
+                    break;
                 }
             }
         }
+        let keep = match (history_bound, multiple_history_bounds) {
+            (Some(keep), false) => keep,
+            (None, false) if equivalent_payload => {
+                following.iter().copied().fold(*first, |keep, index| {
+                    if scopes[index].byte_offset() >= scopes[keep].byte_offset() {
+                        index
+                    } else {
+                        keep
+                    }
+                })
+            }
+            _ => {
+                return Err(CodecError::Malformed(
+                    "Design scope record identity has unresolved duplicate envelopes".into(),
+                ));
+            }
+        };
+        for index in indices {
+            admitted[*index] = *index == keep;
+        }
     }
 
-    let retained_count = ctx
-        .admit_iter(&admitted, "count F3D retained scope admission candidates")?
-        .filter(|selected| **selected)
-        .count();
-    // Every admission precedes the move, so a refusal leaves `scopes` intact.
-    let mut retained = ctx.collection_vec(retained_count, "f3d scope admission retained output")?;
-    for (selected, scope) in ctx
-        .admit_iter(&admitted, "move F3D retained scope admission candidates")?
-        .zip(std::mem::take(scopes))
-    {
-        if *selected {
+    drop(groups);
+    drop(group_storage);
+    let retained_count = admitted.iter().filter(|selected| **selected).count();
+
+    let mut retained = Vec::new();
+    ctx.reserve_vec(
+        &mut retained,
+        retained_count,
+        "f3d scope admission retained output",
+    )?;
+    for (index, scope) in std::mem::take(scopes).into_iter().enumerate() {
+        if admitted[index] {
             retained.push(scope);
         }
     }
@@ -733,113 +652,18 @@ pub(crate) fn admit_history_bound_scope_variants(
     Ok(())
 }
 
-/// The envelope a group of same-identity scopes keeps, or `None` for a group
-/// of one. A history-bound envelope is kept when it is the only one. Without
-/// one, equivalent envelopes keep the latest by byte offset: the later
-/// envelope supersedes the earlier one when no decoded ASM state pair can
-/// select a revision.
-fn admitted_scope_variant(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scopes: &[DesignParameterScope],
-    group: &[(&str, u32, usize)],
-    histories: &[crate::history_records::AsmHistory],
-) -> Result<Option<usize>, CodecError> {
-    const HISTORY_OPERATION: &str = "scan F3D scope admission history candidates";
-    let [(_, _, first), following @ ..] = group else {
-        return Ok(None);
-    };
-    if following.is_empty() {
-        return Ok(None);
-    }
-    let is_history_bound = |(_, _, index): &(&str, u32, usize)| {
-        let scope = &scopes[*index];
-        let bound = scope.history_state_id().is_some_and(|state_id| {
-            crate::history::effective_scope_previous_history_state_id(scope, histories).is_some_and(
-                |previous_state_id| {
-                    crate::history::unique_history_state_pair(
-                        histories,
-                        state_id,
-                        previous_state_id,
-                    )
-                    .is_some()
-                },
-            )
-        });
-        Ok(bound)
-    };
-    let history_bound = ctx.position_by(group, is_history_bound, HISTORY_OPERATION)?;
-    let keep = match history_bound {
-        Some(position) => {
-            if ctx
-                .position_by(&group[position + 1..], is_history_bound, HISTORY_OPERATION)?
-                .is_some()
-            {
-                None
-            } else {
-                Some(group[position].2)
-            }
-        }
-        None => {
-            // An equivalent envelope is one serialization of the same logical
-            // scope without its source-location and dynamic-class fields.
-            let equivalent = match scope_variant_json(ctx, &scopes[*first])? {
-                Some((first_tree, _first_storage)) => ctx.all_by(
-                    following,
-                    |(_, _, index)| match scope_variant_json(ctx, &scopes[*index])? {
-                        Some((tree, _storage)) => {
-                            equivalent_scope_json(ctx, &first_tree, &tree, true)
-                        }
-                        None => Ok(false),
-                    },
-                    "scan F3D equivalent scope admission candidates",
-                )?,
-                None => false,
-            };
-            if equivalent {
-                Some(ctx.fold(
-                    following,
-                    *first,
-                    |keep, (_, _, index)| {
-                        Ok(
-                            if scopes[*index].byte_offset() >= scopes[keep].byte_offset() {
-                                *index
-                            } else {
-                                keep
-                            },
-                        )
-                    },
-                    "select F3D latest equivalent scope envelope",
-                )?)
-            } else {
-                None
-            }
-        }
-    };
-    keep.map(Some).ok_or_else(|| {
-        CodecError::Malformed(
-            "Design scope record identity has unresolved duplicate envelopes".into(),
-        )
-    })
+/// Count serialized JSON bytes without retaining the serialized document.
+#[derive(Default)]
+struct JsonByteCounter {
+    bytes: usize,
 }
 
-/// Serialized JSON text. Each write admits its bytes as work and storage
-/// before copying them; a refusal stops the serializer and is kept for the
-/// caller.
-struct ChargedJsonWriter<'a, 'ctx> {
-    ctx: &'a cadmpeg_core::decode::DecodeContext<'ctx>,
-    bytes: Vec<u8>,
-    refusal: Option<CodecError>,
-}
-
-impl std::io::Write for ChargedJsonWriter<'_, '_> {
+impl std::io::Write for JsonByteCounter {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        if let Err(error) =
-            self.ctx
-                .extend_retained_bytes(&mut self.bytes, bytes, "f3d scope variant JSON")
-        {
-            self.refusal = Some(error);
-            return Err(std::io::Error::other("scope JSON refused"));
-        }
+        self.bytes = self
+            .bytes
+            .checked_add(bytes.len())
+            .ok_or_else(|| std::io::Error::other("scope JSON length overflow"))?;
         Ok(bytes.len())
     }
 
@@ -848,144 +672,162 @@ impl std::io::Write for ChargedJsonWriter<'_, '_> {
     }
 }
 
-/// Serialize `scope` into scoped temporary storage and parse the text as a
-/// value tree, returned with the scoped storage of the tree. A scope that does
-/// not serialize compares as different.
-fn scope_variant_json<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-    scope: &DesignParameterScope,
-) -> Result<
-    Option<(
-        serde_json::Value,
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    )>,
-    CodecError,
-> {
-    const OPERATION: &str = "f3d scope variant JSON";
-    let mut text_storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut writer = ChargedJsonWriter {
-        ctx,
-        bytes: Vec::new(),
-        refusal: None,
-    };
-    let serialized = text_storage.with_storage(|| {
-        let serialized = serde_json::to_writer(&mut writer, scope).is_ok();
-        writer.refusal.take().map_or(Ok(serialized), Err)
-    })?;
-    if !serialized {
-        return Ok(None);
-    }
-    let Ok(text) = ctx.validate_utf8(&writer.bytes, OPERATION)? else {
-        return Ok(None);
-    };
-    match ctx.parse_json_value(text, OPERATION) {
-        Ok(tree) => Ok(Some(tree)),
-        Err(CodecError::ResourceLimit(limit)) => Err(CodecError::ResourceLimit(limit)),
-        Err(_) => Ok(None),
-    }
-}
-
-/// Whether a member name records a source location, or at the top level a
-/// scope identity or dynamic-class field. These members do not take part in
-/// envelope equivalence.
-fn is_scope_variant_provenance(key: &str, top_level: bool) -> bool {
-    key.ends_with("_offset")
-        || key.ends_with("_offsets")
-        || (top_level
-            && matches!(
-                key,
-                "id" | "class_tag"
-                    | "frame_length"
-                    | "history_state_id"
-                    | "previous_history_state_id"
-                    | "paired_class_tag"
-            ))
-}
-
-/// Compare two scope value trees without their provenance members. Objects
-/// and arrays admit only the members and items visited before the first
-/// difference.
-fn equivalent_scope_json(
+/// Compare two same-index scope envelopes after removing source-location and
+/// dynamic-class fields. An equivalent envelope is one serialization of the
+/// same logical scope; the later envelope supersedes the earlier one when no
+/// decoded ASM state pair can select a revision.
+fn equivalent_scope_variant_payload(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    left: &serde_json::Value,
-    right: &serde_json::Value,
-    top_level: bool,
+    left: &DesignParameterScope,
+    right: &DesignParameterScope,
 ) -> Result<bool, CodecError> {
-    use serde_json::Value;
-    const OPERATION: &str = "f3d scope variant comparison";
-    let _depth = ctx.enter_nested("f3d scope variant comparison depth")?;
-    match (left, right) {
-        (Value::Null, Value::Null) => Ok(true),
-        (Value::Bool(left), Value::Bool(right)) => Ok(left == right),
-        (Value::Number(left), Value::Number(right)) => Ok(left == right),
-        (Value::String(left), Value::String(right)) => {
-            ctx.equal_bytes(left.as_bytes(), right.as_bytes(), OPERATION)
-        }
-        (Value::Array(left), Value::Array(right)) => {
-            if left.len() != right.len() {
-                return Ok(false);
-            }
-            let mut right_items = right.iter();
-            ctx.all_by(
-                left,
-                |item| {
-                    right_items.next().map_or(Ok(false), |other| {
-                        equivalent_scope_json(ctx, item, other, false)
-                    })
-                },
-                OPERATION,
-            )
-        }
-        (Value::Object(left), Value::Object(right)) => {
-            // Both maps iterate in key order, so equal member sets pair up.
-            // Each member is admitted as the walk reaches it.
-            fn next_member<'value>(
-                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                members: &mut serde_json::map::Iter<'value>,
-                top_level: bool,
-            ) -> Result<Option<(&'value String, &'value Value)>, CodecError> {
-                for (key, value) in members.by_ref() {
-                    ctx.charge_work(1, OPERATION)?;
-                    if !is_scope_variant_provenance(key, top_level) {
-                        return Ok(Some((key, value)));
-                    }
-                }
-                Ok(None)
-            }
-            let mut left_members = left.iter();
-            let mut right_members = right.iter();
-            loop {
-                match (
-                    next_member(ctx, &mut left_members, top_level)?,
-                    next_member(ctx, &mut right_members, top_level)?,
-                ) {
-                    (None, None) => return Ok(true),
-                    (Some((left_key, left_value)), Some((right_key, right_value))) => {
-                        if !ctx.equal_bytes(left_key.as_bytes(), right_key.as_bytes(), OPERATION)?
-                            || !equivalent_scope_json(ctx, left_value, right_value, false)?
-                        {
-                            return Ok(false);
-                        }
-                    }
-                    _ => return Ok(false),
-                }
-            }
-        }
-        _ => Ok(false),
+    let mut left_count = JsonByteCounter::default();
+    let mut right_count = JsonByteCounter::default();
+    if serde_json::to_writer(&mut left_count, left).is_err()
+        || serde_json::to_writer(&mut right_count, right).is_err()
+    {
+        return Ok(false);
     }
+    let serialized = left_count
+        .bytes
+        .checked_add(right_count.bytes)
+        .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant JSON size", 0, 1))?;
+    let work = u64_from_index(serialized)
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant comparison work", 0, 1))?;
+    ctx.charge_work(work, "f3d scope variant comparison")?;
+    let scratch_bytes = serialized
+        .checked_mul(2)
+        .and_then(|bytes| bytes.checked_add(16))
+        .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant JSON size", 0, 1))?;
+    let _scratch = ctx.reserve_scoped(u64_from_index(scratch_bytes), "f3d scope variant JSON")?;
+    let (equivalent, _storage) = ctx.with_scoped_storage("f3d scope variant JSON", || {
+        let Some(mut left) = scope_variant_json(ctx, left, left_count.bytes)? else {
+            return Ok(false);
+        };
+        let Some(mut right) = scope_variant_json(ctx, right, right_count.bytes)? else {
+            return Ok(false);
+        };
+        strip_scope_variant_provenance(ctx, &mut left, true)?;
+        strip_scope_variant_provenance(ctx, &mut right, true)?;
+        Ok::<_, CodecError>(left == right)
+    })?;
+    Ok(equivalent)
+}
+
+struct ScopeJsonWriter {
+    bytes: Vec<u8>,
+    limit: usize,
+}
+
+impl std::io::Write for ScopeJsonWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let length = self
+            .bytes
+            .len()
+            .checked_add(bytes.len())
+            .filter(|length| *length <= self.limit)
+            .ok_or_else(|| std::io::Error::other("scope JSON changed during serialization"))?;
+        if length > self.bytes.capacity() {
+            return Err(std::io::Error::other("scope JSON exceeds admitted storage"));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn scope_variant_json(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scope: &DesignParameterScope,
+    serialized_length: usize,
+) -> Result<Option<serde_json::Value>, CodecError> {
+    use serde::de::DeserializeSeed;
+
+    let bytes = ctx.collection_vec(serialized_length, "f3d scope variant JSON")?;
+    let mut writer = ScopeJsonWriter {
+        bytes,
+        limit: serialized_length,
+    };
+    if serde_json::to_writer(&mut writer, scope).is_err() {
+        return Ok(None);
+    }
+    let mut refusal = None;
+    let mut deserializer = serde_json::Deserializer::from_slice(&writer.bytes);
+    let parsed = crate::design::json_value::ValueSeed {
+        ctx,
+        refusal: &mut refusal,
+        member: false,
+    }
+    .deserialize(&mut deserializer)
+    .and_then(|value| {
+        deserializer.end()?;
+        Ok(value)
+    });
+    match parsed {
+        Ok(value) => Ok(Some(value)),
+        Err(_) => match refusal {
+            Some(error) => Err(error),
+            None => Ok(None),
+        },
+    }
+}
+
+fn strip_scope_variant_provenance(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &mut serde_json::Value,
+    top_level: bool,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("f3d scope variant provenance depth")?;
+    ctx.charge_work(1, "f3d scope variant provenance work")?;
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                strip_scope_variant_provenance(ctx, item, false)?;
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            fields.retain(|key, _| {
+                if key.ends_with("_offset") || key.ends_with("_offsets") {
+                    return false;
+                }
+                if top_level
+                    && matches!(
+                        key.as_str(),
+                        "id" | "class_tag"
+                            | "frame_length"
+                            | "history_state_id"
+                            | "previous_history_state_id"
+                            | "paired_class_tag"
+                    )
+                {
+                    return false;
+                }
+                true
+            });
+            for field in fields.values_mut() {
+                strip_scope_variant_provenance(ctx, field, false)?;
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+    }
+    Ok(())
 }
 
 /// Skip the payload prologue at `at`: a leading-block presence byte, a property
 /// presence byte, and the property block that byte gates. The leading-block
 /// byte belongs to classes that write one, so this reader only steps over it.
-/// A block holds at most 16 properties of two fields of at most 64 bytes, so
-/// the reader does fixed work.
 pub(in crate::design::decode) fn payload_prologue(
     bytes: &[u8],
     at: usize,
     end: usize,
 ) -> Option<usize> {
-    /// A counted field of 1 to 64 printable ASCII bytes, and the offset after it.
     fn graphic_ascii_at(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
         let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         if !(1..=64).contains(&length) {
@@ -1020,6 +862,39 @@ pub(in crate::design::decode) fn payload_prologue(
         }
         _ => None,
     }
+}
+
+/// Every indexed-record header that can open a parameter scope: a scope is
+/// delimited by two headers carrying its record index, so the last header of an
+/// index opens nothing.
+pub(super) fn parameter_scope_candidate_headers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+) -> Result<Vec<RecordFrame>, CodecError> {
+    let mut headers = Vec::new();
+    for (record_index, offsets) in records.records() {
+        for at in offsets.windows(2).map(|pair| &pair[0]) {
+            let Some((class_tag, _)) =
+                lp_ascii_filtered_view(bytes, *at, 3..=3, u8::is_ascii_digit)
+            else {
+                continue;
+            };
+            let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag) else {
+                continue;
+            };
+            let byte_offset = u64::try_from(*at)
+                .map_err(|_| ctx.refuse_codec_limit("f3d Design scope header offset", 0, 1))?;
+
+            ctx.reserve_vec(&mut headers, 1, "f3d Design scope candidate headers")?;
+            headers.push(RecordFrame {
+                record_index,
+                class_tag,
+                byte_offset,
+            });
+        }
+    }
+    Ok(headers)
 }
 
 pub(crate) fn parameter_scope_tail_length_is_valid(
@@ -1072,8 +947,6 @@ fn parameter_scope_previous_history_offset_for_form(
     }
 }
 
-/// Parse the parameter scope whose frame opens at `byte_offset` and closes at
-/// the next header carrying `record_index`.
 pub(in crate::design::decode) fn parse_parameter_scope(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
@@ -1082,507 +955,417 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     class_tag: &crate::records::references::DesignClassTag,
     byte_offset: u64,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
-    let Some(start) = usize::try_from(byte_offset).ok() else {
-        return Ok(None);
-    };
-    let Ok(class_tag) = <&[u8; 3]>::try_from(class_tag.as_str().as_bytes()) else {
-        return Ok(None);
-    };
-    parse_scope_at(ctx, bytes, records, record_index, *class_tag, start)
-}
-
-/// Parse the parameter scope whose frame opens at `start` and closes at the
-/// first header carrying `record_index` at least one header length later.
-fn parse_scope_at(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    record_index: u32,
-    class_tag: [u8; 3],
-    start: usize,
-) -> Result<Option<DesignParameterScope>, CodecError> {
-    let Some(search) = start.checked_add(11) else {
-        return Ok(None);
-    };
-    let Some(paired_at) = records.first_at_or_after(ctx, search, record_index)? else {
-        return Ok(None);
-    };
-    parse_scope_frame(
-        ctx,
-        bytes,
-        records,
-        record_index,
-        class_tag,
-        start,
-        paired_at,
-    )
-}
-
-/// The farthest a scope kind field opens before the paired header: the
-/// longest tail, the kind's length prefix and a 256-unit kind.
-const KIND_SCAN_SPAN: usize = 590 + 4 + 2 * 256;
-
-/// A marked reference slot of a scope's reference table: a one byte, a `u32`
-/// record index and six zero bytes.
-const REFERENCE_SLOT_LEN: usize = 11;
-
-/// Parse the parameter scope framed by the headers at `start` and `paired_at`,
-/// whose first header carries `class_tag`.
-///
-/// The kind field is the only counted UTF-16 field among the last
-/// [`KIND_SCAN_SPAN`] positions before the paired header whose tail has a
-/// fixed or named-label form; a named tail takes precedence and two candidates
-/// of the chosen form leave the frame unparsed. The reference table is the
-/// only counted run of marked reference slots that ends four bytes before the
-/// kind field.
-fn parse_scope_frame(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    record_index: u32,
-    class_tag: [u8; 3],
-    start: usize,
-    paired_at: usize,
-) -> Result<Option<DesignParameterScope>, CodecError> {
-    let (Ok(class_tag_text), Some(paired_header)) = (
-        std::str::from_utf8(&class_tag),
-        indexed_record_header_at(bytes, paired_at),
-    ) else {
-        return Ok(None);
-    };
-    let Ok(paired_class_tag) = std::str::from_utf8(paired_header.class_tag) else {
-        return Ok(None);
-    };
-    let (Some(scan_start), Some(kind_scan_end)) =
-        (start.checked_add(11), paired_at.checked_sub(72))
-    else {
-        return Ok(None);
-    };
-    let mut fixed_candidate = None;
-    let mut fixed_ambiguous = false;
-    let mut named_candidate = None;
-    let mut named_ambiguous = false;
-    // The window holds at most `KIND_SCAN_SPAN` positions; each decode admits
-    // its own text. A frame shorter than the span opens the window at its start.
-    let window_start = paired_at
-        .checked_sub(KIND_SCAN_SPAN)
-        .map_or(scan_start, |span_start| span_start.max(scan_start));
-    for at in window_start..kind_scan_end {
-        let Some((kind, kind_end, _kind_storage)) =
-            lp_utf16_bounded_scoped(ctx, bytes, at, 1..=256, "f3d Design temporary UTF-16 text")?
-        else {
-            continue;
-        };
-        if utf16_has_control(ctx, bytes.get(at + 4..kind_end).unwrap_or(&[]))? {
-            continue;
-        }
-        let Some(tail_length) = paired_at.checked_sub(kind_end) else {
-            continue;
-        };
-        let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
-        if fixed_tail
-            && parameter_scope_tail_length_is_valid(&kind, tail_length)
-            && fixed_candidate
-                .replace((at, kind_end, tail_length, ScopeTailForm::Fixed))
-                .is_some()
+    (|| {
+        let start = usize::try_from(byte_offset).ok()?;
+        let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
+        let (paired_class_tag, _) =
+            lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
+        let mut fixed_candidate = None;
+        let mut fixed_ambiguous = false;
+        let mut named_candidate = None;
+        let mut named_ambiguous = false;
+        let kind_scan_end = paired_at.checked_sub(72)?;
+        for at in (start.checked_add(11)?..paired_at)
+            .rev()
+            .take(590 + 4 + 2 * 256)
+            .rev()
+            .take_while(|at| *at < kind_scan_end)
         {
-            fixed_ambiguous = true;
-        }
-        let named_tail_possible = (78..=590).contains(&tail_length)
-            && tail_length.is_multiple_of(2)
-            && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78);
-        if named_tail_possible
-            && named_parameter_scope_tail_is_valid(ctx, bytes, kind_end, paired_at, tail_length)?
-                == Some(true)
-            && named_candidate
-                .replace((at, kind_end, tail_length, ScopeTailForm::Named))
-                .is_some()
-        {
-            named_ambiguous = true;
-        }
-    }
-    let candidate = if named_ambiguous {
-        None
-    } else if named_candidate.is_some() {
-        named_candidate
-    } else if fixed_ambiguous {
-        None
-    } else {
-        fixed_candidate
-    };
-    let Some((kind_at, kind_end, tail_length, tail_form)) = candidate else {
-        return Ok(None);
-    };
-    let Some((kind_text, confirmed_kind_end, _kind_storage)) = lp_utf16_bounded_scoped(
-        ctx,
-        bytes,
-        kind_at,
-        1..=256,
-        "f3d Design temporary UTF-16 text",
-    )?
-    else {
-        return Ok(None);
-    };
-    if confirmed_kind_end != kind_end {
-        return Ok(None);
-    }
-    let Ok(kind) = scope::DesignFeatureKind::try_from(kind_text) else {
-        return Ok(None);
-    };
-    if let scope::DesignFeatureKind::Native(_) = &kind {
-        // The output keeps a native kind name: at most 256 UTF-16 units.
-        ctx.charge_retained(
-            u64_from_index(kind.as_str().len()),
-            "f3d Design scope kind storage",
-        )?;
-    }
-    let Some(reference_table_end) = kind_at.checked_sub(4) else {
-        return Ok(None);
-    };
-    let Some(feature_ordinal) =
-        View::u32_le_at(bytes, kind_end).and_then(std::num::NonZeroU32::new)
-    else {
-        return Ok(None);
-    };
-    let Some(history_state_id) = View::u32_le_at(bytes, reference_table_end) else {
-        return Ok(None);
-    };
-    let history_state_id = (history_state_id != u32::MAX).then(|| i64::from(history_state_id));
-    let previous_history_state_id_offset = match parameter_scope_previous_history_offset_for_form(
-        kind.as_str(),
-        tail_length,
-        tail_form,
-    ) {
-        Some(offset) => {
-            let Some(offset) = kind_end.checked_add(offset) else {
-                return Ok(None);
+            let (kind, kind_end, _reservation) = match lp_utf16_bounded_scoped(
+                ctx,
+                bytes,
+                at,
+                1..=256,
+                "f3d Design temporary UTF-16 text",
+            ) {
+                Ok(Some(decoded)) => decoded,
+                Ok(None) => continue,
+                Err(error) => return Some(Err(error)),
             };
-            Some(offset)
+            if !kind.chars().all(|character| !character.is_control()) {
+                continue;
+            }
+            let Some(tail_length) = paired_at.checked_sub(kind_end) else {
+                continue;
+            };
+            let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110);
+            if fixed_tail
+                && parameter_scope_tail_length_is_valid(&kind, tail_length)
+                && fixed_candidate
+                    .replace((at, kind_end, tail_length, ScopeTailForm::Fixed))
+                    .is_some()
+            {
+                fixed_ambiguous = true;
+            }
+            let named_tail_possible = (78..=590).contains(&tail_length)
+                && tail_length.is_multiple_of(2)
+                && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78);
+            let named_tail = if named_tail_possible {
+                match named_parameter_scope_tail_is_valid(
+                    ctx,
+                    bytes,
+                    kind_end,
+                    paired_at,
+                    tail_length,
+                ) {
+                    Ok(Some(valid)) => valid,
+                    Ok(None) => false,
+                    Err(error) => return Some(Err(error)),
+                }
+            } else {
+                false
+            };
+            if named_tail
+                && named_candidate
+                    .replace((at, kind_end, tail_length, ScopeTailForm::Named))
+                    .is_some()
+            {
+                named_ambiguous = true;
+            }
         }
-        None => None,
-    };
-    let previous_history_state_id = previous_history_state_id_offset
-        .and_then(|offset| View::u32_le_at(bytes, offset))
-        .filter(|state_id| *state_id != u32::MAX)
-        .map(i64::from);
-    let Some(table) = reference_table(ctx, bytes, start, reference_table_end)? else {
-        return Ok(None);
-    };
-    let mut members_storage = ctx.reserve_scoped(0, "f3d Design scope reference members")?;
-    let reference_members = members_storage.with_storage(|| {
-        ctx.collect_indexed_vec(
-            table.count,
-            "f3d Design scope reference members",
-            |ordinal| {
-                table.member(bytes, ordinal).ok_or_else(|| {
-                    CodecError::malformed("F3D scope reference slot lies outside its frame")
-                })
-            },
-        )
-    })?;
-    let reference_members = reference_members.as_slice();
-    let reference_count_at = table.count_at;
-    let surface_stitch_operation = if matches!(kind, scope::DesignFeatureKind::SurfaceStitch) {
-        exact_surface_stitch_operation(ctx, bytes, records, record_index, reference_members)?
-    } else {
-        None
-    };
-    let surface_patch_boundaries = if matches!(kind, scope::DesignFeatureKind::SurfacePatch) {
-        crate::design::decode::patch::surface_patch_boundaries(
+        let candidate = if named_ambiguous {
+            None
+        } else if named_candidate.is_some() {
+            named_candidate
+        } else if fixed_ambiguous {
+            None
+        } else {
+            fixed_candidate
+        };
+        let (kind_at, kind_end, tail_length, tail_form) = candidate?;
+        let (kind_text, confirmed_kind_end) = match lp_utf16_bounded_charged(
             ctx,
             bytes,
-            records,
-            reference_members,
-        )?
-    } else {
-        Vec::new()
-    };
-    let base_flange_operation = if matches!(kind, scope::DesignFeatureKind::BaseFlange) {
-        exact_base_flange_operation(bytes, start, paired_at, reference_members)
-    } else {
-        None
-    };
-    let edge_flange_operation = if matches!(kind, scope::DesignFeatureKind::EdgeFlange) {
-        exact_edge_flange_operation(
-            bytes,
-            start,
-            paired_at,
-            class_tag_text,
-            paired_class_tag,
-            reference_members,
-        )
-    } else {
-        None
-    };
-    let ruled_surface_operation = if matches!(kind, scope::DesignFeatureKind::SurfaceRuled) {
-        exact_ruled_surface_operation(
-            ctx,
-            bytes,
-            start,
-            paired_at,
-            reference_count_at,
-            reference_members,
-        )?
-    } else {
-        None
-    };
-    let family = design_feature_family(&kind);
-    // A `Sketch` scope carries either the single entity-suffix reference form
-    // or, when the stream's sketch entity headers use the `EntityGenesis`
-    // form, the generic ordered reference table. Both parse here; the entity
-    // binding in `decode_parameter_scopes` requires a unique suffix match.
-    let extrude_prologue = if family == Some(DesignFeatureFamily::Extrude) {
-        // The generic scope envelope is independently self-delimiting. An
-        // unrecognized Extrude prologue therefore withholds only the typed
-        // fields, not the scope and its ordered reference table.
-        exact_extrude_prologue(
-            ctx,
-            bytes,
-            ExtrudeScopeFrame {
+            kind_at,
+            1..=256,
+            "f3d Design UTF-16 text",
+        ) {
+            Ok(Some(decoded)) => decoded,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        if confirmed_kind_end != kind_end {
+            return None;
+        }
+        if let Err(error) = ctx.charge_retained(
+            u64_from_index(kind_text.len()),
+            "f3d Design scope kind storage",
+        ) {
+            return Some(Err(error));
+        }
+        let kind = scope::DesignFeatureKind::try_from(kind_text).ok()?;
+        let reference_table_end = kind_at.checked_sub(4)?;
+        let feature_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, kind_end)?)?;
+        let history_state_id_offset = reference_table_end;
+        let history_state_id = match View::u32_le_at(bytes, history_state_id_offset)? {
+            u32::MAX => None,
+            state_id => Some(i64::from(state_id)),
+        };
+        let previous_history_state_id_offset =
+            match parameter_scope_previous_history_offset_for_form(
+                kind.as_str(),
+                tail_length,
+                tail_form,
+            ) {
+                Some(offset) => Some(kind_end.checked_add(offset)?),
+                None => None,
+            };
+        let previous_history_state_id = previous_history_state_id_offset.and_then(|offset| {
+            match View::u32_le_at(bytes, offset)? {
+                u32::MAX => None,
+                state_id => Some(i64::from(state_id)),
+            }
+        });
+        let mut reference_table = None;
+        for count_at in start + 11..reference_table_end {
+            let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+            if count == 0
+                || count_at
+                    .checked_add(4)?
+                    .checked_add(count.checked_mul(11)?)?
+                    != reference_table_end
+            {
+                continue;
+            }
+            let first = count_at.checked_add(4)?;
+
+            let mut members = Vec::new();
+            if let Err(error) =
+                ctx.reserve_vec(&mut members, count, "f3d Design scope reference members")
+            {
+                return Some(Err(error));
+            }
+
+            let mut offsets = Vec::new();
+            if let Err(error) =
+                ctx.reserve_vec(&mut offsets, count, "f3d Design scope reference offsets")
+            {
+                return Some(Err(error));
+            }
+            for ordinal in 0..count {
+                let marker = first.checked_add(ordinal.checked_mul(11)?)?;
+                if bytes.get(marker) != Some(&1) || bytes.get(marker + 5..marker + 11)? != [0; 6] {
+                    members.clear();
+                    break;
+                }
+                members.push(View::u32_le_at(bytes, marker + 1)?);
+                offsets.push(u64::try_from(marker + 1).ok()?);
+            }
+            if members.len() == count
+                && reference_table
+                    .replace((count_at, members, offsets))
+                    .is_some()
+            {
+                return None;
+            }
+        }
+        let reference_table = reference_table?;
+        let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
+        let surface_stitch_operation = if kind == scope::DesignFeatureKind::SurfaceStitch {
+            exact_surface_stitch_operation(bytes, records, record_index, reference_members)
+        } else {
+            None
+        };
+        let surface_patch_boundaries = if kind == scope::DesignFeatureKind::SurfacePatch {
+            match crate::design::decode::patch::surface_patch_boundaries(
+                ctx,
+                bytes,
+                records,
+                reference_members,
+            ) {
+                Ok(boundaries) => boundaries,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            Vec::new()
+        };
+        let base_flange_operation = if kind == scope::DesignFeatureKind::BaseFlange {
+            exact_base_flange_operation(bytes, start, paired_at, reference_members)
+        } else {
+            None
+        };
+        let edge_flange_operation = if kind == scope::DesignFeatureKind::EdgeFlange {
+            match exact_edge_flange_operation(
+                ctx,
+                bytes,
                 start,
                 paired_at,
-                class_tag: class_tag_text,
+                class_tag.as_str(),
                 paired_class_tag,
-                reference_count_at,
-            },
-            reference_members,
-        )?
-    } else {
-        None
-    };
-    let coil = if family == Some(DesignFeatureFamily::Coil) {
-        let coil_discriminators =
-            exact_coil_discriminators(bytes, start, paired_at, &kind, reference_members);
-        let coil_transform =
-            exact_long_coil_transform(bytes, start, paired_at, &kind, reference_members);
-        Some(coil_scope(coil_discriminators.as_ref(), coil_transform))
-    } else {
-        None
-    };
-    let payload = match kind {
-        scope::DesignFeatureKind::SurfaceStitch => {
-            let Some(operation) = surface_stitch_operation else {
-                return Ok(None);
-            };
-            scope::DesignScopePayload::SurfaceStitch(operation)
-        }
-        scope::DesignFeatureKind::SurfaceRuled => {
-            let Some(operation) = ruled_surface_operation else {
-                return Ok(None);
-            };
-            scope::DesignScopePayload::SurfaceRuled(operation)
-        }
-        kind => {
-            let Ok(payload) = kind.try_into() else {
-                return Ok(None);
-            };
-            payload
-        }
-    };
-    let (
-        Some(frame_length),
-        Ok(kind_offset),
-        Ok(feature_ordinal_offset),
-        Ok(reference_count_offset),
-    ) = (
-        paired_at.checked_sub(start).map(u64_from_index),
-        u64::try_from(kind_at + 4),
-        u64::try_from(kind_end),
-        u64::try_from(reference_count_at),
-    )
-    else {
-        return Ok(None);
-    };
-    let located_references = ctx.collect_indexed_vec(
-        table.count,
-        "f3d Design scope located references",
-        |ordinal| {
-            Ok(crate::records::identity::Located {
-                value: reference_members[ordinal],
-                offset: u64_from_index(table.member_offset(ordinal)),
+                reference_members,
+            ) {
+                Ok(operation) => operation,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            None
+        };
+        let ruled_surface_operation = if kind == scope::DesignFeatureKind::SurfaceRuled {
+            match exact_ruled_surface_operation(
+                ctx,
+                bytes,
+                start,
+                paired_at,
+                *reference_count_at,
+                reference_members,
+            ) {
+                Ok(operation) => operation,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            None
+        };
+        let family = design_feature_family(&kind);
+        // A `Sketch` scope carries either the single entity-suffix reference form
+        // or, when the stream's sketch entity headers use the `EntityGenesis`
+        // form, the generic ordered reference table. Both parse here; the entity
+        // binding in `decode_parameter_scopes` requires a unique suffix match.
+        let extrude_prologue = if family == Some(DesignFeatureFamily::Extrude) {
+            // The generic scope envelope is independently self-delimiting. An
+            // unrecognized Extrude prologue therefore withholds only the typed
+            // fields, not the scope and its ordered reference table.
+            exact_extrude_prologue(
+                bytes,
+                start,
+                paired_at,
+                class_tag.as_str(),
+                paired_class_tag,
+                *reference_count_at,
+                reference_members,
+            )
+        } else {
+            None
+        };
+        let coil_discriminators = if family == Some(DesignFeatureFamily::Coil) {
+            exact_coil_discriminators(bytes, start, paired_at, &kind, reference_members)
+        } else {
+            None
+        };
+        let coil_transform = if family == Some(DesignFeatureFamily::Coil) {
+            exact_long_coil_transform(bytes, start, paired_at, &kind, reference_members)
+        } else {
+            None
+        };
+        let coil = if family == Some(DesignFeatureFamily::Coil) {
+            Some(coil::DesignCoilScope {
+                operation: coil_discriminators.as_ref().map(|fields| {
+                    crate::records::identity::RecordedValue {
+                        value: fields.operation,
+                        offset: fields.operation_offset,
+                    }
+                }),
+                extent: coil_discriminators
+                    .as_ref()
+                    .and_then(|fields| fields.extent),
+                section: coil_discriminators
+                    .as_ref()
+                    .map(|fields| match fields.section_offset {
+                        Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
+                            crate::records::identity::RecordedValue {
+                                value: fields.section,
+                                offset,
+                            },
+                        ),
+                        None => {
+                            crate::records::identity::MaybeRecordedValue::Unlocated(fields.section)
+                        }
+                    }),
+                section_placement: coil_discriminators.as_ref().map(|fields| {
+                    match fields.section_placement_offset {
+                        Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
+                            crate::records::identity::RecordedValue {
+                                value: fields.section_placement,
+                                offset,
+                            },
+                        ),
+                        None => crate::records::identity::MaybeRecordedValue::Unlocated(
+                            fields.section_placement,
+                        ),
+                    }
+                }),
+                clockwise: coil_discriminators.as_ref().map(|fields| {
+                    match fields.clockwise_offset {
+                        Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
+                            crate::records::identity::RecordedValue {
+                                value: fields.clockwise,
+                                offset,
+                            },
+                        ),
+                        None => crate::records::identity::MaybeRecordedValue::Unlocated(
+                            fields.clockwise,
+                        ),
+                    }
+                }),
+                placement: None,
+                transform: coil_transform,
             })
-        },
-    )?;
-    let class_tag = crate::design::decode::text::retain_class_tag(
-        ctx,
-        class_tag,
-        "f3d Design scope class tag",
-    )?;
-    let paired_class_tag = paired_header.retain_class_tag(ctx, "f3d Design scope class tag")?;
-    let Ok(mut scope) = DesignParameterScope::try_new(scope::DesignParameterScopeDraft {
-        id: String::new(),
-        byte_offset: u64_from_index(start),
-        class_tag,
-        record_index,
-        frame_length,
-        kind_offset,
-        feature_ordinal,
-        feature_ordinal_offset,
-        history_state_id,
-        previous_history_state_id,
-        previous_history_state_id_offset: previous_history_state_id_offset
-            .map(u64_from_index)
-            .filter(|&offset| offset != 0),
-        reference_count_offset,
-        reference_members: crate::records::identity::ReferenceRun::located(located_references),
-        payload,
-        unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag,
-        paired_byte_offset: u64_from_index(paired_at),
-    }) else {
-        return Ok(None);
-    };
-    if let Some(prologue) = extrude_prologue {
-        if let scope::DesignScopePayloadMut::Extrude(slot)
-        | scope::DesignScopePayloadMut::Extrusion(slot)
-        | scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
-        {
-            *slot = Some(scope::DesignExtrudeScope {
-                extrude_prologue: Some(prologue),
-                ..scope::DesignExtrudeScope::default()
-            });
+        } else {
+            None
+        };
+
+        let mut located_references = Vec::new();
+        if let Err(error) = ctx.reserve_vec(
+            &mut located_references,
+            reference_members.len(),
+            "f3d Design scope located references",
+        ) {
+            return Some(Err(error));
         }
-    }
-    if let Some(coil) = coil {
-        if let scope::DesignScopePayloadMut::SpirePrimitive(slot)
-        | scope::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
-        {
-            *slot = Some(coil);
+        located_references.extend(
+            reference_members
+                .iter()
+                .copied()
+                .zip(reference_member_offsets.iter().copied())
+                .map(|(value, offset)| crate::records::identity::Located { value, offset }),
+        );
+        let mut scope = DesignParameterScope::try_new(scope::DesignParameterScopeDraft {
+            id: String::new(),
+            byte_offset,
+            class_tag: class_tag.clone(),
+            record_index,
+            frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
+            kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
+            feature_ordinal,
+            feature_ordinal_offset: u64::try_from(kind_end).ok()?,
+            history_state_id,
+
+            previous_history_state_id,
+            previous_history_state_id_offset: previous_history_state_id_offset
+                .and_then(|offset| u64::try_from(offset).ok())
+                .filter(|&offset| offset != 0),
+            reference_count_offset: u64::try_from(*reference_count_at).ok()?,
+            reference_members: crate::records::identity::ReferenceRun::located(located_references),
+            payload: match kind {
+                scope::DesignFeatureKind::SurfaceStitch => {
+                    scope::DesignScopePayload::SurfaceStitch(surface_stitch_operation?)
+                }
+                scope::DesignFeatureKind::SurfaceRuled => {
+                    scope::DesignScopePayload::SurfaceRuled(ruled_surface_operation?)
+                }
+                kind => kind.try_into().ok()?,
+            },
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
+                .ok()?,
+            paired_byte_offset: u64_from_index(paired_at),
+        })
+        .ok()?;
+        if let Some(prologue) = extrude_prologue {
+            {
+                let construction = Some(scope::DesignExtrudeScope {
+                    extrude_prologue: Some(prologue),
+                    ..scope::DesignExtrudeScope::default()
+                });
+                if let scope::DesignScopePayloadMut::Extrude(slot)
+                | scope::DesignScopePayloadMut::Extrusion(slot)
+                | scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+                {
+                    *slot = construction;
+                }
+            }
         }
-    }
-    if !surface_patch_boundaries.is_empty() {
-        if let scope::DesignScopePayloadMut::SurfacePatch(slot) = scope.payload_mut() {
-            *slot = surface_patch_boundaries;
+        if let Some(coil) = coil {
+            {
+                let construction = Some(coil);
+                if let scope::DesignScopePayloadMut::SpirePrimitive(slot)
+                | scope::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
+                {
+                    *slot = construction;
+                }
+            }
         }
-    }
-    if let Some(operation) = base_flange_operation {
-        if let scope::DesignScopePayloadMut::BaseFlange(slot) = scope.payload_mut() {
-            *slot = Some(scope::DesignBaseFlangeScope {
-                base_flange_operation: Some(operation),
-                ..scope::DesignBaseFlangeScope::default()
-            });
+        if !surface_patch_boundaries.is_empty() {
+            {
+                let construction = surface_patch_boundaries;
+                if let scope::DesignScopePayloadMut::SurfacePatch(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
         }
-    }
-    if let Some(operation) = edge_flange_operation {
-        if let scope::DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
-            *slot = Some(operation);
+        if let Some(operation) = base_flange_operation {
+            {
+                let construction = Some(scope::DesignBaseFlangeScope {
+                    base_flange_operation: Some(operation),
+                    ..scope::DesignBaseFlangeScope::default()
+                });
+                if let scope::DesignScopePayloadMut::BaseFlange(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
         }
-    }
-    Ok(Some(scope))
+        if let Some(operation) = edge_flange_operation {
+            {
+                let construction = Some(operation);
+                if let scope::DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+        }
+        Some(Ok(scope))
+    })()
+    .transpose()
 }
 
-/// Whether UTF-16LE `units` hold a control character. Every control
-/// character is one BMP code unit outside the surrogate range, so the test
-/// reads code units and stops at the first control character.
-fn utf16_has_control(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    units: &[u8],
-) -> Result<bool, CodecError> {
-    let (units, _) = units.as_chunks::<2>();
-    ctx.any_by(
-        units,
-        |unit| {
-            Ok(View::u16_le_at(unit, 0)
-                .and_then(|unit| char::from_u32(u32::from(unit)))
-                .is_some_and(char::is_control))
-        },
-        "validate F3D scope text characters",
-    )
-}
-
-/// A scope's reference table: a `u32` count at `count_at`, then `count`
-/// marked reference slots.
-struct ReferenceTable {
-    count_at: usize,
-    count: usize,
-}
-
-impl ReferenceTable {
-    /// Offset of the record index in slot `ordinal`.
-    fn member_offset(&self, ordinal: usize) -> usize {
-        self.count_at + 4 + ordinal * REFERENCE_SLOT_LEN + 1
-    }
-
-    /// Record index of slot `ordinal`.
-    fn member(&self, bytes: &[u8], ordinal: usize) -> Option<u32> {
-        View::u32_le_at(bytes, self.member_offset(ordinal))
-    }
-}
-
-/// The reference table that ends at `table_end` and whose count lies at or
-/// after `start + 11`. Such a table of `k` slots has its count at
-/// `table_end - 4 - 11k`, so its slots are the last `k` of the slot lattice
-/// that ends at `table_end`. One forward pass over that lattice tests every
-/// candidate count; a slot that is not a marked reference rules out every
-/// table that contains it. A nonzero count lies in the zero padding of the
-/// preceding slot, so at most one complete table exists.
-fn reference_table(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-    table_end: usize,
-) -> Result<Option<ReferenceTable>, CodecError> {
-    let Some(first_slot_min) = start.checked_add(15) else {
-        return Ok(None);
-    };
-    let Some(slot_span) = table_end.checked_sub(first_slot_min) else {
-        return Ok(None);
-    };
-    let slot_count = slot_span / REFERENCE_SLOT_LEN;
-    let slots_start = table_end - slot_count * REFERENCE_SLOT_LEN;
-    let Some(lattice) = bytes.get(slots_start..table_end) else {
-        return Ok(None);
-    };
-    let (slots, _) = lattice.as_chunks::<REFERENCE_SLOT_LEN>();
-    let mut table = None;
-    for (ordinal, slot) in ctx
-        .admit_iter(slots, "scan F3D parameter-scope reference slots")?
-        .enumerate()
-    {
-        let count_at = slots_start + ordinal * REFERENCE_SLOT_LEN - 4;
-        let count = slot_count - ordinal;
-        if View::u32_le_at(bytes, count_at).and_then(|value| usize::try_from(value).ok())
-            == Some(count)
-        {
-            table = Some(ReferenceTable { count_at, count });
-        }
-        if slot[0] != 1 || slot[5..] != [0; 6] {
-            table = None;
-        }
-    }
-    Ok(table)
-}
-
-/// The coil fields of a coil-family scope envelope.
-fn coil_scope(
-    discriminators: Option<&super::coil::CoilDiscriminators>,
-    transform: Option<coil::DesignCoilTransform>,
-) -> coil::DesignCoilScope {
-    use crate::records::identity::{MaybeRecordedValue, RecordedValue};
-    fn recorded<T>(value: T, offset: Option<u64>) -> MaybeRecordedValue<T> {
-        match offset {
-            Some(offset) => MaybeRecordedValue::Located(RecordedValue { value, offset }),
-            None => MaybeRecordedValue::Unlocated(value),
-        }
-    }
-    coil::DesignCoilScope {
-        operation: discriminators.map(|fields| RecordedValue {
-            value: fields.operation,
-            offset: fields.operation_offset,
-        }),
-        extent: discriminators.and_then(|fields| fields.extent),
-        section: discriminators.map(|fields| recorded(fields.section, fields.section_offset)),
-        section_placement: discriminators
-            .map(|fields| recorded(fields.section_placement, fields.section_placement_offset)),
-        clockwise: discriminators.map(|fields| recorded(fields.clockwise, fields.clockwise_offset)),
-        placement: None,
-        transform,
-    }
-}
-
-/// Whether the named-label tail after the kind field at `kind_end` is valid:
-/// a zero `u32`, a counted UTF-16 label without control characters, seven
-/// zero bytes and three repeated binary lane values.
 fn named_parameter_scope_tail_is_valid(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
@@ -1593,7 +1376,7 @@ fn named_parameter_scope_tail_is_valid(
     let Some(label_at) = kind_end.checked_add(8) else {
         return Ok(None);
     };
-    let Some((_label, label_end, _label_storage)) = lp_utf16_bounded_scoped(
+    let Some((label, label_end, _reservation)) = lp_utf16_bounded_scoped(
         ctx,
         bytes,
         label_at,
@@ -1603,60 +1386,52 @@ fn named_parameter_scope_tail_is_valid(
     else {
         return Ok(None);
     };
-    // The counted field holds the label's UTF-16 code units after its prefix.
-    let label_bytes = label_end - label_at - 4;
-    let marker = kind_end + 19 + label_bytes;
-    if tail_length != 78 + label_bytes || label_end + 7 != marker {
-        return Ok(Some(false));
-    }
-    if utf16_has_control(ctx, bytes.get(label_at + 4..label_end).unwrap_or(&[]))? {
-        return Ok(Some(false));
-    }
-    if marker.checked_add(59) != Some(paired_at) || !zeros_at::<7>(bytes, label_end) {
-        return Ok(Some(false));
-    }
-    let (Some(first_lane_value), Some(second_lane_value), Some(third_lane_value)) = (
-        View::u64_le_at(bytes, marker + 2),
-        View::u64_le_at(bytes, marker + 34),
-        View::u64_le_at(bytes, marker + 48),
-    ) else {
-        return Ok(None);
-    };
-    let field_id_at = |at: usize| bytes.get(at).is_some_and(|field_id| *field_id != 0);
-    Ok(Some(
-        zeros_at::<4>(bytes, kind_end + 4)
-            && bytes.get(marker) == Some(&1)
-            && field_id_at(marker + 1)
-            && matches!(first_lane_value, 0 | 1)
-            && second_lane_value == first_lane_value
-            && third_lane_value == first_lane_value
-            && zeros_at::<2>(bytes, marker + 10)
-            && View::u32_le_at(bytes, marker + 12).is_some_and(|value| value > 0)
-            && View::u32_le_at(bytes, marker + 16) == Some(0xfc)
-            && View::f64_le_at(bytes, marker + 20).is_some_and(f64::is_finite)
-            && View::u32_le_at(bytes, marker + 28) == Some(0xfc)
-            && bytes.get(marker + 32) == Some(&1)
-            && field_id_at(marker + 33)
-            && bytes_at::<4>(bytes, marker + 42) == Some(&[0, 1, 0, 0])
-            && bytes.get(marker + 46) == Some(&1)
-            && field_id_at(marker + 47)
-            && zeros_at::<3>(bytes, marker + 56),
-    ))
+    Ok((|| {
+        let label_code_units = label.encode_utf16().count();
+        if tail_length != 78usize.checked_add(label_code_units.checked_mul(2)?)?
+            || label_end.checked_add(7)? != kind_end.checked_add(19 + label_code_units * 2)?
+            || label.chars().any(char::is_control)
+        {
+            return Some(false);
+        }
+        let marker = kind_end.checked_add(19 + label_code_units.checked_mul(2)?)?;
+        if marker.checked_add(59)? != paired_at || bytes.get(label_end..marker)? != [0; 7] {
+            return Some(false);
+        }
+        let first_lane_value = View::u64_le_at(bytes, marker + 2)?;
+        let second_lane_value = View::u64_le_at(bytes, marker + 34)?;
+        let third_lane_value = View::u64_le_at(bytes, marker + 48)?;
+        Some(
+            bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
+                && bytes.get(marker) == Some(&1)
+                && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
+                && matches!(first_lane_value, 0 | 1)
+                && second_lane_value == first_lane_value
+                && third_lane_value == first_lane_value
+                && bytes.get(marker + 10..marker + 12)? == [0; 2]
+                && View::u32_le_at(bytes, marker + 12)? > 0
+                && View::u32_le_at(bytes, marker + 16)? == 0xfc
+                && View::f64_le_at(bytes, marker + 20)?.is_finite()
+                && View::u32_le_at(bytes, marker + 28)? == 0xfc
+                && bytes.get(marker + 32) == Some(&1)
+                && bytes
+                    .get(marker + 33)
+                    .is_some_and(|field_id| *field_id != 0)
+                && bytes.get(marker + 42..marker + 46)? == [0, 1, 0, 0]
+                && bytes.get(marker + 46) == Some(&1)
+                && bytes
+                    .get(marker + 47)
+                    .is_some_and(|field_id| *field_id != 0)
+                && bytes.get(marker + 56..marker + 59)? == [0; 3],
+        )
+    })())
 }
 
-pub(crate) fn parameter_scope_payload_length(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scope: &DesignParameterScope,
-) -> Result<Option<u64>, CodecError> {
-    // A character uses at most its UTF-8 byte count in UTF-16 code units.
-    let code_units: usize = ctx
-        .admit_iter(scope.kind_name(), "count F3D scope kind UTF-16 units")?
-        .encode_utf16()
-        .count();
-    let kind_bytes = u64_from_index(code_units).checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("count F3D scope kind UTF-16 units", u64::MAX, u64::MAX)
-    })?;
-    Ok(scope.frame_length().checked_sub(kind_bytes))
+pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
+    let kind_bytes = u64::try_from(scope.kind_name().encode_utf16().count())
+        .ok()?
+        .checked_mul(2)?;
+    scope.frame_length().checked_sub(kind_bytes)
 }
 
 #[cfg(test)]

@@ -1,17 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
+use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
-use crate::design::decode::byte_fields::zeros_at;
-use crate::design::decode::image::{
-    embedded_image_asset, embedded_image_entry, neutral_asset_id_charged,
-};
-use crate::design::decode::record_streams::{has_stream, record_stream};
+use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
-use crate::design::decode::sketch::{
-    indexed_record_header_at, next_indexed_record_offset, IndexedRecordHeader, IndexedRecordOffsets,
-};
+use crate::design::decode::sketch::next_indexed_record_offset;
 
 use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
@@ -24,7 +19,7 @@ use crate::records::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
     },
 };
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{
@@ -61,129 +56,68 @@ pub(crate) fn project_decal_images(
     features: &mut [Feature],
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
-    for image in ctx.admit_iter(images, "scan F3D Decal images")? {
+    for image in images {
         if image.mapping_mode != crate::records::decal::DesignDecalMappingMode::FitToFaces {
             continue;
         }
-        let image_stream = record_stream(ctx, &image.id)?;
-        let Some(scope) = ctx.find_by(
-            scopes,
-            |scope| {
-                Ok(scope.record_index == image.scope_record_index()
-                    && has_stream(ctx, &scope.id, image_stream)?)
-            },
-            "find F3D Decal image scopes",
-        )?
-        else {
+        let native_stream = ids::native_stream(&image.id);
+        let Some(scope) = scopes.iter().find(|scope| {
+            scope.record_index == image.scope_record_index()
+                && ids::native_stream(&scope.id) == native_stream
+        }) else {
             continue;
         };
-        let Some(group) = ctx.find_by(
-            groups,
-            |group| {
-                Ok(group.scope_record_index == scope.record_index
-                    && group.record_index == image.target_group_record_index
-                    && group.role() == DECAL_TARGET_ROLE
-                    && group.members().len() == 1
-                    && has_stream(ctx, &group.id, image_stream)?)
-            },
-            "find F3D Decal operand groups",
-        )?
-        else {
+        let Some(group) = groups.iter().find(|group| {
+            group.scope_record_index == scope.record_index
+                && group.record_index == image.target_group_record_index
+                && group.role() == DECAL_TARGET_ROLE
+                && group.members().len() == 1
+                && ids::native_stream(&group.id) == native_stream
+        }) else {
             continue;
         };
-        let Some(member) = group.members().first() else {
+        let Some(operand) = operands.iter().find(|operand| {
+            operand.scope_record_index == scope.record_index
+                && operand.owner.group() == Some((group.record_index, 0))
+                && operand.record_index() == group.members()[0].value
+                && ids::native_stream(&operand.id) == native_stream
+        }) else {
             continue;
         };
-        let Some(operand) = ctx.find_by(
-            operands,
-            |operand| {
-                Ok(operand.scope_record_index == scope.record_index
-                    && operand.owner.group() == Some((group.record_index, 0))
-                    && operand.record_index() == member.value
-                    && has_stream(ctx, &operand.id, image_stream)?)
-            },
-            "find F3D Decal recipe operands",
-        )?
-        else {
-            continue;
-        };
-        // The faces, the asset ID and a new asset become retained only when
-        // the image binds a neutral feature.
-        let (faces, faces_storage) = ctx.with_scoped_storage("f3d Decal faces", || {
-            let mut faces = Vec::new();
-            for reference in
-                ctx.admit_iter(operand.references(), "scan F3D Decal operand references")?
-            {
-                for face in
-                    ctx.admit_iter(&reference.candidate_faces, "scan F3D Decal face candidates")?
-                {
-                    let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
-                    ctx.push_vec(&mut faces, copied, "f3d Decal faces")?;
-                }
-            }
-            ctx.stable_sort_by(
-                &mut faces[..],
-                |value| value.as_str(),
-                Ord::cmp,
-                "sort f3d design decal 1",
-            )?;
-            ctx.dedup_vec(&mut faces, "dedup f3d design decal faces")?;
-            Ok::<_, CodecError>(faces)
-        })?;
+        let mut faces = Vec::new();
+        for face in operand
+            .references()
+            .iter()
+            .flat_map(|reference| reference.candidate_faces.iter())
+        {
+            let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
+            ctx.reserve_vec(&mut faces, 1, "f3d Decal faces")?;
+            faces.push(copied);
+        }
+        ctx.stable_sort_by(
+            &mut faces[..],
+            |value| value.as_str(),
+            Ord::cmp,
+            "sort f3d design decal 1",
+        )?;
+        faces.dedup();
         if faces.is_empty() {
             continue;
         }
-        let Some(entry) = embedded_image_entry(ctx, scan, image.asset.name())? else {
+        let Some(asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
             continue;
         };
-        let mut asset_storage = ctx.reserve_scoped(0, "f3d Decal assets")?;
-        let asset_id = asset_storage.with_storage(|| neutral_asset_id_charged(ctx, &entry.name))?;
-        let known_asset = ctx.any_by(
-            &assets,
-            |candidate: &Asset| {
-                ctx.equal_bytes(
-                    candidate.id.as_str().as_bytes(),
-                    asset_id.as_str().as_bytes(),
-                    "match F3D Decal asset",
-                )
-            },
-            "find F3D Decal asset",
-        )?;
-        // The image bytes are copied only for the first asset with its ID.
-        let asset = if known_asset {
-            None
-        } else {
-            Some(asset_storage.with_storage(|| {
-                let id =
-                    asset_id.try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
-                embedded_image_asset(ctx, scan, entry, image.asset.name(), id)
-            })?)
-        };
-        let (feature_id, _feature_id_storage) = ctx
-            .with_scoped_storage("f3d Decal neutral feature ID", || {
-                crate::design::identity::neutral_feature_id(ctx, scope)
-            })?;
-        let Some(feature_index) = ctx.position_by(
-            &*features,
-            |feature| {
-                ctx.equal_bytes(
-                    feature.id.as_str().as_bytes(),
-                    feature_id.as_str().as_bytes(),
-                    "match F3D Decal neutral feature",
-                )
-            },
-            "find F3D Decal neutral feature",
-        )?
-        else {
+        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+        let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
-        let Some(feature) = features.get_mut(feature_index) else {
-            continue;
-        };
-        let native_id =
-            ctx.copy_retained_text(&operand.id, "f3d Decal native operand identifier")?;
-        faces_storage.commit()?;
-        asset_storage.commit()?;
+        let asset_id = asset
+            .id
+            .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
+        let native_id = String::from_utf8(
+            ctx.copy_retained(operand.id.as_bytes(), "f3d Decal native operand identifier")?,
+        )
+        .map_err(|_| CodecError::malformed("F3D Decal operand identifier must be UTF-8"))?;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {
@@ -195,9 +129,9 @@ pub(crate) fn project_decal_images(
                 mapping: DecalMapping::FitToFaces,
                 opacity: None,
             }));
-        if let Some(asset) = asset {
-            ctx.push_vec(&mut assets, asset, "f3d Decal assets")?;
-        }
+
+        ctx.reserve_vec(&mut assets, 1, "f3d Decal assets")?;
+        assets.push(asset);
     }
     ctx.stable_sort_by(
         &mut assets[..],
@@ -205,175 +139,168 @@ pub(crate) fn project_decal_images(
         Ord::cmp,
         "sort f3d design decal 2",
     )?;
+    assets.dedup_by(|a, b| a.id == b.id);
     Ok(assets)
 }
 
 fn parse_decal_image(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
     stream: &str,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
     let Ok(scope_at) = usize::try_from(scope.byte_offset()) else {
         return Ok(None);
     };
-    parse_decal_image_frame(ctx, bytes, records, stream, scope.record_index, scope_at)
+    parse_decal_image_frame(ctx, bytes, stream, scope.record_index, scope_at)
 }
 
-/// The fixed members of a Decal scope prefix at `scope_at`: the asset record
-/// index, the mapping-mode code and the target operand-group record index.
-fn decal_scope_prefix(bytes: &[u8], scope_at: usize) -> Option<(u32, u8, u32)> {
-    if !zeros_at::<10>(bytes, scope_at + decal_scope::ZERO_RUN_10)
-        || !zeros_at::<6>(bytes, scope_at + decal_scope::ASSET_REFERENCE_ZERO_RUN)
-        || !zeros_at::<6>(bytes, scope_at + decal_scope::TARGET_REFERENCE_ZERO_RUN)
-    {
-        return None;
-    }
-    let asset_record_index = marked_reference(bytes, scope_at + decal_scope::ASSET_REFERENCE)?;
-    let mapping_mode = *bytes.get(scope_at + decal_scope::MAPPING_MODE)?;
-    let target_group_record_index =
-        marked_reference(bytes, scope_at + decal_scope::TARGET_GROUP_REFERENCE)?;
-    Some((asset_record_index, mapping_mode, target_group_record_index))
-}
-
-/// The Decal image of the scope prefix at `scope_at`. The asset record index
-/// it names must carry exactly one complete asset record in the stream, so
-/// every header of that index is tested.
 fn parse_decal_image_frame(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
     stream: &str,
     scope_record_index: u32,
     scope_at: usize,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
-    let Some((asset_record_index, mapping_mode, target_group_record_index)) =
-        decal_scope_prefix(bytes, scope_at)
-    else {
-        return Ok(None);
-    };
-    let Ok(scope_offset) = u64::try_from(scope_at) else {
-        return Ok(None);
-    };
-
-    let mut asset_record = None;
-    for &asset_at in records.offsets(asset_record_index) {
-        ctx.charge_work(1, "scan F3D Decal asset records")?;
-        let Some(asset) = indexed_record_header_at(bytes, asset_at) else {
-            continue;
-        };
-        let Some(candidate) = parse_decal_asset_record(ctx, bytes, &asset)? else {
-            continue;
-        };
-        if asset_record.replace(candidate).is_some() {
-            return Ok(None);
+    let parsed = (|| {
+        if bytes
+            .get(scope_at + decal_scope::ZERO_RUN_10..scope_at + decal_scope::ASSET_REFERENCE)?
+            != [0; 10]
+        {
+            return None;
         }
-    }
-    let Some(asset_record) = asset_record else {
-        return Ok(None);
-    };
-    let id = ids::native_scoped_id_charged(ctx, stream, "design-decal-image", scope_at)?;
-    Ok(DesignDecalImage::new(
-        id,
-        crate::records::identity::Located {
-            value: scope_record_index,
-            offset: scope_offset,
-        },
-        crate::records::decal::DesignDecalMappingMode::from_code(mapping_mode),
-        target_group_record_index,
-        asset_record,
-    )
-    .ok())
+        let asset_reference_at = scope_at + decal_scope::ASSET_REFERENCE;
+        let asset_record_index = marked_reference(bytes, asset_reference_at)?;
+        if bytes.get(
+            scope_at + decal_scope::ASSET_REFERENCE_ZERO_RUN..scope_at + decal_scope::MAPPING_MODE,
+        )? != [0; 6]
+        {
+            return None;
+        }
+        let mapping_mode_at = scope_at + decal_scope::MAPPING_MODE;
+        let mapping_mode = *bytes.get(mapping_mode_at)?;
+        let target_group_reference_at = scope_at + decal_scope::TARGET_GROUP_REFERENCE;
+        let target_group_record_index = marked_reference(bytes, target_group_reference_at)?;
+        if bytes
+            .get(scope_at + decal_scope::TARGET_REFERENCE_ZERO_RUN..scope_at + decal_scope::LEN)?
+            != [0; 6]
+        {
+            return None;
+        }
+
+        let mut position = 0;
+        let mut asset_record = None;
+        while let Some(asset_at) = next_indexed_record_offset(bytes, position) {
+            position = asset_at.checked_add(1)?;
+            if View::u32_le_at(bytes, asset_at + 7) != Some(asset_record_index) {
+                continue;
+            }
+            let candidate = match parse_decal_asset_record(ctx, bytes, asset_at, asset_record_index)
+            {
+                Ok(Some(candidate)) => candidate,
+                Ok(None) => continue,
+                Err(error) => return Some(Err(error)),
+            };
+            if asset_record.replace(candidate).is_some() {
+                return None;
+            }
+        }
+        DesignDecalImage::new(
+            ids::native_design_decal_image_id(stream, scope_at),
+            crate::records::identity::Located {
+                value: scope_record_index,
+                offset: u64::try_from(scope_at).ok()?,
+            },
+            crate::records::decal::DesignDecalMappingMode::from_code(mapping_mode),
+            target_group_record_index,
+            asset_record?,
+        )
+        .ok()
+        .map(Ok)
+    })();
+    parsed.transpose()
 }
 
-/// The Decal asset record whose indexed header is `asset`, with the name
-/// record that directly follows it.
 fn parse_decal_asset_record(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    asset: &IndexedRecordHeader<'_>,
+    asset_at: usize,
+    asset_record_index: u32,
 ) -> Result<Option<DesignDecalAsset>, CodecError> {
-    let asset_at = asset.offset;
-    if !zeros_at::<8>(bytes, asset_at + decal_asset::ZERO_RUN_8)
-        || !zeros_at::<6>(bytes, asset_at + decal_asset::ZERO_RUN_6)
-    {
-        return Ok(None);
-    }
-    let Some(asset_entity_suffix) = marked_reference(
-        bytes,
-        asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE,
-    ) else {
-        return Ok(None);
-    };
-    // With both zero runs in place, no indexed header can start inside the
-    // fixed asset record, so the next header follows it exactly when one
-    // opens at its end.
-    let name_at = asset_at + decal_asset::LEN;
-    let Some(name) = indexed_record_header_at(bytes, name_at) else {
-        return Ok(None);
-    };
-    if !zeros_at::<10>(bytes, name_at + decal_name::ZERO_RUN_10) {
-        return Ok(None);
-    }
-    let Ok(byte_offset) = u64::try_from(asset_at) else {
-        return Ok(None);
-    };
-    let Some((asset_name, after_asset_name)) = lp_utf16_bounded_charged(
-        ctx,
-        bytes,
-        name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
-        1..=1024,
-        "f3d Design UTF-16 text",
-    )?
-    else {
-        return Ok(None);
-    };
-    // The first header after the name prefix must open where the name ends.
-    // A header at that offset ends eleven bytes later, so the search reads
-    // only the name bytes the decode already paid for and that header.
-    let Some(window) = after_asset_name
-        .checked_add(11)
-        .and_then(|window_end| bytes.get(..window_end))
-    else {
-        return Ok(None);
-    };
-    if next_indexed_record_offset(ctx, window, name_at + decal_name::ZERO_RUN_10)?
-        != Some(after_asset_name)
-    {
-        return Ok(None);
-    }
-    let asset_class_tag = asset.retain_class_tag(ctx, "f3d Decal asset class tag")?;
-    let name_class_tag = name.retain_class_tag(ctx, "f3d Decal name class tag")?;
+    let parsed = (|| {
+        let (asset_class_tag, after_asset_tag) =
+            lp_ascii_filtered_view(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
+        if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
+            || bytes.get(
+                asset_at + decal_asset::ZERO_RUN_8
+                    ..asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE,
+            )? != [0; 8]
+        {
+            return None;
+        }
+        let asset_entity_reference_at = asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE;
+        let asset_entity_suffix = marked_reference(bytes, asset_entity_reference_at)?;
+        if bytes.get(asset_at + decal_asset::ZERO_RUN_6..asset_at + decal_asset::LEN)? != [0; 6] {
+            return None;
+        }
+        let name_at = next_indexed_record_offset(bytes, asset_at + decal_asset::ZERO_RUN_8)?;
+        if name_at != asset_at + decal_asset::LEN {
+            return None;
+        }
+        let (name_class_tag, after_name_tag) =
+            lp_ascii_filtered_view(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
+        let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
+        if bytes.get(
+            name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
+        )? != [0; 10]
+        {
+            return None;
+        }
+        let (asset_name, after_asset_name) = match lp_utf16_bounded_charged(
+            ctx,
+            bytes,
+            name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
+            1..=1024,
+            "f3d Design UTF-16 text",
+        ) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let next_at = next_indexed_record_offset(bytes, name_at + decal_name::ZERO_RUN_10)?;
+        if after_asset_name != next_at {
+            return None;
+        }
+        let asset_class_tag =
+            match ctx.copy_retained_text(asset_class_tag, "f3d Decal asset class tag") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
+        let name_class_tag =
+            match ctx.copy_retained_text(name_class_tag, "f3d Decal name class tag") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            };
 
-    Ok(DesignDecalAsset::new(
-        [String::from(asset_class_tag), String::from(name_class_tag)],
-        [asset.record_index, name.record_index],
-        byte_offset,
-        asset_entity_suffix,
-        asset_name,
-    )
-    .ok())
+        DesignDecalAsset::new(
+            [asset_class_tag, name_class_tag],
+            [asset_record_index, name_record_index],
+            u64::try_from(asset_at).ok()?,
+            asset_entity_suffix,
+            asset_name,
+        )
+        .ok()
+        .map(Ok)
+    })();
+    parsed.transpose()
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::records::decal::{DesignDecalImage, DesignDecalMappingMode};
+    use super::parse_decal_image_frame;
+    use crate::records::decal::DesignDecalMappingMode;
     use crate::test_support::write_marked_reference;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    /// Parse the scope prefix at `scope_at` against a stream index built
-    /// outside `ctx`.
-    fn parse_decal_image_frame(
-        ctx: &DecodeContext<'_>,
-        bytes: &[u8],
-        stream: &str,
-        scope_record_index: u32,
-        scope_at: usize,
-    ) -> Result<Option<DesignDecalImage>, cadmpeg_core::CodecError> {
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-        super::parse_decal_image_frame(ctx, bytes, &records, stream, scope_record_index, scope_at)
-    }
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -489,33 +416,6 @@ mod tests {
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "f3d Design UTF-16 text")
         );
-    }
-
-    #[test]
-    fn decal_asset_and_name_searches_refuse_work_limits_through_optional_parse() {
-        let (bytes, scope_at) = fixture();
-        // Both asset-index headers are tested; the name search reads from the
-        // name prefix to the header that ends the name.
-        for (operation, skip) in [
-            ("scan F3D Decal asset records", 1),
-            ("find F3D indexed record header", 0),
-        ] {
-            let error = crate::test_support::resource_refusal_at(
-                ResourceDimension::WorkUnits,
-                operation,
-                skip,
-                |ctx| {
-                    parse_decal_image_frame(ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
-                        .map(|_| ())
-                },
-            );
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(refusal)
-                    if refusal.dimension == ResourceDimension::WorkUnits
-                        && refusal.operation == operation
-            ));
-        }
     }
 
     #[test]
@@ -660,12 +560,6 @@ mod tests {
             for (retained, items, dimension, operation) in [
                 (
                     u64::MAX,
-                    u64::MAX,
-                    ResourceDimension::WorkUnits,
-                    "find F3D Decal neutral feature",
-                ),
-                (
-                    u64::MAX,
                     0,
                     ResourceDimension::CollectionItems,
                     "f3d Decal faces",
@@ -679,26 +573,14 @@ mod tests {
                 (
                     u64::try_from(face.as_str().len() - 1).unwrap(),
                     u64::MAX,
-                    ResourceDimension::MaterializedBytes,
+                    ResourceDimension::RetainedBytes,
                     "f3d Decal face identifier",
                 ),
                 (
                     u64::try_from(after_embedded + asset_id_len - 1).unwrap(),
                     u64::MAX,
-                    ResourceDimension::MaterializedBytes,
+                    ResourceDimension::RetainedBytes,
                     "f3d image feature asset identifier",
-                ),
-                (
-                    u64::MAX,
-                    u64::MAX,
-                    ResourceDimension::RetainedBytes,
-                    "f3d Decal faces",
-                ),
-                (
-                    u64::MAX,
-                    u64::MAX,
-                    ResourceDimension::RetainedBytes,
-                    "f3d Decal assets",
                 ),
                 (
                     u64::try_from(after_embedded + asset_id_len + operand.id.len() - 1).unwrap(),

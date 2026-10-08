@@ -635,9 +635,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
             ),
             native_ref: None,
         };
-        assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
-            combine_definition_is_incomplete(ctx, &feature)
-        }));
+        assert!(!combine_definition_is_incomplete(&feature));
     });
 }
 
@@ -755,13 +753,11 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
             .expect("admitted writer history");
 
         assert_eq!(
-            boolean_participant_writer(ctx, target, 401, Some(&blocks), &BTreeMap::new(), &history,)
-                .expect("admitted writer lookup"),
+            boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),
             Some(&offset_prior)
         );
         assert_eq!(
-            boolean_participant_writer(ctx, tools, 402, Some(&blocks), &BTreeMap::new(), &history,)
-                .expect("admitted writer lookup"),
+            boolean_participant_writer(tools, 402, Some(&blocks), &BTreeMap::new(), &history,),
             Some(&offset_prior)
         );
         assert_eq!(

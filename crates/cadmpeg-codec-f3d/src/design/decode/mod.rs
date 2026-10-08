@@ -3,7 +3,6 @@
 
 mod assembly;
 pub(crate) mod body;
-mod byte_fields;
 pub(crate) mod canvas;
 pub(crate) mod components;
 pub(crate) mod decal;
@@ -15,8 +14,6 @@ pub(crate) mod operands;
 pub(crate) mod parameters;
 mod patch;
 pub(crate) mod presentation;
-mod record_streams;
-mod reference_runs;
 pub(crate) mod scopes;
 pub(crate) mod sketch;
 pub(crate) mod surface_trim;

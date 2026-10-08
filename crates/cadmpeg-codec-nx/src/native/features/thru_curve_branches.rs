@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native `THRU_CURVE` groups with one source frame.
 
-use super::{charged_unique_offset_data_block, format_feature_history_id, FeatureHistory};
+use super::{
+    charged_unique_offset_data_block, format_feature_history_id,
+    visit_feature_history_operation_records,
+};
+use crate::container::Container;
 use crate::om::branch_items::BranchItems;
 use crate::om::reference_index::PayloadIndexToken;
 use crate::om::thru_curve_branches::{
@@ -207,50 +211,66 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
 
 pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    history: &FeatureHistory<'_, '_, '_>,
+    container: &Container,
 ) -> Result<Vec<FeatureThruCurveConstructionBranchGroup>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut groups = Vec::new();
-    for history_section in
-        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
-    {
-        let section_key = history_section.key.as_str();
-        let entry_offset = history_section.entry_offset;
-        for &(operation_ordinal, record) in ctx.admit_iter(
-            &history_section.records,
-            "visit NX feature operation records",
-        )? {
-            let Some(group) = thru_curve_payload_branch_group(ctx, record.payload_view())? else {
-                continue;
+    let mut failure = None;
+    visit_feature_history_operation_records(
+        ctx,
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
+            let group = match thru_curve_payload_branch_group(ctx, record.payload_view()) {
+                Ok(Some(group)) => group,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
-            let Some(frame) = group.resolve(ctx, entry_offset, |token| {
+            let frame = match group.resolve(ctx, entry_offset, |token| {
                 charged_unique_offset_data_block(ctx, &indexed, token.value())
-            })?
-            else {
-                continue;
+            }) {
+                Ok(Some(frame)) => frame,
+                Ok(None) => return,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
-            let id = format_feature_history_id(
-                ctx,
-                "thru-curve-construction-branch-group",
-                section_key,
-                operation_ordinal,
-                None,
-            )?;
-            let operation_label = format_feature_history_id(
-                ctx,
-                "operation-label",
-                section_key,
-                operation_ordinal,
-                None,
-            )?;
-            ctx.reserve_vec(&mut groups, 1, "NX thru-curve construction branch groups")?;
-            let group = FeatureThruCurveConstructionBranchGroup {
-                id,
-                operation_label,
-                frame,
-            };
-            groups.push(group);
-        }
+            let projected = (|| -> Result<_, cadmpeg_core::CodecError> {
+                let id = format_feature_history_id(
+                    ctx,
+                    "thru-curve-construction-branch-group",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                )?;
+                let operation_label = format_feature_history_id(
+                    ctx,
+                    "operation-label",
+                    section_key,
+                    operation_ordinal,
+                    None,
+                )?;
+                ctx.reserve_vec(&mut groups, 1, "NX thru-curve construction branch groups")?;
+                Ok(FeatureThruCurveConstructionBranchGroup {
+                    id,
+                    operation_label,
+                    frame,
+                })
+            })();
+            match projected {
+                Ok(group) => groups.push(group),
+                Err(error) => failure = Some(error),
+            }
+        },
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
     }
     Ok(groups)
 }
@@ -282,10 +302,7 @@ mod tests {
     ) -> cadmpeg_core::CodecError {
         let container = branch_group_container();
         let groups = crate::test_support::with_decode_context(|ctx| {
-            super::feature_thru_curve_construction_branch_groups(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, &container)?,
-            )
+            super::feature_thru_curve_construction_branch_groups(ctx, &container)
         })
         .expect("admitted THRU_CURVE branch group");
         assert_eq!(groups.len(), 1);
@@ -296,10 +313,7 @@ mod tests {
                 configure(policy);
             },
             |ctx| {
-                crate::native::features::FeatureHistory::new(ctx, &container)
-                    .and_then(|history| {
-                        super::feature_thru_curve_construction_branch_groups(ctx, &history)
-                    })
+                super::feature_thru_curve_construction_branch_groups(ctx, &container)
                     .expect_err("THRU_CURVE branch group resource limit")
             },
         )

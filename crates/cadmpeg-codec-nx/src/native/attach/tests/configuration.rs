@@ -1008,39 +1008,27 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     assert_eq!(ir.model.features[2].suppressed, None);
 
     ir.model.features[0].ordinal = 2;
-    assert!(
-        crate::test_support::with_decode_context(|ctx| active_feature_closure(
-            ctx,
-            &ir,
-            &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
-        ))
-        .expect("the closure stays within the service budget")
-        .is_err()
-    );
+    assert!(active_feature_closure(
+        &ir,
+        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+    )
+    .is_err());
     ir.model.features[0].ordinal = 1;
     ir.model.features[2].id =
         FeatureId::mint("synthetic:test:id#writer").expect("identity grammar");
-    assert!(
-        crate::test_support::with_decode_context(|ctx| active_feature_closure(
-            ctx,
-            &ir,
-            &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
-        ))
-        .expect("the closure stays within the service budget")
-        .is_err()
-    );
+    assert!(active_feature_closure(
+        &ir,
+        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+    )
+    .is_err());
     ir.model.features[2].id =
         FeatureId::mint("synthetic:test:id#unrelated").expect("identity grammar");
     ir.model.features[1].suppressed = Some(true);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| active_feature_closure(
-            ctx,
-            &ir,
-            &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
-        ))
-        .expect("the closure stays within the service budget")
-        .is_err()
-    );
+    assert!(active_feature_closure(
+        &ir,
+        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+    )
+    .is_err());
 }
 
 #[test]
@@ -1852,49 +1840,36 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     crate::test_support::with_decode_context(|ctx| {
         let history = BodyWriterHistory::default();
         assert_eq!(
-            extrude_boolean_op(ctx, &history, Some(7), None, &[BodyKind::Solid])
-                .expect("admitted writer lookup"),
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid]),
             BooleanOp::NewBody
         );
         assert_eq!(
             extrude_boolean_op(
-                ctx,
                 &BodyWriterHistory::default(),
                 None,
                 None,
-                &[BodyKind::Solid]
-            )
-            .expect("admitted writer lookup"),
+                &[BodyKind::Solid],
+            ),
             BooleanOp::Unresolved
         );
         assert_eq!(
-            extrude_boolean_op(ctx, &history, Some(7), None, &[BodyKind::Sheet])
-                .expect("admitted writer lookup"),
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::Sheet]),
             BooleanOp::NewBody
         );
         assert_eq!(
-            extrude_boolean_op(ctx, &history, Some(7), None, &[BodyKind::Wire])
-                .expect("admitted writer lookup"),
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::Wire]),
             BooleanOp::Unresolved
         );
         assert_eq!(
-            extrude_boolean_op(ctx, &history, Some(7), None, &[BodyKind::General])
-                .expect("admitted writer lookup"),
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::General]),
             BooleanOp::Unresolved
         );
         assert_eq!(
-            extrude_boolean_op(
-                ctx,
-                &history,
-                Some(7),
-                None,
-                &[BodyKind::Solid, BodyKind::Solid]
-            )
-            .expect("admitted writer lookup"),
+            extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid, BodyKind::Solid],),
             BooleanOp::Unresolved
         );
         assert_eq!(
-            extrude_boolean_op(ctx, &history, Some(7), None, &[]).expect("admitted writer lookup"),
+            extrude_boolean_op(&history, Some(7), None, &[]),
             BooleanOp::Unresolved
         );
 
@@ -1906,25 +1881,16 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
             .record_writer(ctx, None, Some(offset_body), &[], &prior)
             .expect("admitted writer history");
         assert_eq!(
-            extrude_boolean_op(
-                ctx,
-                &offset_history,
-                None,
-                Some(offset_body),
-                &[BodyKind::Solid]
-            )
-            .expect("admitted writer lookup"),
+            extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
             BooleanOp::Unresolved
         );
         assert_eq!(
             extrude_boolean_op(
-                ctx,
                 &offset_history,
                 None,
                 Some("store:block#8"),
-                &[BodyKind::Solid]
-            )
-            .expect("admitted writer lookup"),
+                &[BodyKind::Solid],
+            ),
             BooleanOp::NewBody
         );
     });

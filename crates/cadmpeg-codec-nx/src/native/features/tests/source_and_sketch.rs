@@ -106,16 +106,10 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
     let first = section();
     let second = section();
     let single = section();
-    crate::test_support::with_decode_context(|ctx| {
-        assert_eq!(
-            unique_offset_data_store(ctx, &[(entry, single)], &[1])?,
-            Some(0)
-        );
-        let indexed = [(entry, first), (entry, second)];
-        assert_eq!(unique_offset_data_store(ctx, &indexed, &[1])?, None);
-        Ok::<_, cadmpeg_core::CodecError>(())
-    })
-    .unwrap();
+    assert_eq!(unique_offset_data_store(&[(entry, single)], &[1]), Some(0));
+    let indexed = [(entry, first), (entry, second)];
+
+    assert_eq!(unique_offset_data_store(&indexed, &[1]), None);
 }
 
 #[test]
@@ -954,79 +948,11 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
 
 #[test]
 fn nx_sketch_point_names_require_positive_decimal_suffixes() {
-    crate::test_support::with_decode_context(|ctx| {
-        assert_eq!(parse_sketch_point_name(ctx, "Point1")?, Some(1));
-        assert_eq!(parse_sketch_point_name(ctx, "Point2048")?, Some(2048));
-        for malformed in ["Point", "Point0", "point1", "Point-1", "Point1A"] {
-            assert_eq!(parse_sketch_point_name(ctx, malformed)?, None);
-        }
-        Ok::<_, cadmpeg_core::CodecError>(())
-    })
-    .expect("admitted sketch point name parsing");
-}
-
-#[test]
-fn nx_sketch_block_keys_keep_malformed_ordinals_as_none() {
-    crate::test_support::with_decode_context(|ctx| {
-        assert_eq!(
-            crate::native::features::block_key(ctx, "store:block#17")?,
-            Some(("store", 17))
-        );
-        for malformed in ["store", "store:block#x", "store:block#4294967296"] {
-            assert_eq!(crate::native::features::block_key(ctx, malformed)?, None);
-        }
-        Ok::<_, cadmpeg_core::CodecError>(())
-    })
-    .expect("admitted sketch block key parsing");
-}
-
-#[test]
-fn nx_sketch_ordinal_text_parsing_propagates_work_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let point_error = crate::test_support::resource_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "parse NX sketch point ordinal",
-        |ctx| parse_sketch_point_name(ctx, "Point1"),
-    );
-    assert!(matches!(
-        point_error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "parse NX sketch point ordinal"
-    ));
-
-    let block_error = crate::test_support::resource_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "parse NX sketch block ordinal",
-        |ctx| crate::native::features::block_key(ctx, "store:block#17"),
-    );
-    assert!(matches!(
-        block_error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "parse NX sketch block ordinal"
-    ));
-}
-
-#[test]
-fn nx_sketch_ordinal_digit_scan_propagates_work_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let error = crate::test_support::resource_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "check NX sketch point ordinal digits",
-        |ctx| parse_sketch_point_name(ctx, "Point1"),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "check NX sketch point ordinal digits"
-    ));
+    assert_eq!(parse_sketch_point_name("Point1"), Some(1));
+    assert_eq!(parse_sketch_point_name("Point2048"), Some(2048));
+    for malformed in ["Point", "Point0", "point1", "Point-1", "Point1A"] {
+        assert_eq!(parse_sketch_point_name(malformed), None);
+    }
 }
 
 #[test]

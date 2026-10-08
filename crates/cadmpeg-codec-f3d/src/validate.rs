@@ -3049,9 +3049,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let compact_scope = scope.class_tag.as_str() == "387"
                     && scope.paired_class_tag.as_str() == "258"
                     && design::decode::scopes::parameter_scope::parameter_scope_payload_length(
-                        ctx.decode,
                         scope,
-                    )? == Some(314);
+                    ) == Some(314);
                 let extended_reference_scope = scope.class_tag.as_str() == "329"
                     && scope.paired_class_tag.as_str() == "261"
                     && scope.frame_length() == 363;
@@ -6975,20 +6974,15 @@ fn validate_edge_operands<'a>(
             .and_then(|recipe| recipe.record_index)
             .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0);
-        let _expected_faces_storage;
-        let expected_faces;
-        (expected_faces, _expected_faces_storage) = ctx.decode.with_scoped_storage(
-            "F3D validation expected edge operand candidate faces",
-            || match design_reference {
-                Some(design_reference) => design::decode::operands::edge_operand_candidate_faces(
-                    ctx.decode,
-                    design_reference,
-                    &native.persistent_subentity_tags,
-                    Some(&operand.id),
-                ),
-                None => Ok(Vec::new()),
-            },
-        )?;
+        let expected_faces = match design_reference {
+            Some(design_reference) => design::decode::operands::edge_operand_candidate_faces(
+                ctx.decode,
+                design_reference,
+                &native.persistent_subentity_tags,
+                Some(&operand.id),
+            )?,
+            None => Vec::new(),
+        };
         let mut expected_references =
             design::decode::dimension_frames::decode_recipe_references_charged(
                 ctx.decode,
@@ -8252,11 +8246,6 @@ fn validate_dimension_locus_pairs<'a>(
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut locus_pair_indices = HashSet::new();
     let mut locus_pair_companions = HashSet::new();
-    let governing = design::decode::dimension_frames::GoverningCompanions::build(
-        ctx.decode,
-        &native.design_parameter_owners,
-        &native.design_parameters,
-    )?;
     for pair in &native.design_dimension_locus_pairs {
         let native_stream = design_stream(&pair.id);
         let unique_index = ctx.decode.insert_hash_set(
@@ -8291,11 +8280,13 @@ fn validate_dimension_locus_pairs<'a>(
                     parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
-        let governs_following_dimension = governing.governing(
-            ctx.decode,
-            &pair.id,
-            pair.paired_byte_offset(),
-        )? == Some(pair.governing_companion_record_index);
+        let governs_following_dimension =
+            design::decode::dimension_frames::following_dimension_companion_record_index(
+                &pair.id,
+                pair.paired_byte_offset(),
+                &native.design_parameter_owners,
+                &native.design_parameters,
+            ) == Some(pair.governing_companion_record_index);
         let valid = companion_contains_frame
             && dimension_companion
             && governs_following_dimension
@@ -8701,11 +8692,6 @@ fn validate_dimension_null_locus_pairs<'a>(
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut null_locus_pair_indices = HashSet::new();
     let mut null_locus_pair_companions = HashSet::new();
-    let governing = design::decode::dimension_frames::GoverningCompanions::build(
-        ctx.decode,
-        &native.design_parameter_owners,
-        &native.design_parameters,
-    )?;
     for pair in &native.design_dimension_null_locus_pairs {
         let native_stream = design_stream(&pair.id);
         let unique_index = ctx.decode.insert_hash_set(
@@ -8740,11 +8726,13 @@ fn validate_dimension_null_locus_pairs<'a>(
                     parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
-        let governs_following_dimension = governing.governing(
-            ctx.decode,
-            &pair.id,
-            pair.paired_byte_offset(),
-        )? == Some(pair.governing_companion_record_index);
+        let governs_following_dimension =
+            design::decode::dimension_frames::following_dimension_companion_record_index(
+                &pair.id,
+                pair.paired_byte_offset(),
+                &native.design_parameter_owners,
+                &native.design_parameters,
+            ) == Some(pair.governing_companion_record_index);
         let companion_has_typed_frame = locus_pair_companions
             .contains(&(native_stream, pair.companion_record_index))
             || locus_group_companions.contains(&(native_stream, pair.companion_record_index));

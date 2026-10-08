@@ -173,7 +173,7 @@ fn body_recipe_error(
 
 #[test]
 fn body_recipe_expected_index_refuses_collection_limit() {
-    let error = body_recipe_error(true, 6, u64::MAX);
+    let error = body_recipe_error(true, 4, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D expected body recipe operands")
@@ -182,7 +182,7 @@ fn body_recipe_expected_index_refuses_collection_limit() {
 
 #[test]
 fn body_recipe_member_slot_refuses_collection_limit() {
-    let error = body_recipe_error(true, 7, u64::MAX);
+    let error = body_recipe_error(true, 5, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D body recipe member slots")
@@ -191,7 +191,7 @@ fn body_recipe_member_slot_refuses_collection_limit() {
 
 #[test]
 fn body_recipe_record_refuses_collection_limit() {
-    let error = body_recipe_error(true, 8, u64::MAX);
+    let error = body_recipe_error(true, 6, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D body recipe records")

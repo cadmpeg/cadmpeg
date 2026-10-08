@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::matrix;
-use crate::design::decode::mesh::{mesh_body_transform, split_container, MeshBody};
+use crate::design::decode::mesh::{mesh_body_transform, MeshBody};
 use crate::layout::paramesh_mesh_body_join_prefix;
 use crate::paramesh::MeshContainer;
 use cadmpeg_ir::features::FinitePoint3;
@@ -68,13 +68,7 @@ fn reflected_mesh_placement_preserves_triangle_and_corner_order() {
         }],
     };
     let body = crate::design::test_support::with_test_decode_context(|ctx| {
-        MeshBody::from_geometry(
-            ctx,
-            "mesh.paramesh",
-            100,
-            transform,
-            split_container(container).2,
-        )
+        MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container)
     })
     .expect("projected mesh");
 
@@ -122,13 +116,7 @@ fn mesh_placement_transforms_corner_normals_with_oriented_cofactors() {
         attributes: Vec::new(),
     };
     let body = crate::design::test_support::with_test_decode_context(|ctx| {
-        MeshBody::from_geometry(
-            ctx,
-            "mesh.paramesh",
-            100,
-            transform,
-            split_container(container).2,
-        )
+        MeshBody::from_container(ctx, "mesh.paramesh", 100, transform, container)
     })
     .expect("projected mesh");
     let geometric_normal = body.vertices[1]

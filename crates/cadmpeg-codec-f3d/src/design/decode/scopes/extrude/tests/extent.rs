@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::ExtrudeScopeFrame;
 use super::super::{exact_class_338_two_sided_distance_extrude_prologue, exact_extrude_extent};
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudeOperation;
@@ -86,13 +85,11 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
 
     let parsed = exact_class_338_two_sided_distance_extrude_prologue(
         &bytes,
-        ExtrudeScopeFrame {
-            start: 0,
-            paired_at,
-            class_tag: "338",
-            paired_class_tag: "262",
-            reference_count_at: 282,
-        },
+        0,
+        paired_at,
+        "338",
+        "262",
+        282,
         &[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
     )
     .expect("class-338 frame should satisfy its exact admission grammar");
@@ -104,14 +101,12 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
     bytes[139] = 0;
     assert!(exact_class_338_two_sided_distance_extrude_prologue(
         &bytes,
-        ExtrudeScopeFrame {
-            start: 0,
-            paired_at,
-            class_tag: "338",
-            paired_class_tag: "262",
-            reference_count_at: 282
-        },
-        &[4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+        0,
+        paired_at,
+        "338",
+        "262",
+        282,
+        &[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
     )
     .is_none());
 }

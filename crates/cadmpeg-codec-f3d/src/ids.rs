@@ -1327,13 +1327,11 @@ macro_rules! native_record_id {
 
 native_record_id!(
     /// The native design-parameter record key.
-    #[cfg(test)]
     native_design_parameter_id,
     "design-parameter"
 );
 native_record_id!(
     /// The native design-parameter-owner record key.
-    #[cfg(test)]
     native_design_parameter_owner_id,
     "design-parameter-owner"
 );
@@ -1359,6 +1357,16 @@ pub(crate) fn native_design_feature_timeline_id_in_stream(
 ) -> String {
     format!("{stream}:design-feature-timeline#{offset}")
 }
+native_record_id!(
+    /// The native design Canvas image-plane binding key.
+    native_design_canvas_image_id,
+    "design-canvas-image"
+);
+native_record_id!(
+    /// The native design Decal image and target binding key.
+    native_design_decal_image_id,
+    "design-decal-image"
+);
 native_record_id!(
     /// The native persistent-reference record key.
     #[cfg(test)]
@@ -1388,6 +1396,11 @@ native_record_id!(
     #[cfg(test)]
     native_sketch_text_id,
     "sketch-text"
+);
+native_record_id!(
+    /// The native sketch-surface record key.
+    native_sketch_surface_id,
+    "sketch-surface"
 );
 native_record_id!(
     /// The native mesh-body record key.

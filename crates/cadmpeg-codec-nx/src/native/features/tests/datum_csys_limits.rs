@@ -27,9 +27,7 @@ fn datum_csys_refusal(
     })
     .expect("synthetic datum CSYS container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
-        let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
-        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-        feature_datum_csys_constructions(ctx, &history, &inputs)
+        feature_datum_csys_constructions(ctx, &container)
     })
     .expect("admitted datum CSYS constructions");
     assert_eq!(admitted.len(), 1);
@@ -41,11 +39,7 @@ fn datum_csys_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| {
-                    let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-                    feature_datum_csys_constructions(ctx, &history, &inputs)
-                })
+            feature_datum_csys_constructions(ctx, &container)
                 .expect_err("datum CSYS construction resource limit")
         },
     )

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source-block metadata for reconstructed feature payloads.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{
     ser::{SerializeSeq, SerializeStruct},
@@ -36,13 +36,8 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
         Ok(Self { blocks, sha256 })
     }
 
-    pub(super) fn byte_len(&self, ctx: &DecodeContext<'_>) -> Result<u64, CodecError> {
-        ctx.admit_iter(self.blocks(), "sum NX feature payload block lengths")?
-            .try_fold(0u64, |total, block| {
-                total.checked_add(block.byte_len).ok_or_else(|| {
-                    ctx.refuse_codec_limit("sum NX feature payload block lengths", 0, 1)
-                })
-            })
+    pub(super) fn byte_len(&self) -> u64 {
+        self.blocks().iter().map(|block| block.byte_len).sum()
     }
 
     pub(super) fn blocks(&self) -> &[FeaturePayloadBlock] {
@@ -55,28 +50,17 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
 }
 
 impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> FeaturePayloadContent<B> {
-    pub(super) fn from_source<I>(
+    pub(super) fn from_source(
         ctx: &DecodeContext<'_>,
-        ids: I,
+        ids: impl IntoIterator<Item = String>,
         blocks: &BTreeMap<String, (&[u8], u64)>,
-    ) -> Result<Option<Self>, CodecError>
-    where
-        I: IntoIterator<Item = String>,
-        I::IntoIter: ExactSizeIterator,
-    {
+    ) -> Result<Option<Self>, CodecError> {
         let mut hash = Sha256::new();
         let mut rows = Vec::new();
 
         let mut byte_len = 0u64;
-        let mut ids = ids.into_iter();
-        for _ in ctx.admit_iter(&(0..ids.len()), "scan NX feature payload block ids")? {
-            let Some(id) = ids.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX feature payload block ids", 0, 1));
-            };
-            let Some((bytes, source_offset)) = ctx
-                .get_btree_map(blocks, &id, "find NX feature payload block")?
-                .copied()
-            else {
+        for id in ids {
+            let Some((bytes, source_offset)) = blocks.get(&id).copied() else {
                 return Ok(None);
             };
             let length = u64_from_index(bytes.len());
@@ -107,91 +91,9 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             hash.finalize().into(),
             "retain NX feature payload digest",
         )?;
-        // The block lengths were summed with an overflow check while hashing.
-        Ok(Some(Self {
-            blocks,
-            sha256: digest,
-        }))
+        let content = Self::new(blocks, digest).map_err(CodecError::Malformed)?;
+        Ok(Some(content))
     }
-}
-
-/// Separator between a data-block store and the block ordinal in a block id.
-const BLOCK_MARKER: &str = ":block#";
-
-/// The store that owns a block id of the form `{store}:block#{ordinal}`.
-pub(super) fn block_store<'t>(
-    ctx: &DecodeContext<'_>,
-    block: &'t str,
-    operation: &'static str,
-) -> Result<Option<&'t str>, CodecError> {
-    Ok(ctx
-        .rsplit_once(block, BLOCK_MARKER, operation)?
-        .map(|(store, _)| store))
-}
-
-/// Copies block ids into scoped storage; `None` when any block id is absent.
-///
-/// The returned reservation keeps the id vector's storage accounted until the
-/// caller drops it. Every caller passes a fixed-size reference group, so the
-/// visit itself is constant work; each copied id is charged.
-pub(super) fn copy_block_ids<'ctx, 'b>(
-    ctx: &'ctx DecodeContext<'_>,
-    blocks: impl Iterator<Item = Option<&'b str>>,
-    operation: &'static str,
-) -> Result<Option<(Vec<String>, ScopedReservation<'ctx>)>, CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, operation)?;
-    let mut ids = Vec::new();
-    for block in blocks {
-        let Some(block) = block else {
-            return Ok(None);
-        };
-        let copy = ctx.copy_retained_text(block, operation)?;
-        ctx.push_scoped_vec(&mut reservation, &mut ids, copy, operation)?;
-    }
-    Ok(Some((ids, reservation)))
-}
-
-/// True when every block id names `store` as its owner.
-pub(super) fn blocks_in_store(
-    ctx: &DecodeContext<'_>,
-    blocks: &[String],
-    store: &str,
-    operation: &'static str,
-) -> Result<bool, CodecError> {
-    let outside = ctx.any_by(
-        blocks,
-        |block| match block_store(ctx, block, operation)? {
-            Some(owner) => Ok(!ctx.equal(owner, store, operation)?),
-            None => Ok(true),
-        },
-        operation,
-    )?;
-    Ok(!outside)
-}
-
-/// The store shared by every block id, or `None` when there are no blocks, a
-/// block id has no store, or two ids name different stores.
-pub(super) fn shared_block_store<'b>(
-    ctx: &DecodeContext<'_>,
-    blocks: &'b [String],
-    operation: &'static str,
-) -> Result<Option<&'b str>, CodecError> {
-    let Some((first, rest)) = blocks.split_first() else {
-        return Ok(None);
-    };
-    let Some(store) = block_store(ctx, first, operation)? else {
-        return Ok(None);
-    };
-    Ok(blocks_in_store(ctx, rest, store, operation)?.then_some(store))
-}
-
-/// The operation key after the last `#` of an operation-label identity.
-pub(super) fn operation_key<'t>(
-    ctx: &DecodeContext<'_>,
-    label: &'t str,
-    operation: &'static str,
-) -> Result<Option<&'t str>, CodecError> {
-    Ok(ctx.rsplit_once(label, "#", operation)?.map(|(_, key)| key))
 }
 
 #[derive(Deserialize)]
@@ -321,10 +223,7 @@ where
         let blocks = B::try_from(rows).map_err(|_| {
             serde::de::Error::custom("data_blocks count does not match the payload lane")
         })?;
-        match Self::new(blocks, wire.sha256) {
-            Ok(content) => Ok(content),
-            Err(message) => Err(serde::de::Error::custom(message)),
-        }
+        Self::new(blocks, wire.sha256).map_err(serde::de::Error::custom)
     }
 }
 
@@ -361,11 +260,7 @@ mod tests {
     fn payload_content_preserves_ordered_metadata_wire() {
         let content: FeaturePayloadContent<[FeaturePayloadBlock; 2]> =
             serde_json::from_str(TWO_BLOCKS).unwrap();
-        crate::test_support::with_decode_context(|ctx| {
-            assert_eq!(content.byte_len(ctx)?, 8);
-            Ok::<_, cadmpeg_core::CodecError>(())
-        })
-        .unwrap();
+        assert_eq!(content.byte_len(), 8);
         assert_eq!(serde_json::to_string(&content).unwrap(), TWO_BLOCKS);
         let variable: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
             serde_json::from_str(TWO_BLOCKS).unwrap();
@@ -417,28 +312,8 @@ mod tests {
         ];
         assert!(FeaturePayloadContent::new(
             blocks,
-            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash"),
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash")
         )
         .is_err());
-    }
-
-    #[test]
-    fn shared_block_store_requires_one_owner_for_every_block() {
-        let ids = |ids: &[&str]| ids.iter().map(|id| (*id).to_owned()).collect::<Vec<_>>();
-        crate::test_support::with_decode_context(|ctx| {
-            let op = "test shared store";
-            let same = ids(&["s:a:block#1", "s:a:block#2"]);
-            assert_eq!(super::shared_block_store(ctx, &same, op)?, Some("s:a"));
-            let mixed = ids(&["s:a:block#1", "s:b:block#2"]);
-            assert_eq!(super::shared_block_store(ctx, &mixed, op)?, None);
-            let unowned = ids(&["s:a:block#1", "plain"]);
-            assert_eq!(super::shared_block_store(ctx, &unowned, op)?, None);
-            assert_eq!(super::shared_block_store(ctx, &ids(&["plain"]), op)?, None);
-            assert_eq!(super::shared_block_store(ctx, &[], op)?, None);
-            assert!(super::blocks_in_store(ctx, &same, "s:a", op)?);
-            assert!(!super::blocks_in_store(ctx, &mixed, "s:a", op)?);
-            Ok::<_, cadmpeg_core::CodecError>(())
-        })
-        .unwrap();
     }
 }

@@ -157,7 +157,6 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
         .expect("evaluator allocation succeeds")
         .expect("finite wide blend grid");
         assert!(grid
-            .samples()
             .iter()
             .any(|(uv, point)| uv.u == 0.0 && point.is_finite()));
     });

@@ -1181,17 +1181,6 @@ impl DecodeContext<'_> {
     // when at least half the real capacity has been removed or filled since
     // the last rehash, so the charged removals and insertions since then pay
     // for its walk.
-    //
-    // Under churn the retained total exceeds the real allocation. Std exposes
-    // neither the bucket count nor the deleted slots, so growth after
-    // removals cannot tell an in-place rehash from a doubling and charges as
-    // if the table doubled. That over-count is nonzero only when the old
-    // `capacity()` maps to fewer buckets than the table holds, which takes
-    // removals of at least half the real capacity since the last rehash,
-    // and it is at most half the table's storage. Each removal therefore
-    // adds at most 8/7 of an entry and its control byte: no more than a
-    // table that had kept the removed entry would have retained for it.
-    // Exact tracking needs the bucket count kept beside the table.
     fn charge_hash_growth<T>(
         &self,
         len: usize,

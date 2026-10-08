@@ -25,12 +25,8 @@ fn sketch_reference_refusal(
         )
     })
     .expect("composed feature-history container");
-    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_sketch_references(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
-    };
+    let decode =
+        |ctx: &cadmpeg_core::decode::DecodeContext<'_>| feature_sketch_references(ctx, &container);
     assert!(!crate::test_support::with_decode_context(|ctx| decode(ctx))
         .expect("admitted sketch references")
         .is_empty());
@@ -92,22 +88,10 @@ fn sketch_payload_refusal(
     })
     .expect("composed feature-history container");
     let constructions = crate::test_support::with_decode_context(|ctx| {
-        let labels = feature_operation_labels(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )?;
-        let records = feature_operation_records(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )?;
-        let inputs = feature_input_blocks(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )?;
-        let references = feature_sketch_references(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )?;
+        let labels = feature_operation_labels(ctx, &container)?;
+        let records = feature_operation_records(ctx, &container)?;
+        let inputs = feature_input_blocks(ctx, &container)?;
+        let references = feature_sketch_references(ctx, &container)?;
         let sketches = feature_sketch_records(ctx, &labels, &records, &inputs, &references)?;
         feature_sketch_construction_inputs(ctx, &sketches, &references)
     })

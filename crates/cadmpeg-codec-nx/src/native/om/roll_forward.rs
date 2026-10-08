@@ -249,46 +249,29 @@ struct OmRollForwardStateTableWire {
 }
 
 impl OmRollForwardStateTable {
-    /// Identify the frames that have absolute offsets, in table order.
-    pub(super) fn groups_from_frames<O>(
+    pub(super) fn from_frames(
         ctx: &DecodeContext<'_>,
         section_ordinal: usize,
-        frames: crate::om::nonempty::NonEmpty<OperationStateGroup<O>>,
-        mut absolute: impl FnMut(OperationStateGroup<O>) -> Option<OperationStateGroup<u64>>,
-    ) -> Result<Vec<OmRollForwardStateGroup>, CodecError> {
+        section_link: &str,
+        source_entry: &str,
+        table_footer: GroupTableFooter,
+        table_end_offset: u64,
+        frames: impl IntoIterator<Item = OperationStateGroup<u64>>,
+    ) -> Result<Self, CodecError> {
         let mut groups = Vec::new();
-        let frame_count = frames.len();
-        let mut frames = frames.into_iter();
-        let candidates = ctx
-            .admit_iter(&(0..frame_count), "NX roll-forward frame visits")?
-            .filter_map(|_| frames.next().and_then(&mut absolute));
-        for (ordinal, frame) in candidates.enumerate() {
-            let Ok(ordinal) = u32::try_from(ordinal) else {
-                return Err(CodecError::Malformed(ctx.format_retained(
-                    format_args!(
-                        "{}: ordinal exceeds the roll-forward group range",
-                        crate::loss::NxLossCode::RollForwardTableRejected.code()
-                    ),
-                    "NX roll-forward group ordinal",
-                )?));
-            };
+        for (ordinal, frame) in frames.into_iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed(format!(
+                    "{}: ordinal exceeds the roll-forward group range",
+                    crate::loss::NxLossCode::RollForwardTableRejected.code()
+                ))
+            })?;
             ctx.reserve_vec(&mut groups, 1, "NX roll-forward state groups")?;
             groups.push(OmRollForwardStateGroup {
                 id: group_id(ctx, section_ordinal, ordinal)?,
                 frame,
             });
         }
-        Ok(groups)
-    }
-
-    pub(super) fn new(
-        ctx: &DecodeContext<'_>,
-        section_link: &str,
-        source_entry: &str,
-        table_footer: GroupTableFooter,
-        table_end_offset: u64,
-        groups: Vec<OmRollForwardStateGroup>,
-    ) -> Result<Self, CodecError> {
         Ok(Self {
             section_link: ctx
                 .copy_retained_text(section_link, "retain NX roll-forward table text")?,
@@ -359,47 +342,20 @@ mod tests {
                 policy.limits.max_collection_items = 0;
             },
             |ctx| {
-                let error = super::OmRollForwardStateTable::groups_from_frames(
+                let error = super::OmRollForwardStateTable::from_frames(
                     ctx,
                     0,
-                    crate::om::nonempty::NonEmpty::new([group.frame]).unwrap(),
-                    Some,
+                    "section",
+                    "entry",
+                    super::GroupTableFooter::try_from(&[][..]).unwrap(),
+                    8,
+                    [group.frame],
                 )
                 .unwrap_err();
                 assert!(
                     matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems)
                 );
-            },
-        );
-    }
-
-    #[test]
-    fn roll_forward_frame_visits_propagate_work_refusal() {
-        let group: OmRollForwardStateGroup = serde_json::from_str(
-            r#"{"id":"group","opener":[1,0],"count_prefix":null,"declared_count":0,"rows":[],"source_offset":0}"#,
-        ).unwrap();
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| policy.limits.max_work_units = 0,
-            |ctx| {
-                let error = super::OmRollForwardStateTable::groups_from_frames(
-                    ctx,
-                    0,
-                    crate::om::nonempty::NonEmpty::new([group.frame]).unwrap(),
-                    Some,
-                )
-                .unwrap_err();
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                    panic!("frame admission must return its resource refusal");
-                };
-                assert_eq!(limit.operation, "NX roll-forward frame visits");
-                assert_eq!(
-                    limit.dimension,
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits
-                );
-                assert_eq!(limit.additional, 1);
-                assert_eq!(ctx.resource_refusal(), Some(limit));
             },
         );
     }

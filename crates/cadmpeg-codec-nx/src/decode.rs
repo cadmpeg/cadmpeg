@@ -55,21 +55,22 @@ impl Scan<'_> {
         ctx: &DecodeContext<'_>,
         kind: StreamKind,
     ) -> Result<usize, CodecError> {
-        Ok(ctx
-            .admit_iter(&self.streams, "count NX streams")?
-            .filter(|stream| stream.kind() == kind)
-            .count())
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.streams.len()),
+            "count NX streams",
+        )?;
+        Ok(self.streams.iter().filter(|s| s.kind() == kind).count())
     }
 
     /// Return whether the file contains an inline Parasolid stream.
     ///
     /// NX assemblies may contain only references to external child parts.
     pub(super) fn has_parasolid(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-        ctx.any_by(
-            &self.streams,
-            |stream| Ok(stream.kind().is_parasolid()),
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.streams.len()),
             "scan NX Parasolid streams",
-        )
+        )?;
+        Ok(self.streams.iter().any(|s| s.kind().is_parasolid()))
     }
 }
 
@@ -163,12 +164,12 @@ fn report_untransferred_streams(
                 control_count - classified_control_count
             ), "nx offset control loss text")?), "nx decode losses")?;
     }
-    let typed_toggle_stream = typed_native == TypedNative::Available
-        && crate::native::toggle::has_complete_saved_toggle_stream(ctx, &scan.container)?;
-    for entry in ctx.admit_iter(&scan.container.entries, "nx opaque stream losses")? {
+    for entry in &scan.container.entries {
         let content = entry.content();
         if content.retains_opaque_payload()
-            && !(typed_toggle_stream && content == EntryContent::SaveToggleInfo)
+            && !(typed_native == TypedNative::Available
+                && content == EntryContent::SaveToggleInfo
+                && crate::native::toggle::has_complete_saved_toggle_stream(&scan.container))
         {
             charge_loss_code(ctx, NxLossCode::ContainerStreamOpaque)?;
             ctx.push_vec(&mut body.losses, NxLossCode::ContainerStreamOpaque.note(ctx.format_retained(format_args!(
@@ -178,10 +179,7 @@ fn report_untransferred_streams(
                 ), "nx opaque stream loss text")?), "nx decode losses")?;
         }
     }
-    for (index, stream) in ctx
-        .admit_iter(&scan.streams, "nx omitted stream losses")?
-        .enumerate()
-    {
+    for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             charge_loss_code(ctx, NxLossCode::NonParasolidStreamOmitted)?;
             ctx.push_vec(
@@ -217,8 +215,7 @@ pub(super) fn offset_store_control_counts(
 ) -> Result<(usize, usize), CodecError> {
     let mut total = 0;
     let mut classified = 0;
-    let sections = container.indexed_om_sections(ctx)?;
-    for (_, section) in ctx.admit_iter(&sections, "nx offset-store control blocks")? {
+    for (_, section) in container.indexed_om_sections(ctx)? {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
@@ -285,11 +282,12 @@ fn build_metadata_ir(
     ),
     CodecError,
 > {
-    let unknown_count = ctx
-        .admit_iter(&scan.streams, "nx metadata unknown streams")?
+    let unknown_count = scan
+        .streams
+        .iter()
         .filter(|stream| stream.kind().is_parasolid())
         .count();
-    let mut unknowns = ctx.vector_storage(unknown_count, "nx metadata unknown streams")?;
+    let mut unknowns = ctx.collection_vec(unknown_count, "nx metadata unknown streams")?;
     let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
@@ -298,10 +296,7 @@ fn build_metadata_ir(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    for (si, stream) in ctx
-        .admit_iter(&scan.streams, "nx metadata unknown streams")?
-        .enumerate()
-    {
+    for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
             annotations.note(
@@ -312,7 +307,7 @@ fn build_metadata_ir(
                 Some(stream.kind().label()),
             )?;
             annotations.exactness(ctx, unknown.id().as_str(), Exactness::Derived)?;
-            ctx.push_vec(&mut unknowns, unknown, "nx metadata unknown streams")?;
+            unknowns.push(unknown);
         }
     }
     if ctx.container_only() {

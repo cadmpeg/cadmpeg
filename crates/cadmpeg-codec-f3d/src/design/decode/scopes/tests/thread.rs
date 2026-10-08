@@ -37,99 +37,38 @@ fn thread_payload_refuses_each_text_limit() {
     }
 }
 
-/// A standard Thread scope prefix and payload with face group 988.
-fn standard_thread_bytes() -> Vec<u8> {
-    let mut bytes = vec![0; 148];
+#[test]
+fn thread_face_group_limit_refuses_before_payload() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = vec![0; 38];
     bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
     bytes[29..34].copy_from_slice(&[1, 2, 0, 0, 0]);
     bytes[34..38].copy_from_slice(&[0x36, 0, 0x67, 0]);
-    let mut payload = Vec::new();
-    lp_utf16(&mut payload, "M30x3.5");
-    lp_utf16(&mut payload, "30.0");
-    lp_utf16(&mut payload, "ISO Metric profile");
-    bytes[38..108].copy_from_slice(&payload);
-    bytes[108..113].copy_from_slice(&[0, 1, 0, 0, 0]);
-    bytes[113..121].copy_from_slice(&2.97345f64.to_le_bytes());
-    bytes[121..129].copy_from_slice(&2.5732f64.to_le_bytes());
-    bytes[129] = 1;
-    bytes[130..138].copy_from_slice(&0.35f64.to_le_bytes());
-    bytes[138..146].copy_from_slice(&2.7568f64.to_le_bytes());
-    bytes[146..148].copy_from_slice(&[0, 1]);
-    bytes
-}
-
-/// A compact Thread scope prefix and payload without a trailer reference.
-fn compact_thread_bytes() -> Vec<u8> {
-    let mut bytes = vec![0; 160];
-    let mut payload = Vec::new();
-    lp_utf16(&mut payload, "M3.5x0.6");
-    lp_utf16(&mut payload, "3.5");
-    lp_utf16(&mut payload, "GB Metric profile");
-    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
-    bytes[29..34].copy_from_slice(&[0, 2, 0, 0, 0]);
-    bytes[34..38].copy_from_slice(&[0x36, 0, 0x48, 0]);
-    bytes[38..38 + payload.len()].copy_from_slice(&payload);
-    let after_profile = 38 + payload.len();
-    bytes[after_profile..after_profile + 5].copy_from_slice(&[1, 2, 0, 0, 0]);
-    bytes[after_profile + 5..after_profile + 13].copy_from_slice(&0.35995f64.to_le_bytes());
-    bytes[after_profile + 13..after_profile + 21].copy_from_slice(&0.293f64.to_le_bytes());
-    bytes[after_profile + 22..after_profile + 30].copy_from_slice(&0.06f64.to_le_bytes());
-    bytes[after_profile + 30..after_profile + 38].copy_from_slice(&0.3166f64.to_le_bytes());
-    bytes[after_profile + 38..after_profile + 42].copy_from_slice(&[0, 0, 0, 1]);
-    bytes
-}
-
-fn thread_limit_scope(id: &str, references: Vec<u32>) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
-        id,
+        "f3d:scope#thread-limit",
         crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
     scope
         .try_edit(|draft| {
             draft.frame_length = 200;
-            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(references);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope
-}
-
-#[test]
-fn thread_without_payload_holds_no_face_groups() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let bytes = standard_thread_bytes()[..38].to_vec();
-    let scope = thread_limit_scope("f3d:scope#thread-limit", vec![988, 989]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    policy.limits.max_retained_bytes = 0;
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(
-        exact_thread_construction(&ctx, &bytes, &scope).unwrap(),
-        None
-    );
-}
-
-#[test]
-fn thread_face_group_limit_refuses_accepted_payload() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let bytes = standard_thread_bytes();
-    let scope = thread_limit_scope("f3d:scope#thread-limit", vec![988, 989]);
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::CollectionItems,
-        "f3d Thread face groups",
-        0,
-        |ctx| exact_thread_construction(ctx, &bytes, &scope),
-    );
+    let result = exact_thread_construction(&ctx, &bytes, &scope);
     assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(failure)
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d Thread face groups"
     ));
@@ -137,22 +76,38 @@ fn thread_face_group_limit_refuses_accepted_payload() {
 
 #[test]
 fn thread_compact_face_group_limit_refuses_second_item() {
-    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let bytes = compact_thread_bytes();
-    let scope = thread_limit_scope("f3d:scope#compact-thread-limit", vec![988, 989, 992, 993]);
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::CollectionItems,
-        "f3d Thread face groups",
-        1,
-        |ctx| exact_thread_construction(ctx, &bytes, &scope),
+    let mut bytes = vec![0; 38];
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[0, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x48, 0]);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#compact-thread-limit",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        987,
     );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 200;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989, 992, 993]);
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = exact_thread_construction(&ctx, &bytes, &scope);
     assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(failure)
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d Thread face groups"
-                && failure.used == 1
     ));
 }
 

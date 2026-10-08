@@ -27,6 +27,39 @@ fn axial_binding_context(arena: &DecodeArena) -> DecodeContext<'_> {
 }
 
 #[test]
+fn axial_assembly_bindings_refuse_collection_limit() {
+    let identity = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
+    let mut assembly = DesignParameterScope::empty("assembly", DesignFeatureKind::Assemble, 10);
+    assembly
+        .try_edit(|draft| {
+            draft.frame_length = 705;
+            draft.paired_byte_offset = 705;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let DesignScopePayloadMut::Assemble(slot) = assembly.payload_mut() {
+        *slot = Some(axial_test_alignment([identity, identity]));
+    }
+    let origins = [70_u32, 80_u32].map(|index| {
+        let mut origin =
+            DesignParameterScope::empty("origin", DesignFeatureKind::JointOrigin, index);
+        origin.with_joint_origin_transform(identity.try_into().unwrap());
+        origin
+    });
+    let mut scopes = vec![assembly];
+    scopes.extend(origins);
+    let arena = DecodeArena::new();
+    let ctx = joint_origin_collection_context(&arena);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&[]);
+    let error = bind_axial_assembly_operand_targets(&ctx, &[], &records, &mut scopes).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d axial assembly bindings")
+    );
+}
+
+#[test]
 fn joint_origin_frame_candidates_refuse_collection_limit() {
     let mut assembly = DesignParameterScope::empty("assembly", DesignFeatureKind::Assemble, 10);
     let identity = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
@@ -43,9 +76,8 @@ fn joint_origin_frame_candidates_refuse_collection_limit() {
     );
 }
 
-/// An Assemble scope that names joint origin 91 through the single
-/// joint-origin envelope, and its bytes.
-fn single_joint_origin_envelope() -> (DesignParameterScope, Vec<u8>) {
+#[test]
+fn joint_origin_assembly_envelopes_refuse_collection_limit() {
     let mut assembly = DesignParameterScope::empty("assembly", DesignFeatureKind::Assemble, 10);
     assembly.class_tag = "276".to_owned().try_into().unwrap();
     assembly.paired_class_tag = "258".to_owned().try_into().unwrap();
@@ -72,12 +104,6 @@ fn single_joint_origin_envelope() -> (DesignParameterScope, Vec<u8>) {
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
-    (assembly, bytes)
-}
-
-#[test]
-fn joint_origin_assembly_envelopes_refuse_collection_limit() {
-    let (assembly, bytes) = single_joint_origin_envelope();
     let arena = DecodeArena::new();
     let ctx = joint_origin_collection_context(&arena);
     let error =
@@ -91,7 +117,6 @@ fn joint_origin_assembly_envelopes_refuse_collection_limit() {
 
 #[test]
 fn resolved_joint_origins_refuse_collection_limit() {
-    let (assembly, bytes) = single_joint_origin_envelope();
     let mut origin = DesignParameterScope::empty("origin", DesignFeatureKind::JointOrigin, 91);
     if let DesignScopePayloadMut::JointOrigin(slot) = origin.payload_mut() {
         *slot = Some(DesignJointOriginTransform {
@@ -101,13 +126,9 @@ fn resolved_joint_origins_refuse_collection_limit() {
             reference: None,
         });
     }
-    let scopes = [assembly, origin];
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::CollectionItems,
-        "f3d resolved joint origins",
-        0,
-        |ctx| bind_joint_origin_frames_from_assemblies(ctx, &bytes, &mut scopes.clone()),
-    );
+    let arena = DecodeArena::new();
+    let ctx = joint_origin_collection_context(&arena);
+    let error = bind_joint_origin_frames_from_assemblies(&ctx, &[], &mut [origin]).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems

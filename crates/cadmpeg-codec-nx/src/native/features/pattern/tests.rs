@@ -34,10 +34,7 @@ fn pattern_construction_route_refusal(
     })
     .expect("pattern construction container");
     let references = crate::test_support::with_decode_context(|ctx| {
-        super::feature_pattern_references(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
+        super::feature_pattern_references(ctx, &container)
     })
     .expect("pattern construction references");
     assert_eq!(references.len(), 9);
@@ -126,10 +123,7 @@ fn pattern_reference_route_refusal(
     })
     .expect("pattern reference container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::pattern::feature_pattern_references(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
+        crate::native::features::pattern::feature_pattern_references(ctx, &container)
     })
     .expect("admitted pattern references");
     assert_eq!(admitted.len(), 9);
@@ -140,10 +134,7 @@ fn pattern_reference_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| {
-                    crate::native::features::pattern::feature_pattern_references(ctx, &history)
-                })
+            crate::native::features::pattern::feature_pattern_references(ctx, &container)
                 .expect_err("pattern reference resource limit")
         },
     )
@@ -188,9 +179,9 @@ fn pattern_reference_route_refuses_work_limit() {
 fn pattern_output_lane_refusal<T>(
     label: &'static str,
     payload: &'static [u8],
-    route: for<'ctx, 'history> fn(
-        &'history cadmpeg_core::decode::DecodeContext<'ctx>,
-        &crate::native::features::FeatureHistory<'_, '_, 'history>,
+    route: for<'ctx, 'input> fn(
+        &cadmpeg_core::decode::DecodeContext<'ctx>,
+        &crate::container::Container<'input>,
     ) -> Result<Vec<T>, cadmpeg_core::CodecError>,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
@@ -204,13 +195,8 @@ fn pattern_output_lane_refusal<T>(
         crate::container::scan_bytes(ctx, file)
     })
     .expect("pattern output lane container");
-    let admitted = crate::test_support::with_decode_context(|ctx| {
-        route(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
-    })
-    .expect("admitted pattern output lane");
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx, &container))
+        .expect("admitted pattern output lane");
     assert_eq!(admitted.len(), 1);
 
     crate::test_support::with_decode_context_over(
@@ -219,8 +205,7 @@ fn pattern_output_lane_refusal<T>(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| route(ctx, &history))
+            route(ctx, &container)
                 .err()
                 .expect("pattern output lane resource limit")
         },

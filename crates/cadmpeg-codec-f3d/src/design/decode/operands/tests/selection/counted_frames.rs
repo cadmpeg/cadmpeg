@@ -174,13 +174,14 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                         &limited_policy,
                     )
                     .unwrap();
-                    (parse_extrude_selection_member(
+                    ((parse_extrude_selection_member(
                         &limited_ctx,
                         &member_bytes,
                         &group,
                         0,
                         &member_record,
                     ))
+                    .transpose())
                     .map(|_| ())
                 },
             ) {
@@ -229,13 +230,14 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                         &limited_policy,
                     )
                     .unwrap();
-                    (parse_extrude_selection_member(
+                    ((parse_extrude_selection_member(
                         &limited_ctx,
                         &member_bytes,
                         &group,
                         0,
                         &member_record,
                     ))
+                    .transpose())
                     .map(|_| ())
                 },
             ) {
@@ -266,7 +268,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .unwrap();
             assert!(matches!(
                 parse_extrude_selection_member(&limited_ctx, &member_bytes, &group, 0, &member_record),
-                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
                     if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                         && failure.operation == "f3d Design UTF-16 text"
             ));

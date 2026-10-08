@@ -189,26 +189,22 @@ fn typed_line_accepts_the_referenced_compact_planar_form() {
     assert!(matches!(parsed.geometry, SketchCurveGeometry::Line { .. }));
 }
 
-fn class_of(type_guid: &str, version: u32, module: &str) -> Option<SketchCurveClass> {
-    SketchCurveClass::of(type_guid, version, module)
-}
-
 #[test]
 fn curve_type_versions_select_only_their_settled_grammars() {
     for (type_guid, version, module) in SKETCH_LINE_TYPES {
         assert_eq!(
-            class_of(type_guid, version, module),
+            SketchCurveClass::of(type_guid, version, module),
             Some(SketchCurveClass::Line)
         );
     }
     for (type_guid, version, module) in SKETCH_CIRCULAR_TYPES {
         assert_eq!(
-            class_of(type_guid, version, module),
+            SketchCurveClass::of(type_guid, version, module),
             Some(SketchCurveClass::Circular)
         );
     }
     assert_eq!(
-        class_of(
+        SketchCurveClass::of(
             CURRENT_SKETCH_NURBS_TYPE.0,
             CURRENT_SKETCH_NURBS_TYPE.1,
             CURRENT_SKETCH_NURBS_TYPE.2,
@@ -216,21 +212,33 @@ fn curve_type_versions_select_only_their_settled_grammars() {
         Some(SketchCurveClass::Nurbs)
     );
     assert_eq!(
-        class_of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 0, "MSketch"),
+        SketchCurveClass::of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 0, "MSketch"),
         Some(SketchCurveClass::TextFrameLine)
     );
-    assert_eq!(class_of(SKETCH_LINE_TYPES[0].0, 0, "Geometry"), None);
-    assert_eq!(class_of(SKETCH_LINE_TYPES[0].0, 3, "Geometry"), None);
-    assert_eq!(class_of(SKETCH_CIRCULAR_TYPES[0].0, 1, "Geometry"), None);
     assert_eq!(
-        class_of(CURRENT_SKETCH_NURBS_TYPE.0, 2, CURRENT_SKETCH_NURBS_TYPE.2,),
+        SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 0, "Geometry"),
         None
     );
     assert_eq!(
-        class_of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 1, "MSketch"),
+        SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 3, "Geometry"),
         None
     );
-    assert_eq!(class_of(SKETCH_LINE_TYPES[0].0, 2, "MSketch"), None);
+    assert_eq!(
+        SketchCurveClass::of(SKETCH_CIRCULAR_TYPES[0].0, 1, "Geometry"),
+        None
+    );
+    assert_eq!(
+        SketchCurveClass::of(CURRENT_SKETCH_NURBS_TYPE.0, 2, CURRENT_SKETCH_NURBS_TYPE.2,),
+        None
+    );
+    assert_eq!(
+        SketchCurveClass::of(SKETCH_TEXT_FRAME_LINE_TYPE_GUID, 1, "MSketch"),
+        None
+    );
+    assert_eq!(
+        SketchCurveClass::of(SKETCH_LINE_TYPES[0].0, 2, "MSketch"),
+        None
+    );
 }
 
 #[test]
@@ -364,10 +372,7 @@ fn assert_arc_diagnostic_limit(values: [f64; 12]) {
 fn sketch_nurbs_decoder_keeps_constructor_refusals_in_the_outer_result() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
-    // Every work refusal on the way to an admitted curve stays in the result
-    // and in the session.
-    let mut allowance = 0;
-    loop {
+    for allowance in 0..=6 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = allowance;
@@ -381,16 +386,13 @@ fn sketch_nurbs_decoder_keeps_constructor_refusals_in_the_outer_result() {
             &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             0,
         );
-        let original = match result {
-            Ok(_) => break,
-            Err(CodecError::ResourceLimit(original)) => original,
-            Err(error) => panic!("constructor refusal must not change kind: {error:?}"),
+        let Err(CodecError::ResourceLimit(original)) = result else {
+            panic!("constructor refusal must not disappear");
         };
-        assert!(original.used <= allowance && original.used + original.additional > allowance);
+        assert_eq!(original.used, allowance);
+        assert_eq!(original.additional, 1);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
         );
-        allowance = original.used + original.additional;
     }
-    assert!(allowance > 0);
 }

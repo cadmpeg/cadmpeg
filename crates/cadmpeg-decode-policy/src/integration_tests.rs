@@ -140,7 +140,6 @@ fn check_fixture(name: &str) {
             | "adapter_receipts"
             | "matrix_iteration"
             | "hash_tables"
-            | "admission"
             | "member_keys"
             | "serde_storage"
             | "collection_sources"
@@ -405,7 +404,6 @@ fn check_fixture(name: &str) {
                     | "adapter_receipts"
                     | "matrix_iteration"
                     | "hash_tables"
-                    | "admission"
                     | "serde_storage"
                     | "collection_sources"
                     | "archive_probe"
@@ -1183,9 +1181,4 @@ fn owned_and_mutable_collection_sources_preserve_admission() {
 #[test]
 fn archive_name_probe_keeps_concrete_callback_obligations() {
     check_fixture("archive_probe");
-}
-
-#[test]
-fn admission_calls_are_checked_as_the_core_operations_they_forward_to() {
-    check_fixture("admission");
 }

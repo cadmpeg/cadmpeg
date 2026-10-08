@@ -2,7 +2,6 @@
 //! Decode the boundary-settings record a `SurfacePatch` scope references once
 //! per boundary component.
 
-use super::byte_fields::zeros_at;
 use super::sketch::IndexedRecordOffsets;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
@@ -27,15 +26,9 @@ pub(super) fn surface_patch_boundaries(
     reference_members: &[u32],
 ) -> Result<Vec<DesignSurfacePatchBoundary>, CodecError> {
     let mut boundaries = Vec::new();
-    for (ordinal, record_index) in ctx
-        .admit_iter(
-            reference_members,
-            "scan F3D SurfacePatch boundary references",
-        )?
-        .enumerate()
-    {
+    for (ordinal, record_index) in reference_members.iter().enumerate() {
         let Some(mut boundary) = records
-            .first_offset(*record_index)
+            .first_at_or_after(0, *record_index)
             .and_then(|at| exact_surface_patch_boundary(bytes, at))
         else {
             continue;
@@ -46,7 +39,8 @@ pub(super) fn surface_patch_boundaries(
         boundary.scope_reference_ordinal = ordinal;
         boundary.record_index = *record_index;
 
-        ctx.push_vec(&mut boundaries, boundary, "f3d SurfacePatch boundaries")?;
+        ctx.reserve_vec(&mut boundaries, 1, "f3d SurfacePatch boundaries")?;
+        boundaries.push(boundary);
     }
     Ok(boundaries)
 }
@@ -58,7 +52,9 @@ pub(super) fn surface_patch_boundaries(
 /// base level's reference run closes the record and carries no settings.
 fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurfacePatchBoundary> {
     let payload = at.checked_add(PAYLOAD)?;
-    if View::u32_le_at(bytes, at.checked_add(15)?)? != 0 || !zeros_at::<2>(bytes, payload) {
+    if View::u32_le_at(bytes, at.checked_add(15)?)? != 0
+        || bytes.get(payload..payload + 2)? != [0; 2]
+    {
         return None;
     }
     let is_seed_selection = match bytes.get(payload + 2)? {
@@ -77,36 +73,4 @@ fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurface
         scale,
         model_reference,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::surface_patch_boundaries;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    #[test]
-    fn surface_patch_boundary_refuses_work_before_reference_lookup() {
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&[]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-
-        assert!(matches!(
-            surface_patch_boundaries(&ctx, &[], &records, &[42]),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan F3D SurfacePatch boundary references"
-                    && limit.additional == 1
-        ));
-        assert!(surface_patch_boundaries(
-            &cadmpeg_test_support::service_decode_context(),
-            &[],
-            &records,
-            &[42],
-        )
-        .unwrap()
-        .is_empty());
-    }
 }

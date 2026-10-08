@@ -689,67 +689,57 @@ fn collect_extrude_profile_group_operands(
 
 /// Whether every root member is one exact paired-reference face subgroup.
 pub(crate) fn is_paired_extrude_profile_aggregate(
-    ctx: &DecodeContext<'_>,
     root: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignFaceOperand],
-) -> Result<bool, CodecError> {
+) -> bool {
     use crate::records::{
         recipes::ConstructionRecipeKind, topology::extrude_selection::DesignExtrudeOperandRole,
     };
 
     let Some(stream) = native_stream(&root.id) else {
-        return Ok(false);
+        return false;
     };
-    if root.members().is_empty() {
-        return Ok(false);
-    }
-    for record_index in root.members().iter().map(|member| &member.value) {
-        let mut children = groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == root.scope_record_index
-                && group.record_index == *record_index
-                && group.scope_reference_ordinal > root.scope_reference_ordinal
-                && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
-        });
-        let Some(child) = children.next() else {
-            return Ok(false);
-        };
-        if children.next().is_some() {
-            return Ok(false);
-        }
-        let [crate::records::identity::Located {
-            value: operand_record_index,
-            ..
-        }] = child.members()
-        else {
-            return Ok(false);
-        };
-        let leaves = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == root.scope_record_index
-                && operand.group_record_index() == Some(child.record_index)
-                && operand.group_member_ordinal() == Some(0)
-                && operand.record_index() == *operand_record_index
-                && operand.recipe_kind == ConstructionRecipeKind::BoundedFace
-        });
-        let mut found = false;
-        for operand in leaves {
-            if crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(
-                ctx,
-                &operand.recipe_prefix_bytes,
-            )? {
-                if found {
-                    return Ok(false);
+    !root.members().is_empty()
+        && root
+            .members()
+            .iter()
+            .map(|member| &member.value)
+            .all(|record_index| {
+                let mut children = groups.iter().filter(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == root.scope_record_index
+                        && group.record_index == *record_index
+                        && group.scope_reference_ordinal > root.scope_reference_ordinal
+                        && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
+                });
+                let Some(child) = children.next() else {
+                    return false;
+                };
+                if children.next().is_some() {
+                    return false;
                 }
-                found = true;
-            }
-        }
-        if !found {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+                let [crate::records::identity::Located {
+                    value: operand_record_index,
+                    ..
+                }] = child.members()
+                else {
+                    return false;
+                };
+                let mut leaves =
+                    operands.iter().filter(|operand| {
+                        native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == root.scope_record_index
+                    && operand.group_record_index() == Some(child.record_index)
+                    && operand.group_member_ordinal() == Some(0)
+                    && operand.record_index() == *operand_record_index
+                    && operand.recipe_kind == ConstructionRecipeKind::BoundedFace
+                    && crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(
+                        &operand.recipe_prefix_bytes,
+                    )
+                    });
+                matches!((leaves.next(), leaves.next()), (Some(_), None))
+            })
 }
 
 /// Resolve one top-level Extrude profile group through its exact leaf operands.

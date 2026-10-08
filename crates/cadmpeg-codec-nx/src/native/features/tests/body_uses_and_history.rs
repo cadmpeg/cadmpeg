@@ -32,10 +32,7 @@ fn boolean_native_route_refusal(
     })
     .expect("Boolean native container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::feature_boolean_operations(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
+        crate::native::features::feature_boolean_operations(ctx, &container)
     })
     .expect("admitted native Boolean operations");
     assert_eq!(admitted.len(), 1);
@@ -47,10 +44,7 @@ fn boolean_native_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| {
-                    crate::native::features::feature_boolean_operations(ctx, &history)
-                })
+            crate::native::features::feature_boolean_operations(ctx, &container)
                 .expect_err("native Boolean resource limit")
         },
     )
@@ -924,25 +918,22 @@ fn feature_body_data_block_uses_refuse_collection_at_caller_limit() {
         },
     ];
 
-    let error = crate::test_support::resource_refusal_at(
+    crate::test_support::with_decode_context_over(
         &[],
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "NX feature body block uses",
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
         |ctx| {
-            feature_body_data_block_uses(
-                ctx,
-                std::slice::from_ref(&reference),
-                std::slice::from_ref(&input),
-                &blocks,
-            )
+            let error = feature_body_data_block_uses(ctx, &[reference], &[input], &blocks)
+                .expect_err("body block use needs one collection item");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        && limit.operation == "NX feature body block uses"
+            ));
         },
     );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "NX feature body block uses"
-    ));
 }
 
 #[test]

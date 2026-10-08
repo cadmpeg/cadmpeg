@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native FSET reference graphs and construction payloads.
 
-use super::payload_content::{copy_block_ids, shared_block_store, FeaturePayloadContent};
+use super::payload_content::FeaturePayloadContent;
 use super::{
     charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
-    FeatureConstructionOwner, FeatureConstructionPayload, FeatureHistory,
+    visit_feature_history_operation_records, FeatureConstructionOwner, FeatureConstructionPayload,
 };
 use crate::container::Container;
 use crate::om::fset_references::{word_reference_bytes, FsetReferences};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt::Write;
 
 /// Exact two-group object-reference graph carried by an `FSET` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -197,50 +198,59 @@ pub(in crate::native) enum FeatureFsetReferenceGroup {
 /// roles to either reference group.
 pub(in crate::native) fn feature_fset_reference_graphs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    history: &FeatureHistory<'_, '_, '_>,
+    container: &Container,
 ) -> Result<Vec<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut graphs = Vec::new();
-    for history_section in
-        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
-    {
-        let section_key = history_section.key.as_str();
-        let entry_offset = history_section.entry_offset;
-        for &(operation_ordinal, record) in ctx.admit_iter(
-            &history_section.records,
-            "visit NX feature operation records",
-        )? {
-            let Some(graph) = FsetReferences::read(record.payload_view()) else {
-                continue;
-            };
-            let Some(references) = graph.resolve(entry_offset, |index| {
-                charged_unique_offset_data_block(ctx, &indexed, u32::from(index))
-            })?
-            else {
-                continue;
-            };
-            let id = format_feature_history_id(
-                ctx,
-                "fset-reference-graph",
-                section_key,
-                operation_ordinal,
-                None,
-            )?;
-            let operation_label = format_feature_history_id(
-                ctx,
-                "operation-label",
-                section_key,
-                operation_ordinal,
-                None,
-            )?;
-            ctx.reserve_vec(&mut graphs, 1, "NX FSET reference graphs")?;
-            let graph = FeatureFsetReferenceGraph {
-                id,
-                operation_label,
-                references,
-            };
-            graphs.push(graph);
-        }
+    let mut failure = None;
+    visit_feature_history_operation_records(
+        ctx,
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
+            let projected =
+                (|| -> Result<Option<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
+                    let Some(graph) = FsetReferences::read(record.payload_view()) else {
+                        return Ok(None);
+                    };
+                    let Some(references) = graph.resolve(entry_offset, |index| {
+                        charged_unique_offset_data_block(ctx, &indexed, u32::from(index))
+                    })?
+                    else {
+                        return Ok(None);
+                    };
+                    let id = format_feature_history_id(
+                        ctx,
+                        "fset-reference-graph",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    )?;
+                    let operation_label = format_feature_history_id(
+                        ctx,
+                        "operation-label",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    )?;
+                    ctx.reserve_vec(&mut graphs, 1, "NX FSET reference graphs")?;
+                    Ok(Some(FeatureFsetReferenceGraph {
+                        id,
+                        operation_label,
+                        references,
+                    }))
+                })();
+            match projected {
+                Ok(Some(graph)) => graphs.push(graph),
+                Ok(None) => {}
+                Err(error) => failure = Some(error),
+            }
+        },
+    )?;
+    if let Some(error) = failure {
+        return Err(error);
     }
     Ok(graphs)
 }
@@ -254,7 +264,7 @@ pub(in crate::native) fn feature_fset_construction_payloads(
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut output = Vec::new();
-    for graph in ctx.admit_iter(graphs, "scan NX FSET reference graphs")? {
+    for graph in graphs {
         for (group, source_blocks) in [
             (
                 FeatureFsetReferenceGroup::First,
@@ -284,15 +294,47 @@ fn fset_construction_payload_from_group(
     source_blocks: &[(u16, Option<String>)],
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
-    let Some((data_blocks, _source_reservation)) = copy_block_ids(
-        ctx,
-        source_blocks.iter().map(|(_, target)| target.as_deref()),
+    if source_blocks.iter().any(|(_, target)| target.is_none()) {
+        return Ok(None);
+    }
+
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(source_blocks.len()),
         "NX FSET source block references",
-    )?
+    )?;
+    let mut source_reservation = ctx.reserve_scoped(0, "NX FSET source block references")?;
+    let mut data_blocks = Vec::new();
+    source_reservation.with_storage(|| {
+        ctx.reserve_capacity(
+            &mut data_blocks,
+            source_blocks.len(),
+            "allocate NX FSET source block references",
+        )
+    })?;
+    for (_, target) in source_blocks {
+        let Some(block) = target else {
+            return Ok(None);
+        };
+        let mut id = String::new();
+        ctx.try_reserve_retained_text(
+            &mut id,
+            block.len(),
+            "allocate NX FSET source block reference",
+        )?;
+        id.push_str(block);
+        data_blocks.push(id);
+    }
+    let Some(store) = data_blocks
+        .first()
+        .and_then(|id| id.rsplit_once(":block#").map(|(store, _)| store))
     else {
         return Ok(None);
     };
-    if shared_block_store(ctx, &data_blocks, "validate NX FSET source block owners")?.is_none() {
+    if data_blocks.iter().any(|block| {
+        block
+            .rsplit_once(":block#")
+            .is_none_or(|(prefix, _)| prefix != store)
+    }) {
         return Ok(None);
     }
     let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
@@ -308,10 +350,15 @@ fn fset_construction_payload_from_group(
     else {
         return Ok(None);
     };
-    let id = ctx.format_retained(
-        format_args!("nx:feature-history:fset-construction-payload#{operation_key}-{group_name}"),
-        "NX FSET construction identity",
-    )?;
+    let prefix = "nx:feature-history:fset-construction-payload#";
+    let id_len = prefix
+        .len()
+        .checked_add(operation_key.len())
+        .and_then(|length| length.checked_add(1 + group_name.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX FSET construction identity", 0, 1))?;
+    let mut id = ctx.retained_string(id_len, "NX FSET construction identity")?;
+    write!(&mut id, "{prefix}{operation_key}-{group_name}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX FSET construction identity", 0, 1))?;
     Ok(Some(FeatureConstructionPayload {
         id,
         operation_label: ctx

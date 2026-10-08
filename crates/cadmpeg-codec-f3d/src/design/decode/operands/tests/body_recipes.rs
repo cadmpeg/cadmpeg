@@ -67,7 +67,8 @@ fn body_recipe_decode_indices_refuse_collection_limits() {
         };
         for (limit, operation) in [
             (0, "f3d body recipe header index"),
-            (1, "f3d body recipe stream entries"),
+            (1, "f3d body recipe stream index"),
+            (2, "f3d body recipe stream entries"),
         ] {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -226,8 +227,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 &limited_policy,
             )
             .unwrap();
-            (parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe))
-                .map(|_| ())
+            ((parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe))
+                .transpose())
+            .map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -275,8 +277,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 &limited_policy,
             )
             .unwrap();
-            (parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe))
-                .map(|_| ())
+            ((parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe))
+                .transpose())
+            .map(|_| ())
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -303,7 +306,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             .unwrap();
     assert!(matches!(
         parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe),
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+        Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && failure.operation == "f3d body recipe references"
     ));
@@ -344,8 +347,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                     &limited_policy,
                 )
                 .unwrap();
-                (parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe))
-                    .map(|_| ())
+                ((parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe))
+                    .transpose())
+                .map(|_| ())
             },
         ) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -393,8 +397,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                     &limited_policy,
                 )
                 .unwrap();
-                (parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe))
-                    .map(|_| ())
+                ((parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe))
+                    .transpose())
+                .map(|_| ())
             },
         ) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -424,7 +429,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         .unwrap();
         assert!(matches!(
             parse_body_recipe_operand(&limited_ctx, &bytes, &group, 0, &record, &recipe),
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
                 if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                     && failure.operation == operation
         ));
@@ -748,6 +753,11 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         (1, u64::MAX, "f3d operand face candidate"),
         (
             u64::MAX,
+            u64::try_from(operand.id.len() - 1).unwrap(),
+            "f3d body recipe candidate operand ID",
+        ),
+        (
+            u64::MAX,
             u64::try_from(operand.id.len() + "test:model:face#same-stream".len() - 1).unwrap(),
             "f3d operand face candidate ID",
         ),
@@ -884,30 +894,6 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         ]
     );
 
-    for (skip, additional) in [(0, 1), (1, 8), (2, 8)] {
-        let operation = "find F3D body recipe Design reference";
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            operation,
-            skip,
-            |ctx| {
-                let mut limited_operand = operand.clone();
-                crate::design::decode::operands::bind_body_recipe_operand_candidates(
-                    ctx,
-                    std::slice::from_mut(&mut limited_operand),
-                    std::slice::from_ref(&recipe),
-                    &candidate_tags,
-                    std::slice::from_ref(&scope),
-                )
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == operation && limit.additional == additional)
-        );
-    }
-
     // A legacy Combine tool keeps the same identity envelope with no
     // persistent Design-reference clauses. The marker therefore follows the
     // zero count at the ordinary reference-table cursor.
@@ -1031,6 +1017,128 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         .unwrap();
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].id, output_id);
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes =
+            u64::try_from(72 + recipe.id.len() + output_id.len() * 2 - 1).unwrap();
+        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d body recipe owner ID",
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .unwrap();
+                (crate::design::decode::operands::decode_body_recipe_operands(
+                    &ctx,
+                    scan,
+                    &[],
+                    std::slice::from_ref(&group),
+                    std::slice::from_ref(&record),
+                    std::slice::from_ref(&recipe),
+                ))
+                .map(|_| ())
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap;
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
+        let refusal_cap = match cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d body recipe owner ID",
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                        policy.limits.max_retained_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                        policy.limits.max_collection_items = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap;
+                    }
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                        policy.limits.max_work_units = cap;
+                    }
+                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+                }
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .unwrap();
+                (crate::design::decode::operands::decode_body_recipe_operands(
+                    &ctx,
+                    scan,
+                    &[],
+                    std::slice::from_ref(&group),
+                    std::slice::from_ref(&record),
+                    std::slice::from_ref(&recipe),
+                ))
+                .map(|_| ())
+            },
+        ) {
+            cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
+            error => panic!("unexpected refusal: {error:?}"),
+        };
+        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
+        match cadmpeg_core::decode::ResourceDimension::RetainedBytes {
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = refusal_cap;
+            }
+            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                policy.limits.max_work_units = refusal_cap;
+            }
+            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
+        }
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            crate::design::decode::operands::decode_body_recipe_operands(
+                &ctx, scan, &[], std::slice::from_ref(&group),
+                std::slice::from_ref(&record), std::slice::from_ref(&recipe),
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d body recipe owner ID"
+        ));
     });
 }
 

@@ -106,12 +106,11 @@ fn component_pattern_generated_instances_refuse_collection_limit() {
                 && failure.operation == "retain F3D pattern GUID")
         );
     }
-    let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::CollectionItems,
-        "f3d component pattern generated instances",
-        0,
-        |ctx| bind_component_pattern_occurrences(ctx, &mut scope.clone(), &occurrences),
-    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = bind_component_pattern_occurrences(&ctx, &mut scope, &occurrences).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
@@ -119,7 +118,8 @@ fn component_pattern_generated_instances_refuse_collection_limit() {
     );
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     bind_component_pattern_occurrences(&ctx, &mut scope, &occurrences).unwrap();
     let Some(DesignRectangularPatternInstances::Components {
         component_guid,

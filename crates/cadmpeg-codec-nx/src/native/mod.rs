@@ -24,26 +24,6 @@ pub(crate) mod structure;
 pub(crate) mod substrate;
 pub(crate) mod toggle;
 
-/// Return the only value that satisfies `matches`.
-///
-/// The search stops at a second match; no match or several matches yield
-/// `None`. Each visited value is charged once.
-pub(crate) fn unique_by<'a, T>(
-    ctx: &DecodeContext<'_>,
-    values: &'a [T],
-    mut matches: impl FnMut(&T) -> Result<bool, CodecError>,
-    operation: &'static str,
-) -> Result<Option<&'a T>, CodecError> {
-    let Some(first) = ctx.position_by(values, &mut matches, operation)? else {
-        return Ok(None);
-    };
-    let (found, rest) = values.split_at(first + 1);
-    if ctx.any_by(rest, matches, operation)? {
-        return Ok(None);
-    }
-    Ok(found.last())
-}
-
 /// Availability of typed native records during container retention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TypedNative {

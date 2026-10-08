@@ -34,13 +34,11 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
             })
             .unwrap();
         let construction = exact_path_feature_construction(
-            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
             &[],
         )
-        .unwrap()
         .expect("compact Loft operation");
         assert_eq!(
             construction,
@@ -55,13 +53,11 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         bytes[24] = 0;
         assert_eq!(
             exact_path_feature_construction(
-                &cadmpeg_test_support::service_decode_context(),
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 &scope,
                 &[],
-            )
-            .unwrap(),
+            ),
             None
         );
     }

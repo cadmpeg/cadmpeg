@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
+use std::fmt::Write;
 
 use super::hex::ToggleId;
 use crate::container::{Container, EntryContent};
@@ -334,7 +335,7 @@ pub(super) fn saved_toggle_records(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<(Vec<SavedToggleStream>, Vec<SavedToggleEntry>), CodecError> {
-    let Some((bytes, source_offset)) = saved_toggle_bytes(ctx, container)? else {
+    let Some((bytes, source_offset)) = saved_toggle_bytes(container) else {
         return Ok((Vec::new(), Vec::new()));
     };
     let Some(parsed) = parse_saved_toggle_stream(ctx, bytes, source_offset)? else {
@@ -345,90 +346,90 @@ pub(super) fn saved_toggle_records(
     Ok((streams, parsed.entries))
 }
 
-fn saved_toggle_bytes<'a>(
-    ctx: &DecodeContext<'_>,
-    container: &'a Container<'_>,
-) -> Result<Option<(&'a [u8], u64)>, CodecError> {
-    let operation = "locate NX saved toggle stream";
-    let is_toggle_stream =
-        |entry: &crate::container::DirEntry| Ok(entry.content() == EntryContent::SaveToggleInfo);
-    let Some(first) = ctx.position_by(&container.entries, is_toggle_stream, operation)? else {
-        return Ok(None);
-    };
-    let (found, rest) = container.entries.split_at(first + 1);
-    if ctx.any_by(rest, is_toggle_stream, operation)? {
-        return Ok(None);
+fn saved_toggle_bytes<'a>(container: &'a Container<'_>) -> Option<(&'a [u8], u64)> {
+    let mut candidates = container
+        .entries
+        .iter()
+        .filter(|entry| entry.content() == EntryContent::SaveToggleInfo);
+    let entry = candidates.next()?;
+    if candidates.next().is_some() || entry.name != ENTRY_NAME {
+        return None;
     }
-    let Some(entry) = found.last() else {
-        return Ok(None);
-    };
-    if entry.name != ENTRY_NAME {
-        return Ok(None);
-    }
-    let Some((source_offset, byte_len)) = entry.file_span() else {
-        return Ok(None);
-    };
-    let bytes = usize::try_from(source_offset)
-        .ok()
-        .zip(usize::try_from(byte_len).ok())
-        .and_then(|(start, byte_len)| Some((start, start.checked_add(byte_len)?)))
-        .and_then(|(start, end)| container.data.get(start..end));
-    Ok(bytes.map(|bytes| (bytes, source_offset)))
+    let (source_offset, byte_len) = entry.file_span()?;
+    let start = usize::try_from(source_offset).ok()?;
+    let byte_len = usize::try_from(byte_len).ok()?;
+    let end = start.checked_add(byte_len)?;
+    Some((container.data.get(start..end)?, source_offset))
 }
 
 /// Whether the canonical saved-toggle entry has a complete admitted grammar.
-pub(crate) fn has_complete_saved_toggle_stream(
-    ctx: &DecodeContext<'_>,
-    container: &Container,
-) -> Result<bool, CodecError> {
-    let Some((bytes, _)) = saved_toggle_bytes(ctx, container)? else {
-        return Ok(false);
-    };
-    Ok(walk_saved_toggle_stream(ctx, bytes, |_, _| Ok(Some(())))?.is_some())
+pub(crate) fn has_complete_saved_toggle_stream(container: &Container) -> bool {
+    saved_toggle_bytes(container)
+        .and_then(|(bytes, _)| validate_saved_toggle_stream(bytes))
+        .is_some()
 }
 
-/// One canonical `<32 lowercase hex digits>:<On|Off>` member.
-struct ToggleMember<'a> {
-    ordinal: u32,
-    member_offset: usize,
-    toggle_id: &'a str,
-    state: SavedToggleState,
-}
-
-/// Frame of a complete saved toggle-information stream.
-struct ToggleStreamFrame {
-    entry_count: u32,
-    trailer: [u8; 4],
-    trailer_at: usize,
-}
-
-/// Walk the complete stream grammar, visiting members in order with the
-/// bounded member count. A visit that returns `None` stops the walk without a
-/// frame.
-fn walk_saved_toggle_stream<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-    mut visit: impl FnMut(usize, ToggleMember<'a>) -> Result<Option<()>, CodecError>,
-) -> Result<Option<ToggleStreamFrame>, CodecError> {
+fn validate_saved_toggle_stream(bytes: &[u8]) -> Option<u32> {
     let mut view = View::over_retained(bytes);
-    let Some(version) = view.u8() else {
-        return Ok(None);
-    };
+    let version = view.u8()?;
     if version != 1 || bytes.len() < 9 {
-        return Ok(None);
+        return None;
     }
-    let Some(entry_count) = view.u32_le() else {
-        return Ok(None);
-    };
-    let Ok(count) = usize::try_from(entry_count) else {
-        return Ok(None);
-    };
+    let entry_count = view.u32_le()?;
+    let count = usize::try_from(entry_count).ok()?;
     // The shortest canonical member is a two-byte length plus 32 hex digits,
-    // a colon, and `On`. Bound the member walk before reading any member lengths.
+    // a colon, and `On`. Bound allocation before reading any member lengths.
     if count > (bytes.len() - 9) / 37 {
-        return Ok(None);
+        return None;
     }
-    for ordinal in ctx.admit_iter(&(0..count), "walk NX saved toggle members")? {
+    for _ in 0..count {
+        let raw_byte_len = view.array::<2>()?;
+        let byte_len = usize::from(View::u16_le_at(&raw_byte_len, 0)?);
+        let value = std::str::from_utf8(view.take(byte_len)?).ok()?;
+        let (toggle_id, state) = value.rsplit_once(':')?;
+        let state = match state {
+            "On" => SavedToggleState::On,
+            "Off" => SavedToggleState::Off,
+            _ => return None,
+        };
+        if !ToggleId::is_valid(toggle_id) || byte_len != usize::from(state.byte_len()) {
+            return None;
+        }
+    }
+    view.array::<4>()?;
+    if !view.is_empty() {
+        return None;
+    }
+    Some(entry_count)
+}
+
+fn parse_saved_toggle_stream(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    source_offset: u64,
+) -> Result<Option<ParsedToggleStream>, CodecError> {
+    const PREFIX: &str = "nx:saved-toggle:entry#";
+    let Some(entry_count) = validate_saved_toggle_stream(bytes) else {
+        return Ok(None);
+    };
+    let Some(end_offset) = u64::try_from(bytes.len())
+        .ok()
+        .and_then(|len| source_offset.checked_add(len))
+    else {
+        return Ok(None);
+    };
+    let count = usize::try_from(entry_count).map_err(|_| {
+        ctx.refuse_codec_limit("index NX saved toggle entries", 0, u64::from(entry_count))
+    })?;
+    let mut entries = ctx.collection_vec(count, "store NX saved toggle entries")?;
+    let mut view = View::over_retained(bytes);
+    let Some(_version) = view.u8() else {
+        return Ok(None);
+    };
+    let Some(_count) = view.u32_le() else {
+        return Ok(None);
+    };
+    for ordinal in 0..entry_count {
         let member_offset = view.position();
         let Some(raw_byte_len) = view.array::<2>() else {
             return Ok(None);
@@ -439,91 +440,55 @@ fn walk_saved_toggle_stream<'a>(
         let Some(value) = view.take(usize::from(byte_len)) else {
             return Ok(None);
         };
-        let Some((digits, tail)) = value.split_first_chunk::<32>() else {
+        let Some(value) = std::str::from_utf8(value).ok() else {
             return Ok(None);
         };
-        let state = match tail {
-            b":On" => SavedToggleState::On,
-            b":Off" => SavedToggleState::Off,
-            _ => return Ok(None),
-        };
-        let Some(toggle_id) = ToggleId::digits_text(digits) else {
+        let Some((toggle_id, state)) = value.rsplit_once(':') else {
             return Ok(None);
         };
-        let Ok(ordinal) = u32::try_from(ordinal) else {
-            return Ok(None);
-        };
-        let member = ToggleMember {
-            ordinal,
-            member_offset,
-            toggle_id,
-            state,
-        };
-        if visit(count, member)?.is_none() {
-            return Ok(None);
-        }
-    }
-    let trailer_at = view.position();
-    let Some(trailer) = view.array::<4>() else {
-        return Ok(None);
-    };
-    if !view.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(ToggleStreamFrame {
-        entry_count,
-        trailer,
-        trailer_at,
-    }))
-}
-
-fn parse_saved_toggle_stream(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    source_offset: u64,
-) -> Result<Option<ParsedToggleStream>, CodecError> {
-    let Some(end_offset) = u64::try_from(bytes.len())
-        .ok()
-        .and_then(|len| source_offset.checked_add(len))
-    else {
-        return Ok(None);
-    };
-    let mut entries = Vec::new();
-    let frame = walk_saved_toggle_stream(ctx, bytes, |count, member| {
-        if entries.capacity() == 0 {
-            entries = ctx.vector_storage(count, "store NX saved toggle entries")?;
-        }
-        ctx.reserve_vec(&mut entries, 1, "store NX saved toggle entries")?;
-        let owned_id =
-            ctx.copy_retained_text(member.toggle_id, "retain NX saved toggle identity")?;
+        let mut owned_id =
+            ctx.retained_string(toggle_id.len(), "retain NX saved toggle identity")?;
+        owned_id.push_str(toggle_id);
         let Ok(toggle_id) = ToggleId::try_from(owned_id) else {
             return Ok(None);
         };
-        let Some(member_offset) = u64::try_from(member.member_offset)
+        let state = match state {
+            "On" => SavedToggleState::On,
+            "Off" => SavedToggleState::Off,
+            _ => return Ok(None),
+        };
+        let Some(member_offset) = u64::try_from(member_offset)
             .ok()
             .and_then(|off| source_offset.checked_add(off))
         else {
             return Ok(None);
         };
-        let id = ctx.format_retained(
-            format_args!("nx:saved-toggle:entry#{}", member.ordinal),
-            "retain NX saved toggle entry id",
-        )?;
+        let digits = if ordinal == 0 {
+            1
+        } else {
+            cadmpeg_core::decode::index_from_u32(ordinal.ilog10()) + 1
+        };
+        let id_len = PREFIX.len() + digits;
+        let mut id = ctx.retained_string(id_len, "retain NX saved toggle entry id")?;
+        id.push_str(PREFIX);
+        if write!(&mut id, "{ordinal}").is_err() {
+            return Ok(None);
+        }
         entries.push(SavedToggleEntry {
             id,
-            ordinal: member.ordinal,
+            ordinal,
             toggle_id,
             stable_identity: None,
-            state: member.state,
+            state,
             source_offset: member_offset,
         });
-        Ok(Some(()))
-    })?;
-    let Some(frame) = frame else {
+    }
+    assign_stable_toggle_identities(ctx, &mut entries)?;
+    let trailer_at = view.position();
+    let Some(trailer) = view.array::<4>() else {
         return Ok(None);
     };
-    assign_stable_toggle_identities(ctx, &mut entries)?;
-    let Some(trailer_source_offset) = u64::try_from(frame.trailer_at)
+    let Some(trailer_source_offset) = u64::try_from(trailer_at)
         .ok()
         .and_then(|off| source_offset.checked_add(off))
     else {
@@ -534,8 +499,8 @@ fn parse_saved_toggle_stream(
     }
     Ok(Some(ParsedToggleStream {
         stream: SavedToggleStream {
-            entry_count: frame.entry_count,
-            trailer: frame.trailer,
+            entry_count,
+            trailer,
             source_offset,
             trailer_source_offset,
         },
@@ -548,52 +513,35 @@ fn assign_stable_toggle_identities(
     entries: &mut [SavedToggleEntry],
 ) -> Result<(), CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "index NX saved toggle identities")?;
-    let mut counts = BTreeMap::<&ToggleId, usize>::new();
-    for entry in ctx.admit_iter(&*entries, "index NX saved toggle identities")? {
-        match ctx.get_mut_btree_map(
-            &mut counts,
-            &&entry.toggle_id,
-            "index NX saved toggle identities",
-        )? {
-            Some(count) => {
-                *count = count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("index NX saved toggle identities", 0, 1)
-                })?;
-            }
-            None => {
-                reservation.with_storage(|| {
-                    ctx.insert_btree_map(
-                        &mut counts,
-                        &entry.toggle_id,
-                        1,
+    let mut counts = BTreeMap::<ToggleId, usize>::new();
+    for entry in entries.iter() {
+        ctx.charge_work(1, "index NX saved toggle identities")?;
+        if let Some(count) = counts.get_mut(&entry.toggle_id) {
+            *count += 1;
+        } else {
+            reservation.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut counts,
+                    ToggleId::try_from(ctx.copy_retained_text(
+                        entry.toggle_id.as_str(),
                         "index NX saved toggle identities",
-                    )
-                })?;
-            }
+                    )?)
+                    .map_err(CodecError::malformed)?,
+                    1,
+                    "index NX saved toggle identities",
+                )
+            })?;
         }
     }
-    let mut unique = Vec::new();
-    for entry in ctx.admit_iter(&*entries, "resolve NX saved toggle identity")? {
-        let is_unique = matches!(
-            ctx.get_btree_map(
-                &counts,
-                &&entry.toggle_id,
-                "resolve NX saved toggle identity"
-            )?,
-            Some(1)
-        );
-        reservation.with_storage(|| {
-            ctx.push_vec(&mut unique, is_unique, "resolve NX saved toggle identity")
-        })?;
-    }
-    drop(counts);
-    for index in ctx.admit_iter(&(0..entries.len()), "resolve NX saved toggle identity")? {
-        if unique[index] {
-            let entry = &mut entries[index];
-            entry.stable_identity = Some(ctx.format_retained(
-                format_args!("nx:saved-toggle:identity#{}", entry.toggle_id.as_str()),
-                "retain NX stable toggle identity",
-            )?);
+    for entry in entries.iter_mut() {
+        ctx.charge_work(1, "resolve NX saved toggle identity")?;
+        if counts.get(&entry.toggle_id) == Some(&1) {
+            const PREFIX: &str = "nx:saved-toggle:identity#";
+            let byte_len = PREFIX.len() + 32;
+            let mut identity = ctx.retained_string(byte_len, "retain NX stable toggle identity")?;
+            identity.push_str(PREFIX);
+            identity.push_str(entry.toggle_id.as_str());
+            entry.stable_identity = Some(identity);
         }
     }
     Ok(())
@@ -891,13 +839,21 @@ mod tests {
     fn saved_toggle_lookup_refuses_before_index_work() {
         let bytes = stream(&["0123456789abcdef0123456789abcdef:On"], [0; 4]);
 
-        crate::test_support::resource_refusal_at(
+        crate::test_support::with_decode_context_over(
             &[],
-            ResourceDimension::WorkUnits,
-            "index NX saved toggle identities",
-            |ctx| super::parse_saved_toggle_stream(ctx, &bytes, 0),
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let error = super::parse_saved_toggle_stream(ctx, &bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "index NX saved toggle identities")
+                );
+                assert!(parse_service(&bytes, 0).is_some());
+            },
         );
-        assert!(parse_service(&bytes, 0).is_some());
     }
 
     #[test]

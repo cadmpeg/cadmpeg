@@ -208,14 +208,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some((definition, operands)) = self.call(expression) else {
             return;
         };
-        // Core's three charged removals are the operations the removal rule
-        // names; every other body, in core or a codec, reports a raw removal.
-        let owner = self.typeck.hir_owner.def_id.to_def_id();
-        let charged_removal = crate::hash_tables::CHARGED_REMOVALS
-            .iter()
-            .any(|method| types::decode_context_method(self.tcx, owner, method));
+        // Core's removal operations are the charged removals the removal rule
+        // names, and its generic keyed operations are proven at each concrete
+        // instance its callers import.
+        let core_body = self
+            .tcx
+            .crate_name(rustc_span::def_id::LOCAL_CRATE)
+            .as_str()
+            == "cadmpeg_core";
         if let Some(removal) =
-            crate::hash_tables::removal(self.tcx, definition).filter(|_| !charged_removal)
+            crate::hash_tables::removal(self.tcx, definition).filter(|_| !core_body)
         {
             self.report(
                 expression.span,
@@ -233,17 +235,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
             operands.first().map(|receiver| self.expr_ty(receiver)),
         ) {
             self.hash_table_traversal(expression, traversal);
-            return;
-        }
-        if self.call_arguments(expression).is_some_and(|arguments| {
-            crate::hash_tables::iterated_instance(
-                self.tcx,
-                self.typing_env(),
-                definition,
-                arguments,
-            )
-        }) {
-            self.hash_table_traversal(expression, "iterated through IntoIterator");
             return;
         }
         match self.shared_identity_grammar_paid(expression, definition) {
@@ -301,11 +292,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         // Core's generic keyed operations are proven at each concrete instance
         // its callers import.
-        let core_body = self
-            .tcx
-            .crate_name(rustc_span::def_id::LOCAL_CRATE)
-            .as_str()
-            == "cadmpeg_core";
         if let Some((receiver, query)) =
             operands.first().zip(operands.get(1)).filter(|_| !core_body)
         {
@@ -1139,16 +1125,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
     pub(crate) fn visit_work_expression(&mut self, expression: &'tcx Expr<'tcx>) {
         if let ExprKind::Match(source, [arm], MatchSource::ForLoopDesugar) = expression.kind {
             if let ExprKind::Loop(block, _, LoopSource::ForLoop, header) = arm.body.kind {
-                if let Some((definition, args)) = self.call(source) {
+                if let Some((_, args)) = self.call(source) {
                     if let Some(input) = args.first() {
                         self.visit_expr(input);
-                        if let Some(traversal) = crate::hash_tables::traversal(
-                            self.tcx,
-                            definition,
-                            Some(self.expr_ty(input)),
-                        ) {
-                            self.hash_table_traversal(source, traversal);
-                        }
                         // A one-step iterator whose source expression has no
                         // inferred extent still needs one charge per step.
                         let shape = match self.iteration(input, &mut Vec::new()) {

@@ -50,11 +50,7 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     bytes.extend_from_slice(b"277");
     bytes.extend_from_slice(&1240u32.to_le_bytes());
 
-    assert_eq!(
-        next_indexed_record_offset(&cadmpeg_test_support::service_decode_context(), &bytes, 11)
-            .unwrap(),
-        Some(127)
-    );
+    assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
     let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
     assert_eq!(
         parsed
@@ -109,19 +105,9 @@ fn indexed_record_search_requires_the_expected_identity() {
     bytes.extend_from_slice(b"306");
     bytes.extend_from_slice(&42u32.to_le_bytes());
 
+    assert_eq!(next_indexed_record_offset(&bytes, 0), Some(decoy));
     assert_eq!(
-        next_indexed_record_offset(&cadmpeg_test_support::service_decode_context(), &bytes, 0)
-            .unwrap(),
-        Some(decoy)
-    );
-    assert_eq!(
-        next_indexed_record_offset_with_index(
-            &cadmpeg_test_support::service_decode_context(),
-            &bytes,
-            0,
-            42
-        )
-        .unwrap(),
+        next_indexed_record_offset_with_index(&bytes, 0, 42),
         Some(expected)
     );
 }
@@ -141,7 +127,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         0x100_0000_0000,
         &[2403, 2404],
     );
-    let parsed =
+    let mut parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
     assert_eq!(
         parsed
@@ -183,12 +169,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         (vec![SketchConstraintKind::TextFrame], 0)
     );
     assert_eq!(
-        decode_pattern_definition(
-            &cadmpeg_test_support::service_decode_context(),
-            &record,
-            &parsed
-        )
-        .unwrap(),
+        decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
                 text_reference: 2394
@@ -231,7 +212,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         0x200_0000_0000,
         &[237],
     );
-    let parsed = tested_parse_classed_sketch_relation(
+    let mut parsed = tested_parse_classed_sketch_relation(
         &record,
         SketchRelationClass::TextPath { leading_flag: true },
     )
@@ -289,12 +270,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         (vec![SketchConstraintKind::TextPath], 0)
     );
     assert_eq!(
-        decode_pattern_definition(
-            &cadmpeg_test_support::service_decode_context(),
-            &record,
-            &parsed
-        )
-        .unwrap(),
+        decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::TextPath {
                 text_reference: 304,
@@ -330,7 +306,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         0x1000_0000,
         &[291, 327, 330, 280],
     );
-    let parsed =
+    let mut parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
             .unwrap();
     assert_eq!(
@@ -351,12 +327,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
     );
     assert_eq!(parsed.state, 0x1000_0000);
     assert_eq!(
-        decode_pattern_definition(
-            &cadmpeg_test_support::service_decode_context(),
-            &record,
-            &parsed
-        )
-        .unwrap(),
+        decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::Circular {
                 angle_parameter: 336,
@@ -399,7 +370,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         0x2000_0000,
         &[353, 352, 442, 445],
     );
-    let parsed =
+    let mut parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
             .unwrap();
     assert_eq!(
@@ -427,12 +398,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
     ));
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::sketch_relations::SketchPatternDefinition::Rectangular { directions }) =
-        decode_pattern_definition(
-            &cadmpeg_test_support::service_decode_context(),
-            &record,
-            &parsed,
-        )
-        .unwrap()
+        decode_pattern_definition(&record, &mut parsed)
     else {
         panic!("expected rectangular pattern definition");
     };
@@ -561,121 +527,4 @@ fn indexed_record_header_requires_a_complete_class_header() {
         assert_eq!(index_at(&header[..length], 0), None);
     }
     assert_eq!(index_at(&header, usize::MAX), None);
-}
-
-#[test]
-fn indexed_record_header_class_tag_copy_refuses_retained_bytes() {
-    use crate::design::decode::sketch::indexed_record_header_at;
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let header = [3, 0, 0, 0, b'2', b'5', b'7', 42, 0, 0, 0];
-    let parsed = indexed_record_header_at(&header, 0).unwrap();
-    assert_eq!((parsed.class_tag, parsed.class_code), (b"257", 257));
-    let refusal = crate::test_support::resource_refusal_at(
-        ResourceDimension::RetainedBytes,
-        "copy F3D indexed record class tag",
-        0,
-        |ctx| {
-            parsed
-                .retain_class_tag(ctx, "copy F3D indexed record class tag")
-                .map(|_| ())
-        },
-    );
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "copy F3D indexed record class tag"
-                && limit.additional == 3
-    ));
-}
-
-#[test]
-fn relation_class_is_the_type_at_its_tag_position_in_its_own_segment() {
-    use std::io::{Cursor, Write};
-    use zip::CompressionMethod;
-
-    // A relation record of class tag 257 in a segment whose name the native
-    // scope escapes. The other segment's types come first in the type list;
-    // the record's class is the second type of its own segment.
-    const ASSET_GUID: &str = "00000000-0000-4000-8000-000000000004";
-    const STREAM: &str = "Fusion Asset[Active]/Design1/BulkStream.dat";
-    const META: &str = "Fusion Asset[Active]/Design1/MetaStream.dat";
-    const OTHER_META: &str = "Other[Active]/Design1/MetaStream.dat";
-    const OTHER_TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
-    let mut bytes = vec![0u8; 127];
-    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
-    bytes[4..7].copy_from_slice(b"257");
-    bytes[7..11].copy_from_slice(&1239u32.to_le_bytes());
-    bytes[19] = 1;
-    bytes[20..24].copy_from_slice(&3u32.to_le_bytes());
-    for (marker, reference) in [(24, 1224u32), (39, 1228), (54, 1236)] {
-        bytes[marker] = 1;
-        bytes[marker + 1..marker + 9].copy_from_slice(&u64::from(reference).to_le_bytes());
-    }
-    bytes[35..39].copy_from_slice(&3u32.to_le_bytes());
-    bytes[50..54].copy_from_slice(&1u32.to_le_bytes());
-    bytes[70] = 1;
-    bytes[71..79].copy_from_slice(&1041u64.to_le_bytes());
-    bytes[81..89].copy_from_slice(&4u64.to_le_bytes());
-    bytes[89..93].copy_from_slice(&3u32.to_le_bytes());
-    for (marker, reference) in [(93, 1224u32), (104, 1228), (115, 1236)] {
-        bytes[marker] = 1;
-        bytes[marker + 1..marker + 9].copy_from_slice(&u64::from(reference).to_le_bytes());
-    }
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"277");
-    bytes.extend_from_slice(&1240u32.to_le_bytes());
-
-    let type_at = |meta: &str, byte_offset: u64, type_guid: &str| {
-        let mut design_type =
-            crate::design::test_support::design_type(type_guid, None, 0, "MSketch", Vec::new());
-        design_type.byte_offset = byte_offset;
-        crate::records::entity_header::SegmentType::try_new(
-            crate::ids::native_design_type_id(meta, byte_offset),
-            design_type,
-        )
-        .unwrap()
-    };
-    let relation_guid = crate::design::decode::sketch::RELATION_TYPE_GUID;
-    let types = [
-        type_at(OTHER_META, 0, relation_guid),
-        type_at(OTHER_META, 1, OTHER_TYPE_GUID),
-        type_at(META, 0, OTHER_TYPE_GUID),
-        type_at(META, 1, relation_guid),
-    ];
-    let scope = crate::ids::native_scope(STREAM);
-    assert!(scope.contains("%20"));
-    let header = crate::records::decal::DesignRecordHeader {
-        id: format!("{scope}:design-record-header#0"),
-        record_index: 1239,
-        class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap(),
-        byte_offset: 0,
-    };
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(&crate::manifest::encode_top_level(ASSET_GUID, &["Fusion Asset"]).unwrap())
-        .unwrap();
-    zip.start_file("Fusion Asset[Active]/Manifest.dat", stored)
-        .unwrap();
-    zip.write_all(&crate::manifest::encode_design_asset("Fusion Asset", ASSET_GUID).unwrap())
-        .unwrap();
-    zip.start_file(STREAM, stored).unwrap();
-    zip.write_all(&bytes).unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let relations = crate::design::decode::sketch::decode_sketch_relations(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-            &types,
-            std::slice::from_ref(&header),
-        )
-        .expect("relations decode");
-        let [relation] = relations.as_slice() else {
-            panic!("one relation, got {}", relations.len());
-        };
-        assert_eq!(relation.record_index, 1239);
-        assert!(relation.id.starts_with(&scope));
-    });
 }

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::u64_from_index;
-
 use super::parse_construction_operand_group;
-use super::record_frame;
+use crate::design::decode::operands::RecordFrame;
 
 use crate::records::decal::DesignRecordHeader;
 
@@ -15,9 +13,6 @@ use crate::records::feature::scope::DesignParameterScope;
 
 use crate::records::topology::extrude_selection::DesignExtrudeFaceRole;
 use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
-use crate::records::topology::extrude_selection::DesignOperandRole;
-use crate::test_support::indexed_header;
-use crate::test_support::push_marked_reference;
 
 #[test]
 fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scope() {
@@ -110,16 +105,15 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
         record_index: 296_501,
     };
-    let mut group = parse_construction_operand_group(&bytes, &scope, 0, &record_frame(&header))
-        .complete()
-        .expect("class-296 two-sided-to-faces construction group");
+    let mut group =
+        parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&header))
+            .complete()
+            .expect("class-296 two-sided-to-faces construction group");
     assert_eq!(group.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
-        &cadmpeg_test_support::service_decode_context(),
         &scope,
         std::slice::from_mut(&mut group),
-    )
-    .expect("Extrude face roles");
+    );
     assert_eq!(
         group.extrude_role(),
         Some(DesignExtrudeOperandRole::Faces(
@@ -135,9 +129,10 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let group = parse_construction_operand_group(&bytes, &wrong_length, 0, &record_frame(&header))
-        .complete()
-        .expect("construction group with otherwise valid frame");
+    let group =
+        parse_construction_operand_group(&bytes, &wrong_length, 0, &RecordFrame::from(&header))
+            .complete()
+            .expect("construction group with otherwise valid frame");
     assert_eq!(group.extrude_role(), None);
 
     let mut wrong_extent = scope;
@@ -147,153 +142,9 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         panic!("synthetic class-296 two-sided-to-faces prologue");
     };
     *extent = Some(DesignExtrudeExtent::SymmetricDistance);
-    let group = parse_construction_operand_group(&bytes, &wrong_extent, 0, &record_frame(&header))
-        .complete()
-        .expect("construction group with otherwise valid frame");
-    assert_eq!(group.extrude_role(), None);
-}
-
-#[test]
-fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
-    for (ordinal, (class_tag, scope_kind)) in [
-        (
-            "323",
-            crate::records::feature::scope::DesignFeatureKind::Move,
-        ),
-        (
-            "328",
-            crate::records::feature::scope::DesignFeatureKind::Move,
-        ),
-        (
-            "257",
-            crate::records::feature::scope::DesignFeatureKind::Move,
-        ),
-        (
-            "338",
-            crate::records::feature::scope::DesignFeatureKind::RemoveBody,
-        ),
-        (
-            "282",
-            crate::records::feature::scope::DesignFeatureKind::Move,
-        ),
-        (
-            "302",
-            crate::records::feature::scope::DesignFeatureKind::Move,
-        ),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let scope_record_index = 12 + u32::try_from(ordinal).expect("small test ordinal");
-        let group_record_index = 100 + 4 * u32::try_from(ordinal).expect("small test ordinal");
-        let frame_at = 0;
-        let mut bytes = Vec::new();
-        indexed_header(
-            &mut bytes,
-            class_tag.as_bytes().try_into().expect("three-digit class"),
-            group_record_index,
-        );
-        bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        push_marked_reference(&mut bytes, group_record_index + 3);
-        if class_tag == "328" {
-            bytes.push(0);
-            push_marked_reference(&mut bytes, group_record_index + 13);
-        } else {
-            bytes.extend_from_slice(&[0; 2]);
-        }
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        if class_tag == "328" {
-            bytes.push(0);
-        }
-        bytes.extend_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
-        bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&180u32.to_le_bytes());
-        bytes.extend_from_slice(&0.125f64.to_le_bytes());
-        bytes.extend_from_slice(&180u32.to_le_bytes());
-        push_marked_reference(&mut bytes, group_record_index + 2);
-        let flag_pair = matches!(class_tag, "282" | "302")
-            .then_some([0, 1])
-            .unwrap_or([1, 1]);
-        if class_tag == "328" {
-            bytes.push(0);
-        }
-        bytes.extend_from_slice(&flag_pair);
-        if class_tag == "328" {
-            bytes.extend_from_slice(&u64::from(group_record_index + 1).to_le_bytes());
-            bytes.extend_from_slice(&[0; 3]);
-        } else {
-            push_marked_reference(&mut bytes, group_record_index + 1);
-            bytes.push(0);
-        }
-        push_marked_reference(&mut bytes, scope_record_index);
-        let paired_at = bytes.len();
-        indexed_header(
-            &mut bytes,
-            if class_tag == "328" { *b"263" } else { *b"262" },
-            group_record_index,
-        );
-
-        let mut scope = DesignParameterScope::empty(
-            &format!("f3d:test:legacy-body-group#{scope_record_index}"),
-            scope_kind,
-            scope_record_index,
-        );
-        scope
-            .try_edit(|draft| {
-                draft.reference_members =
-                    crate::records::identity::ReferenceRun::unlocated(vec![group_record_index]);
-                draft.layout_fixture_references();
-                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-                draft.layout_fixture_tail();
-            })
-            .unwrap();
-        let record = DesignRecordHeader {
-            id: format!("f3d:test:legacy-body-record#{group_record_index}"),
-            byte_offset: frame_at,
-            class_tag: crate::records::references::DesignClassTag::try_from(class_tag.to_owned())
-                .unwrap(),
-            record_index: group_record_index,
-        };
-        if class_tag == "323" {
-            let refusal = crate::test_support::resource_refusal_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                "copy F3D construction operand paired class tag",
-                0,
-                |ctx| {
-                    crate::design::decode::operands::parse_construction_operand_group(
-                        ctx,
-                        &bytes,
-                        &scope,
-                        0,
-                        &record_frame(&record),
-                    )
-                    .map(|_| ())
-                },
-            );
-            assert!(matches!(
-                refusal,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                        && limit.operation == "copy F3D construction operand paired class tag"
-                        && limit.additional == 3
-            ));
-        }
-        let group = parse_construction_operand_group(&bytes, &scope, 0, &record_frame(&record))
+    let group =
+        parse_construction_operand_group(&bytes, &wrong_extent, 0, &RecordFrame::from(&header))
             .complete()
-            .expect("legacy body construction group");
-
-        assert_eq!(
-            group
-                .members()
-                .iter()
-                .map(|member| member.value)
-                .collect::<Vec<_>>(),
-            [group_record_index + 3]
-        );
-        assert_eq!(group.role(), DesignOperandRole::BODIES_A);
-        assert_eq!(group.frame.variant, flag_pair == [1, 1]);
-        assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
-    }
+            .expect("construction group with otherwise valid frame");
+    assert_eq!(group.extrude_role(), None);
 }

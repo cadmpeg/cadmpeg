@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::sketch::decode_persistent_references_from_stream;
+use crate::design::decode::sketch::{
+    decode_persistent_references_from_stream, finish_persistent_references,
+};
 use crate::records::references::PersistentReference;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -19,9 +21,9 @@ fn scan_references(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<PersistentReference>, cadmpeg_core::CodecError> {
-    let mut references = Vec::new();
-    decode_persistent_references_from_stream(ctx, "BulkStream.dat", bytes, &mut references)?;
-    Ok(references)
+    let mut indexed = Vec::new();
+    decode_persistent_references_from_stream(ctx, 0, "BulkStream.dat", bytes, &mut indexed)?;
+    finish_persistent_references(ctx, indexed)
 }
 
 #[test]
@@ -30,6 +32,8 @@ fn persistent_reference_collections_refuse_collection_limit() {
     for (limit, operation) in [
         (0, "f3d persistent reference index"),
         (1, "f3d persistent reference index"),
+        (2, "f3d persistent reference output"),
+        (3, "f3d persistent reference output"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();

@@ -5,15 +5,13 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
-use super::shared_frames::rigid_transform_at;
 use crate::bytes::f64s_at;
-use crate::design::decode::byte_fields::zeros_at;
+use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::operands::parse_entity_selection_prefix;
 use crate::design::decode::operands::parse_face_operand;
-use crate::design::decode::record_streams::{in_stream, record_stream};
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::decode::text::retain_class_tag;
+use crate::ids::native_stream;
 use crate::layout::coil_compact_placement_identity_frame as coil_identity;
 use crate::layout::coil_compact_placement_matrix_frame as coil_matrix;
 use crate::layout::coil_compact_placement_owner_identity_frame as coil_owner_identity;
@@ -30,11 +28,9 @@ use crate::records::feature::coil::DesignCoilSectionPlacement;
 use crate::records::feature::coil::DesignCoilSelection;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::scope;
-use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
-use crate::records::identity::Located;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
 use crate::records::recipes::ConstructionRecipe;
-use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
@@ -77,214 +73,222 @@ pub(super) fn exact_coil_placement(
     scope: &DesignParameterScope,
     recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignCoilPlacement>, CodecError> {
-    let Some(carriers) = coil_placement_carriers(bytes, records, scope) else {
-        return Ok(None);
-    };
-    let CoilPlacementCarriers {
-        selection_record_index,
-        selection_start,
-        selection_class_tag,
-        transform_record_index,
-        transform_start,
-        transform_class_tag,
-        explicit_transform,
-    } = carriers;
-    let Ok(selection_class_text) = std::str::from_utf8(selection_class_tag) else {
-        return Ok(None);
-    };
-    let persistent_frame = parse_entity_selection_frame(
-        ctx,
-        bytes,
-        selection_record_index,
-        u64_from_index(selection_start),
-        selection_class_text,
-    )?;
-    let persistent_selection = persistent_frame.and_then(|selection| {
-        Some(DesignCoilSelection::Persistent {
-            asset_id: selection.asset_id.try_into().ok()?,
-            context_id: selection.context_id.try_into().ok()?,
-            identity_record_index: selection.identity_record_index,
-            primary_identity: selection.primary_identity,
-            secondary: selection.secondary.map(|identity| {
-                crate::records::identity::DesignSecondaryIdentity {
-                    identity: identity.identity.value,
-                    curve_identity: identity.curve_identity.map(|identity| identity.value),
+    (|| {
+        if scope.kind() != scope::DesignFeatureKind::CoilPrimitive {
+            return None;
+        }
+        match (
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
+            scope.frame_length(),
+            scope.reference_members().len(),
+        ) {
+            ("393", "258", 427, 8) => {}
+            ("353", "259", 427, 8) => {}
+            (_, _, 411, 7) if matches!(scope.coil_extent(), Some(DesignCoilExtent::Spiral)) => {}
+            (_, _, 432 | 442, 8) => {}
+            _ => return None,
+        }
+        let selection_record_index = *scope.reference_members().values().next()?;
+        let transform_record_index = *scope.reference_members().values().nth(1)?;
+        let mut selection_frames = records.frames(selection_record_index);
+        let (selection_start, _) = selection_frames.next()?;
+        if selection_frames.next().is_some() {
+            return None;
+        }
+        let (selection_class_tag, selection_after_tag) =
+            lp_ascii_filtered_view(bytes, selection_start, 3..=3, u8::is_ascii_digit)?;
+        if selection_after_tag != selection_start.checked_add(7)?
+            || View::u32_le_at(bytes, selection_after_tag)? != selection_record_index
+        {
+            return None;
+        }
+        let mut transform_frames = records.frames(transform_record_index);
+        let (transform_start, transform_paired) = transform_frames.next()?;
+        if transform_frames.next().is_some() {
+            return None;
+        }
+        let (transform_class_tag, transform_after_tag) =
+            lp_ascii_filtered_view(bytes, transform_start, 3..=3, u8::is_ascii_digit)?;
+        if transform_after_tag != transform_start.checked_add(7)?
+            || View::u32_le_at(bytes, transform_after_tag)? != transform_record_index
+        {
+            return None;
+        }
+        let transform_paired_class_tag =
+            exact_indexed_header_at(bytes, transform_paired, transform_record_index)?;
+        let frame_length = transform_paired.checked_sub(transform_start)?;
+        let explicit_transform = match frame_length {
+            coil_legacy_identity::LEN
+                if scope.class_tag.as_str() == "393"
+                    && scope.paired_class_tag.as_str() == "258"
+                    && transform_class_tag == "395"
+                    && transform_paired_class_tag == "258"
+                    && exact_coil_legacy_identity_frame(
+                        bytes,
+                        transform_start,
+                        transform_paired,
+                        selection_record_index,
+                        transform_record_index,
+                        scope.record_index,
+                    ) =>
+            {
+                None
+            }
+            coil_modern_matrix::LEN
+                if transform_class_tag == "450"
+                    && transform_paired_class_tag == "259"
+                    && exact_coil_modern_placement_matrix_frame(
+                        bytes,
+                        transform_start,
+                        transform_paired,
+                        selection_record_index,
+                        transform_record_index,
+                        scope.record_index,
+                    ) =>
+            {
+                let values = f64s_at::<16>(
+                    bytes,
+                    transform_start.checked_add(coil_modern_matrix::MATRIX)?,
+                )?;
+                let mut transform = [[0.0; 4]; 4];
+                for (ordinal, value) in values.into_iter().enumerate() {
+                    transform[ordinal / 4][ordinal % 4] = value;
                 }
-            }),
-        })
-    });
-    let selection = match persistent_selection {
-        Some(selection) => selection,
-        None => {
-            let Some(selection) = exact_coil_face_selection(
+                Some(crate::records::identity::Located {
+                    value: crate::records::sketch_placement::SketchPlacementMatrix::try_from(
+                        transform,
+                    )
+                    .ok()?,
+                    offset: u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?)
+                        .ok()?,
+                })
+            }
+            coil_identity::LEN
+                if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
+                    && bytes.get(
+                        transform_start + coil_identity::IDENTITY_ZERO_RUN
+                            ..transform_start + coil_identity::IDENTITY_MARKER,
+                    ) == Some(&[0; 9][..])
+                    && bytes.get(transform_start + coil_identity::IDENTITY_MARKER) == Some(&1) =>
+            {
+                None
+            }
+            coil_owner_identity::LEN
+                if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
+                    && bytes.get(
+                        transform_start + coil_identity::IDENTITY_ZERO_RUN
+                            ..transform_start + coil_identity::IDENTITY_MARKER,
+                    ) == Some(&[0; 9][..])
+                    && bytes.get(transform_start + coil_identity::IDENTITY_MARKER) == Some(&1)
+                    && bytes.get(
+                        transform_start + coil_identity::LEN
+                            ..transform_start + coil_owner_identity::OWNER_REFERENCE_MARKER,
+                    ) == Some(&[0; 9][..])
+                    && bytes.get(transform_start + coil_owner_identity::OWNER_REFERENCE_MARKER)
+                        == Some(&1)
+                    && View::u32_le_at(
+                        bytes,
+                        transform_start + coil_owner_identity::OWNER_SCOPE_RECORD_INDEX,
+                    ) == Some(scope.record_index)
+                    && bytes.get(
+                        transform_start + coil_owner_identity::OWNER_REFERENCE_TAIL
+                            ..transform_start + coil_owner_identity::LEN,
+                    ) == Some(&[0; 6][..]) =>
+            {
+                None
+            }
+            coil_matrix::LEN
+                if bytes.get(transform_start + coil_matrix::PLACEMENT_MARKER) == Some(&1)
+                    && bytes.get(
+                        transform_start + coil_matrix::EXPLICIT_ZERO_RUN
+                            ..transform_start + coil_matrix::EXPLICIT_FORM_MARKER,
+                    ) == Some(&[0; 9][..])
+                    && bytes.get(transform_start + coil_matrix::EXPLICIT_FORM_MARKER)
+                        == Some(&0) =>
+            {
+                let values =
+                    f64s_at::<16>(bytes, transform_start.checked_add(coil_matrix::MATRIX)?)?;
+                let mut transform = [[0.0; 4]; 4];
+                for (ordinal, value) in values.into_iter().enumerate() {
+                    transform[ordinal / 4][ordinal % 4] = value;
+                }
+                Some(crate::records::identity::Located {
+                    value: crate::records::sketch_placement::SketchPlacementMatrix::try_from(
+                        transform,
+                    )
+                    .ok()?,
+                    offset: u64::try_from(transform_start.checked_add(coil_matrix::MATRIX)?)
+                        .ok()?,
+                })
+            }
+            _ => return None,
+        };
+        if explicit_transform
+            .as_ref()
+            .is_some_and(|matrix| !valid_right_handed_coil_transform(&matrix.value))
+        {
+            return None;
+        }
+        let persistent_frame = match parse_entity_selection_frame(
+            ctx,
+            bytes,
+            selection_record_index,
+            u64::try_from(selection_start).ok()?,
+            selection_class_tag,
+        ) {
+            Some(Ok(frame)) => Some(frame),
+            Some(Err(error)) => return Some(Err(error)),
+            None => None,
+        };
+        let persistent_selection = persistent_frame.and_then(|selection| {
+            Some(DesignCoilSelection::Persistent {
+                asset_id: selection.asset_id.try_into().ok()?,
+                context_id: selection.context_id.try_into().ok()?,
+                identity_record_index: selection.identity_record_index,
+                primary_identity: selection.primary_identity,
+                secondary: selection.secondary.map(|identity| {
+                    crate::records::identity::DesignSecondaryIdentity {
+                        identity: identity.identity.value,
+                        curve_identity: identity.curve_identity.map(|identity| identity.value),
+                    }
+                }),
+            })
+        });
+        let selection = match persistent_selection {
+            Some(selection) => selection,
+            None => match exact_coil_face_selection(
                 ctx,
                 bytes,
                 records,
                 scope,
-                (
-                    selection_record_index,
-                    selection_start,
-                    selection_class_text,
-                ),
+                (selection_record_index, selection_start, selection_class_tag),
                 transform_start,
                 recipes,
-            )?
-            else {
-                return Ok(None);
-            };
-            selection
-        }
-    };
-    Ok(Some(DesignCoilPlacement {
-        selection_record_index,
-        selection_record_byte_offset: u64_from_index(selection_start),
-        selection_class_tag: retain_class_tag(ctx, *selection_class_tag, "copy F3D class tag")?,
-        selection,
-        transform_record_index,
-        transform_record_byte_offset: u64_from_index(transform_start),
-        transform_class_tag: retain_class_tag(ctx, *transform_class_tag, "copy F3D class tag")?,
-        explicit_transform,
-    }))
-}
-
-/// The selection and transform carriers named by the first two references of
-/// a compact Coil scope, each the only frame of its record.
-struct CoilPlacementCarriers<'bytes> {
-    selection_record_index: u32,
-    selection_start: usize,
-    selection_class_tag: &'bytes [u8; 3],
-    transform_record_index: u32,
-    transform_start: usize,
-    transform_class_tag: &'bytes [u8; 3],
-    explicit_transform: Option<Located<SketchPlacementMatrix>>,
-}
-
-fn coil_placement_carriers<'bytes>(
-    bytes: &'bytes [u8],
-    records: &IndexedRecordOffsets,
-    scope: &DesignParameterScope,
-) -> Option<CoilPlacementCarriers<'bytes>> {
-    if !matches!(scope.payload(), DesignScopePayload::CoilPrimitive(_)) {
-        return None;
-    }
-    match (
-        scope.class_tag.as_str(),
-        scope.paired_class_tag.as_str(),
-        scope.frame_length(),
-        scope.reference_members().len(),
-    ) {
-        ("393", "258", 427, 8) => {}
-        ("353", "259", 427, 8) => {}
-        (_, _, 411, 7) if matches!(scope.coil_extent(), Some(DesignCoilExtent::Spiral)) => {}
-        (_, _, 432 | 442, 8) => {}
-        _ => return None,
-    }
-    let mut references = scope.reference_members().values();
-    let selection_record_index = *references.next()?;
-    let transform_record_index = *references.next()?;
-    let (selection_start, _) = records.only_frame(selection_record_index)?;
-    let selection_class_tag =
-        exact_indexed_header_at(bytes, selection_start, selection_record_index)?;
-    let (transform_start, transform_paired) = records.only_frame(transform_record_index)?;
-    let transform_class_tag =
-        exact_indexed_header_at(bytes, transform_start, transform_record_index)?;
-    let transform_paired_class_tag =
-        exact_indexed_header_at(bytes, transform_paired, transform_record_index)?;
-    let frame_length = transform_paired.checked_sub(transform_start)?;
-    let explicit_transform = match frame_length {
-        coil_legacy_identity::LEN
-            if scope.class_tag.as_str() == "393"
-                && scope.paired_class_tag.as_str() == "258"
-                && transform_class_tag == b"395"
-                && transform_paired_class_tag == b"258"
-                && exact_coil_legacy_identity_frame(
-                    bytes,
-                    transform_start,
-                    transform_paired,
-                    selection_record_index,
-                    transform_record_index,
-                    scope.record_index,
-                ) =>
-        {
-            None
-        }
-        coil_modern_matrix::LEN
-            if transform_class_tag == b"450"
-                && transform_paired_class_tag == b"259"
-                && exact_coil_modern_placement_matrix_frame(
-                    bytes,
-                    transform_start,
-                    transform_paired,
-                    selection_record_index,
-                    transform_record_index,
-                    scope.record_index,
-                ) =>
-        {
-            Some(located_transform(
-                bytes,
-                transform_start + coil_modern_matrix::MATRIX,
-            )?)
-        }
-        coil_identity::LEN
-            if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
-                && zeros_at::<9>(bytes, transform_start + coil_identity::IDENTITY_ZERO_RUN)
-                && bytes.get(transform_start + coil_identity::IDENTITY_MARKER) == Some(&1) =>
-        {
-            None
-        }
-        coil_owner_identity::LEN
-            if bytes.get(transform_start + coil_identity::PLACEMENT_MARKER) == Some(&1)
-                && zeros_at::<9>(bytes, transform_start + coil_identity::IDENTITY_ZERO_RUN)
-                && bytes.get(transform_start + coil_identity::IDENTITY_MARKER) == Some(&1)
-                && zeros_at::<9>(bytes, transform_start + coil_identity::LEN)
-                && bytes.get(transform_start + coil_owner_identity::OWNER_REFERENCE_MARKER)
-                    == Some(&1)
-                && View::u32_le_at(
-                    bytes,
-                    transform_start + coil_owner_identity::OWNER_SCOPE_RECORD_INDEX,
-                ) == Some(scope.record_index)
-                && zeros_at::<6>(
-                    bytes,
-                    transform_start + coil_owner_identity::OWNER_REFERENCE_TAIL,
-                ) =>
-        {
-            None
-        }
-        coil_matrix::LEN
-            if bytes.get(transform_start + coil_matrix::PLACEMENT_MARKER) == Some(&1)
-                && zeros_at::<9>(bytes, transform_start + coil_matrix::EXPLICIT_ZERO_RUN)
-                && bytes.get(transform_start + coil_matrix::EXPLICIT_FORM_MARKER) == Some(&0) =>
-        {
-            Some(located_transform(
-                bytes,
-                transform_start + coil_matrix::MATRIX,
-            )?)
-        }
-        _ => return None,
-    };
-    if explicit_transform
-        .as_ref()
-        .is_some_and(|matrix| !valid_right_handed_coil_transform(&matrix.value))
-    {
-        return None;
-    }
-    Some(CoilPlacementCarriers {
-        selection_record_index,
-        selection_start,
-        selection_class_tag,
-        transform_record_index,
-        transform_start,
-        transform_class_tag,
-        explicit_transform,
-    })
-}
-
-/// The placement matrix at `at` and its offset.
-fn located_transform(bytes: &[u8], at: usize) -> Option<Located<SketchPlacementMatrix>> {
-    Some(Located {
-        value: rigid_transform_at(bytes, at)?,
-        offset: u64_from_index(at),
-    })
+            ) {
+                Ok(Some(selection)) => selection,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            },
+        };
+        Some(Ok(DesignCoilPlacement {
+            selection_record_index,
+            selection_record_byte_offset: u64::try_from(selection_start).ok()?,
+            selection_class_tag: crate::design::decode::text::class_tag_from_view(
+                selection_class_tag,
+            )
+            .ok()?,
+            selection,
+            transform_record_index,
+            transform_record_byte_offset: u64::try_from(transform_start).ok()?,
+            transform_class_tag: crate::design::decode::text::class_tag_from_view(
+                transform_class_tag,
+            )
+            .ok()?,
+            explicit_transform,
+        }))
+    })()
+    .transpose()
 }
 
 fn exact_coil_modern_placement_matrix_frame(
@@ -296,35 +300,57 @@ fn exact_coil_modern_placement_matrix_frame(
     scope_record_index: u32,
 ) -> bool {
     paired_at.checked_sub(start) == Some(coil_modern_matrix::LEN)
-        && zeros_at::<39>(bytes, start + 11)
-        && zeros_at::<26>(bytes, start + coil_modern_matrix::MATRIX + 16 * 8)
+        && bytes.get(start + 11..start + coil_modern_matrix::MATRIX) == Some(&[0; 39][..])
+        && bytes.get(
+            start + coil_modern_matrix::MATRIX + 16 * 8..start + coil_modern_matrix::CONSTANT_512,
+        ) == Some(&[0; 26][..])
         && View::u32_le_at(bytes, start + coil_modern_matrix::CONSTANT_512) == Some(512)
-        && zeros_at::<4>(bytes, start + coil_modern_matrix::CONSTANT_512 + 4)
+        && bytes.get(
+            start + coil_modern_matrix::CONSTANT_512 + 4..start + coil_modern_matrix::CONSTANT_256,
+        ) == Some(&[0; 4][..])
         && View::u32_le_at(bytes, start + coil_modern_matrix::CONSTANT_256) == Some(256)
-        && zeros_at::<1>(bytes, start + coil_modern_matrix::CONSTANT_256 + 4)
+        && bytes.get(
+            start + coil_modern_matrix::CONSTANT_256 + 4
+                ..start + coil_modern_matrix::SELECTION_REFERENCE,
+        ) == Some(&[0; 1][..])
         && marked_record_reference(bytes, start + coil_modern_matrix::SELECTION_REFERENCE)
             == Some(selection_record_index)
-        && zeros_at::<2>(bytes, start + coil_modern_matrix::SELECTION_REFERENCE + 11)
+        && bytes.get(
+            start + coil_modern_matrix::SELECTION_REFERENCE + 11
+                ..start + coil_modern_matrix::SELECTION_FLAG,
+        ) == Some(&[0; 2][..])
         && View::u32_le_at(bytes, start + coil_modern_matrix::SELECTION_FLAG) == Some(1)
         && marked_record_reference(bytes, start + coil_modern_matrix::AUXILIARY_REFERENCE)
             == transform_record_index.checked_add(25)
-        && zeros_at::<3>(bytes, start + coil_modern_matrix::AUXILIARY_REFERENCE + 11)
+        && bytes.get(
+            start + coil_modern_matrix::AUXILIARY_REFERENCE + 11
+                ..start + coil_modern_matrix::CONSTANT_1024,
+        ) == Some(&[0; 3][..])
         && View::u64_le_at(bytes, start + coil_modern_matrix::CONSTANT_1024) == Some(1024)
         && View::u64_le_at(bytes, start + coil_modern_matrix::IDENTITY_LANE_PREFIX)
             == Some(0x7000_0000_0000_0000)
-        && zeros_at::<4>(bytes, start + coil_modern_matrix::IDENTITY_LANE_PREFIX + 8)
+        && bytes.get(
+            start + coil_modern_matrix::IDENTITY_LANE_PREFIX + 8
+                ..start + coil_modern_matrix::IDENTITY_LANE,
+        ) == Some(&[0; 4][..])
         && View::u64_le_at(bytes, start + coil_modern_matrix::IDENTITY_LANE)
             .is_some_and(|value| value >> 56 == 0x70)
-        && zeros_at::<3>(bytes, start + coil_modern_matrix::IDENTITY_LANE + 8)
+        && bytes.get(
+            start + coil_modern_matrix::IDENTITY_LANE + 8
+                ..start + coil_modern_matrix::SUCCESSOR_REFERENCE,
+        ) == Some(&[0; 3][..])
         && marked_record_reference(bytes, start + coil_modern_matrix::SUCCESSOR_REFERENCE)
             == transform_record_index.checked_add(2)
-        && zeros_at::<2>(bytes, start + coil_modern_matrix::SUCCESSOR_REFERENCE + 11)
+        && bytes.get(
+            start + coil_modern_matrix::SUCCESSOR_REFERENCE + 11
+                ..start + coil_modern_matrix::PREDECESSOR_REFERENCE,
+        ) == Some(&[0; 2][..])
         && marked_record_reference(bytes, start + coil_modern_matrix::PREDECESSOR_REFERENCE)
             == transform_record_index.checked_add(1)
-        && zeros_at::<1>(
-            bytes,
-            start + coil_modern_matrix::PREDECESSOR_REFERENCE + 11,
-        )
+        && bytes.get(
+            start + coil_modern_matrix::PREDECESSOR_REFERENCE + 11
+                ..start + coil_modern_matrix::OWNER_REFERENCE,
+        ) == Some(&[0; 1][..])
         && marked_record_reference(bytes, start + coil_modern_matrix::OWNER_REFERENCE)
             == Some(scope_record_index)
 }
@@ -344,45 +370,52 @@ fn exact_coil_legacy_identity_frame(
         return false;
     };
     paired_at.checked_sub(start) == Some(coil_legacy_identity::LEN)
-        && zeros_at::<37>(bytes, start + 11)
+        && bytes.get(start + 11..start + coil_legacy_identity::LEADING_REFERENCE_MARKER)
+            == Some(&[0; 37][..])
         && marked_record_reference(
             bytes,
             start + coil_legacy_identity::LEADING_REFERENCE_MARKER,
         ) == Some(0)
-        && zeros_at::<17>(
-            bytes,
-            start + coil_legacy_identity::LEADING_REFERENCE_MARKER + 11,
-        )
+        && bytes.get(
+            start + coil_legacy_identity::LEADING_REFERENCE_MARKER + 11
+                ..start + coil_legacy_identity::PROLOGUE_VALUE,
+        ) == Some(&[0; 17][..])
         && View::u32_le_at(bytes, start + coil_legacy_identity::PROLOGUE_VALUE) == Some(2)
-        && zeros_at::<4>(bytes, start + coil_legacy_identity::PROLOGUE_VALUE + 4)
+        && bytes.get(
+            start + coil_legacy_identity::PROLOGUE_VALUE + 4
+                ..start + coil_legacy_identity::PROLOGUE_FLAG,
+        ) == Some(&[0; 4][..])
         && View::u32_le_at(bytes, start + coil_legacy_identity::PROLOGUE_FLAG) == Some(1)
         && marked_record_reference(
             bytes,
             start + coil_legacy_identity::SELECTION_REFERENCE_MARKER,
         ) == Some(selection_record_index)
-        && zeros_at::<6>(
-            bytes,
-            start + coil_legacy_identity::SELECTION_RECORD_INDEX + 4,
-        )
-        && zeros_at::<2>(
-            bytes,
-            start + coil_legacy_identity::SELECTION_REFERENCE_MARKER + 11,
-        )
+        && bytes.get(
+            start + coil_legacy_identity::SELECTION_RECORD_INDEX + 4
+                ..start + coil_legacy_identity::SELECTION_REFERENCE_MARKER + 11,
+        ) == Some(&[0; 6][..])
+        && bytes.get(
+            start + coil_legacy_identity::SELECTION_REFERENCE_MARKER + 11
+                ..start + coil_legacy_identity::SELECTION_FLAG,
+        ) == Some(&[0; 2][..])
         && View::u32_le_at(bytes, start + coil_legacy_identity::SELECTION_FLAG) == Some(1)
         && auxiliary_record_index != 0
         && auxiliary_record_index != selection_record_index
         && auxiliary_record_index != transform_record_index
         && auxiliary_record_index != scope_record_index
-        && zeros_at::<6>(
-            bytes,
-            start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER + 5,
-        )
-        && zeros_at::<4>(
-            bytes,
-            start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER + 11,
-        )
+        && bytes.get(
+            start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER + 5
+                ..start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER + 11,
+        ) == Some(&[0; 6][..])
+        && bytes.get(
+            start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER + 11
+                ..start + coil_legacy_identity::TAIL_VALUE,
+        ) == Some(&[0; 4][..])
         && View::u32_le_at(bytes, start + coil_legacy_identity::TAIL_VALUE) == Some(4)
-        && zeros_at::<10>(bytes, start + coil_legacy_identity::TAIL_VALUE + 4)
+        && bytes.get(
+            start + coil_legacy_identity::TAIL_VALUE + 4
+                ..start + coil_legacy_identity::INTERMEDIATE_SELECTOR,
+        ) == Some(&[0; 10][..])
         && View::u32_le_at(bytes, start + coil_legacy_identity::INTERMEDIATE_SELECTOR) == Some(109)
         && View::f64_le_at(bytes, start + coil_legacy_identity::CARRIER_SCALAR)
             .is_some_and(|value| value.is_finite() && value > 0.0)
@@ -391,26 +424,23 @@ fn exact_coil_legacy_identity_frame(
             bytes,
             start + coil_legacy_identity::SUCCESSOR_REFERENCE_MARKER,
         ) == transform_record_index.checked_add(2)
-        && zeros_at::<2>(
-            bytes,
-            start + coil_legacy_identity::SUCCESSOR_REFERENCE_MARKER + 11,
-        )
+        && bytes.get(
+            start + coil_legacy_identity::SUCCESSOR_REFERENCE_MARKER + 11
+                ..start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER,
+        ) == Some(&[0; 2][..])
         && marked_record_reference(
             bytes,
             start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER,
         ) == transform_record_index.checked_add(1)
-        && zeros_at::<6>(
-            bytes,
-            start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER + 5,
-        )
+        && bytes.get(
+            start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER + 5
+                ..start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER + 11,
+        ) == Some(&[0; 6][..])
         && bytes.get(start + coil_legacy_identity::OWNER_REFERENCE_MARKER - 1) == Some(&0)
         && marked_record_reference(bytes, start + coil_legacy_identity::OWNER_REFERENCE_MARKER)
             == Some(scope_record_index)
 }
 
-/// The face-recipe support selection of a compact Coil placement: a face
-/// operand whose recipe is among `recipes`, ending where the transform
-/// carrier at `transform_start` begins.
 fn exact_coil_face_selection(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -420,38 +450,27 @@ fn exact_coil_face_selection(
     transform_start: usize,
     recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignCoilSelection>, CodecError> {
-    let Some(prefix) =
-        parse_entity_selection_prefix(ctx, bytes, selection_start, selection_record_index)?
-    else {
-        return Ok(None);
-    };
-    // The face-operand parser reads the selection header; its copies of the
-    // scope ID and class tag, and the parsed operand, are dropped when this
-    // search returns.
-    let mut header_storage = ctx.reserve_scoped(0, "f3d Coil selection header")?;
-    let id = ctx.copy_scoped_text(
-        &scope.id,
-        &mut header_storage,
-        "f3d Coil selection header ID",
-    )?;
-    let Ok(class_tag) = ctx
-        .copy_scoped_text(
-            selection_class_tag,
-            &mut header_storage,
-            "copy F3D Coil face-selection class tag",
-        )?
-        .try_into()
-    else {
-        return Ok(None);
-    };
-    let header = DesignRecordHeader {
-        id,
-        byte_offset: u64_from_index(selection_start),
-        class_tag,
-        record_index: selection_record_index,
-    };
-    let Some(face) = header_storage.with_storage(|| {
-        parse_face_operand(
+    (|| {
+        let prefix = match parse_entity_selection_prefix(
+            ctx,
+            bytes,
+            selection_start,
+            selection_record_index,
+        )? {
+            Ok(prefix) => prefix,
+            Err(error) => return Some(Err(error)),
+        };
+        let id = match ctx.copy_retained_text(&scope.id, "f3d Coil selection header ID") {
+            Ok(id) => id,
+            Err(error) => return Some(Err(error)),
+        };
+        let header = DesignRecordHeader {
+            id,
+            byte_offset: u64::try_from(selection_start).ok()?,
+            class_tag: selection_class_tag.to_owned().try_into().ok()?,
+            record_index: selection_record_index,
+        };
+        let face = parse_face_operand(
             ctx,
             bytes,
             records,
@@ -459,51 +478,39 @@ fn exact_coil_face_selection(
                 scope,
                 scope_reference_ordinal: 0,
                 group_ownership: None,
-                next_byte_offset: Some(u64_from_index(transform_start)),
+                next_byte_offset: Some(u64::try_from(transform_start).ok()?),
                 header: &header,
             },
             recipes,
-        )
-    })?
-    else {
-        return Ok(None);
-    };
-    if face.next_byte_offset() != u64_from_index(transform_start) {
-        return Ok(None);
-    }
-    let operation = "find F3D Coil face construction recipe";
-    let Some(recipe) = ctx.find_by(
-        recipes,
-        |recipe| ctx.equal_bytes(recipe.id.as_bytes(), face.recipe_id.as_bytes(), operation),
-        operation,
-    )?
-    else {
-        return Ok(None);
-    };
-    let (Ok(asset_id), Ok(context_id), Ok(recipe_kind)) = (
-        prefix.asset_id.try_into(),
-        prefix.context_id.try_into(),
-        scope::DesignFaceRecipeKind::try_from(recipe.kind),
-    ) else {
-        return Ok(None);
-    };
-    let recipe_id = ctx.copy_retained_text(&recipe.id, "f3d Coil face recipe ID")?;
-    let design = match recipe.design.as_ref() {
-        Some(design) => Some(crate::records::recipes::ConstructionRecipeDesign {
-            id: ctx.copy_retained_text(&design.id.value, "copy F3D Coil recipe design ID")?,
-            selector: design.selector,
-        }),
-        None => None,
-    };
-    Ok(Some(DesignCoilSelection::FaceRecipe {
-        asset_id,
-        context_id,
-        recipe_record_index: face.recipe_record_index(),
-        recipe_record_byte_offset: face.recipe_record_byte_offset(),
-        recipe_id,
-        recipe_kind,
-        design,
-    }))
+        )?;
+        let face = match face {
+            Ok(face) => face,
+            Err(error) => return Some(Err(error)),
+        };
+        if face.next_byte_offset() != u64::try_from(transform_start).ok()? {
+            return None;
+        }
+        let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
+        let recipe_id = match ctx.copy_retained_text(&recipe.id, "f3d Coil face recipe ID") {
+            Ok(id) => id,
+            Err(error) => return Some(Err(error)),
+        };
+        Some(Ok(DesignCoilSelection::FaceRecipe {
+            asset_id: prefix.asset_id.try_into().ok()?,
+            context_id: prefix.context_id.try_into().ok()?,
+            recipe_record_index: face.recipe_record_index(),
+            recipe_record_byte_offset: face.recipe_record_byte_offset(),
+            recipe_id,
+            recipe_kind: scope::DesignFaceRecipeKind::try_from(recipe.kind).ok()?,
+            design: recipe.design.as_ref().map(|design| {
+                crate::records::recipes::ConstructionRecipeDesign {
+                    id: design.id.value.clone(),
+                    selector: design.selector,
+                }
+            }),
+        }))
+    })()
+    .transpose()
 }
 
 fn valid_right_handed_coil_transform(
@@ -631,12 +638,14 @@ fn exact_long_coil_discriminators(
     kind: &scope::DesignFeatureKind,
     reference_members: &[u32],
 ) -> Option<CoilDiscriminators> {
-    if !matches!(kind, scope::DesignFeatureKind::CoilPrimitive) || reference_members.len() != 10 {
+    if *kind != scope::DesignFeatureKind::CoilPrimitive || reference_members.len() != 10 {
         return None;
     }
     let frame_length = paired_at.checked_sub(start)?;
     if !matches!(frame_length, 450 | 572 | 578)
-        || !zeros_at::<11>(bytes, start.checked_add(coil_long::ZERO_RUN_11)?)
+        || bytes.get(
+            start.checked_add(coil_long::ZERO_RUN_11)?..start.checked_add(coil_long::OPERATION)?,
+        )? != [0; 11]
         || View::u32_le_at(bytes, start.checked_add(coil_long::STRUCTURAL_CONSTANT)?)? != 1
         || marked_record_reference(bytes, start.checked_add(coil_long::FIFTH_REFERENCE)?)?
             != *reference_members.get(4)?
@@ -692,7 +701,7 @@ pub(super) fn exact_long_coil_transform(
     kind: &scope::DesignFeatureKind,
     reference_members: &[u32],
 ) -> Option<coil::DesignCoilTransform> {
-    if !matches!(kind, scope::DesignFeatureKind::CoilPrimitive)
+    if *kind != scope::DesignFeatureKind::CoilPrimitive
         || reference_members.len() != 10
         || !matches!(paired_at.checked_sub(start)?, 572 | 578)
     {
@@ -722,58 +731,52 @@ fn exact_long_coil_transform_values(
     valid_right_handed_coil_transform(&transform).then_some(transform)
 }
 
-/// Bind the extent mode of a long-form `CoilPrimitive` scope from the source
-/// kinds of its owned parameters, in local-ordinal order.
 pub(super) fn bind_coil_extent_from_parameters(
     ctx: &DecodeContext<'_>,
     scope: &mut DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
 ) -> Result<(), CodecError> {
-    if !matches!(scope.payload(), DesignScopePayload::CoilPrimitive(_))
-        || scope.coil_extent().is_some()
-    {
+    if scope.kind() != scope::DesignFeatureKind::CoilPrimitive || scope.coil_extent().is_some() {
         return Ok(());
     }
-    let Some(stream) = record_stream(ctx, &scope.id)? else {
+    let Some(stream) = native_stream(&scope.id) else {
         return Ok(());
     };
-    // At most five owned parameters name an extent; empty slots sort last.
-    let mut owned: [Option<(u32, &str)>; 5] = [None; 5];
+    let owned_kinds = parameter_owners
+        .iter()
+        .filter(|owner| {
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+        })
+        .filter_map(|owner| {
+            parameters
+                .iter()
+                .find(|parameter| {
+                    native_stream(&parameter.id) == Some(stream)
+                        && parameter.record_index == owner.parameter_record_index()
+                })
+                .map(|parameter| (owner.local_ordinal(), parameter.source_kind()))
+        });
+    let mut sorted = [(0, ""); 5];
     let mut count = 0usize;
-    // Each owner is admitted as the scan reaches it; a sixth owned parameter
-    // stops the scan.
-    for owner in parameter_owners {
-        ctx.charge_work(1, "scan F3D Coil parameter owners")?;
-        if owner.scope_record_index() != scope.record_index || !in_stream(ctx, owner.id(), stream)?
-        {
-            continue;
-        }
-        let operation = "find F3D Coil owner parameter";
-        let Some(parameter) = ctx.find_by(
-            parameters,
-            |parameter| {
-                Ok(parameter.record_index == owner.parameter_record_index()
-                    && in_stream(ctx, &parameter.id, stream)?)
-            },
-            operation,
-        )?
-        else {
-            continue;
-        };
-        let Some(slot) = owned.get_mut(count) else {
+    for kind in owned_kinds {
+        if count == sorted.len() {
             return Ok(());
-        };
-        *slot = Some((owner.local_ordinal(), parameter.source_kind()));
+        }
+        sorted[count] = kind;
         count += 1;
     }
-    ctx.stable_sort_by_key(
-        &mut owned[..],
-        |slot| slot.map_or((true, 0), |(ordinal, _)| (false, ordinal)),
+    ctx.sort_unstable_by(
+        &mut sorted[..count],
+        |value| &value.0,
         Ord::cmp,
-        "sort F3D Coil owned parameters",
+        "f3d coil parameter owner ordinals sort",
     )?;
-    let kinds = owned.map(|slot| slot.map_or("", |(_, source_kind)| source_kind));
+    let mut kinds = [""; 5];
+    for (index, (_, source_kind)) in sorted[..count].iter().enumerate() {
+        kinds[index] = source_kind;
+    }
     let extent = match &kinds[..count] {
         ["Diameter", "SectionSize", "TaperAngle", "Revolutions", "Height"]
         | ["Diameter", "SectionSize", "TaperAngle", "Height", "Revolutions"] => {

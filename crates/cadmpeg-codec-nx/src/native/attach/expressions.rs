@@ -289,8 +289,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 .map_err(cadmpeg_core::CodecError::from)?;
             let mut dependencies = Vec::new();
             if ordinal < ordered_count {
-                for name in crate::native::om::expression_parameter_names(ctx, &expression.expression) {
-                    let name = name?;
+                for name in crate::native::om::expression_parameter_names(&expression.expression) {
                     ctx.charge_work(
                         cadmpeg_core::decode::u64_from_index(parameter_ids.len()),
                         "NX parameter dependency lookup",
@@ -474,8 +473,7 @@ fn order_expression_dependencies(
                 continue;
             }
             let mut dependencies_ready = true;
-            for name in crate::native::om::expression_parameter_names(ctx, &expression.expression) {
-                let name = name?;
+            for name in crate::native::om::expression_parameter_names(&expression.expression) {
                 let mut dependency = None;
                 let mut ambiguous = false;
                 for (candidate_index, candidate) in expressions.iter().enumerate() {

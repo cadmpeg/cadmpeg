@@ -9,27 +9,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
         &self,
         expression: &'tcx Expr<'tcx>,
     ) -> Option<ty::GenericArgsRef<'tcx>> {
-        let arguments = self.raw_call_arguments(expression)?;
-        let definition = match expression.kind {
-            ExprKind::Call(callee, _) => match self.expr_ty(callee).kind() {
-                ty::FnDef(definition, _) => Some(*definition),
-                _ => None,
-            },
-            ExprKind::MethodCall(..) => self.typeck.type_dependent_def_id(expression.hir_id),
-            _ => None,
-        };
-        Some(
-            definition
-                .and_then(|definition| self.admission_forward(definition, arguments))
-                .map_or(arguments, |(_, forwarded)| forwarded),
-        )
-    }
-
-    /// The generic arguments the call names, before admission forwarding.
-    pub(crate) fn raw_call_arguments(
-        &self,
-        expression: &'tcx Expr<'tcx>,
-    ) -> Option<ty::GenericArgsRef<'tcx>> {
         let arguments = match expression.kind {
             ExprKind::Call(callee, _) => match self.expr_ty(callee).kind() {
                 ty::FnDef(_, arguments) => arguments.no_bound_vars()?,
@@ -158,13 +137,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
     }
 
     pub(crate) fn checked_call(&self, expression: &'tcx Expr<'tcx>, definition: DefId) -> bool {
-        if self
-            .implementation(expression, definition)
-            .is_some_and(|resolved| types::checked_imported_leaf(self.tcx, resolved))
-            || types::checked_imported_leaf(self.tcx, definition)
-        {
-            return true;
-        }
         if self.call(expression).is_some_and(|(called, operands)| {
             called == definition
                 && operands.first().is_some_and(|source| {

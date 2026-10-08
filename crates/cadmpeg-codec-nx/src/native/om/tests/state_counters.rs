@@ -51,13 +51,9 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let rows = crate::test_support::with_decode_context(|ctx| {
-        operation_state_counters(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
-    })
-    .unwrap();
+    let rows =
+        crate::test_support::with_decode_context(|ctx| operation_state_counters(ctx, &container))
+            .unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(u8::from(rows[0].frame.kind()), 1);
     assert_eq!(rows[0].frame.object().value(), 0x320);
@@ -181,7 +177,7 @@ fn audit_trail_route_refuses_work_limit() {
 fn state_projection_limit_error(
     payload: Vec<u8>,
     configure: impl FnOnce(&mut DecodePolicy),
-    project: impl Fn(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
+    project: impl FnOnce(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
 ) -> CodecError {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
 
@@ -207,13 +203,7 @@ fn state_counter_route_refuses_collection_limit() {
     let error = state_projection_limit_error(
         segment_om_record_area_with_state_counter_map(),
         |policy| policy.limits.max_collection_items = 0,
-        |ctx, container| {
-            operation_state_counters(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_counters(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems));
@@ -224,13 +214,7 @@ fn state_counter_route_refuses_retained_limit() {
     let error = state_projection_limit_error(
         segment_om_record_area_with_state_counter_map(),
         |policy| policy.limits.max_retained_bytes = 0,
-        |ctx, container| {
-            operation_state_counters(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_counters(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes));
@@ -241,13 +225,7 @@ fn state_counter_route_refuses_work_limit() {
     let error = state_projection_limit_error(
         segment_om_record_area_with_state_counter_map(),
         |policy| policy.limits.max_work_units = 0,
-        |ctx, container| {
-            operation_state_counters(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_counters(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits));
@@ -258,13 +236,7 @@ fn state_journal_route_refuses_collection_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_state_journal(),
         |policy| policy.limits.max_collection_items = 0,
-        |ctx, container| {
-            operation_state_journal_groups(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_journal_groups(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems));
@@ -275,13 +247,7 @@ fn state_journal_route_refuses_retained_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_state_journal(),
         |policy| policy.limits.max_retained_bytes = 0,
-        |ctx, container| {
-            operation_state_journal_groups(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_journal_groups(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes));
@@ -292,13 +258,7 @@ fn state_journal_route_refuses_work_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_state_journal(),
         |policy| policy.limits.max_work_units = 0,
-        |ctx, container| {
-            operation_state_journal_groups(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_journal_groups(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits));
@@ -313,10 +273,7 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
             .expect("required invariant");
 
     let groups = crate::test_support::with_decode_context(|ctx| {
-        operation_state_journal_groups(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
+        operation_state_journal_groups(ctx, &container)
     })
     .unwrap();
     assert_eq!(groups.len(), 2);
@@ -372,13 +329,9 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let tables = crate::test_support::with_decode_context(|ctx| {
-        operation_state_groups(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
-    })
-    .unwrap();
+    let tables =
+        crate::test_support::with_decode_context(|ctx| operation_state_groups(ctx, &container))
+            .unwrap();
     let groups = tables
         .iter()
         .flat_map(OmRollForwardStateTable::groups)
@@ -443,8 +396,7 @@ fn native_operation_state_groups_refuse_retained_limit() {
             policy.limits.max_retained_bytes = 0;
         },
         |ctx| {
-            let error = crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| operation_state_groups(ctx, &history))
+            let error = operation_state_groups(ctx, &container)
                 .expect_err("group vector exceeds zero retained bytes");
             assert!(matches!(
                 error,
@@ -473,8 +425,7 @@ fn native_operation_state_groups_refuse_collection_limit() {
             policy.limits.max_collection_items = 0;
         },
         |ctx| {
-            let error = crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| operation_state_groups(ctx, &history))
+            let error = operation_state_groups(ctx, &container)
                 .expect_err("group route exceeds zero collection items");
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -502,8 +453,7 @@ fn native_operation_state_groups_refuse_work_limit() {
             policy.limits.max_work_units = 0;
         },
         |ctx| {
-            let error = crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| operation_state_groups(ctx, &history))
+            let error = operation_state_groups(ctx, &container)
                 .expect_err("group scan exceeds zero work units");
             assert!(matches!(
                 error,
@@ -524,13 +474,9 @@ fn native_catalog_emits_bounded_operation_state_messages() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let messages = crate::test_support::with_decode_context(|ctx| {
-        operation_state_messages(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
-    })
-    .unwrap();
+    let messages =
+        crate::test_support::with_decode_context(|ctx| operation_state_messages(ctx, &container))
+            .unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].body.text.as_str(), "state warning");
     assert_eq!(messages[0].body.value.marker(), 0xaa);
@@ -578,8 +524,7 @@ fn native_operation_state_message_route_refuses_retained_bytes() {
             policy.limits.max_retained_bytes = 0;
         },
         |ctx| {
-            let error = crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| operation_state_messages(ctx, &history))
+            let error = operation_state_messages(ctx, &container)
                 .expect_err("message route exceeds zero retained bytes");
             assert!(matches!(
                 error,
@@ -595,13 +540,7 @@ fn state_message_route_refuses_collection_limit() {
     let error = state_projection_limit_error(
         segment_om_record_area_with_state_groups_and_counter_map(),
         |policy| policy.limits.max_collection_items = 0,
-        |ctx, container| {
-            operation_state_messages(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_messages(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems));
@@ -612,13 +551,7 @@ fn state_message_route_refuses_work_limit() {
     let error = state_projection_limit_error(
         segment_om_record_area_with_state_groups_and_counter_map(),
         |policy| policy.limits.max_work_units = 0,
-        |ctx, container| {
-            operation_state_messages(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_messages(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits));
@@ -629,13 +562,7 @@ fn state_status_route_refuses_collection_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_operation_state_statuses(),
         |policy| policy.limits.max_collection_items = 0,
-        |ctx, container| {
-            operation_state_statuses(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems));
@@ -646,13 +573,7 @@ fn state_status_route_refuses_retained_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_operation_state_statuses(),
         |policy| policy.limits.max_retained_bytes = 0,
-        |ctx, container| {
-            operation_state_statuses(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes));
@@ -663,13 +584,7 @@ fn state_status_route_refuses_work_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_operation_state_statuses(),
         |policy| policy.limits.max_work_units = 0,
-        |ctx, container| {
-            operation_state_statuses(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits));
@@ -680,13 +595,7 @@ fn state_slot_lane_route_refuses_collection_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_operation_state_statuses(),
         |policy| policy.limits.max_collection_items = 0,
-        |ctx, container| {
-            operation_state_slot_lanes(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems));
@@ -697,13 +606,7 @@ fn state_slot_lane_route_refuses_retained_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_operation_state_statuses(),
         |policy| policy.limits.max_retained_bytes = 0,
-        |ctx, container| {
-            operation_state_slot_lanes(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes));
@@ -714,13 +617,7 @@ fn state_slot_lane_route_refuses_work_limit() {
     let error = state_projection_limit_error(
         composed_feature_history_payload_with_operation_state_statuses(),
         |policy| policy.limits.max_work_units = 0,
-        |ctx, container| {
-            operation_state_slot_lanes(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, container)?,
-            )
-            .map(|_| ())
-        },
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits));
@@ -734,13 +631,9 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let statuses = crate::test_support::with_decode_context(|ctx| {
-        operation_state_statuses(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
-    })
-    .unwrap();
+    let statuses =
+        crate::test_support::with_decode_context(|ctx| operation_state_statuses(ctx, &container))
+            .unwrap();
     assert_eq!(statuses.len(), 2);
     assert_eq!(statuses[0].body().status_code.value(), 0x41);
     assert_eq!(statuses[0].body().object_index.value(), 0x20);
@@ -760,13 +653,9 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
         } if u8::from(link_code) == 0x4b && object_index.value() == 0x22
     ));
 
-    let lanes = crate::test_support::with_decode_context(|ctx| {
-        operation_state_slot_lanes(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
-    })
-    .unwrap();
+    let lanes =
+        crate::test_support::with_decode_context(|ctx| operation_state_slot_lanes(ctx, &container))
+            .unwrap();
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].frame.slots().len(), 3);
     assert_eq!(
@@ -864,45 +753,4 @@ fn state_slot_lane_derives_ordinals_and_preserves_null_tokens() {
         .unwrap_err()
         .to_string()
         .contains("slots.ordinal"));
-}
-
-fn matching_section_refusal(
-    payload: Vec<u8>,
-    operation: &'static str,
-    project: impl Fn(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
-) {
-    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        let container = container::scan_bytes(ctx, file)?;
-        // Build the section cache once so every walk step charges the same route.
-        container.om_sections(ctx)?;
-        Ok::<_, CodecError>(container)
-    })
-    .expect("section search container");
-    let error = crate::test_support::resource_refusal_at(
-        container.data.as_ref(),
-        ResourceDimension::WorkUnits,
-        operation,
-        |ctx| project(ctx, &container),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == operation));
-}
-
-#[test]
-fn audit_trail_matching_section_preserves_work_refusal() {
-    matching_section_refusal(
-        audit_trail_test_payload(),
-        "NX matching OM sections",
-        |ctx, container| audit_trail_rows(ctx, container).map(|_| ()),
-    );
-}
-
-#[test]
-fn feature_history_section_match_preserves_work_refusal() {
-    matching_section_refusal(
-        segment_om_record_area_with_state_counter_map(),
-        "match NX feature history section",
-        |ctx, container| crate::native::features::FeatureHistory::new(ctx, container).map(|_| ()),
-    );
 }
