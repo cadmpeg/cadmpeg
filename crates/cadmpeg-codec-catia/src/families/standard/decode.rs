@@ -9410,6 +9410,120 @@ fn corroborate_successor_endpoint_points(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct BoundsEntry {
+    bounds: [[f64; 2]; 3],
+    item: usize,
+}
+
+struct BoundsNode {
+    bounds: [[f64; 2]; 3],
+    item: Option<usize>,
+    after: usize,
+}
+
+/// A balanced, preorder tree. A disjoint node skips its whole subtree.
+/// The reservation owns node storage until the index is dropped.
+struct BoundsIndex<'ctx> {
+    nodes: Vec<BoundsNode>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn bounds_overlap(left: [[f64; 2]; 3], right: [[f64; 2]; 3]) -> bool {
+    (0..3).all(|axis| !(left[axis][1] < right[axis][0] || right[axis][1] < left[axis][0]))
+}
+
+fn point_bounds(point: Point3, tolerance: f64) -> [[f64; 2]; 3] {
+    [point.x, point.y, point.z].map(|value| [value - tolerance, value + tolerance])
+}
+
+impl<'ctx> BoundsIndex<'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        entries: &mut [BoundsEntry],
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        fn build(
+            ctx: &DecodeContext<'_>,
+            entries: &mut [BoundsEntry],
+            nodes: &mut Vec<BoundsNode>,
+            storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+            operation: &'static str,
+        ) -> Result<(), CodecError> {
+            let _depth = ctx.enter_nested(operation)?;
+            if entries.is_empty() {
+                return Ok(());
+            }
+            let bounds = ctx.fold(
+                entries,
+                [[f64::INFINITY, f64::NEG_INFINITY]; 3],
+                |mut bounds, entry| {
+                    for axis in 0..3 {
+                        bounds[axis][0] = bounds[axis][0].min(entry.bounds[axis][0]);
+                        bounds[axis][1] = bounds[axis][1].max(entry.bounds[axis][1]);
+                    }
+                    Ok(bounds)
+                },
+                operation,
+            )?;
+            let at = nodes.len();
+            ctx.push_scoped_vec(
+                storage,
+                nodes,
+                BoundsNode {
+                    bounds,
+                    item: (entries.len() == 1).then_some(entries[0].item),
+                    after: 0,
+                },
+                operation,
+            )?;
+            if entries.len() > 1 {
+                // Half extents avoid overflow for finite opposite-sign bounds.
+                let extent = bounds.map(|[low, high]| high * 0.5 - low * 0.5);
+                let mut axis = 0;
+                for candidate in 1..3 {
+                    if extent[candidate].total_cmp(&extent[axis]).is_gt() {
+                        axis = candidate;
+                    }
+                }
+                ctx.sort_unstable_by(
+                    entries,
+                    |entry| &entry.bounds[axis][0],
+                    f64::total_cmp,
+                    operation,
+                )?;
+                let middle = entries.len() / 2;
+                let (left, right) = entries.split_at_mut(middle);
+                build(ctx, left, nodes, storage, operation)?;
+                build(ctx, right, nodes, storage, operation)?;
+            }
+            nodes[at].after = nodes.len();
+            Ok(())
+        }
+        let mut storage = ctx.reserve_scoped(0, operation)?;
+        let mut nodes = Vec::new();
+        build(ctx, entries, &mut nodes, &mut storage, operation)?;
+        Ok(Self {
+            nodes,
+            _storage: storage,
+        })
+    }
+
+    /// Each advance does constant work; the caller admits each visited node.
+    fn overlapping(&self, bounds: [[f64; 2]; 3]) -> impl Iterator<Item = &BoundsNode> {
+        std::iter::successors((!self.nodes.is_empty()).then_some(0), move |&at| {
+            let node = &self.nodes[at];
+            let next = if bounds_overlap(node.bounds, bounds) {
+                at + 1
+            } else {
+                node.after
+            };
+            (next < self.nodes.len()).then_some(next)
+        })
+        .map(|at| &self.nodes[at])
+    }
+}
+
 fn unique_native_identity_points(
     ctx: &DecodeContext<'_>,
     vertices: &[crate::families::b5::graph::B5LogicalVertex],
@@ -9419,28 +9533,17 @@ fn unique_native_identity_points(
 ) -> Result<HashMap<u32, usize>, CodecError> {
     const MATCH_TOLERANCE: f64 = 2e-3;
 
-    // Points ordered by x: a vertex can match only points whose x lies within
-    // its tolerance, so each search visits one window of the order.
     let mut storage = ctx.reserve_scoped(0, "catia_native_identity_point_order")?;
-    let mut by_x = Vec::new();
-    ctx.reserve_scoped_vec(
-        &mut storage,
-        &mut by_x,
-        points.len(),
-        "catia_native_identity_point_order",
-    )?;
-    for (index, point) in ctx
-        .admit_iter(points, "catia_native_identity_point_order")?
-        .enumerate()
-    {
-        by_x.push((point.position().get().x, index));
-    }
-    ctx.sort_unstable_by(
-        &mut by_x,
-        |value| &value.0,
-        f64::total_cmp,
-        "catia_native_identity_point_order",
-    )?;
+    let mut entries = storage.with_storage(|| {
+        ctx.collect_vec(
+            points.iter().enumerate().map(|(item, point)| BoundsEntry {
+                item,
+                bounds: point_bounds(point.position().get(), 0.0),
+            }),
+            "catia_native_identity_point_order",
+        )
+    })?;
+    let index = BoundsIndex::new(ctx, &mut entries, "catia_native_identity_point_order")?;
     let mut matches = HashMap::new();
     for (rank, vertex) in ctx
         .admit_iter(vertices, "catia_native_logical_vertices")?
@@ -9454,34 +9557,24 @@ fn unique_native_identity_points(
             .map_or(MATCH_TOLERANCE, |tolerance| tolerance.get())
             .max(MATCH_TOLERANCE);
         let target = vertex.point.get();
-        let low = target.x - tolerance;
-        let high = target.x + tolerance;
-        let first = ctx.partition_point(
-            &by_x,
-            |&(x, _)| Ok(x < low),
+        let bounds = point_bounds(target, tolerance);
+        let mut matched = None;
+        let ambiguous = ctx.any_by(
+            index.overlapping(bounds),
+            |node| {
+                let Some(point) = node.item.filter(|_| bounds_overlap(node.bounds, bounds)) else {
+                    return Ok(false);
+                };
+                Ok(points[point]
+                    .position()
+                    .get()
+                    .distance_squared(target)
+                    .sqrt()
+                    <= tolerance
+                    && matched.replace(point).is_some())
+            },
             "catia_native_identity_point_match",
         )?;
-        let mut matched = None;
-        let mut window = by_x.get(first..).unwrap_or_default().iter();
-        let mut ambiguous = false;
-        while let Some(&(x, index)) =
-            ctx.next_charged(&mut window, "catia_native_identity_point_match")?
-        {
-            if x > high {
-                break;
-            }
-            if points[index]
-                .position()
-                .get()
-                .distance_squared(target)
-                .sqrt()
-                <= tolerance
-                && matched.replace(index).is_some()
-            {
-                ambiguous = true;
-                break;
-            }
-        }
         if !ambiguous {
             if let Some(point) = matched {
                 ctx.insert_hash_map(
