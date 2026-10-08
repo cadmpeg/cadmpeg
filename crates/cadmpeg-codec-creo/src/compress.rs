@@ -33,13 +33,9 @@ pub(crate) fn decode(
     let reservation =
         ctx.reserve_scoped(u64_from_index(expected_length), "inflate Creo TOC section")?;
     let mut output = ctx.begin_expand(ExpandSpec::Exact(u64_from_index(expected_length)))?;
-    let dictionary_bytes = dictionary_limit * 4;
-    let _dictionary_reservation = ctx.reserve_scoped(
-        u64_from_index(dictionary_bytes),
-        "decode Creo LZW dictionary",
-    )?;
-    let mut prefix = ctx.alloc_filled(dictionary_limit, 0u16, "creo LZW prefix slots")?;
-    let mut suffix = ctx.alloc_filled(dictionary_limit, 0u8, "creo LZW suffix slots")?;
+    let mut dictionary_storage = ctx.reserve_scoped(0, "decode Creo LZW dictionary")?;
+    let mut prefix = dictionary_storage.with_storage(|| ctx.alloc_filled(dictionary_limit, 0u16, "creo LZW prefix slots"))?;
+    let mut suffix = dictionary_storage.with_storage(|| ctx.alloc_filled(dictionary_limit, 0u8, "creo LZW suffix slots"))?;
     for (value, slot) in suffix.iter_mut().take(256).enumerate() {
         let Ok(value) = u8::try_from(value) else {
             return Ok(None);
@@ -69,8 +65,7 @@ pub(crate) fn decode(
     let mut stack = stack_storage
         .with_storage(|| ctx.collection_vec(dictionary_limit, "creo LZW stack slots"))?;
 
-    while let Some(raw_code) = reader.next(free_entry, false) {
-        ctx.charge_work(1, "decode Creo LZW code")?;
+    while let Some(raw_code) = ctx.next_charged(&mut std::iter::from_fn(|| reader.next(free_entry, false)), "decode Creo LZW code")? {
         if block_mode && raw_code == CLEAR {
             free_entry = 257;
             let Some(code) = reader.next(free_entry, true) else {
@@ -119,8 +114,9 @@ pub(crate) fn decode(
             stack.push(final_byte);
             code = old_code;
         }
+        let mut chain_steps = 0..dictionary_limit;
         while code >= 256 {
-            ctx.charge_work(1, "decode Creo LZW dictionary chain")?;
+            if ctx.next_charged(&mut chain_steps, "decode Creo LZW dictionary chain")?.is_none() { return Ok(None); }
             if code >= free_entry || code >= dictionary_limit {
                 return Ok(None);
             }
@@ -167,7 +163,6 @@ pub(crate) fn decode(
             "Creo LZW expansion does not equal its TOC length",
         ));
     }
-    ctx.charge_work(16, "creo LZW final padding")?;
     if !reader.padding_is_zero() {
         return Err(CodecError::malformed(
             "Creo LZW stream has invalid final padding",
@@ -370,12 +365,12 @@ mod tests {
             Some(b"ABC".to_vec())
         );
 
-        let mut limited = service;
-        limited.limits.max_collection_items = 2 * (1 << 16);
-        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &limited)
-            .expect("root bytes are within the limit");
-        let err = super::decode(&ctx, &stream, 3)
-            .expect_err("the dictionary fills the item budget before the stack");
+        let err = crate::test_support::last_refusal_at(
+            &stream,
+            ResourceDimension::CollectionItems,
+            "creo LZW stack slots",
+            |ctx| super::decode(ctx, &stream, 3),
+        );
         assert!(matches!(
             err,
             CodecError::ResourceLimit(limit)
@@ -468,8 +463,8 @@ mod tests {
     fn expansion_owns_one_payload_buffer() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        // The output owns three bytes; prefix and suffix vectors own 2+1 bytes per dictionary slot.
-        policy.limits.max_retained_bytes = 3 + (1 << 16) * (2 + 1);
+        // Dictionary and stack storage are released; only the output is retained.
+        policy.limits.max_retained_bytes = 3;
         let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)

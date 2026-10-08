@@ -549,7 +549,7 @@ pub(crate) fn round_replay_scalars(
             else {
                 continue;
             };
-            let Some(scalar_offset) = round_replay_short_scalar(&row.body, separator, record_end)
+            let Some(scalar_offset) = round_replay_short_scalar(ctx, &row.body, separator, record_end)?
             else {
                 continue;
             };
@@ -580,36 +580,28 @@ pub(crate) fn round_replay_scalars(
     Ok(result)
 }
 
-fn round_replay_short_scalar(body: &[u8], start: usize, end: usize) -> Option<usize> {
+fn round_replay_short_scalar(ctx: &DecodeContext<'_>, body: &[u8], start: usize, end: usize) -> Result<Option<usize>, CodecError> {
     let mut offset = start;
     while offset < end {
-        if body.get(offset) == Some(&0x29)
-            && scalar::decode(body, offset).is_some_and(|(value, scalar_end)| {
-                scalar_end == offset + 3 && scalar_end <= end && value.is_finite()
-            })
-        {
-            return Some(offset);
-        }
-        offset = round_replay_token_end(body, offset, end)?;
+        if body.get(offset) == Some(&0x29) && scalar::decode(body, offset).is_some_and(|(value, scalar_end)| scalar_end == offset + 3 && scalar_end <= end && value.is_finite()) { return Ok(Some(offset)); }
+        let Some(next) = round_replay_token_end(ctx, body, offset, end)? else { return Ok(None); };
+        offset = next;
     }
-    None
+    Ok(None)
 }
 
-fn round_replay_token_end(body: &[u8], offset: usize, end: usize) -> Option<usize> {
-    let head = *body.get(offset)?;
+fn round_replay_token_end(ctx: &DecodeContext<'_>, body: &[u8], offset: usize, end: usize) -> Result<Option<usize>, CodecError> {
+    let Some(&head) = body.get(offset) else { return Ok(None); };
     let next = match head {
-        0x19 | 0x28 | 0x32 | 0x37 | 0x41 => offset.checked_add(8)?,
-        0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 => offset.checked_add(7)?,
-        // The token is the head byte and one compact integer, so it ends where the
-        // compact integer ends.
-        0x18 => psb::compact_int(body, offset + 1).1,
-        _ => scalar::decode(body, offset)
-            .map(|(_, scalar_end)| scalar_end)
-            .or_else(|| {
-                psb::token_at(body, offset).and_then(|token| offset.checked_add(token.length))
-            })?,
+        0x19 | 0x28 | 0x32 | 0x37 | 0x41 => offset.checked_add(8),
+        0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 => offset.checked_add(7),
+        0x18 => Some(psb::compact_int(body, offset + 1).1),
+        _ => match scalar::decode(body, offset) {
+            Some((_, scalar_end)) => Some(scalar_end),
+            None => psb::token_at(ctx, body, offset)?.and_then(|token| offset.checked_add(token.length)),
+        },
     };
-    (next > offset && next <= end).then_some(next)
+    Ok(next.filter(|&next| next > offset && next <= end))
 }
 
 /// Bound recognized procedural-choice labels within decoded feature rows.
@@ -1747,7 +1739,10 @@ fn loop_history_roster(
         cursor = after_id;
         let mut field_bytes = std::array::from_fn(|_| Vec::new());
         for field in &mut field_bytes {
-            let token = psb::token_at(body, cursor)?;
+            let token = match psb::token_at(ctx, body, cursor) {
+                Ok(token) => token?,
+                Err(error) => return Some(Err(error)),
+            };
             (!matches!(
                 token.kind,
                 psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
@@ -1779,7 +1774,10 @@ fn loop_history_roster(
             }
         } else {
             (index + 1 == count).then_some(())?;
-            let token = psb::token_at(body, cursor)?;
+            let token = match psb::token_at(ctx, body, cursor) {
+                Ok(token) => token?,
+                Err(error) => return Some(Err(error)),
+            };
             let trailing = if token.kind == psb::TokenKind::NamedRecord {
                 None
             } else {
@@ -1795,7 +1793,10 @@ fn loop_history_roster(
                 };
                 cursor = cursor.checked_add(token.length)?;
                 matches!(
-                    psb::token_at(body, cursor).map(|token| token.kind),
+                    match psb::token_at(ctx, body, cursor) {
+                        Ok(token) => token.map(|token| token.kind),
+                        Err(error) => return Some(Err(error)),
+                    },
                     Some(psb::TokenKind::NamedRecord)
                 )
                 .then_some(())?;

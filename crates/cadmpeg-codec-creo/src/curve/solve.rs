@@ -34,6 +34,13 @@ pub(super) fn solve_nonlinear_expression_block(
     initial_values: &[Option<CurveExpressionValue>],
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
+    let variable_count = block.unknowns.len();
+    if variable_count == 0
+        || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES
+        || block.equations.len() < variable_count
+    {
+        return Ok(None);
+    }
     if !nonlinear_equations_are_smooth(ctx, block)? {
         return Ok(None);
     }
@@ -42,14 +49,8 @@ pub(super) fn solve_nonlinear_expression_block(
     else {
         return Ok(None);
     };
-    let variable_count = block.unknowns.len();
-    if variable_count == 0
-        || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES
-        || block.equations.len() < variable_count
-    {
-        return Ok(None);
-    }
-    let Some(seeds) = nonlinear_initial_guesses(ctx, initial_values, &variable_dimensions)? else {
+    let mut scratch = ctx.reserve_scoped(0, "creo nonlinear solve scratch")?;
+    let Some(seeds) = scratch.with_storage(|| nonlinear_initial_guesses(ctx, initial_values, &variable_dimensions))? else {
         return Ok(None);
     };
     let mut seeds = seeds.into_iter();
@@ -96,11 +97,7 @@ pub(super) fn nonlinear_equations_are_smooth(
         &block.equations,
         |equation| {
             Ok({
-                ctx.all_by(
-                    &[equation.left.as_str(), equation.right.as_str()],
-                    |expression| nonlinear_expression_is_smooth(ctx, expression),
-                    "creo relation comparison traversal",
-                )?
+                nonlinear_expression_is_smooth(ctx, &equation.left)? && nonlinear_expression_is_smooth(ctx, &equation.right)?
             })
         },
         "creo relation comparison traversal",
@@ -114,12 +111,12 @@ pub(super) fn nonlinear_expression_is_smooth(
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
+        ctx.next_charged(&mut bytes[cursor..].iter(), "creo nonlinear expression scan")?;
         if matches!(bytes[cursor], b'\'' | b'"') {
             let delimiter = bytes[cursor];
             cursor += 1;
-            while bytes.get(cursor).is_some_and(|byte| *byte != delimiter) {
-                cursor += 1;
-            }
+            let tail = &bytes[cursor..];
+            cursor += ctx.position_by(tail, |byte| Ok(*byte == delimiter), "creo nonlinear quoted expression scan")?.unwrap_or(tail.len());
             if bytes.get(cursor) != Some(&delimiter) {
                 return Ok(false);
             }
@@ -134,14 +131,13 @@ pub(super) fn nonlinear_expression_is_smooth(
         }
         if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
             let start = cursor;
-            let Some(end) = expression_identifier_end(bytes, start) else {
+            let Some(end) = expression_identifier_end(ctx, bytes, start)? else {
                 return Ok(false);
             };
             cursor = end;
             let mut following = cursor;
-            while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
-                following += 1;
-            }
+            let tail = &bytes[following..];
+            following += ctx.position_by(tail, |byte| Ok(!byte.is_ascii_whitespace()), "creo nonlinear following whitespace scan")?.unwrap_or(tail.len());
             if bytes.get(following) == Some(&b'(') {
                 let name = &expression[start..end];
                 let smooth = ctx.any_by(
@@ -232,8 +228,7 @@ pub(super) fn refine_nonlinear_solution(
         return Ok(None);
     };
     for _ in 0..MAX_NONLINEAR_SOLVE_ITERATIONS {
-        ctx.charge_work(1, "creo nonlinear iteration work")?;
-        if nonlinear_residuals_converged(&residuals) {
+        if nonlinear_residuals_converged(ctx, &residuals)? {
             let Some(mut rank_rows) = nonlinear_jacobian_rows(
                 ctx,
                 block,
@@ -274,7 +269,7 @@ pub(super) fn refine_nonlinear_solution(
         if !maximum_delta.is_finite() || maximum_delta > 1e12 * point_scale {
             return Ok(None);
         }
-        let base_norm = nonlinear_residual_norm(&residuals, &residuals);
+        let base_norm = nonlinear_residual_norm(ctx, &residuals, &residuals)?;
         let mut accepted = None;
         let mut valid_candidate = false;
         let mut scale = 1.0;
@@ -295,8 +290,8 @@ pub(super) fn refine_nonlinear_solution(
                     context,
                 )? {
                     valid_candidate = true;
-                    let candidate_norm = nonlinear_residual_norm(&candidate_residuals, &residuals);
-                    if nonlinear_residuals_converged(&candidate_residuals)
+                    let candidate_norm = nonlinear_residual_norm(ctx, &candidate_residuals, &residuals)?;
+                    if nonlinear_residuals_converged(ctx, &candidate_residuals)?
                         || candidate_norm < base_norm
                     {
                         accepted = Some((candidate, candidate_residuals));
@@ -319,12 +314,12 @@ pub(super) fn refine_nonlinear_solution(
         point = candidate;
         residuals = candidate_residuals;
         if maximum_delta * scale <= NONLINEAR_SOLVE_STEP_TOLERANCE * point_scale
-            && !nonlinear_residuals_converged(&residuals)
+            && !nonlinear_residuals_converged(ctx, &residuals)?
         {
             return Ok(None);
         }
     }
-    if !nonlinear_residuals_converged(&residuals) {
+    if !nonlinear_residuals_converged(ctx, &residuals)? {
         return Err(ctx.refuse_codec_limit(
             "creo nonlinear iteration ceiling",
             cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_ITERATIONS),
@@ -359,66 +354,32 @@ pub(super) fn nonlinear_jacobian_rows(
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<AffineEquationRow>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
+    if variable_count > MAX_NONLINEAR_SOLVE_VARIABLES || point.len() != variable_count { return Ok(None); }
     let mut rows = Vec::new();
-    for (row_index, residual) in residuals.iter().enumerate() {
-        let mut coefficients = Vec::new();
-        ctx.reserve_vec(
-            &mut coefficients,
-            variable_count,
-            "creo nonlinear Jacobian coefficients",
-        )?;
-        for column in 0..variable_count {
-            let step = NONLINEAR_SOLVE_DERIVATIVE_STEP * point[column].abs().max(1.0);
-            let mut plus = ctx.alloc_filled(point.len(), 0.0, "creo nonlinear positive probe")?;
-            let mut minus = ctx.alloc_filled(point.len(), 0.0, "creo nonlinear negative probe")?;
-            plus.copy_from_slice(point);
-            minus.copy_from_slice(point);
-            plus[column] += step;
-            minus[column] -= step;
-            let Some(plus_residuals) = evaluate_nonlinear_residuals(
-                ctx,
-                block,
-                values,
-                variable_dimensions,
-                &plus,
-                context,
-            )?
-            else {
-                return Ok(None);
-            };
-            let Some(minus_residuals) = evaluate_nonlinear_residuals(
-                ctx,
-                block,
-                values,
-                variable_dimensions,
-                &minus,
-                context,
-            )?
-            else {
-                return Ok(None);
-            };
-            let Some(plus_residual) = plus_residuals.get(row_index) else {
-                return Ok(None);
-            };
-            let Some(minus_residual) = minus_residuals.get(row_index) else {
-                return Ok(None);
-            };
-            if plus_residual.dimension != residual.dimension
-                || minus_residual.dimension != residual.dimension
-            {
-                return Ok(None);
-            }
+    for _ in ctx.admit_iter(residuals, "creo nonlinear Jacobian row initialization")? {
+        let coefficients = ctx.alloc_filled(variable_count, 0.0, "creo nonlinear Jacobian coefficients")?;
+        ctx.push_vec(&mut rows, AffineEquationRow { coefficients, rhs: 0.0 }, "creo nonlinear Jacobian rows")?;
+    }
+    for column in 0..variable_count {
+        let mut probes = ctx.reserve_scoped(0, "creo nonlinear Jacobian probes")?;
+        let step = NONLINEAR_SOLVE_DERIVATIVE_STEP * point[column].abs().max(1.0);
+        let mut plus = probes.with_storage(|| ctx.alloc_filled(point.len(), 0.0, "creo nonlinear positive probe"))?;
+        let mut minus = probes.with_storage(|| ctx.alloc_filled(point.len(), 0.0, "creo nonlinear negative probe"))?;
+        plus.copy_from_slice(point);
+        minus.copy_from_slice(point);
+        plus[column] += step;
+        minus[column] -= step;
+        let Some(plus_residuals) = probes.with_storage(|| evaluate_nonlinear_residuals(ctx, block, values, variable_dimensions, &plus, context))? else { return Ok(None); };
+        let Some(minus_residuals) = probes.with_storage(|| evaluate_nonlinear_residuals(ctx, block, values, variable_dimensions, &minus, context))? else { return Ok(None); };
+        let mut input = rows.iter_mut().zip(residuals).enumerate();
+        while let Some((row_index, (row, residual))) = ctx.next_charged(&mut input, "creo nonlinear Jacobian column traversal")? {
+            let Some(plus_residual) = plus_residuals.get(row_index) else { return Ok(None); };
+            let Some(minus_residual) = minus_residuals.get(row_index) else { return Ok(None); };
+            if plus_residual.dimension != residual.dimension || minus_residual.dimension != residual.dimension { return Ok(None); }
             let derivative = (plus_residual.value - minus_residual.value) / (2.0 * step);
-            if !derivative.is_finite() {
-                return Ok(None);
-            }
-            coefficients.push(derivative);
+            if !derivative.is_finite() { return Ok(None); }
+            row.coefficients[column] = derivative;
         }
-        ctx.reserve_vec(&mut rows, 1, "creo nonlinear Jacobian rows")?;
-        rows.push(AffineEquationRow {
-            coefficients,
-            rhs: 0.0,
-        });
     }
     Ok(Some(rows))
 }
@@ -435,14 +396,15 @@ pub(super) fn evaluate_nonlinear_residuals(
     {
         return Ok(None);
     }
+    let mut scratch = ctx.reserve_scoped(0, "creo nonlinear evaluation scratch")?;
     let mut evaluation_values = BTreeMap::new();
-    for (name, value) in values {
-        ctx.insert_btree_map(
+    for (name, value) in ctx.admit_iter(values, "creo nonlinear known value traversal")? {
+        scratch.with_storage(|| ctx.insert_btree_map(
             &mut evaluation_values,
             ctx.copy_retained_text(name, "creo nonlinear known value names")?,
             copy_expression_value(ctx, value, "creo nonlinear known string values")?,
             "creo nonlinear known value nodes",
-        )?;
+        ))?;
     }
     for ((variable, dimension), value) in block
         .unknowns
@@ -454,20 +416,21 @@ pub(super) fn evaluate_nonlinear_residuals(
         if !value.is_finite() {
             return Ok(None);
         }
-        let mut key = ctx.copy_retained_text(variable, "creo nonlinear unknown value names")?;
+        let mut key = scratch.with_storage(|| ctx.copy_retained_text(variable, "creo nonlinear unknown value names"))?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
         let Some(value) = quantity_value(*value, *dimension) else {
             return Ok(None);
         };
-        ctx.insert_btree_map(
+        scratch.with_storage(|| ctx.insert_btree_map(
             &mut evaluation_values,
             key,
             value,
             "creo nonlinear unknown value nodes",
-        )?;
+        ))?;
     }
     let mut residuals = Vec::new();
-    for equation in &block.equations {
+    let mut equations = block.equations.iter();
+    while let Some(equation) = ctx.next_charged(&mut equations, "creo nonlinear equation traversal")? {
         let Some(left) = parse_relation_expression::<CurveExpressionValue>(
             ctx,
             &equation.left,
@@ -510,21 +473,12 @@ pub(super) fn evaluate_nonlinear_residuals(
     Ok(Some(residuals))
 }
 
-pub(super) fn nonlinear_residual_norm(
-    residuals: &[SolveResidual],
-    reference: &[SolveResidual],
-) -> f64 {
-    residuals
-        .iter()
-        .zip(reference)
-        .map(|(residual, reference)| (residual.value / reference.scale).abs())
-        .fold(0.0, f64::max)
+pub(super) fn nonlinear_residual_norm(ctx: &cadmpeg_core::decode::DecodeContext<'_>, residuals: &[SolveResidual], reference: &[SolveResidual]) -> Result<f64, cadmpeg_core::CodecError> {
+    Ok(ctx.admit_iter(residuals, "creo nonlinear residual norm")?.zip(reference).map(|(residual, reference)| (residual.value / reference.scale).abs()).fold(0.0, f64::max))
 }
 
-pub(super) fn nonlinear_residuals_converged(residuals: &[SolveResidual]) -> bool {
-    residuals
-        .iter()
-        .all(|residual| residual.value.abs() <= NONLINEAR_SOLVE_RESIDUAL_TOLERANCE * residual.scale)
+pub(super) fn nonlinear_residuals_converged(ctx: &cadmpeg_core::decode::DecodeContext<'_>, residuals: &[SolveResidual]) -> Result<bool, cadmpeg_core::CodecError> {
+    ctx.all_by(residuals, |residual| Ok(residual.value.abs() <= NONLINEAR_SOLVE_RESIDUAL_TOLERANCE * residual.scale), "creo nonlinear residual convergence")
 }
 
 pub(super) fn nonlinear_solutions_close(left: &[f64], right: &[f64]) -> bool {
@@ -551,21 +505,12 @@ pub(super) fn eliminate_pivot_column(
     let Some((pivot, after)) = pivot_and_after.split_first_mut() else {
         return Ok(());
     };
-    for row in before.iter_mut().chain(after.iter_mut()) {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(row.coefficients.len())
-                .checked_mul(3)
-                .and_then(|work| work.checked_add(3))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo matrix elimination", u64::MAX, u64::MAX)
-                })?,
-            "creo matrix elimination",
-        )?;
+    for row in ctx.admit_iter(before, "creo matrix elimination rows")?.chain(ctx.admit_iter(after, "creo matrix elimination rows")?) {
         let factor = row.coefficients[column];
         if factor.abs() <= coefficient_tolerance {
             continue;
         }
-        for (coefficient, pivot_coefficient) in row.coefficients.iter_mut().zip(&pivot.coefficients)
+        for (coefficient, pivot_coefficient) in ctx.admit_iter(&mut row.coefficients, "creo matrix elimination")?.zip(&pivot.coefficients)
         {
             *coefficient -= factor * pivot_coefficient;
             if coefficient.abs() <= coefficient_tolerance {
@@ -585,51 +530,24 @@ pub(super) fn solve_unique_affine_system(
     if variable_count == 0 || rows.len() < variable_count {
         return Ok(None);
     }
-    for row in rows.iter_mut() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(row.coefficients.len())
-                .checked_mul(2)
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo matrix row normalization", u64::MAX, u64::MAX)
-                })?,
-            "creo matrix row normalization",
-        )?;
-        let scale = row
-            .coefficients
-            .iter()
+    for row in ctx.admit_iter(&mut *rows, "creo matrix row normalization")? {
+        let scale = ctx.admit_iter(&row.coefficients, "creo matrix row normalization")?
             .map(|value| value.abs())
             .fold(0.0, f64::max);
         if scale > 0.0 {
-            for coefficient in &mut row.coefficients {
+            for coefficient in ctx.admit_iter(&mut row.coefficients, "creo matrix row normalization")? {
                 *coefficient /= scale;
             }
             row.rhs /= scale;
         }
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(rows.len())
-            .checked_mul(
-                cadmpeg_core::decode::u64_from_index(variable_count)
-                    .checked_add(2)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX)
-                    })?,
-            )
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("creo matrix residual scan", u64::MAX, u64::MAX)
-            })?,
-        "creo matrix residual scan",
-    )?;
-    let rhs_scale = rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
+    let rhs_scale = ctx.admit_iter(&*rows, "creo matrix rhs scale")?.map(|row| row.rhs.abs()).fold(1.0, f64::max);
     let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
     let residual_tolerance = EPS_LINEAR_SYSTEM_RESIDUAL * rhs_scale;
-    for (pivot_row, column) in (0..variable_count).enumerate() {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(rows.len()),
-            "creo matrix pivot scan",
-        )?;
-        let Some(selected) = (pivot_row..rows.len()).max_by(|&first, &second| {
+    let mut columns = 0..variable_count;
+    while let Some(column) = ctx.next_charged(&mut columns, "creo matrix column traversal")? {
+        let pivot_row = column;
+        let Some(selected) = ctx.admit_iter(pivot_row..rows.len(), "creo matrix pivot scan")?.max_by(|&first, &second| {
             rows[first].coefficients[column]
                 .abs()
                 .total_cmp(&rows[second].coefficients[column].abs())
@@ -641,32 +559,22 @@ pub(super) fn solve_unique_affine_system(
             return Ok(None);
         }
         rows.swap(pivot_row, selected);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(rows[pivot_row].coefficients.len()),
-            "creo matrix pivot normalization",
-        )?;
-        for coefficient in &mut rows[pivot_row].coefficients {
+        for coefficient in ctx.admit_iter(&mut rows[pivot_row].coefficients, "creo matrix pivot normalization")? {
             *coefficient /= divisor;
         }
         rows[pivot_row].rhs /= divisor;
         eliminate_pivot_column(ctx, rows, pivot_row, column, coefficient_tolerance)?;
     }
-    if !rows.iter().skip(variable_count).all(|row| {
-        row.coefficients
-            .iter()
-            .all(|coefficient| coefficient.abs() <= coefficient_tolerance)
-            && row.rhs.abs() <= residual_tolerance
-    }) {
+    if !ctx.all_by(&rows[variable_count..], |row| {
+        Ok(ctx.all_by(&row.coefficients, |coefficient| Ok(coefficient.abs() <= coefficient_tolerance), "creo matrix residual coefficients")? && row.rhs.abs() <= residual_tolerance)
+    }, "creo matrix residual scan")? {
         return Ok(None);
     }
     let mut solution = ctx.alloc_filled(variable_count, 0.0, "creo affine unique solution")?;
-    for (slot, row) in solution.iter_mut().zip(rows.iter()) {
+    for (slot, row) in ctx.admit_iter(&mut solution, "creo affine solution traversal")?.zip(rows.iter()) {
         *slot = row.rhs;
     }
-    Ok(solution
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(solution))
+    Ok(ctx.all_by(&solution, |value| Ok(value.is_finite()), "creo affine solution finite scan")?.then_some(solution))
 }
 
 pub(super) fn evaluate_affine_program(
@@ -689,14 +597,14 @@ pub(super) fn evaluate_affine_program(
         ctx.copy_retained_text("t", "creo affine defined time name")?,
         "creo affine defined time node",
     )?;
-    for assignment in &record.assignments {
+    for assignment in ctx.admit_iter(&record.assignments, "creo affine assignment traversal")? {
         let Some((name, declared_unit)) = assignment.parameter_target() else {
             continue;
         };
         let mut key = ctx.copy_retained_text(name, "creo affine assignment names")?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        let declaration_is_valid = declared_unit.is_none() || !defined_symbols.contains(&key);
-        if !defined_symbols.contains(&key) {
+        let declaration_is_valid = declared_unit.is_none() || !ctx.contains_btree_set(&defined_symbols, &key, "creo affine defined symbol lookup")?;
+        if !ctx.contains_btree_set(&defined_symbols, &key, "creo affine defined symbol lookup")? {
             ctx.insert_btree_set(
                 &mut defined_symbols,
                 ctx.copy_retained_text(&key, "creo affine defined symbol names")?,
@@ -727,12 +635,12 @@ pub(super) fn evaluate_affine_program(
                 if let Some(value) = value {
                     ctx.insert_btree_map(&mut values, key, value, "creo affine value nodes")?;
                 } else {
-                    values.remove(&key);
+                    ctx.remove_btree_map(&mut values, &key, "creo affine value removal")?;
                 }
             }
             CurveExpressionActivation::Inactive => {}
             CurveExpressionActivation::Conditional => {
-                values.remove(&key);
+                ctx.remove_btree_map(&mut values, &key, "creo affine value removal")?;
             }
         }
     }

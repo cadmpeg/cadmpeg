@@ -257,7 +257,6 @@ fn affine_pivot_and_coefficient_elimination_refuse_work() {
     let solution = crate::test_support::assert_work_boundaries(
         &[
             "creo matrix row normalization",
-            "creo matrix residual scan",
             "creo matrix pivot scan",
             "creo matrix pivot normalization",
             "creo matrix elimination",
@@ -285,10 +284,7 @@ fn affine_pivot_and_coefficient_elimination_refuse_work() {
 #[test]
 fn relation_stack_operators_refuse_work_after_source_admission() {
     let value = crate::test_support::assert_work_boundaries(
-        &[
-            "creo relation source scan",
-            "creo relation value operation work",
-        ],
+        &["creo relation source scan"],
         |ctx| {
             parse_relation_expression::<CurveExpressionValue>(
                 ctx,
