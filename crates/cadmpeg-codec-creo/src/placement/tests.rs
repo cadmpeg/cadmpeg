@@ -38,6 +38,8 @@ use crate::feature::entity::FeatureEntityTableEntry;
 use crate::feature::rows::FeatureGeometryTableKind;
 use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord};
 
+mod point_storage;
+
 fn generated_cylinder_section_transform(
     definition: &FeatureDefinition,
     sources: &PlacementSources<'_>,
