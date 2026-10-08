@@ -206,11 +206,10 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
         let mut visited = std::collections::BTreeSet::new();
 
         assert!(
-            !crate::entities::directed_cycle(1, &mut visited, decode_ctx, |sequence| graph
-                .get(&sequence)
-                .into_iter()
-                .flatten()
-                .copied())
+            !crate::entities::directed_cycle(1, &mut visited, decode_ctx, |sequence| {
+                Ok(decode_ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                    .into_iter().flatten().copied())
+            })
             .unwrap()
         );
         assert_eq!(visited.len(), 100_001);
@@ -220,7 +219,10 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
             1,
             &mut std::collections::BTreeSet::new(),
             decode_ctx,
-            |sequence| graph.get(&sequence).into_iter().flatten().copied()
+            |sequence| {
+                Ok(decode_ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                    .into_iter().flatten().copied())
+            }
         )
         .unwrap());
     }
@@ -247,7 +249,8 @@ fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 crate::entities::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
-                    graph.get(&sequence).into_iter().flatten().copied()
+                    Ok(ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                        .into_iter().flatten().copied())
                 })
             },
         );
@@ -256,11 +259,10 @@ fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut visited = BTreeSet::new();
     assert!(
-        !crate::entities::directed_cycle(1, &mut visited, &ctx, |sequence| graph
-            .get(&sequence)
-            .into_iter()
-            .flatten()
-            .copied(),)
+        !crate::entities::directed_cycle(1, &mut visited, &ctx, |sequence| {
+            Ok(ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                .into_iter().flatten().copied())
+        },)
         .unwrap()
     );
     assert_eq!(visited, [1, 2].into());
@@ -277,8 +279,59 @@ fn directed_cycle_work_refusal_reaches_caller() {
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             super::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
-                (sequence == 1).then_some(2).into_iter()
+                Ok((sequence == 1).then_some(2).into_iter())
             })
+        },
+    );
+}
+
+#[test]
+fn directed_cycle_lookup_refusals_preserve_the_session() {
+    let graph = [
+        (1_u32, vec![2_u32, 3_u32]),
+        (2, Vec::new()),
+        (3, vec![2]),
+    ]
+        .into_iter().collect::<BTreeMap<_, _>>();
+    for operation in [
+        "iges cycle successor lookup", "iges cycle active lookup",
+        "iges cycle active removal", "iges cycle visited lookup",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = super::directed_cycle(1, &mut BTreeSet::new(), &ctx, |sequence| {
+                    Ok(ctx.get_btree_map(&graph, &sequence, "iges cycle successor lookup")?
+                        .into_iter().flatten().copied())
+                });
+                if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual))
+                        if actual == *limit));
+                } else {
+                    ctx.finish_session().unwrap();
+                }
+                result
+            },
+        );
+    }
+}
+
+#[test]
+fn cached_property_text_identity_refuses_lookup_work() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "iges property text record lookup", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut index = super::PropertyTextIndex::new(&ctx)?;
+            let first = index.id(1, b"shared", &ctx, "test property text values")?;
+            assert_eq!(index.id(1, b"shared", &ctx, "test property text values")?, first);
+            Ok(())
         },
     );
 }
