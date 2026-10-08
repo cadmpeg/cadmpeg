@@ -11,7 +11,7 @@ use crate::container::{self};
 use crate::CreoCodec;
 
 use super::{
-    definition_local_plane_equation,
+    definition_local_plane_equation as parse_definition_local_plane_equation,
     generated_cylinder_section_transform as parse_generated_cylinder_section_transform,
     generated_planar_section_transform as parse_generated_planar_section_transform,
     generated_planar_table_shape, plane_equation, resolve as parse_resolve,
@@ -1632,3 +1632,7 @@ fn section_frame_refuses_a_non_finite_origin_or_axis() {
 }
 
 mod work_admission;
+
+fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<SignedPlaneEquation> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_definition_local_plane_equation(ctx, definition)).expect("test local plane selection")
+}
