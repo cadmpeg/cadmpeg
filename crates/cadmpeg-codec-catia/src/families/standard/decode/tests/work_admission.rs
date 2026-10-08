@@ -473,3 +473,192 @@ fn native_surface_index_preserves_source_precedence_and_ambiguity() {
         assert_eq!(ir.model.surfaces.len(), 1028);
     });
 }
+
+#[test]
+fn circle_interval_selection_filters_disjoint_and_coincident_prefixes() {
+    use crate::families::standard::decode::edge_geometry::circular_range_choices_have_simple_selection;
+    let choices = (0..127_u32)
+        .map(|row| {
+            let start = f64::from(row) * std::f64::consts::TAU / 127.0;
+            [[start, start + 0.02]]
+        })
+        .collect::<Vec<_>>();
+    let error =
+        crate::test_support::with_work_refusal("catia_standard_circle_range_selection", |ctx| {
+            circular_range_choices_have_simple_selection(ctx, &choices)
+        })
+        .expect_err("first interval query");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal")
+    };
+    // The complete query/update pass fits below the 8001 old prefix visits.
+    crate::test_support::with_work_limit(limit.used + 7500, |ctx| {
+        assert!(circular_range_choices_have_simple_selection(ctx, &choices)
+            .expect("indexed compatible arcs"));
+    });
+    let coincident = (0..127_u32)
+        .map(|row| {
+            let offset = f64::from(row)
+                * crate::families::standard::decode::EPS_STANDARD_DECODE_GEOMETRY
+                / 254.0;
+            [[offset, 1.0 + offset]]
+        })
+        .collect::<Vec<_>>();
+    crate::test_support::with_retained_limit(0, |ctx| {
+        assert!(
+            circular_range_choices_have_simple_selection(ctx, &coincident)
+                .expect("coincident subtree and temporary state")
+        );
+    });
+}
+
+#[test]
+fn indexed_circle_selection_matches_exhaustive_pair_predicate() {
+    use crate::families::standard::decode::edge_geometry::{
+        circular_range_choices_have_simple_selection,
+        circular_ranges_are_nonoverlapping_or_coincident,
+    };
+    fn exhaustive(rows: &[Vec<[f64; 2]>], selected: &mut Vec<[f64; 2]>) -> bool {
+        if selected.len() == rows.len() {
+            return crate::test_support::with_service_context(|ctx| {
+                circular_ranges_are_nonoverlapping_or_coincident(ctx, selected)
+            })
+            .expect("pair oracle");
+        }
+        for &range in &rows[selected.len()] {
+            selected.push(range);
+            if exhaustive(rows, selected) {
+                return true;
+            }
+            selected.pop();
+        }
+        false
+    }
+    let eps = crate::families::standard::decode::EPS_STANDARD_DECODE_GEOMETRY;
+    let ranges = [
+        [0.0, 1.0],
+        [0.75 * eps, 1.0 + 0.75 * eps],
+        [1.5 * eps, 1.0 + 1.5 * eps],
+        [1.0, 2.0],
+        [5.5, 6.5],
+        [0.0, 0.5],
+        [-0.0, 1.0],
+        [2.0, 1.0],
+        [f64::NAN, 1.0],
+        [0.0, f64::INFINITY],
+    ];
+    for &left in &ranges {
+        for &right in &ranges {
+            let rows = vec![vec![left], vec![right, [3.0, 4.0]], vec![[4.0, 5.0]]];
+            let expected = exhaustive(&rows, &mut Vec::new());
+            let actual = crate::test_support::with_service_context(|ctx| {
+                circular_range_choices_have_simple_selection(ctx, &rows)
+            })
+            .expect("indexed selection");
+            assert_eq!(actual, expected, "choices {rows:?}");
+        }
+    }
+}
+
+#[test]
+fn line_segment_index_filters_separated_segments_and_exact_duplicates() {
+    use crate::families::standard::decode::StandardLinePairConstraint;
+    use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
+    use cadmpeg_ir::{ids::PointId, topology::Point};
+    for separated in [true, false] {
+        let points = (0..1024_u32)
+            .flat_map(|row| {
+                let y = if separated { f64::from(row) } else { 0.0 };
+                [Point3::new(0.0, y, 0.0), Point3::new(1.0, y, 0.0)]
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(endpoint, position)| {
+                        Point::new(
+                            PointId::mint(format!("catia:test:point#{row}-{endpoint}"))
+                                .expect("id"),
+                            crate::test_support::test_b5::point(position.into()),
+                            None,
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
+        let supports = (0..1024_usize)
+            .map(|row| StandardCurveSupport {
+                pos: row,
+                tag: 0,
+                faces: [0, 0],
+                geometry: StandardCurveGeometry::Line,
+            })
+            .collect::<Vec<_>>();
+        let options = (0..1024_usize)
+            .map(|row| vec![[2 * row, 2 * row + 1], [2 * row + 1, 2 * row]])
+            .collect::<Vec<_>>();
+        let pairs = options.iter().map(|row| Some(row[0])).collect::<Vec<_>>();
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let constraint = StandardLinePairConstraint::new(ctx, &points, &supports, &options)?;
+            constraint.is_simple(ctx, &constraint.edge_pairs(&pairs).expect("matching roles"))
+        };
+        let error = crate::test_support::with_work_refusal("catia_standard_line_right_edges", run)
+            .expect_err("first query");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("work refusal")
+        };
+        crate::test_support::with_work_limit(limit.used + 400_000, |ctx| {
+            assert!(run(ctx).expect("indexed segments"));
+        });
+    }
+}
+
+#[test]
+fn indexed_line_validation_matches_pair_predicate() {
+    use crate::families::standard::decode::{
+        standard_line_pair_solution_is_simple, StandardLinePairConstraint,
+    };
+    use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
+    use cadmpeg_ir::{ids::PointId, topology::Point};
+    let spans = [[0.0, 1.0], [0.5, 1.5], [1.0, 2.0], [0.0, 1.0], [1.0, 0.0]];
+    for &a in &spans {
+        for &b in &spans {
+            for y in [0.0, 0.001, 0.003] {
+                let positions = [
+                    Point3::new(a[0], 0.0, 0.0),
+                    Point3::new(a[1], 0.0, 0.0),
+                    Point3::new(b[0], y, 0.0),
+                    Point3::new(b[1], y, 0.0),
+                ];
+                let points = positions
+                    .into_iter()
+                    .enumerate()
+                    .map(|(row, p)| {
+                        Point::new(
+                            PointId::mint(format!("catia:test:point#{row}")).expect("id"),
+                            crate::test_support::test_b5::point(p.into()),
+                            None,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let supports = (0..2)
+                    .map(|row| StandardCurveSupport {
+                        pos: row,
+                        tag: 0,
+                        faces: [0, 0],
+                        geometry: StandardCurveGeometry::Line,
+                    })
+                    .collect::<Vec<_>>();
+                let options = [vec![[0, 1], [1, 0]], vec![[2, 3], [3, 2]]];
+                let pairs = [Some([0, 1]), Some([2, 3])];
+                let expected =
+                    standard_line_pair_solution_is_simple(&points, &supports, &options, &pairs);
+                let actual = crate::test_support::with_service_context(|ctx| {
+                    let constraint =
+                        StandardLinePairConstraint::new(ctx, &points, &supports, &options)
+                            .expect("constraint");
+                    constraint
+                        .is_simple(ctx, &constraint.edge_pairs(&pairs).expect("roles"))
+                        .expect("validation")
+                });
+                assert_eq!(actual, expected, "spans {a:?} {b:?}, offset {y}");
+            }
+        }
+    }
+}

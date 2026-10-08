@@ -2095,17 +2095,202 @@ pub(super) fn circle_endpoint_range_choices(
     }))
 }
 
+fn circular_segments(range: [f64; 2]) -> [Option<[f64; 2]>; 2] {
+    let span = range[1] - range[0];
+    let start = range[0].rem_euclid(std::f64::consts::TAU);
+    let end = start + span;
+    if end <= std::f64::consts::TAU {
+        [Some([start, end]), None]
+    } else {
+        [
+            Some([start, std::f64::consts::TAU]),
+            Some([0.0, end - std::f64::consts::TAU]),
+        ]
+    }
+}
+
+/// Active summaries prune disjoint segments and whole coincident subtrees.
+/// Group counts make selection and rollback independent of prefix length.
+struct CircularIntervalIndex<'ctx> {
+    tree: super::BoundsIndex<'ctx>,
+    ranges: Vec<[f64; 2]>,
+    leaves: Vec<[Option<usize>; 2]>,
+    parents: Vec<Option<usize>>,
+    active: Vec<Option<[[f64; 2]; 3]>>,
+    counts: Vec<usize>,
+}
+
+impl<'ctx> CircularIntervalIndex<'ctx> {
+    fn new<T: AsRef<[[f64; 2]]>>(
+        ctx: &'ctx DecodeContext<'_>,
+        choices: &[T],
+    ) -> Result<(Self, Vec<Vec<usize>>), CodecError> {
+        const OP: &str = "catia_standard_circle_interval_index";
+        let mut groups = HashMap::new();
+        let mut ranges = Vec::new();
+        let mut rows = Vec::new();
+        let mut entries = Vec::new();
+        for choice in ctx.admit_iter(choices, OP)? {
+            let mut row = Vec::new();
+            let choices = choice.as_ref();
+            let mut choices_iter = choices.iter();
+            loop {
+                let next = if choices.len() <= 2 {
+                    choices_iter.next()
+                } else {
+                    ctx.next_charged(&mut choices_iter, OP)?
+                };
+                let Some(&range) = next else { break };
+                let key = range.map(real_bits);
+                let group = if let Some(&group) = ctx.get_hash_map(&groups, &key, OP)? {
+                    group
+                } else {
+                    let group = ranges.len();
+                    ctx.push_vec(&mut ranges, range, OP)?;
+                    ctx.insert_hash_map(&mut groups, key, group, OP)?;
+                    for segment in circular_segments(range).into_iter().flatten() {
+                        if segment[1] - segment[0] <= EPS_STANDARD_DECODE_COARSE_GEOMETRY {
+                            continue;
+                        }
+                        let bounds = if range.into_iter().chain(segment).all(f64::is_finite) {
+                            [segment, [range[0]; 2], [range[1]; 2]]
+                        } else {
+                            [[f64::NEG_INFINITY, f64::INFINITY]; 3]
+                        };
+                        ctx.push_vec(
+                            &mut entries,
+                            super::BoundsEntry {
+                                bounds,
+                                item: group,
+                            },
+                            OP,
+                        )?;
+                    }
+                    group
+                };
+                ctx.push_vec(&mut row, group, OP)?;
+            }
+            ctx.push_vec(&mut rows, row, OP)?;
+        }
+        let tree = super::BoundsIndex::new(ctx, &mut entries, OP)?;
+        let mut parents = ctx.alloc_filled(tree.nodes.len(), None, OP)?;
+        let mut leaves = ctx.alloc_filled(ranges.len(), [None; 2], OP)?;
+        for (at, node) in ctx.admit_iter(&tree.nodes, OP)?.enumerate() {
+            if let Some(group) = node.item {
+                let slots = &mut leaves[group];
+                slots[usize::from(slots[0].is_some())] = Some(at);
+            } else {
+                let left = at + 1;
+                let right = tree.nodes[left].after;
+                parents[left] = Some(at);
+                parents[right] = Some(at);
+            }
+        }
+        let active = ctx.alloc_filled(tree.nodes.len(), None, OP)?;
+        let counts = ctx.alloc_filled(ranges.len(), 0, OP)?;
+        Ok((
+            Self {
+                tree,
+                ranges,
+                leaves,
+                parents,
+                active,
+                counts,
+            },
+            rows,
+        ))
+    }
+
+    fn compatible(&self, ctx: &DecodeContext<'_>, group: usize) -> Result<bool, CodecError> {
+        let range = self.ranges[group];
+        if self.counts[group] > 0 && range.into_iter().all(f64::is_finite) {
+            return Ok(true);
+        }
+        for segment in circular_segments(range).into_iter().flatten() {
+            if segment[1] - segment[0] <= EPS_STANDARD_DECODE_COARSE_GEOMETRY {
+                continue;
+            }
+            let relevant = |at: usize| {
+                self.active[at].is_some_and(|bounds| {
+                    let coincident = (bounds[1][0] - range[0]).abs()
+                        <= EPS_STANDARD_DECODE_GEOMETRY
+                        && (bounds[1][1] - range[0]).abs() <= EPS_STANDARD_DECODE_GEOMETRY
+                        && (bounds[2][0] - range[1]).abs() <= EPS_STANDARD_DECODE_GEOMETRY
+                        && (bounds[2][1] - range[1]).abs() <= EPS_STANDARD_DECODE_GEOMETRY;
+                    !coincident
+                        && !(bounds[0][1].min(segment[1]) - bounds[0][0].max(segment[0])
+                            <= EPS_STANDARD_DECODE_COARSE_GEOMETRY)
+                })
+            };
+            let nodes = std::iter::successors((!self.tree.nodes.is_empty()).then_some(0), |&at| {
+                let next = if relevant(at) {
+                    at + 1
+                } else {
+                    self.tree.nodes[at].after
+                };
+                (next < self.tree.nodes.len()).then_some(next)
+            });
+            if ctx.any_by(
+                nodes,
+                |at| {
+                    Ok(relevant(at)
+                        && self.tree.nodes[at].item.is_some_and(|other| {
+                            !circular_ranges_are_compatible(self.ranges[other], range)
+                        }))
+                },
+                "catia_standard_circle_range_selection",
+            )? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn select(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        group: usize,
+        add: bool,
+    ) -> Result<(), CodecError> {
+        if add {
+            self.counts[group] += 1;
+        } else {
+            self.counts[group] -= 1;
+        }
+        if (add && self.counts[group] != 1) || (!add && self.counts[group] != 0) {
+            return Ok(());
+        }
+        for leaf in self.leaves[group].into_iter().flatten() {
+            self.active[leaf] = (self.counts[group] > 0).then_some(self.tree.nodes[leaf].bounds);
+            let mut ancestors = std::iter::successors(self.parents[leaf], |&at| self.parents[at]);
+            while let Some(at) =
+                ctx.next_charged(&mut ancestors, "catia_standard_circle_interval_update")?
+            {
+                let left = at + 1;
+                let right = self.tree.nodes[left].after;
+                self.active[at] = match (self.active[left], self.active[right]) {
+                    (Some(a), Some(b)) => Some(std::array::from_fn(|axis| {
+                        [a[axis][0].min(b[axis][0]), a[axis][1].max(b[axis][1])]
+                    })),
+                    (Some(a), None) | (None, Some(a)) => Some(a),
+                    (None, None) => None,
+                };
+            }
+        }
+        Ok(())
+    }
+}
+
 pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>(
     ctx: &DecodeContext<'_>,
     choices: &[T],
 ) -> Result<bool, CodecError> {
     const MAX_SELECTION_STATES: usize = 4_096;
-
-    fn visit<T: AsRef<[[f64; 2]]>>(
+    fn visit(
         ctx: &DecodeContext<'_>,
-        choices: &[T],
+        choices: &[Vec<usize>],
         index: usize,
-        selected: &mut [u16; MAX_SELECTION_STATES],
+        intervals: &mut CircularIntervalIndex<'_>,
         states: &mut usize,
     ) -> Result<Option<bool>, CodecError> {
         let _depth = ctx.enter_nested("catia_standard_circle_range_selection")?;
@@ -2116,49 +2301,32 @@ pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>
         if index == choices.len() {
             return Ok(Some(true));
         }
-        // Production rows contain at most two fixed choices. Larger generic
-        // rows admit each visited choice before advancing.
-        let ranges = choices[index].as_ref();
-        let mut candidates = ranges.iter().enumerate();
+        let row = &choices[index];
+        let mut candidates = row.iter().enumerate();
         loop {
-            let next = if ranges.len() <= 2 {
+            let next = if row.len() <= 2 {
                 candidates.next()
             } else {
                 ctx.next_charged(&mut candidates, "catia_standard_iteration")?
             };
-            let Some((choice_index, _)) = next else { break };
-            let Ok(choice_index) = u16::try_from(choice_index) else {
-                return Ok(None);
+            let Some((choice_index, &group)) = next else {
+                break;
             };
-            selected[index] = choice_index;
-            // The earlier selections are pairwise compatible already; the new
-            // range needs checking only against each of them.
-            let range = choices[index].as_ref()[usize::from(choice_index)];
-            let compatible = ctx.all_by(
-                0..index,
-                |at| {
-                    Ok(circular_ranges_are_compatible(
-                        choices[at].as_ref()[usize::from(selected[at])],
-                        range,
-                    ))
-                },
-                "catia_standard_circle_range_selection",
-            )?;
-            if compatible {
-                match visit(ctx, choices, index + 1, selected, states)? {
-                    Some(true) => {
-                        return Ok(Some(true));
-                    }
-                    None => {
-                        return Ok(None);
-                    }
+            if u16::try_from(choice_index).is_err() {
+                return Ok(None);
+            }
+            if intervals.compatible(ctx, group)? {
+                intervals.select(ctx, group, true)?;
+                let result = visit(ctx, choices, index + 1, intervals, states)?;
+                intervals.select(ctx, group, false)?;
+                match result {
+                    Some(true) | None => return Ok(result),
                     Some(false) => {}
                 }
             }
         }
         Ok(Some(false))
     }
-
     if ctx.any_by(
         choices,
         |choice| Ok(choice.as_ref().is_empty()),
@@ -2166,7 +2334,11 @@ pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>
     )? {
         return Ok(false);
     }
-    Ok(visit(ctx, choices, 0, &mut [0; MAX_SELECTION_STATES], &mut 0)?.unwrap_or(false))
+    let mut storage = ctx.reserve_scoped(0, "catia_standard_circle_interval_storage")?;
+    storage.with_storage(|| {
+        let (mut intervals, rows) = CircularIntervalIndex::new(ctx, choices)?;
+        Ok(visit(ctx, &rows, 0, &mut intervals, &mut 0)?.unwrap_or(false))
+    })
 }
 
 #[cfg(test)]
@@ -2190,29 +2362,22 @@ pub(super) fn circular_ranges_are_nonoverlapping_or_coincident(
 /// Two circular parameter ranges are compatible when they coincide or their
 /// arcs overlap by no more than the coarse geometry tolerance.
 fn circular_ranges_are_compatible(left: [f64; 2], right: [f64; 2]) -> bool {
-    fn segments(range: [f64; 2]) -> [Option<[f64; 2]>; 2] {
-        let span = range[1] - range[0];
-        let start = range[0].rem_euclid(std::f64::consts::TAU);
-        let end = start + span;
-        if end <= std::f64::consts::TAU {
-            [Some([start, end]), None]
-        } else {
-            [
-                Some([start, std::f64::consts::TAU]),
-                Some([0.0, end - std::f64::consts::TAU]),
-            ]
-        }
-    }
-
     let coincident = (right[0] - left[0]).abs() <= EPS_STANDARD_DECODE_GEOMETRY
         && (right[1] - left[1]).abs() <= EPS_STANDARD_DECODE_GEOMETRY;
     coincident
-        || segments(left).into_iter().flatten().all(|left_segment| {
-            segments(right).into_iter().flatten().all(|right_segment| {
-                left_segment[1].min(right_segment[1]) - left_segment[0].max(right_segment[0])
-                    <= EPS_STANDARD_DECODE_COARSE_GEOMETRY
+        || circular_segments(left)
+            .into_iter()
+            .flatten()
+            .all(|left_segment| {
+                circular_segments(right)
+                    .into_iter()
+                    .flatten()
+                    .all(|right_segment| {
+                        left_segment[1].min(right_segment[1])
+                            - left_segment[0].max(right_segment[0])
+                            <= EPS_STANDARD_DECODE_COARSE_GEOMETRY
+                    })
             })
-        })
 }
 
 pub(super) struct StandardCircleParamRangeInputs<
