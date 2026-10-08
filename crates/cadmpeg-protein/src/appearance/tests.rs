@@ -251,3 +251,96 @@ fn overflowed_texture_distance_diagnostic_admits_asset_guid() {
     };
     assert_eq!(detail, format!("Protein asset {} distance bumpmap_Depth is non-finite after millimetre conversion", record.guid));
 }
+
+fn equality_texture() -> super::TextureAsset {
+    let record = float_record("BumpMapSchema", "UScale", 1.0);
+    let super::TextureAssetResult::Usable(mut texture) = texture_for_test(&record).expect("texture") else {
+        panic!("usable texture");
+    };
+    texture.asset_guid = "guid".into();
+    texture.paths = vec!["path".repeat(256), "uri".repeat(512)];
+    texture.urn = Some("urn".repeat(256));
+    texture
+}
+
+#[test]
+fn admitted_texture_equality_checks_every_field() {
+    let expected = equality_texture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("service context");
+    assert!(expected.equal_for_decode(&ctx, &expected, "texture equality").expect("identical"));
+    for field in 0..8 {
+        let mut other = expected.clone();
+        match field {
+            0 => other.asset_guid.push('x'),
+            1 => other.schema.push('x'),
+            2 => other.paths[0].push('x'),
+            3 => other.paths.push("another".into()),
+            4 => other.urn.as_mut().expect("URN").push('x'),
+            5 => other.urn = None,
+            6 => other.mapping.repeat_u = !other.mapping.repeat_u,
+            7 => other.bump.as_mut().expect("bump").normal_map = true,
+            _ => unreachable!(),
+        }
+        assert!(expected != other);
+        assert!(!expected.equal_for_decode(&ctx, &other, "texture equality").expect("unequal"), "field {field}");
+    }
+}
+
+#[test]
+fn admitted_texture_equality_refuses_before_visiting_long_paths() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let texture = equality_texture();
+    // Each equal text pair visits its byte length, and each path slot plus
+    // the path iterator's end probe costs one step. Fixed fields are free.
+    let work = cadmpeg_core::decode::u64_from_index(
+        texture.asset_guid.len() + texture.schema.len()
+            + texture.urn.as_ref().expect("URN").len()
+            + texture.paths.iter().map(String::len).sum::<usize>()
+            + texture.paths.len() + 1,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+    assert!(texture.equal_for_decode(&ctx, &texture, "texture equality").expect("exact comparison work"));
+    assert!(matches!(ctx.charge_work(1, "after exact equality"),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.used == work));
+    policy.limits.max_work_units = work - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+    let error = texture.equal_for_decode(&ctx, &texture, "texture equality").expect_err("end probe cannot fit");
+    let CodecError::ResourceLimit(limit) = error else { panic!("work refusal expected"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "texture equality");
+    assert_eq!(limit.used, work - 1);
+    assert_eq!(limit.additional, 1);
+    let mut other = texture.clone();
+    other.paths.clear();
+    assert!(matches!(texture.equal_for_decode(&ctx, &other, "after refused equality"),
+        Err(CodecError::ResourceLimit(original)) if original == limit));
+}
+
+#[test]
+fn admitted_texture_equality_skips_unvisited_paths() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let texture = equality_texture();
+    let mut other = texture.clone();
+    other.paths[0].replace_range(..1, "x");
+    let work = cadmpeg_core::decode::u64_from_index(
+        texture.asset_guid.len() + texture.schema.len()
+            + texture.urn.as_ref().expect("URN").len() + 1 + 1,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+    assert!(!texture.equal_for_decode(&ctx, &other, "early texture mismatch").expect("only first path byte is visited"));
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+    other.paths.clear();
+    assert!(!texture.equal_for_decode(&ctx, &other, "unequal path counts").expect("collection lengths are constant work"));
+}
