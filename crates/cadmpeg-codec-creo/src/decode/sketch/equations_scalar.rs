@@ -1558,8 +1558,14 @@ fn scalar_equality_components(
         queue_storage.with_storage(|| {
             ctx.push_back(&mut pending, seed, "creo section scalar pending nodes")
         })?;
-        while let Some(variable) = pending.pop_front() {
-            ctx.charge_work(1, "creo scalar equality graph visits")?;
+        while !pending.is_empty() {
+            let Some(variable) = ctx
+                .next_charged(&mut pending.iter(), "creo scalar equality graph visits")?
+                .copied()
+            else {
+                break;
+            };
+            pending.pop_front();
             if let Some(neighbors) =
                 ctx.get_btree_map(adjacency, &variable, "creo section adjacency get")?
             {

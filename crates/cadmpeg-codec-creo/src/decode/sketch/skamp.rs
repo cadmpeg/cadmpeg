@@ -134,8 +134,14 @@ fn section_line_entity_fixed_coordinate_with_mode(
             "creo fixed-coordinate pending seed",
         )
     })?;
-    while let Some(entity_id) = pending.pop_front() {
-        ctx.charge_work(1, "creo fixed-coordinate graph traversal")?;
+    while !pending.is_empty() {
+        let Some(entity_id) = ctx
+            .next_charged(&mut pending.iter(), "creo fixed-coordinate graph traversal")?
+            .copied()
+        else {
+            break;
+        };
+        pending.pop_front();
         let Some(&parity) =
             ctx.get_btree_map(&parities, &entity_id, "creo fixed-coordinate parity lookup")?
         else {
