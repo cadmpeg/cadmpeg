@@ -102,38 +102,7 @@ pub(crate) fn project_helix_axes(
         return Ok(());
     }
     let object_names = lane_object_names(ctx, &mut records_storage, lanes)?;
-    let mut object_offsets = Vec::new();
-    for names in ctx.admit_iter(&object_names, "index SLDPRT helix object boundaries")? {
-        let mut offsets = Vec::new();
-        for history in ctx.admit_iter(histories, "index SLDPRT helix object boundaries")? {
-            for feature in
-                ctx.admit_iter(&history.features, "index SLDPRT helix object boundaries")?
-            {
-                if let Some(name) = names.of(ctx, feature)? {
-                    records_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut offsets,
-                            name.offset,
-                            "index SLDPRT helix object boundaries",
-                        )
-                    })?;
-                }
-            }
-        }
-        ctx.sort_unstable_by(
-            &mut offsets,
-            |offset| offset,
-            Ord::cmp,
-            "sort SLDPRT helix object boundaries",
-        )?;
-        records_storage.with_storage(|| {
-            ctx.push_vec(
-                &mut object_offsets,
-                offsets,
-                "index SLDPRT helix object boundaries",
-            )
-        })?;
-    }
+    let mut object_offsets = HashMap::<usize, Vec<u64>>::new();
     let mut source_items = model_features.iter_mut();
     while let Some(model_feature) =
         ctx.next_charged(&mut source_items, "scan SLDPRT helix features")?
@@ -167,8 +136,32 @@ pub(crate) fn project_helix_axes(
             let Some(name) = names.of(ctx, record)? else {
                 continue;
             };
+            const INDEX_OPERATION: &str = "index SLDPRT helix object boundaries";
+            if ctx.get_hash_map(&object_offsets, &lane_index, INDEX_OPERATION)?.is_none() {
+                let mut offsets = Vec::new();
+                for history in ctx.admit_iter(histories, INDEX_OPERATION)? {
+                    for feature in ctx.admit_iter(&history.features, INDEX_OPERATION)? {
+                        if let Some(object_name) = names.of(ctx, feature)? {
+                            records_storage.with_storage(|| {
+                                ctx.push_vec(&mut offsets, object_name.offset, INDEX_OPERATION)
+                            })?;
+                        }
+                    }
+                }
+                ctx.sort_unstable_by(
+                    &mut offsets,
+                    |offset| offset,
+                    Ord::cmp,
+                    "sort SLDPRT helix object boundaries",
+                )?;
+                records_storage.with_storage(|| {
+                    ctx.insert_hash_map(&mut object_offsets, lane_index, offsets, INDEX_OPERATION)
+                })?;
+            }
+            let offsets = ctx
+                .get_hash_map(&object_offsets, &lane_index, INDEX_OPERATION)?
+                .map_or(&[][..], Vec::as_slice);
             let start = usize::try_from(name.offset).ok();
-            let offsets = &object_offsets[lane_index];
             let next = ctx.partition_point(
                 offsets,
                 |offset| Ok(*offset <= name.offset),
@@ -469,19 +462,7 @@ fn enrich_history_hole_constructions_with_names(
             continue;
         }
         let mut object_storage = ctx.reserve_scoped(0, "SLDPRT hole object order workspace")?;
-        let mut object_orders = Vec::new();
-        for names in ctx.admit_iter(object_names, OPERATION)? {
-            let mut objects = Vec::new();
-            for (index, feature) in ctx.admit_iter(&history.features, OPERATION)?.enumerate() {
-                if let Some(name) = names.names.of(ctx, feature)? {
-                    object_storage.with_storage(|| {
-                        ctx.push_vec(&mut objects, (name.offset, index), OPERATION)
-                    })?;
-                }
-            }
-            ctx.sort_unstable_by(&mut objects, |value| value, Ord::cmp, OPERATION)?;
-            object_storage.with_storage(|| ctx.push_vec(&mut object_orders, objects, OPERATION))?;
-        }
+        let mut object_orders = HashMap::<usize, Vec<(u64, usize)>>::new();
         let records = HoleHistoryIndex::new(ctx, history)?;
         let mut addition_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut additions = Vec::new();
@@ -503,7 +484,8 @@ fn enrich_history_hole_constructions_with_names(
                 &records,
                 lanes,
                 object_names,
-                &object_orders,
+                &mut object_orders,
+                &mut object_storage,
             )? {
                 Some(profile)
             } else {
@@ -895,7 +877,8 @@ fn hole_profile_from_position_source<'a>(
     records: &HoleHistoryIndex<'a, '_>,
     lanes: &[FeatureInputLane],
     object_names: &[HoleLaneNames<'_, '_>],
-    object_orders: &[Vec<(u64, usize)>],
+    object_orders: &mut HashMap<usize, Vec<(u64, usize)>>,
+    object_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT hole profile ownership";
     let mut source = None;
@@ -935,7 +918,7 @@ fn hole_profile_from_position_source<'a>(
         Ok(selected.map(|index| &history.features[index]))
     };
     let position = unique_position()?;
-    let serialized_successor =
+    let mut serialized_successor =
         || -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
             let Some(position) = position else {
                 return Ok(None);
@@ -953,7 +936,27 @@ fn hole_profile_from_position_source<'a>(
                 else {
                     return Ok(None);
                 };
-                let objects = &object_orders[lane_index];
+                const INDEX_OPERATION: &str = "index SLDPRT hole object orders";
+                if ctx.get_hash_map(object_orders, &lane_index, INDEX_OPERATION)?.is_none() {
+                    let mut objects = Vec::new();
+                    for (index, feature) in ctx
+                        .admit_iter(&history.features, INDEX_OPERATION)?
+                        .enumerate()
+                    {
+                        if let Some(name) = names.names.of(ctx, feature)? {
+                            object_storage.with_storage(|| {
+                                ctx.push_vec(&mut objects, (name.offset, index), INDEX_OPERATION)
+                            })?;
+                        }
+                    }
+                    ctx.sort_unstable_by(&mut objects, |value| value, Ord::cmp, INDEX_OPERATION)?;
+                    object_storage.with_storage(|| {
+                        ctx.insert_hash_map(object_orders, lane_index, objects, INDEX_OPERATION)
+                    })?;
+                }
+                let objects = ctx
+                    .get_hash_map(object_orders, &lane_index, INDEX_OPERATION)?
+                    .map_or(&[][..], Vec::as_slice);
                 let next = ctx.partition_point(
                     objects,
                     |(offset, _)| Ok(*offset <= position_offset),

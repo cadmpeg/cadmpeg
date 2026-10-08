@@ -1186,15 +1186,7 @@ pub(crate) fn project_relation_point_geometry(
                 .with_storage(|| ctx.push_vec(&mut marker_roster, marker, operation))?;
         }
         let curve_markers = std::cell::OnceCell::new();
-        let geometry =
-            crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
-                ctx,
-                &marker_roster,
-                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
-                    ctx,
-                    &lane.native_payload,
-                )?,
-            )?;
+        let mut geometry = None;
         for marker in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT relation-line markers")? {
             let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind() == SketchInputKind::Arc
@@ -1308,6 +1300,19 @@ pub(crate) fn project_relation_point_geometry(
                     curve_markers.get_or_init(|| built)
                 }
             };
+            let geometry = match &mut geometry {
+                Some(geometry) => geometry,
+                slot @ None => slot.insert(
+                    crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                        ctx,
+                        &marker_roster,
+                        crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                            ctx,
+                            &lane.native_payload,
+                        )?,
+                    )?,
+                ),
+            };
             let (mut endpoints, mut endpoints_storage) =
                 ctx.with_scoped_storage("SLDPRT relation-line endpoint workspace", || {
                     marker_curve_endpoint_markers_in(
@@ -1316,7 +1321,7 @@ pub(crate) fn project_relation_point_geometry(
                         marker,
                         &markers_by_id,
                         curve_index,
-                        &geometry,
+                        geometry,
                     )
                 })?;
             if endpoints.len() != 2 && linked_curve_handle {
@@ -1713,15 +1718,7 @@ pub(crate) fn project_relation_solved_line_geometry(
             })?;
         let curve_markers = std::cell::OnceCell::new();
         let point_rosters = std::cell::RefCell::new(SolvedLinePoints::new(ctx)?);
-        let geometry =
-            crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
-                ctx,
-                &marker_roster,
-                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
-                    ctx,
-                    &lane.native_payload,
-                )?,
-            )?;
+        let mut geometry = None;
         for relation in ctx.admit_iter(
             &lane.relation_instances,
             "scan SLDPRT solved-line relations",
@@ -1852,7 +1849,7 @@ pub(crate) fn project_relation_solved_line_geometry(
             if !expected.is_finite() || expected < 0.0 {
                 continue;
             }
-            let endpoint_line_markers = |operand_index: usize| -> Result<
+            let mut endpoint_line_markers = |operand_index: usize| -> Result<
                 Option<[&SketchInputEntity; 2]>,
                 cadmpeg_core::CodecError,
             > {
@@ -1878,6 +1875,19 @@ pub(crate) fn project_relation_solved_line_geometry(
                         curve_markers.get_or_init(|| built)
                     }
                 };
+                let geometry = match &mut geometry {
+                    Some(geometry) => geometry,
+                    slot @ None => slot.insert(
+                        crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                            ctx,
+                            &marker_roster,
+                            crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                                ctx,
+                                &lane.native_payload,
+                            )?,
+                        )?,
+                    ),
+                };
                 let (endpoints, _endpoint_storage) =
                     ctx.with_scoped_storage("SLDPRT solved-line endpoint workspace", || {
                         marker_curve_endpoint_markers_in(
@@ -1886,7 +1896,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                             marker,
                             markers_by_id,
                             curve_index,
-                            &geometry,
+                            geometry,
                         )
                     })?;
                 let [first, second] = endpoints.as_slice() else {
@@ -2213,7 +2223,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     Point2::new(end_u * QUANTUM, end_v * QUANTUM),
                 )))
             };
-            let build_lines = |prefer_marker_endpoints: bool| -> Result<
+            let mut build_lines = |prefer_marker_endpoints: bool| -> Result<
                 (Vec<_>, ScopedReservation<'_>),
                 cadmpeg_core::CodecError,
             > {
@@ -4549,6 +4559,9 @@ pub(crate) fn project_relation_bindings(
             let definition = if let Some(definition) = typed_definition {
                 definition
             } else {
+                if existing.is_some() {
+                    continue;
+                }
                 let mut entities = Vec::new();
                 for marker in ctx
                     .admit_iter(
