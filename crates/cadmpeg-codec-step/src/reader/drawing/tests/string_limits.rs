@@ -173,3 +173,22 @@ fn nested_drawing_text_retains_only_the_complete_result() {
     .expect("only final text retained");
     assert_eq!(text.as_deref(), Some(expected.as_str()));
 }
+
+#[test]
+fn invalid_drawing_text_does_not_admit_an_unvisited_suffix() {
+    let (_, exchange) = exchange("#1=ITEM();");
+    let mut values = vec![Value::String(b"\\X2\\D83D\\X0\\".to_vec())];
+    values.extend(std::iter::repeat_n(Value::Omitted, 100_000));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 10_000;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+        let mut losses = Vec::new();
+        let text = super::super::value_text(
+            &exchange, &Value::List(values), (&mut losses, &reports), 1, "fixture", ctx,
+        ).expect("invalid prefix fits without visiting suffix");
+        assert!(text.is_none());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code, crate::loss::StepLossCode::MetadataStringInvalid.kind());
+    });
+}

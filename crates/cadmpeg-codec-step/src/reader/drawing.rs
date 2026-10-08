@@ -1581,10 +1581,7 @@ fn collect_value_text<'a>(
                 Cow::Borrowed("("),
                 "STEP drawing text fragments",
             )?;
-            for (index, value) in ctx
-                .admit_iter(values, "STEP value text traversal")?
-                .enumerate()
-            {
+            if !ctx.all_by(values.iter().enumerate(), |(index, value)| {
                 if index != 0 {
                     ctx.push_scoped_vec(
                         storage,
@@ -1603,6 +1600,9 @@ fn collect_value_text<'a>(
                 )? {
                     return Ok(false);
                 }
+                Ok(true)
+            }, "STEP value text traversal")? {
+                return Ok(false);
             }
             Cow::Borrowed(")")
         }
