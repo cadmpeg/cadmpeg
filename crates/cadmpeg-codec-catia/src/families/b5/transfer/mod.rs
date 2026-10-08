@@ -1148,7 +1148,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
     }) else {
         return Ok(None);
     };
-    let Some((knots, control_points)) = pcurve.bspline(ctx, true)? else {
+    let Some((knots, control_points)) = pcurve.bspline(ctx)? else {
         return Ok(None);
     };
     let Some(nurbs) = crate::nurbs::note_refusal(

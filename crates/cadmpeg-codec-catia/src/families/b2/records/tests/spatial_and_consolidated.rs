@@ -73,12 +73,7 @@ fn b2_nurbs_fixed_byte_lane_scans_refuse_work_limits() {
         .expect("one NURBS frame")
     });
 
-    for operation in [
-        "catia_b2_nurbs_point_scan",
-        "catia_b2_nurbs_weight_scan",
-        "catia_b2_nurbs_control_point_emit",
-        "catia_b2_nurbs_weight_emit",
-    ] {
+    for operation in ["catia_b2_nurbs_control_point_emit", "catia_b2_nurbs_knots"] {
         let result = crate::test_support::with_work_refusal(operation, |ctx| {
             crate::families::b2::records::parse_b2_nurbs_curve(
                 ctx,

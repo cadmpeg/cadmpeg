@@ -740,7 +740,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
 }
 
 #[test]
-fn owner_chart_indexes_and_rows_refuse_collection_limits() {
+fn owner_chart_rows_refuse_collection_limits() {
     use std::collections::HashSet;
 
     let bytes = b2_owner_chart_stream(0x28);
@@ -754,13 +754,8 @@ fn owner_chart_indexes_and_rows_refuse_collection_limits() {
             refused.insert(error.operation);
         }
     }
-    for operation in [
-        "catia_b2_owner_chart_owners",
-        "catia_b2_owner_chart_points",
-        "catia_b2_owner_charts",
-    ] {
-        assert!(refused.contains(operation), "{operation} did not refuse");
-    }
+    let operation = "catia_b2_owner_charts";
+    assert!(refused.contains(operation), "{operation} did not refuse");
 }
 
 #[test]
@@ -1020,14 +1015,11 @@ fn b2_adjacent_face_owner_requires_adjacency_and_successor_identity() {
 }
 
 #[test]
-fn b2_adjacent_face_owner_indexes_and_pair_refuse_collection_limits() {
+fn b2_adjacent_face_owner_pair_refuses_collection_limit() {
     let bytes = b2_adjacent_face_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    for (limit, operation) in [
-        (0, "catia_b2_adjacent_face_nodes"),
-        (1, "catia_b2_adjacent_face_owners"),
-        (2, "catia_b2_adjacent_face_pairs"),
-    ] {
+    {
+        let (limit, operation) = (0, "catia_b2_adjacent_face_pairs");
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
             crate::families::b2::records::b2_adjacent_face_owners_from_records(
                 ctx, &bytes, &records,
@@ -1083,7 +1075,8 @@ fn b2_counted_owner_references_refuse_collection_limit() {
 fn b2_counted_owner_encodings_refuse_collection_limit() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let result = crate::test_support::with_collection_limit(1, |ctx| {
+    // The seven references are admitted together before their encodings.
+    let result = crate::test_support::with_collection_limit(7, |ctx| {
         crate::families::b2::records::b2_counted_owners_from_records(ctx, &bytes, &records)
     });
     assert!(
@@ -1135,8 +1128,7 @@ fn b2_adjacent_counted_owners_refuse_each_collection_boundary() {
         }
     }
     for operation in [
-        "catia_b2_counted_face_nodes",
-        "catia_b2_counted_owner_index",
+        "catia_b2_counted_owner_references",
         "catia_b2_adjacent_counted_owners",
     ] {
         assert!(
@@ -1445,7 +1437,8 @@ fn b2_revolution_profile_and_resolved_output_refuse_collection_limits() {
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b2_revolution_profiles")
     );
-    let limited = crate::test_support::with_collection_limit(1, |ctx| {
+    // One circle, then a new group and its first member in each profile index.
+    let limited = crate::test_support::with_collection_limit(5, |ctx| {
         crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
     });
     assert!(

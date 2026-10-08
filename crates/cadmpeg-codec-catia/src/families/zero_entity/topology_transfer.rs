@@ -55,6 +55,8 @@ struct Occurrence {
     oriented_endpoints: [FinitePoint3; 2],
     model_parameters: Option<[f64; 2]>,
     curve: CurveId,
+    /// Position of the support curve in the model curves.
+    curve_position: usize,
     oriented_curve: Option<(CurveId, [f64; 2])>,
     pcurve: Option<OccurrencePcurve>,
 }
@@ -121,27 +123,28 @@ pub(super) fn transfer_closed_face_topology(
             support_curve_ids,
             ownership_root,
         } = solved;
+        let ctx = admission.context();
         if support_runs.is_empty()
-            || admitted!(admission
-                .context()
-                .admit_iter(support_runs, "catia_zero_topology_source_visits")
-                .map_err(cadmpeg_core::CodecError::from))
-            .any(|run| run.face.is_none())
+            || admitted!(ctx.any_by(
+                support_runs,
+                |run| Ok(run.face.is_none()),
+                "catia_zero_topology_source_visits"
+            ))
         {
             return None;
         }
         if let Some(ownership_root) = ownership_root {
+            // The face slots descend from the face count to one.
             if ownership_root.face_slots.len() != support_runs.len()
-                || !ownership_root
-                    .face_slots
-                    .iter()
-                    .copied()
-                    .eq((1..=u32::try_from(support_runs.len()).ok()?).rev())
+                || !admitted!(ctx.all_by(
+                    ownership_root.face_slots.iter().rev().zip(1u32..),
+                    |(&slot, expected)| Ok(slot == expected),
+                    "catia_zero_topology_face_slot_visits"
+                ))
             {
                 return None;
             }
         }
-
         let mut occurrences = Vec::new();
         let mut occurrence_by_support = HashMap::<u32, usize>::new();
         let mut face_ids = Vec::new();
@@ -152,7 +155,38 @@ pub(super) fn transfer_closed_face_topology(
         ) {
             return Some(Err(error));
         }
-        let mut face_id_by_ordinal = HashMap::<u32, FaceId>::new();
+        let mut face_ordinals = std::collections::HashSet::<u32>::new();
+        // Identity indexes, occurrence rows and copied identities that only
+        // link the emitted records are scratch for this transfer.
+        let mut scratch = admitted!(ctx.reserve_scoped(0, "catia_zero_topology_workspace"));
+        let positions = admitted!(crate::families::ModelCurvePositions::new(
+            ctx,
+            &ir.model.curves,
+            &ir.model.procedural_curves
+        ));
+        let surface_positions = admitted!(scratch.with_storage(|| {
+            let mut surface_positions = std::collections::BTreeMap::new();
+            for (position, surface) in ctx
+                .admit_iter(&ir.model.surfaces, "catia_zero_topology_surface_positions")?
+                .enumerate()
+            {
+                if !ctx.contains_key_btree_map(
+                    &surface_positions,
+                    &surface.id,
+                    "catia_zero_topology_surface_positions",
+                )? {
+                    ctx.insert_btree_map(
+                        &mut surface_positions,
+                        surface
+                            .id
+                            .try_clone_for_decode(ctx, "catia_zero_topology_surface_positions")?,
+                        position,
+                        "catia_zero_topology_surface_positions",
+                    )?;
+                }
+            }
+            Ok::<_, cadmpeg_core::CodecError>(surface_positions)
+        }));
 
         for run in admitted!(admission
             .context()
@@ -160,13 +194,17 @@ pub(super) fn transfer_closed_face_topology(
             .map_err(cadmpeg_core::CodecError::from))
         {
             let face = run.face.as_ref()?;
-            let surface_id = surface_ids_by_position.get(&run.carrier_pos)?;
-            let surface_geometry = admitted!(admission
-                .context()
-                .admit_iter(&ir.model.surfaces, "catia_zero_topology_source_visits")
-                .map_err(cadmpeg_core::CodecError::from))
-            .find(|surface| surface.id == *surface_id)
-            .map(|surface| &surface.geometry)?;
+            let surface_id = admitted!(ctx.get_hash_map(
+                surface_ids_by_position,
+                &run.carrier_pos,
+                "catia_zero_topology_surface_lookup"
+            ))?;
+            let surface_index = *admitted!(ctx.get_btree_map(
+                &surface_positions,
+                surface_id,
+                "catia_zero_topology_surface_lookup"
+            ))?;
+            let surface_geometry = &ir.model.surfaces.get(surface_index)?.geometry;
             let face_id = admitted!(crate::resource::compose_u32_id(
                 admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-face"),
@@ -174,34 +212,30 @@ pub(super) fn transfer_closed_face_topology(
                 FaceId::mint,
                 "catia_zero_topology_face_id"
             ));
-            let inserted = match admission.context().insert_hash_map(
-                &mut face_id_by_ordinal,
+            let inserted = admitted!(scratch.with_storage(|| ctx.insert_hash_set(
+                &mut face_ordinals,
                 face.record_ordinal,
-                copied_id!(face_id, FaceId),
-                "catia_zero_topology_face_ordinals",
-            ) {
-                Ok(inserted) => inserted,
-                Err(error) => return Some(Err(error)),
-            };
-            if inserted.is_some() {
+                "catia_zero_topology_face_ordinals"
+            )));
+            if !inserted {
                 return None;
             }
             face_ids.push(face_id);
 
+            let mut run_storage =
+                admitted!(ctx.reserve_scoped(0, "catia_zero_topology_support_ordinals"));
             let mut supports_by_ordinal = HashMap::new();
-            if let Err(error) = admission.context().reserve_map(
-                &mut supports_by_ordinal,
-                run.supports.len(),
-                "catia_zero_topology_support_ordinals",
-            ) {
-                return Some(Err(error));
-            }
             for support in admitted!(admission
                 .context()
                 .admit_iter(&run.supports, "catia_zero_topology_source_visits")
                 .map_err(cadmpeg_core::CodecError::from))
             {
-                supports_by_ordinal.insert(support.record_ordinal, support);
+                admitted!(run_storage.with_storage(|| ctx.insert_hash_map(
+                    &mut supports_by_ordinal,
+                    support.record_ordinal,
+                    support,
+                    "catia_zero_topology_support_ordinals"
+                )));
             }
             for loop_record in admitted!(admission
                 .context()
@@ -231,17 +265,20 @@ pub(super) fn transfer_closed_face_topology(
                 .copied()
                 .enumerate()
                 {
-                    let support = *supports_by_ordinal.get(&support_record_ordinal)?;
-                    let curve =
-                        copied_id!(support_curve_ids.get(&support_record_ordinal)?, CurveId);
-                    if !admitted!(admission
-                        .context()
-                        .admit_iter(&ir.model.curves, "catia_zero_topology_source_visits")
-                        .map_err(cadmpeg_core::CodecError::from))
-                    .any(|candidate| candidate.id == curve)
-                    {
-                        return None;
-                    }
+                    let support = *admitted!(ctx.get_hash_map(
+                        &supports_by_ordinal,
+                        &support_record_ordinal,
+                        "catia_zero_topology_support_lookup"
+                    ))?;
+                    let curve_id = admitted!(ctx.get_hash_map(
+                        support_curve_ids,
+                        &support_record_ordinal,
+                        "catia_zero_topology_curve_lookup"
+                    ))?;
+                    let curve_position = admitted!(positions.curve(ctx, curve_id))?;
+                    let curve = admitted!(scratch
+                        .with_storage(|| curve_id
+                            .try_clone_for_decode(ctx, "catia_zero_topology_identity_copy")));
                     let raw_endpoints = support.model_endpoints?;
                     let oriented_endpoints = loop_record.oriented_model_endpoints[member_index];
                     let pcurve = match support.pcurve.as_ref() {
@@ -279,12 +316,14 @@ pub(super) fn transfer_closed_face_topology(
                         None => None,
                     };
                     let occurrence_index = occurrences.len();
-                    let inserted = match admission.context().insert_hash_map(
-                        &mut occurrence_by_support,
-                        support_record_ordinal,
-                        occurrence_index,
-                        "catia_zero_topology_occurrence_ordinals",
-                    ) {
+                    let inserted = match scratch.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut occurrence_by_support,
+                            support_record_ordinal,
+                            occurrence_index,
+                            "catia_zero_topology_occurrence_ordinals",
+                        )
+                    }) {
                         Ok(inserted) => inserted,
                         Err(error) => return Some(Err(error)),
                     };
@@ -299,10 +338,12 @@ pub(super) fn transfer_closed_face_topology(
                             .model_parameters
                             .map(|parameters| parameters.map(FiniteReal::get)),
                         curve,
+                        curve_position,
                         oriented_curve: None,
                         pcurve,
                     };
-                    if let Err(error) = admission.context().push_vec(
+                    if let Err(error) = ctx.push_scoped_vec(
+                        &mut scratch,
                         &mut occurrences,
                         occurrence,
                         "catia_zero_topology_occurrences",
@@ -313,25 +354,17 @@ pub(super) fn transfer_closed_face_topology(
             }
         }
 
-        for occurrence in &mut occurrences {
-            let curve_geometry = admitted!(admission
-                .context()
-                .admit_iter(
-                    &ir.model.curves,
-                    "catia_zero_topology_occurrence_curve_visits"
-                )
-                .map_err(cadmpeg_core::CodecError::ResourceLimit)
-                .and_then(|mut curves| {
-                    curves
-                        .find(|curve| curve.id == occurrence.curve)
-                        .map(|curve| {
-                            curve.geometry.try_clone_for_decode(
-                                admission.context(),
-                                "catia_zero_wire_curve_copy",
-                            )
-                        })
-                        .transpose()
-                }))?;
+        for occurrence in admitted!(ctx
+            .admit_iter(
+                &mut occurrences,
+                "catia_zero_topology_occurrence_curve_visits"
+            )
+            .map_err(cadmpeg_core::CodecError::from))
+        {
+            let curve_geometry = admitted!(scratch
+                .with_storage(|| ir.model.curves[occurrence.curve_position]
+                    .geometry
+                    .try_clone_for_decode(ctx, "catia_zero_wire_curve_copy")));
             let source_range = occurrence
                 .model_parameters
                 .and_then(increasing_range)
@@ -396,15 +429,7 @@ pub(super) fn transfer_closed_face_topology(
                             Ok(geometry) => geometry,
                             Err(error) => return Some(Err(error)),
                         };
-                        let curve_index = admitted!(admission
-                            .context()
-                            .admit_iter(
-                                &ir.model.curves,
-                                "catia_zero_topology_reversed_curve_lookup"
-                            )
-                            .map_err(cadmpeg_core::CodecError::ResourceLimit))
-                        .position(|curve| curve.id == occurrence.curve)?;
-                        let curve = ir.model.curves.get_mut(curve_index)?;
+                        let curve = ir.model.curves.get_mut(occurrence.curve_position)?;
                         match reversed_geometry {
                             Some((geometry, parameter_range)) => {
                                 let canonical_range = canonical_model_curve_range(
@@ -463,12 +488,7 @@ pub(super) fn transfer_closed_face_topology(
                             .as_ref()
                             .map(|pcurve| pcurve.parameter_range)
                     })?;
-                    let curve_index = admitted!(admission
-                        .context()
-                        .admit_iter(&ir.model.curves, "catia_zero_topology_unknown_curve_lookup")
-                        .map_err(cadmpeg_core::CodecError::ResourceLimit))
-                    .position(|curve| curve.id == occurrence.curve)?;
-                    let curve = ir.model.curves.get_mut(curve_index)?;
+                    let curve = ir.model.curves.get_mut(occurrence.curve_position)?;
                     if !matches!(
                         &curve.geometry,
                         cadmpeg_ir::geometry::CurveGeometry::Procedural { .. }
@@ -488,6 +508,7 @@ pub(super) fn transfer_closed_face_topology(
             occurrence.oriented_curve = Some((oriented_curve, oriented_curve_parameter_range));
         }
 
+        drop(positions);
         let support_count = admitted!(admission
             .context()
             .admit_iter(support_runs, "catia_zero_topology_source_visits")
@@ -518,15 +539,21 @@ pub(super) fn transfer_closed_face_topology(
         .enumerate()
         {
             for support_record_ordinal in candidate.support_record_ordinals {
-                if !occurrence_by_support.contains_key(&support_record_ordinal) {
+                if !admitted!(ctx.contains_key_hash_map(
+                    &occurrence_by_support,
+                    &support_record_ordinal,
+                    "catia_zero_topology_occurrence_lookup"
+                )) {
                     return None;
                 }
-                let inserted = match admission.context().insert_hash_map(
-                    &mut edge_for_support,
-                    support_record_ordinal,
-                    edge_index,
-                    "catia_zero_topology_edge_for_support",
-                ) {
+                let inserted = match scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut edge_for_support,
+                        support_record_ordinal,
+                        edge_index,
+                        "catia_zero_topology_edge_for_support",
+                    )
+                }) {
                     Ok(inserted) => inserted,
                     Err(error) => return Some(Err(error)),
                 };
@@ -568,12 +595,14 @@ pub(super) fn transfer_closed_face_topology(
                 if edge_index >= edge_candidates.len() {
                     return None;
                 }
-                let inserted = match admission.context().insert_hash_map(
-                    &mut vertex_for_endpoint,
-                    (edge_index, endpoint_index),
-                    vertex_index,
-                    "catia_zero_topology_vertex_for_endpoint",
-                ) {
+                let inserted = match scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut vertex_for_endpoint,
+                        (edge_index, endpoint_index),
+                        vertex_index,
+                        "catia_zero_topology_vertex_for_endpoint",
+                    )
+                }) {
                     Ok(inserted) => inserted,
                     Err(error) => return Some(Err(error)),
                 };
@@ -669,14 +698,16 @@ pub(super) fn transfer_closed_face_topology(
                 VertexId::mint,
                 "catia_zero_topology_vertex_id"
             ));
-            if let Err(error) = admission.context().push_vec(
+            if let Err(error) = ctx.push_scoped_vec(
+                &mut scratch,
                 &mut point_ids,
                 point_id,
                 "catia_zero_topology_point_ids",
             ) {
                 return Some(Err(error));
             }
-            if let Err(error) = admission.context().push_vec(
+            if let Err(error) = ctx.push_scoped_vec(
+                &mut scratch,
                 &mut vertex_ids,
                 vertex_id,
                 "catia_zero_topology_vertex_ids",
@@ -806,38 +837,40 @@ pub(super) fn transfer_closed_face_topology(
             .admit_iter(&occurrences, "catia_zero_topology_source_visits")
             .map_err(cadmpeg_core::CodecError::from))
         {
-            let edge_index = *edge_for_support.get(&occurrence.support_record_ordinal)?;
+            let edge_index = *admitted!(ctx.get_hash_map(
+                &edge_for_support,
+                &occurrence.support_record_ordinal,
+                "catia_zero_topology_edge_lookup"
+            ))?;
             let candidate = &edge_candidates[edge_index];
             let oriented_indices =
                 endpoint_indices(candidate.model_endpoints, occurrence.oriented_endpoints)?;
             let raw_indices =
                 endpoint_indices(occurrence.oriented_endpoints, occurrence.raw_endpoints)?;
+            // Each occurrence keeps the vertex indexes of its oriented and raw ends.
+            let vertex = |endpoint: usize| -> Option<Result<usize, cadmpeg_core::CodecError>> {
+                match ctx.get_hash_map(
+                    &vertex_for_endpoint,
+                    &(edge_index, endpoint),
+                    "catia_zero_topology_vertex_lookup",
+                ) {
+                    Ok(vertex) => vertex.copied().map(Ok),
+                    Err(error) => Some(Err(error)),
+                }
+            };
             let pair = (
                 [
-                    copied_id!(
-                        vertex_ids[vertex_for_endpoint[&(edge_index, oriented_indices[0])]],
-                        VertexId
-                    ),
-                    copied_id!(
-                        vertex_ids[vertex_for_endpoint[&(edge_index, oriented_indices[1])]],
-                        VertexId
-                    ),
+                    admitted!(vertex(oriented_indices[0])?),
+                    admitted!(vertex(oriented_indices[1])?),
                 ],
                 [
-                    copied_id!(
-                        vertex_ids
-                            [vertex_for_endpoint[&(edge_index, oriented_indices[raw_indices[0]])]],
-                        VertexId
-                    ),
-                    copied_id!(
-                        vertex_ids
-                            [vertex_for_endpoint[&(edge_index, oriented_indices[raw_indices[1]])]],
-                        VertexId
-                    ),
+                    admitted!(vertex(oriented_indices[raw_indices[0]])?),
+                    admitted!(vertex(oriented_indices[raw_indices[1]])?),
                 ],
                 raw_indices == [0, 1],
             );
-            if let Err(error) = admission.context().push_vec(
+            if let Err(error) = ctx.push_scoped_vec(
+                &mut scratch,
                 &mut occurrence_vertex_pairs,
                 pair,
                 "catia_zero_topology_occurrence_vertices",
@@ -847,14 +880,7 @@ pub(super) fn transfer_closed_face_topology(
         }
 
         let mut edge_ids = Vec::new();
-        if let Err(error) = admission.context().reserve_vec(
-            &mut edge_ids,
-            edge_candidates.len(),
-            "catia_zero_topology_edge_ids",
-        ) {
-            return Some(Err(error));
-        }
-        let mut coedges_by_support = HashMap::<u32, CoedgeId>::new();
+        let mut coedges_by_support = HashMap::<u32, usize>::new();
         // Each candidate pushes exactly one edge id and the loop has no `continue`,
         // so `edge_ids[i]` is the edge of `edge_candidates[i]` by construction.
         for candidate in admitted!(admission
@@ -862,8 +888,12 @@ pub(super) fn transfer_closed_face_topology(
             .admit_iter(&edge_candidates, "catia_zero_topology_source_visits")
             .map_err(cadmpeg_core::CodecError::from))
         {
-            let first_occurrence =
-                &occurrences[*occurrence_by_support.get(&candidate.support_record_ordinals[0])?];
+            let first_occurrence_index = *admitted!(ctx.get_hash_map(
+                &occurrence_by_support,
+                &candidate.support_record_ordinals[0],
+                "catia_zero_topology_occurrence_lookup"
+            ))?;
+            let first_occurrence = &occurrences[first_occurrence_index];
             let edge_id = admitted!(EdgeId::mint(admitted!(admission.context().format_retained(
                 format_args!(
                     "catia:zero-entity:topology-edge#{}-{}",
@@ -874,9 +904,7 @@ pub(super) fn transfer_closed_face_topology(
             .map_err(cadmpeg_core::CodecError::malformed));
             let (oriented_curve, parameter_range) = first_occurrence.oriented_curve.as_ref()?;
             let param_range = Some(*parameter_range);
-            let oriented_vertices = &occurrence_vertex_pairs
-                [*occurrence_by_support.get(&candidate.support_record_ordinals[0])?]
-            .0;
+            let oriented_vertices = &occurrence_vertex_pairs[first_occurrence_index].0;
             admitted!(annotate(
                 admission.context(),
                 annotations,
@@ -922,8 +950,8 @@ pub(super) fn transfer_closed_face_topology(
                     param_range,
                 )
                 .ok()?,
-                start: copied_id!(oriented_vertices[0], VertexId),
-                end: copied_id!(oriented_vertices[1], VertexId),
+                start: copied_id!(vertex_ids[oriented_vertices[0]], VertexId),
+                end: copied_id!(vertex_ids[oriented_vertices[1]], VertexId),
                 tolerance: Some(MODEL_POINT_TOLERANCE),
             };
             if let Err(error) =
@@ -933,7 +961,11 @@ pub(super) fn transfer_closed_face_topology(
             {
                 return Some(Err(error));
             }
-            edge_ids.push(edge_id);
+            admitted!(scratch.with_storage(|| ctx.push_vec(
+                &mut edge_ids,
+                edge_id,
+                "catia_zero_topology_edge_ids"
+            )));
         }
 
         for (run_index, run) in admitted!(admission
@@ -963,11 +995,12 @@ pub(super) fn transfer_closed_face_topology(
                     LoopId::mint,
                     "catia_zero_topology_loop_id"
                 ));
-                if let Err(error) =
-                    admission
-                        .context()
-                        .push_vec(&mut loop_ids, id, "catia_zero_topology_loop_ids")
-                {
+                if let Err(error) = ctx.push_scoped_vec(
+                    &mut scratch,
+                    &mut loop_ids,
+                    id,
+                    "catia_zero_topology_loop_ids",
+                ) {
                     return Some(Err(error));
                 }
             }
@@ -1020,7 +1053,14 @@ pub(super) fn transfer_closed_face_topology(
             let face_record = Face {
                 id: copied_id!(face_id, FaceId),
                 shell: copied_id!(shell_id, ShellId),
-                surface: copied_id!(surface_ids_by_position[&run.carrier_pos], SurfaceId),
+                surface: copied_id!(
+                    admitted!(ctx.get_hash_map(
+                        surface_ids_by_position,
+                        &run.carrier_pos,
+                        "catia_zero_topology_surface_lookup"
+                    ))?,
+                    SurfaceId
+                ),
                 sense: outer_sense,
                 loops: match loop_ids.split_first() {
                     // The source states the outer boundary first.
@@ -1082,17 +1122,22 @@ pub(super) fn transfer_closed_face_topology(
                         CoedgeId::mint,
                         "catia_zero_topology_coedge_id"
                     ));
-                    if let Err(error) = admission.context().push_vec(
+                    if let Err(error) = ctx.push_scoped_vec(
+                        &mut scratch,
                         &mut coedge_ids,
                         id,
                         "catia_zero_topology_coedge_ids",
                     ) {
                         return Some(Err(error));
                     }
-                    let occurrence_index = *occurrence_by_support.get(support_record_ordinal)?;
+                    let occurrence_index = *admitted!(ctx.get_hash_map(
+                        &occurrence_by_support,
+                        support_record_ordinal,
+                        "catia_zero_topology_occurrence_lookup"
+                    ))?;
                     let vertex_use = AnchoredVertexUse {
                         vertex: copied_id!(
-                            occurrence_vertex_pairs[occurrence_index].0[1],
+                            vertex_ids[occurrence_vertex_pairs[occurrence_index].0[1]],
                             VertexId
                         ),
                         after: copied_id!(coedge_ids[member_index], CoedgeId),
@@ -1172,16 +1217,26 @@ pub(super) fn transfer_closed_face_topology(
                 .copied()
                 .enumerate()
                 {
-                    let occurrence_index = *occurrence_by_support.get(&support_record_ordinal)?;
+                    let occurrence_index = *admitted!(ctx.get_hash_map(
+                        &occurrence_by_support,
+                        &support_record_ordinal,
+                        "catia_zero_topology_occurrence_lookup"
+                    ))?;
                     let occurrence = &occurrences[occurrence_index];
-                    let edge_index = *edge_for_support.get(&support_record_ordinal)?;
-                    let oriented_vertices = &occurrence_vertex_pairs[occurrence_index].0;
+                    let edge_index = *admitted!(ctx.get_hash_map(
+                        &edge_for_support,
+                        &support_record_ordinal,
+                        "catia_zero_topology_edge_lookup"
+                    ))?;
+                    let oriented_vertices = occurrence_vertex_pairs[occurrence_index].0;
                     let edge = &edge_candidates[edge_index];
-                    let first_occurrence = &occurrences
-                        [*occurrence_by_support.get(&edge.support_record_ordinals[0])?];
-                    let first_oriented_vertices = &occurrence_vertex_pairs
-                        [*occurrence_by_support.get(&edge.support_record_ordinals[0])?]
-                    .0;
+                    let first_occurrence_index = *admitted!(ctx.get_hash_map(
+                        &occurrence_by_support,
+                        &edge.support_record_ordinals[0],
+                        "catia_zero_topology_occurrence_lookup"
+                    ))?;
+                    let first_occurrence = &occurrences[first_occurrence_index];
+                    let first_oriented_vertices = occurrence_vertex_pairs[first_occurrence_index].0;
                     let sense = if oriented_vertices == first_oriented_vertices {
                         Sense::Forward
                     } else if oriented_vertices[0] == first_oriented_vertices[1]
@@ -1193,7 +1248,11 @@ pub(super) fn transfer_closed_face_topology(
                     };
                     let (curve, parameter_range) = occurrence.oriented_curve.as_ref()?;
                     let (first_curve, _) = first_occurrence.oriented_curve.as_ref()?;
-                    let use_curve = if curve == first_curve {
+                    let use_curve = if admitted!(ctx.equal(
+                        curve,
+                        first_curve,
+                        "catia_zero_topology_use_curve_comparison"
+                    )) {
                         None
                     } else {
                         Some(cadmpeg_ir::topology::CoedgeUseCurve {
@@ -1296,6 +1355,7 @@ pub(super) fn transfer_closed_face_topology(
                         pcurves,
                         use_curve,
                     };
+                    let coedge_position = ir.model.coedges.len();
                     if let Err(error) = admission.context().push_vec(
                         &mut ir.model.coedges,
                         coedge,
@@ -1303,12 +1363,14 @@ pub(super) fn transfer_closed_face_topology(
                     ) {
                         return Some(Err(error));
                     }
-                    if let Err(error) = admission.context().insert_hash_map(
-                        &mut coedges_by_support,
-                        support_record_ordinal,
-                        coedge_id,
-                        "catia_zero_topology_coedges_by_support",
-                    ) {
+                    if let Err(error) = scratch.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut coedges_by_support,
+                            support_record_ordinal,
+                            coedge_position,
+                            "catia_zero_topology_coedges_by_support",
+                        )
+                    }) {
                         return Some(Err(error));
                     }
                 }
@@ -1320,27 +1382,19 @@ pub(super) fn transfer_closed_face_topology(
             .admit_iter(&edge_candidates, "catia_zero_topology_source_visits")
             .map_err(cadmpeg_core::CodecError::from))
         {
-            let first = coedges_by_support.get(&candidate.support_record_ordinals[0])?;
-            let second = coedges_by_support.get(&candidate.support_record_ordinals[1])?;
-            let second_copy = copied_id!(second, CoedgeId);
-            let first_index = admitted!(admission
-                .context()
-                .admit_iter(
-                    &ir.model.coedges,
-                    "catia_zero_topology_first_radial_coedge_lookup"
-                )
-                .map_err(cadmpeg_core::CodecError::ResourceLimit))
-            .position(|coedge| coedge.id == *first)?;
+            let first_index = *admitted!(ctx.get_hash_map(
+                &coedges_by_support,
+                &candidate.support_record_ordinals[0],
+                "catia_zero_topology_radial_coedge_lookup"
+            ))?;
+            let second_index = *admitted!(ctx.get_hash_map(
+                &coedges_by_support,
+                &candidate.support_record_ordinals[1],
+                "catia_zero_topology_radial_coedge_lookup"
+            ))?;
+            let second_copy = copied_id!(ir.model.coedges.get(second_index)?.id, CoedgeId);
             ir.model.coedges.get_mut(first_index)?.radial_next = second_copy;
-            let first_copy = copied_id!(first, CoedgeId);
-            let second_index = admitted!(admission
-                .context()
-                .admit_iter(
-                    &ir.model.coedges,
-                    "catia_zero_topology_second_radial_coedge_lookup"
-                )
-                .map_err(cadmpeg_core::CodecError::ResourceLimit))
-            .position(|coedge| coedge.id == *second)?;
+            let first_copy = copied_id!(ir.model.coedges.get(first_index)?.id, CoedgeId);
             ir.model.coedges.get_mut(second_index)?.radial_next = first_copy;
         }
 
