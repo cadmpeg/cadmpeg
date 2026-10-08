@@ -87,8 +87,10 @@ fn reconstruct_service(data: &[u8], descriptor: &Descriptor, inner: usize) -> Ve
 }
 
 fn brep_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
-    crate::test_support::with_service_context(|ctx| super::brep_stream(ctx, data, dir))
-        .expect("service budget admits BREP stream")
+    crate::test_support::with_service_context(|ctx| {
+        super::brep_stream(ctx, data, dir).map(|streams| streams.0)
+    })
+    .expect("service budget admits BREP stream")
 }
 
 fn main_data_stream_service(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
@@ -136,8 +138,7 @@ fn logical_stream_roster_refuses_collection_limit() {
     let bytes = outer_directory_catpart();
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, bytes))
         .expect("service budget admits outer directory");
-    let first_len = scan.outer.as_ref().expect("outer directory").descriptors[0].logical_length();
-    let limited = crate::test_support::with_collection_limit(first_len, |ctx| {
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::logical_record_streams(ctx, &scan)
     });
     assert!(
@@ -380,7 +381,7 @@ fn nested_fbb_spine_precedes_a_coherent_e5_stream() {
             ctx,
             scan.inner.as_ref(),
             scan.brep.as_deref(),
-            scan.main_data_stream.as_deref(),
+            scan.main_data_stream(),
             &scan.census,
             true,
         ))
@@ -1568,7 +1569,7 @@ fn outer_declarations_release_their_reconstructed_stream() {
 }
 
 #[test]
-fn brep_surface_source_is_scoped_and_destination_is_retained_once() {
+fn brep_surface_extents_append_directly_to_the_retained_destination() {
     let data = [1_u8, 2, 3, 4, 5, 6];
     let directory = InnerDir {
         inner: 0,
@@ -1580,7 +1581,16 @@ fn brep_surface_source_is_scoped_and_destination_is_retained_once() {
     crate::test_support::with_retained_limit(8, |ctx| {
         assert_eq!(
             super::brep_stream(ctx, &data, &directory)
-                .expect("eight retained vector capacity bytes"),
+                .expect("eight retained vector capacity bytes")
+                .0,
+            Some(data.to_vec())
+        );
+    });
+    crate::test_support::with_collection_limit(6, |ctx| {
+        assert_eq!(
+            super::brep_stream(ctx, &data, &directory)
+                .expect("each destination byte occupies one collection slot")
+                .0,
             Some(data.to_vec())
         );
     });
@@ -1691,4 +1701,137 @@ fn container_scan_rejects_wrong_magic_and_truncated_header() {
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
+}
+
+#[test]
+fn rejected_extent_candidate_charges_only_the_examined_extent() {
+    let bytes = vec![0; 4 + 4_096 * 20];
+    crate::test_support::with_work_limit(1, |ctx| {
+        assert!(
+            super::validate_extents(ctx, &bytes, 0, 4_096, 0, bytes.len())
+                .expect("first zero-length extent ends validation")
+                .is_none()
+        );
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn e5_marker_candidates_charge_the_searched_prefix() {
+    let bytes = [0xe5, 0x0d, 0x03, 0, 0, 0xff, 0xff, 0].repeat(32);
+    crate::test_support::with_work_limit(1_024, |ctx| {
+        assert_eq!(
+            super::coherent_e5_record_count(ctx, &bytes)
+                .expect("invalid markers need one linear scan"),
+            0
+        );
+    });
+}
+
+#[test]
+fn e5_stride_walk_does_not_charge_unread_trailing_bytes() {
+    let mut bytes = Vec::new();
+    for id in 0..10 {
+        append_e5_test_record(&mut bytes, id);
+    }
+    let end = bytes.len();
+    bytes.extend_from_slice(&[0; 8_192]);
+    crate::test_support::with_work_limit(64, |ctx| {
+        assert_eq!(
+            super::e5_record_walk_count(ctx, &bytes, 0)
+                .expect("ten fixed headers fit the walk budget"),
+            (10, end)
+        );
+    });
+}
+
+#[test]
+fn main_stream_is_the_shared_brep_prefix() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("synthetic container admission");
+    let main = scan.main_data_stream().expect("main stream");
+    let brep = scan.brep.as_deref().expect("BREP stream");
+    assert_eq!(main.as_ptr(), brep.as_ptr());
+    assert!(main.len() < brep.len());
+}
+
+#[test]
+fn contiguous_logical_streams_borrow_the_source_image() {
+    let scan =
+        crate::test_support::with_service_context(|ctx| scan_bytes(ctx, outer_directory_catpart()))
+            .expect("synthetic outer directory admission");
+    let streams = crate::test_support::with_collection_limit(1, |ctx| {
+        super::logical_record_streams(ctx, &scan)
+    })
+    .expect("one borrowed stream needs one roster slot");
+    assert_eq!(streams.len(), 1);
+    assert!(matches!(streams[0], std::borrow::Cow::Borrowed(_)));
+}
+
+#[test]
+fn adjacent_descriptor_extents_borrow_one_root_window() {
+    let mut scan =
+        crate::test_support::with_service_context(|ctx| scan_bytes(ctx, outer_directory_catpart()))
+            .expect("synthetic directory admission");
+    let descriptor = &mut scan.outer.as_mut().expect("outer directory").descriptors[0];
+    let extent = descriptor.extents[0].clone();
+    let half = extent.phys_len / 2;
+    assert!(half > 0);
+    descriptor.extents = vec![
+        Extent {
+            phys_len: half,
+            ..extent.clone()
+        },
+        Extent {
+            phys_off: extent.phys_off + half,
+            phys_len: extent.phys_len - half,
+            ..extent
+        },
+    ];
+    let streams = crate::test_support::with_collection_limit(1, |ctx| {
+        super::logical_record_streams(ctx, &scan)
+    })
+    .expect("adjacent source ranges need no reconstructed byte vector");
+    assert_eq!(streams.len(), 1);
+    assert!(matches!(streams[0], std::borrow::Cow::Borrowed(_)));
+}
+
+#[test]
+fn descriptor_adjacency_stops_charging_at_the_first_gap() {
+    let mut scan =
+        crate::test_support::with_service_context(|ctx| scan_bytes(ctx, outer_directory_catpart()))
+            .expect("synthetic directory admission");
+    let directory = scan.outer.as_mut().expect("outer directory");
+    let descriptor = &mut directory.descriptors[0];
+    let extent = descriptor.extents[0].clone();
+    descriptor.extents = vec![extent; 4_096];
+    crate::test_support::with_work_limit(2, |ctx| {
+        assert!(super::contiguous_descriptor_range(
+            ctx,
+            descriptor,
+            directory.inner,
+            scan.data.len(),
+        )
+        .expect("the second extent establishes a gap")
+        .is_none());
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn canonical_record_streams_reuse_the_brep_storage() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("synthetic directory admission");
+    let streams =
+        crate::test_support::with_service_context(|ctx| super::logical_record_streams(ctx, &scan))
+            .expect("logical sources");
+    let main = scan.main_data_stream().expect("canonical main source");
+    let brep = scan.brep.as_deref().expect("BREP storage");
+    assert!(streams
+        .iter()
+        .any(|stream| stream.as_ptr() == main.as_ptr() && stream.len() == main.len()));
+    assert!(streams
+        .iter()
+        .any(|stream| stream.as_ptr() == brep[main.len()..].as_ptr()
+            && stream.len() == brep.len() - main.len()));
 }

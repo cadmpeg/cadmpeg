@@ -571,42 +571,65 @@ fn intern_gauge_signatures<T: Ord>(
     signatures: impl IntoIterator<Item = T>,
     key_bytes: impl Fn(&T) -> usize,
 ) -> Result<Vec<usize>, CodecError> {
-    let mut ids = BTreeMap::<T, usize>::new();
-    let mut colors = Vec::new();
-    let mut largest_key = 0u64;
-    for signature in signatures {
-        let bytes = u64_from_index(std::mem::size_of::<T>())
-            .checked_add(u64_from_index(key_bytes(&signature)))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_gauge_signature_compare", u64::MAX - 1, u64::MAX)
-            })?;
-        let lookup_work = bytes
-            .checked_add(largest_key)
-            .and_then(|bytes| bytes.checked_mul(u64_from_index(ids.len())))
-            .and_then(|bytes| bytes.checked_add(1))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_gauge_signature_compare", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(lookup_work, "catia_gauge_signature_compare")?;
-        let id = if let Some(id) = ids.get(&signature) {
-            *id
+    let mut indexed = ctx.collect_vec(
+        signatures.into_iter().enumerate(),
+        "catia_gauge_signature_keys",
+    )?;
+    ctx.sort_unstable_by(
+        &mut indexed,
+        |left, right| left.1.cmp(&right.1),
+        |item| key_bytes(&item.1),
+        "catia_gauge_signature_compare",
+    )?;
+    let mut colors = ctx.alloc_filled(indexed.len(), 0usize, "catia_gauge_signature_colors")?;
+    ctx.charge_work(
+        u64_from_index(indexed.len()),
+        "catia_gauge_signature_groups",
+    )?;
+    let mut first_seen = Vec::<(usize, usize)>::new();
+    let mut group = 0usize;
+    for (index, (position, signature)) in indexed.iter().enumerate() {
+        let same = if let Some(previous) = index.checked_sub(1) {
+            let previous = &indexed[previous].1;
+            let bytes = u64_from_index(std::mem::size_of::<T>())
+                .checked_mul(2)
+                .and_then(|bytes| bytes.checked_add(u64_from_index(key_bytes(signature))))
+                .and_then(|bytes| bytes.checked_add(u64_from_index(key_bytes(previous))))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("catia_gauge_signature_compare", u64::MAX - 1, u64::MAX)
+                })?;
+            ctx.charge_work(bytes, "catia_gauge_signature_compare")?;
+            previous == signature
         } else {
-            let id = ids.len();
-            let insert_work = lookup_work.checked_mul(2).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "catia_gauge_signature_insert_compare",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-            ctx.charge_work(insert_work, "catia_gauge_signature_insert_compare")?;
-            if bytes > largest_key {
-                largest_key = bytes;
-            }
-            ctx.insert_btree_map(&mut ids, signature, id, "catia_gauge_signature_keys")?;
-            id
+            false
         };
-        ctx.push_vec(&mut colors, id, "catia_gauge_signature_colors")?;
+        if same {
+            first_seen[group].0 = first_seen[group].0.min(*position);
+        } else {
+            group = first_seen.len();
+            ctx.push_vec(
+                &mut first_seen,
+                (*position, group),
+                "catia_gauge_signature_groups",
+            )?;
+        }
+        colors[*position] = group;
+    }
+    // Colors name signatures by their first source occurrence, independent of
+    // the sorted key order used to batch their comparisons.
+    ctx.sort_unstable_by(
+        &mut first_seen,
+        Ord::cmp,
+        |_| 0,
+        "catia_gauge_signature_first_seen",
+    )?;
+    let mut labels = ctx.alloc_filled(first_seen.len(), 0usize, "catia_gauge_signature_labels")?;
+    for (label, (_, group)) in first_seen.into_iter().enumerate() {
+        labels[group] = label;
+    }
+    ctx.charge_work(u64_from_index(colors.len()), "catia_gauge_signature_labels")?;
+    for color in &mut colors {
+        *color = labels[*color];
     }
     Ok(colors)
 }
@@ -981,6 +1004,10 @@ pub(super) fn build_mesh_coordinate_gauge(
             "catia_gauge_local_orders",
         )?;
         for class in color_classes.values() {
+            ctx.charge_work(1, "catia_gauge_color_class_shape")?;
+            if class.len() == 1 {
+                continue;
+            }
             let remaining_limit = MAX_COORDINATE_GAUGE_PERMUTATIONS / local_orders.len();
             let class_order_count = bounded_factorial(ctx, class.len(), remaining_limit)?;
             let mut used = ctx.alloc_filled(class.len(), false, "catia_coordinate_gauge_used")?;

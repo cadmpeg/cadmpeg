@@ -320,7 +320,7 @@ fn finish_decode(
         &native,
         &modeling_graph_scope,
         standard_face_population
-            .then_some(scan.main_data_stream.as_deref().or(scan.brep.as_deref()))
+            .then_some(scan.main_data_stream().or(scan.brep.as_deref()))
             .flatten(),
     )?;
     let object_record_count: usize = native

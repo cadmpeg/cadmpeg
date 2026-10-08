@@ -1621,14 +1621,13 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     }
     assert!(
         admitted,
-        "collection ceiling must admit curve copy and six-value basis scratch"
+        "collection ceiling must admit bindings and six-value basis scratch"
     );
     for operation in [
         "catia_limit_curve_point_rows",
         "catia_limit_curve_point_parameters",
         "catia_limit_curve_edge_rows",
         "catia_limit_curve_candidates",
-        "catia_limit_curve_geometry_copy",
         "catia_limit_curve_edge_bindings",
     ] {
         assert!(

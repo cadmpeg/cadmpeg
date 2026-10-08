@@ -4698,56 +4698,10 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                 if face_budget.exhausted() {
                     return Some(Err(refuse_face()));
                 }
-                let mut alternatives = Vec::new();
-                for assignment in assignments {
-                    let Some(work) = (match quotient.signature_work(ctx) {
-                        Ok(work) => work,
-                        Err(error) => return Some(Err(error)),
-                    }) else {
-                        return Some(Err(refuse_face()));
-                    };
-                    if !face_budget.charge_by(work) {
-                        return Some(Err(refuse_face()));
-                    }
-                    let options = match quotient.assignment_options_limited(
-                        ctx,
-                        assignment,
-                        edge_candidates,
-                        &HashSet::new(),
-                        MAX_FACE_OPTIONS + 1,
-                        Some(&face_budget),
-                    ) {
-                        Ok(options) => options,
-                        Err(error) => return Some(Err(error)),
-                    };
-                    if face_budget.exhausted() {
-                        return Some(Err(refuse_face()));
-                    }
-                    if options.len() > MAX_FACE_OPTIONS {
-                        return Some(Err(refuse_face()));
-                    }
-                    for (_, quotient) in options {
-                        if let Err(error) = ctx.push_vec(
-                            &mut alternatives,
-                            quotient,
-                            "catia_ordered_face_alternatives",
-                        ) {
-                            return Some(Err(error));
-                        }
-                    }
-                    if alternatives.len() > MAX_FACE_OPTIONS {
-                        return Some(Err(refuse_face()));
-                    }
-                }
-                if alternatives.is_empty() {
-                    continue;
-                }
-                match propagate_common_full_quotients(ctx, alternatives, edge_candidates, quotient)
-                {
-                    Ok(Some(())) => {}
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                }
+                // This preparation pass propagates local equations only. The
+                // complete incidence and endpoint searches below retain every
+                // face domain and validate their correlated assignments. Signing
+                // whole-mesh alternatives here repeats that search per face.
             }
             if match quotient.monotone_measure(ctx) {
                 Ok(measure) => measure?,
@@ -9570,31 +9524,41 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
             }
             changed |= face.len() != before;
         }
+        let mut incident_faces = ctx.alloc_filled(
+            edge_candidates.len(),
+            Vec::new(),
+            "catia_prune_incident_rows",
+        )?;
+        for (face, choices) in assignments.iter().enumerate() {
+            for use_ in choices
+                .iter()
+                .flat_map(|assignment| assignment.boundaries.iter().flatten())
+            {
+                ctx.charge_work(1, "catia_prune_incident_index")?;
+                let Some(faces) = incident_faces.get_mut(use_.edge) else {
+                    continue;
+                };
+                if faces.last() != Some(&face) {
+                    ctx.push_vec(faces, face, "catia_prune_incident_faces")?;
+                }
+            }
+        }
         for edge in 0..edge_candidates.len() {
             if edge_candidates[edge].is_empty() {
                 continue;
             }
-            let mut incident_faces = Vec::new();
-            for (face, choices) in assignments.iter().enumerate() {
-                if choices.iter().any(|assignment| {
-                    assignment
-                        .boundaries
-                        .iter()
-                        .flatten()
-                        .any(|use_| use_.edge == edge)
-                }) {
-                    ctx.push_vec(&mut incident_faces, face, "catia_prune_incident_faces")?;
-                }
-            }
+            let incident_faces = &incident_faces[edge];
             let before = edge_candidates[edge].len();
-            let snapshot = ctx.copy_retained_rows(
-                edge_candidates,
-                "catia_prune_snapshot_rows",
-                "catia_prune_snapshot_pairs",
-            )?;
+            let mut decisions = ctx.alloc_filled(before, false, "catia_prune_pair_decisions")?;
+            let decision_work = u64_from_index(before).checked_mul(2).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_prune_pair_decisions", u64::MAX - 1, u64::MAX)
+            })?;
+            ctx.charge_work(decision_work, "catia_prune_pair_decisions")?;
             let mut refusal = None;
-            edge_candidates[edge].retain(|pair| {
-                incident_faces.iter().all(|face| {
+            // Read the unchanged candidate table, then apply this row's decisions.
+            // A complete table copy per row repeats all unrelated storage.
+            for (pair, decision) in edge_candidates[edge].iter().zip(&mut decisions) {
+                *decision = incident_faces.iter().all(|face| {
                     assignments[*face].iter().any(|assignment| {
                         assignment
                             .boundaries
@@ -9604,7 +9568,7 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                             && mesh_assignment_endpoint_cycles_viable_with(
                                 ctx,
                                 assignment,
-                                &snapshot,
+                                edge_candidates,
                                 Some((edge, *pair)),
                                 Some(&budget),
                             )
@@ -9616,7 +9580,13 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                                 |result| result.unwrap_or(true),
                             )
                     })
-                })
+                });
+            }
+            let mut position = 0;
+            edge_candidates[edge].retain(|_| {
+                let supported = decisions[position];
+                position += 1;
+                supported
             });
             if let Some(error) = refusal {
                 return Err(error);
@@ -13985,13 +13955,20 @@ fn mesh_work_guard_preserves_the_existing_session_refusal() {
 fn ordered_face_local_ceiling_refuses_constraint_propagation() {
     crate::test_support::with_service_context(|ctx| {
         let mut quotient =
-            MeshQuotient::new((0..80).map(|_| Arc::new(HashSet::from([0]))).collect());
-        let domains = [MeshFaceBoundaryDomain::Ordered(vec![
-            MeshFaceBoundaryAssignment {
-                boundaries: Vec::new(),
-            },
-        ])];
-        let candidates = vec![vec![[0, 0]]; 40];
+            MeshQuotient::new((0..130).map(|_| Arc::new(HashSet::from([0]))).collect());
+        let domains = [MeshFaceBoundaryDomain::Ordered(
+            (0..65)
+                .map(|edge| MeshFaceBoundaryAssignment {
+                    boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                        edge,
+                        start: 0,
+                        end: 0,
+                        reversed: Some(false),
+                    }]],
+                })
+                .collect(),
+        )];
+        let candidates = vec![Vec::new(); 65];
         let budget = ctx.work_budget(1_000_000);
         let CodecError::ResourceLimit(limit) = propagate_common_ordered_face_quotients(
             ctx,
@@ -14006,6 +13983,55 @@ fn ordered_face_local_ceiling_refuses_constraint_propagation() {
         assert_eq!(limit.operation, "catia_ordered_face_constraint_work");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
+}
+
+#[cfg(test)]
+mod preparation_tests {
+    use super::{propagate_common_ordered_face_quotients, MeshQuotient};
+    use crate::solve::missing_edge::{
+        MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
+    };
+    use std::collections::HashSet;
+    use std::sync::Arc;
+
+    #[test]
+    fn directed_face_does_not_clone_independent_mesh_content() {
+        crate::test_support::with_collection_limit(16_384, |ctx| {
+            let shared = Arc::new(HashSet::from([0, 1]));
+            let mut quotient = MeshQuotient::new(vec![shared; 1_000]);
+            let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+                MeshFaceBoundaryAssignment {
+                    boundaries: vec![(0..4)
+                        .map(|edge| MeshBoundaryEdgeCandidate {
+                            edge,
+                            start: edge,
+                            end: (edge + 1) % 4,
+                            reversed: Some(false),
+                        })
+                        .collect()],
+                },
+            ])];
+            let candidates = vec![Vec::new(); 500];
+            let budget = ctx.work_budget(1_000_000);
+            propagate_common_ordered_face_quotients(
+                ctx,
+                &domains,
+                &candidates,
+                &mut quotient,
+                &budget,
+            )
+            .expect("directed face work fits")
+            .expect("complete corner equations");
+            for [left, right] in [[1, 2], [3, 4], [5, 6], [7, 0]] {
+                assert_eq!(
+                    quotient.root(ctx, left).expect("corner root"),
+                    quotient.root(ctx, right).expect("corner root")
+                );
+            }
+            assert_eq!(quotient.root_count(ctx).expect("root count"), 996);
+            assert_eq!(quotient.root(ctx, 8).expect("independent root"), 8);
+        });
+    }
 }
 
 #[cfg(test)]
@@ -14025,4 +14051,36 @@ fn boundary_component_exhausted_slice_refuses_instead_of_absence() {
         assert_eq!(limit.operation, "catia_boundary_component_work");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
+}
+
+#[cfg(test)]
+mod pair_support_tests {
+    use super::prune_mesh_endpoint_pair_support;
+    use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
+
+    #[test]
+    fn endpoint_pair_pruning_does_not_copy_unrelated_candidate_rows() {
+        const EDGES: usize = 512;
+        let mut assignments = (0..EDGES)
+            .map(|edge| {
+                vec![MeshFaceBoundaryAssignment {
+                    boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                        edge,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    }]],
+                }]
+            })
+            .collect::<Vec<_>>();
+        let mut candidates = vec![vec![[0, 0]]; EDGES];
+        crate::test_support::with_collection_limit(128_000, |ctx| {
+            assert!(
+                prune_mesh_endpoint_pair_support(ctx, &mut assignments, &mut candidates)
+                    .expect("independent one-edge faces require linear candidate storage")
+            );
+        });
+        assert!(assignments.iter().all(|choices| choices.len() == 1));
+        assert!(candidates.iter().all(|pairs| pairs == &[[0, 0]]));
+    }
 }

@@ -36,14 +36,30 @@ fn refine_nurbs_surface_point(
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     ctx.charge_work_limit(0, "catia surface refinement boundary")?;
     let mut parameters = seed;
-    for _ in 0..NURBS_SURFACE_REFINEMENT_ITERATIONS {
+    for iteration in 0..NURBS_SURFACE_REFINEMENT_ITERATIONS {
         ctx.charge_work_limit(1, "catia surface refinement step")?;
+        if iteration == 0 {
+            let Some(distance) = nurbs_surface_point_distance(ctx, surface, point, parameters)?
+            else {
+                return Ok(None);
+            };
+            if distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE {
+                return Ok(Some(distance));
+            }
+        }
         let Some(partials) = cadmpeg_ir::eval::finite_or_refusal(
             cadmpeg_ir::eval::nurbs_surface_partials(ctx, surface, parameters.u, parameters.v),
         )?
         else {
             return Ok(None);
         };
+        let current = partials.point.distance(point);
+        if !current.is_finite() {
+            return Ok(None);
+        }
+        if current <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE {
+            return Ok(Some(current));
+        }
         let residual = partials.point.vector_from(point);
         let Some((u, v)) =
             cadmpeg_ir::math::solve::least_squares_step(partials.du, partials.dv, residual)
@@ -51,9 +67,6 @@ fn refine_nurbs_surface_point(
             break;
         };
         let step = Point2::new(u.get(), v.get());
-        let Some(current) = nurbs_surface_point_distance(ctx, surface, point, parameters)? else {
-            return Ok(None);
-        };
         let mut scale = 1.0;
         let mut accepted = None;
         for _ in 0..NURBS_SURFACE_BACKTRACK_STEPS {
@@ -62,6 +75,11 @@ fn refine_nurbs_surface_point(
                 (parameters.u - scale * step.u).clamp(domains[0][0], domains[0][1]),
                 (parameters.v - scale * step.v).clamp(domains[1][0], domains[1][1]),
             );
+            // Clamping or a stationary least-squares step can leave the same
+            // parameter pair. Re-evaluating it cannot improve this seed.
+            if candidate == parameters {
+                break;
+            }
             let Some(distance) = nurbs_surface_point_distance(ctx, surface, point, candidate)?
             else {
                 return Ok(None);
@@ -125,7 +143,7 @@ pub(super) fn nurbs_surface_witness_distance(
         return Ok(None);
     };
     let mut best: Option<f64> = None;
-    let mut consider = |seed: Point2| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+    let mut consider = |seed: Point2| -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
         ctx.charge_work_limit(1, "catia surface witness seed")?;
         if let Some(distance) = refine_nurbs_surface_point(ctx, surface, point, seed, domains)? {
             best = Some(best.map_or(distance, |previous| {
@@ -135,8 +153,11 @@ pub(super) fn nurbs_surface_witness_distance(
                     distance
                 }
             }));
+            if distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE {
+                return Ok(Some(distance));
+            }
         }
-        Ok(())
+        Ok(None)
     };
     if samples > NURBS_SURFACE_MAX_SEEDS {
         const SIDE: usize = 16;
@@ -187,7 +208,9 @@ pub(super) fn nurbs_surface_witness_distance(
                 else {
                     return Ok(None);
                 };
-                consider(Point2::new(u.get(), v.get()))?;
+                if let Some(distance) = consider(Point2::new(u.get(), v.get()))? {
+                    return Ok(Some(distance));
+                }
             }
         }
     } else {
@@ -228,7 +251,9 @@ pub(super) fn nurbs_surface_witness_distance(
                         else {
                             return Ok(None);
                         };
-                        consider(Point2::new(u.get(), v.get()))?;
+                        if let Some(distance) = consider(Point2::new(u.get(), v.get()))? {
+                            return Ok(Some(distance));
+                        }
                     }
                 }
             }
@@ -262,6 +287,103 @@ mod tests {
         )
         .expect("fixture admission")
         .expect("unit square")
+    }
+
+    #[test]
+    fn membership_stops_after_a_complete_point_witness() {
+        let surface = surface();
+        crate::test_support::with_collection_limit(512, |ctx| {
+            let distance =
+                nurbs_surface_witness_distance(ctx, &surface, Point3::new(0.3, 0.7, 0.0))
+                    .expect("one planar witness fits")
+                    .expect("point witness");
+            assert!(distance <= super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE);
+        });
+    }
+
+    #[test]
+    fn stationary_refinement_does_not_repeat_the_same_evaluation() {
+        let surface = surface();
+        crate::test_support::with_collection_limit(512, |ctx| {
+            let distance = refine_nurbs_surface_point(
+                ctx,
+                &surface,
+                Point3::new(0.5, 0.5, 0.25),
+                Point2::new(0.5, 0.5),
+                [[0.0, 1.0]; 2],
+            )
+            .expect("one stationary step fits")
+            .expect("finite residual");
+            assert_eq!(distance, 0.25);
+        });
+    }
+
+    #[test]
+    fn exact_point_witness_does_not_require_finite_derivatives() {
+        let surface = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![
+                        Point3::new(f64::MAX, 0.0, 0.0),
+                        Point3::new(f64::MAX, 1.0, 0.0),
+                    ],
+                    vec![
+                        Point3::new(-f64::MAX, 0.0, 0.0),
+                        Point3::new(-f64::MAX, 1.0, 0.0),
+                    ],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("finite pole admission")
+        .expect("valid bilinear surface");
+        crate::test_support::with_service_context(|ctx| {
+            assert!(
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_surface_partials(
+                    ctx, &surface, 0.0, 0.0
+                ))
+                .expect("derivative evaluation remains within its resource allowance")
+                .is_none()
+            );
+            assert_eq!(
+                refine_nurbs_surface_point(
+                    ctx,
+                    &surface,
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Point2::new(0.0, 0.0),
+                    [[0.0, 1.0]; 2],
+                )
+                .expect("point evaluation remains within its resource allowance"),
+                Some(0.0)
+            );
+        });
+    }
+
+    #[test]
+    fn conservative_face_membership_does_not_allocate_witness_basis() {
+        let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface()),
+        );
+        crate::test_support::with_collection_limit(0, |ctx| {
+            assert!(super::super::point_on_standard_face(
+                ctx,
+                Point3::new(0.3, 0.7, 0.0),
+                &geometry,
+                None
+            )
+            .expect("possible membership uses only borrowed poles"));
+            assert!(!super::super::point_on_standard_face(
+                ctx,
+                Point3::new(0.3, 0.7, 0.25),
+                &geometry,
+                None
+            )
+            .expect("outside the control net is impossible"));
+        });
     }
 
     #[test]

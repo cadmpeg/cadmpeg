@@ -986,7 +986,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
 }
 
 #[test]
-fn ordered_face_options_preflight_exact_signature_work() {
+fn ordered_face_preparation_does_not_sign_whole_mesh_alternatives() {
     catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
@@ -1007,20 +1007,16 @@ fn ordered_face_options_preflight_exact_signature_work() {
     let mut quotient = MeshQuotient::new(vec![broad; 4]);
     let budget = WorkBudget::new(100);
 
-    let error = crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
         &candidates,
         &mut quotient,
         &budget,
     )
-    .expect_err("signature work exceeds the ordered-face slice");
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-        panic!("resource refusal")
-    };
-    assert_eq!(limit.operation, "catia_ordered_face_constraint_work");
-    assert_eq!(limit.limit, 64);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+    .expect("preparation does not enumerate whole-mesh alternatives")
+    .expect("locally viable face domains");
+    assert!(ctx.resource_refusal().is_none());
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| quotient.root_count(ctx))
@@ -1031,7 +1027,7 @@ fn ordered_face_options_preflight_exact_signature_work() {
 }
 
 #[test]
-fn ordered_cycle_support_propagates_domain_forced_directions() {
+fn ordered_cycle_final_search_retains_domain_forced_directions() {
     catia_test_context!(ctx);
     let domains = [MeshFaceBoundaryDomain::Ordered(vec![
         MeshFaceBoundaryAssignment {
@@ -1070,18 +1066,20 @@ fn ordered_cycle_support_propagates_domain_forced_directions() {
     .expect("service resource budget")
     .expect("supported cycle quotient");
 
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 0))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 3))
-            .expect("service forest traversal")
-    );
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 1))
-            .expect("service forest traversal"),
-        crate::test_support::with_service_context(|ctx| quotient.find(ctx, 2))
-            .expect("service forest traversal")
-    );
+    let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
+        &candidates,
+        &[[0, 0]; 2],
+        1,
+        2,
+        Some(&domains),
+        Some(&quotient),
+        None,
+        &|_| Ok(true),
+    )
+    .expect("service resource budget")
+    .expect("the final search retains the correlated cycle");
+    assert_eq!(solutions, vec![vec![[0, 1], [0, 1]]]);
 }
 
 #[test]
