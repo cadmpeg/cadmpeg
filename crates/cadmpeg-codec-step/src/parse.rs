@@ -1182,34 +1182,24 @@ impl Parser<'_, '_, '_> {
             }
             let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget)
                 .map_err(|error| error.into_parse_error(0))?;
-            for anchor in self
-                .budget
-                .admit_iter(anchors.as_mut_slice(), "STEP anchor resolution traversal")?
-            {
+            let mut resolving_anchors = anchors.iter_mut();
+            while let Some(anchor) = self.budget.next_charged(&mut resolving_anchors, "STEP anchor resolution traversal")? {
                 anchor.value = resolver
                     .resolve_root(&anchor.value)
                     .map_err(|error| error.into_parse_error(0))?;
-                for tag in self.budget.admit_iter(
-                    anchor.tags.as_mut_slice(),
-                    "STEP anchor tag resolution traversal",
-                )? {
+                let mut tags = anchor.tags.iter_mut();
+                while let Some(tag) = self.budget.next_charged(&mut tags, "STEP anchor tag resolution traversal")? {
                     tag.value = resolver
                         .resolve_root(&tag.value)
                         .map_err(|error| error.into_parse_error(0))?;
                 }
             }
-            for (_, record) in self
-                .budget
-                .admit_iter(&mut records, "STEP mutable record traversal")?
-            {
-                for partial in self
-                    .budget
-                    .admit_iter(&mut record.partials[..], "STEP mutable partial traversal")?
-                {
-                    for value in self.budget.admit_iter(
-                        partial.parameters.as_mut_slice(),
-                        "STEP mutable parameter traversal",
-                    )? {
+            let mut resolving_records = records.iter_mut();
+            while let Some((_, record)) = self.budget.next_charged(&mut resolving_records, "STEP mutable record traversal")? {
+                let mut partials = record.partials.iter_mut();
+                while let Some(partial) = self.budget.next_charged(&mut partials, "STEP mutable partial traversal")? {
+                    let mut parameters = partial.parameters.iter_mut();
+                    while let Some(value) = self.budget.next_charged(&mut parameters, "STEP mutable parameter traversal")? {
                         *value = resolver
                             .resolve_root(value)
                             .map_err(|error| error.into_parse_error(record.span.start))?;
@@ -1291,11 +1281,8 @@ impl Parser<'_, '_, '_> {
         let mut reference_storage = self.budget.reserve_scoped(0, "step reference lookup")?;
         let mut refs = Vec::new();
         let mut value_refs = Vec::new();
-        for anchor in self
-            .budget
-            .admit_iter(&anchors[..], "STEP exchange traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        let mut validating_anchors = anchors.iter();
+        while let Some(anchor) = self.budget.next_charged(&mut validating_anchors, "STEP exchange traversal")? {
             refs.clear();
             value_refs.clear();
             reference_storage.with_storage(|| {
@@ -1331,11 +1318,8 @@ impl Parser<'_, '_, '_> {
             )? {
                 return self.err("unresolved value instance reference in anchor binding");
             }
-            for tag in self
-                .budget
-                .admit_iter(&anchor.tags[..], "STEP exchange traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            let mut tags = anchor.tags.iter();
+            while let Some(tag) = self.budget.next_charged(&mut tags, "STEP exchange traversal")? {
                 refs.clear();
                 value_refs.clear();
                 reference_storage.with_storage(|| {
@@ -1373,12 +1357,8 @@ impl Parser<'_, '_, '_> {
                 }
             }
         }
-        for record in self
-            .budget
-            .admit_iter(&(records), "STEP exchange map traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .map(|(_, value)| value)
-        {
+        let mut validating_records = records.values();
+        while let Some(record) = self.budget.next_charged(&mut validating_records, "STEP exchange map traversal")? {
             refs.clear();
             value_refs.clear();
             for partial in self
@@ -1962,10 +1942,8 @@ fn validate_header(
     let mut normalized_storage =
         budget.reserve_scoped(0, "STEP schema identifier uniqueness storage")?;
     let mut normalized_identifiers = BTreeSet::new();
-    for value in budget.admit_iter(
-        identifiers.as_slice(),
-        "STEP schema identifier validation traversal",
-    )? {
+    let mut identifiers = identifiers.iter();
+    while let Some(value) = budget.next_charged(&mut identifiers, "STEP schema identifier validation traversal")? {
         let Value::String(bytes) = value else {
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
@@ -2066,11 +2044,8 @@ fn validate_header_sections(
         budget.reserve_scoped(0, "STEP header section uniqueness storage")?;
     let mut language_sections = BTreeSet::new();
     let mut context_sections = BTreeSet::new();
-    for record in budget
-        .admit_iter(&header[..], "STEP validate header sections traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .skip(3)
-    {
+    let mut optional = header.get(3..).unwrap_or_default().iter();
+    while let Some(record) = budget.next_charged(&mut optional, "STEP validate header sections traversal")? {
         if record.name.starts_with('!') {
             user_defined = true;
             continue;
@@ -2228,10 +2203,8 @@ fn admit_file_population(
         Value::Omitted => Ok(BTreeSet::new()),
         Value::List(sections) if !sections.is_empty() => {
             let mut names = BTreeSet::new();
-            for section in budget.admit_iter(
-                sections.as_slice(),
-                "STEP file population section traversal",
-            )? {
+            let mut sections = sections.iter();
+            while let Some(section) = budget.next_charged(&mut sections, "STEP file population section traversal")? {
                 let Some(section) = decoded_string(section, implementation_level, budget)? else {
                     return invalid("FILE_POPULATION has invalid parameters");
                 };
@@ -2616,16 +2589,12 @@ fn validate_header_data_references(
     references: &[HeaderDataReferences],
     data_section_names: &BTreeSet<String>,
 ) -> Result<(), ValidationError> {
-    for reference in budget
-        .admit_iter(references, "STEP header DATA reference traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    let mut references = references.iter();
+    while let Some(reference) = budget.next_charged(&mut references, "STEP header DATA reference traversal")? {
         match reference {
             HeaderDataReferences::FilePopulation(sections) => {
-                for section in budget
-                    .admit_iter(sections, "STEP FILE_POPULATION section traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                {
+                let mut sections = sections.iter();
+                while let Some(section) = budget.next_charged(&mut sections, "STEP FILE_POPULATION section traversal")? {
                     if !budget.contains_btree_set(
                         data_section_names,
                         section,
@@ -2966,11 +2935,8 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     .budget
                     .collection_vec(values.len(), "step_anchor_list_items")
                     .map_err(ResolveError::Resource)?;
-                for value in self
-                    .budget
-                    .admit_iter(values.as_slice(), "STEP resolve value traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                {
+                let mut values = values.iter();
+                while let Some(value) = self.budget.next_charged(&mut values, "STEP resolve value traversal")? {
                     let remaining = budget
                         .checked_sub(expanded_nodes)
                         .ok_or_else(|| self.node_limit_error())?;
@@ -3371,8 +3337,9 @@ fn references(
         value,
         "step_parse_reference_pending",
     )?;
-    while let Some(value) = pending.pop() {
+    while !pending.is_empty() {
         budget.charge_work(1, "STEP value worklist traversal")?;
+        let Some(value) = pending.pop() else { break; };
         match value {
             Value::Reference(id) => {
                 budget.push_vec(entity_out, *id, "step_parse_reference_ids")?;
@@ -3422,7 +3389,10 @@ fn contains_class3_occurrence(
             |value| contains_class3_occurrence(budget, value),
             "STEP class-3 occurrence traversal",
         ),
-        Value::Typed(_, value) => contains_class3_occurrence(budget, value),
+        Value::Typed(_, value) => {
+            budget.charge_work(1, "STEP typed class-3 occurrence traversal")?;
+            contains_class3_occurrence(budget, value)
+        },
         _ => Ok(false),
     }
 }
@@ -3436,7 +3406,10 @@ fn contains_resource_value(budget: &DecodeContext<'_>, value: &Value) -> Result<
             |value| contains_resource_value(budget, value),
             "STEP resource value traversal",
         ),
-        Value::Typed(_, value) => contains_resource_value(budget, value),
+        Value::Typed(_, value) => {
+            budget.charge_work(1, "STEP typed resource value traversal")?;
+            contains_resource_value(budget, value)
+        },
         _ => Ok(false),
     }
 }
