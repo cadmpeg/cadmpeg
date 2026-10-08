@@ -60,13 +60,13 @@ fn flex_reads_only_the_operand_of_its_selected_form() {
         match (form, mode) {
             (Some(FlexForm::Bending), FlexMode::Bending { angle })
             | (Some(FlexForm::Twisting), FlexMode::Twisting { angle }) => {
-                assert_eq!(angle.get(), 1.0)
+                assert_eq!(angle.get(), 1.0);
             }
             (Some(FlexForm::Tapering), FlexMode::Tapering { factor }) => {
-                assert_eq!(factor.get(), 2.0)
+                assert_eq!(factor.get(), 2.0);
             }
             (Some(FlexForm::Stretching), FlexMode::Stretching { distance }) => {
-                assert_eq!(distance.get(), 1.0)
+                assert_eq!(distance.get(), 1.0);
             }
             (None, FlexMode::Unresolved { form: None }) => {}
             (_, mode) => panic!("unexpected flex mode: {mode:?}"),
@@ -85,4 +85,3 @@ fn flex_reads_only_the_operand_of_its_selected_form() {
         }
     }
 }
-

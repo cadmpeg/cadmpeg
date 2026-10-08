@@ -66,4 +66,3 @@ fn empty_composite_segments_do_not_read_closed_flag() {
             .is_none()
     );
 }
-
