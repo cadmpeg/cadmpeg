@@ -986,6 +986,7 @@ fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
     }
 }
 mod expression_admission;
+mod external_references;
 mod material_and_external_records;
 mod material_catalog_admission;
 mod record_area_admission;
