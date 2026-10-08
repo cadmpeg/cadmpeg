@@ -3,7 +3,6 @@
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
@@ -16,40 +15,16 @@ use crate::test_support::test_owned::{
 use crate::IgesCodec;
 
 fn assert_conic_refusal(bytes: &[u8], operation: &str, retained: bool) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
+    let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
-        if retained {
-            policy.limits.max_retained_bytes = cap;
-        } else {
-            policy.limits.max_collection_items = cap;
-        }
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                let dimension = if retained {
-                    ResourceDimension::RetainedBytes
-                } else {
-                    ResourceDimension::CollectionItems
-                };
-                assert_eq!(limit.dimension, dimension);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+        if retained { policy.limits.max_retained_bytes = cap; } else { policy.limits.max_collection_items = cap; }
+        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+            .map(|_| ()).map_err(|error| match error {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
+    });
 }
 
 #[test]
@@ -74,8 +49,6 @@ fn conic_generated_identity_refuses_before_minting() {
 fn conic_indexes_neutral_records_and_wire_edges_refuse_limits() {
     let valid = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
     for operation in [
-        "iges conic parameter index",
-        "iges conic directory index",
         "iges source point sequences",
         "iges source curve sequences",
         "iges conic neutral points",

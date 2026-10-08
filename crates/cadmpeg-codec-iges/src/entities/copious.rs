@@ -219,7 +219,7 @@ pub(super) fn project(
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<CopiousProjectionOutcome, CodecError> {
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();

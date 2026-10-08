@@ -136,7 +136,7 @@ fn topology_vertex<'ids>(
     vertex_lists: &BTreeMap<u32, Vec<Point3>>,
     stem: &crate::ids::Stem,
     vertex_key: (u32, usize),
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<&'ids VertexId>, CodecError> {
     let (list, index) = vertex_key;
@@ -317,7 +317,10 @@ fn resolve_pcurve_uses<'a>(
     support: &SurfaceSupport<'_>,
     endpoints: PcurveEndpointCheck,
     ctx: &'a DecodeContext<'_>,
-    model_index: &mut Option<cadmpeg_ir::index::DecodeModelIndex<'a, 'a>>,
+    (model_index, composite): (
+        &mut Option<cadmpeg_ir::index::DecodeModelIndex<'a, 'a>>,
+        (&mut Option<super::composite::CompositeIndex>, &mut ScopedReservation<'_>),
+    ),
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
         start: expected_start,
@@ -332,6 +335,13 @@ fn resolve_pcurve_uses<'a>(
         *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source, ctx)?);
     }
     let index = model_index.as_ref();
+    let (composite_index, composite_storage) = composite;
+    if composite_index.is_none() {
+        *composite_index = Some(composite_storage.with_storage(|| super::composite::CompositeIndex::from_ir(source, ctx))?);
+    } else if let Some(index) = composite_index.as_mut() {
+        composite_storage.with_storage(|| index.refresh_topology(source, ctx))?;
+    }
+    let composite_index = composite_index.as_ref().ok_or_else(|| CodecError::malformed("IGES B-rep composite index is absent"))?;
     let point_on_surface = |u, v| {
         let evaluation = if let Some(index) = index {
             cadmpeg_ir::eval::model_surface_point_by_id(
@@ -364,7 +374,7 @@ fn resolve_pcurve_uses<'a>(
             },
             Some(tolerance),
             ctx,
-            None,
+            composite_index,
         )?
         else {
             return Ok(None);
@@ -412,13 +422,15 @@ pub(super) fn project(
     ),
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let factor = global.length_factor_mm();
     let tolerance = global.minimum_resolution_mm();
     let mut definition_storage = ctx.reserve_scoped(0, "iges B-rep definitions")?;
+    let mut composite_storage = ctx.reserve_scoped(0, "iges B-rep composite index")?;
+    let mut composite_index = None;
     // Successful record reservations live as long as the definition tables.
     let mut definition_reservations = Vec::new();
     let mut vertex_lists = BTreeMap::<u32, Vec<Point3>>::new();
@@ -1346,7 +1358,7 @@ pub(super) fn project(
                                     tolerance,
                                 },
                                 ctx,
-                                &mut model_index,
+                                (&mut model_index, (&mut composite_index, &mut composite_storage)),
                             ) {
                                 Ok(resolved) => resolved,
                                 Err(error) => {
@@ -1458,7 +1470,7 @@ pub(super) fn project(
                                 tolerance,
                             },
                             ctx,
-                            &mut model_index,
+                            (&mut model_index, (&mut composite_index, &mut composite_storage)),
                         ) {
                             Ok(resolved) => resolved,
                             Err(error) => {

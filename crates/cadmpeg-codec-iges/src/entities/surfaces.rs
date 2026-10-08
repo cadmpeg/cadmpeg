@@ -366,7 +366,7 @@ fn interval_certified_linear_bezier(
                 values[control] = value;
                 uncertainties[control] = uncertainty;
             }
-            if !declared_affine_progression(&values, &uncertainties) {
+            if !declared_affine_progression(&values, &uncertainties, ctx)? {
                 return Ok(false);
             }
         }
@@ -456,7 +456,7 @@ fn bounded_evaluable_curve<'a>(
     index: &CompositeIndex,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(&'a CurveGeometry, [f64; 2])>, CodecError> {
-    let Some(curve) = index.curve_by_id(ir, curve_id) else {
+    let Some(curve) = index.curve_by_id(ir, curve_id, ctx)? else {
         return Ok(None);
     };
     let geometry = &curve.geometry;
@@ -1645,7 +1645,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
-    sequences: &mut super::geometry::SourceSequences,
+    sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
     // The transform resolver requires sequence maps. Their storage is local to this projection.
     let mut transform_storage = ctx.reserve_scoped(0, "iges surfaces transform indexes")?;
@@ -1928,8 +1928,8 @@ pub(super) fn project(
                 crate::ids::curve_admitted(&crate::ids::Stem::directory(second_sequence), ctx)?,
             ))
         })?;
-        let first_curve = composite_index.curve_by_id(ir, &first_id);
-        let second_curve = composite_index.curve_by_id(ir, &second_id);
+        let first_curve = composite_index.curve_by_id(ir, &first_id, ctx)?;
+        let second_curve = composite_index.curve_by_id(ir, &second_id, ctx)?;
         let rails = (
             match first_curve {
                 Some(curve) => rail_storage
@@ -2395,7 +2395,7 @@ pub(super) fn project(
         )?
         .unwrap_or(cached_interval);
         let source_interval = composite_index
-            .curve_by_id(ir, &directrix_id)
+            .curve_by_id(ir, &directrix_id, ctx)?
             .map(|curve| &curve.geometry)
             .map(|geometry| source_parameter_interval(geometry, cached_interval, ctx))
             .transpose()?
@@ -2733,7 +2733,7 @@ pub(super) fn project(
         let axis_id = axis_storage.with_storage(|| {
             crate::ids::curve_admitted(&crate::ids::Stem::directory(axis_sequence), ctx)
         })?;
-        let Some(axis_curve) = composite_index.curve_by_id(ir, &axis_id) else {
+        let Some(axis_curve) = composite_index.curve_by_id(ir, &axis_id, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2949,7 +2949,7 @@ pub(super) fn project(
         )?
         .unwrap_or(cached_interval);
         let source_interval = composite_index
-            .curve_by_id(ir, &generatrix_id)
+            .curve_by_id(ir, &generatrix_id, ctx)?
             .map(|curve| &curve.geometry)
             .map(|geometry| source_parameter_interval(geometry, cached_interval, ctx))
             .transpose()?
