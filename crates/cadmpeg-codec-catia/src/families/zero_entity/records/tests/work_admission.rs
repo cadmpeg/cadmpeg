@@ -169,3 +169,73 @@ fn constant_coordinate_search_stops_at_first_different_pole() {
         );
     }
 }
+
+#[test]
+fn fixed_support_retains_final_knots_and_poles() {
+    let bytes = super::support_pcurve_record(0x71);
+    let record = super::super::ZeroEntityRecord {
+        pos: 0,
+        end: bytes.len(),
+        tag: [0x21, 0x71],
+        ordinal: 1,
+    };
+    // The linear support keeps four f64 knots and two finite 2D poles.
+    let kept_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<f64>() + 2 * std::mem::size_of::<cadmpeg_ir::units::FinitePoint2>(),
+    );
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::zero_entity_support_pcurve(
+            ctx,
+            &bytes,
+            record,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    };
+    assert!(crate::test_support::with_retained_limit(kept_bytes, run)
+        .expect("exact final lane storage fits")
+        .is_some());
+    crate::test_support::with_retained_limit(kept_bytes - 1, |ctx| {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = run(ctx) else {
+            panic!("both final lanes must be retained");
+        };
+        assert_eq!(limit.operation, "catia_zero_support_pcurve_workspace");
+        assert_eq!(limit.additional, kept_bytes);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
+
+#[test]
+fn nurbs_surface_retains_both_final_knot_lanes() {
+    let bytes = super::nurbs_carrier(
+        [0x34, 0xc8],
+        &[0.0, 1.0, 2.0, 3.0, 4.0],
+        &[4, 1, 1, 1, 4],
+        &[0.0, 1.0, 2.0, 3.0, 4.0],
+        &[4, 1, 1, 1, 4],
+    );
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let result = super::super::zero_entity_nurbs_surface(
+            ctx,
+            &bytes,
+            0,
+            &mut crate::nurbs::LaneRefusals::new(),
+        );
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    };
+    assert!(crate::test_support::with_service_context(run)
+        .expect("valid surface fits the service budget")
+        .is_some());
+    let result =
+        crate::test_support::with_retained_refusal(&[], "catia_zero_nurbs_kept_knots", run);
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+        panic!("both knot lanes must reach retained admission");
+    };
+    // Each axis has seven poles and degree three, hence eleven knots.
+    assert_eq!(
+        limit.additional,
+        cadmpeg_core::decode::u64_from_index(2 * 11 * std::mem::size_of::<f64>()),
+    );
+}

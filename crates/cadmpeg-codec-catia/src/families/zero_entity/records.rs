@@ -1867,13 +1867,19 @@ fn zero_entity_support_pcurve(
                 if derived_control_count != u32::try_from(control_count).ok()? {
                     return None;
                 }
-                let (knots, _knot_storage) = match ctx
-                    .with_scoped_storage("catia_zero_support_expanded_knot_workspace", || {
-                        zero_entity_expand_knots(ctx, distinct_knots, expected_multiplicities)
-                    }) {
+                let knot_count = derived_control_count.checked_add(degree.checked_add(1)?)?;
+                let mut knots = match ctx.collection_vec(
+                    index_from_u32(knot_count),
+                    "catia_zero_support_expanded_knots",
+                ) {
                     Ok(value) => value,
                     Err(error) => return Some(Err(error)),
                 };
+                // The tag fixes at most eight pairs and four repeats per knot.
+                for (knot, &multiplicity) in distinct_knots.iter().zip(expected_multiplicities) {
+                    let repeated = [knot.get(); 4];
+                    knots.extend_from_slice(repeated.get(..index_from_u32(multiplicity))?);
+                }
                 let pole_start = record.pos.checked_add(pole_start)?;
                 let pole_end = pole_start.checked_add(control_count.checked_mul(16)?)?;
                 let pole_bytes = data.get(pole_start..pole_end)?;
@@ -2855,7 +2861,7 @@ fn zero_entity_nurbs_surface(
     record: usize,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<SurfaceGeometry>, CodecError> {
-    let (layout, mut workspace) = ctx
+    let (layout, _workspace) = ctx
         .with_scoped_storage("catia_zero_nurbs_layout_workspace", || {
             zero_entity_nurbs_layout(ctx, data, record)
         })?;
@@ -2901,10 +2907,12 @@ fn zero_entity_nurbs_surface(
         }
         row_storage.with_storage(|| ctx.push_vec(&mut rows, row, "catia_zero_nurbs_pole_rows"))?;
     }
-    let u_knots = workspace
-        .with_storage(|| zero_entity_expand_knots(ctx, &layout.u_distinct, &layout.u_mults))?;
-    let v_knots = workspace
-        .with_storage(|| zero_entity_expand_knots(ctx, &layout.v_distinct, &layout.v_mults))?;
+    let ((u_knots, v_knots), knot_storage) =
+        ctx.with_scoped_storage("catia_zero_nurbs_kept_knots", || {
+            let u_knots = zero_entity_expand_knots(ctx, &layout.u_distinct, &layout.u_mults)?;
+            let v_knots = zero_entity_expand_knots(ctx, &layout.v_distinct, &layout.v_mults)?;
+            Ok::<_, CodecError>((u_knots, v_knots))
+        })?;
     let surface = crate::nurbs::note_refusal(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
@@ -2922,6 +2930,7 @@ fn zero_entity_nurbs_surface(
     })?;
     if surface.is_some() {
         row_storage.commit()?;
+        knot_storage.commit()?;
     }
     Ok(surface)
 }
@@ -3333,24 +3342,23 @@ mod tests {
             tag: [0x21, 0x99],
             ordinal: 1,
         };
-        for operation in ["catia_zero_knot_expansion_emit", "IR NURBS knot order"] {
-            let result = crate::test_support::with_work_refusal(operation, |ctx| {
-                let result = super::zero_entity_support_pcurve(
-                    ctx,
-                    &bytes,
-                    record,
-                    &mut crate::nurbs::LaneRefusals::new(),
-                );
-                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-                }
-                result
-            });
-            assert!(
-                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == operation)
+        const OPERATION: &str = "IR NURBS knot order";
+        let result = crate::test_support::with_work_refusal(OPERATION, |ctx| {
+            let result = super::zero_entity_support_pcurve(
+                ctx,
+                &bytes,
+                record,
+                &mut crate::nurbs::LaneRefusals::new(),
             );
-        }
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        });
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == OPERATION)
+        );
     }
 
     #[test]
@@ -3757,7 +3765,7 @@ mod tests {
         let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = limited else {
             panic!("support knot lane must refuse the collection limit");
         };
-        assert_eq!(error.operation, "catia_zero_knot_expansion_emit");
+        assert_eq!(error.operation, "catia_zero_support_expanded_knots");
     }
 
     #[test]
