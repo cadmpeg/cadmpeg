@@ -73,7 +73,9 @@ fn boolean_tree_is_valid(
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let _depth = ctx.enter_nested("iges boolean tree validation")?;
-    if let Some(valid) = validation.memo.get(&sequence) {
+    if let Some(valid) = ctx.get_btree_map(
+        &validation.memo, &sequence, "iges boolean validity memo lookup",
+    )? {
         return Ok(*valid);
     }
     let mut path_storage = ctx.reserve_scoped(0, "iges Boolean path frame")?;
@@ -86,22 +88,32 @@ fn boolean_tree_is_valid(
     })? {
         return Ok(false);
     }
-    let Some(entry) = entries.get(&sequence) else {
-        validation.path.remove(&sequence);
+    let Some(entry) = ctx.get_btree_map(
+        entries, &sequence, "iges boolean directory lookup",
+    )? else {
+        ctx.remove_btree_set(&mut validation.path, &sequence, "iges boolean path removal")?;
         return Ok(false);
     };
-    let Some(terms) = boolean_definitions.get(&sequence) else {
-        validation.path.remove(&sequence);
+    let Some(terms) = ctx.get_btree_map(
+        boolean_definitions, &sequence, "iges boolean definition lookup",
+    )? else {
+        ctx.remove_btree_set(&mut validation.path, &sequence, "iges boolean path removal")?;
         return Ok(false);
     };
     let mut has_direct_brep = false;
     let mut operands_valid = true;
     let mut terms = terms.iter();
     while let Some(term) = ctx.next_charged(&mut terms, "iges boolean term validation")? {
-        has_direct_brep |= matches!(term, BooleanTerm::Operand(target) if entries.get(target).is_some_and(|target| target.entity_type == 186));
+        let target = match term {
+            BooleanTerm::Operand(sequence) => ctx.get_btree_map(
+                entries, sequence, "iges boolean operand directory lookup",
+            )?,
+            BooleanTerm::Operation => None,
+        };
+        has_direct_brep |= target.is_some_and(|target| target.entity_type == 186);
         let valid = match term {
             BooleanTerm::Operation => true,
-            BooleanTerm::Operand(target_sequence) => match entries.get(target_sequence) {
+            BooleanTerm::Operand(target_sequence) => match target {
                 Some(target)
                     if matches!(
                         target.entity_type,
@@ -127,7 +139,7 @@ fn boolean_tree_is_valid(
         }
     }
     let valid = operands_valid && has_direct_brep == (entry.form == 1);
-    validation.path.remove(&sequence);
+    ctx.remove_btree_set(&mut validation.path, &sequence, "iges boolean path removal")?;
     validation.storage.with_storage(|| {
         ctx.insert_btree_map(
             &mut validation.memo,
@@ -156,7 +168,9 @@ pub(super) fn project(
             matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
         })
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(
+            records, &entry.sequence, "iges csg parameter record lookup",
+        )?.copied() else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -337,7 +351,9 @@ pub(super) fn project(
                 || (entry.entity_type == 164 && entry.form == 0)
         })
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(
+            records, &entry.sequence, "iges csg parameter record lookup",
+        )?.copied() else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -489,7 +505,9 @@ pub(super) fn project(
         .admit_iter(directory, "iges csg directory traversal")?
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(
+            records, &entry.sequence, "iges csg parameter record lookup",
+        )?.copied() else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -583,7 +601,8 @@ pub(super) fn project(
     for (sequence, _) in
         ctx.admit_iter(&boolean_definitions, "iges Boolean definition validation")?
     {
-        let entry = entries[sequence];
+        let entry = ctx.get_btree_map(entries, sequence, "iges boolean directory lookup")?
+            .ok_or_else(|| CodecError::malformed("Boolean index has no directory entry"))?;
         let operands_valid = boolean_tree_is_valid(
             *sequence,
             entries,
@@ -629,7 +648,9 @@ pub(super) fn project(
         .admit_iter(directory, "iges csg directory traversal")?
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx.get_btree_map(
+            records, &entry.sequence, "iges csg parameter record lookup",
+        )?.copied() else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -638,12 +659,15 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(_tree) = pointer(record, 1).filter(|sequence| {
-            decoded.contains(sequence)
-                && entries
-                    .get(sequence)
-                    .is_some_and(|target| target.entity_type == 180)
-        }) else {
+        let tree_valid = match pointer(record, 1) {
+            Some(sequence) => ctx.contains_btree_set(
+                &decoded, &sequence, "iges selected component decoded lookup",
+            )? && ctx.get_btree_map(
+                entries, &sequence, "iges selected component directory lookup",
+            )?.is_some_and(|target| target.entity_type == 180),
+            None => false,
+        };
+        if !tree_valid {
             super::push_entity_loss(
                 ctx,
                 &mut losses,

@@ -631,3 +631,25 @@ fn csg_profile_indexes_and_boolean_scans_preserve_work_refusals() {
         assert_csg_refusal(&bytes, operation, ResourceDimension::WorkUnits);
     }
 }
+
+#[test]
+fn csg_ordered_queries_preserve_work_refusals() {
+    let nested = nested_brep_boolean_file();
+    for operation in [
+        "iges csg parameter record lookup",
+        "iges boolean directory lookup",
+        "iges boolean definition lookup",
+        "iges boolean operand directory lookup",
+        "iges boolean validity memo lookup",
+        "iges boolean path removal",
+    ] {
+        assert_csg_refusal(&nested, operation, ResourceDimension::WorkUnits);
+    }
+    let selected = procedural_and_boolean_solids_file();
+    for operation in [
+        "iges selected component decoded lookup",
+        "iges selected component directory lookup",
+    ] {
+        assert_csg_refusal(&selected, operation, ResourceDimension::WorkUnits);
+    }
+}
