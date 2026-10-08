@@ -1092,8 +1092,14 @@ fn next_section_component(
     let mut pending = std::collections::VecDeque::new();
     queue_storage
         .with_storage(|| ctx.push_back(&mut pending, seed, "creo section pending seed"))?;
-    while let Some(variable) = pending.pop_front() {
-        ctx.charge_work(1, "creo section coordinate graph visits")?;
+    while !pending.is_empty() {
+        let Some(variable) = ctx
+            .next_charged(&mut pending.iter(), "creo section coordinate graph visits")?
+            .copied()
+        else {
+            break;
+        };
+        pending.pop_front();
         for &neighbor in ctx.admit_iter(&adjacency[variable], "creo component adjacency links")? {
             if ctx.insert_btree_set(&mut component, neighbor, "creo section component neighbors")? {
                 ctx.remove_btree_set(remaining, &neighbor, "creo section remaining remove")?;
