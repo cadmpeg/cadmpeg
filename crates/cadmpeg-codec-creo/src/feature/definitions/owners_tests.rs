@@ -1518,33 +1518,43 @@ fn definition_identity_utf8_refuses_work() {
 }
 
 #[test]
-fn depdb_section_identity_utf8_refuses_work() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo UTF-8 validation",
+fn depdb_section_identity_ascii_parses_after_bounded_search() {
+    let starts = crate::test_support::assert_work_boundaries(
+        &[
+            "creo DEPDB section marker traversal",
+            "find Creo feature definition field",
+        ],
         |ctx| super::depdb_gsec2d_starts(ctx, b"gsec2d_ptr\0name\0S2D1\0"),
     );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation")
-    );
+    assert_eq!(starts.len(), 1);
+    assert_eq!(starts[0].offset, 0);
+    assert_eq!(starts[0].id, std::num::NonZeroU32::new(1));
+    assert_eq!(starts[0].owner_override, None);
+    assert!(!starts[0].positional);
+
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        super::depdb_gsec2d_starts(ctx, b"gsec2d_ptr\0name\0S2D4294967296\0")
+    })
+    .expect("overflowing ASCII section ID is rejected")
+    .is_empty());
 }
 
 #[test]
-fn depdb_definition_identity_utf8_refuses_work() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo UTF-8 validation",
+fn depdb_definition_identity_ascii_parses_after_bounded_search() {
+    let definition = crate::test_support::assert_work_boundaries(
+        &[
+            "creo standalone section search",
+            "creo standalone section uniqueness",
+            "find Creo feature definition field",
+        ],
         |ctx| super::depdb_section_definition(ctx, b"gsec2d_ptr\0name\0S2D1\0", None),
     );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation")
+    let definition = definition.expect("bounded DEPDB section is recognized");
+    assert_eq!(
+        definition.identity.schema_id(),
+        std::num::NonZeroU32::new(1)
     );
+    assert_eq!(definition.identity.owner_feature_id(), None);
 }
 
 fn bind_definition_owners(

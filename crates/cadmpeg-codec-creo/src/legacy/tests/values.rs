@@ -309,6 +309,8 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
                 }),
             ],
             continuation: None,
+            complete: true,
+            accepted_value_indices: vec![0, 1],
         }
     );
     assert!(
@@ -358,6 +360,8 @@ fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
                 text: "only".to_string()
             })],
             continuation: None,
+            complete: false,
+            accepted_value_indices: vec![0],
         }
     );
 }
@@ -383,6 +387,7 @@ fn array_completeness_wire_retains_continuation_failures() {
     let payload = ObjectPayload::Array {
         dimensions: vec![1, 2],
         elements: vec!["first".into(), "second".into()],
+        complete: true,
     };
     assert_eq!(
         serde_json::to_value(payload).unwrap(),
@@ -390,6 +395,36 @@ fn array_completeness_wire_retains_continuation_failures() {
             "form": "array", "dimensions": [1, 2], "elements": ["first", "second"],
             "complete": true
         })
+    );
+}
+
+#[test]
+fn type_10_array_wire_uses_admitted_supported_source_indices() {
+    let data = b"@names 1 10\n0 1 [3]\n1 1 first\n1 1 skipped\n$continued\n1 1 last\n";
+    let persistence = crate::test_support::assert_work_boundaries(
+        &["creo legacy string child traversal"],
+        |ctx| super::super::scan(ctx, data, std::iter::once(0..data.len())),
+    );
+
+    assert_eq!(persistence.incomplete_string_array_count, 1);
+    assert_eq!(persistence.unresolved_string_value_count, 1);
+    let StringPayload::Array {
+        accepted_value_indices,
+        complete,
+        ..
+    } = &persistence.string_values[0].payload
+    else {
+        panic!("three-row type-10 array is retained");
+    };
+    assert_eq!(accepted_value_indices, &[0, 2]);
+    assert!(!*complete);
+    assert_eq!(
+        serde_json::to_value(&persistence.string_values[0].payload).unwrap(),
+        serde_json::json!({"form": "array", "dimensions": [3],
+            "values": [
+                {"form": "utf8", "text": "first"},
+                {"form": "utf8", "text": "last"}
+            ], "complete": false})
     );
 }
 
@@ -422,6 +457,11 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
         crate::decode::with_test_decode_ctx(|ctx| persistence.objects[1].payload.is_complete(ctx))
             .expect("complete array admission")
     );
+    assert!(
+        serde_json::to_value(&persistence.objects[1].payload).unwrap()["complete"]
+            .as_bool()
+            .expect("serialized object completeness")
+    );
     assert_eq!(persistence.unresolved_object_value_count, 0);
     assert_eq!(persistence.objects[1].parent, Some(root_offset));
     assert_eq!(
@@ -432,6 +472,7 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
                 object_node_id(first_child_offset),
                 object_node_id(second_child_offset),
             ],
+            complete: true,
         }
     );
     assert_eq!(persistence.integer_values.rows.len(), 1);
@@ -455,6 +496,11 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
     assert!(
         !crate::decode::with_test_decode_ctx(|ctx| persistence.objects[0].payload.is_complete(ctx))
             .expect("complete array admission")
+    );
+    assert!(
+        !serde_json::to_value(&persistence.objects[0].payload).unwrap()["complete"]
+            .as_bool()
+            .expect("serialized object incompleteness")
     );
     assert_eq!(persistence.unresolved_object_value_count, 1);
     assert!(matches!(

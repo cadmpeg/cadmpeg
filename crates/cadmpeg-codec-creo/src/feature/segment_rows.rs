@@ -247,6 +247,7 @@ impl SegmentRows {
             .filter_map(|(&id, ordinal)| ordinal.is_none().then_some(id))
     }
 
+    #[cfg(test)]
     fn select<'a, T: 'a>(
         &'a self,
         select: impl Fn(&'a SegmentRow) -> Option<&'a T>,
@@ -270,6 +271,7 @@ impl SegmentRows {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn ordinary(&self) -> impl Iterator<Item = &FeatureSegment> {
         self.select(|row| match row {
             SegmentRow::Ordinary(row) => Some(row),
@@ -277,6 +279,7 @@ impl SegmentRows {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn circles(&self) -> impl Iterator<Item = &FeatureCircleSegment> {
         self.select(|row| match row {
             SegmentRow::Circle(row) => Some(row),
@@ -284,6 +287,7 @@ impl SegmentRows {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn points(&self) -> impl Iterator<Item = &FeaturePointSegment> {
         self.select(|row| match row {
             SegmentRow::Point(row) => Some(row),
@@ -291,6 +295,7 @@ impl SegmentRows {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn centered_lines(&self) -> impl Iterator<Item = &FeatureCenteredLineSegment> {
         self.select(|row| match row {
             SegmentRow::CenteredLine(row) => Some(row),
@@ -298,6 +303,7 @@ impl SegmentRows {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn reference_lines(&self) -> impl Iterator<Item = &FeatureReferenceLineSegment> {
         self.select(|row| match row {
             SegmentRow::ReferenceLine(row) => Some(row),
@@ -305,6 +311,7 @@ impl SegmentRows {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn bounded_curves(&self) -> impl Iterator<Item = &FeatureBoundedCurveSegment> {
         self.select(|row| match row {
             SegmentRow::BoundedCurve(row) => Some(row),
@@ -312,6 +319,7 @@ impl SegmentRows {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn conics(&self) -> impl Iterator<Item = &FeatureConicSegment> {
         self.select(|row| match row {
             SegmentRow::Conic(row) => Some(row),
@@ -319,6 +327,7 @@ impl SegmentRows {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn opaque(&self) -> impl Iterator<Item = &FeatureOpaqueSegment> {
         self.select(|row| match row {
             SegmentRow::Opaque(row) => Some(row),

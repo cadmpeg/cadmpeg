@@ -368,6 +368,7 @@ fn full_data_dimension_rows<'a>(
     let ObjectPayload::Array {
         dimensions,
         elements,
+        ..
     } = &array.payload
     else {
         return Ok(None);
@@ -568,6 +569,7 @@ mod tests {
             ObjectPayload::Array {
                 dimensions: vec![u32::try_from(elements.len()).expect("test extent")],
                 elements,
+                complete: true,
             },
         ));
         Persistence {
