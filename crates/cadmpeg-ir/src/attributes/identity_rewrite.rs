@@ -25,9 +25,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             None => None,
         };
         match kind {
-            Some(kind)
-                if ctx.equal_bytes(kind.as_bytes(), b"body", "match native attribute kind")? =>
-            {
+            Some("body") => {
                 crate::schema::rewrite::typed::native_fields::rewrite_field(
                     ctx,
                     value,
@@ -39,9 +37,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     },
                 )
             }
-            Some(kind)
-                if ctx.equal_bytes(kind.as_bytes(), b"face", "match native attribute kind")? =>
-            {
+            Some("face") => {
                 crate::schema::rewrite::typed::native_fields::rewrite_field(
                     ctx,
                     value,
@@ -53,9 +49,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     },
                 )
             }
-            Some(kind)
-                if ctx.equal_bytes(kind.as_bytes(), b"shell", "match native attribute kind")? =>
-            {
+            Some("shell") => {
                 crate::schema::rewrite::typed::native_fields::rewrite_field(
                     ctx,
                     value,
@@ -67,9 +61,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     },
                 )
             }
-            Some(kind)
-                if ctx.equal_bytes(kind.as_bytes(), b"loop", "match native attribute kind")? =>
-            {
+            Some("loop") => {
                 crate::schema::rewrite::typed::native_fields::rewrite_field(
                     ctx,
                     value,
@@ -81,13 +73,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     },
                 )
             }
-            Some(kind)
-                if ctx.equal_bytes(
-                    kind.as_bytes(),
-                    b"coedge",
-                    "match native attribute kind",
-                )? =>
-            {
+            Some("coedge") => {
                 crate::schema::rewrite::typed::native_fields::rewrite_field(
                     ctx,
                     value,
@@ -99,9 +85,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     },
                 )
             }
-            Some(kind)
-                if ctx.equal_bytes(kind.as_bytes(), b"edge", "match native attribute kind")? =>
-            {
+            Some("edge") => {
                 crate::schema::rewrite::typed::native_fields::rewrite_field(
                     ctx,
                     value,
@@ -113,13 +97,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     },
                 )
             }
-            Some(kind)
-                if ctx.equal_bytes(
-                    kind.as_bytes(),
-                    b"vertex",
-                    "match native attribute kind",
-                )? =>
-            {
+            Some("vertex") => {
                 crate::schema::rewrite::typed::native_fields::rewrite_field(
                     ctx,
                     value,
@@ -131,13 +109,7 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
                     },
                 )
             }
-            Some(kind)
-                if ctx.equal_bytes(
-                    kind.as_bytes(),
-                    b"document",
-                    "match native attribute kind",
-                )? =>
-            {
+            Some("document") => {
                 Ok(())
             }
             _ => Err(cadmpeg_core::CodecError::malformed(
@@ -151,7 +123,6 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
         visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("walk typed reference fields")?;
-        ctx.charge_work(0, "walk typed reference fields")?;
         match self {
             Self::Document => Ok(()),
             Self::Body(id) => id.visit_identity_references(ctx, visitor),
@@ -169,7 +140,6 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
         map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("typed rewrite variant")?;
-        ctx.charge_work(0, "typed rewrite variant")?;
         Ok(match self {
             Self::Document => Self::Document,
             Self::Body(id) => Self::Body(id.rewrite_identities(ctx, map)?),
@@ -215,7 +185,7 @@ mod tests {
             AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut mapping).unwrap();
             assert_eq!(value, before);
         }
-        for operation in ["find native attribute kind", "match native attribute kind"] {
+        for operation in ["find native attribute kind"] {
             cadmpeg_test_support::refusal::resource_limit_at(
                 ResourceDimension::WorkUnits,
                 operation,

@@ -133,11 +133,7 @@ impl PresentationDocument {
 
     /// Replace persisted states after checking that their orders are distinct.
     pub fn set_states(&mut self, states: Vec<PresentationState>) -> Result<(), String> {
-        if states.windows(2).all(Self::orders_increase) {
-            self.states = states;
-            return Ok(());
-        }
-        let mut orders = std::collections::BTreeSet::new();
+        let mut orders = std::collections::HashSet::new();
         if states.iter().any(|state| !orders.insert(state.order)) {
             return Err("states must have distinct order values".into());
         }
@@ -145,45 +141,7 @@ impl PresentationDocument {
         Ok(())
     }
 
-    fn orders_increase(pair: &[PresentationState]) -> bool {
-        pair[0].order < pair[1].order
-    }
 
-    /// Check decoded state orders with scoped uniqueness storage before assignment.
-    pub fn set_states_for_decode(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        states: Vec<PresentationState>,
-    ) -> Result<Result<(), String>, cadmpeg_core::CodecError> {
-        if !ctx.all_by(
-            states.windows(2),
-            |pair| Ok(Self::orders_increase(pair)),
-            "IR presentation state order",
-        )? {
-            let mut storage = ctx.reserve_scoped(0, "IR presentation order slots")?;
-            let mut orders = std::collections::BTreeSet::new();
-            if ctx.any_by(
-                &states,
-                |state| {
-                    Ok(!ctx.insert_scoped_btree_set(
-                        &mut storage,
-                        &mut orders,
-                        state.order,
-                        "IR presentation order lookup",
-                        "IR presentation order slots",
-                    )?)
-                },
-                "IR presentation order uniqueness",
-            )? {
-                return Ok(Err(ctx.copy_retained_text(
-                    "states must have distinct order values",
-                    "IR presentation order refusal",
-                )?));
-            }
-        }
-        self.states = states;
-        Ok(Ok(()))
-    }
 }
 
 impl From<PresentationDocument> for PresentationDocumentWire {
@@ -592,85 +550,6 @@ mod tests {
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
         assert!(cadmpeg_core::text::NonBlankString::try_from("").is_err());
-    }
-
-    #[test]
-    fn decoded_state_orders_preserve_order_and_refuse_before_assignment() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-        let state = |order| PresentationState {
-            kind: PresentationStateKind::Native("View".into()),
-            order,
-            attributes: BTreeMap::new(),
-            assets: Vec::new(),
-        };
-        for orders in [vec![], vec![1], vec![1, 2, 3], vec![9, 2], vec![2, 2]] {
-            let mut standard = PresentationDocument::new(
-                PresentationId::mint("test:model:presentation#states").unwrap(),
-            );
-            let mut decoded = standard.clone();
-            standard.set_states(vec![state(99)]).unwrap();
-            decoded.set_states(vec![state(99)]).unwrap();
-            let states: Vec<_> = orders.into_iter().map(state).collect();
-            let expected = standard.set_states(states.clone());
-            let ctx = cadmpeg_test_support::service_decode_context();
-            assert_eq!(
-                decoded.set_states_for_decode(&ctx, states).unwrap(),
-                expected
-            );
-            assert_eq!(decoded, standard);
-        }
-        for (dimension, operation, orders) in [
-            (
-                ResourceDimension::WorkUnits,
-                "IR presentation state order",
-                vec![1, 2, 3],
-            ),
-            (
-                ResourceDimension::CollectionItems,
-                "IR presentation order slots",
-                vec![9, 2],
-            ),
-            (
-                ResourceDimension::MaterializedBytes,
-                "IR presentation order slots",
-                vec![9, 2],
-            ),
-            (
-                ResourceDimension::RetainedBytes,
-                "IR presentation order refusal",
-                vec![2, 2],
-            ),
-        ] {
-            cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                match dimension {
-                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                    ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-                    _ => unreachable!(),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let mut document = PresentationDocument::new(
-                    PresentationId::mint("test:model:presentation#states").unwrap(),
-                );
-                document.set_states(vec![state(99)]).unwrap();
-                let before = document.clone();
-                let result = document
-                    .set_states_for_decode(&ctx, orders.iter().copied().map(state).collect());
-                if let Err(CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(document, before);
-                    assert!(
-                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
-                    );
-                }
-                result
-            });
-        }
     }
 
     #[test]

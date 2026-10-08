@@ -970,15 +970,14 @@ pub struct TessellationChannel {
 
 impl<P: Copy, N: Copy> TessellationMesh<P, N> {
     fn checked_triangle_count(&self) -> Result<usize, TessellationError> {
-        let vertex_count = self.vertex_count();
         match self {
             Self::List { triangles, .. } | Self::ShadedList { triangles, .. } => {
-                require_triangle_indices(vertex_count, triangles)?;
+                require_triangle_indices(self.vertex_count(), triangles)?;
                 Ok(triangles.len())
             }
             Self::CornerShadedList { triangles, .. } => {
                 require_triangle_indices(
-                    vertex_count,
+                    self.vertex_count(),
                     triangles.iter().map(|triangle| &triangle.corners),
                 )?;
                 Ok(triangles.len())
