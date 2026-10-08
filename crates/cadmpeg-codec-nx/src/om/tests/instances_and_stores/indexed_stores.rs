@@ -51,21 +51,21 @@ fn om_offset_only_index_bounds_storage_blocks() {
 #[test]
 fn om_indexed_layout_materializes_both_store_forms_without_semantic_drift() {
     for bytes in [indexed_om_section(), offset_only_indexed_om_section()] {
-        let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes))
-            .unwrap()
-            .into_iter()
-            .next()
-            .expect("indexed fixture has one section");
         let source = std::sync::Arc::<[u8]>::from(bytes.as_slice());
-        let layout = crate::test_support::with_decode_context(|ctx| {
-            crate::om::cache::IndexedSectionLayout::from_section(ctx, &section, &source)
-        })
-        .unwrap()
-        .unwrap();
-        assert_eq!(
-            crate::test_support::with_decode_context(|ctx| layout.materialize(ctx)).unwrap(),
-            section
-        );
+        crate::test_support::with_decode_context(|ctx| {
+            let section = indexed_sections(ctx, &bytes)
+                .unwrap()
+                .into_iter()
+                .next()
+                .expect("indexed fixture has one section");
+            let (layout, storage) =
+                crate::om::cache::IndexedSectionLayout::from_section(ctx, &section, &source)
+                    .unwrap();
+            let layout = layout.expect("validated indexed section has a cache layout");
+            assert_eq!(layout.materialize(ctx).unwrap(), section);
+            drop(layout);
+            drop(storage);
+        });
     }
 }
 

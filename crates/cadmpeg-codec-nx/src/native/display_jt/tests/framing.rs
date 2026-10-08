@@ -249,18 +249,7 @@ fn jt_compressed_sequence_refuses_before_vector_reservation() {
 
 #[test]
 fn jt_compressed_element_fields_refuse_before_string_allocation() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = compressed_jt_retained_stages().elements
-            + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                super::super::DisplayJtCompressedElement,
-            >());
-    };
-    assert_compressed_jt_limit(
-        adjust_policy,
-        ResourceDimension::RetainedBytes,
-        "retain DisplayJT compressed element fields",
-    );
+    assert_compressed_jt_scoped_refusal("retain DisplayJT compressed element fields");
 }
 
 #[test]
@@ -283,102 +272,96 @@ fn jt_decoded_sequence_keeps_its_computed_tail_digest() {
     assert_eq!(sequence.tail, [6, 5]);
 }
 
-struct CompressedJtRetainedStages {
-    ids: u64,
-    elements: u64,
-    sequence: u64,
-    sequence_fields: u64,
-    tail: u64,
+fn compressed_jt_retained_bytes() -> u64 {
+    let segment = "nx:jt:segment#0";
+    let element_id_len = segment.len() + "-inflated-element-".len() + 1;
+    let sequence_id_len = segment.len() + "-inflated-sequence".len();
+    // Each amortized output vector starts with four inline slots. Two element
+    // identities, two owner strings, two digest strings and the two-byte tail
+    // remain live in the accepted one-element sequence.
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>())
+        + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::super::DisplayJtCompressedElement>())
+        + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::super::DisplayJtCompressedElementSequence>())
+        + cadmpeg_core::decode::u64_from_index(element_id_len * 2 + segment.len() * 2 + sequence_id_len + 64 * 2 + 2)
 }
 
-fn compressed_jt_retained_stages() -> CompressedJtRetainedStages {
-    let segment = "nx:jt:segment#0";
-    let before_ids = 0;
-    let before_elements = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>());
-    let element_id_len = segment.len() + "-inflated-element-".len() + 1;
-    let before_sequence_fields = before_elements
-        + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            super::super::DisplayJtCompressedElement,
-        >())
-        + cadmpeg_core::decode::u64_from_index(element_id_len * 2 + segment.len() + 64);
-    let before_sequence = before_sequence_fields
-        + cadmpeg_core::decode::u64_from_index(segment.len() * 2 + "-inflated-sequence".len());
-    let before_tail = before_sequence
-        + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            super::super::DisplayJtCompressedElementSequence,
-        >());
-    CompressedJtRetainedStages {
-        ids: before_ids,
-        elements: before_elements,
-        sequence: before_sequence,
-        sequence_fields: before_sequence_fields,
-        tail: before_tail,
+fn assert_compressed_jt_scoped_refusal(operation: &'static str) {
+    use cadmpeg_core::decode::ResourceDimension;
+    let (data, segment) = compressed_jt_fixture();
+    let container = compressed_jt_container(&data);
+    let error = crate::test_support::resource_refusal_at(
+        &data, ResourceDimension::MaterializedBytes, operation,
+        |ctx| super::super::display_jt_compressed_element_sequences(
+            ctx, &container, std::slice::from_ref(&segment),
+        ),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == operation && limit.additional > 0));
+    crate::test_support::with_decode_context_over(&data, |_| {}, |ctx| {
+        let (elements, sequences) = super::super::display_jt_compressed_element_sequences(
+            ctx, &container, std::slice::from_ref(&segment),
+        ).unwrap();
+        assert_eq!((elements.len(), sequences.len()), (1, 1));
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn accepted_compressed_sequence_commits_the_exact_retained_output_bound() {
+    let (data, segment) = compressed_jt_fixture();
+    let container = compressed_jt_container(&data);
+    let retained = compressed_jt_retained_bytes();
+    for cap in [retained - 1, retained] {
+        crate::test_support::with_decode_context_over(&data,
+            |policy| policy.limits.max_retained_bytes = cap,
+            |ctx| {
+                let result = super::super::display_jt_compressed_element_sequences(
+                    ctx, &container, std::slice::from_ref(&segment),
+                );
+                if cap == retained {
+                    let (elements, sequences) = result.expect("the source-derived output bound fits");
+                    assert_eq!((elements.len(), sequences.len()), (1, 1));
+                    assert!(ctx.resource_refusal().is_none());
+                } else {
+                    let error = result.expect_err("one byte below final output admission refuses");
+                    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                        panic!("the accepted output must refuse retained storage");
+                    };
+                    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+                    assert_eq!(limit.operation, "nx JT compressed sequence candidates");
+                    assert_eq!(limit.used, 0);
+                    assert_eq!(limit.additional, retained);
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                }
+            },
+        );
     }
 }
 
 #[test]
-fn jt_element_ids_refuse_before_retained_vector_allocation() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = compressed_jt_retained_stages().ids;
-    };
-    assert_compressed_jt_limit(
-        adjust_policy,
-        ResourceDimension::RetainedBytes,
-        "retain DisplayJT element ids",
-    );
+fn jt_element_ids_refuse_before_scoped_vector_allocation() {
+    assert_compressed_jt_scoped_refusal("retain DisplayJT element ids");
 }
 
 #[test]
-fn jt_compressed_elements_refuse_before_retained_vector_allocation() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = compressed_jt_retained_stages().elements;
-    };
-    assert_compressed_jt_limit(
-        adjust_policy,
-        ResourceDimension::RetainedBytes,
-        "retain DisplayJT compressed elements",
-    );
+fn jt_compressed_elements_refuse_before_scoped_vector_allocation() {
+    assert_compressed_jt_scoped_refusal("retain DisplayJT compressed elements");
 }
 
 #[test]
-fn jt_compressed_sequence_refuses_before_retained_vector_allocation() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = compressed_jt_retained_stages().sequence;
-    };
-    assert_compressed_jt_limit(
-        adjust_policy,
-        ResourceDimension::RetainedBytes,
-        "retain DisplayJT compressed sequence",
-    );
+fn jt_compressed_sequence_refuses_before_scoped_vector_allocation() {
+    assert_compressed_jt_scoped_refusal("retain DisplayJT compressed sequence");
 }
 
 #[test]
 fn jt_compressed_sequence_fields_refuse_before_string_allocation() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = compressed_jt_retained_stages().sequence_fields;
-    };
-    assert_compressed_jt_limit(
-        adjust_policy,
-        ResourceDimension::RetainedBytes,
-        "retain DisplayJT compressed sequence fields",
-    );
+    assert_compressed_jt_scoped_refusal("retain DisplayJT compressed sequence fields");
 }
 
 #[test]
 fn jt_compressed_sequence_tail_refuses_before_copy() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = compressed_jt_retained_stages().tail;
-    };
-    assert_compressed_jt_limit(
-        adjust_policy,
-        ResourceDimension::RetainedBytes,
-        "retain DisplayJT compressed sequence tail",
-    );
+    assert_compressed_jt_scoped_refusal("retain DisplayJT compressed sequence tail");
 }
 
 #[test]

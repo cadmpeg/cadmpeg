@@ -3,7 +3,7 @@
 
 use super::state_index::{OperationStateIndex, StateIndexToken};
 use super::state_slots::StateSlots;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,13 +29,13 @@ impl<O: Copy> StateSlotLane<O> {
 }
 
 impl StateSlotLane {
-    pub(super) fn read(
-        ctx: &DecodeContext<'_>,
+    pub(super) fn read<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
         bytes: &[u8],
         at: usize,
         end: usize,
         base: usize,
-    ) -> Result<Option<Self>, CodecError> {
+    ) -> Result<Option<(Self, ScopedReservation<'ctx>)>, CodecError> {
         let Some(prefix_end) = at.checked_add(3) else {
             return Ok(None);
         };
@@ -58,8 +58,7 @@ impl StateSlotLane {
                 ) else {
                     return Ok(None);
                 };
-                storage.commit()?;
-                return Ok(Some(Self { offset, end, slots }));
+                return Ok(Some((Self { offset, end, slots }, storage)));
             }
             let Some(slot) = OperationStateIndex::read_at(bytes, cursor, base) else {
                 return Ok(None);
@@ -169,7 +168,7 @@ mod tests {
             &bytes,
             |_| {},
             |ctx| {
-                let lane = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 100)
+                let (lane, storage) = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 100)
                     .unwrap()
                     .unwrap();
                 assert_eq!(lane.slots().len(), 4);
@@ -195,11 +194,90 @@ mod tests {
                     lane.into_slots()
                 )
                 .is_err());
+                drop(storage);
                 assert!(
                     StateSlotLane::read(ctx, &bytes, 0, bytes.len(), usize::MAX - 11)
                         .unwrap()
                         .is_none()
                 );
+            },
+        );
+    }
+
+    #[test]
+    fn slot_candidate_receipt_tracks_and_releases_the_token_vector() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        let bytes = [2, 1, 0x11, 0xff, 2, 0x11];
+        let token_storage =
+            4 * std::mem::size_of::<Option<super::super::state_index::StateIndexToken>>();
+        let refusal = crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_materialized_bytes =
+                    cadmpeg_core::decode::u64_from_index(token_storage)
+            },
+            |ctx| {
+                let (first, first_storage) = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0)
+                    .unwrap()
+                    .unwrap();
+                let refusal = match StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0) {
+                    Err(CodecError::ResourceLimit(limit)) => limit,
+                    Err(error) => {
+                        panic!("second slot candidate failed for the wrong reason: {error}")
+                    }
+                    Ok(_) => panic!("second slot candidate must exceed the exact storage cap"),
+                };
+                drop(first);
+                drop(first_storage);
+                refusal
+            },
+        );
+        assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(refusal.operation, "nx state slots");
+        assert_eq!(refusal.additional, cadmpeg_core::decode::u64_from_index(token_storage));
+
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_materialized_bytes =
+                    cadmpeg_core::decode::u64_from_index(token_storage)
+            },
+            |ctx| {
+                let (lane, storage) =
+                    StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0).unwrap().unwrap();
+                drop(lane);
+                drop(storage);
+                assert!(ctx
+                    .reserve_scoped(
+                        cadmpeg_core::decode::u64_from_index(token_storage),
+                        "released NX slot candidate storage",
+                    )
+                    .is_ok());
+            },
+        );
+
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_materialized_bytes =
+                    cadmpeg_core::decode::u64_from_index(token_storage)
+            },
+            |ctx| {
+                let (lane, storage) =
+                    StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 0).unwrap().unwrap();
+                assert_eq!(
+                    StateSlotLane::from_wire(ctx, u64::MAX - 5, lane.into_slots()).unwrap(),
+                    Err("source_offset: slot-lane extent overflows")
+                );
+                drop(storage);
+                assert!(ctx
+                    .reserve_scoped(
+                        cadmpeg_core::decode::u64_from_index(token_storage),
+                        "released rejected NX slot candidate storage",
+                    )
+                    .is_ok());
             },
         );
     }

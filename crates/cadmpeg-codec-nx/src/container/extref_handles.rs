@@ -3,7 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_core::decode::admission::{Admission, StandardAdmission};
+
 use crate::layout::extrefstream_handle_set_record;
+
+const HANDLE_ORDER_OPERATION: &str = "NX external reference handle order";
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "HandlesWire")]
@@ -30,13 +34,23 @@ impl Serialize for ExtrefHandles {
 
 impl ExtrefHandles {
     pub(crate) fn new(tokens: Vec<u32>) -> Result<Self, &'static str> {
+        match Self::new_with_admission(&StandardAdmission, tokens) {
+            Ok(result) => result,
+            Err(error) => match error {},
+        }
+    }
+
+    pub(crate) fn new_with_admission<A: Admission>(
+        admission: &A,
+        tokens: Vec<u32>,
+    ) -> Result<Result<Self, &'static str>, A::Error> {
         if !(1..=254).contains(&tokens.len()) {
-            return Err("handles: encoded token count must be in 1..=254");
+            return Ok(Err("handles: encoded token count must be in 1..=254"));
         }
-        if !tokens.windows(2).all(|pair| pair[0] <= pair[1]) {
-            return Err("handles: must be non-decreasing");
+        if !admission.is_sorted_by(&tokens, |value| value, Ord::cmp, HANDLE_ORDER_OPERATION)? {
+            return Ok(Err("handles: must be non-decreasing"));
         }
-        Ok(Self(tokens))
+        Ok(Ok(Self(tokens)))
     }
 
     pub(crate) fn serialized(&self) -> &[u32] {
@@ -163,6 +177,12 @@ mod tests {
         for tokens in [vec![], vec![7; 255], vec![9, 7]] {
             assert!(ExtrefHandles::new(tokens).is_err());
         }
+        let mut overlong_and_unsorted = vec![7; 254];
+        overlong_and_unsorted.push(6);
+        assert_eq!(
+            ExtrefHandles::new(overlong_and_unsorted).unwrap_err(),
+            "handles: encoded token count must be in 1..=254"
+        );
         for (handles, closing, length, field) in [
             (vec![], true, 26, "closing_duplicate"),
             (vec![7, 7], false, 36, "closing_duplicate"),

@@ -5,21 +5,52 @@ use super::nonempty::NonEmpty;
 use super::state_index::StateIndexToken;
 use super::state_slots::StateSlots;
 use super::state_status::StateStatus;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum StateTableEntry<'a> {
+#[derive(Debug)]
+pub(crate) enum StateTableEntry<'a, 'ctx> {
     Status(StateStatus<&'a str, &'a [u8]>),
-    Slots(StateSlots<Option<StateIndexToken>>),
+    Slots(StateSlotTokens<'ctx>),
 }
 
-impl StateTableEntry<'_> {
+#[derive(Debug)]
+pub(crate) struct StateSlotTokens<'ctx> {
+    slots: StateSlots<Option<StateIndexToken>>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> StateSlotTokens<'ctx> {
+    pub(super) fn new(
+        slots: StateSlots<Option<StateIndexToken>>,
+        storage: ScopedReservation<'ctx>,
+    ) -> Self {
+        Self { slots, storage }
+    }
+
+    pub(crate) fn slots(&self) -> &StateSlots<Option<StateIndexToken>> {
+        &self.slots
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (StateSlots<Option<StateIndexToken>>, ScopedReservation<'ctx>) {
+        (self.slots, self.storage)
+    }
+
+    pub(crate) fn discard(self) {
+        let (slots, storage) = self.into_parts();
+        drop(slots);
+        drop(storage);
+    }
+}
+
+impl StateTableEntry<'_, '_> {
     pub(super) fn byte_len(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
         match self {
             Self::Status(body) => Ok(body.byte_len()),
-            Self::Slots(slots) => ctx.fold(
-                slots.as_slice(),
+            Self::Slots(tokens) => ctx.fold(
+                tokens.slots().as_slice(),
                 5_usize,
                 |length, slot| {
                     length
@@ -34,17 +65,17 @@ impl StateTableEntry<'_> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OperationStateStatusTable<'a> {
+#[derive(Debug)]
+pub(crate) struct OperationStateStatusTable<'a, 'ctx> {
     offset: usize,
-    entries: NonEmpty<StateTableEntry<'a>>,
+    entries: NonEmpty<StateTableEntry<'a, 'ctx>>,
 }
 
-impl<'a> OperationStateStatusTable<'a> {
+impl<'a, 'ctx> OperationStateStatusTable<'a, 'ctx> {
     pub(super) fn new(
         ctx: &DecodeContext<'_>,
         offset: usize,
-        entries: NonEmpty<StateTableEntry<'a>>,
+        entries: NonEmpty<StateTableEntry<'a, 'ctx>>,
     ) -> Result<Option<Self>, CodecError> {
         let mut end = offset;
         let mut initial = entries.initial().iter();
@@ -57,33 +88,61 @@ impl<'a> OperationStateStatusTable<'a> {
             };
             end = next;
         }
-        if end.checked_add(entries.last().byte_len(ctx)?).is_none() {
+        let mut last = std::iter::once(entries.last());
+        let Some(last_entry) = ctx.next_charged(&mut last, "NX status table entries")? else {
+            return Ok(None);
+        };
+        if end.checked_add(last_entry.byte_len(ctx)?).is_none() {
             return Ok(None);
         }
         Ok(Some(Self { offset, entries }))
     }
 
-    pub(crate) fn into_entries<'ctx, 'policy>(
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub(crate) fn into_entries<'iter, 'policy>(
         self,
-        ctx: &'ctx DecodeContext<'policy>,
-    ) -> impl Iterator<Item = Result<(usize, StateTableEntry<'a>), CodecError>>
-           + 'ctx
-           + use<'a, 'ctx, 'policy>
+        ctx: &'iter DecodeContext<'policy>,
+    ) -> impl Iterator<Item = Result<(usize, StateTableEntry<'a, 'ctx>), CodecError>>
+           + 'iter
+           + use<'a, 'ctx, 'iter, 'policy>
     where
-        'a: 'ctx,
+        'a: 'iter,
+        'ctx: 'iter,
     {
         let mut offset = self.offset;
+        let mut remaining = self.entries.len();
         let (initial, last) = self.entries.into_parts();
-        initial
-            .into_iter()
-            .chain(std::iter::once(last))
-            .map(move |entry| {
-                let start = offset;
-                offset = offset.checked_add(entry.byte_len(ctx)?).ok_or_else(|| {
-                    ctx.refuse_codec_limit("NX status table extent", u64::MAX, u64::MAX)
-                })?;
-                Ok((start, entry))
-            })
+        let mut entries = initial.into_iter().chain(std::iter::once(last));
+        std::iter::from_fn(move || {
+            if remaining == 0 {
+                return None;
+            }
+            remaining -= 1;
+            let entry = match ctx.next_charged(&mut entries, "NX status table entry extents") {
+                Ok(Some(entry)) => entry,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            let start = offset;
+            let length = match entry.byte_len(ctx) {
+                Ok(length) => length,
+                Err(error) => return Some(Err(error)),
+            };
+            offset = match offset.checked_add(length) {
+                Some(offset) => offset,
+                None => {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "NX status table extent",
+                        u64::MAX,
+                        u64::MAX,
+                    )))
+                }
+            };
+            Some(Ok((start, entry)))
+        })
     }
 
     #[cfg(test)]
@@ -108,75 +167,125 @@ impl<'a> OperationStateStatusTable<'a> {
             .iter()
             .filter_map(|entry| match entry {
                 StateTableEntry::Status(_) => None,
-                StateTableEntry::Slots(slots) => Some(slots),
+                StateTableEntry::Slots(tokens) => Some(tokens.slots()),
             })
             .collect()
     }
 }
 
 #[cfg(test)]
-fn operation_state_status_table(
-    bytes: &[u8],
+fn operation_state_status_table<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &'a [u8],
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<OperationStateStatusTable<'_>> {
+) -> Option<OperationStateStatusTable<'a, 'ctx>> {
     use super::state_message::OperationStateMessage;
     use super::state_slot_lane::StateSlotLane;
     use super::state_status::operation_state_status_row_at;
 
-    crate::test_support::with_decode_context_over(
-        bytes,
-        |_| {},
-        |ctx| {
-            if start >= end || end > bytes.len() {
-                return None;
-            }
-            let mut entries = Vec::new();
-            let mut at = start;
-            while at < end {
-                if OperationStateMessage::read(ctx, bytes, at, base_offset)
-                    .unwrap()
-                    .is_some()
-                {
-                    break;
-                }
-                if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-                    let lane = StateSlotLane::read(ctx, bytes, at, end, base_offset)
-                        .expect("test state slots fit the decode policy")?;
-                    at = lane.end_offset() - base_offset;
-                    entries.push(StateTableEntry::Slots(lane.into_slots()));
-                    continue;
-                }
-                let Some(row) =
-                    operation_state_status_row_at(ctx, bytes, at, end, base_offset, None).unwrap()
-                else {
-                    break;
-                };
-                at = row.end_offset() - base_offset;
-                entries.push(StateTableEntry::Status(row.body()));
-            }
-            if !entries
-                .iter()
-                .any(|entry| matches!(entry, StateTableEntry::Status(_)))
-            {
-                return None;
-            }
-            OperationStateStatusTable::new(
-                ctx,
-                base_offset.checked_add(start)?,
-                NonEmpty::new(entries)?,
-            )
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut entries = Vec::new();
+    let mut at = start;
+    while at < end {
+        if OperationStateMessage::read(ctx, bytes, at, base_offset)
             .unwrap()
-        },
+            .is_some()
+        {
+            break;
+        }
+        if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+            let (lane, storage) = StateSlotLane::read(ctx, bytes, at, end, base_offset)
+                .expect("test state slots fit the decode policy")?;
+            at = lane.end_offset() - base_offset;
+            entries.push(StateTableEntry::Slots(StateSlotTokens::new(
+                lane.into_slots(),
+                storage,
+            )));
+            continue;
+        }
+        let Some(row) =
+            operation_state_status_row_at(ctx, bytes, at, end, base_offset, None).unwrap()
+        else {
+            break;
+        };
+        at = row.end_offset() - base_offset;
+        entries.push(StateTableEntry::Status(row.body()));
+    }
+    if !entries
+        .iter()
+        .any(|entry| matches!(entry, StateTableEntry::Status(_)))
+    {
+        return None;
+    }
+    OperationStateStatusTable::new(
+        ctx,
+        base_offset.checked_add(start)?,
+        NonEmpty::new(entries)?,
     )
+    .unwrap()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{operation_state_status_table, StateIndexToken};
-    use crate::om::state_status::StateStatusPayload;
+    use super::{
+        operation_state_status_table, OperationStateStatusTable, StateIndexToken, StateTableEntry,
+    };
+    use crate::om::nonempty::NonEmpty;
+    use crate::om::state_status::{StateStatus, StateStatusPayload};
     use crate::om::tests::message_bytes;
+
+    #[test]
+    fn operation_state_status_table_charges_the_final_entry_visit() {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX status table entries",
+            |ctx| {
+                let token = StateIndexToken::read_at(&[1], 0).expect("one-byte state index");
+                let entry = StateTableEntry::Status(StateStatus {
+                    status_code: token,
+                    object_index: token,
+                    payload: StateStatusPayload::Plain,
+                });
+                OperationStateStatusTable::new(ctx, 0, NonEmpty::new([entry]).unwrap())
+                    .map(|_| ())
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "NX status table entries" && limit.additional == 1));
+    }
+
+    #[test]
+    fn operation_state_status_table_charges_each_entry_extent_before_conversion() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 1,
+            |ctx| {
+                let token = StateIndexToken::read_at(&[1], 0).expect("one-byte state index");
+                let entry = StateTableEntry::Status(StateStatus {
+                    status_code: token,
+                    object_index: token,
+                    payload: StateStatusPayload::Plain,
+                });
+                let table = OperationStateStatusTable::new(ctx, 0, NonEmpty::new([entry]).unwrap())
+                    .expect("the one table-construction visit fits")
+                    .expect("the single status row has a representable extent");
+                let error = table
+                    .into_entries(ctx)
+                    .next()
+                    .expect("the table contains one entry")
+                    .expect_err("entry extent conversion has a separate visit admission");
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.operation == "NX status table entry extents"
+                        && limit.used == 1
+                        && limit.additional == 1));
+            },
+        );
+    }
 
     #[test]
     fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() {
@@ -190,32 +299,34 @@ mod tests {
         ]);
         bytes.extend([0x02, 0x01, 0x11, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
 
-        let table =
-            operation_state_status_table(&bytes, 0, bytes.len(), 700).expect("status table");
-        assert_eq!(table.rows().len(), 4);
-        assert_eq!(table.rows()[0].status_code.value(), 0x41);
-        assert!(matches!(table.rows()[0].payload, StateStatusPayload::Plain));
-        assert!(matches!(
-            table.rows()[1].payload,
-            StateStatusPayload::Linked {
-                link_code,
-                ..
-            } if u8::from(link_code) == 0x45
-        ));
-        let StateStatusPayload::Diagnostic(message) = table.rows()[2].payload else {
-            panic!("diagnostic row was not typed");
-        };
-        assert_eq!(message.text.as_str(), "bad curve");
-        let StateStatusPayload::Opaque { raw } = table.rows()[3].payload else {
-            panic!("opaque state lane was not retained");
-        };
-        assert_eq!(raw, &[0x1e, 0x01, 0x41, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
-        assert_eq!(table.slot_lanes().len(), 1);
-        assert_eq!(table.slot_lanes()[0].len(), 3);
-        assert_eq!(
-            table.slot_lanes()[0].as_slice()[1].map(StateIndexToken::value),
-            Some(0x3ad)
-        );
-        assert_eq!(&bytes[table.end_offset() - 700..], &b""[..]);
+        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
+            let table = operation_state_status_table(ctx, &bytes, 0, bytes.len(), 700)
+                .expect("status table");
+            assert_eq!(table.rows().len(), 4);
+            assert_eq!(table.rows()[0].status_code.value(), 0x41);
+            assert!(matches!(table.rows()[0].payload, StateStatusPayload::Plain));
+            assert!(matches!(
+                table.rows()[1].payload,
+                StateStatusPayload::Linked {
+                    link_code,
+                    ..
+                } if u8::from(link_code) == 0x45
+            ));
+            let StateStatusPayload::Diagnostic(message) = table.rows()[2].payload else {
+                panic!("diagnostic row was not typed");
+            };
+            assert_eq!(message.text.as_str(), "bad curve");
+            let StateStatusPayload::Opaque { raw } = table.rows()[3].payload else {
+                panic!("opaque state lane was not retained");
+            };
+            assert_eq!(raw, &[0x1e, 0x01, 0x41, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
+            assert_eq!(table.slot_lanes().len(), 1);
+            assert_eq!(table.slot_lanes()[0].len(), 3);
+            assert_eq!(
+                table.slot_lanes()[0].as_slice()[1].map(StateIndexToken::value),
+                Some(0x3ad)
+            );
+            assert_eq!(&bytes[table.end_offset() - 700..], &b""[..]);
+        });
     }
 }

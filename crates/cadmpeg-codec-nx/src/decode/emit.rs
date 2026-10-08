@@ -16,7 +16,7 @@ use super::{offset_store_control_counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::parasolid::{Stream, StreamKind};
-use crate::topology::{FaceLoopError, FaceLoopFailure, Graph, Node};
+use crate::topology::{BodyShapeShellVisitor, FaceLoopError, FaceLoopFailure, Graph, Node};
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::dialect::DialectLayers;
@@ -41,6 +41,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Write as _};
+use std::ops::ControlFlow;
 
 const EPS_EMIT_CANONICAL_TRIM_RANGE_E6: f64 = 1.0e-6;
 
@@ -76,15 +77,78 @@ pub(super) struct TopologyBudgets<'inputs, 'ctx> {
     pub(super) completion_geometry: &'inputs GeometryWorkBudget<'ctx>,
 }
 
-pub(super) fn emit_topology(
-    ctx: &DecodeContext<'_>,
+#[derive(Clone, Copy)]
+pub(super) struct EndpointWitnessOperations {
+    pub(super) lookup_key: &'static str,
+    pub(super) curve: &'static str,
+    pub(super) support: &'static str,
+    pub(super) pcurve: &'static str,
+    pub(super) index: &'static str,
+    pub(super) witnesses: &'static str,
+}
+
+/// Insert one endpoint proof under the receipt that owns its destination map.
+/// The lookup-key copy is scratch unless the key is new, in which case its
+/// receipt transfers into the destination scope with the key.
+pub(super) fn push_endpoint_witness<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    storage: &mut ScopedReservation<'ctx>,
+    target: &mut EndpointWitnesses,
+    curve: &CurveId,
+    support: &SurfaceId,
+    pcurve: &PcurveGeometry,
+    parameter_range: [f64; 2],
+    endpoints: [Point3; 2],
+    operations: EndpointWitnessOperations,
+) -> Result<(), CodecError> {
+    let mut key_storage = ctx.reserve_scoped(0, operations.lookup_key)?;
+    let key = key_storage.with_storage(|| {
+        Ok::<_, CodecError>((
+            curve.try_clone_for_decode(ctx, operations.curve)?,
+            support.try_clone_for_decode(ctx, operations.support)?,
+        ))
+    })?;
+    storage.with_storage(|| {
+        let mut candidate_storage = ctx.reserve_scoped(0, operations.witnesses)?;
+        if let Some(witnesses) = ctx.get_mut_btree_map(target, &key, operations.index)? {
+            candidate_storage.with_storage(|| {
+                let witness = (
+                    pcurve.try_clone_for_decode(ctx, operations.pcurve)?,
+                    parameter_range,
+                    endpoints,
+                );
+                ctx.push_vec(witnesses, witness, operations.witnesses)
+            })?;
+        } else {
+            candidate_storage.with_storage(|| {
+                let witness = (
+                    pcurve.try_clone_for_decode(ctx, operations.pcurve)?,
+                    parameter_range,
+                    endpoints,
+                );
+                let mut witnesses = Vec::new();
+                ctx.push_vec(&mut witnesses, witness, operations.witnesses)?;
+                // discarded-value: the key was absent before the admitted insertion.
+                let _ = ctx.insert_btree_map(target, key, witnesses, operations.index)?;
+                // The key now belongs to the inserted map entry.
+                key_storage.commit()
+            })?;
+        }
+        candidate_storage.commit()
+    })
+}
+
+pub(super) fn emit_topology<'ctx, 'graph>(
+    ctx: &'ctx DecodeContext<'_>,
     ir: &mut CadIr,
-    topology_stream: &TopologyStream<'_>,
+    topology_stream: &TopologyStream<'graph>,
     annotations: &mut AnnotationBuilder,
     intersection_index: &mut IntersectionIncidenceIndex,
     topology_budgets: &TopologyBudgets<'_, '_>,
     topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<EndpointWitnesses, CodecError> {
+    endpoint_witnesses: &mut EndpointWitnesses,
+    endpoint_witness_storage: &mut ScopedReservation<'ctx>,
+) -> Result<(), CodecError> {
     let &TopologyBudgets {
         exact_transfer: exact_transfer_budget,
         completion_transfer: completion_transfer_budget,
@@ -107,37 +171,66 @@ pub(super) fn emit_topology(
     } = topology_stream;
 
     let scope = IdScope::stream_charged(ctx, stream_index)?;
-    let mut storage = ctx.reserve_scoped(0, "nx topology emission scratch")?;
-    let body_shells = storage.with_storage(|| graph.body_shape_shells(ctx))?;
+    let mut valid_face_storage = ctx.reserve_scoped(0, "nx valid topology faces")?;
     let mut valid_face_xmts = BTreeSet::new();
-    for shell in ctx.admit_iter(&body_shells, "nx valid topology faces")? {
-        for &face in ctx.admit_iter(&shell.faces, "nx valid topology faces")? {
-            storage.with_storage(|| {
+    let mut body_shell_storage = ctx.reserve_scoped(0, "nx topology body nodes")?;
+    let mut body_shell_positions: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut shell_node_storage = ctx.reserve_scoped(0, "nx accepted body shells")?;
+    let mut body_shell_nodes = Vec::new();
+    let mut visit_shell = |shell: &'graph Node, body_id: u32, face_xmts: &[u32]| {
+        ctx.charge_work(1, "nx topology body nodes")?;
+        ctx.push_scoped_vec(
+            &mut shell_node_storage,
+            &mut body_shell_nodes,
+            shell,
+            "nx accepted body shells",
+        )?;
+        for &face in ctx.admit_iter(face_xmts, "nx valid topology faces")? {
+            valid_face_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut valid_face_xmts, face, "nx valid topology faces")
             })?;
         }
-    }
+        if !ctx.contains_key_btree_map(&body_shell_positions, &body_id, "nx topology body nodes")? {
+            body_shell_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut body_shell_positions,
+                    body_id,
+                    shell.pos(),
+                    "nx topology body nodes",
+                )
+            })?;
+        }
+        Ok(ControlFlow::Continue(()))
+    };
+    // discarded-value: the visitor always continues; its callbacks populate topology maps.
+    let _ = graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit_shell))?;
+    drop(visit_shell);
+    let mut face_loop_storage = ctx.reserve_scoped(0, "nx face loop ring index")?;
     let mut face_loop_rings: BTreeMap<u32, Vec<(u32, Vec<u32>)>> = BTreeMap::new();
+    let mut face_loop_failure_storage = ctx.reserve_scoped(0, "nx face loop failure index")?;
     let mut face_loop_failures: BTreeMap<u32, FaceLoopFailure> = BTreeMap::new();
     for &face_xmt in ctx.admit_iter(&valid_face_xmts, "nx face loop ring index")? {
-        let rings = storage.with_storage(|| match graph.face_loop_rings(ctx, face_xmt) {
+        let mut candidate_storage = ctx.reserve_scoped(0, "nx face loop ring candidate")?;
+        let rings = candidate_storage.with_storage(|| match graph.face_loop_rings(ctx, face_xmt) {
             Ok(rings) => Ok(Ok(rings)),
             Err(FaceLoopError::Invalid(failure)) => Ok(Err(failure)),
             Err(FaceLoopError::Codec(error)) => Err(error),
         })?;
         match rings {
             Ok(rings) => {
-                storage.with_storage(|| {
+                face_loop_storage.with_storage(|| {
                     ctx.insert_btree_map(
                         &mut face_loop_rings,
                         face_xmt,
                         rings,
                         "nx face loop ring index",
-                    )
+                    )?;
+                    candidate_storage.commit()
                 })?;
             }
             Err(failure) => {
-                storage.with_storage(|| {
+                drop(candidate_storage);
+                face_loop_failure_storage.with_storage(|| {
                     ctx.insert_btree_map(
                         &mut face_loop_failures,
                         face_xmt,
@@ -148,6 +241,8 @@ pub(super) fn emit_topology(
             }
         }
     }
+    let mut valid_loop_storage = ctx.reserve_scoped(0, "nx valid loop ring index")?;
+    let mut valid_fin_storage = ctx.reserve_scoped(0, "nx valid fin nodes")?;
     let mut valid_loop_rings: BTreeMap<u32, &[u32]> = BTreeMap::new();
     let mut valid_fin_xmts = BTreeSet::new();
     for rings in ctx
@@ -155,7 +250,7 @@ pub(super) fn emit_topology(
         .map(|(_, rings)| rings)
     {
         for (loop_xmt, ring) in ctx.admit_iter(rings, "nx valid loop ring index")? {
-            storage.with_storage(|| {
+            valid_loop_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut valid_loop_rings,
                     *loop_xmt,
@@ -170,11 +265,13 @@ pub(super) fn emit_topology(
         .map(|(_, ring)| *ring)
     {
         for &fin in ctx.admit_iter(ring, "nx valid fin nodes")? {
-            storage.with_storage(|| {
+            valid_fin_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut valid_fin_xmts, fin, "nx valid fin nodes")
             })?;
         }
     }
+    let mut valid_edge_storage = ctx.reserve_scoped(0, "nx valid edge nodes")?;
+    let mut valid_vertex_storage = ctx.reserve_scoped(0, "nx valid vertex nodes")?;
     let mut valid_edge_xmts = BTreeSet::new();
     let mut valid_vertex_xmts = BTreeSet::new();
     for &xmt in ctx.admit_iter(&valid_fin_xmts, "nx valid edge and vertex nodes")? {
@@ -182,7 +279,7 @@ pub(super) fn emit_topology(
             .get(ctx, NodeKind::Fin, xmt)?
             .and_then(Node::fin_fields);
         if let Some(edge) = fields.and_then(|fields| fields.edge.map(u32::from)) {
-            storage.with_storage(|| {
+            valid_edge_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut valid_edge_xmts, edge, "nx valid edge nodes")
             })?;
         }
@@ -203,34 +300,13 @@ pub(super) fn emit_topology(
         .flatten()
         .filter(|vertex| *vertex > 1)
         {
-            storage.with_storage(|| {
+            valid_vertex_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut valid_vertex_xmts, vertex, "nx valid vertex nodes")
             })?;
         }
     }
-    // The first body-shape shell of each body locates a body that has no
-    // BODY record of its own.
-    let mut body_shell_positions: BTreeMap<u32, usize> = BTreeMap::new();
-    for shell in ctx.admit_iter(&body_shells, "nx topology body nodes")? {
-        let shell = shell.node;
-        let Some(body) = shell
-            .shell_fields()
-            .and_then(|fields| fields.body.map(u32::from))
-        else {
-            continue;
-        };
-        if !ctx.contains_key_btree_map(&body_shell_positions, &body, "nx topology body nodes")? {
-            storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut body_shell_positions,
-                    body,
-                    shell.pos(),
-                    "nx topology body nodes",
-                )
-            })?;
-        }
-    }
     // Emitted bodies by record identity, with their arena positions.
+    let mut body_storage = ctx.reserve_scoped(0, "nx emitted body index")?;
     let mut bodies: BTreeMap<u32, usize> = BTreeMap::new();
     for (&body_xmt, &shell_pos) in ctx.admit_iter(&body_shell_positions, "nx emitted bodies")? {
         let id: BodyId =
@@ -247,7 +323,7 @@ pub(super) fn emit_topology(
             )?;
             annotations.exactness(ctx, id.as_str(), Exactness::Unknown)?;
         }
-        storage.with_storage(|| {
+        body_storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut bodies,
                 body_xmt,
@@ -266,9 +342,12 @@ pub(super) fn emit_topology(
         };
         ctx.push_vec(&mut ir.model.bodies, body, "nx emitted bodies")?;
     }
+    drop(body_shell_positions);
+    drop(body_shell_storage);
 
     // Valid faces of each shell record, in record order, whose surface
     // resolved to a carrier.
+    let mut shell_face_storage = ctx.reserve_scoped(0, "nx shell faces")?;
     let mut shell_faces_by_xmt: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     for face in graph.of_kind(NodeKind::Face) {
         ctx.charge_work(1, "nx shell faces")?;
@@ -288,7 +367,7 @@ pub(super) fn emit_topology(
             None => false,
         };
         if has_surface {
-            storage.with_storage(|| {
+            shell_face_storage.with_storage(|| {
                 ctx.push_btree_group(
                     &mut shell_faces_by_xmt,
                     shell,
@@ -301,10 +380,11 @@ pub(super) fn emit_topology(
     }
     // Regions by record identity: identity, owning body record and arena
     // position.
+    let mut region_storage = ctx.reserve_scoped(0, "nx emitted region index")?;
+    let mut shell_storage = ctx.reserve_scoped(0, "nx emitted shell index")?;
     let mut regions: BTreeMap<u32, (RegionId, u32, usize)> = BTreeMap::new();
     let mut shells: BTreeMap<u32, ShellId> = BTreeMap::new();
-    for shell in ctx.admit_iter(&body_shells, "nx emitted shells")? {
-        let node = shell.node;
+    for node in ctx.admit_iter(&body_shell_nodes, "nx emitted shells")? {
         let Some(fields) = node.shell_fields() else {
             continue;
         };
@@ -357,7 +437,7 @@ pub(super) fn emit_topology(
                     };
                     let body_region =
                         region.try_clone_for_decode(ctx, "nx body region identity")?;
-                    let indexed = storage.with_storage(|| {
+                    let indexed = region_storage.with_storage(|| {
                         region.try_clone_for_decode(ctx, "nx indexed region identity")
                     })?;
                     let region_index = ir.model.regions.len();
@@ -372,7 +452,7 @@ pub(super) fn emit_topology(
                     if let Some(parent) = ir.model.bodies.get_mut(body_index) {
                         ctx.push_vec(&mut parent.regions, body_region, "nx body regions")?;
                     }
-                    storage.with_storage(|| {
+                    region_storage.with_storage(|| {
                         ctx.insert_btree_map(
                             &mut regions,
                             region_xmt,
@@ -424,18 +504,28 @@ pub(super) fn emit_topology(
             }
         };
         ctx.push_vec(&mut ir.model.shells, shell, "nx emitted shells")?;
-        let indexed = storage
+        let indexed = shell_storage
             .with_storage(|| shell_id.try_clone_for_decode(ctx, "nx emitted shell index"))?;
         if let Some(parent) = ir.model.regions.get_mut(region_index) {
             ctx.push_vec(&mut parent.shells, shell_id, "nx region shells")?;
         }
-        storage.with_storage(|| {
+        shell_storage.with_storage(|| {
             ctx.insert_btree_map(&mut shells, node.xmt(), indexed, "nx emitted shell index")
         })?;
     }
+    drop(body_shell_nodes);
+    drop(shell_node_storage);
+    drop(regions);
+    drop(region_storage);
+    drop(shell_faces_by_xmt);
+    drop(shell_face_storage);
+    drop(bodies);
+    drop(body_storage);
+    let mut vertex_index_storage = ctx.reserve_scoped(0, "nx emitted vertex indexes")?;
     let mut vertices: BTreeMap<u32, VertexId> = BTreeMap::new();
     let mut vertex_positions: BTreeMap<VertexId, (Point3, Option<f64>)> = BTreeMap::new();
     {
+        let mut point_position_storage = ctx.reserve_scoped(0, "nx point position index")?;
         let mut point_positions: BTreeMap<&PointId, Point3> = BTreeMap::new();
         for point in ctx.admit_iter(&ir.model.points, "nx point position index")? {
             if !ctx.contains_key_btree_map(
@@ -443,7 +533,7 @@ pub(super) fn emit_topology(
                 &point.id,
                 "nx point position index",
             )? {
-                storage.with_storage(|| {
+                point_position_storage.with_storage(|| {
                     ctx.insert_btree_map(
                         &mut point_positions,
                         &point.id,
@@ -490,7 +580,7 @@ pub(super) fn emit_topology(
                     .derived(ctx, &vertex, "tolerance")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
-            storage.with_storage(|| {
+            vertex_index_storage.with_storage(|| {
                 let indexed = vertex.try_clone_for_decode(ctx, "nx indexed vertex identity")?;
                 ctx.insert_btree_map(
                     &mut vertices,
@@ -516,26 +606,32 @@ pub(super) fn emit_topology(
             };
             ctx.push_vec(&mut ir.model.vertices, record, "nx emitted vertices")?;
         }
+        drop(point_positions);
+        drop(point_position_storage);
     }
+    drop(valid_vertex_xmts);
+    drop(valid_vertex_storage);
+    let mut pcurve_index_storage = ctx.reserve_scoped(0, "nx pcurve index")?;
     let mut pcurve_indices: BTreeMap<PcurveId, usize> = BTreeMap::new();
     for (index, pcurve) in ctx
         .admit_iter(&ir.model.pcurves, "nx pcurve index")?
         .enumerate()
     {
-        storage.with_storage(|| {
+        pcurve_index_storage.with_storage(|| {
             let id = pcurve
                 .id
                 .try_clone_for_decode(ctx, "nx indexed pcurve identity")?;
             ctx.insert_btree_map(&mut pcurve_indices, id, index, "nx pcurve index")
         })?;
     }
+    let mut curve_index_storage = ctx.reserve_scoped(0, "nx curve index")?;
     let mut curve_indices: BTreeMap<CurveId, usize> = BTreeMap::new();
     for (index, curve) in ctx
         .admit_iter(&ir.model.curves, "nx curve index")?
         .enumerate()
     {
         if !ctx.contains_key_btree_map(&curve_indices, &curve.id, "nx curve index")? {
-            storage.with_storage(|| {
+            curve_index_storage.with_storage(|| {
                 let id = curve
                     .id
                     .try_clone_for_decode(ctx, "nx indexed curve identity")?;
@@ -543,28 +639,36 @@ pub(super) fn emit_topology(
             })?;
         }
     }
+    let mut procedural_curve_storage = ctx.reserve_scoped(0, "nx procedural curve index")?;
     let mut procedural_curve_ids: BTreeSet<CurveId> = BTreeSet::new();
     {
-        let (owners, _owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
-        for procedural in
-            ctx.admit_iter(&ir.model.procedural_curves, "nx procedural curve index")?
-        {
-            if let Some(Some(owner)) =
-                ctx.get_hash_map(&owners, &procedural.id, "nx procedural curve owners")?
+        let (owners, owner_storage) = procedural_curve_owners(ctx, &ir.model.curves)?;
+        let result = (|| {
+            for procedural in
+                ctx.admit_iter(&ir.model.procedural_curves, "nx procedural curve index")?
             {
-                storage.with_storage(|| {
-                    let owner =
-                        owner.try_clone_for_decode(ctx, "nx indexed procedural curve identity")?;
-                    ctx.insert_btree_set(
-                        &mut procedural_curve_ids,
-                        owner,
-                        "nx procedural curve index",
-                    )
-                })?;
+                if let Some(Some(owner)) =
+                    ctx.get_hash_map(&owners, &procedural.id, "nx procedural curve owners")?
+                {
+                    procedural_curve_storage.with_storage(|| {
+                        let owner = owner
+                            .try_clone_for_decode(ctx, "nx indexed procedural curve identity")?;
+                        ctx.insert_btree_set(
+                            &mut procedural_curve_ids,
+                            owner,
+                            "nx procedural curve index",
+                        )
+                    })?;
+                }
             }
-        }
+            Ok::<(), CodecError>(())
+        })();
+        drop(owners);
+        drop(owner_storage);
+        result?;
     }
     let mut curve_point_cache = CurvePointCache::new(ctx)?;
+    let mut edge_storage = ctx.reserve_scoped(0, "nx emitted edge index")?;
     let mut edges: BTreeMap<u32, EdgeId> = BTreeMap::new();
     for node in graph.of_kind(NodeKind::Edge) {
         ctx.charge_work(1, "nx emitted edges")?;
@@ -811,7 +915,7 @@ pub(super) fn emit_topology(
                 }
             }
         }
-        storage.with_storage(|| {
+        edge_storage.with_storage(|| {
             let indexed = id.try_clone_for_decode(ctx, "nx emitted edge index")?;
             ctx.insert_btree_map(&mut edges, node.xmt(), indexed, "nx emitted edge index")
         })?;
@@ -825,11 +929,23 @@ pub(super) fn emit_topology(
         };
         ctx.push_vec(&mut ir.model.edges, edge, "nx emitted edges")?;
     }
+    drop(valid_edge_xmts);
+    drop(valid_edge_storage);
+    drop(vertices);
+    drop(vertex_positions);
+    drop(vertex_index_storage);
+    drop(pcurve_indices);
+    drop(pcurve_index_storage);
+    drop(curve_indices);
+    drop(curve_index_storage);
+    drop(procedural_curve_ids);
+    drop(procedural_curve_storage);
     drop(curve_point_cache);
+    let mut edge_curve_storage = ctx.reserve_scoped(0, "nx edge curve index")?;
     let mut edge_curves_by_id: BTreeMap<&EdgeId, &CurveId> = BTreeMap::new();
     for edge in ctx.admit_iter(&ir.model.edges, "nx edge curve index")? {
         if let Some(curve) = edge.curve() {
-            storage.with_storage(|| {
+            edge_curve_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut edge_curves_by_id,
                     &edge.id,
@@ -839,7 +955,9 @@ pub(super) fn emit_topology(
             })?;
         }
     }
+    let mut face_index_storage = ctx.reserve_scoped(0, "nx emitted face index")?;
     let mut faces: BTreeMap<u32, FaceId> = BTreeMap::new();
+    let mut pending_face_storage = ctx.reserve_scoped(0, "nx pending faces")?;
     let mut pending_faces: Vec<PendingFace> = Vec::new();
     for node in graph.of_kind(NodeKind::Face) {
         ctx.charge_work(1, "nx pending faces")?;
@@ -873,7 +991,7 @@ pub(super) fn emit_topology(
                 .derived(ctx, &id, "tolerance")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
-        storage.with_storage(|| {
+        face_index_storage.with_storage(|| {
             let indexed = id.try_clone_for_decode(ctx, "nx emitted face index")?;
             ctx.insert_btree_map(&mut faces, node.xmt(), indexed, "nx emitted face index")
         })?;
@@ -886,12 +1004,17 @@ pub(super) fn emit_topology(
             tolerance: decoded_tolerance(fields.tolerance()),
         };
         ctx.push_scoped_vec(
-            &mut storage,
+            &mut pending_face_storage,
             &mut pending_faces,
             pending,
             "nx pending faces",
         )?;
     }
+    drop(valid_face_xmts);
+    drop(valid_face_storage);
+    drop(shells);
+    drop(shell_storage);
+    let mut loop_index_storage = ctx.reserve_scoped(0, "nx emitted loop indexes")?;
     let mut loops: BTreeMap<u32, LoopId> = BTreeMap::new();
     let mut loop_specs: BTreeMap<u32, (LoopId, FaceId)> = BTreeMap::new();
     for (&loop_xmt, &ring) in ctx.admit_iter(&valid_loop_rings, "nx emitted loop index")? {
@@ -909,7 +1032,7 @@ pub(super) fn emit_topology(
         }) else {
             continue;
         };
-        let id: LoopId = storage.with_storage(|| {
+        let id: LoopId = loop_index_storage.with_storage(|| {
             scope.id_charged(ctx, &cadmpeg_ir::identity_component!("loop"), node.xmt())
         })?;
         let ring_resolves = ctx.all_by(
@@ -937,7 +1060,7 @@ pub(super) fn emit_topology(
             continue;
         }
         annotate_node(ctx, annotations, id.as_str(), source_stream, node, "LOOP")?;
-        storage.with_storage(|| {
+        loop_index_storage.with_storage(|| {
             let spec = (
                 id.try_clone_for_decode(ctx, "nx loop specification identity")?,
                 face_ref.try_clone_for_decode(ctx, "nx loop face identity")?,
@@ -951,6 +1074,11 @@ pub(super) fn emit_topology(
             ctx.insert_btree_map(&mut loops, node.xmt(), id, "nx emitted loop index")
         })?;
     }
+    drop(valid_loop_rings);
+    drop(valid_loop_storage);
+    drop(faces);
+    drop(face_index_storage);
+    let mut fin_index_storage = ctx.reserve_scoped(0, "nx fin identity index")?;
     let mut fin_ids = BTreeMap::new();
     for &xmt in ctx.admit_iter(&valid_fin_xmts, "nx fin identity index")? {
         let Some(loop_xmt) = graph
@@ -961,7 +1089,7 @@ pub(super) fn emit_topology(
             continue;
         };
         if ctx.contains_key_btree_map(&loops, &u32::from(loop_xmt), "nx emitted loop index")? {
-            storage.with_storage(|| {
+            fin_index_storage.with_storage(|| {
                 let id = scope.id_charged::<CoedgeId>(
                     ctx,
                     &cadmpeg_ir::identity_component!("fin"),
@@ -971,21 +1099,26 @@ pub(super) fn emit_topology(
             })?;
         }
     }
+    drop(valid_fin_xmts);
+    drop(valid_fin_storage);
     // Preserve the endpoint proof only when the admitted carrier is the exact
     // intersection candidate consumed by the later attachment pass. A valid
     // unrelated coedge pcurve must not become a general admission shortcut.
-    let mut endpoint_witnesses = EndpointWitnesses::new();
-    let (valid_pcurve_fins, fallback_pcurves) = {
+    let mut intersection_pcurve_storage = ctx.reserve_scoped(0, "nx intersection pcurve index")?;
+    let mut valid_pcurve_storage = ctx.reserve_scoped(0, "nx valid pcurve fins")?;
+    let mut valid_pcurve_fins = BTreeSet::new();
+    let mut fallback_pcurve_storage = ctx.reserve_scoped(0, "nx fallback pcurve index")?;
+    let mut fallback_pcurves = BTreeMap::new();
+    {
         let intersection_pcurves = intersection_pcurve_index(
             ctx,
-            &mut storage,
+            &mut intersection_pcurve_storage,
             &ir.model.curves,
             &ir.model.procedural_curves,
         )?;
         let mut index_storage = ctx.reserve_scoped(0, "nx coedge pcurve model index")?;
         let index = index_storage
             .with_storage_limit(|| cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx))?;
-        let mut valid_pcurve_fins = BTreeSet::new();
         for &fin_xmt in ctx
             .admit_iter(&fin_ids, "nx valid pcurve fins")?
             .map(|(fin_xmt, _)| fin_xmt)
@@ -1041,7 +1174,7 @@ pub(super) fn emit_topology(
             let Some(parameter_range) = parameter_range else {
                 continue;
             };
-            storage.with_storage(|| {
+            valid_pcurve_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut valid_pcurve_fins, fin_xmt, "nx valid pcurve fins")
             })?;
             let Some(&(candidate_geometry, candidate_range, _)) = ctx.get_btree_map(
@@ -1055,36 +1188,25 @@ pub(super) fn emit_topology(
             if *candidate_geometry != carrier.geometry || candidate_range != parameter_range {
                 continue;
             }
-            let witness = (
-                carrier
-                    .geometry
-                    .try_clone_for_decode(ctx, "nx endpoint witness pcurve")?,
+            push_endpoint_witness(
+                ctx,
+                endpoint_witness_storage,
+                endpoint_witnesses,
+                curve,
+                support,
+                &carrier.geometry,
                 parameter_range,
                 endpoints,
-            );
-            let key = (
-                curve.try_clone_for_decode(ctx, "nx endpoint witness curve")?,
-                support.try_clone_for_decode(ctx, "nx endpoint witness support")?,
-            );
-            match ctx.get_mut_btree_map(
-                &mut endpoint_witnesses,
-                &key,
-                "nx endpoint witness index",
-            )? {
-                Some(witnesses) => ctx.push_vec(witnesses, witness, "nx endpoint witnesses")?,
-                None => {
-                    let mut witnesses = Vec::new();
-                    ctx.push_vec(&mut witnesses, witness, "nx endpoint witnesses")?;
-                    ctx.insert_btree_map(
-                        &mut endpoint_witnesses,
-                        key,
-                        witnesses,
-                        "nx endpoint witness index",
-                    )?;
-                }
-            }
+                EndpointWitnessOperations {
+                    lookup_key: "nx endpoint witness lookup key",
+                    curve: "nx endpoint witness curve",
+                    support: "nx endpoint witness support",
+                    pcurve: "nx endpoint witness pcurve",
+                    index: "nx endpoint witness index",
+                    witnesses: "nx endpoint witnesses",
+                },
+            )?;
         }
-        let mut fallback_pcurves = BTreeMap::new();
         for &fin_xmt in ctx
             .admit_iter(&fin_ids, "nx fallback pcurve index")?
             .map(|(fin_xmt, _)| fin_xmt)
@@ -1131,7 +1253,7 @@ pub(super) fn emit_topology(
                 fit_tolerance.map(cadmpeg_ir::geometry::FitTolerance::get),
                 adaptive_geometry_budget,
             )? {
-                storage.with_storage(|| {
+                fallback_pcurve_storage.with_storage(|| {
                     ctx.insert_btree_map(
                         &mut fallback_pcurves,
                         fin_xmt,
@@ -1141,8 +1263,10 @@ pub(super) fn emit_topology(
                 })?;
             }
         }
-        (valid_pcurve_fins, fallback_pcurves)
-    };
+        drop(intersection_pcurves);
+    }
+    drop(intersection_pcurve_storage);
+    let mut serialized_branch_storage = ctx.reserve_scoped(0, "nx serialized branch pcurves")?;
     let mut serialized_branch_pcurves = BTreeSet::new();
     for (&fin_xmt, id) in ctx.admit_iter(&fin_ids, "nx emitted coedges")? {
         let Some(node) = graph.get(ctx, NodeKind::Fin, fin_xmt)? else {
@@ -1220,7 +1344,7 @@ pub(super) fn emit_topology(
                     None => false,
                 };
             if same_support {
-                storage.with_storage(|| {
+                serialized_branch_storage.with_storage(|| {
                     let branch = (
                         edge_curve.try_clone_for_decode(ctx, "nx branch curve identity")?,
                         support.try_clone_for_decode(ctx, "nx branch support identity")?,
@@ -1296,7 +1420,15 @@ pub(super) fn emit_topology(
         };
         ctx.push_vec(&mut ir.model.coedges, coedge, "nx emitted coedges")?;
     }
-    drop((fallback_pcurves, edge_curves_by_id));
+    drop(fallback_pcurves);
+    drop(fallback_pcurve_storage);
+    drop(valid_pcurve_fins);
+    drop(valid_pcurve_storage);
+    drop(edge_curves_by_id);
+    drop(edge_curve_storage);
+    drop(loops);
+    drop(loop_index_storage);
+    let mut face_loops_storage = ctx.reserve_scoped(0, "nx face loop index")?;
     let mut face_loops: BTreeMap<FaceId, Vec<LoopId>> = BTreeMap::new();
     for rings in ctx
         .admit_iter(&face_loop_rings, "nx emitted loops")?
@@ -1349,7 +1481,7 @@ pub(super) fn emit_topology(
                 None => {
                     let mut loops = Vec::new();
                     ctx.push_vec(&mut loops, loop_id, "nx face loops")?;
-                    storage.with_storage(|| {
+                    face_loops_storage.with_storage(|| {
                         let key = face.try_clone_for_decode(ctx, "nx face loop index identity")?;
                         ctx.insert_btree_map(&mut face_loops, key, loops, "nx face loop index")
                     })?;
@@ -1357,6 +1489,11 @@ pub(super) fn emit_topology(
             }
         }
     }
+    drop(face_loop_rings);
+    drop(face_loop_storage);
+    drop(loop_specs);
+    drop(fin_ids);
+    drop(fin_index_storage);
     for pending in ctx.admit_iter(pending_faces, "nx emitted faces")? {
         if let Some(failure) = ctx.remove_btree_map(
             &mut face_loop_failures,
@@ -1387,6 +1524,11 @@ pub(super) fn emit_topology(
         };
         ctx.push_vec(&mut ir.model.faces, face, "nx emitted faces")?;
     }
+    drop(pending_face_storage);
+    drop(face_loops);
+    drop(face_loops_storage);
+    drop(face_loop_failures);
+    drop(face_loop_failure_storage);
     attach_tolerant_edge_intersections_with_budget(
         ctx,
         ir,
@@ -1422,10 +1564,13 @@ pub(super) fn emit_topology(
         completion_geometry_budget,
     )?;
     intersection_index.complete_new_pcurves_from_stream(ctx, ir, intersection_starts.pcurves)?;
+    drop(serialized_branch_pcurves);
+    drop(serialized_branch_storage);
 
+    let mut edge_index_storage = ctx.reserve_scoped(0, "nx retained edge index")?;
     let mut owned_edges = BTreeSet::new();
     for coedge in ctx.admit_iter(&ir.model.coedges, "nx owned edge index")? {
-        storage.with_storage(|| {
+        edge_index_storage.with_storage(|| {
             ctx.insert_btree_set(&mut owned_edges, &coedge.edge, "nx owned edge index")
         })?;
     }
@@ -1434,14 +1579,12 @@ pub(super) fn emit_topology(
         .admit_iter(&edges, "nx candidate edge index")?
         .map(|(_, edge)| edge)
     {
-        storage.with_storage(|| {
+        edge_index_storage.with_storage(|| {
             ctx.insert_btree_set(&mut candidate_edges, edge, "nx candidate edge index")
         })?;
     }
-    let edge_marks = keep_marks(
-        ctx,
-        &mut storage,
-        &ir.model.edges,
+    ctx.retain_vec(
+        &mut ir.model.edges,
         |edge| {
             Ok(
                 !ctx.contains_btree_set(&candidate_edges, &edge.id, "nx candidate edge index")?
@@ -1451,10 +1594,13 @@ pub(super) fn emit_topology(
         "nx retained edges",
     )?;
     drop((owned_edges, candidate_edges));
-    retain_marked(&mut ir.model.edges, edge_marks);
+    drop(edge_index_storage);
+    drop(edges);
+    drop(edge_storage);
+    let mut retained_vertex_storage = ctx.reserve_scoped(0, "nx retained vertex index")?;
     let mut retained_vertices = BTreeSet::new();
     for edge in ctx.admit_iter(&ir.model.edges, "nx retained vertex index")? {
-        storage.with_storage(|| {
+        retained_vertex_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut retained_vertices,
                 &edge.start,
@@ -1467,11 +1613,9 @@ pub(super) fn emit_topology(
             )
         })?;
     }
-    let scope_prefix = storage.with_storage(|| scope.prefix_charged(ctx))?;
-    let vertex_marks = keep_marks(
-        ctx,
-        &mut storage,
-        &ir.model.vertices,
+    let scope_prefix = retained_vertex_storage.with_storage(|| scope.prefix_charged(ctx))?;
+    ctx.retain_vec(
+        &mut ir.model.vertices,
         |vertex| {
             Ok(
                 !ctx.starts_with(vertex.id.as_str(), &scope_prefix, "nx retained vertices")?
@@ -1484,9 +1628,9 @@ pub(super) fn emit_topology(
         },
         "nx retained vertices",
     )?;
-    drop(retained_vertices);
-    retain_marked(&mut ir.model.vertices, vertex_marks);
-    Ok(endpoint_witnesses)
+    drop((retained_vertices, scope_prefix));
+    drop(retained_vertex_storage);
+    Ok(())
 }
 
 /// Stream lookups that lift an edge without a 3D carrier to its pcurve.
@@ -1549,36 +1693,42 @@ fn intersection_pcurve_index<'ir>(
     curves: &'ir [Curve],
     procedural_curves: &'ir [ProceduralCurve],
 ) -> Result<IntersectionPcurveIndex<'ir>, CodecError> {
-    let (owners, _owner_storage) = procedural_curve_owners(ctx, curves)?;
+    let (owners, owner_storage) = procedural_curve_owners(ctx, curves)?;
     let mut index = IntersectionPcurveIndex::new();
-    for procedural in ctx.admit_iter(procedural_curves, "nx intersection pcurve index")? {
-        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-        else {
-            continue;
-        };
-        let Some(Some(owner)) =
-            ctx.get_hash_map(&owners, &procedural.id, "nx procedural curve owners")?
-        else {
-            continue;
-        };
-        for side in context.sides() {
-            let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
+    let result = (|| {
+        for procedural in ctx.admit_iter(procedural_curves, "nx intersection pcurve index")? {
+            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+            else {
                 continue;
             };
-            storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut index,
-                    (*owner, surface),
-                    (
-                        &pcurve.geometry,
-                        context.parameter_range().endpoints(),
-                        procedural.cache_fit_tolerance(),
-                    ),
-                    "nx intersection pcurve index",
-                )
-            })?;
+            let Some(Some(owner)) =
+                ctx.get_hash_map(&owners, &procedural.id, "nx procedural curve owners")?
+            else {
+                continue;
+            };
+            for side in context.sides() {
+                let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
+                    continue;
+                };
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut index,
+                        (*owner, surface),
+                        (
+                            &pcurve.geometry,
+                            context.parameter_range().endpoints(),
+                            procedural.cache_fit_tolerance(),
+                        ),
+                        "nx intersection pcurve index",
+                    )
+                })?;
+            }
         }
-    }
+        Ok::<(), CodecError>(())
+    })();
+    drop(owners);
+    drop(owner_storage);
+    result?;
     Ok(index)
 }
 
@@ -1679,30 +1829,6 @@ fn fin_pcurve_candidate<'inputs>(
         carrier,
         use_range,
     }))
-}
-
-/// Visit values once and record which of them `keep` admits. The marks let a
-/// caller release its borrows before [`retain_marked`] edits the arena.
-pub(super) fn keep_marks<T>(
-    ctx: &DecodeContext<'_>,
-    storage: &mut ScopedReservation<'_>,
-    values: &[T],
-    mut keep: impl FnMut(&T) -> Result<bool, CodecError>,
-    operation: &'static str,
-) -> Result<Vec<bool>, CodecError> {
-    let mut marks = Vec::new();
-    for value in ctx.admit_iter(values, operation)? {
-        let mark = keep(value)?;
-        ctx.push_scoped_vec(storage, &mut marks, mark, operation)?;
-    }
-    Ok(marks)
-}
-
-/// Keep the arena values whose mark is set, in order. The marks were produced
-/// by one admitted pass over the same arena.
-pub(super) fn retain_marked<T>(values: &mut Vec<T>, marks: Vec<bool>) {
-    let mut marks = marks.into_iter();
-    values.retain(|_| marks.next().unwrap_or(false));
 }
 
 pub(super) struct UnresolvedTopologyStream<'inputs, 'storage> {

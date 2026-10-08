@@ -43,7 +43,7 @@ use std::num::NonZeroU8;
 use std::sync::Arc;
 
 use crate::printable_string::PrintableString;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -1427,15 +1427,17 @@ impl<'a> Section<'a> {
     }
 
     /// Decode the bounded per-object status lane after the operation records.
-    pub(crate) fn operation_state_status_table(
+    pub(crate) fn operation_state_status_table<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<OperationStateStatusTable<'a>>, CodecError> {
-        Ok(self
-            .operation_state_block(ctx)?
-            .map(|block| block.into_status_table(ctx))
-            .transpose()?
-            .flatten())
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<
+        Option<(OperationStateStatusTable<'a, 'ctx>, ScopedReservation<'ctx>)>,
+        CodecError,
+    > {
+        let Some(block) = self.operation_state_block(ctx)? else {
+            return Ok(None);
+        };
+        block.into_status_table(ctx)
     }
 
     /// Decode the contiguous standalone message records immediately before

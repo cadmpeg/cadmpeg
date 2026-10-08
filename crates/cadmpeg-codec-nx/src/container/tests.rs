@@ -884,7 +884,7 @@ fn external_reference_paths_refuse_retained_string_limit() {
 
 #[test]
 fn external_reference_paths_refuse_work_limit() {
-    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
+    let payload = b"prefix\x01\x02\x00\x00\x00\x09\x00child.prt\x0c\x00nested/b.prt";
     let container = external_reference_path_container(payload);
     let error = crate::test_support::resource_refusal_at(
         payload,
@@ -897,8 +897,32 @@ fn external_reference_paths_refuse_work_limit() {
         },
     );
     assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "project NX external reference paths")
+        matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "project NX external reference paths"
+                && limit.additional == 1)
     );
+}
+
+#[test]
+fn external_reference_strings_refuse_before_visiting_the_unselected_suffix() {
+    let payload = b"prefix\x01\x02\x00\x00\x00\x09\x00child.prt\x0c\x00nested/b.prt";
+    let container = external_reference_path_container(payload);
+    let error = crate::test_support::resource_refusal_at(
+        payload,
+        ResourceDimension::WorkUnits,
+        "project NX external reference strings",
+        |ctx| {
+            let (strings, storage) = container.external_reference_strings(ctx)?;
+            drop(strings);
+            drop(storage);
+            Ok(())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "project NX external reference strings"
+            && limit.additional == 1));
 }
 
 #[test]
@@ -928,7 +952,7 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
     payload.extend_from_slice(b"\x01\x01\x00\x00\x00\x09\x00child.prt");
 
     crate::test_support::with_decode_context(|ctx| {
-        let (records, records_storage) =
+        let (records, records_storage, handles_storage) =
             crate::container::parse_extref_records(ctx, &payload).expect("record resources");
         let (indexed, indexed_storage) = crate::container::parse_extref_record_index(ctx, &payload)
             .expect("index resources")
@@ -949,6 +973,7 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
         assert_eq!(records[0].tail_byte_len, 0);
         drop(records);
         drop(records_storage);
+        drop(handles_storage);
         drop(indexed);
         drop(indexed_storage);
     });
@@ -959,11 +984,12 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
         .expect("closing duplicate");
     payload[duplicate + 1] = 0x10;
     crate::test_support::with_decode_context(|ctx| {
-        let (records, records_storage) =
+        let (records, records_storage, handles_storage) =
             crate::container::parse_extref_records(ctx, &payload).expect("record resources");
         assert!(records.is_empty());
         drop(records);
         drop(records_storage);
+        drop(handles_storage);
         let (indexed, indexed_storage) = crate::container::parse_extref_record_index(ctx, &payload)
             .expect("index resources")
             .expect("opaque indexed record");
@@ -1014,6 +1040,26 @@ fn nine_push_growth_copy_work<T>() -> u64 {
     cadmpeg_core::decode::u64_from_index(moved_bytes)
 }
 
+fn external_reference_handle_parse_work(record_count: usize, tokens_per_record: usize) -> u64 {
+    // parse_extref_records visits each encoded token once before allocation
+    // and once while extracting it. Handle ordering compares every neighbor.
+    let token_visits = record_count
+        .checked_mul(tokens_per_record)
+        .and_then(|count| count.checked_mul(2))
+        .expect("handle token visit work fits usize");
+    let comparisons = record_count
+        .checked_mul(tokens_per_record.saturating_sub(1))
+        .expect("handle ordering comparisons fit usize");
+    let comparison_work = comparisons
+        .checked_mul(1 + 2 * std::mem::size_of::<u32>())
+        .expect("handle ordering work fits usize");
+    cadmpeg_core::decode::u64_from_index(
+        token_visits
+            .checked_add(comparison_work)
+            .expect("handle parse work fits usize"),
+    )
+}
+
 #[test]
 fn external_reference_record_parser_charges_only_visited_index_records() {
     const RECORD_COUNT: usize = 9;
@@ -1023,9 +1069,11 @@ fn external_reference_record_parser_charges_only_visited_index_records() {
         ResourceDimension::WorkUnits,
         "parse NX external reference records",
         |ctx| {
-            let (records, storage) = container::parse_extref_records(ctx, &payload)?;
+            let (records, storage, handles_storage) =
+                container::parse_extref_records(ctx, &payload)?;
             drop(records);
             drop(storage);
+            drop(handles_storage);
             Ok(())
         },
     );
@@ -1036,6 +1084,7 @@ fn external_reference_record_parser_charges_only_visited_index_records() {
     let exact_work = limit
         .used
         .checked_add(cadmpeg_core::decode::u64_from_index(RECORD_COUNT))
+        .and_then(|work| work.checked_add(external_reference_handle_parse_work(RECORD_COUNT, 1)))
         .and_then(|work| {
             work.checked_add(nine_push_growth_copy_work::<container::ExtrefRecord>())
         })
@@ -1045,14 +1094,119 @@ fn external_reference_record_parser_charges_only_visited_index_records() {
         &[],
         |policy| policy.limits.max_work_units = exact_work,
         |ctx| {
-            let (records, storage) =
+            let (records, storage, handles_storage) =
                 container::parse_extref_records(ctx, &payload).expect("all nine visits fit");
             assert_eq!(records.len(), RECORD_COUNT);
             drop(records);
             drop(storage);
+            drop(handles_storage);
             assert_eq!(ctx.resource_refusal(), None);
         },
     );
+}
+
+#[test]
+fn external_reference_handle_parser_charges_each_token_pass() {
+    const RECORD_COUNT: usize = 9;
+    let payload = crate::test_support::test_streams::external_reference_handle_sets(RECORD_COUNT);
+    for operation in [
+        "validate NX external reference handle tokens",
+        "extract NX external reference handles",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                let (records, storage, handles_storage) =
+                    container::parse_extref_records(ctx, &payload)?;
+                drop(records);
+                drop(storage);
+                drop(handles_storage);
+                Ok(())
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == operation && limit.additional == 1));
+    }
+}
+
+#[test]
+fn external_reference_handle_ordering_charges_each_comparison() {
+    let payload = crate::test_support::test_streams::external_reference_stream();
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX external reference handle order",
+        |ctx| {
+            let (records, storage, handles_storage) =
+                container::parse_extref_records(ctx, &payload)?;
+            drop(records);
+            drop(storage);
+            drop(handles_storage);
+            Ok(())
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("handle ordering must charge its first adjacent comparison");
+    };
+    assert_eq!(limit.additional, 1);
+    let comparison_work = cadmpeg_core::decode::u64_from_index(
+        1 + 2 * std::mem::size_of::<u32>(),
+    );
+    let exact_work = limit
+        .used
+        .checked_add(comparison_work)
+        .expect("one handle comparison fits the work budget");
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = exact_work,
+        |ctx| {
+            let (records, storage, handles_storage) = container::parse_extref_records(ctx, &payload)
+                .expect("the two-token order check fits exactly");
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].handles.serialized(), [0x10, 0x20]);
+            assert_eq!(ctx.resource_refusal(), None);
+            drop(records);
+            drop(storage);
+            drop(handles_storage);
+        },
+    );
+}
+
+#[test]
+fn external_reference_record_parser_rejects_unsorted_handles() {
+    let mut payload = crate::test_support::test_streams::external_reference_stream();
+    let first = 51 + crate::layout::extrefstream_handle_set_record::LEN;
+    let second = first + 5;
+    payload[first + 1..first + 5].copy_from_slice(&0x20u32.to_be_bytes());
+    payload[second + 1..second + 5].copy_from_slice(&0x10u32.to_be_bytes());
+
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "NX external reference handle order",
+        |ctx| {
+            let (records, records_storage, handles_storage) =
+                container::parse_extref_records(ctx, &payload)?;
+            drop(records);
+            drop(records_storage);
+            drop(handles_storage);
+            Ok(())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "NX external reference handle order" && limit.additional == 1));
+
+    crate::test_support::with_decode_context(|ctx| {
+        let (records, storage, handles_storage) = container::parse_extref_records(ctx, &payload)
+            .expect("invalid handle ordering is a grammar rejection");
+        assert!(records.is_empty());
+        assert_eq!(ctx.resource_refusal(), None);
+        drop(records);
+        drop(storage);
+        drop(handles_storage);
+    });
 }
 
 #[test]
@@ -1111,9 +1265,11 @@ fn external_reference_record_container_projection_charges_each_tuple() {
         ResourceDimension::WorkUnits,
         "project NX external reference record entries",
         |ctx| {
-            let (records, storage) = container.external_reference_records(ctx)?;
+            let (records, storage, handles_storage) =
+                container.external_reference_records(ctx)?;
             drop(records);
             drop(storage);
+            drop(handles_storage);
             Ok(())
         },
     );
@@ -1135,12 +1291,13 @@ fn external_reference_record_container_projection_charges_each_tuple() {
         &[],
         |policy| policy.limits.max_work_units = exact_work,
         |ctx| {
-            let (records, storage) = container
+            let (records, storage, handles_storage) = container
                 .external_reference_records(ctx)
                 .expect("all nine tuple visits fit");
             assert_eq!(records.len(), RECORD_COUNT);
             drop(records);
             drop(storage);
+            drop(handles_storage);
             assert_eq!(ctx.resource_refusal(), None);
         },
     );
@@ -1208,11 +1365,14 @@ fn external_reference_record_projection_keeps_scratch_and_retained_handles_separ
     let index_peak = index_node
         + 4 * std::mem::size_of::<(u32, usize)>()
         + 2 * std::mem::size_of::<container::ExtrefIndexedRecord>();
+    let handle_storage = 2 * std::mem::size_of::<u32>();
     let parsed_records_peak =
         2 * std::mem::size_of::<container::ExtrefIndexedRecord>()
-            + 4 * std::mem::size_of::<container::ExtrefRecord>();
+            + 4 * std::mem::size_of::<container::ExtrefRecord>()
+            + handle_storage;
     let output_slots = 4 * std::mem::size_of::<(&DirEntry, container::ExtrefRecord)>();
-    let projection_peak = 4 * std::mem::size_of::<container::ExtrefRecord>() + output_slots;
+    let projection_peak =
+        4 * std::mem::size_of::<container::ExtrefRecord>() + handle_storage + output_slots;
     let peak = index_peak.max(parsed_records_peak).max(projection_peak);
 
     crate::test_support::with_decode_context_over(
@@ -1222,23 +1382,30 @@ fn external_reference_record_projection_keeps_scratch_and_retained_handles_separ
                 cadmpeg_core::decode::u64_from_index(peak);
         },
         |ctx| {
-            let (records, storage) = container
+            let (records, storage, handles_storage) = container
                 .external_reference_records(ctx)
                 .expect("record projection fits its exact scratch peak");
             assert_eq!(records.len(), 1);
             assert_eq!(records[0].1.handles.serialized().len(), 2);
             let refusal = ctx
                 .reserve_scoped(
-                    cadmpeg_core::decode::u64_from_index(peak - output_slots + 1),
+                    cadmpeg_core::decode::u64_from_index(
+                        peak - output_slots - handle_storage + 1,
+                    ),
                     "probe external reference result lifetime",
                 )
                 .expect_err("returned outer slots remain scoped until the vector is dropped");
             assert!(matches!(refusal, CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.used == cadmpeg_core::decode::u64_from_index(output_slots)
-                    && limit.additional == cadmpeg_core::decode::u64_from_index(peak - output_slots + 1)));
+                    && limit.used == cadmpeg_core::decode::u64_from_index(
+                        output_slots + handle_storage
+                    )
+                    && limit.additional == cadmpeg_core::decode::u64_from_index(
+                        peak - output_slots - handle_storage + 1
+                    )));
             drop(records);
             drop(storage);
+            drop(handles_storage);
         },
     );
 }
@@ -1255,11 +1422,14 @@ fn external_reference_record_projection_refuses_exact_outer_scratch_growth() {
     let index_peak = index_node
         + 4 * std::mem::size_of::<(u32, usize)>()
         + 2 * std::mem::size_of::<container::ExtrefIndexedRecord>();
+    let handle_storage = 2 * std::mem::size_of::<u32>();
     let parsed_records_peak =
         2 * std::mem::size_of::<container::ExtrefIndexedRecord>()
-            + 4 * std::mem::size_of::<container::ExtrefRecord>();
+            + 4 * std::mem::size_of::<container::ExtrefRecord>()
+            + handle_storage;
     let output_slots = 4 * std::mem::size_of::<(&DirEntry, container::ExtrefRecord)>();
-    let projection_peak = 4 * std::mem::size_of::<container::ExtrefRecord>() + output_slots;
+    let projection_peak =
+        4 * std::mem::size_of::<container::ExtrefRecord>() + handle_storage + output_slots;
     let peak = index_peak.max(parsed_records_peak).max(projection_peak);
 
     crate::test_support::with_decode_context_over(
@@ -1277,7 +1447,7 @@ fn external_reference_record_projection_refuses_exact_outer_scratch_growth() {
                     && limit.operation == "nx external reference record entries"
                     && limit.limit == cadmpeg_core::decode::u64_from_index(peak - 1)
                     && limit.used == cadmpeg_core::decode::u64_from_index(
-                        4 * std::mem::size_of::<container::ExtrefRecord>()
+                        4 * std::mem::size_of::<container::ExtrefRecord>() + handle_storage
                     )
                     && limit.additional == cadmpeg_core::decode::u64_from_index(output_slots)));
         },
@@ -1365,7 +1535,7 @@ fn external_reference_indexed_projection_refuses_peak_reallocation_overlap() {
 }
 
 #[test]
-fn external_reference_record_handles_remain_retained_after_projection() {
+fn external_reference_record_handles_remain_scoped_until_native_projection() {
     let payload = crate::test_support::test_streams::external_reference_stream();
     let file = prt_with_named_payloads(&[("/Root/ExternalReferences", payload)]);
     let container = crate::test_support::with_decode_context(|ctx| {
@@ -1375,22 +1545,26 @@ fn external_reference_record_handles_remain_retained_after_projection() {
 
     crate::test_support::with_decode_context_over(
         &[],
-        |policy| policy.limits.max_retained_bytes = 2 * std::mem::size_of::<u32>() as u64,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 1024;
+        },
         |ctx| {
-            let (records, storage) = container
+            let (records, storage, handles_storage) = container
                 .external_reference_records(ctx)
-                .expect("only the transferred handle payload is retained");
+                .expect("parsed handles remain scoped through native projection");
             assert_eq!(records.len(), 1);
             assert_eq!(records[0].1.handles.serialized(), [0x10, 0x20]);
             let error = ctx
                 .charge_retained(1, "probe retained external reference handles")
-                .expect_err("the nested handle vector remains retained");
+                .expect_err("the parser does not retain its nested handle vector");
             assert!(matches!(error, CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 2 * std::mem::size_of::<u32>() as u64
+                    && limit.used == 0
                     && limit.additional == 1));
             drop(records);
             drop(storage);
+            drop(handles_storage);
         },
     );
 }

@@ -49,7 +49,10 @@ use crate::decode::build::{rmfastload_allows_terminal_lineage, topology_body_nod
 use crate::decode::feature_completeness::output_free_local_body_construction;
 
 use crate::framing::node_kind::NodeKind;
-use std::{collections::BTreeSet, io::Cursor};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::Cursor,
+};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::BodyId;
@@ -1027,7 +1030,12 @@ fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing()
 
     crate::test_support::with_decode_context(|ctx| {
         let graph = crate::topology::Graph::parse(ctx, &stream).unwrap();
-        assert!(topology_body_node_ids(ctx, 0, &graph).unwrap().is_empty());
+        let mut body_storage = ctx.reserve_scoped(0, "nx topology body test").unwrap();
+        let mut body_node_ids = BTreeMap::new();
+        topology_body_node_ids(ctx, 0, &graph, &mut body_node_ids, &mut body_storage).unwrap();
+        assert!(body_node_ids.is_empty());
+        drop(body_node_ids);
+        drop(body_storage);
     });
 }
 

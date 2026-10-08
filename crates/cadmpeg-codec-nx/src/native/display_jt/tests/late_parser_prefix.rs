@@ -250,6 +250,91 @@ fn topology_packet_sequence(packets: Vec<DisplayJtTopologyPacket>) -> DisplayJtT
     }
 }
 
+fn group_node() -> DisplayJtGroupNodeData {
+    DisplayJtGroupNodeData {
+        id: "group-node".into(),
+        base_node: "base-node".into(),
+        object_id: 1,
+        version: 1,
+        child_object_ids: Vec::new(),
+        family_data_byte_len: 0,
+        family_data_sha256: Sha256Digest::digest(&[]),
+        source_offset: 0,
+    }
+}
+
+fn instance_node() -> DisplayJtInstanceNode {
+    DisplayJtInstanceNode {
+        id: "instance-node".into(),
+        base_node: "base-node".into(),
+        object_id: 1,
+        version: 1,
+        child_object_id: 2,
+        source_offset: 0,
+    }
+}
+
+fn transform_attribute() -> DisplayJtGeometricTransformAttribute {
+    DisplayJtGeometricTransformAttribute {
+        id: "transform".into(),
+        element: "element".into(),
+        object_id: 1,
+        state_flags: 0,
+        field_inhibit_flags: 0,
+        stored_values_mask: 0xffff,
+        matrix: JtTransformMatrix::try_from([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("fixture matrix is valid"),
+        source_offset: 0,
+    }
+}
+
+fn material_attribute() -> DisplayJtMaterialAttribute {
+    DisplayJtMaterialAttribute {
+        id: "material".into(),
+        element: "element".into(),
+        object_id: 2,
+        state_flags: 0,
+        field_inhibit_flags: 0,
+        version: JtMaterialVersion::One,
+        data_flags: 0,
+        ambient: jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).expect("fixture color is valid"),
+        diffuse: jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).expect("fixture color is valid"),
+        specular: jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).expect("fixture color is valid"),
+        emission: jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).expect("fixture color is valid"),
+        shininess: JtShininess::new(1.0).expect("fixture shininess is valid"),
+        source_offset: 0,
+    }
+}
+
+fn shape_node() -> DisplayJtTriStripShapeNode {
+    DisplayJtTriStripShapeNode {
+        id: "shape-node".into(),
+        base_node: "base-node".into(),
+        object_id: 1,
+        reserved_bounds: JtBounds::try_from([[0.0; 3]; 2]).expect("fixture bounds are valid"),
+        untransformed_bounds: JtBounds::try_from([[0.0; 3]; 2])
+            .expect("fixture bounds are valid"),
+        area: JtArea::new(0.0).expect("fixture area is valid"),
+        vertex_count_range: [0, 0],
+        node_count_range: [0, 0],
+        polygon_count_range: [0, 0],
+        memory_byte_len: 0,
+        compression_level: 0.0_f32.try_into().expect("fixture level is valid"),
+        vertex_version: JtVertexVersion::One,
+        vertex_bindings: 0,
+        vertex_quantization_bits: 0,
+        normal_quantization_factor: 0,
+        texture_quantization_bits: 0,
+        color_quantization_bits: 0,
+        source_offset: 0,
+    }
+}
+
 #[test]
 fn face_degree_and_topology_scans_stop_at_the_first_bad_shape_element() {
     let container = empty_container();
@@ -478,6 +563,44 @@ fn high_degree_mask_scan_stops_at_the_first_missing_lane_value() {
 }
 
 #[test]
+fn large_mask_word_visits_are_admitted_one_lane_at_a_time() {
+    let mut packets = vec![topology_packet(
+        TopologyPacketRole::VertexValences,
+        Some(vec![3]),
+    )];
+    for context in TopologyContext::ALL {
+        packets.push(topology_packet(
+            TopologyPacketRole::FaceDegrees(context),
+            Some(Vec::new()),
+        ));
+        packets.push(topology_packet(
+            TopologyPacketRole::FaceAttributeMasks(context),
+            Some(Vec::new()),
+        ));
+    }
+    packets.push(topology_packet(
+        TopologyPacketRole::FaceAttributeMasks7Next30,
+        Some(Vec::new()),
+    ));
+    packets.push(topology_packet(
+        TopologyPacketRole::FaceAttributeMasks7Upper4,
+        Some(Vec::new()),
+    ));
+    for index in 0..129_u8 {
+        packets.push(topology_packet(
+            TopologyPacketRole::HighDegreeFaceAttributeMasks(usize::from(index)),
+            Some(Vec::new()),
+        ));
+    }
+    let sequences = [topology_packet_sequence(packets)];
+    let headers = [malformed_coordinate_header()];
+    assert_charged_visit("nx JT large mask words", |ctx: &DecodeContext<'_>| {
+        let _ = display_jt_polygon_meshes(ctx, &sequences, &headers)?;
+        Ok(true)
+    });
+}
+
+#[test]
 fn segment_and_scene_scans_stop_at_the_first_invalid_segment() {
     let container = empty_container();
     let short_compressed = vec![segment(2, Some(invalid_compression()))];
@@ -561,6 +684,122 @@ fn tessellation_scan_stops_at_the_first_mesh_without_its_coordinate_header() {
 }
 
 #[test]
+fn unshaded_tessellation_triangle_visits_are_admitted_one_at_a_time() {
+    let mesh = DisplayJtPolygonMesh::try_from(DisplayJtPolygonMeshWire {
+        id: "mesh".into(),
+        topology: "sequence".into(),
+        coordinate_header: "coordinate-header".into(),
+        polygons: vec![vec![0, 1, 2]; 129],
+        vertex_attribute_indices: vec![vec![None; 3]; 129],
+        polygon_groups: vec![0; 129],
+        polygon_flags: vec![0; 129],
+        source_offset: 0,
+    })
+    .expect("matched polygon corner arrays");
+    let coordinates = DisplayJtVertexCoordinates {
+        id: "coordinates".into(),
+        header: "coordinate-header".into(),
+        points_m: vec![
+            [0.0, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite fixture")),
+            [1.0, 0.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite fixture")),
+            [0.0, 1.0, 0.0].map(|value| FiniteBinary32::new(value).expect("finite fixture")),
+        ],
+        coordinate_hash: 0,
+        byte_len: 0,
+        source_offset: 0,
+    };
+    let coordinate_header = DisplayJtVertexCoordinateArrayHeader {
+        id: "coordinate-header".into(),
+        element: "shape-element".into(),
+        unique_vertex_count: 3,
+        component_count: 3,
+        component_ranges: [QuantizedRange::ZERO; 3],
+        component_quantization_bits: [0; 3],
+        compressed_components_byte_len: 0,
+        compressed_components_sha256: Sha256Digest::digest(&[]),
+        source_offset: 0,
+    };
+    let shape_element = DisplayJtShapeLodElement {
+        id: "shape-element".into(),
+        segment: "shape-segment".into(),
+        ordinal: 0,
+        object_type_id: [0; 16],
+        object_id: 7,
+        body_byte_len: 0,
+        body_sha256: Sha256Digest::digest(&[]),
+        source_offset: 0,
+    };
+    let binding = DisplayJtShapeLodBinding {
+        id: "binding".into(),
+        scene_segment: "scene".into(),
+        table_version: 1,
+        shape_node_object_id: 1,
+        key_object_id: 2,
+        key: "shape".into(),
+        value_object_id: 3,
+        state_flags: 0,
+        property_version: 1,
+        shape_segment: "shape-segment".into(),
+        payload_object_id: 7,
+        reserved_value: 1,
+        source_offset: 0,
+    };
+    let shape = shape_node();
+    let base = base_node("base-node".into(), 1);
+    let vertex_header = DisplayJtCompressedVertexRecordsHeader {
+        id: "vertex-header".into(),
+        element: "shape-element".into(),
+        vertex_bindings: 0,
+        vertex_quantization_bits: 0,
+        normal_quantization_factor: 0,
+        texture_quantization_bits: 0,
+        color_quantization_bits: 0,
+        topological_vertex_count: 3,
+        vertex_attribute_count: 0,
+        compressed_arrays_byte_len: 0,
+        compressed_arrays_sha256: Sha256Digest::digest(&[]),
+        source_offset: 0,
+    };
+    let compressed_element = DisplayJtCompressedElement {
+        id: "element".into(),
+        segment: "scene".into(),
+        segment_type: 1,
+        ordinal: 0,
+        object_type_id: [0; 16],
+        object_base_type: 0,
+        object_id: 1,
+        body_byte_len: 0,
+        body_sha256: Sha256Digest::digest(&[]),
+        inflated_offset: 0,
+        source_offset: 0,
+    };
+    let inputs = DisplayJtTessellationInputs {
+        meshes: std::slice::from_ref(&mesh),
+        coordinates: std::slice::from_ref(&coordinates),
+        normals: &[],
+        colors: &[],
+        texture_coordinates: &[],
+        vertex_flags: &[],
+        vertex_headers: std::slice::from_ref(&vertex_header),
+        coordinate_headers: std::slice::from_ref(&coordinate_header),
+        shape_elements: std::slice::from_ref(&shape_element),
+        bindings: std::slice::from_ref(&binding),
+        shape_nodes: std::slice::from_ref(&shape),
+        base_nodes: std::slice::from_ref(&base),
+        group_nodes: &[],
+        instance_nodes: &[],
+        transforms: &[],
+        materials: &[],
+        compressed_elements: std::slice::from_ref(&compressed_element),
+    };
+    assert_charged_visit("nx JT tessellation triangles", |ctx: &DecodeContext<'_>| {
+        let tessellations = display_jt_tessellations(ctx, &inputs)?;
+        assert_eq!(tessellations.len(), 1);
+        Ok(true)
+    });
+}
+
+#[test]
 fn scene_graph_base_scan_stops_at_the_first_duplicate_object_id() {
     let short_bases = vec![base_node("base-a".into(), 7), base_node("base-b".into(), 7)];
     let mut long_bases = short_bases.clone();
@@ -600,4 +839,66 @@ fn scene_graph_base_scan_stops_at_the_first_duplicate_object_id() {
         |ctx: &DecodeContext<'_>| run(ctx, &short_bases),
         |ctx: &DecodeContext<'_>| run(ctx, &long_bases),
     );
+}
+
+#[test]
+fn jt_tessellation_indexes_admit_slice_visits_before_processing_each_record() {
+    let groups = vec![group_node(); 129];
+    assert_charged_visit("index JT group children", |ctx: &DecodeContext<'_>| {
+        let inputs = DisplayJtTessellationInputs {
+            group_nodes: &groups,
+            ..tessellation_inputs(&[])
+        };
+        drop(JtTessellationIndex::new(ctx, &inputs)?);
+        Ok(true)
+    });
+
+    let instances = vec![instance_node(); 129];
+    assert_charged_visit("index JT instance children", |ctx: &DecodeContext<'_>| {
+        let inputs = DisplayJtTessellationInputs {
+            instance_nodes: &instances,
+            ..tessellation_inputs(&[])
+        };
+        drop(JtTessellationIndex::new(ctx, &inputs)?);
+        Ok(true)
+    });
+
+    let compressed_elements = [compressed_element()];
+    let transforms = vec![transform_attribute(); 129];
+    assert_charged_visit("nx JT scoped transforms", |ctx: &DecodeContext<'_>| {
+        let inputs = DisplayJtTessellationInputs {
+            transforms: &transforms,
+            compressed_elements: &compressed_elements,
+            ..tessellation_inputs(&[])
+        };
+        let index = JtTessellationIndex::new(ctx, &inputs)?;
+        drop(JtSceneGraph::new(ctx, "scene", &inputs, &index)?);
+        Ok(true)
+    });
+
+    let materials = vec![material_attribute(); 129];
+    assert_charged_visit("nx JT scoped materials", |ctx: &DecodeContext<'_>| {
+        let inputs = DisplayJtTessellationInputs {
+            materials: &materials,
+            compressed_elements: &compressed_elements,
+            ..tessellation_inputs(&[])
+        };
+        let index = JtTessellationIndex::new(ctx, &inputs)?;
+        drop(JtSceneGraph::new(ctx, "scene", &inputs, &index)?);
+        Ok(true)
+    });
+
+    let bases = [base_node("base-node".into(), 1)];
+    let shapes = vec![shape_node(); 129];
+    assert_charged_visit("index JT mesh shape nodes", |ctx: &DecodeContext<'_>| {
+        let inputs = DisplayJtTessellationInputs {
+            shape_nodes: &shapes,
+            base_nodes: &bases,
+            compressed_elements: &compressed_elements,
+            ..tessellation_inputs(&[])
+        };
+        let scene = JtTessellationIndex::new(ctx, &inputs)?;
+        drop(JtMeshIndex::new(ctx, &inputs, &scene)?);
+        Ok(true)
+    });
 }

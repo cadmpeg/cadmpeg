@@ -15,16 +15,43 @@ use crate::test_support::test_streams::deltas_intersection_curve_stream;
 use crate::test_support::test_streams::offset_surface_topology_partition_stream;
 use crate::test_support::test_streams::topology_partition_stream;
 use std::io::Cursor;
+use std::ops::ControlFlow;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::NxLossCode;
 use crate::topology::{
-    intersection_data_curves, FaceLoopError, FaceLoopFailure, Graph, Node, NodeCandidate,
-    TYPE_38_SCHEMA_HEADER,
+    intersection_data_curves, BodyShapeShellVisitor, FaceLoopError, FaceLoopFailure, Graph, Node,
+    NodeCandidate, TYPE_38_SCHEMA_HEADER,
 };
 use crate::NxCodec;
 use cadmpeg_core::decode::View;
+
+fn body_shape_shell_count(
+    graph: &Graph,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut count = 0;
+    let mut visit = |_, _| {
+        count += 1;
+        Ok(ControlFlow::Continue(()))
+    };
+    let _ = graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Summary(&mut visit))?;
+    Ok(count)
+}
+
+fn body_shape_shell_count_with_faces(
+    graph: &Graph,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    let mut count = 0;
+    let mut visit = |_, _, _: &[u32]| {
+        count += 1;
+        Ok(ControlFlow::Continue(()))
+    };
+    let _ = graph.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))?;
+    Ok(count)
+}
 
 #[test]
 fn topology_graph_parse_refuses_collection_limit() {
@@ -114,8 +141,19 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             crate::topology::Graph::parse(ctx, &valid)
         })
         .unwrap();
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().len(), 1);
+        assert_eq!(body_shape_shell_count(&graph, ctx).unwrap(), 1);
         assert!(graph.has_body_shape_shell(ctx).unwrap());
+        let expected_face = graph.of_kind(NodeKind::Face)[0].xmt();
+        let mut published = 0;
+        let mut visit = |_, _, faces: &[u32]| {
+            assert_eq!(faces, &[expected_face]);
+            published += 1;
+            Ok(ControlFlow::Continue(()))
+        };
+        let _ = graph
+            .visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))
+            .unwrap();
+        assert_eq!(published, 1);
 
         let mut broken = valid;
         let face = broken
@@ -125,8 +163,17 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
         put_ref(&mut broken, face + 24, 99);
         let broken_graph =
             crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &broken)).unwrap();
-        assert!(broken_graph.body_shape_shells(ctx).unwrap().is_empty());
+        assert_eq!(body_shape_shell_count(&broken_graph, ctx).unwrap(), 0);
         assert!(!broken_graph.has_body_shape_shell(ctx).unwrap());
+        let mut published = false;
+        let mut visit = |_, _, _: &[u32]| {
+            published = true;
+            Ok(ControlFlow::Continue(()))
+        };
+        let _ = broken_graph
+            .visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))
+            .unwrap();
+        assert!(!published);
 
         let mut independent_previous = topology_partition_stream();
         let face = independent_previous
@@ -138,7 +185,7 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             crate::topology::Graph::parse(ctx, &independent_previous)
         })
         .unwrap();
-        assert_eq!(independent_previous_graph.body_shape_shells(ctx).unwrap().len(), 1);
+        assert_eq!(body_shape_shell_count(&independent_previous_graph, ctx).unwrap(), 1);
         assert!(independent_previous_graph
             .has_body_shape_shell(ctx)
             .unwrap());
@@ -160,7 +207,7 @@ fn topology_retains_shell_body_identity_without_body_record() {
         })
         .unwrap();
         assert!(graph.node(NodeKind::Body, 2).is_none());
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().len(), 1);
+        assert_eq!(body_shape_shell_count(&graph, ctx).unwrap(), 1);
 
         let mut input = Cursor::new(prt_with_partition(&stream));
         let result = NxCodec
@@ -197,7 +244,7 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
         })
         .unwrap();
 
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().len(), 1);
+        assert_eq!(body_shape_shell_count(&graph, ctx).unwrap(), 1);
         assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
         assert!(crate::test_support::with_decode_context(
             |ctx| graph.has_complete_body_topology(ctx)
@@ -436,18 +483,18 @@ fn topology_carrier_references_refuse_collection_limit() {
 }
 
 #[test]
-fn topology_body_shells_refuse_at_shell_face_identities() {
+fn topology_body_shell_face_chain_refuses_at_scoped_candidate_storage() {
     let stream = topology_partition_stream();
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
     let error = crate::test_support::resource_refusal_at(
         &stream,
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "NX shell face identities",
-        |ctx| graph.body_shape_shells(ctx),
+        |ctx| body_shape_shell_count_with_faces(&graph, ctx),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
     );
 }
 
@@ -681,7 +728,7 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         })
         .unwrap();
         assert!(graph.node(NodeKind::Region, 12).is_none());
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().len(), 1);
+        assert_eq!(body_shape_shell_count(&graph, ctx).unwrap(), 1);
         assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 2);
         assert!(graph.has_body_shape_shell(ctx).unwrap());
         let mut body_id = None;
@@ -700,6 +747,97 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         assert_eq!(result.ir().model.regions.len(), 1);
         assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
         assert_eq!(result.ir().model.faces.len(), 2);
+        let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
+        assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+    });
+}
+
+#[test]
+fn topology_keeps_nonmonotone_linked_face_order_in_native_identity() {
+    crate::test_support::with_decode_context(|ctx| {
+        let mut stream = topology_partition_stream();
+        let shell = stream
+            .windows(4)
+            .position(|window| window == [0, 13, 0, 3])
+            .expect("shell record");
+        put_ref(&mut stream, shell + 22, 1);
+        let region = stream
+            .windows(4)
+            .position(|window| window == [0, 19, 0, 12])
+            .expect("region record");
+        stream[region..region + 16].fill(0xff);
+        let first_face_pos = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
+        .unwrap()
+        .node(NodeKind::Face, 4)
+        .unwrap()
+        .pos();
+        put_ref(&mut stream, first_face_pos + 18, 2);
+        put_ref(&mut stream, shell + 22, 1);
+        let mut second_face = record(14, 39);
+        put_ref(&mut second_face, 2, 2);
+        put_f64(&mut second_face, 10, 0.000_2);
+        put_ref(&mut second_face, 18, 1);
+        put_ref(&mut second_face, 20, 1);
+        put_ref(&mut second_face, 22, 1);
+        put_ref(&mut second_face, 24, 3);
+        put_ref(&mut second_face, 26, 6);
+        second_face[28] = b'+';
+        stream.extend(second_face);
+
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
+        .unwrap();
+        assert!(graph.node(NodeKind::Region, 12).is_none());
+        assert_eq!(body_shape_shell_count(&graph, ctx).unwrap(), 1);
+        assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 2);
+        assert!(graph.has_body_shape_shell(ctx).unwrap());
+        let mut observed_chain = false;
+        let mut visit = |_, _, face_xmts: &[u32]| {
+            assert_eq!(face_xmts, &[4, 2]);
+            observed_chain = true;
+            Ok(ControlFlow::Continue(()))
+        };
+        let _ = graph
+            .visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))
+            .unwrap();
+        assert!(observed_chain);
+        let mut body_id = None;
+        graph
+            .visit_body_shape_body_ids(ctx, |candidate| {
+                body_id = Some(candidate);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(body_id, Some(2));
+
+        let mut input = Cursor::new(prt_with_partition(&stream));
+        let result = NxCodec
+            .decode(&mut input, &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.regions.len(), 1);
+        assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
+        assert_eq!(result.ir().model.faces.len(), 2);
+        // Finalization sorts arena identities; shell membership keeps record order.
+        assert_eq!(
+            result.ir().model.faces[0].id.as_str(),
+            "nx:s0:face#2"
+        );
+        assert_eq!(
+            result.ir().model.faces[1].id.as_str(),
+            "nx:s0:face#4"
+        );
+        assert_eq!(
+            result.ir().model.shells[0]
+                .faces()
+                .iter()
+                .map(cadmpeg_ir::ids::FaceId::as_str)
+                .collect::<Vec<_>>(),
+            vec!["nx:s0:face#4", "nx:s0:face#2"]
+        );
         let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
             .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -916,7 +1054,7 @@ fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
             graph.node(NodeKind::Shell, 3).map(super::Node::pos),
             Some(shell)
         );
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().len(), 1);
+        assert_eq!(body_shape_shell_count(&graph, ctx).unwrap(), 1);
         assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
     });
 }
@@ -1411,7 +1549,7 @@ fn body_shape_classification_refuses_at_the_shell_visit() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "classify NX body shells",
-        |ctx| graph.body_shape_shells(ctx),
+        |ctx| body_shape_shell_count(&graph, ctx),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1534,14 +1672,18 @@ fn topology_body_census_stops_after_the_first_face_without_loops() {
         panic!("the first shell visit must refuse");
     };
     assert_eq!(limit.additional, 1);
-    // After complete shell classification and face counting, the census reads
-    // one shell, one face, and one four-key lookup. The first face has no loops.
+    // The first callback visits one face and its four-key lookup, then fails
+    // before a FIN ring. Classification still visits the second shell: one
+    // two-owner lookup, one face-chain visit and one four-key graph lookup.
+    // The second callback counts its face but does not inspect its loops.
     let lookup_work = 4 * cadmpeg_core::decode::u64_from_index(
         std::mem::size_of::<NodeKind>() + std::mem::size_of::<u32>(),
     );
     crate::test_support::with_decode_context_over(
         &[],
-        |policy| policy.limits.max_work_units = limit.used + 2 + lookup_work,
+        |policy| policy.limits.max_work_units = limit.used + 1 + lookup_work
+            + 1 + 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>())
+            + 1 + lookup_work,
         |ctx| {
             assert_eq!(graph.body_topology_census(ctx).unwrap(), (false, 2));
             assert!(ctx.resource_refusal().is_none());

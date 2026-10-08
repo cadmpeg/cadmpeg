@@ -5,7 +5,7 @@ use super::nonempty::NonEmpty;
 use super::state_message::{OperationStateMessage, StateMessage};
 use super::state_slot_lane::StateSlotLane;
 use super::state_status::{operation_state_opaque_lane_end_at, operation_state_status_row_at};
-use super::state_table::{OperationStateStatusTable, StateTableEntry};
+use super::state_table::{OperationStateStatusTable, StateSlotTokens, StateTableEntry};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
@@ -13,14 +13,15 @@ use std::num::NonZeroUsize;
 pub(super) struct OperationStateBlock<'a, 'ctx> {
     offset: usize,
     status_end: usize,
-    body: BlockBody<'a>,
+    body: BlockBody<'a, 'ctx>,
+    entry_storage: ScopedReservation<'ctx>,
     // Keeps message workspace charged until the body is consumed.
     message_storage: ScopedReservation<'ctx>,
 }
 
-enum BlockBody<'a> {
+enum BlockBody<'a, 'ctx> {
     Statuses {
-        entries: NonEmpty<StateTableEntry<'a>>,
+        entries: NonEmpty<StateTableEntry<'a, 'ctx>>,
         messages: Vec<StateMessage<&'a str>>,
     },
     Messages(NonEmpty<StateMessage<&'a str>>),
@@ -30,12 +31,13 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
     fn from_parts(
         ctx: &DecodeContext<'_>,
         offset: usize,
-        entries: Vec<StateTableEntry<'a>>,
+        entries: Vec<StateTableEntry<'a, 'ctx>>,
         messages: Vec<StateMessage<&'a str>>,
+        entry_storage: ScopedReservation<'ctx>,
         message_storage: ScopedReservation<'ctx>,
     ) -> Result<Option<Self>, CodecError> {
         let mut end = offset;
-        if !ctx.all_by(
+        let status_widths = ctx.all_by(
             &entries,
             |entry| {
                 let Some(next) = end.checked_add(entry.byte_len(ctx)?) else {
@@ -45,11 +47,26 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
                 Ok(true)
             },
             "NX state block status widths",
-        )? {
-            return Ok(None);
+        );
+        match status_widths {
+            Ok(true) => {}
+            Ok(false) => {
+                drop(entries);
+                drop(messages);
+                drop(entry_storage);
+                drop(message_storage);
+                return Ok(None);
+            }
+            Err(error) => {
+                drop(entries);
+                drop(messages);
+                drop(entry_storage);
+                drop(message_storage);
+                return Err(error);
+            }
         }
         let status_end = end;
-        if !ctx.all_by(
+        let message_widths = ctx.all_by(
             &messages,
             |message| {
                 let Some(next) = end.checked_add(message.byte_len()) else {
@@ -59,13 +76,30 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
                 Ok(true)
             },
             "NX state block message widths",
-        )? {
-            return Ok(None);
+        );
+        match message_widths {
+            Ok(true) => {}
+            Ok(false) => {
+                drop(entries);
+                drop(messages);
+                drop(entry_storage);
+                drop(message_storage);
+                return Ok(None);
+            }
+            Err(error) => {
+                drop(entries);
+                drop(messages);
+                drop(entry_storage);
+                drop(message_storage);
+                return Err(error);
+            }
         }
         let body = match NonEmpty::from_admitted_vec(entries) {
             Some(entries) => BlockBody::Statuses { entries, messages },
             None => {
                 let Some(messages) = NonEmpty::from_admitted_vec(messages) else {
+                    drop(entry_storage);
+                    drop(message_storage);
                     return Ok(None);
                 };
                 BlockBody::Messages(messages)
@@ -75,6 +109,7 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
             offset,
             status_end,
             body,
+            entry_storage,
             message_storage,
         }))
     }
@@ -82,30 +117,57 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
     fn new(
         ctx: &'ctx DecodeContext<'_>,
         offset: usize,
-        entries: Vec<StateTableEntry<'a>>,
+        entries: Vec<StateTableEntry<'a, 'ctx>>,
         messages: Vec<StateMessage<&'a str>>,
     ) -> Result<Option<Self>, CodecError> {
-        let storage = ctx.reserve_scoped(0, "NX test state message workspace")?;
-        Self::from_parts(ctx, offset, entries, messages, storage)
+        let entry_storage = ctx.reserve_scoped(0, "NX test state entry workspace")?;
+        let message_storage = ctx.reserve_scoped(0, "NX test state message workspace")?;
+        Self::from_parts(
+            ctx,
+            offset,
+            entries,
+            messages,
+            entry_storage,
+            message_storage,
+        )
     }
     pub(super) fn into_status_table(
         self,
         ctx: &DecodeContext<'_>,
-    ) -> Result<Option<OperationStateStatusTable<'a>>, CodecError> {
+    ) -> Result<
+        Option<(OperationStateStatusTable<'a, 'ctx>, ScopedReservation<'ctx>)>,
+        CodecError,
+    > {
         let Self {
             offset,
             body,
+            entry_storage,
             message_storage,
             ..
         } = self;
         let table = match body {
-            BlockBody::Statuses { entries, .. } => {
-                OperationStateStatusTable::new(ctx, offset, entries)
+            BlockBody::Statuses { entries, messages } => {
+                let table = OperationStateStatusTable::new(ctx, offset, entries);
+                drop(messages);
+                table
             }
-            BlockBody::Messages(_) => Ok(None),
+            BlockBody::Messages(messages) => {
+                drop(messages);
+                Ok(None)
+            }
         };
         drop(message_storage);
-        table
+        match table {
+            Ok(Some(table)) => Ok(Some((table, entry_storage))),
+            Ok(None) => {
+                drop(entry_storage);
+                Ok(None)
+            }
+            Err(error) => {
+                drop(entry_storage);
+                Err(error)
+            }
+        }
     }
     #[cfg(test)]
     fn status_end_offset(&self) -> usize {
@@ -118,10 +180,13 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
         let offset = self.status_end;
         let Self {
             body,
+            entry_storage,
             message_storage,
             ..
         } = self;
         let located = locate_messages(ctx, offset, &body);
+        drop(body);
+        drop(entry_storage);
         drop(message_storage);
         located
     }
@@ -154,20 +219,25 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
 fn locate_messages<'a>(
     ctx: &DecodeContext<'_>,
     mut offset: usize,
-    body: &BlockBody<'a>,
+    body: &BlockBody<'a, '_>,
 ) -> Result<Option<Vec<OperationStateMessage<'a>>>, CodecError> {
     let mut located = Vec::new();
-    let (initial, last) = match body {
-        BlockBody::Statuses { messages, .. } => (messages.as_slice(), &[][..]),
+    let (initial, last, mut remaining) = match body {
+        BlockBody::Statuses { messages, .. } => (messages.as_slice(), &[][..], messages.len()),
         BlockBody::Messages(messages) => {
-            (messages.initial(), std::slice::from_ref(messages.last()))
+            (
+                messages.initial(),
+                std::slice::from_ref(messages.last()),
+                messages.len(),
+            )
         }
     };
-    for body in ctx
-        .admit_iter(initial, "NX state message traversal")?
-        .chain(last.iter())
-        .copied()
-    {
+    let mut messages = initial.iter().chain(last.iter()).copied();
+    while remaining != 0 {
+        let Some(body) = ctx.next_charged(&mut messages, "NX state message traversal")? else {
+            break;
+        };
+        remaining -= 1;
         let Some(message) = OperationStateMessage::new(offset, body) else {
             return Ok(None);
         };
@@ -345,7 +415,7 @@ pub(super) fn operation_state_block_before_boundary<'a, 'ctx>(
         return Ok(None);
     };
     let path_end = path.end;
-    let mut output_storage = ctx.reserve_scoped(0, "NX state block candidate storage")?;
+    let mut entry_storage = ctx.reserve_scoped(0, "NX state block candidate storage")?;
     let mut message_storage = ctx.reserve_scoped(0, "NX state block message workspace")?;
     let mut entries = Vec::new();
     let mut messages = Vec::new();
@@ -391,18 +461,28 @@ pub(super) fn operation_state_block_before_boundary<'a, 'ctx>(
                 .is_none_or(|(_, message_length)| length >= message_length)
         }) {
             if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-                let Some(lane) = output_storage
-                    .with_storage(|| StateSlotLane::read(ctx, bytes, at, end, base_offset))?
+                let Some((lane, token_storage)) =
+                    StateSlotLane::read(ctx, bytes, at, end, base_offset)?
                 else {
                     return Ok(None);
                 };
                 let lane_end = lane.end_offset() - base_offset;
                 if lane_end != next {
+                    drop(lane);
+                    drop(token_storage);
                     return Ok(None);
                 }
-                output_storage
-                    .with_storage(|| ctx.reserve_vec(&mut entries, 1, "nx state block entries"))?;
-                entries.push(StateTableEntry::Slots(lane.into_slots()));
+                if let Err(error) = entry_storage
+                    .with_storage(|| ctx.reserve_vec(&mut entries, 1, "nx state block entries"))
+                {
+                    drop(lane);
+                    drop(token_storage);
+                    return Err(error);
+                }
+                entries.push(StateTableEntry::Slots(StateSlotTokens::new(
+                    lane.into_slots(),
+                    token_storage,
+                )));
                 at = next;
             } else {
                 let Some(row) = operation_state_status_row_at(
@@ -420,7 +500,7 @@ pub(super) fn operation_state_block_before_boundary<'a, 'ctx>(
                 if row_end != next {
                     return Ok(None);
                 }
-                output_storage
+                entry_storage
                     .with_storage(|| ctx.reserve_vec(&mut entries, 1, "nx state block entries"))?;
                 entries.push(StateTableEntry::Status(row.body()));
                 at = next;
@@ -457,18 +537,21 @@ pub(super) fn operation_state_block_before_boundary<'a, 'ctx>(
     let Some(offset) = base_offset.checked_add(offset) else {
         return Ok(None);
     };
-    let block = OperationStateBlock::from_parts(ctx, offset, entries, messages, message_storage)?;
-    if block.is_some() {
-        output_storage.commit()?;
-    }
-    Ok(block)
+    OperationStateBlock::from_parts(
+        ctx,
+        offset,
+        entries,
+        messages,
+        entry_storage,
+        message_storage,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         operation_state_block_before_boundary, OperationStateBlock, OperationStateMessage,
-        StateSlotLane, StateTableEntry,
+        StateSlotLane, StateSlotTokens, StateTableEntry,
     };
     use crate::om::operation_state_group_table;
     use crate::om::state_status::{operation_state_status_row_at, StateStatusPayload};
@@ -493,9 +576,44 @@ mod tests {
                     .into_messages(ctx)
             },
         );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "NX state message traversal" && limit.additional == 1)
+        let cadmpeg_core::CodecError::ResourceLimit(first_visit) = error else {
+            unreachable!("the operation-specific probe returned a work refusal");
+        };
+        assert_eq!(first_visit.operation, "NX state message traversal");
+        assert_eq!(first_visit.additional, 1);
+        let second_visit_cap = first_visit
+            .used
+            .checked_add(1)
+            .expect("second message visit cap fits");
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = second_visit_cap,
+            |ctx| {
+                let error = OperationStateBlock::new(ctx, 100, Vec::new(), vec![message, message])
+                    .and_then(|block| block.unwrap().into_messages(ctx))
+                    .expect_err("the second message visit must be admitted separately");
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.operation == "NX state message traversal"
+                        && limit.used == second_visit_cap
+                        && limit.additional == 1));
+            },
+        );
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = first_visit
+                    .used
+                    .checked_add(2)
+                    .expect("exact message visit cap fits")
+            },
+            |ctx| {
+                let messages = OperationStateBlock::new(ctx, 100, Vec::new(), vec![message, message])
+                    .and_then(|block| block.unwrap().into_messages(ctx))
+                    .expect("both message visits fit exactly")
+                    .expect("message block is nonempty");
+                assert_eq!(messages.len(), 2);
+                assert_eq!(ctx.resource_refusal(), None);
+            },
         );
     }
 
@@ -509,10 +627,15 @@ mod tests {
         .body();
 
         crate::test_support::with_decode_context(|ctx| {
-            let slots = StateSlotLane::read(ctx, &[2, 1, 0x11, 0xff, 2, 0x11], 0, 6, 0)
+            let (lane, token_storage) = StateSlotLane::read(
+                ctx,
+                &[2, 1, 0x11, 0xff, 2, 0x11],
+                0,
+                6,
+                0,
+            )
                 .unwrap()
-                .unwrap()
-                .into_slots();
+                .unwrap();
             let message = crate::test_support::with_decode_context(|ctx| {
                 OperationStateMessage::read(
                     ctx,
@@ -526,17 +649,17 @@ mod tests {
             .body();
             let entries = vec![
                 StateTableEntry::Status(row),
-                StateTableEntry::Slots(slots),
+                StateTableEntry::Slots(StateSlotTokens::new(
+                    lane.into_slots(),
+                    token_storage,
+                )),
                 StateTableEntry::Status(row),
             ];
-            let block = OperationStateBlock::new(ctx, 100, entries.clone(), vec![message])
+            let block = OperationStateBlock::new(ctx, 100, entries, vec![message])
                 .unwrap()
                 .unwrap();
             assert_eq!(block.status_end_offset(), 112);
-            let table =
-                crate::test_support::with_decode_context(|ctx| block.into_status_table(ctx))
-                    .unwrap()
-                    .unwrap();
+            let (table, entry_storage) = block.into_status_table(ctx).unwrap().unwrap();
             let positioned: Vec<_> = table.into_entries(ctx).collect::<Result<_, _>>().unwrap();
             assert_eq!(
                 positioned
@@ -546,16 +669,33 @@ mod tests {
                 [100, 103, 109]
             );
             assert!(matches!(positioned[1].1, StateTableEntry::Slots(_)));
+            drop(positioned);
+            drop(entry_storage);
 
-            crate::test_support::with_decode_context(|ctx| {
-                let messages = OperationStateBlock::new(ctx, 100, entries, vec![message])
+            let (lane, token_storage) = StateSlotLane::read(
+                ctx,
+                &[2, 1, 0x11, 0xff, 2, 0x11],
+                0,
+                6,
+                0,
+            )
+            .unwrap()
+            .unwrap();
+            let entries = vec![
+                StateTableEntry::Status(row),
+                StateTableEntry::Slots(StateSlotTokens::new(
+                    lane.into_slots(),
+                    token_storage,
+                )),
+                StateTableEntry::Status(row),
+            ];
+            let messages = OperationStateBlock::new(ctx, 100, entries, vec![message])
                     .unwrap()
                     .unwrap()
                     .into_messages(ctx)
                     .unwrap()
                     .unwrap();
-                assert_eq!((messages[0].offset(), messages[0].end_offset()), (112, 125));
-            });
+            assert_eq!((messages[0].offset(), messages[0].end_offset()), (112, 125));
         });
     }
 
@@ -774,7 +914,7 @@ mod tests {
     }
 
     #[test]
-    fn operation_state_block_refuses_retained_limit() {
+    fn operation_state_block_reader_uses_scoped_storage() {
         let bytes = [
             0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff,
         ];
@@ -785,13 +925,11 @@ mod tests {
                 policy.limits.max_retained_bytes = 0;
             },
             |ctx| {
-                let error = operation_state_block_before_boundary(ctx, &bytes, 0, bytes.len(), 0)
-                    .err()
-                    .expect("resource refusal");
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-                );
+                let block = operation_state_block_before_boundary(ctx, &bytes, 0, bytes.len(), 0)
+                    .expect("reader storage is scoped")
+                    .expect("the same bounded status block is valid");
+                drop(block);
+                assert!(ctx.resource_refusal().is_none());
             },
         );
     }
@@ -865,7 +1003,7 @@ mod tests {
     }
 
     #[test]
-    fn state_message_singleton_needs_no_traversal_budget() {
+    fn state_message_singleton_charges_its_input_sized_visit() {
         let message = crate::test_support::with_decode_context(|ctx| {
             OperationStateMessage::read(ctx, &[3, 3, b'A', 0, 0, 0, 0, 0, 0xa0, 0, 0, 0, 0], 0, 0)
         })
@@ -875,6 +1013,18 @@ mod tests {
         crate::test_support::with_decode_context_over(
             &[],
             |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let error = super::locate_messages(ctx, 100,
+                    &super::BlockBody::Messages(super::NonEmpty::new([message]).unwrap()),
+                ).expect_err("the first input-sized visit must be admitted");
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.operation == "NX state message traversal"
+                        && limit.used == 0 && limit.additional == 1));
+            },
+        );
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 1,
             |ctx| {
                 let located = super::locate_messages(
                     ctx,
