@@ -9486,12 +9486,21 @@ impl<'ctx> BoundsIndex<'ctx> {
                         axis = candidate;
                     }
                 }
-                ctx.sort_unstable_by(
-                    entries,
-                    |entry| &entry.bounds[axis][0],
-                    f64::total_cmp,
-                    operation,
-                )?;
+                if entries.len() == 2 {
+                    if entries[0].bounds[axis][0]
+                        .total_cmp(&entries[1].bounds[axis][0])
+                        .is_gt()
+                    {
+                        entries.swap(0, 1);
+                    }
+                } else {
+                    ctx.sort_unstable_by(
+                        entries,
+                        |entry| &entry.bounds[axis][0],
+                        f64::total_cmp,
+                        operation,
+                    )?;
+                }
                 let middle = entries.len() / 2;
                 let (left, right) = entries.split_at_mut(middle);
                 build(ctx, left, nodes, storage, operation)?;
@@ -10624,6 +10633,164 @@ fn owner_contains_face_bounds(
     })
 }
 
+fn distinct_face_witnesses(
+    ctx: &DecodeContext<'_>,
+    witnesses: &[Point3],
+) -> Result<Vec<Point3>, CodecError> {
+    const OP: &str = "catia_a5_distinct_face_witnesses";
+    let mut storage = ctx.reserve_scoped(0, OP)?;
+    let (mut entries, mut accepted) = storage.with_storage(|| {
+        let entries =
+            ctx.collect_indexed_vec(witnesses.len(), "catia_a5_witness_bounds_index", |item| {
+                Ok(BoundsEntry {
+                    bounds: point_bounds(witnesses[item], 0.0),
+                    item,
+                })
+            })?;
+        let accepted = ctx.alloc_filled(witnesses.len(), false, "catia_a5_witness_bounds_index")?;
+        Ok::<_, CodecError>((entries, accepted))
+    })?;
+    let index = BoundsIndex::new(ctx, &mut entries, "catia_a5_witness_bounds_index")?;
+    let mut distinct = Vec::new();
+    for (item, &point) in ctx.admit_iter(witnesses, OP)?.enumerate() {
+        let bounds = point_bounds(point, NURBS_SURFACE_MEMBERSHIP_TOLERANCE);
+        if !ctx.any_by(
+            index.overlapping(bounds),
+            |node| {
+                Ok(node.item.is_some_and(|other| {
+                    accepted[other]
+                        && bounds_overlap(node.bounds, bounds)
+                        && witnesses[other].distance(point) <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                }))
+            },
+            OP,
+        )? {
+            accepted[item] = true;
+            ctx.push_vec(&mut distinct, point, OP)?;
+        }
+    }
+    Ok(distinct)
+}
+
+struct A5BindingIndex<'a, 'ctx> {
+    carriers: &'a [crate::families::a5a8::records::FreeformSurface],
+    owners: &'a [crate::families::b2::records::B2OwnerPacket],
+    carriers_by_bounds: BoundsIndex<'ctx>,
+    owners_by_bounds: BoundsIndex<'ctx>,
+}
+
+impl<'a, 'ctx> A5BindingIndex<'a, 'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        carriers: &'a [crate::families::a5a8::records::FreeformSurface],
+        owners: &'a [crate::families::b2::records::B2OwnerPacket],
+    ) -> Result<Self, CodecError> {
+        const OP: &str = "catia_a5_binding_bounds_index";
+        let mut storage = ctx.reserve_scoped(0, OP)?;
+        let mut carrier_entries =
+            storage.with_storage(|| {
+                ctx.collect_indexed_vec(carriers.len(), OP, |item| {
+                    let bounds = nurbs_surface_control_bounds(ctx, &carriers[item].geometry)?
+                        .map_or([[f64::NEG_INFINITY, f64::INFINITY]; 3], |bounds| {
+                            bounds.map(|[lower, upper]| {
+                                [
+                                    lower - NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
+                                    upper + NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
+                                ]
+                            })
+                        });
+                    Ok(BoundsEntry { bounds, item })
+                })
+            })?;
+        let carriers_by_bounds = BoundsIndex::new(ctx, &mut carrier_entries, OP)?;
+        let mut owner_entries = storage.with_storage(|| {
+            ctx.collect_indexed_vec(owners.len(), OP, |item| {
+                Ok(BoundsEntry {
+                    bounds: Self::owner_bounds(&owners[item].numeric_tail),
+                    item,
+                })
+            })
+        })?;
+        let owners_by_bounds = BoundsIndex::new(ctx, &mut owner_entries, OP)?;
+        Ok(Self {
+            carriers,
+            owners,
+            carriers_by_bounds,
+            owners_by_bounds,
+        })
+    }
+
+    fn owner_bounds(
+        tail: &crate::native::owner_numeric_tail::CatiaOwnerNumericTail,
+    ) -> [[f64; 2]; 3] {
+        tail.bounds().map(|[lower, upper]| {
+            [
+                f64::from(lower) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
+                f64::from(upper) + NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
+            ]
+        })
+    }
+
+    fn matching_carriers(
+        &self,
+        ctx: &DecodeContext<'_>,
+        tail: &crate::native::owner_numeric_tail::CatiaOwnerNumericTail,
+    ) -> Result<Vec<usize>, CodecError> {
+        const OP: &str = "catia_a5_owner_carriers";
+        let bounds = Self::owner_bounds(tail);
+        let mut matched = Vec::new();
+        let mut nodes = self.carriers_by_bounds.overlapping(bounds);
+        while let Some(node) = ctx.next_charged(&mut nodes, OP)? {
+            let Some(carrier) = node.item.filter(|_| bounds_overlap(node.bounds, bounds)) else {
+                continue;
+            };
+            if owner_matches_a5_carrier(ctx, tail, &self.carriers[carrier].geometry)? {
+                ctx.push_vec(&mut matched, carrier, "catia_a5_owner_carrier_indices")?;
+            }
+        }
+        if matched.len() > 2 {
+            ctx.sort_unstable_by(&mut matched, |value| value, Ord::cmp, OP)?;
+        } else if matched.len() == 2 && matched[0] > matched[1] {
+            matched.swap(0, 1);
+        }
+        Ok(matched)
+    }
+
+    fn containing_owners(
+        &self,
+        ctx: &DecodeContext<'_>,
+        face: crate::families::standard::records::StandardFaceBounds,
+        owner_carriers: &[Vec<usize>],
+    ) -> Result<Vec<usize>, CodecError> {
+        const OP: &str = "catia_a5_containing_owner_indices";
+        let bounds = std::array::from_fn(|axis| {
+            [
+                face.aabb_center[axis].get() - face.aabb_half_extents[axis].get(),
+                face.aabb_center[axis].get() + face.aabb_half_extents[axis].get(),
+            ]
+        });
+        let mut matched = Vec::new();
+        let mut nodes = self.owners_by_bounds.overlapping(bounds);
+        while let Some(node) = ctx.next_charged(&mut nodes, OP)? {
+            let Some(owner) = node.item.filter(|_| bounds_overlap(node.bounds, bounds)) else {
+                continue;
+            };
+            let value = &self.owners[owner];
+            if !owner_carriers[owner].is_empty()
+                && owner_contains_face_bounds(value.reference_encoding, &value.numeric_tail, face)
+            {
+                ctx.push_vec(&mut matched, owner, OP)?;
+            }
+        }
+        if matched.len() > 2 {
+            ctx.sort_unstable_by(&mut matched, |value| value, Ord::cmp, OP)?;
+        } else if matched.len() == 2 && matched[0] > matched[1] {
+            matched.swap(0, 1);
+        }
+        Ok(matched)
+    }
+}
+
 fn standard_face_boundary_witnesses(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -10759,16 +10926,7 @@ fn standard_face_boundary_witnesses(
                 }
             }
         }
-        let mut distinct = Vec::new();
-        for point in ctx.admit_iter(&witnesses, "catia_a5_distinct_face_witnesses")? {
-            if ctx.all_by(
-                &distinct,
-                |stored: &Point3| Ok(stored.distance(*point) > NURBS_SURFACE_MEMBERSHIP_TOLERANCE),
-                "catia_a5_distinct_face_witnesses",
-            )? {
-                ctx.push_vec(&mut distinct, *point, "catia_a5_distinct_face_witnesses")?;
-            }
-        }
+        let distinct = distinct_face_witnesses(ctx, &witnesses)?;
         ctx.push_vec(&mut face_witnesses, distinct, "catia_a5_face_witness_rows")?;
     }
     Ok(face_witnesses)
@@ -10805,18 +10963,11 @@ fn bind_standard_a5_owner_surfaces(
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
         return Ok(0);
     }
+    let index = A5BindingIndex::new(ctx, &carriers, &owners)?;
     let (owner_carriers, witnesses, unknown_faces) = scratch.with_storage(|| {
         let mut owner_carriers = Vec::new();
         for owner in ctx.admit_iter(&owners, "catia_a5_owner_packets")? {
-            let mut matched = Vec::new();
-            for (carrier, value) in ctx
-                .admit_iter(&carriers, "catia_a5_owner_carriers")?
-                .enumerate()
-            {
-                if owner_matches_a5_carrier(ctx, &owner.numeric_tail, &value.geometry)? {
-                    ctx.push_vec(&mut matched, carrier, "catia_a5_owner_carrier_indices")?;
-                }
-            }
+            let matched = index.matching_carriers(ctx, &owner.numeric_tail)?;
             ctx.push_vec(&mut owner_carriers, matched, "catia_a5_owner_carrier_rows")?;
         }
         let witnesses = standard_face_boundary_witnesses(ctx, ir)?;
@@ -10871,26 +11022,8 @@ fn bind_standard_a5_owner_surfaces(
             continue;
         };
         let mut face_storage = ctx.reserve_scoped(0, "catia_a5_face_carrier_scratch")?;
-        let mut containing_owners = Vec::new();
-        for (owner, value) in ctx
-            .admit_iter(&owners, "catia_a5_containing_owner_indices")?
-            .enumerate()
-        {
-            if !owner_carriers[owner].is_empty()
-                && owner_contains_face_bounds(
-                    value.reference_encoding,
-                    &value.numeric_tail,
-                    *bounds,
-                )
-            {
-                ctx.push_scoped_vec(
-                    &mut face_storage,
-                    &mut containing_owners,
-                    owner,
-                    "catia_a5_containing_owner_indices",
-                )?;
-            }
-        }
+        let containing_owners =
+            face_storage.with_storage(|| index.containing_owners(ctx, *bounds, &owner_carriers))?;
         let mut possible_carriers = BTreeSet::new();
         for owner in ctx.admit_iter(&containing_owners, "catia_a5_containing_owner_indices")? {
             for carrier in ctx.admit_iter(&owner_carriers[*owner], "catia_a5_possible_carriers")? {
