@@ -2,15 +2,14 @@
 //! Certified offset-cache fit and offset-surface parameter inversion.
 
 use super::blend::{
-    blend_surface_parameter_grid_with_index_and_budget,
-    blend_surface_parameters_for_fit_with_grid_and_budget, BlendParameterGrid,
+    blend_surface_parameters_for_fit_with_grid_and_budget, BlendParameterGridCache,
 };
-use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
+use super::geometry_work::{same_text, GeometryWorkBudget};
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
-use crate::topology::{Graph, Node};
+use crate::topology::Graph;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -45,6 +44,12 @@ const EPS_OFFSET_CORRECT_INTERSECTION_PARAMETERS_E11: f64 = 1.0e-11;
 const EPS_OFFSET_INTERSECTION_PARAMETER_TANGENT_E8: f64 = 1.0e-8;
 const EPS_OFFSET_SOLVE_DAMPED_LEAST_SQUARES_4X4_E12: f64 = 1.0e-12;
 const OFFSET_NEWTON_ITERATIONS: usize = 32;
+
+/// Two parameter lanes and the scoped reservation holding their storage.
+pub(super) type ParameterLanes<'ctx> = (
+    [Vec<Point2>; 2],
+    cadmpeg_core::decode::ScopedReservation<'ctx>,
+);
 const MAX_OFFSET_FIT_CACHE_ENTRIES: usize = 4096;
 
 pub(super) fn saved_offset_carriers(
@@ -56,33 +61,52 @@ pub(super) fn saved_offset_carriers(
     tolerance: PositiveLength,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<BTreeMap<u32, (SurfaceId, f64)>, CodecError> {
+    // Every table below is dropped before return, so its storage is scoped.
+    let mut storage = ctx.reserve_scoped(0, "nx saved offset carrier tables")?;
+    let (geometry_by_id, _geometry_storage) = ctx.unique_index(
+        ir.model
+            .surfaces
+            .iter()
+            .map(|surface| (surface.id.as_str(), &surface.geometry)),
+        "nx saved offset surface geometry index",
+    )?;
     let mut face_surfaces = BTreeSet::new();
-    for xmt in graph
-        .of_kind(NodeKind::Face)
-        .filter_map(Node::face_fields)
-        .filter_map(|face| face.surface.map(u32::from))
+    for (_, node) in ctx
+        .admit_iter(
+            &(0..graph.kind_count(NodeKind::Face)),
+            "nx offset face surface traversal",
+        )?
+        .zip(graph.of_kind(NodeKind::Face))
     {
-        ctx.insert_btree_set(&mut face_surfaces, xmt, "nx offset face surfaces")?;
+        let Some(xmt) = node
+            .face_fields()
+            .and_then(|face| face.surface.map(u32::from))
+        else {
+            continue;
+        };
+        storage.with_storage(|| {
+            ctx.insert_btree_set(&mut face_surfaces, xmt, "nx offset face surfaces")
+        })?;
     }
     let mut candidates = Vec::new();
-    for xmt in &face_surfaces {
-        let candidate = surfaces_by_xmt.get(xmt).and_then(|id| {
-            let geometry = &ir
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| &surface.id == id)?
-                .geometry;
-            matches!(
-                geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-            )
-            .then_some((id, geometry))
-        });
-        if let Some(candidate) = candidate {
-            ctx.reserve_vec(&mut candidates, 1, "nx offset candidates")?;
-            candidates.push(candidate);
-        }
+    for xmt in ctx.admit_iter(&face_surfaces, "nx offset candidate traversal")? {
+        let Some(id) = ctx.get_btree_map(surfaces_by_xmt, xmt, "nx offset candidate identity")?
+        else {
+            continue;
+        };
+        let Some(geometry @ SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))) = ctx
+            .get_hash_map(
+                &geometry_by_id,
+                id.as_str(),
+                "nx offset candidate geometry lookup",
+            )?
+            .copied()
+            .flatten()
+        else {
+            continue;
+        };
+        ctx.reserve_scoped_vec(&mut storage, &mut candidates, 1, "nx offset candidates")?;
+        candidates.push((id, geometry));
     }
 
     let mut matches = BTreeMap::<u32, Vec<(&SurfaceId, f64)>>::new();
@@ -91,24 +115,37 @@ pub(super) fn saved_offset_carriers(
     // cap the cache so a large offset roster cannot turn this optimization
     // into unbounded model-sized storage.
     let mut fit_cache = BTreeMap::<(&SurfaceId, &SurfaceId, u64, u64), Option<f64>>::new();
-    for offset in offsets
-        .iter()
-        .filter(|offset| !face_surfaces.contains(&offset.xmt))
-    {
-        let Some(support_id) = surfaces_by_xmt.get(&offset.state.support()) else {
+    for offset in ctx.admit_iter(offsets, "nx saved offset traversal")? {
+        if ctx.contains_btree_set(&face_surfaces, &offset.xmt, "nx offset face surface test")? {
             continue;
-        };
-        let Some(support) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| &surface.id == support_id)
-            .map(|surface| &surface.geometry)
+        }
+        let Some(support_id) = ctx.get_btree_map(
+            surfaces_by_xmt,
+            &offset.state.support(),
+            "nx offset support identity",
+        )?
         else {
             continue;
         };
-        for (candidate_id, candidate) in &candidates {
-            if *candidate_id == support_id {
+        let Some(support) = ctx
+            .get_hash_map(
+                &geometry_by_id,
+                support_id.as_str(),
+                "nx offset support geometry lookup",
+            )?
+            .copied()
+            .flatten()
+        else {
+            continue;
+        };
+        for (candidate_id, candidate) in
+            ctx.admit_iter(&candidates, "nx offset candidate fit traversal")?
+        {
+            if ctx.equal(
+                candidate_id.as_str(),
+                support_id.as_str(),
+                "nx offset candidate support test",
+            )? {
                 continue;
             }
             let key = (
@@ -117,8 +154,10 @@ pub(super) fn saved_offset_carriers(
                 offset.state.distance().get().to_bits(),
                 tolerance.get().to_bits(),
             );
-            let fit = if let Some(fit) = fit_cache.get(&key).copied() {
-                fit
+            let fit = if let Some(fit) =
+                ctx.get_btree_map(&fit_cache, &key, "nx offset fit cache lookup")?
+            {
+                *fit
             } else {
                 let fit = certified_offset_cache_fit_with_budget(
                     support,
@@ -128,36 +167,51 @@ pub(super) fn saved_offset_carriers(
                     geometry_budget,
                 )?;
                 if fit_cache.len() < MAX_OFFSET_FIT_CACHE_ENTRIES {
-                    ctx.insert_btree_map(&mut fit_cache, key, fit, "nx offset fit cache")?;
+                    storage.with_storage(|| {
+                        ctx.insert_btree_map(&mut fit_cache, key, fit, "nx offset fit cache")
+                    })?;
                 }
                 fit
             };
             if let Some(fit) = fit {
-                ctx.admit_btree_entry(&matches, &offset.xmt, "nx offset match owners")?;
-                let group = matches.entry(offset.xmt).or_default();
-                ctx.reserve_vec(group, 1, "nx offset matches")?;
-                group.push((*candidate_id, fit));
-                ctx.admit_btree_entry(
-                    &candidate_owners,
-                    candidate_id,
-                    "nx offset candidate owners",
-                )?;
-                let owners = candidate_owners.entry(*candidate_id).or_default();
-                ctx.reserve_vec(owners, 1, "nx offset candidate owner entries")?;
-                owners.push(offset.xmt);
+                storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut matches,
+                        offset.xmt,
+                        (*candidate_id, fit),
+                        "nx offset match owners",
+                        "nx offset matches",
+                    )
+                })?;
+                storage.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut candidate_owners,
+                        *candidate_id,
+                        offset.xmt,
+                        "nx offset candidate owners",
+                        "nx offset candidate owner entries",
+                    )
+                })?;
             }
         }
     }
 
     let mut result = BTreeMap::new();
-    for (offset, candidates) in matches {
+    for (offset, candidates) in ctx.admit_iter(&matches, "nx saved offset match traversal")? {
         let [(candidate, fit)] = candidates.as_slice() else {
             continue;
         };
-        if candidate_owners.get(candidate).map(Vec::as_slice) == Some(&[offset][..]) {
+        let sole_owner = ctx
+            .get_btree_map(
+                &candidate_owners,
+                candidate,
+                "nx offset candidate owner lookup",
+            )?
+            .is_some_and(|owners| matches!(owners.as_slice(), [owner] if owner == offset));
+        if sole_owner {
             ctx.insert_btree_map(
                 &mut result,
-                offset,
+                *offset,
                 (
                     candidate.try_clone_for_decode(ctx, "nx saved offset surface identity")?,
                     *fit,
@@ -198,80 +252,93 @@ fn certified_offset_cache_fit_with_budget(
     tolerance: NonNegativeLength,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    (|| -> Option<Result<f64, cadmpeg_core::decode::ResourceLimit>> {
-        let tolerance = tolerance.get();
-        let (
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)),
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)),
-        ) = (support, candidate)
-        else {
-            return None;
-        };
-        let compatible_parameterization = support.u_periodic() == candidate.u_periodic()
-            && support.v_periodic() == candidate.v_periodic()
-            && nurbs_active_domain(support)
-                .zip(nurbs_active_domain(candidate))
-                .is_some_and(|(support, candidate)| support == candidate)
-            && positive_weights(support)
-            && positive_weights(candidate);
-        if !compatible_parameterization || !distance.is_finite() {
-            return None;
-        }
-        let same_basis = candidate.u_degree() == support.u_degree()
-            && candidate.v_degree() == support.v_degree()
-            && support.u_knots() == candidate.u_knots()
-            && support.v_knots() == candidate.v_knots()
-            && support.u_count() == candidate.u_count()
-            && support.v_count() == candidate.v_count()
-            && matching_weights(support, candidate);
-        if same_basis {
-            if let Some(normal) = translation_net_normal(support) {
-                let translation = Vector3::new(
-                    distance * normal.x,
-                    distance * normal.y,
-                    distance * normal.z,
-                );
-                let mut maximum_error = 0.0_f64;
-                for u in 0..support.u_count() {
-                    for v in 0..support.v_count() {
-                        let support_point = support.pole(u, v)?;
-                        let candidate_point = candidate.pole(u, v)?;
-                        let expected = Point3::new(
-                            support_point.x + translation.x,
-                            support_point.y + translation.y,
-                            support_point.z + translation.z,
-                        );
-                        let error = Point3::distance(expected, candidate_point.get());
-                        if !error.is_finite() {
-                            return None;
-                        }
-                        maximum_error = maximum_error.max(error);
+    let ctx = geometry_budget.charges;
+    let tolerance = tolerance.get();
+    let (
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)),
+    ) = (support, candidate)
+    else {
+        return Ok(None);
+    };
+    let compatible_parameterization = support.u_periodic() == candidate.u_periodic()
+        && support.v_periodic() == candidate.v_periodic()
+        && nurbs_active_domain(support)
+            .zip(nurbs_active_domain(candidate))
+            .is_some_and(|(support, candidate)| support == candidate)
+        && positive_weights(ctx, support)?
+        && positive_weights(ctx, candidate)?;
+    if !compatible_parameterization || !distance.is_finite() {
+        return Ok(None);
+    }
+    let same_basis = candidate.u_degree() == support.u_degree()
+        && candidate.v_degree() == support.v_degree()
+        && equal_knots(ctx, support.u_knots(), candidate.u_knots())?
+        && equal_knots(ctx, support.v_knots(), candidate.v_knots())?
+        && support.u_count() == candidate.u_count()
+        && support.v_count() == candidate.v_count()
+        && matching_weights(ctx, support, candidate)?;
+    if same_basis {
+        if let Some(normal) = translation_net_normal(ctx, support)? {
+            let translation = Vector3::new(
+                distance * normal.x,
+                distance * normal.y,
+                distance * normal.z,
+            );
+            let mut maximum_error = 0.0_f64;
+            for u in ctx.admit_iter(&(0..support.u_count()), "nx offset translation net rows")? {
+                for v in
+                    ctx.admit_iter(&(0..support.v_count()), "nx offset translation net poles")?
+                {
+                    let (Some(support_point), Some(candidate_point)) =
+                        (support.pole(u, v), candidate.pole(u, v))
+                    else {
+                        return Ok(None);
+                    };
+                    let expected = Point3::new(
+                        support_point.x + translation.x,
+                        support_point.y + translation.y,
+                        support_point.z + translation.z,
+                    );
+                    let error = Point3::distance(expected, candidate_point.get());
+                    if !error.is_finite() {
+                        return Ok(None);
                     }
+                    maximum_error = maximum_error.max(error);
                 }
-                return (maximum_error <= tolerance).then_some(Ok(maximum_error));
             }
+            return Ok((maximum_error <= tolerance).then_some(maximum_error));
         }
-        if match offset_candidate_sample_error(support, candidate, distance, geometry_budget) {
-            Ok(error) => error,
-            Err(limit) => return Some(Err(limit)),
-        }
+    }
+    if offset_candidate_sample_error(support, candidate, distance, geometry_budget)?
         .is_some_and(|error| error > tolerance)
-        {
-            return None;
-        }
-        match certified_curved_offset_cache_fit_with_budget(
-            support,
-            candidate,
-            distance,
-            tolerance,
-            same_basis,
-            geometry_budget,
-        ) {
-            Ok(fit) => fit.map(Ok),
-            Err(limit) => Some(Err(limit)),
-        }
-    })()
-    .transpose()
+    {
+        return Ok(None);
+    }
+    certified_curved_offset_cache_fit_with_budget(
+        support,
+        candidate,
+        distance,
+        tolerance,
+        same_basis,
+        geometry_budget,
+    )
+}
+
+/// Compare two knot vectors. Unequal lengths need no element comparison.
+fn equal_knots(
+    ctx: &DecodeContext<'_>,
+    first: &[f64],
+    second: &[f64],
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    if first.len() != second.len() {
+        return Ok(false);
+    }
+    ctx.charge_work_limit(
+        cadmpeg_core::decode::u64_from_index(first.len()),
+        "nx offset knot comparison",
+    )?;
+    Ok(first == second)
 }
 
 /// Return one certified lower bound for a same-parameter offset candidate.
@@ -398,7 +465,12 @@ impl<'a> HomogeneousSurfaceNet<'a> {
         else {
             return Ok(None);
         };
-        for (index, control) in net.controls.iter_mut().enumerate() {
+        // The weight component was checked finite when the support net was
+        // built; each rewritten position component is checked here.
+        for index in geometry_budget
+            .charges
+            .admit_iter(&(0..net.controls.len()), "nx offset residual net controls")?
+        {
             let u = index / net.v_count;
             let v = index % net.v_count;
             let (Some(support_point), Some(candidate_point)) =
@@ -406,23 +478,25 @@ impl<'a> HomogeneousSurfaceNet<'a> {
             else {
                 return Ok(None);
             };
+            let control = &mut net.controls[index];
             control[0] = (candidate_point.x - support_point.x) * control[3];
             control[1] = (candidate_point.y - support_point.y) * control[3];
             control[2] = (candidate_point.z - support_point.z) * control[3];
+            if control.iter().any(|component| !component.is_finite()) {
+                return Ok(None);
+            }
         }
-        Ok(net
-            .controls
-            .iter()
-            .flatten()
-            .all(|component| component.is_finite())
-            .then_some(net))
+        Ok(Some(net))
     }
 
+    /// Build a net from every pole of `surface`. A pole whose weight is not
+    /// positive, or whose components are not finite, yields no net.
     fn from_components(
         surface: &NurbsSurface,
         geometry_budget: &GeometryWorkBudget<'a>,
         components: impl Fn(Point3, f64) -> [f64; 4],
     ) -> Result<Option<Self>, cadmpeg_core::decode::ResourceLimit> {
+        let ctx = geometry_budget.charges;
         let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
             return Ok(None);
         };
@@ -431,38 +505,39 @@ impl<'a> HomogeneousSurfaceNet<'a> {
         };
         let u_count = surface.u_count();
         let v_count = surface.v_count();
-        if !positive_weights(surface) {
+        // A rational grid with no pole has no positive weight.
+        if matches!(surface.pole_grid(), NurbsPoleGrid::Rational { .. })
+            && (u_count == 0 || v_count == 0)
+        {
             return Ok(None);
         }
-        let mut controls_storage = geometry_budget
-            .charges
-            .reserve_scoped_limit(0, "nx offset net controls")?;
+        let mut controls_storage = ctx.reserve_scoped_limit(0, "nx offset net controls")?;
         let mut controls = Vec::new();
-        for u in 0..u_count {
-            geometry_budget.charges.reserve_scoped_vec_limit(
+        for u in ctx.admit_iter(&(0..u_count), "nx offset net rows")? {
+            ctx.reserve_scoped_vec_limit(
                 &mut controls_storage,
                 &mut controls,
                 v_count,
                 "nx offset net controls",
             )?;
-            for v in 0..v_count {
+            for v in ctx.admit_iter(&(0..v_count), "nx offset net poles")? {
                 let Some(point) = surface.pole(u, v) else {
                     return Ok(None);
                 };
-                controls.push(components(
-                    point.get(),
-                    surface
-                        .weight(u, v)
-                        .map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get),
-                ));
+                let weight = surface
+                    .weight(u, v)
+                    .map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get);
+                // Surface admission keeps every pole row nonempty, so this
+                // per-pole test states the whole positive-weight condition.
+                if weight <= 0.0 {
+                    return Ok(None);
+                }
+                let control = components(point.get(), weight);
+                if control.iter().any(|component| !component.is_finite()) {
+                    return Ok(None);
+                }
+                controls.push(control);
             }
-        }
-        if controls
-            .iter()
-            .flatten()
-            .any(|component| !component.is_finite())
-        {
-            return Ok(None);
         }
         let (u_knots, u_storage) = geometry_budget
             .charges
@@ -501,14 +576,20 @@ impl<'a> HomogeneousSurfaceNet<'a> {
             .charges
             .reserve_scoped_limit(0, "nx offset net controls")?;
         let mut controls = Vec::new();
-        for u in 0..next_u_count {
+        for u in geometry_budget
+            .charges
+            .admit_iter(&(0..next_u_count), "nx offset derivative net rows")?
+        {
             geometry_budget.charges.reserve_scoped_vec_limit(
                 &mut controls_storage,
                 &mut controls,
                 next_v_count,
                 "nx offset derivative controls",
             )?;
-            for v in 0..next_v_count {
+            for v in geometry_budget
+                .charges
+                .admit_iter(&(0..next_v_count), "nx offset derivative net poles")?
+            {
                 let index = |u, v| u * self.v_count + v;
                 let (first, second, derivative_index) = if u_axis {
                     (
@@ -573,19 +654,28 @@ impl<'a> HomogeneousSurfaceNet<'a> {
 
     fn active_control_bounds(
         &self,
+        ctx: &DecodeContext<'_>,
         u: f64,
         v: f64,
         origin: [f64; 3],
-    ) -> Option<HomogeneousControlBounds> {
-        let u_controls = active_spline_controls(&self.u_knots, self.u_degree, self.u_count, u)?;
-        let v_controls = active_spline_controls(&self.v_knots, self.v_degree, self.v_count, v)?;
+    ) -> Result<Option<HomogeneousControlBounds>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(u_controls) =
+            active_spline_controls(ctx, &self.u_knots, self.u_degree, self.u_count, u)?
+        else {
+            return Ok(None);
+        };
+        let Some(v_controls) =
+            active_spline_controls(ctx, &self.v_knots, self.v_degree, self.v_count, v)?
+        else {
+            return Ok(None);
+        };
         let mut bounds = HomogeneousControlBounds {
             minimum_weight: f64::INFINITY,
             maximum_position_norm: 0.0,
             maximum_weight_magnitude: 0.0,
         };
-        for u in u_controls {
-            for v in v_controls.clone() {
+        for u in ctx.admit_iter(&u_controls, "nx offset active control rows")? {
+            for v in ctx.admit_iter(&v_controls, "nx offset active controls")? {
                 let control = self.controls[u * self.v_count + v];
                 let position_norm = control[..3]
                     .iter()
@@ -593,7 +683,7 @@ impl<'a> HomogeneousSurfaceNet<'a> {
                     .map(|(coordinate, origin)| coordinate - origin * control[3])
                     .fold(0.0_f64, f64::hypot);
                 if !position_norm.is_finite() || !control[3].is_finite() {
-                    return None;
+                    return Ok(None);
                 }
                 bounds.minimum_weight = bounds.minimum_weight.min(control[3]);
                 bounds.maximum_position_norm = bounds.maximum_position_norm.max(position_norm);
@@ -601,7 +691,7 @@ impl<'a> HomogeneousSurfaceNet<'a> {
                     bounds.maximum_weight_magnitude.max(control[3].abs());
             }
         }
-        Some(bounds)
+        Ok(Some(bounds))
     }
 }
 
@@ -613,24 +703,48 @@ struct HomogeneousControlBounds {
 }
 
 fn active_spline_controls(
+    ctx: &DecodeContext<'_>,
     knots: &[f64],
     degree: usize,
     count: usize,
     parameter: f64,
-) -> Option<std::ops::RangeInclusive<usize>> {
-    let lower = *knots.get(degree)?;
-    let upper = *knots.get(count)?;
+) -> Result<Option<std::ops::RangeInclusive<usize>>, cadmpeg_core::decode::ResourceLimit> {
+    let (Some(&lower), Some(&upper)) = (knots.get(degree), knots.get(count)) else {
+        return Ok(None);
+    };
     if !parameter.is_finite() || parameter < lower || parameter > upper || lower >= upper {
-        return None;
+        return Ok(None);
     }
     let span = if parameter == upper {
-        count.checked_sub(1)?
+        count.checked_sub(1)
     } else {
-        knots
-            .partition_point(|knot| *knot <= parameter)
-            .checked_sub(1)?
+        knots_at_or_below(ctx, knots, parameter)?.checked_sub(1)
     };
-    (span >= degree && span < count).then_some(span - degree..=span)
+    Ok(span.and_then(|span| (span >= degree && span < count).then_some(span - degree..=span)))
+}
+
+/// The number of leading knots at or below `parameter`.
+///
+/// Knots are non-decreasing, so the knots at or below a finite parameter form
+/// a prefix and a binary search finds its end. Each probe is charged before it
+/// reads a knot.
+fn knots_at_or_below(
+    ctx: &DecodeContext<'_>,
+    knots: &[f64],
+    parameter: f64,
+) -> Result<usize, cadmpeg_core::decode::ResourceLimit> {
+    let mut lower = 0;
+    let mut upper = knots.len();
+    while lower < upper {
+        ctx.charge_work_limit(1, "nx offset knot span search")?;
+        let middle = lower + (upper - lower) / 2;
+        if knots[middle] <= parameter {
+            lower = middle + 1;
+        } else {
+            upper = middle;
+        }
+    }
+    Ok(lower)
 }
 
 pub(super) fn certified_curved_offset_cache_fit_with_budget(
@@ -641,260 +755,287 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
     same_basis: bool,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    (|| -> Option<Result<f64, cadmpeg_core::decode::ResourceLimit>> {
-        let support_net =
-            match HomogeneousSurfaceNet::from_homogeneous_surface(support, geometry_budget) {
-                Ok(Some(net)) => net,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
-            };
-        let candidate_net =
-            match HomogeneousSurfaceNet::from_homogeneous_surface(candidate, geometry_budget) {
-                Ok(Some(net)) => net,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
-            };
-        let residual_net = if same_basis {
-            match HomogeneousSurfaceNet::from_homogeneous_residual(
-                support,
-                candidate,
-                geometry_budget,
-            ) {
-                Ok(Some(net)) => Some(net),
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
-            }
-        } else {
-            None
+    let support_net =
+        match HomogeneousSurfaceNet::from_homogeneous_surface(support, geometry_budget) {
+            Ok(Some(net)) => net,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
         };
-        let support_derivatives =
-            match RationalSurfaceDerivativeNets::from_net(&support_net, geometry_budget) {
-                Ok(Some(nets)) => nets,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
-            };
-        let candidate_derivatives =
-            match RationalSurfaceDerivativeNets::from_net(&candidate_net, geometry_budget) {
-                Ok(Some(nets)) => nets,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
-            };
-        let residual_derivatives = match residual_net.as_ref() {
-            Some(net) => match RationalSurfaceDerivativeNets::from_net(net, geometry_budget) {
-                Ok(Some(nets)) => Some(nets),
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
-            },
-            None => None,
+    let candidate_net =
+        match HomogeneousSurfaceNet::from_homogeneous_surface(candidate, geometry_budget) {
+            Ok(Some(net)) => net,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
         };
+    let residual_net = if same_basis {
+        match HomogeneousSurfaceNet::from_homogeneous_residual(support, candidate, geometry_budget)
+        {
+            Ok(Some(net)) => Some(net),
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        }
+    } else {
+        None
+    };
+    let support_derivatives =
+        match RationalSurfaceDerivativeNets::from_net(&support_net, geometry_budget) {
+            Ok(Some(nets)) => nets,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+    let candidate_derivatives =
+        match RationalSurfaceDerivativeNets::from_net(&candidate_net, geometry_budget) {
+            Ok(Some(nets)) => nets,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+    let residual_derivatives = match residual_net.as_ref() {
+        Some(net) => match RationalSurfaceDerivativeNets::from_net(net, geometry_budget) {
+            Ok(Some(nets)) => Some(nets),
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        },
+        None => None,
+    };
 
-        let (mut u_breaks, mut u_storage) = match geometry_budget.charges.copy_temporary_slice(
-            &support_net.u_knots[support_net.u_degree..=support_net.u_count],
-            "nx offset net knots",
-        ) {
-            Ok(breaks) => breaks,
-            Err(limit) => return Some(Err(limit)),
-        };
-        let candidate_u_breaks =
-            &candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count];
-        if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
-            &mut u_storage,
+    let (mut u_breaks, mut u_storage) = geometry_budget.charges.copy_temporary_slice(
+        &support_net.u_knots[support_net.u_degree..=support_net.u_count],
+        "nx offset net knots",
+    )?;
+    let candidate_u_breaks = &candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count];
+    geometry_budget.charges.reserve_scoped_vec_limit(
+        &mut u_storage,
+        &mut u_breaks,
+        candidate_u_breaks.len(),
+        "nx offset u breaks",
+    )?;
+    geometry_budget.charges.charge_work_limit(
+        cadmpeg_core::decode::u64_from_index(candidate_u_breaks.len()),
+        "nx offset u breaks copy",
+    )?;
+    u_breaks.extend(candidate_u_breaks);
+    if geometry_budget
+        .charges
+        .stable_sort_by(
             &mut u_breaks,
-            candidate_u_breaks.len(),
-            "nx offset u breaks",
-        ) {
-            return Some(Err(limit));
-        }
-        u_breaks.extend(candidate_u_breaks);
-        if geometry_budget
-            .charges
-            .stable_sort_by(
-                &mut u_breaks,
-                |value| value,
-                f64::total_cmp,
-                "nx offset u breaks sort",
-            )
-            .is_err()
-        {
-            return geometry_budget.resource_refusal().map(Err);
-        }
-        u_breaks.dedup();
-        let (mut v_breaks, mut v_storage) = match geometry_budget.charges.copy_temporary_slice(
-            &support_net.v_knots[support_net.v_degree..=support_net.v_count],
-            "nx offset net knots",
-        ) {
-            Ok(breaks) => breaks,
-            Err(limit) => return Some(Err(limit)),
-        };
-        let candidate_v_breaks =
-            &candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count];
-        if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
-            &mut v_storage,
+            |value| value,
+            f64::total_cmp,
+            "nx offset u breaks sort",
+        )
+        .is_err()
+    {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    }
+    geometry_budget.charges.charge_work_limit(
+        cadmpeg_core::decode::u64_from_index(u_breaks.len()),
+        "nx offset u breaks dedup",
+    )?;
+    u_breaks.dedup();
+    let (mut v_breaks, mut v_storage) = geometry_budget.charges.copy_temporary_slice(
+        &support_net.v_knots[support_net.v_degree..=support_net.v_count],
+        "nx offset net knots",
+    )?;
+    let candidate_v_breaks = &candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count];
+    geometry_budget.charges.reserve_scoped_vec_limit(
+        &mut v_storage,
+        &mut v_breaks,
+        candidate_v_breaks.len(),
+        "nx offset v breaks",
+    )?;
+    geometry_budget.charges.charge_work_limit(
+        cadmpeg_core::decode::u64_from_index(candidate_v_breaks.len()),
+        "nx offset v breaks copy",
+    )?;
+    v_breaks.extend(candidate_v_breaks);
+    if geometry_budget
+        .charges
+        .stable_sort_by(
             &mut v_breaks,
-            candidate_v_breaks.len(),
-            "nx offset v breaks",
-        ) {
-            return Some(Err(limit));
+            |value| value,
+            f64::total_cmp,
+            "nx offset v breaks sort",
+        )
+        .is_err()
+    {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    }
+    geometry_budget.charges.charge_work_limit(
+        cadmpeg_core::decode::u64_from_index(v_breaks.len()),
+        "nx offset v breaks dedup",
+    )?;
+    v_breaks.dedup();
+    let mut rectangles = Vec::new();
+    let mut rectangle_storage = geometry_budget
+        .charges
+        .reserve_scoped_limit(0, "nx offset rectangles")?;
+    // Consecutive breaks bound one knot span.
+    for u_end in geometry_budget
+        .charges
+        .admit_iter(&(1..u_breaks.len()), "nx offset u knot spans")?
+    {
+        let (u0, u1) = (u_breaks[u_end - 1], u_breaks[u_end]);
+        if u0 >= u1 {
+            continue;
         }
-        v_breaks.extend(candidate_v_breaks);
-        if geometry_budget
+        for v_end in geometry_budget
             .charges
-            .stable_sort_by(
-                &mut v_breaks,
-                |value| value,
-                f64::total_cmp,
-                "nx offset v breaks sort",
-            )
-            .is_err()
+            .admit_iter(&(1..v_breaks.len()), "nx offset v knot spans")?
         {
-            return geometry_budget.resource_refusal().map(Err);
-        }
-        v_breaks.dedup();
-        let mut rectangles = Vec::new();
-        for u in u_breaks.windows(2).filter(|span| span[0] < span[1]) {
-            for v in v_breaks.windows(2).filter(|span| span[0] < span[1]) {
-                if let Err(limit) = geometry_budget.charges.reserve_temporary_vec(
-                    &mut rectangles,
-                    1,
-                    "nx offset rectangles",
-                ) {
-                    return Some(Err(limit));
-                }
-                rectangles.push([u[0], u[1], v[0], v[1]]);
+            let (v0, v1) = (v_breaks[v_end - 1], v_breaks[v_end]);
+            if v0 >= v1 {
+                continue;
             }
-        }
-        if rectangles.is_empty() {
-            return None;
-        }
-        let mut certified_bound = 0.0_f64;
-        while let Some([u0, u1, v0, v1]) = rectangles.pop() {
-            if !geometry_budget.charge() {
-                return geometry_budget.resource_refusal().map(Err);
-            }
-            let u = u0 + (u1 - u0) * 0.5;
-            let v = v0 + (v1 - v0) * 0.5;
-            let support_bounds = rational_surface_derivative_bounds_with_nets(
-                &support_net,
-                &support_derivatives,
-                u,
-                v,
+            geometry_budget.charges.reserve_scoped_vec_limit(
+                &mut rectangle_storage,
+                &mut rectangles,
+                1,
+                "nx offset rectangles",
             )?;
-            let (residual_u_bound, residual_v_bound) =
-                if let (Some(residual_net), Some(derivatives)) =
-                    (&residual_net, &residual_derivatives)
-                {
-                    let bounds = rational_surface_derivative_bounds_with_nets(
-                        residual_net,
-                        derivatives,
-                        u,
-                        v,
-                    )?;
-                    (bounds.u, bounds.v)
-                } else {
-                    let candidate_bounds = rational_surface_derivative_bounds_with_nets(
-                        &candidate_net,
-                        &candidate_derivatives,
-                        u,
-                        v,
-                    )?;
-                    (
-                        support_bounds.u + candidate_bounds.u,
-                        support_bounds.v + candidate_bounds.v,
-                    )
-                };
-            let normal_u_numerator =
-                support_bounds.uu * support_bounds.v + support_bounds.u * support_bounds.uv;
-            let normal_v_numerator =
-                support_bounds.uv * support_bounds.v + support_bounds.u * support_bounds.vv;
-            if !normal_u_numerator.is_finite() || !normal_v_numerator.is_finite() {
-                return None;
-            }
-            let support_point = match finite_or_refusal(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
-                    .within_work_slice(geometry_budget, |admission| {
-                        cadmpeg_ir::eval::decode::nurbs_surface_point(admission, support, u, v)
-                    }),
-            ) {
-                Ok(Some(point)) => point,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+            rectangles.push([u0, u1, v0, v1]);
+        }
+    }
+    if rectangles.is_empty() {
+        return Ok(None);
+    }
+    let mut certified_bound = 0.0_f64;
+    // Each probed rectangle is one unit of the adaptive geometry budget, which
+    // draws on the session work allowance; its evaluations charge their own
+    // work.
+    while let Some([u0, u1, v0, v1]) = rectangles.pop() {
+        if !geometry_budget.charge() {
+            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+        }
+        let ctx = geometry_budget.charges;
+        let u = u0 + (u1 - u0) * 0.5;
+        let v = v0 + (v1 - v0) * 0.5;
+        let Some(support_bounds) = rational_surface_derivative_bounds_with_nets(
+            ctx,
+            &support_net,
+            &support_derivatives,
+            u,
+            v,
+        )?
+        else {
+            return Ok(None);
+        };
+        let (residual_u_bound, residual_v_bound) = if let (Some(residual_net), Some(derivatives)) =
+            (&residual_net, &residual_derivatives)
+        {
+            let Some(bounds) =
+                rational_surface_derivative_bounds_with_nets(ctx, residual_net, derivatives, u, v)?
+            else {
+                return Ok(None);
             };
-            let candidate_point = match finite_or_refusal(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
-                    .within_work_slice(geometry_budget, |admission| {
-                        cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)
-                    }),
-            ) {
-                Ok(Some(point)) => point,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
-            };
-            let partials = match finite_or_refusal(nurbs_surface_partials(
-                geometry_budget.charges,
-                support,
+            (bounds.u, bounds.v)
+        } else {
+            let Some(candidate_bounds) = rational_surface_derivative_bounds_with_nets(
+                ctx,
+                &candidate_net,
+                &candidate_derivatives,
                 u,
                 v,
-            )) {
-                Ok(Some(partials)) => partials,
-                Ok(None) => return None,
-                Err(limit) => return Some(Err(limit)),
+            )?
+            else {
+                return Ok(None);
             };
-            let normal_vector = partials.du.cross(partials.dv.get());
-            let normal_size = normal_vector.norm();
-            let half_u = (u1 - u0) * 0.5;
-            let half_v = (v1 - v0) * 0.5;
-            let minimum_normal =
-                normal_size - normal_u_numerator * half_u - normal_v_numerator * half_v;
-            if !minimum_normal.is_finite() || minimum_normal <= 0.0 {
-                let split_u = normal_u_numerator * (u1 - u0) >= normal_v_numerator * (v1 - v0);
-                match subdivide_offset_rectangle(
-                    &mut rectangles,
-                    [u0, u1, v0, v1],
-                    [u, v],
-                    split_u,
-                    geometry_budget,
-                ) {
-                    Ok(true) => {}
-                    Ok(false) => return None,
-                    Err(limit) => return Some(Err(limit)),
-                }
-                continue;
-            }
-            let normal = oriented_nurbs_normal(support, normal_vector)?;
-            let u_lipschitz =
-                residual_u_bound + distance.abs() * normal_u_numerator / minimum_normal;
-            let v_lipschitz =
-                residual_v_bound + distance.abs() * normal_v_numerator / minimum_normal;
-            let expected = Point3::new(
-                support_point.x + distance * normal.x,
-                support_point.y + distance * normal.y,
-                support_point.z + distance * normal.z,
-            );
-            let midpoint_error = Point3::distance(expected, candidate_point.get());
-            let bound = midpoint_error + u_lipschitz * half_u + v_lipschitz * half_v;
-            if !bound.is_finite() {
-                return None;
-            }
-            if bound <= tolerance {
-                certified_bound = certified_bound.max(bound);
-                continue;
-            }
-            let split_u = u_lipschitz * (u1 - u0) >= v_lipschitz * (v1 - v0);
+            (
+                support_bounds.u + candidate_bounds.u,
+                support_bounds.v + candidate_bounds.v,
+            )
+        };
+        let normal_u_numerator =
+            support_bounds.uu * support_bounds.v + support_bounds.u * support_bounds.uv;
+        let normal_v_numerator =
+            support_bounds.uv * support_bounds.v + support_bounds.u * support_bounds.vv;
+        if !normal_u_numerator.is_finite() || !normal_v_numerator.is_finite() {
+            return Ok(None);
+        }
+        let support_point = match finite_or_refusal(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    cadmpeg_ir::eval::decode::nurbs_surface_point(admission, support, u, v)
+                }),
+        ) {
+            Ok(Some(point)) => point,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+        let candidate_point = match finite_or_refusal(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)
+                }),
+        ) {
+            Ok(Some(point)) => point,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+        let partials = match finite_or_refusal(nurbs_surface_partials(
+            geometry_budget.charges,
+            support,
+            u,
+            v,
+        )) {
+            Ok(Some(partials)) => partials,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+        let normal_vector = partials.du.cross(partials.dv.get());
+        let normal_size = normal_vector.norm();
+        let half_u = (u1 - u0) * 0.5;
+        let half_v = (v1 - v0) * 0.5;
+        let minimum_normal =
+            normal_size - normal_u_numerator * half_u - normal_v_numerator * half_v;
+        if !minimum_normal.is_finite() || minimum_normal <= 0.0 {
+            let split_u = normal_u_numerator * (u1 - u0) >= normal_v_numerator * (v1 - v0);
             match subdivide_offset_rectangle(
                 &mut rectangles,
+                &mut rectangle_storage,
                 [u0, u1, v0, v1],
                 [u, v],
                 split_u,
                 geometry_budget,
             ) {
                 Ok(true) => {}
-                Ok(false) => return None,
-                Err(limit) => return Some(Err(limit)),
+                Ok(false) => return Ok(None),
+                Err(limit) => return Err(limit),
             }
+            continue;
         }
-        Some(Ok(certified_bound))
-    })()
-    .transpose()
+        let Some(normal) = oriented_nurbs_normal(support, normal_vector) else {
+            return Ok(None);
+        };
+        let u_lipschitz = residual_u_bound + distance.abs() * normal_u_numerator / minimum_normal;
+        let v_lipschitz = residual_v_bound + distance.abs() * normal_v_numerator / minimum_normal;
+        let expected = Point3::new(
+            support_point.x + distance * normal.x,
+            support_point.y + distance * normal.y,
+            support_point.z + distance * normal.z,
+        );
+        let midpoint_error = Point3::distance(expected, candidate_point.get());
+        let bound = midpoint_error + u_lipschitz * half_u + v_lipschitz * half_v;
+        if !bound.is_finite() {
+            return Ok(None);
+        }
+        if bound <= tolerance {
+            certified_bound = certified_bound.max(bound);
+            continue;
+        }
+        let split_u = u_lipschitz * (u1 - u0) >= v_lipschitz * (v1 - v0);
+        match subdivide_offset_rectangle(
+            &mut rectangles,
+            &mut rectangle_storage,
+            [u0, u1, v0, v1],
+            [u, v],
+            split_u,
+            geometry_budget,
+        ) {
+            Ok(true) => {}
+            Ok(false) => return Ok(None),
+            Err(limit) => return Err(limit),
+        }
+    }
+    Ok(Some(certified_bound))
 }
 
 #[derive(Clone, Copy)]
@@ -946,48 +1087,70 @@ impl<'a> RationalSurfaceDerivativeNets<'a> {
 }
 
 fn rational_surface_derivative_bounds_with_nets(
+    ctx: &DecodeContext<'_>,
     net: &HomogeneousSurfaceNet<'_>,
     derivatives: &RationalSurfaceDerivativeNets<'_>,
     u: f64,
     v: f64,
-) -> Option<RationalSurfaceDerivativeBounds> {
-    let u_controls = active_spline_controls(&net.u_knots, net.u_degree, net.u_count, u)?;
-    let v_controls = active_spline_controls(&net.v_knots, net.v_degree, net.v_count, v)?;
+) -> Result<Option<RationalSurfaceDerivativeBounds>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(u_controls) = active_spline_controls(ctx, &net.u_knots, net.u_degree, net.u_count, u)?
+    else {
+        return Ok(None);
+    };
+    let Some(v_controls) = active_spline_controls(ctx, &net.v_knots, net.v_degree, net.v_count, v)?
+    else {
+        return Ok(None);
+    };
     let reference = net.controls[*u_controls.start() * net.v_count + *v_controls.start()];
-    let origin = (reference[3] > 0.0).then(|| {
+    let Some(origin) = (reference[3] > 0.0).then(|| {
         [
             reference[0] / reference[3],
             reference[1] / reference[3],
             reference[2] / reference[3],
         ]
-    })?;
+    }) else {
+        return Ok(None);
+    };
     if origin.iter().any(|coordinate| !coordinate.is_finite()) {
-        return None;
+        return Ok(None);
     }
-    let base_bounds = net.active_control_bounds(u, v, origin)?;
-    let weight_floor = (base_bounds.minimum_weight > 0.0).then_some(base_bounds.minimum_weight)?;
+    let Some(base_bounds) = net.active_control_bounds(ctx, u, v, origin)? else {
+        return Ok(None);
+    };
+    let Some(weight_floor) =
+        (base_bounds.minimum_weight > 0.0).then_some(base_bounds.minimum_weight)
+    else {
+        return Ok(None);
+    };
     let a = base_bounds.maximum_position_norm;
-    let u_bounds = derivatives.u.active_control_bounds(u, v, origin)?;
-    let v_bounds = derivatives.v.active_control_bounds(u, v, origin)?;
+    let Some(u_bounds) = derivatives.u.active_control_bounds(ctx, u, v, origin)? else {
+        return Ok(None);
+    };
+    let Some(v_bounds) = derivatives.v.active_control_bounds(ctx, u, v, origin)? else {
+        return Ok(None);
+    };
     let au = u_bounds.maximum_position_norm;
     let av = v_bounds.maximum_position_norm;
     let wu = u_bounds.maximum_weight_magnitude;
     let wv = v_bounds.maximum_weight_magnitude;
-    let (auu, wuu) = derivatives.uu.as_ref().map_or(Some((0.0, 0.0)), |net| {
-        let bounds = net.active_control_bounds(u, v, origin)?;
-        Some((
-            bounds.maximum_position_norm,
-            bounds.maximum_weight_magnitude,
-        ))
-    })?;
-    let (avv, wvv) = derivatives.vv.as_ref().map_or(Some((0.0, 0.0)), |net| {
-        let bounds = net.active_control_bounds(u, v, origin)?;
-        Some((
-            bounds.maximum_position_norm,
-            bounds.maximum_weight_magnitude,
-        ))
-    })?;
-    let uv_bounds = derivatives.uv.active_control_bounds(u, v, origin)?;
+    let second_bounds = |net: Option<&HomogeneousSurfaceNet<'_>>| match net {
+        None => Ok(Some((0.0, 0.0))),
+        Some(net) => Ok(net.active_control_bounds(ctx, u, v, origin)?.map(|bounds| {
+            (
+                bounds.maximum_position_norm,
+                bounds.maximum_weight_magnitude,
+            )
+        })),
+    };
+    let Some((auu, wuu)) = second_bounds(derivatives.uu.as_ref())? else {
+        return Ok(None);
+    };
+    let Some((avv, wvv)) = second_bounds(derivatives.vv.as_ref())? else {
+        return Ok(None);
+    };
+    let Some(uv_bounds) = derivatives.uv.active_control_bounds(ctx, u, v, origin)? else {
+        return Ok(None);
+    };
     let auv = uv_bounds.maximum_position_norm;
     let wuv = uv_bounds.maximum_weight_magnitude;
     // Divide homogeneous bounds before combining them. A common weight
@@ -999,14 +1162,17 @@ fn rational_surface_derivative_bounds_with_nets(
     let uu = auu + a * wuu + 2.0 * au * wu + 2.0 * a * wu * wu;
     let uv = auv + au * wv + av * wu + a * wuv + 2.0 * a * wu * wv;
     let vv = avv + a * wvv + 2.0 * av * wv + 2.0 * a * wv * wv;
-    [u, v, uu, uv, vv]
+    Ok([u, v, uu, uv, vv]
         .iter()
         .all(|bound| bound.is_finite())
-        .then_some(RationalSurfaceDerivativeBounds { u, v, uu, uv, vv })
+        .then_some(RationalSurfaceDerivativeBounds { u, v, uu, uv, vv }))
 }
 
+/// Split one rectangle in two at its midpoint. The two halves grow
+/// `rectangles` under `storage`, which holds the queue's scoped bytes.
 pub(super) fn subdivide_offset_rectangle(
     rectangles: &mut Vec<[f64; 4]>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     [u0, u1, v0, v1]: [f64; 4],
     [u, v]: [f64; 2],
     split_u: bool,
@@ -1014,83 +1180,105 @@ pub(super) fn subdivide_offset_rectangle(
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let u_divisible = u != u0 && u != u1;
     let v_divisible = v != v0 && v != v1;
-    if u_divisible && (split_u || !v_divisible) {
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
-            rectangles,
-            2,
-            "nx offset subdivision rectangles",
-        )?;
-        rectangles.extend([[u0, u, v0, v1], [u, u1, v0, v1]]);
-        Ok(true)
+    let halves = if u_divisible && (split_u || !v_divisible) {
+        [[u0, u, v0, v1], [u, u1, v0, v1]]
     } else if v_divisible {
-        let _reservation = geometry_budget.charges.reserve_temporary_vec(
-            rectangles,
-            2,
-            "nx offset subdivision rectangles",
-        )?;
-        rectangles.extend([[u0, u1, v0, v], [u0, u1, v, v1]]);
-        Ok(true)
+        [[u0, u1, v0, v], [u0, u1, v, v1]]
     } else {
-        Ok(false)
-    }
+        return Ok(false);
+    };
+    geometry_budget.charges.reserve_scoped_vec_limit(
+        storage,
+        rectangles,
+        halves.len(),
+        "nx offset subdivision rectangles",
+    )?;
+    rectangles.extend(halves);
+    Ok(true)
 }
 
-pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> {
+/// The unit normal of a translation net: a control grid whose u rows and v
+/// columns are positive, collinear increments of its first row and column.
+pub(super) fn translation_net_normal(
+    ctx: &DecodeContext<'_>,
+    surface: &NurbsSurface,
+) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
     let u_count = surface.u_count();
     let v_count = surface.v_count();
-    let u_degree = usize::try_from(surface.u_degree()).ok()?;
-    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let (Ok(u_degree), Ok(v_degree)) = (
+        usize::try_from(surface.u_degree()),
+        usize::try_from(surface.v_degree()),
+    ) else {
+        return Ok(None);
+    };
     if u_degree == 0 || v_degree == 0 {
-        return None;
+        return Ok(None);
     }
-    let grid = surface.control_grid();
-    let point = |u: usize, v: usize| grid[u][v];
+    let point = |u: usize, v: usize| {
+        surface
+            .pole(u, v)
+            .map(cadmpeg_ir::features::FinitePoint3::get)
+    };
     let difference = |end: Point3, start: Point3| {
         Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z)
     };
-    let u_direction = difference(point(1, 0).get(), point(0, 0).get());
-    let v_direction = difference(point(0, 1).get(), point(0, 0).get());
-    let normal = oriented_nurbs_normal(surface, u_direction.cross(v_direction))?;
+    let (Some(origin), Some(u_first), Some(v_first)) = (point(0, 0), point(1, 0), point(0, 1))
+    else {
+        return Ok(None);
+    };
+    let u_direction = difference(u_first, origin);
+    let v_direction = difference(v_first, origin);
+    let Some(normal) = oriented_nurbs_normal(surface, u_direction.cross(v_direction)) else {
+        return Ok(None);
+    };
 
     let positive_collinear = |increment: Vector3, direction: Vector3| {
         increment.is_finite()
             && increment.cross(direction) == Vector3::new(0.0, 0.0, 0.0)
             && increment.dot(direction) > 0.0
     };
+    // Each test below can reject the net, so each visit is charged as it is
+    // made.
     for u in 0..u_count - 1 {
+        ctx.charge_work_limit(1, "nx offset translation u increments")?;
+        let (Some(start), Some(end)) = (point(u, 0), point(u + 1, 0)) else {
+            return Ok(None);
+        };
         let denominator = surface.u_knots()[u + u_degree + 1] - surface.u_knots()[u + 1];
         if !denominator.is_finite()
             || denominator <= 0.0
-            || !positive_collinear(
-                difference(point(u + 1, 0).get(), point(u, 0).get()),
-                u_direction,
-            )
+            || !positive_collinear(difference(end, start), u_direction)
         {
-            return None;
+            return Ok(None);
         }
     }
     for v in 0..v_count - 1 {
+        ctx.charge_work_limit(1, "nx offset translation v increments")?;
+        let (Some(start), Some(end)) = (point(0, v), point(0, v + 1)) else {
+            return Ok(None);
+        };
         let denominator = surface.v_knots()[v + v_degree + 1] - surface.v_knots()[v + 1];
         if !denominator.is_finite()
             || denominator <= 0.0
-            || !positive_collinear(
-                difference(point(0, v + 1).get(), point(0, v).get()),
-                v_direction,
-            )
+            || !positive_collinear(difference(end, start), v_direction)
         {
-            return None;
+            return Ok(None);
         }
     }
-    let origin = point(0, 0);
-    for u in 0..u_count {
+    for u in ctx.admit_iter(&(0..u_count), "nx offset translation net rows")? {
         for v in 0..v_count {
-            let v_displacement = difference(point(0, v).get(), origin.get());
-            if difference(point(u, v).get(), point(u, 0).get()) != v_displacement {
-                return None;
+            ctx.charge_work_limit(1, "nx offset translation net poles")?;
+            let (Some(column_start), Some(row_start), Some(pole)) =
+                (point(0, v), point(u, 0), point(u, v))
+            else {
+                return Ok(None);
+            };
+            if difference(pole, row_start) != difference(column_start, origin) {
+                return Ok(None);
             }
         }
     }
-    Some(normal)
+    Ok(Some(normal))
 }
 
 fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vector3> {
@@ -1102,30 +1290,58 @@ fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vect
     })
 }
 
-fn positive_weights(surface: &NurbsSurface) -> bool {
+/// Whether every pole weight is positive. A polynomial surface has unit
+/// weights; a rational grid with no pole has none. The search stops at the
+/// first weight that is not positive and charges each pole it reads.
+fn positive_weights(
+    ctx: &DecodeContext<'_>,
+    surface: &NurbsSurface,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     match surface.pole_grid() {
-        NurbsPoleGrid::Polynomial { .. } => true,
+        NurbsPoleGrid::Polynomial { .. } => Ok(true),
         NurbsPoleGrid::Rational { rows } => {
-            !rows.is_empty()
-                && rows
-                    .iter()
-                    .all(|row| !row.is_empty() && row.iter().all(|pole| pole.weight.get() > 0.0))
+            if rows.is_empty() {
+                return Ok(false);
+            }
+            for row in rows {
+                ctx.charge_work_limit(1, "nx offset weight rows")?;
+                if row.is_empty() {
+                    return Ok(false);
+                }
+                for pole in row {
+                    ctx.charge_work_limit(1, "nx offset weights")?;
+                    if pole.weight.get() <= 0.0 {
+                        return Ok(false);
+                    }
+                }
+            }
+            Ok(true)
         }
     }
 }
 
-fn matching_weights(first: &NurbsSurface, second: &NurbsSurface) -> bool {
+/// Whether two surfaces carry the same weight at every paired pole. The
+/// search stops at the first differing weight and charges each pair it reads.
+fn matching_weights(
+    ctx: &DecodeContext<'_>,
+    first: &NurbsSurface,
+    second: &NurbsSurface,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     match (first.pole_grid(), second.pole_grid()) {
-        (NurbsPoleGrid::Polynomial { .. }, NurbsPoleGrid::Polynomial { .. }) => true,
+        (NurbsPoleGrid::Polynomial { .. }, NurbsPoleGrid::Polynomial { .. }) => Ok(true),
         (NurbsPoleGrid::Rational { rows: first }, NurbsPoleGrid::Rational { rows: second }) => {
-            first.iter().zip(second).all(|(first, second)| {
-                first
-                    .iter()
-                    .zip(second)
-                    .all(|(first, second)| first.weight == second.weight)
-            })
+            for (first, second) in first.iter().zip(second) {
+                ctx.charge_work_limit(1, "nx offset weight row pairs")?;
+                for (first, second) in first.iter().zip(second) {
+                    ctx.charge_work_limit(1, "nx offset weight pairs")?;
+                    if first.weight != second.weight {
+                        return Ok(false);
+                    }
+                }
+            }
+            Ok(true)
         }
-        _ => false,
+        _ => Ok(false),
     }
 }
 
@@ -1146,31 +1362,32 @@ fn offset_support_control_hull_excludes_point(
             return Ok(false);
         };
         match &carrier.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-                if positive_weights(nurbs) =>
-            {
-                let (minimum, maximum) = (0..nurbs.u_count())
-                    .flat_map(|u| (0..nurbs.v_count()).filter_map(move |v| nurbs.pole(u, v)))
-                    .fold(
-                        (
-                            Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
-                            Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
-                        ),
-                        |(minimum, maximum), control| {
-                            (
-                                Point3::new(
-                                    minimum.x.min(control.x),
-                                    minimum.y.min(control.y),
-                                    minimum.z.min(control.z),
-                                ),
-                                Point3::new(
-                                    maximum.x.max(control.x),
-                                    maximum.y.max(control.y),
-                                    maximum.z.max(control.z),
-                                ),
-                            )
-                        },
-                    );
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                if !positive_weights(ctx, nurbs)? {
+                    return Ok(false);
+                }
+                let mut minimum = Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
+                let mut maximum =
+                    Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+                for u in ctx.admit_iter(&(0..nurbs.u_count()), "NX offset control hull rows")? {
+                    for v in
+                        ctx.admit_iter(&(0..nurbs.v_count()), "NX offset control hull poles")?
+                    {
+                        let Some(control) = nurbs.pole(u, v) else {
+                            continue;
+                        };
+                        minimum = Point3::new(
+                            minimum.x.min(control.x),
+                            minimum.y.min(control.y),
+                            minimum.z.min(control.z),
+                        );
+                        maximum = Point3::new(
+                            maximum.x.max(control.x),
+                            maximum.y.max(control.y),
+                            maximum.z.max(control.z),
+                        );
+                    }
+                }
                 return Ok(point.x < minimum.x - allowance
                     || point.x > maximum.x + allowance
                     || point.y < minimum.y - allowance
@@ -1310,27 +1527,15 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     {
         return Ok(None);
     }
-    let mut starts = Vec::new();
-    let _starts_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut starts,
-        3,
-        "nx offset support starting parameters",
-    )?;
-    let add_start = |starts: &mut Vec<Point2>, candidate: Option<Point2>| {
-        let Some(mut candidate) = candidate else {
-            return;
-        };
-        if !candidate.is_finite() {
-            return;
-        }
+    // A start is finite, and clamped into the support domain unless the
+    // support extends linearly.
+    let start = |candidate: Option<Point2>| {
+        let mut candidate = candidate.filter(Point2::is_finite)?;
         if !linear_extension {
             clamp_surface_parameters(&mut candidate, domain);
         }
-        if !starts.contains(&candidate) {
-            starts.push(candidate);
-        }
+        Some(candidate)
     };
-    add_start(&mut starts, seed);
 
     let mut best = None;
     let mut process_start =
@@ -1407,7 +1612,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             }
             Ok(None)
         };
-    for parameters in starts.drain(..) {
+    if let Some(parameters) = start(seed) {
         if let Some(parameters) = process_start(parameters)? {
             return Ok(Some(parameters));
         }
@@ -1421,33 +1626,33 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         } else {
             None
         };
-        add_start(&mut starts, coarse);
-        for parameters in starts.drain(..) {
+        if let Some(parameters) = start(coarse) {
             if let Some(parameters) = process_start(parameters)? {
                 return Ok(Some(parameters));
             }
         }
     }
-    add_start(
-        &mut starts,
-        initial_surface_parameters_with_index_and_budget(
-            index,
-            support,
-            point,
-            None,
-            support_fit_tolerance,
-            geometry_budget,
-        )?,
-    );
-    if fit_tolerance.is_none() {
+    let initial = start(initial_surface_parameters_with_index_and_budget(
+        index,
+        support,
+        point,
+        None,
+        support_fit_tolerance,
+        geometry_budget,
+    )?);
+    // Without a fit tolerance the coarse seed follows the support-wide
+    // inverse, unless both name the same start.
+    let coarse = if fit_tolerance.is_none() {
         let coarse = if let Some(domain) = domain {
             coarse_model_surface_parameters(index, surface, point, domain, geometry_budget)?
         } else {
             None
         };
-        add_start(&mut starts, coarse);
-    }
-    for parameters in starts {
+        start(coarse).filter(|coarse| initial != Some(*coarse))
+    } else {
+        None
+    };
+    for parameters in [initial, coarse].into_iter().flatten() {
         if let Some(parameters) = process_start(parameters)? {
             return Ok(Some(parameters));
         }
@@ -1601,8 +1806,9 @@ pub(super) fn coarse_model_surface_parameters(
         coarse_surface_sample_counts(index, surface, 0, geometry_budget.charges)?;
     let mut best = None;
     let mut best_distance = f64::INFINITY;
-    for ui in 0..u_samples.get() {
-        for vi in 0..v_samples.get() {
+    // Each direction takes at most the ceiling count of samples.
+    for ui in (0..CoarseSampleCount::CEILING).take(u_samples.get()) {
+        for vi in (0..CoarseSampleCount::CEILING).take(v_samples.get()) {
             let Some(u) = cadmpeg_ir::math::interpolate(
                 u_domain[0],
                 u_domain[1],
@@ -2023,41 +2229,51 @@ fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::decode::ResourceLimit> {
-    let mut blend_parameter_grids = BTreeMap::new();
-    continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
-        index,
-        surfaces,
-        chart,
-        fit_tolerance,
-        seeds,
-        geometry_budget,
-        &mut blend_parameter_grids,
+) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::CodecError> {
+    let mut blend_parameter_grids = BlendParameterGridCache::new(geometry_budget.charges)?;
+    Ok(
+        continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
+            index,
+            surfaces,
+            chart,
+            fit_tolerance,
+            seeds,
+            geometry_budget,
+            &mut blend_parameter_grids,
+        )?
+        .map(|(lanes, _storage)| lanes),
     )
 }
 
+/// Continue one surface-intersection branch along `chart`. The two parameter
+/// lanes come back with the scoped reservation that holds their storage.
 pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache<
     'a,
+    'ctx,
 >(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&'a SurfaceId; 2],
     chart: &[Point3],
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
-    geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BTreeMap<&'a str, Option<Vec<(Point2, Point3)>>>,
-) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::decode::ResourceLimit> {
-    if chart.len() < 2
-        || surfaces[0] == surfaces[1]
-        || !fit_tolerance.is_finite()
-        || fit_tolerance <= 0.0
-    {
+    geometry_budget: &GeometryWorkBudget<'ctx>,
+    blend_parameter_grids: &mut BlendParameterGridCache<'a, '_>,
+) -> Result<Option<ParameterLanes<'ctx>>, cadmpeg_core::CodecError> {
+    if chart.len() < 2 || !fit_tolerance.is_finite() || fit_tolerance <= 0.0 {
+        return Ok(None);
+    }
+    if same_text(
+        geometry_budget.charges,
+        surfaces[0].as_str(),
+        surfaces[1].as_str(),
+        "nx intersection support identity comparison",
+    )? {
         return Ok(None);
     }
     let mut fit_parameters = |side: usize,
                               point: Point3,
                               seed: Option<Point2>|
-     -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+     -> Result<Option<Point2>, cadmpeg_core::CodecError> {
         let surface = surfaces[side];
         let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.charges)? else {
             return Ok(None);
@@ -2065,15 +2281,15 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         let geometry = &carrier.geometry;
         match geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-                nurbs_surface_parameter_within_tolerance_with_budget(
+                Ok(nurbs_surface_parameter_within_tolerance_with_budget(
                     geometry_budget.charges,
                     nurbs,
                     point,
                     seed,
                     fit_tolerance,
                     geometry_budget,
-                )
-                .map(|parameter| parameter.map(FinitePoint2::get))
+                )?
+                .map(FinitePoint2::get))
             }
             SurfaceGeometry::Procedural { .. } => {
                 let offset = offset_surface_parameters_with_tolerance_with_index_and_budget(
@@ -2087,23 +2303,8 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                 if offset.is_some() {
                     return Ok(offset);
                 }
-                if !blend_parameter_grids.contains_key(surface.as_str()) {
-                    let grid = blend_surface_parameter_grid_with_index_and_budget(
-                        index,
-                        surface,
-                        0,
-                        geometry_budget,
-                    )?;
-                    geometry_budget
-                        .charges
-                        .charge_collection_items_limit(1, "nx intersection blend grid cache")?;
-                    blend_parameter_grids.insert(surface.as_str(), grid);
-                }
-                let grid = blend_parameter_grids
-                    .get(surface.as_str())
-                    .and_then(Option::as_deref)
-                    .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided);
-                blend_surface_parameters_for_fit_with_grid_and_budget(
+                let grid = blend_parameter_grids.grid(index, surface, geometry_budget)?;
+                Ok(blend_surface_parameters_for_fit_with_grid_and_budget(
                     index,
                     surface,
                     point,
@@ -2111,7 +2312,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                     fit_tolerance,
                     grid,
                     geometry_budget,
-                )
+                )?)
             }
             geometry @ SurfaceGeometry::Solved(_) => {
                 Ok(analytic_surface_parameters(geometry, point).map(Point2::from))
@@ -2174,20 +2375,27 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         return Ok(None);
     }
     let mut lanes = [Vec::new(), Vec::new()];
-    let _first_lane_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut lanes[0],
-        chart.len(),
-        "nx intersection first parameter lane",
-    )?;
-    let _second_lane_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut lanes[1],
-        chart.len(),
-        "nx intersection second parameter lane",
-    )?;
+    let mut lane_storage = geometry_budget
+        .charges
+        .reserve_scoped_limit(0, "nx intersection parameter lanes")?;
+    for lane in &mut lanes {
+        geometry_budget.charges.reserve_scoped_vec_limit(
+            &mut lane_storage,
+            lane,
+            chart.len(),
+            "nx intersection parameter lanes",
+        )?;
+    }
     lanes[0].push(Point2::new(current[0], current[1]));
     lanes[1].push(Point2::new(current[2], current[3]));
 
-    for chart_pair in chart.windows(2) {
+    // Each chart sample after the first adds one corrected sample to each
+    // lane, within the capacity reserved above.
+    for next in geometry_budget
+        .charges
+        .admit_iter(&(1..chart.len()), "nx intersection chart traversal")?
+    {
+        let chart_pair = [chart[next - 1], chart[next]];
         let Some(jacobian) =
             intersection_parameter_jacobian(index, surfaces, current, space, geometry_budget)?
         else {
@@ -2274,7 +2482,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         lanes[0].push(Point2::new(current[0], current[1]));
         lanes[1].push(Point2::new(current[2], current[3]));
     }
-    Ok(Some(lanes))
+    Ok(Some((lanes, lane_storage)))
 }
 
 pub(super) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -> f64 {
@@ -2477,10 +2685,10 @@ fn intersection_parameter_tangent(
     else {
         return Ok(None);
     };
+    if let Some(tangent) = null_vector_3x4(jacobian) {
+        return Ok(Some(tangent));
+    }
     Ok((|| -> Option<[f64; 4]> {
-        if let Some(tangent) = null_vector_3x4(jacobian) {
-            return Some(tangent);
-        }
         let chord = FiniteVector3::new(chord).and_then(FiniteVector3::unit_nonzero)?;
         let derivatives = [
             [
@@ -2630,17 +2838,17 @@ fn null_vector_3x4(mut matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
     }
     let mut vector = [0.0; 4];
     for (omitted, component) in vector.iter_mut().enumerate() {
-        let minor = std::array::from_fn(|row| {
+        let mut minor = [[0.0; 3]; 3];
+        for (minor_row, row) in minor.iter_mut().zip(&matrix) {
             let mut column = 0;
-            std::array::from_fn(|_| {
-                while column == omitted {
+            for value in minor_row.iter_mut() {
+                if column == omitted {
                     column += 1;
                 }
-                let value = matrix[row][column];
+                *value = row[column];
                 column += 1;
-                value
-            })
-        });
+            }
+        }
         *component = if omitted % 2 == 0 { 1.0 } else { -1.0 } * determinant_3x3(minor);
     }
     let norm = vector
@@ -2778,22 +2986,35 @@ pub(super) fn intersection_side(
     uv: Option<(&[cadmpeg_ir::units::FiniteVector<2>], &[f64])>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<IntcurveSupportSide, cadmpeg_core::CodecError> {
-    let surface = surface_xmt
-        .and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)))
-        .map(|surface| surface.try_clone_for_decode(ctx, "nx intersection support identity"))
-        .transpose()?;
+    let surface = match surface_xmt {
+        Some(xmt) => ctx.get_btree_map(
+            surfaces_by_xmt,
+            &u32::from(xmt),
+            "nx intersection support lookup",
+        )?,
+        None => None,
+    }
+    .map(|surface| surface.try_clone_for_decode(ctx, "nx intersection support identity"))
+    .transpose()?;
     let lanes = if let (Some(surface_id), Some((uv, parameters))) = (&surface, uv) {
-        let geometry = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|candidate| &candidate.id == surface_id)
+        let geometry = ctx
+            .find_by(
+                &ir.model.surfaces,
+                |candidate| {
+                    ctx.equal(
+                        candidate.id.as_str(),
+                        surface_id.as_str(),
+                        "nx intersection support identity",
+                    )
+                },
+                "nx intersection support surface search",
+            )?
             .map(|surface| &surface.geometry);
-        if uv
-            .iter()
-            .flat_map(|pair| pair.iter())
-            .any(|value| missing_support_parameter(*value))
-        {
+        if ctx.any_by(
+            uv,
+            |pair| Ok(pair.iter().any(|value| missing_support_parameter(*value))),
+            "nx intersection missing support parameter search",
+        )? {
             None
         } else if let Some(geometry) = geometry {
             let mut control_points = Vec::new();
@@ -2803,7 +3024,7 @@ pub(super) fn intersection_side(
                 "nx intersection support controls",
             )?;
             let mut valid = true;
-            for pair in uv {
+            for pair in ctx.admit_iter(uv, "nx intersection support parameter conversion")? {
                 if let Some(point) = surface_parameters(ctx, geometry, **pair)? {
                     control_points.push(point.get());
                 } else {
@@ -2853,7 +3074,6 @@ pub(super) fn surface_parameters(
 ) -> Result<Option<FinitePoint2>, cadmpeg_core::decode::ResourceLimit> {
     let mut surface = match surface {
         SurfaceGeometry::Procedural { .. } => {
-            ctx.charge_work_limit(1, "nx support parameter surface visit")?;
             return Ok(FinitePoint2::new(Point2::new(uv[0], uv[1])));
         }
         SurfaceGeometry::Solved(surface) => surface,
@@ -3617,6 +3837,69 @@ mod tests {
         }
         assert!(super::null_vector_3x4([[0.; 4]; 3]).is_none());
     }
+
+    #[test]
+    fn offset_rectangle_probe_refuses_session_work_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+
+        let setup_ctx = cadmpeg_test_support::service_decode_context();
+        let support = NurbsSurface::from_lanes(
+            &setup_ctx,
+            NurbsSurfaceAxis::new(2, vec![0., 0., 0., 1., 1., 1.], false),
+            NurbsSurfaceAxis::new(2, vec![0., 0., 0., 1., 1., 1.], false),
+            NurbsSurfaceLanes::new(
+                (0..3)
+                    .map(|u| {
+                        (0..3)
+                            .map(|v| {
+                                Point3::new(
+                                    [0.0, 0.5, 1.0][u],
+                                    [0.0, 0.5, 1.0][v],
+                                    [0.0, 0.0, 1.0][u] + [0.0, 0.0, 1.0][v],
+                                )
+                            })
+                            .collect()
+                    })
+                    .collect(),
+                None,
+            ),
+            false,
+        )
+        .expect("fixture constructor admission")
+        .expect("valid polynomial surface");
+
+        // The first rectangle probe is the route's first adaptive geometry
+        // work unit; the nets before it charge the session directly.
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "work_budget",
+            |ctx| {
+                let geometry_budget = GeometryWorkBudget::from_context(
+                    ctx,
+                    cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+                );
+                super::certified_curved_offset_cache_fit_with_budget(
+                    &support,
+                    &support,
+                    0.01,
+                    0.02,
+                    true,
+                    &geometry_budget,
+                )
+                .map(|_| ())
+                .map_err(Into::into)
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "work_budget"
+        ));
+    }
+
     #[test]
     fn periodic_lift_avoids_overflowing_the_parameter_difference() {
         let lifted = super::lift_periodic_parameter(-1e308, 1e308, 1e307);
@@ -3706,11 +3989,13 @@ mod tests {
                         .unwrap()
                         .unwrap();
                 let bounds = super::rational_surface_derivative_bounds_with_nets(
+                    geometry_ctx,
                     &net,
                     &derivatives,
                     0.5,
                     0.5,
                 )
+                .unwrap()
                 .unwrap();
                 assert!((bounds.u - 1.).abs() <= 16. * f64::EPSILON);
                 assert!((bounds.v - 1.).abs() <= 16. * f64::EPSILON);
@@ -3748,7 +4033,12 @@ mod tests {
             )
             .expect("fixture constructor admission")
             .expect("a degree-zero axis can contain a single pole");
-            assert!(super::translation_net_normal(&surface).is_none());
+            assert!(super::translation_net_normal(
+                &cadmpeg_test_support::service_decode_context(),
+                &surface
+            )
+            .unwrap()
+            .is_none());
         }
     }
 
@@ -3888,5 +4178,36 @@ mod tests {
         let refined =
             refine_across_the_overflowing_step(&ir, &offset).expect("the halved step converges");
         assert!((refined.u - 0.3).abs() <= 1.0e-9, "{refined:?}");
+    }
+
+    #[test]
+    fn intersection_side_charges_its_support_lookup() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        const OPERATION: &str = "nx intersection support lookup";
+        let surface =
+            SurfaceId::mint("test:model:entity#synthetic:side-support").expect("identity grammar");
+        let surfaces_by_xmt = std::collections::BTreeMap::from([(7_u32, surface)]);
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            OPERATION,
+            |ctx| {
+                let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
+                super::intersection_side(
+                    ctx,
+                    &CadIr::empty(),
+                    &surfaces_by_xmt,
+                    crate::framing::xmt_reference::NonNullXmt::try_from(7).ok(),
+                    None,
+                    &geometry_budget,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == OPERATION
+        ));
     }
 }

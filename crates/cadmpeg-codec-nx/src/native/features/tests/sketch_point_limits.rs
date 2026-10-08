@@ -28,10 +28,22 @@ fn sketch_point_refusal(
     })
     .expect("composed feature-history container");
     let (records, names, scalars, pairs) = crate::test_support::with_decode_context(|ctx| {
-        let labels = feature_operation_labels(ctx, &container)?;
-        let operations = feature_operation_records(ctx, &container)?;
-        let inputs = feature_input_blocks(ctx, &container)?;
-        let references = feature_sketch_references(ctx, &container)?;
+        let labels = feature_operation_labels(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )?;
+        let operations = feature_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )?;
+        let inputs = feature_input_blocks(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )?;
+        let references = feature_sketch_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )?;
         let sketches = feature_sketch_records(ctx, &labels, &operations, &inputs, &references)?;
         let constructions = feature_sketch_construction_inputs(ctx, &sketches, &references)?;
         let payloads = feature_sketch_construction_payloads(ctx, &container, &constructions)?;

@@ -16,13 +16,20 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
     let tail_member = record(14, 100, Some(50), Vec::new());
     let head_member = record(16, 101, Some(51), Vec::new());
     let records = [group, tail, head, tail_member, head_member];
+    let current = |records: &[crate::deltas::Record]| {
+        crate::test_support::with_decode_context(|ctx| {
+            let records: Vec<_> = records
+                .iter()
+                .map(|record| (record.xmt, &record.family))
+                .collect();
+            let mut members = Vec::new();
+            crate::native::parasolid::group_members_from_records(ctx, 4, &records, &mut members)
+                .unwrap();
+            members
+        })
+    };
 
-    let members = crate::test_support::with_decode_context(|ctx| {
-        let mut members = Vec::new();
-        crate::native::parasolid::group_members_from_records(ctx, 4, &records, &mut members)
-            .unwrap();
-        members
-    });
+    let members = current(&records);
 
     assert_eq!(members.len(), 2);
     assert_eq!(members[0].list_record_xmt, 20);
@@ -52,12 +59,7 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
     broken[2].family = crate::deltas::record_family::RecordFamily::Type91 {
         references: [10, 101, 3, 4, 1, 99],
     };
-    let broken_members = crate::test_support::with_decode_context(|ctx| {
-        let mut members = Vec::new();
-        crate::native::parasolid::group_members_from_records(ctx, 4, &broken, &mut members)
-            .unwrap();
-        members
-    });
+    let broken_members = current(&broken);
     assert!(broken_members.is_empty());
 }
 
@@ -123,10 +125,12 @@ fn group_records_keep_equal_node_ids_in_distinct_partition_scopes() {
         ),
     ];
 
+    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
     let groups = crate::test_support::with_decode_context(|ctx| {
-        crate::native::parasolid::parasolid_group_records(ctx, &streams, &BTreeMap::new(), &[])
+        crate::native::parasolid::parasolid_groups(ctx, &streams, &BTreeMap::new(), &events)
     })
-    .unwrap();
+    .unwrap()
+    .records;
 
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].node_id, groups[1].node_id);
@@ -160,13 +164,121 @@ fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
     let pairs = BTreeMap::from([(0, vec![1])]);
 
     let groups = crate::test_support::with_decode_context(|ctx| {
-        crate::native::parasolid::parasolid_group_records(ctx, &streams, &pairs, &events.records)
+        crate::native::parasolid::parasolid_groups(ctx, &streams, &pairs, &events)
     })
-    .unwrap();
+    .unwrap()
+    .records;
 
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[0].origin.partition_stream_ordinal(), Some(0));
     assert_eq!(groups[1].origin.partition_stream_ordinal(), Some(0));
     assert_eq!(groups[2].origin.partition_stream_ordinal(), None);
     assert_eq!(groups[1].origin.stream_kind().label(), "deltas");
+}
+
+#[test]
+fn group_members_replay_paired_deltas_events_in_offset_order() {
+    use crate::native::parasolid::{ParasolidDeltasRecord, ParasolidDeltasTombstone};
+
+    let streams = [
+        stream(
+            crate::parasolid::ParasolidSubtype::Partition,
+            "SCH_TEST",
+            group_record(10, 7, 30),
+        ),
+        stream(
+            crate::parasolid::ParasolidSubtype::Deltas,
+            "SCH_TEST",
+            Vec::new(),
+        ),
+    ];
+    let pairs = BTreeMap::from([(0, vec![1])]);
+    let delta = |record: crate::deltas::Record, inflated_offset| ParasolidDeltasRecord {
+        id: format!("nx:s1:deltas-record#{inflated_offset}-{}", record.xmt),
+        stream_ordinal: 1,
+        family: record.family,
+        xmt: record.xmt,
+        byte_len: 1,
+        inflated_offset,
+    };
+    let members_with_tombstone_at = |tombstone_offset| {
+        let mut events = crate::native::parasolid::parasolid_deltas_events(&[]);
+        events.records = vec![
+            delta(record(16, 101, Some(51), Vec::new()), 40),
+            delta(record(91, 30, None, vec![10, 100, 3, 4, 20, 1]), 10),
+            delta(record(14, 100, Some(50), Vec::new()), 30),
+            delta(record(91, 20, None, vec![10, 101, 3, 4, 1, 30]), 20),
+        ];
+        events.tombstones = vec![ParasolidDeltasTombstone {
+            id: "nx:s1:deltas-tombstone#0".into(),
+            stream_ordinal: 1,
+            kind: crate::deltas::record_kind::RecordKind::Edge,
+            xmt: 101,
+            inflated_offset: tombstone_offset,
+        }];
+        crate::test_support::with_decode_context(|ctx| {
+            crate::native::parasolid::parasolid_groups(ctx, &streams, &pairs, &events)
+        })
+        .unwrap()
+        .members
+    };
+
+    // A tombstone after the member record clears it and breaks the chain.
+    assert!(members_with_tombstone_at(50).is_empty());
+    // A record after the tombstone restores the member.
+    let members = members_with_tombstone_at(35);
+    assert_eq!(members.len(), 2);
+    assert_eq!(members[0].list_record_xmt, 20);
+    assert_eq!(members[1].member_xmt, 100);
+}
+
+/// Walks the cap in one dimension until the named GROUP member operation refuses.
+fn group_member_chain_refusal(dimension: cadmpeg_core::decode::ResourceDimension, operation: &str) {
+    let records = [
+        record(90, 10, Some(7), vec![3, 4, 5, 6, 30]),
+        record(91, 30, None, vec![10, 100, 3, 4, 20, 1]),
+        record(91, 20, None, vec![10, 101, 3, 4, 1, 30]),
+        record(14, 100, Some(50), Vec::new()),
+        record(16, 101, Some(51), Vec::new()),
+    ];
+    let records: Vec<_> = records
+        .iter()
+        .map(|record| (record.xmt, &record.family))
+        .collect();
+    crate::test_support::resource_refusal_at(&[], dimension, operation, |ctx| {
+        let mut members = Vec::new();
+        crate::native::parasolid::group_members_from_records(ctx, 4, &records, &mut members)
+    });
+}
+
+#[test]
+fn group_member_route_refuses_collection_limit() {
+    group_member_chain_refusal(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX GROUP members",
+    );
+}
+
+#[test]
+fn group_member_route_refuses_retained_limit() {
+    group_member_chain_refusal(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX GROUP member identity",
+    );
+}
+
+#[test]
+fn group_member_route_refuses_scoped_limit() {
+    group_member_chain_refusal(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX GROUP member seen index",
+    );
+}
+
+#[test]
+fn group_member_route_refuses_work_limit() {
+    group_member_chain_refusal(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX GROUP member chain",
+    );
 }
