@@ -518,7 +518,8 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             (828, [0.0, 4.0, 0.0], [0.0, 1.0, 0.0]),
             (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
         ], [
-            CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]] },
+            Some(CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]] }),
+            None,
         ])).expect("service resources"),
         Some(cylinder)
             if *cylinder.origin() == Point3::new(-12.5, 4.0, 0.0)

@@ -343,8 +343,11 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
 pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
     ctx: &DecodeContext<'_>,
     planes: [FeatureOutlinePlane; 2],
-    outlines: impl IntoIterator<Item = CapOutline>,
+    outlines: [Option<CapOutline>; 2],
 ) -> Result<Option<CylinderSurface>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let Some((_, axis, _)) = hole_placement(planes) else {
         return Ok(None);
     };
@@ -352,12 +355,9 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
         return Ok(None);
     };
     let radial = aligned_axis.complement().map(crate::axis::Axis::index);
-    let mut outlines = outlines.into_iter();
-    let Some((center, radius)) = ctx.find_map(
-        &mut outlines,
-        |cap| Ok(cap_square_center_radius(cap.corners, aligned_axis)),
-        "creo circular sweep cap scan",
-    )?
+    let mut outlines = outlines.into_iter().flatten();
+    let Some((center, radius)) = outlines
+        .find_map(|cap| cap_square_center_radius(cap.corners, aligned_axis))
     else {
         return Ok(None);
     };
@@ -366,22 +366,16 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
         .chain(std::iter::once(&radius))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    if ctx.any_by(
-        outlines,
-        |cap| {
-            Ok(
-                cap_square_center_radius(cap.corners, aligned_axis).is_some_and(
-                    |(other_center, other_radius)| {
-                        radial.iter().any(|index| {
-                            (center[*index] - other_center[*index]).abs()
-                                > EPS_CENTER_AGREEMENT * scale
-                        }) || (radius - other_radius).abs() > EPS_CENTER_AGREEMENT * scale
-                    },
-                ),
-            )
-        },
-        "creo circular sweep cap scan",
-    )? {
+    if outlines.any(|cap| {
+        cap_square_center_radius(cap.corners, aligned_axis).is_some_and(
+            |(other_center, other_radius)| {
+                radial.iter().any(|index| {
+                    (center[*index] - other_center[*index]).abs()
+                        > EPS_CENTER_AGREEMENT * scale
+                }) || (radius - other_radius).abs() > EPS_CENTER_AGREEMENT * scale
+            },
+        )
+    }) {
         return Ok(None);
     }
     let mut ref_direction = [0.0; 3];
@@ -632,7 +626,7 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
     let Some(geometry) = circular_sweep_cylinder_from_cap_outlines(
         ctx,
         [first, second],
-        caps.into_iter().flatten(),
+        caps,
     )?
     else {
         return Ok(None);
