@@ -429,6 +429,13 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
     solver_roles: SolverRoles,
 ) -> Result<IncidenceEvidence, cadmpeg_core::CodecError> {
     let mut evidence = IncidenceEvidence::default();
+    let mut solver_only = None;
+    let mut is_solver_only = || {
+        if let Some(value) = solver_only { return Ok(value); }
+        let value = solver_only_section_entity_offset(ctx, definition, entity_id)?.is_some();
+        solver_only = Some(value);
+        Ok::<_, cadmpeg_core::CodecError>(value)
+    };
     let ControlFlow::Continue(()) =
         visit_section_skamps::<std::convert::Infallible>(ctx, definition, false, |skamp| {
             if matches!((skamp.kind, skamp.items.as_slice()),
@@ -459,8 +466,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                             continue;
                         }
                         if unique_opaque_section_entity(definition, target.entity_id)
-                            || solver_only_section_entity_offset(ctx, definition, target.entity_id)?
-                                .is_some()
+                            || is_solver_only()?
                         {
                             evidence.insert(SectionEntityIncidenceFamily::LineOrArc);
                             break;
@@ -482,8 +488,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                             continue;
                         }
                         if unique_opaque_section_entity(definition, target.entity_id)
-                            || solver_only_section_entity_offset(ctx, definition, target.entity_id)?
-                                .is_some()
+                            || is_solver_only()?
                         {
                             evidence.insert(SectionEntityIncidenceFamily::Point);
                             break;
@@ -494,14 +499,10 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
             // Line-family roles are structural; type-six circular evidence is
             // activity-dependent, like its radius-equality constraint.
             if let (5 | 7 | 8, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-                if first.sense == 0 && second.sense == 0 {
-                    let has_solver_entity =
-                        solver_only_section_entity_offset(ctx, definition, entity_id)?.is_some();
-                    if has_solver_entity
-                        && (first.entity_id == entity_id || second.entity_id == entity_id)
-                    {
-                        evidence.insert(SectionEntityIncidenceFamily::Line);
-                    }
+                if first.sense == 0 && second.sense == 0
+                    && (first.entity_id == entity_id || second.entity_id == entity_id)
+                    && is_solver_only()? {
+                    evidence.insert(SectionEntityIncidenceFamily::Line);
                 }
             }
             if section_skamp_active(skamp.status)
@@ -587,24 +588,6 @@ pub(in super::super) fn solver_only_section_entity_family(
         return Ok(None);
     }
     let mut evidence = section_incidence_curve_family_evidence(ctx, definition, entity_id)?;
-    if !evidence.contains(SectionEntityIncidenceFamily::Arc) {
-        let outcome = visit_section_skamps(ctx, definition, false, |skamp| {
-            let has_circular_sense = ctx.any_by(
-                &skamp.items,
-                |item| Ok(item.entity_id == entity_id && item.sense == 4),
-                "creo solver-only circular SKAMP items",
-            )?;
-            Ok(if has_circular_sense {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            })
-        })?;
-        if matches!(outcome, ControlFlow::Break(())) {
-            evidence.insert(SectionEntityIncidenceFamily::Circular);
-            normalize_section_incidence_curve_family_evidence(&mut evidence);
-        }
-    }
     if !evidence.contains(SectionEntityIncidenceFamily::Line)
         && !evidence.contains(SectionEntityIncidenceFamily::LineOrArc)
     {
