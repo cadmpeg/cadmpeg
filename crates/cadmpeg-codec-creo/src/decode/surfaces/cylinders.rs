@@ -1208,23 +1208,12 @@ pub(in super::super) fn transfer_positional_cylinders(
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let mut workspace = ctx.reserve_scoped(0, "creo positional cylinder workspace")?;
     let mut surfaces_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
-    let mut generated_cylinder_counts = std::collections::HashMap::<u32, usize>::new();
+    let mut generated_cylinder_counts = None;
     let mut round_feature_ids = BTreeSet::new();
     for row in ctx.admit_iter(
         &*scan.surfaces.rows,
         "creo positional cylinder surface rows",
     )? {
-        if row.kind == crate::surface::SurfaceKind::Cylinder {
-            workspace.with_storage(|| {
-                *ctx.entry_hash_map(
-                    &mut generated_cylinder_counts,
-                    row.feature_id,
-                    "creo generated cylinder counts",
-                )?
-                .or_insert(0) += 1;
-                Ok::<_, cadmpeg_core::CodecError>(())
-            })?;
-        }
         if row.kind == crate::surface::SurfaceKind::Cylinder
             && feature_schema_class(ctx, scan, row.feature_id)? == Some(SchemaClass::Round)
         {
@@ -1489,44 +1478,6 @@ pub(in super::super) fn transfer_positional_cylinders(
         {
             continue;
         }
-        let reference_bound_frame = || -> Result<
-            Option<(crate::surface::PositionalCylinderFrame, CylinderFrameMechanism)>,
-            cadmpeg_core::CodecError,
-        > {
-            let mut reference_storage = ctx.reserve_scoped(0, "creo reference cylinder workspace")?;
-            let mut entity_ids = BTreeSet::new();
-            for table in ctx
-                .admit_iter(&scan.features.entity_tables, "creo reference cylinder entity tables")?
-                .filter(|table| table.feature_id == row.feature_id)
-            {
-                for entry in ctx.admit_iter(&table.entries, "creo reference cylinder entity entries")? {
-                    reference_storage.with_storage(|| ctx.insert_btree_set(
-                        &mut entity_ids,
-                        entry.entity_id,
-                        "creo reference cylinder entity ID nodes",
-                    ))?;
-                }
-            }
-            let mut circles = Vec::new();
-            for circle in ctx
-                .admit_iter(&scan.references.circles, "creo reference cylinder circles")?
-            {
-                if !ctx.contains_btree_set(&entity_ids, &circle.entity_id, "creo entity ids lookup")? { continue; }
-                reference_storage.with_storage(|| ctx.reserve_vec(&mut circles, 1, "creo reference cylinder circles"))?;
-                circles.push(circle);
-            }
-            let generated_cylinder_count = generated_cylinder_counts.get(&row.feature_id).copied().unwrap_or(0);
-            if generated_cylinder_count == 1 {
-                if let Some(frame) = reference_circle_pair_cylinder_frame(&circles) {
-                    return Ok(Some((frame, CylinderFrameMechanism::ReferenceCirclePair)));
-                }
-            }
-            let Some(envelope) = record.type24_scalar_frame_round_envelope() else {
-                return Ok(None);
-            };
-            Ok(reference_cap_bound_round_frame(envelope, &circles)
-                .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap)))
-        };
         let (frame, mechanism) = if selector_corner_interval {
             let Some(frame) = record.positional_cylinder_frame() else {
                 continue;
@@ -1548,7 +1499,34 @@ pub(in super::super) fn transfer_positional_cylinders(
         } else if let Some(frame) = record.positional_cylinder_frame() {
             (frame, CylinderFrameMechanism::PositionalCylinderFrame)
         } else {
-            let Some(frame) = reference_bound_frame()? else {
+            if generated_cylinder_counts.is_none() {
+                let mut counts = std::collections::HashMap::<u32, usize>::new();
+                for candidate in ctx.admit_iter(
+                    &*scan.surfaces.rows,
+                    "creo generated cylinder row traversal",
+                )? {
+                    if candidate.kind == crate::surface::SurfaceKind::Cylinder {
+                        workspace.with_storage(|| {
+                            *ctx.entry_hash_map(
+                                &mut counts,
+                                candidate.feature_id,
+                                "creo generated cylinder counts",
+                            )?
+                            .or_default() += 1;
+                            Ok::<_, cadmpeg_core::CodecError>(())
+                        })?;
+                    }
+                }
+                generated_cylinder_counts = Some(counts);
+            }
+            let count = generated_cylinder_counts
+                .as_ref()
+                .and_then(|counts| counts.get(&row.feature_id))
+                .copied()
+                .unwrap_or(0);
+            let Some(frame) =
+                reference_bound_cylinder_frame(ctx, scan, record, row.feature_id, count)?
+            else {
                 continue;
             };
             frame
@@ -1652,6 +1630,59 @@ pub(in super::super) fn transfer_positional_cylinders(
             usize::from(mechanism == CylinderFrameMechanism::RoundEdgeEndpoint);
     }
     Ok(summary)
+}
+
+fn reference_bound_cylinder_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    record: &crate::surface::SurfaceParameterRecord,
+    feature_id: u32,
+    generated_cylinder_count: usize,
+) -> Result<
+    Option<(
+        crate::surface::PositionalCylinderFrame,
+        CylinderFrameMechanism,
+    )>,
+    cadmpeg_core::CodecError,
+> {
+    let mut reference_storage = ctx.reserve_scoped(0, "creo reference cylinder workspace")?;
+    let mut entity_ids = BTreeSet::new();
+    for table in ctx
+        .admit_iter(
+            &scan.features.entity_tables,
+            "creo reference cylinder entity tables",
+        )?
+        .filter(|table| table.feature_id == feature_id)
+    {
+        for entry in ctx.admit_iter(&table.entries, "creo reference cylinder entity entries")? {
+            reference_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut entity_ids,
+                    entry.entity_id,
+                    "creo reference cylinder entity ID nodes",
+                )
+            })?;
+        }
+    }
+    let mut circles = Vec::new();
+    for circle in ctx.admit_iter(&scan.references.circles, "creo reference cylinder circles")? {
+        if !ctx.contains_btree_set(&entity_ids, &circle.entity_id, "creo entity ids lookup")? {
+            continue;
+        }
+        reference_storage
+            .with_storage(|| ctx.reserve_vec(&mut circles, 1, "creo reference cylinder circles"))?;
+        circles.push(circle);
+    }
+    if generated_cylinder_count == 1 {
+        if let Some(frame) = reference_circle_pair_cylinder_frame(&circles) {
+            return Ok(Some((frame, CylinderFrameMechanism::ReferenceCirclePair)));
+        }
+    }
+    let Some(envelope) = record.type24_scalar_frame_round_envelope() else {
+        return Ok(None);
+    };
+    Ok(reference_cap_bound_round_frame(envelope, &circles)
+        .map(|frame| (frame, CylinderFrameMechanism::RoundReferenceCap)))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
