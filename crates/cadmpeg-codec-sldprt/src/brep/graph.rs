@@ -1579,6 +1579,10 @@ pub(crate) fn decode_bodies(
     let mut facts = entity::Facts::default();
     let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
+    enum ScannedTables<'ctx> {
+        Primary(topology::Tables),
+        MergeSource(topology::MergeSource<'ctx>),
+    }
     let mut ordered_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
     let mut ordered = Vec::new();
     ordered_storage.with_storage(|| {
@@ -1661,7 +1665,7 @@ pub(crate) fn decode_bodies(
             index_storage
                 .with_storage(|| carriers.merge_missing(ctx, scan_carriers(ctx, body)?))?;
             let curve_attrs = stream_storage.with_storage(|| carriers.curve_attrs(ctx))?;
-            index_storage.with_storage(|| {
+            let scan_tables = || {
                 if is_deltas {
                     topology::scan_deltas_with_curve_attrs_excluding(
                         ctx,
@@ -1677,7 +1681,12 @@ pub(crate) fn decode_bodies(
                         &typed_face_offsets,
                     )
                 }
-            })?
+            };
+            if initialized {
+                ScannedTables::MergeSource(topology::MergeSource::scan(ctx, scan_tables)?)
+            } else {
+                ScannedTables::Primary(index_storage.with_storage(scan_tables)?)
+            }
         };
         let mut scanned_facts =
             index_storage.with_storage(|| entity::scan_metadata(ctx, body, is_deltas))?;
@@ -1693,22 +1702,18 @@ pub(crate) fn decode_bodies(
         )? {
             version.stream_order = stream_order;
         }
-        if !initialized || !is_deltas {
-            if initialized {
-                index_storage.with_storage(|| {
-                    tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)
-                })?;
-                index_storage
-                    .with_storage(|| append_entity_facts(ctx, &mut facts, scanned_facts))?;
-            } else {
+        match scanned_tables {
+            ScannedTables::Primary(scanned_tables) => {
                 tables = scanned_tables;
                 facts = scanned_facts;
                 initialized = true;
             }
-        } else {
-            index_storage
-                .with_storage(|| tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs))?;
-            index_storage.with_storage(|| append_entity_facts(ctx, &mut facts, scanned_facts))?;
+            ScannedTables::MergeSource(source) => {
+                index_storage.with_storage(|| {
+                    source.merge_into(ctx, &mut tables, selected_bridge_attrs)
+                })?;
+                index_storage.with_storage(|| append_entity_facts(ctx, &mut facts, scanned_facts))?;
+            }
         }
     }
     decode_graph(ctx, &carriers, &tables, facts, &typed_facts, stream)
