@@ -2918,12 +2918,20 @@ fn style_domain_uncached(
             |partial| -> Result<Option<()>, CodecError> {
                 let name = partial.name.as_str();
                 Ok(
-                    (ctx.contains_text(name, "POINT", "STEP style domain point containment")?
-                        || ctx.contains_text(
-                            name,
-                            "VERTEX",
-                            "STEP style domain vertex containment",
-                        )?)
+                    (ctx
+                        .position_by(
+                            name.as_bytes().windows(b"POINT".len()),
+                            |window| Ok(window == &b"POINT"[..]),
+                            "STEP style domain point containment",
+                        )?
+                        .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"VERTEX".len()),
+                                |window| Ok(window == &b"VERTEX"[..]),
+                                "STEP style domain vertex containment",
+                            )?
+                            .is_some())
                     .then_some(()),
                 )
             },
@@ -2940,17 +2948,27 @@ fn style_domain_uncached(
             |partial| -> Result<Option<()>, CodecError> {
                 let name = partial.name.as_str();
                 Ok(
-                    (ctx.contains_text(name, "CURVE", "STEP style domain curve containment")?
-                        || ctx.contains_text(
-                            name,
-                            "EDGE",
-                            "STEP style domain edge containment",
+                    (ctx
+                        .position_by(
+                            name.as_bytes().windows(b"CURVE".len()),
+                            |window| Ok(window == &b"CURVE"[..]),
+                            "STEP style domain curve containment",
                         )?
-                        || ctx.contains_text(
-                            name,
-                            "_LINE",
-                            "STEP style domain line containment",
-                        )?
+                        .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"EDGE".len()),
+                                |window| Ok(window == &b"EDGE"[..]),
+                                "STEP style domain edge containment",
+                            )?
+                            .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"_LINE".len()),
+                                |window| Ok(window == &b"_LINE"[..]),
+                                "STEP style domain line containment",
+                            )?
+                            .is_some()
                         || matches!(
                             name,
                             "LINE" | "POLYLINE" | "CIRCLE" | "ELLIPSE" | "HYPERBOLA" | "PARABOLA"
@@ -2971,22 +2989,34 @@ fn style_domain_uncached(
             |partial| -> Result<Option<()>, CodecError> {
                 let name = partial.name.as_str();
                 Ok(
-                    (ctx.contains_text(name, "FACE", "STEP style domain face containment")?
-                        || ctx.contains_text(
-                            name,
-                            "SURFACE",
-                            "STEP style domain surface containment",
+                    (ctx
+                        .position_by(
+                            name.as_bytes().windows(b"FACE".len()),
+                            |window| Ok(window == &b"FACE"[..]),
+                            "STEP style domain face containment",
                         )?
-                        || ctx.contains_text(
-                            name,
-                            "SOLID",
-                            "STEP style domain solid containment",
-                        )?
-                        || ctx.contains_text(
-                            name,
-                            "SHELL",
-                            "STEP style domain shell containment",
-                        )?
+                        .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"SURFACE".len()),
+                                |window| Ok(window == &b"SURFACE"[..]),
+                                "STEP style domain surface containment",
+                            )?
+                            .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"SOLID".len()),
+                                |window| Ok(window == &b"SOLID"[..]),
+                                "STEP style domain solid containment",
+                            )?
+                            .is_some()
+                        || ctx
+                            .position_by(
+                                name.as_bytes().windows(b"SHELL".len()),
+                                |window| Ok(window == &b"SHELL"[..]),
+                                "STEP style domain shell containment",
+                            )?
+                            .is_some()
                         || matches!(
                             name,
                             "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"

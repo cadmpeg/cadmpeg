@@ -3087,17 +3087,23 @@ fn measure_inner(
         Value::Real(value) => PmiValue::new(value.get(), PmiQuantity::Ratio),
         Value::Typed(name, value) => {
             if let Some(number) = value.number() {
-                let (quantity, scale) = if ctx.contains_text(
-                    name.as_str(),
-                    "LENGTH",
-                    "STEP PMI typed length containment",
-                )? {
+                let (quantity, scale) = if ctx
+                    .position_by(
+                        name.as_bytes().windows(b"LENGTH".len()),
+                        |window| Ok(window == &b"LENGTH"[..]),
+                        "STEP PMI typed length containment",
+                    )?
+                    .is_some()
+                {
                     (PmiQuantity::Length, measurements.length_scale)
-                } else if ctx.contains_text(
-                    name.as_str(),
-                    "ANGLE",
-                    "STEP PMI typed angle containment",
-                )? {
+                } else if ctx
+                    .position_by(
+                        name.as_bytes().windows(b"ANGLE".len()),
+                        |window| Ok(window == &b"ANGLE"[..]),
+                        "STEP PMI typed angle containment",
+                    )?
+                    .is_some()
+                {
                     (PmiQuantity::Angle, measurements.angle_scale)
                 } else {
                     (PmiQuantity::Ratio, 1.0)
@@ -3139,11 +3145,12 @@ fn measure_inner(
                     &record.partials[..],
                     |partial| -> Result<Option<()>, CodecError> {
                         Ok(ctx
-                            .contains_text(
-                                partial.name.as_str(),
-                                "LENGTH",
+                            .position_by(
+                                partial.name.as_bytes().windows(b"LENGTH".len()),
+                                |window| Ok(window == &b"LENGTH"[..]),
                                 "STEP PMI record length containment",
                             )?
+                            .is_some()
                             .then_some(()))
                     },
                     "STEP PMI length classifier traversal",
@@ -3156,11 +3163,12 @@ fn measure_inner(
                     &record.partials[..],
                     |partial| -> Result<Option<()>, CodecError> {
                         Ok(ctx
-                            .contains_text(
-                                partial.name.as_str(),
-                                "ANGLE",
+                            .position_by(
+                                partial.name.as_bytes().windows(b"ANGLE".len()),
+                                |window| Ok(window == &b"ANGLE"[..]),
                                 "STEP PMI record angle containment",
                             )?
+                            .is_some()
                             .then_some(()))
                     },
                     "STEP PMI angle classifier traversal",
@@ -3291,19 +3299,32 @@ fn measure_quantity(
     let _depth = ctx.enter_nested("step_pmi_measure_quantity_walk")?;
     Ok(match value {
         Value::Typed(name, value) => {
-            if ctx.contains_text(name.as_str(), "LENGTH", "STEP PMI typed length containment")? {
+            if ctx
+                .position_by(
+                    name.as_bytes().windows(b"LENGTH".len()),
+                    |window| Ok(window == &b"LENGTH"[..]),
+                    "STEP PMI typed length containment",
+                )?
+                .is_some()
+            {
                 Some(PmiQuantity::Length)
-            } else if ctx.contains_text(
-                name.as_str(),
-                "ANGLE",
-                "STEP PMI typed angle containment",
-            )? {
+            } else if ctx
+                .position_by(
+                    name.as_bytes().windows(b"ANGLE".len()),
+                    |window| Ok(window == &b"ANGLE"[..]),
+                    "STEP PMI typed angle containment",
+                )?
+                .is_some()
+            {
                 Some(PmiQuantity::Angle)
-            } else if ctx.contains_text(
-                name.as_str(),
-                "RATIO",
-                "STEP PMI typed ratio containment",
-            )? {
+            } else if ctx
+                .position_by(
+                    name.as_bytes().windows(b"RATIO".len()),
+                    |window| Ok(window == &b"RATIO"[..]),
+                    "STEP PMI typed ratio containment",
+                )?
+                .is_some()
+            {
                 Some(PmiQuantity::Ratio)
             } else {
                 measure_quantity(value, ctx)?

@@ -46,6 +46,48 @@ fn domain_resolution_reuses_a_shared_dag() {
 }
 
 #[test]
+fn style_domain_name_substrings_keep_all_classifications() {
+    let cases = [
+        ("XPOINTX", super::super::StyleDomain::Point),
+        ("XVERTEXX", super::super::StyleDomain::Point),
+        ("XCURVEX", super::super::StyleDomain::Curve),
+        ("XEDGEX", super::super::StyleDomain::Curve),
+        ("X_LINE_X", super::super::StyleDomain::Curve),
+        ("XFACEX", super::super::StyleDomain::Surface),
+        ("XSURFACEX", super::super::StyleDomain::Surface),
+        ("XSOLIDX", super::super::StyleDomain::Surface),
+        ("XSHELLX", super::super::StyleDomain::Surface),
+    ];
+
+    for (name, expected) in cases {
+        let exchange = exchange(&format!("#1={name}();"));
+        crate::test_support::with_service_context(b"", |_, ctx| {
+            let actual = super::super::style_domain(1, &exchange, ctx)
+                .expect("style domain classification");
+            assert!(actual == expected, "wrong style domain for {name}");
+        });
+    }
+}
+
+#[test]
+fn style_domain_point_prefix_does_not_scan_the_name_suffix() {
+    let exchange = exchange(&format!("#1=POINT{}();", "X".repeat(4096)));
+    let mut policy = DecodePolicy::service();
+    // The one-record path has one 8-byte record lookup, a two-step partial
+    // probe, a one-window POINT match, a 696-unit active-set insertion, a
+    // 240-unit active-set removal, and a 729-unit cache insertion. The cap
+    // leaves room for this 1,676-unit route while the old 4,106-unit
+    // full-name-plus-pattern scan cannot fit.
+    policy.limits.max_work_units = 2048;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let actual = super::super::style_domain(1, &exchange, ctx)
+            .expect("POINT prefix fits the work limit");
+        assert!(actual == super::super::StyleDomain::Point);
+        assert!(ctx.resource_refusal().is_none());
+    });
+}
+
+#[test]
 fn invisible_resolution_reuses_a_shared_dag() {
     let exchange = exchange(&layered_graph("REPRESENTATION", 16));
     let mut ir = CadIr::empty();
