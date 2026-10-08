@@ -383,16 +383,17 @@ pub(in crate::families) fn e5_surfaces(
     let mut out = Vec::new();
     for record in e5_frames(ctx, data)? {
         let pos = record.pos;
+        let carrier_bytes = &data[record.pos..record.end()];
         let decoded = match record.class {
-            0xc9 => e5_cylinder(data, pos).and_then(|(geometry, radius)| {
+            0xc9 => e5_cylinder(carrier_bytes, 0).and_then(|(geometry, radius)| {
                 Some((
                     geometry,
                     [FiniteReal::new(1.0 / radius.get())?, FiniteReal::ONE],
                 ))
             }),
-            0xca => e5_cone(data, pos).and_then(|(geometry, half_angle)| {
-                let u_scale = f64_le(data, pos + 158)?.get();
-                let v_scale = f64_le(data, pos + 166)?.get();
+            0xca => e5_cone(carrier_bytes, 0).and_then(|(geometry, half_angle)| {
+                let u_scale = f64_le(carrier_bytes, 158)?.get();
+                let v_scale = f64_le(carrier_bytes, 166)?.get();
                 if u_scale == 0.0 || v_scale == 0.0 {
                     return None;
                 }
@@ -404,7 +405,7 @@ pub(in crate::families) fn e5_surfaces(
                     ],
                 ))
             }),
-            0xcc => e5_torus(data, pos).and_then(|(geometry, major_radius, minor_radius)| {
+            0xcc => e5_torus(carrier_bytes, 0).and_then(|(geometry, major_radius, minor_radius)| {
                 Some((
                     geometry,
                     [
