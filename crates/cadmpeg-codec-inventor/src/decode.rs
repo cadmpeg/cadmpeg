@@ -40,10 +40,10 @@ use crate::native::ufrx::{
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
-    RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, VersionTupleRecord,
+    AssemblyPlacementRecordConversionError, AssemblyPlacementRecordWire, DatabaseIssueRecord,
+    DatabaseRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -2429,46 +2429,48 @@ fn admit_assembly_placement(
     wire: AssemblyPlacementRecordWire,
     issues: &mut Vec<RecordIssue>,
 ) -> Result<Option<AssemblyPlacementRecord>, CodecError> {
-    let mut token_reservation = ctx.reserve_scoped(0, "retain Inventor placement issue token")?;
-    let segment_token = token_reservation.with_storage(|| {
-        ctx.copy_retained_text(&wire.segment_token, "copy Inventor placement issue token")
-    })?;
-    let record_ordinal = wire.record_ordinal;
     match wire.into_record() {
         Ok(record) => {
             ctx.charge_entities(1, "admit Inventor native assembly placement")?;
             Ok(Some(record))
         }
-        Err(CodecError::Malformed(detail)) => {
-            ctx.charge_entities(1, "admit Inventor placement conversion issue")?;
-            ctx.reserve_capacity(issues, 1, "retain Inventor native structural records")?;
-            token_reservation.commit()?;
-            let key_work = segment_token.len().checked_mul(2).ok_or_else(|| {
-                ctx.refuse_codec_limit(
+        Err(AssemblyPlacementRecordConversionError {
+            segment_token,
+            record_ordinal,
+            error,
+        }) => match error {
+            CodecError::Malformed(detail) => {
+                ctx.charge_entities(1, "admit Inventor placement conversion issue")?;
+                ctx.reserve_capacity(issues, 1, "retain Inventor native structural records")?;
+                let key_work = segment_token.len().checked_mul(2).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "validate Inventor placement issue token",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(key_work),
                     "validate Inventor placement issue token",
-                    u64::MAX,
-                    u64::MAX,
-                )
-            })?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(key_work),
-                "validate Inventor placement issue token",
-            )?;
-            ctx.push_vec(
-                issues,
-                RecordIssue {
-                    family: RecordIssueFamily::Assembly,
-                    segment_token: cadmpeg_ir::ids::IdentityKey::try_new(segment_token)
-                        .map_err(CodecError::malformed)?,
-                    record_ordinal,
-                    detail: ctx
-                        .copy_retained_text(&detail, "retain Inventor placement issue detail")?,
-                },
-                "retain Inventor native structural records",
-            )?;
-            Ok(None)
-        }
-        Err(error) => Err(error),
+                )?;
+                ctx.push_vec(
+                    issues,
+                    RecordIssue {
+                        family: RecordIssueFamily::Assembly,
+                        segment_token: cadmpeg_ir::ids::IdentityKey::try_new(segment_token)
+                            .map_err(CodecError::malformed)?,
+                        record_ordinal,
+                        detail: ctx.copy_retained_text(
+                            &detail,
+                            "retain Inventor placement issue detail",
+                        )?,
+                    },
+                    "retain Inventor native structural records",
+                )?;
+                Ok(None)
+            }
+            error => Err(error),
+        },
     }
 }
 

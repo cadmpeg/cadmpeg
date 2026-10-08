@@ -1648,6 +1648,46 @@ mod tests {
     }
 
     #[test]
+    fn singleton_default_without_a_style_reference_needs_no_work() {
+        let mut default_bytes = Vec::new();
+        default_bytes.extend(0_u32.to_le_bytes());
+        default_bytes.extend(1_u16.to_le_bytes());
+        for reference in [8_u32, 0, 10, 11, 12, 13, 14, 15, 16] {
+            default_bytes.extend((reference | 0x8000_0000).to_le_bytes());
+        }
+        default_bytes.push(0);
+        default_bytes.extend(0x8000_0011_u32.to_le_bytes());
+        default_bytes.extend([0; 8]);
+        let style_bytes = rendering_style_fixture();
+        let arena = DecodeArena::new();
+        let (parse_ctx, default_root) = DecodeContext::from_root_bytes(
+            &default_bytes, &arena, &DecodePolicy::service(),
+        ).expect("default style context");
+        let (_, style_root) = DecodeContext::from_root_bytes(
+            &style_bytes, &arena, &DecodePolicy::service(),
+        ).expect("rendering style context");
+        let (inventory, appearance, body) =
+            default_binding_projection_fixture(&parse_ctx, default_root, style_root);
+        assert_eq!(inventory.default_styles[0].rendering_style_reference, 0);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_entities = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("singleton default context");
+        let projection = project_default_bindings(
+            &ctx, &inventory, &[appearance], &[body],
+        ).expect("the fixed default read precedes all variable scans");
+        assert!(projection.appearances.is_empty());
+        assert!(projection.bindings.is_empty());
+        assert_eq!(projection.unresolved_defaults, 1);
+        assert!(projection.unresolved_face_overrides.is_empty());
+        ctx.finish_session().expect("unvisited sources need no work");
+    }
+
+    #[test]
     fn default_binding_projection_uses_one_output_collection_slot() {
         let default_bytes = default_style_fixture();
         let style_bytes = rendering_style_fixture();

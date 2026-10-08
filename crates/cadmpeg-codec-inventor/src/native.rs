@@ -463,6 +463,13 @@ pub(crate) struct AssemblyPlacementRecordWire {
     pub(crate) suffix_sha256: String,
 }
 
+#[derive(Debug)]
+pub(crate) struct AssemblyPlacementRecordConversionError {
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) error: CodecError,
+}
+
 impl AssemblyPlacementRecordWire {
     pub(crate) fn from_placement(
         ctx: &DecodeContext<'_>,
@@ -505,42 +512,76 @@ impl AssemblyPlacementRecordWire {
             .into(),
         })
     }
-}
 
-impl AssemblyPlacementRecordWire {
-    pub(crate) fn into_record(self) -> Result<AssemblyPlacementRecord, CodecError> {
-        let transform = crate::compact_matrix::CompactMatrix::try_from_rows(
-            self.transform_encoding[0],
-            self.transform_encoding[1],
-            self.transform,
-        )?;
-        let Some(suffix_len) = std::num::NonZeroU64::new(self.suffix_len) else {
-            return Err(CodecError::malformed("suffix_len must not be zero"));
+    pub(crate) fn into_record(
+        self,
+    ) -> Result<AssemblyPlacementRecord, AssemblyPlacementRecordConversionError> {
+        let Self {
+            id,
+            segment_token,
+            record_ordinal,
+            header_id,
+            owner_reference,
+            attribute_reference,
+            state,
+            transform_prefix,
+            transform_encoding,
+            transform: transform_rows,
+            branch,
+            graphics_state,
+            occurrence_id,
+            graphics_index,
+            object_reference,
+            suffix_len: raw_suffix_len,
+            suffix_sha256: raw_suffix_sha256,
+        } = self;
+        let transform = match crate::compact_matrix::CompactMatrix::try_from_rows(
+            transform_encoding[0],
+            transform_encoding[1],
+            transform_rows,
+        ) {
+            Ok(transform) => transform,
+            Err(error) => {
+                return Err(AssemblyPlacementRecordConversionError {
+                    segment_token,
+                    record_ordinal,
+                    error,
+                });
+            }
+        };
+        let Some(suffix_len) = std::num::NonZeroU64::new(raw_suffix_len) else {
+            return Err(AssemblyPlacementRecordConversionError {
+                segment_token,
+                record_ordinal,
+                error: CodecError::malformed("suffix_len must not be zero"),
+            });
         };
         let suffix_sha256 =
-            match cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256) {
+            match cadmpeg_ir::hash::digest::Sha256Digest::try_from(raw_suffix_sha256) {
                 Ok(suffix_sha256) => suffix_sha256,
                 Err(error) => {
-                    return Err(CodecError::malformed(format_args!(
-                        "suffix_sha256: {error}"
-                    )));
+                    return Err(AssemblyPlacementRecordConversionError {
+                        segment_token,
+                        record_ordinal,
+                        error: CodecError::malformed(format_args!("suffix_sha256: {error}")),
+                    });
                 }
             };
         Ok(AssemblyPlacementRecord {
-            id: self.id,
-            segment_token: self.segment_token,
-            record_ordinal: self.record_ordinal,
-            header_id: self.header_id,
-            owner_reference: self.owner_reference,
-            attribute_reference: self.attribute_reference,
-            state: self.state,
-            transform_prefix: self.transform_prefix,
+            id,
+            segment_token,
+            record_ordinal,
+            header_id,
+            owner_reference,
+            attribute_reference,
+            state,
+            transform_prefix,
             transform,
-            branch: self.branch,
-            graphics_state: self.graphics_state,
-            occurrence_id: self.occurrence_id,
-            graphics_index: self.graphics_index,
-            object_reference: self.object_reference,
+            branch,
+            graphics_state,
+            occurrence_id,
+            graphics_index,
+            object_reference,
             suffix_len,
             suffix_sha256,
         })
@@ -1689,6 +1730,19 @@ impl ActiveCarrierRecord {
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
+        let record_count = ctx
+            .get_btree_map(
+                namespace.arenas(),
+                "active_carrier",
+                "read Inventor active carrier cardinality",
+            )?
+            .map_or(0, |records| records.len());
+        if record_count != 1 {
+            return Err(<serde_json::Error as serde::de::Error>::custom(format!(
+                "active_carrier must contain exactly one record; found {record_count}"
+            ))
+            .into());
+        }
         let [record] =
             <[_; 1]>::try_from(namespace.arena_as_for_decode::<Self>(ctx, "active_carrier")?)
                 .map_err(|records: Vec<_>| {
@@ -1757,7 +1811,7 @@ mod tests {
         let wire = serde_json::from_value::<AssemblyPlacementRecordWire>(value)
             .map_err(|error| error.to_string())?;
         wire.into_record()
-            .map_err(|error| error.to_string())
+            .map_err(|failure| failure.error.to_string())
     }
 
     #[test]
@@ -1777,10 +1831,12 @@ mod tests {
         // A fixed refusal message is returned, with no model text allocation.
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(
-            matches!(wire.into_record(), Err(CodecError::Malformed(detail))
-            if detail == "suffix_len must not be zero")
-        );
+        assert!(matches!(
+            wire.into_record(),
+            Err(failure)
+                if matches!(&failure.error, CodecError::Malformed(detail)
+                    if detail == "suffix_len must not be zero")
+        ));
         ctx.finish_session().expect("fixed placement error uses no budget");
     }
 
@@ -2085,9 +2141,7 @@ mod tests {
 
     #[test]
     fn active_carrier_fixed_id_admits_exact_storage_without_work() {
-        use cadmpeg_core::decode::{
-            DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-        };
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
 
         let id = "inventor:kernel:active-carrier#root";
@@ -2166,16 +2220,95 @@ mod tests {
                 },
             ],
         ] {
+            let record_count = records.len();
             namespace
                 .set_arena(&crate::native::test_ctx(), "active_carrier", &records)
                 .expect("valid wire records");
-            assert!(
+            assert_eq!(
                 ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
                     .expect_err("invalid cardinality")
-                    .to_string()
-                    .contains("active_carrier")
+                    .to_string(),
+                format!(
+                    "native record conversion failed: active_carrier must contain exactly one record; found {record_count}"
+                )
             );
         }
+    }
+
+    #[test]
+    fn active_carrier_cardinality_preflight_skips_wire_text_and_lookup_refusal_is_sticky() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::native::NativeConvertError;
+
+        let empty_namespace = cadmpeg_ir::native::NativeNamespace::default();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(
+            ActiveCarrierRecord::read(&ctx, &empty_namespace)
+                .expect_err("empty cardinality is checked without retained storage")
+                .to_string(),
+            "native record conversion failed: active_carrier must contain exactly one record; found 0"
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+        ctx.finish_session()
+            .expect("empty raw cardinality needs no retained storage");
+
+        let records = [
+            ActiveCarrierRecord::Unavailable {
+                id: format!("inventor:kernel:active-carrier#{}", "a".repeat(4_096)),
+                detail: "first detail ".repeat(1_024),
+            },
+            ActiveCarrierRecord::Unavailable {
+                id: format!("inventor:kernel:active-carrier#{}", "b".repeat(4_096)),
+                detail: "second detail ".repeat(1_024),
+            },
+        ];
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace
+            .set_arena(&crate::native::test_ctx(), "active_carrier", &records)
+            .expect("two valid carrier wires");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(
+            ActiveCarrierRecord::read(&ctx, &namespace)
+                .expect_err("cardinality is checked before typed wire copies")
+                .to_string(),
+            "native record conversion failed: active_carrier must contain exactly one record; found 2"
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+        ctx.finish_session()
+            .expect("raw cardinality needs no retained wire storage");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let first_refusal = match ActiveCarrierRecord::read(&ctx, &namespace) {
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
+            other => panic!("raw cardinality lookup should refuse work: {other:?}"),
+        };
+        assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(
+            first_refusal.operation,
+            "read Inventor active carrier cardinality"
+        );
+        assert_eq!(ctx.resource_refusal(), Some(first_refusal));
+        assert!(matches!(
+            ActiveCarrierRecord::read(&ctx, &namespace),
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit)))
+                if limit == first_refusal
+        ));
+        assert_eq!(ctx.resource_refusal(), Some(first_refusal));
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(CodecError::ResourceLimit(limit)) if limit == first_refusal
+        ));
     }
 
     #[test]

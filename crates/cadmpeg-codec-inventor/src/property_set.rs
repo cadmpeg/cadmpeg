@@ -420,7 +420,6 @@ fn parse_section<'a>(
         None => None,
     };
     let mut names_storage = ctx.reserve_scoped(0, "admit OLE property dictionary entries")?;
-    let mut folded_names_storage = ctx.reserve_scoped(0, "admit OLE folded dictionary names")?;
     let names = match ctx.find_by(
         &ranges,
         |range| Ok(range.0 == 0),
@@ -431,7 +430,6 @@ fn parse_section<'a>(
             child(source, *start, *end, "property dictionary")?,
             code_page,
             &mut names_storage,
-            &mut folded_names_storage,
         )?,
         None => BTreeMap::new(),
     };
@@ -466,18 +464,15 @@ fn parse_section<'a>(
             "admit OLE properties",
         )?;
     }
+    let dictionary_entries = names.len();
+    drop((names, names_storage));
+    drop((ranges, ranges_storage));
     ctx.stable_sort_by(
         &mut properties,
         |value| &value.id,
         Ord::cmp,
         "OLE properties sort",
     )?;
-    let dictionary_entries = names.len();
-    drop(names);
-    drop(names_storage);
-    drop(folded_names_storage);
-    drop(ranges);
-    drop(ranges_storage);
     Ok(PropertySection {
         fmtid,
         code_page,
@@ -509,7 +504,6 @@ fn parse_dictionary(
     source: View<'_>,
     code_page: Option<u16>,
     names_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    folded_names_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<BTreeMap<u32, String>, CodecError> {
     let mut cursor = Cursor::new(source, "OLE property dictionary");
     let count = cursor.count("entry count", MAX_PROPERTIES)?;
@@ -524,6 +518,7 @@ fn parse_dictionary(
         ));
     }
     let mut names = BTreeMap::new();
+    let mut folded_names_storage = ctx.reserve_scoped(0, "admit OLE folded dictionary names")?;
     let mut folded_names = BTreeSet::new();
     let mut entries = 0..count;
     while ctx.next_charged(&mut entries, "admit OLE property dictionary entries")?.is_some() {
@@ -573,6 +568,7 @@ fn parse_dictionary(
         }
         cursor.align4(ctx, "entry padding")?;
     }
+    drop((folded_names, folded_names_storage));
     cursor.zero_finish(ctx)?;
     Ok(names)
 }
@@ -1278,16 +1274,12 @@ mod tests {
         let mut names_storage = service
             .reserve_scoped(0, "admit OLE property dictionary entries")
             .expect("dictionary name storage reservation");
-        let mut folded_names_storage = service
-            .reserve_scoped(0, "admit OLE folded dictionary names")
-            .expect("folded dictionary name storage reservation");
         assert_eq!(
             parse_dictionary(
                 &service,
                 root,
                 Some(1200),
                 &mut names_storage,
-                &mut folded_names_storage,
             )
             .expect("dictionary admitted")
             .get(&2)
@@ -1310,22 +1302,184 @@ mod tests {
             let mut names_storage = limited
                 .reserve_scoped(0, "admit OLE property dictionary entries")
                 .expect("dictionary name storage reservation");
-            let mut folded_names_storage = limited
-                .reserve_scoped(0, "admit OLE folded dictionary names")
-                .expect("folded dictionary name storage reservation");
             assert!(matches!(
                 parse_dictionary(
                     &limited,
                     root,
                     Some(1200),
                     &mut names_storage,
-                    &mut folded_names_storage,
                 ),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::MaterializedBytes
                         && limit.operation == operation
             ));
         }
+    }
+
+    #[test]
+    fn dictionary_scratch_releases_before_large_property_sort() {
+        fn amortized_capacity<T>(count: usize) -> usize {
+            let minimum = match std::mem::size_of::<T>() {
+                1 => 8,
+                2..=1024 => 4,
+                _ => 1,
+            };
+            let mut capacity = 0_usize;
+            for required in 1..=count {
+                if required > capacity {
+                    capacity = capacity
+                        .checked_mul(2)
+                        .expect("small fixture capacity fits")
+                        .max(required)
+                        .max(minimum);
+                }
+            }
+            capacity
+        }
+
+        fn tree_node_bytes<K, V>() -> usize {
+            let alignment = std::mem::align_of::<K>()
+                .max(std::mem::align_of::<V>())
+                .max(std::mem::align_of::<usize>());
+            (std::mem::size_of::<K>() + std::mem::size_of::<V>()) * 11
+                + 16 * std::mem::size_of::<usize>()
+                + 2 * alignment
+        }
+
+        fn tree_nodes(count: usize) -> usize {
+            if count == 0 {
+                0
+            } else {
+                (count - 1) / 5 + 1
+            }
+        }
+
+        // Twenty-one properties use the two-array branch of stable_sort_by.
+        let property_count = 21_usize;
+        let directory_entry_size = std::mem::size_of::<(usize, u32)>();
+        let range_size = std::mem::size_of::<(u32, usize, usize)>();
+        let directory_capacity = amortized_capacity::<(usize, u32)>(property_count);
+        let range_capacity = amortized_capacity::<(u32, usize, usize)>(property_count);
+        let directory_bytes = directory_capacity * directory_entry_size;
+        let range_bytes = range_capacity * range_size;
+
+        let mut id_directory_growth_peak = 0_usize;
+        let mut prior_directory_capacity = 0_usize;
+        for inserted in 1..=property_count {
+            let ids_bytes = tree_nodes(inserted) * tree_node_bytes::<u32, ()>();
+            let current_directory_bytes = prior_directory_capacity * directory_entry_size;
+            id_directory_growth_peak = id_directory_growth_peak
+                .max(ids_bytes + current_directory_bytes);
+            if inserted > prior_directory_capacity {
+                let next_directory_capacity = prior_directory_capacity
+                    .checked_mul(2)
+                    .expect("small fixture capacity fits")
+                    .max(inserted)
+                    .max(4);
+                let next_directory_bytes = next_directory_capacity * directory_entry_size;
+                id_directory_growth_peak = id_directory_growth_peak
+                    .max(ids_bytes + current_directory_bytes + next_directory_bytes);
+                prior_directory_capacity = next_directory_capacity;
+            }
+        }
+
+        // At the 17th range, the 16-tuple allocation overlaps its 32-tuple
+        // replacement while the 32-entry directory remains live.
+        let range_growth_peak = directory_bytes
+            + (range_capacity / 2) * range_size
+            + range_bytes;
+        let dictionary_peak = range_bytes
+            + ("abc".len() + 1)
+            + "abc".to_uppercase().len()
+            + tree_node_bytes::<u32, String>()
+            + tree_node_bytes::<String, ()>();
+        let sort_scratch = 2 * property_count * std::mem::size_of::<usize>();
+        let property_sort_peak = sort_scratch;
+        // The limit must admit each earlier stage too. Directory sorting is
+        // unstable and uses no scratch; directory growth still overlaps its
+        // ID tree, and range growth overlaps the admitted directory vector.
+        let materialized_peak = range_growth_peak
+            .max(dictionary_peak)
+            .max(id_directory_growth_peak)
+            .max(property_sort_peak);
+
+        let directory_end = 8 + property_count * 8;
+        let mut values = Vec::<(u32, Vec<u8>)>::with_capacity(property_count);
+        let mut dictionary = Vec::new();
+        dictionary.extend_from_slice(&1_u32.to_le_bytes());
+        dictionary.extend_from_slice(&2_u32.to_le_bytes());
+        dictionary.extend_from_slice(&4_u32.to_le_bytes());
+        for unit in "abc\0".encode_utf16() {
+            dictionary.extend_from_slice(&unit.to_le_bytes());
+        }
+        values.push((0, dictionary));
+
+        let mut code_page = Vec::new();
+        code_page.extend_from_slice(&2_u16.to_le_bytes());
+        code_page.extend_from_slice(&0_u16.to_le_bytes());
+        code_page.extend_from_slice(&1200_u16.to_le_bytes());
+        code_page.extend_from_slice(&0_u16.to_le_bytes());
+        values.push((1, code_page));
+        for value in 2..=20_u32 {
+            let mut property = Vec::new();
+            property.extend_from_slice(&3_u16.to_le_bytes());
+            property.extend_from_slice(&0_u16.to_le_bytes());
+            property.extend_from_slice(
+                &i32::try_from(value)
+                    .expect("small fixture value fits")
+                    .to_le_bytes(),
+            );
+            values.push((value, property));
+        }
+
+        let mut directory = Vec::with_capacity(property_count);
+        let mut property_bytes = Vec::new();
+        let mut offset = directory_end;
+        for (id, value) in values {
+            directory.push((id, offset));
+            property_bytes.extend_from_slice(&value);
+            offset += value.len();
+        }
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(
+            &u32::try_from(offset)
+                .expect("small fixture size fits")
+                .to_le_bytes(),
+        );
+        bytes.extend_from_slice(
+            &u32::try_from(property_count)
+                .expect("small fixture count fits")
+                .to_le_bytes(),
+        );
+        for (id, property_offset) in directory {
+            bytes.extend_from_slice(&id.to_le_bytes());
+            bytes.extend_from_slice(
+                &u32::try_from(property_offset)
+                    .expect("small offset fits")
+                    .to_le_bytes(),
+            );
+        }
+        bytes.extend_from_slice(&property_bytes);
+        assert_eq!(bytes.len(), offset);
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes =
+            u64::try_from(materialized_peak).expect("small fixture peak fits");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("source-derived property-set limit");
+        let section = super::parse_section(&ctx, root, [0; 16])
+            .expect("dictionary scratch releases before large property sort");
+        assert_eq!(section.dictionary_entries, 1);
+        assert_eq!(section.properties.len(), property_count);
+        assert_eq!(section.properties[2].id, 2);
+        assert_eq!(section.properties[2].name.as_deref(), Some("abc"));
+        assert!(matches!(
+            &section.properties[2].value,
+            PropertyValue::Signed { value: 2, .. }
+        ));
+        ctx.finish_session()
+            .expect("all scratch reservations release after parsing");
     }
 
     #[test]

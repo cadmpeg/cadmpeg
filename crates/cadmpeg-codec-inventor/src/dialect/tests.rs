@@ -265,6 +265,63 @@ fn dialect_loss_refuses_materialized_limit_before_absent_schema_reason() {
 }
 
 #[test]
+fn dialect_recovery_visits_both_flat_sources_and_their_end_probes() {
+    use crate::rse::{DatabaseDescriptor, DatabaseState, SegmentBulkState,
+        SegmentDescriptor, SegmentKind, SegmentMetaState};
+    let bytes = primary_envelope_fixture_with(EnvelopeDeclarations::default());
+    for (database_count, segment_count) in [(0_usize, 0_usize), (1, 0), (0, 1), (1, 1), (17, 13)] {
+        for exact in [false, true] {
+            let arena = DecodeArena::new();
+            let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("dialect source fixture context");
+            let mut container = InventorContainer::open(&setup, root).expect("dialect source fixture");
+            let database = container.rse.databases.first().expect("fixture database");
+            let databases = (0..database_count).map(|_| DatabaseDescriptor {
+                band: database.band, stream: database.stream,
+                state: DatabaseState::Unreadable("database".into()),
+            }).collect();
+            let pair = container.rse.segments[0].pair.clone();
+            container.rse.databases = databases;
+            container.rse.segments = (0..segment_count).map(|_| SegmentDescriptor {
+                pair: pair.clone(), registry: None, kind: SegmentKind::Unresolved,
+                identity_issues: Vec::new(),
+                meta: SegmentMetaState::Malformed { declared: None, detail: "metadata".into() },
+                bulk: SegmentBulkState::Malformed("bulk".into()),
+            }).collect();
+            // Declaration and unframed inventories each traverse each source.
+            // No descriptor declares a value, so only two visits per item and
+            // the four terminal probes execute.
+            let work = cadmpeg_core::decode::u64_from_index(2 * (database_count + segment_count) + 4);
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work - u64::from(!exact);
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("dialect source context");
+            match DialectRecovery::of(&ctx, &container) {
+                Ok(recovery) if exact => {
+                    assert!(recovery.schemas.is_empty());
+                    assert!(recovery.unframed_schemas.is_empty());
+                    assert!(recovery.meta_streams.is_empty());
+                    assert!(recovery.unframed_meta_streams.is_empty());
+                    ctx.finish_session().expect("both source passes fit exactly");
+                }
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if !exact => {
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(limit.operation, "visit Inventor dialect items");
+                    assert_eq!(limit.used, work - 1);
+                    assert_eq!(limit.additional, 1);
+                    assert!(matches!(ctx.finish_session(),
+                        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+                }
+                _ => panic!("dialect inventory must use exactly its source visits"),
+            }
+        }
+    }
+}
+
+#[test]
 fn dialect_schema_collection_refuses_before_first_declaration_push() {
     let bytes = primary_envelope_fixture_with(EnvelopeDeclarations::default());
     let arena = DecodeArena::new();
