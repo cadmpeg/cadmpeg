@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reconciliation of section coordinates by point identity.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::{FeatureVariableTable, ReconciledPoints, VariableType, EPS_PARAMETER_AGREEMENT};
+use super::{FeatureVariableTable, ReconciledPoints, VariableType, EPS_PARAMETER_AGREEMENT, TRIM_COORDINATE_EPS};
 
 #[derive(Clone, Copy)]
 struct CoordinateAgreement {
@@ -38,15 +38,80 @@ impl CoordinateAgreement {
     }
 }
 
+#[derive(Default)]
+struct RadiusAgreement {
+    first: Option<cadmpeg_ir::scalar::FiniteReal>,
+    missing: bool,
+    conflict: bool,
+}
+
+impl RadiusAgreement {
+    fn add(&mut self, value: Option<f64>) {
+        let Some(value) = value else {
+            self.missing = true;
+            return;
+        };
+        let Some(value) = cadmpeg_ir::scalar::FiniteReal::new(value) else {
+            self.conflict = true;
+            return;
+        };
+        if let Some(first) = self.first {
+            let scale = first.get().abs().max(value.get().abs()).max(1.0);
+            self.conflict |= (value.get() - first.get()).abs() > TRIM_COORDINATE_EPS * scale;
+        } else {
+            self.first = Some(value);
+        }
+    }
+
+    fn value(&self) -> Result<Option<cadmpeg_ir::scalar::FiniteReal>, ()> {
+        if self.conflict || (self.missing && self.first.is_some()) {
+            Err(())
+        } else {
+            Ok(self.first)
+        }
+    }
+}
+
+pub(super) struct TrimGeometry {
+    pub(super) coordinates: ReconciledPoints<[Option<f64>; 2]>,
+    radii: HashMap<u32, RadiusAgreement>,
+}
+
+impl TrimGeometry {
+    pub(super) fn radius(&self, key: u32) -> Result<Option<cadmpeg_ir::scalar::FiniteReal>, ()> {
+        self.radii.get(&key).map_or(Ok(None), RadiusAgreement::value)
+    }
+}
+
 impl FeatureVariableTable {
     /// Reconcile repeated and complementary section-point rows by identity.
     pub(crate) fn reconciled_points(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<ReconciledPoints<[Option<f64>; 2]>, CodecError> {
+        Ok(self.reconciled_geometry(ctx, false)?.coordinates)
+    }
+
+    pub(super) fn reconciled_trim_geometry(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<TrimGeometry, CodecError> {
+        self.reconciled_geometry(ctx, true)
+    }
+
+    fn reconciled_geometry(
+        &self,
+        ctx: &DecodeContext<'_>,
+        include_radii: bool,
+    ) -> Result<TrimGeometry, CodecError> {
+        let mut radii = HashMap::<u32, RadiusAgreement>::new();
         let mut storage = ctx.reserve_scoped(0, "creo point coordinate groups")?;
         let mut coordinates = BTreeMap::<u32, [Option<CoordinateAgreement>; 2]>::new();
         for row in ctx.admit_iter(&self.rows, "creo point variable traversal")? {
+            if include_radii && row.variable_type == VariableType::Radius {
+                ctx.entry_hash_map(&mut radii, row.key, "creo trim radius groups")?
+                    .or_default().add(row.value.value());
+            }
             let coordinate = match row.variable_type {
                 VariableType::U => 0,
                 VariableType::V => 1,
@@ -82,7 +147,7 @@ impl FeatureVariableTable {
                 ctx.insert_btree_map(&mut points, point_id, point, "creo reconciled point nodes")?;
             }
         }
-        Ok(ReconciledPoints { points, ambiguous })
+        Ok(TrimGeometry { coordinates: ReconciledPoints { points, ambiguous }, radii })
     }
 }
 #[cfg(test)]
