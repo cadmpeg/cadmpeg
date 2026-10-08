@@ -268,7 +268,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    for transform in &scan.features.section_transforms {
+    for transform in ctx.admit_iter(&scan.features.section_transforms, "creo sweep transform scan")? {
         if unique_feature_section_transform(
             ctx,
             &scan.features.section_transforms,
@@ -334,7 +334,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 format_args!("{}:{suffix}", definition.identity.id()),
                 "creo saved spline curve identity",
             )?;
-            if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
+            if ctx.any_by(&ir.model.curves, |curve| ctx.equal(curve.id.as_str(), curve_id.as_str(), "creo model identity comparison"), "creo model identity scan")? {
                 continue;
             }
             let Some(placed) = placed_section_nurbs(ctx, transform, &nurbs)? else {
@@ -414,7 +414,8 @@ pub(in super::super) fn revolved_nurbs_surface(
     ];
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
-    for index in 0..directrix.pole_count() {
+    let mut poles = 0..directrix.pole_count();
+    while let Some(index) = ctx.next_charged(&mut poles, "creo revolved NURBS pole projection")? {
         let Some(point) = directrix.pole_rows().point_at(index) else {
             return Ok(None);
         };
@@ -470,7 +471,7 @@ pub(in super::super) fn revolved_nurbs_surface(
         directrix.knots().as_slice().len(),
         "creo revolved NURBS u knots",
     )?;
-    u_knots.extend_from_slice(directrix.knots().as_slice());
+    u_knots.extend(ctx.admit_iter(directrix.knots().as_slice(), "creo revolved NURBS u knot copy")?.copied());
     let angular_knots = [
         0.0,
         0.0,
@@ -587,7 +588,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    for transform in &scan.features.section_transforms {
+    for transform in ctx.admit_iter(&scan.features.section_transforms, "creo sweep transform scan")? {
         if unique_feature_section_transform(
             ctx,
             &scan.features.section_transforms,
@@ -612,12 +613,11 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(order_table) = &definition.order_table else {
             continue;
         };
-        let points = resolved_section_points(ctx, definition)?;
-        let solved = extrusion_solved_segment_ids(ctx, definition)?;
-        for segment in complete_section_segment_rows(ctx, definition)?
-            .iter()
-            .filter(|segment| solved.contains(&segment.external_id))
-        {
+        let (points, _point_storage) = ctx.with_scoped_storage("creo extrusion section point scratch", || resolved_section_points(ctx, definition))?;
+        let (solved, _solved_storage) = ctx.with_scoped_storage("creo extrusion solved segment scratch", || extrusion_solved_segment_ids(ctx, definition))?;
+        let (segments, _segment_storage) = ctx.with_scoped_storage("creo extrusion section row scratch", || complete_section_segment_rows(ctx, definition))?;
+        for segment in ctx.admit_iter(&segments, "creo extrusion section segment traversal")? {
+            if !ctx.contains_btree_set(&solved, &segment.external_id, "creo extrusion solved segment membership")? { continue; }
             let Some(section_geometry) =
                 resolved_section_segment_geometry(ctx, definition, &points, segment)?
             else {
@@ -643,7 +643,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 surface_id,
                 "creo extrusion surface identity",
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ctx.any_by(&ir.model.surfaces, |surface| ctx.equal(surface.id.as_str(), id.as_str(), "creo model identity comparison"), "creo model identity scan")? {
                 continue;
             }
             annotate(
@@ -719,7 +719,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 native_surface_id,
                 "creo extrusion surface identity",
             )?;
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if ctx.any_by(&ir.model.surfaces, |surface| ctx.equal(surface.id.as_str(), id.as_str(), "creo model identity comparison"), "creo model identity scan")? {
                 continue;
             }
             annotate(
@@ -756,13 +756,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        let (entities, _entity_storage) = semantic_saved_section_entities(ctx, definition)?;
-        let splines = ctx
-            .admit_iter(&entities, "creo saved section spline traversal")?
-            .filter_map(|entity| match entity {
-                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
-                _ => None,
-            });
         let Some(span) =
             resolved_feature_extrusion_span(ctx, scan, ir, source_carriers, definition, transform)?
         else {
@@ -772,7 +765,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let sweep = transform
             .normal()
             .map(|value| value * (span.upper() - span.lower()));
-        for spline in splines {
+        for spline in ctx.admit_iter(&entities, "creo saved section spline traversal")?.filter_map(|entity| match entity { crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline), _ => None }) {
             let Some(internal_id) = spline.entity_id else {
                 continue;
             };
@@ -839,7 +832,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 &mut refusal,
             )?
             else {
-                for record in refusal.take_records_checked()? {
+                for record in ctx.admit_iter(refusal.take_records_checked()?, "creo saved spline refusal records")? {
                     push_saved_spline_loss(ctx, losses, format_args!(
                         "Extruded section spline at offset {} states no surface carrier: {record}",
                         spline.offset
@@ -858,7 +851,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 format_args!("{feature_id}:{internal_id}"),
                 "creo extrusion directrix identity",
             )?;
-            if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
+            if !ctx.any_by(&ir.model.curves, |curve| ctx.equal(curve.id.as_str(), curve_id.as_str(), "creo model identity comparison"), "creo model identity scan")? {
                 annotate(
                     ctx,
                     annotations,
@@ -898,7 +891,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 native_surface_id,
                 "creo extrusion surface identity",
             )?;
-            if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
+            if ctx.any_by(&ir.model.surfaces, |item| ctx.equal(item.id.as_str(), surface_id.as_str(), "creo model identity comparison"), "creo model identity scan")? {
                 continue;
             }
             let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(

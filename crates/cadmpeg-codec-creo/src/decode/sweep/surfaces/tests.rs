@@ -86,37 +86,24 @@ fn revolved_nurbs_surface_refuses_each_collection_boundary() {
         direction: FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).expect("axis direction"),
         reference: None,
     };
-    let arena = DecodeArena::new();
-    for (limit, operation) in [
-        (0, "creo revolved NURBS pole rows"),
-        (1, "creo revolved NURBS weight rows"),
-        (2, "creo revolved NURBS poles"),
-        (11, "creo revolved NURBS weights"),
-        (40, "creo revolved NURBS u knots"),
-        (44, "creo revolved NURBS v knots"),
-        (56, "IR NURBS paired grid rows"),
-        (65, "IR NURBS paired poles"),
-        (76, "IR NURBS admitted grid rows"),
-        (85, "IR NURBS admitted poles"),
-    ] {
+    crate::test_support::assert_refusal_order(cadmpeg_core::decode::ResourceDimension::CollectionItems, &[
+        "creo revolved NURBS pole rows",
+        "creo revolved NURBS weight rows",
+        "creo revolved NURBS poles",
+        "creo revolved NURBS weights",
+        "creo revolved NURBS u knots",
+        "creo revolved NURBS v knots",
+        "IR NURBS paired grid rows",
+        "IR NURBS paired poles",
+        "IR NURBS admitted grid rows",
+        "IR NURBS admitted poles",
+    ], |limit| {
+        let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let error = super::revolved_nurbs_surface(
-            &ctx,
-            &directrix,
-            &axis,
-            &"revolved NURBS fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-        .expect_err("one collection boundary exceeds its named limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
-    }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::revolved_nurbs_surface(&ctx, &directrix, &axis, &"revolved NURBS fixture", &mut crate::lane_refusal::LaneRefusals::new())
+    });
     let surface = crate::decode::with_test_decode_ctx(|ctx| {
         super::revolved_nurbs_surface(
             ctx,

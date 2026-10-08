@@ -419,7 +419,7 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
             917
         )
         .and_then(|planes| {
-            extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
+            crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)).expect("service resources")
         }),
         Some((
             ExtrudeExtent::OneSided {

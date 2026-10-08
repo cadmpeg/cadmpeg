@@ -2,7 +2,7 @@
 //! Feature plane equations and generated cylinder and cap extents.
 
 use super::super::holes::sweep::blind_extrude_side;
-use super::super::uniqueness::exactly_one;
+use super::super::uniqueness::exactly_one_by;
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
@@ -18,40 +18,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_CYLINDER_CARRIER: f64 = 1.0e-9;
 
-fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<PlaneEquation>, ()> {
-    if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id).is_none() {
-        return Err(());
+fn feature_local_plane(ctx: &DecodeContext<'_>, scan: &ContainerScan, surface_id: u32) -> Result<Result<Option<PlaneEquation>, ()>, CodecError> {
+    if scan.surfaces.rows.unique(surface_id).is_none() { return Ok(Err(())); }
+    if let Some(index) = ctx.position_by(&scan.planes.outlines, |plane| Ok(plane.surface_id == surface_id), "creo local plane outline search")? {
+        if ctx.any_by(&scan.planes.outlines[index + 1..], |plane| Ok(plane.surface_id == surface_id), "creo local plane outline search")? { return Ok(Err(())); }
+        let plane = &scan.planes.outlines[index];
+        return Ok(Ok(Some(PlaneEquation { origin: plane.origin, normal: plane.normal() })));
     }
-    let mut outlines = scan
-        .planes
-        .outlines
-        .iter()
-        .filter(|plane| plane.surface_id == surface_id);
-    match (outlines.next(), outlines.next()) {
-        (Some(plane), None) => Ok(Some(PlaneEquation {
-            origin: plane.origin,
-            normal: plane.normal(),
-        })),
-        (None, None) => {
-            let mut frames = scan
-                .planes
-                .local_systems
-                .iter()
-                .filter(|frame| frame.surface_id == surface_id);
-            match (frames.next(), frames.next()) {
-                (None, None) => Ok(None),
-                (Some(frame), None) => {
-                    let frame = frame.frame();
-                    Ok(frame
-                        .origin
-                        .zip(frame.normal())
-                        .map(|(origin, normal)| PlaneEquation { origin, normal }))
-                }
-                _ => Err(()),
-            }
-        }
-        _ => Err(()),
-    }
+    let Some(index) = ctx.position_by(&scan.planes.local_systems, |frame| Ok(frame.surface_id == surface_id), "creo local plane frame search")? else { return Ok(Ok(None)); };
+    if ctx.any_by(&scan.planes.local_systems[index + 1..], |frame| Ok(frame.surface_id == surface_id), "creo local plane frame search")? { return Ok(Err(())); }
+    let frame = scan.planes.local_systems[index].frame();
+    Ok(Ok(frame.origin.zip(frame.normal()).map(|(origin, normal)| PlaneEquation { origin, normal })))
 }
 
 const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
@@ -65,29 +42,32 @@ pub(in super::super) fn feature_plane_equations(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Result<Option<Vec<crate::decode::analytic::equations::PlaneEquation>>, CodecError> {
+    let mut plane_storage = ctx.reserve_scoped(0, "creo feature plane scratch")?;
     let mut ids = BTreeSet::new();
-    for row in scan.surfaces.rows.iter().filter(|row| {
+    for row in ctx.admit_iter(&*scan.surfaces.rows, "creo feature plane row scan")?.filter(|row| {
         row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
     }) {
-        ctx.insert_btree_set(&mut ids, row.id, "creo feature plane ID nodes")?;
+        plane_storage.with_storage(|| ctx.insert_btree_set(&mut ids, row.id, "creo feature plane ID nodes"))?;
     }
     let mut local_planes = BTreeMap::new();
-    for id in &ids {
-        match feature_local_plane(scan, *id) {
+    let mut plane_ids = ids.iter();
+    while let Some(id) = ctx.next_charged(&mut plane_ids, "creo feature plane local ID scan")? {
+        match feature_local_plane(ctx, scan, *id)? {
             Ok(Some(plane)) => {
-                ctx.insert_btree_map(
+                plane_storage.with_storage(|| ctx.insert_btree_map(
                     &mut local_planes,
                     *id,
                     plane,
                     "creo feature local plane nodes",
-                )?;
+                ))?;
             }
             Ok(None) => {}
             Err(()) => return Ok(None),
         }
     }
     let mut equations = Vec::new();
-    for id in ids {
+    let mut plane_ids = ids.into_iter();
+    while let Some(id) = ctx.next_charged(&mut plane_ids, "creo feature plane equation ID scan")? {
         let Some(plane) = reconciled_model_plane(ctx, &local_planes, ir, source_carriers, id)?
         else {
             return Ok(None);
@@ -104,31 +84,20 @@ pub(in super::super) type FeatureOutlinePlane = (u32, [f64; 3], [f64; 3]);
 /// equation. The equation may be carried by one outline and one positional
 /// frame; both carriers are valid only when they agree on origin and normal.
 pub(in super::super) fn feature_outline_plane(
-    scan: &ContainerScan,
-    feature_id: u32,
-    surface_id: u32,
-) -> Option<FeatureOutlinePlane> {
-    let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
-    (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
-        .then_some(())?;
-    let mut outlines = scan
-        .planes
-        .outlines
-        .iter()
-        .filter(|plane| plane.surface_id == surface_id);
-    let outline = outlines.next();
-    if outlines.next().is_some() {
-        return None;
+    ctx: &DecodeContext<'_>, scan: &ContainerScan, feature_id: u32, surface_id: u32,
+) -> Result<Option<FeatureOutlinePlane>, CodecError> {
+    let Some(row) = scan.surfaces.rows.unique(surface_id) else { return Ok(None); };
+    if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Plane { return Ok(None); }
+    let outline_index = ctx.position_by(&scan.planes.outlines, |plane| Ok(plane.surface_id == surface_id), "creo feature outline plane search")?;
+    if let Some(index) = outline_index {
+        if ctx.any_by(&scan.planes.outlines[index + 1..], |plane| Ok(plane.surface_id == surface_id), "creo feature outline plane search")? { return Ok(None); }
     }
-    let mut positional_frames = scan
-        .planes
-        .positional_frames
-        .iter()
-        .filter(|plane| plane.surface_id == surface_id);
-    let positional = positional_frames.next();
-    if positional_frames.next().is_some() {
-        return None;
+    let positional_index = ctx.position_by(&scan.planes.positional_frames, |plane| Ok(plane.surface_id == surface_id), "creo feature positional plane search")?;
+    if let Some(index) = positional_index {
+        if ctx.any_by(&scan.planes.positional_frames[index + 1..], |plane| Ok(plane.surface_id == surface_id), "creo feature positional plane search")? { return Ok(None); }
     }
+    let outline = outline_index.map(|index| &scan.planes.outlines[index]);
+    let positional = positional_index.map(|index| &scan.planes.positional_frames[index]);
     let agrees = |left: &crate::surface::OutlinePlane, right: &crate::surface::OutlinePlane| {
         left.origin
             .into_iter()
@@ -147,12 +116,12 @@ pub(in super::super) fn feature_outline_plane(
                 })
     };
     let plane = match (outline, positional) {
-        (None, None) => return None,
+        (None, None) => return Ok(None),
         (Some(plane), None) | (None, Some(plane)) => plane,
         (Some(outline), Some(positional)) if agrees(outline, positional) => outline,
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some((surface_id, plane.origin, plane.normal()))
+    Ok(Some((surface_id, plane.origin, plane.normal())))
 }
 
 /// Collect every same-feature plane row only when all rows have complete,
@@ -164,10 +133,10 @@ pub(in super::super) fn feature_outline_planes(
     feature_id: u32,
 ) -> Result<Option<Vec<FeatureOutlinePlane>>, CodecError> {
     let mut planes = Vec::new();
-    for row in scan.surfaces.rows.iter().filter(|row| {
-        row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-    }) {
-        let Some(plane) = feature_outline_plane(scan, feature_id, row.id) else {
+    let mut rows = scan.surfaces.rows.iter();
+    while let Some(row) = ctx.next_charged(&mut rows, "creo feature outline row scan")? {
+        if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Plane { continue; }
+        let Some(plane) = feature_outline_plane(ctx, scan, feature_id, row.id)? else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut planes, 1, "creo feature outline planes")?;
@@ -194,15 +163,14 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     else {
         return Ok(None);
     };
+    let mut id_storage = ctx.reserve_scoped(0, "creo generated arc ID scratch")?;
     let mut surface_ids = BTreeSet::new();
-    for (_, entry) in scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
-        .filter(|(table, entry)| table.contains_surface_id(entry.entity_id))
-    {
+    let mut tables = scan.features.entity_tables.iter();
+    while let Some(table) = ctx.next_charged(&mut tables, "creo generated arc table scan")? {
+        if table.feature_id != feature_id { continue; }
+        let mut entries = table.entries.iter();
+        while let Some(entry) = ctx.next_charged(&mut entries, "creo generated arc entry scan")? {
+            if !ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo generated arc surface membership")? { continue; }
         let Some(source_id) = entry.source_entity_id() else {
             continue;
         };
@@ -222,20 +190,18 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         else {
             continue;
         };
-        if surface_ids.contains(&row.id) {
+        if ctx.contains_btree_set(&surface_ids, &row.id, "creo generated arc duplicate surface lookup")? {
             return Ok(None);
         }
-        ctx.insert_btree_set(
+        id_storage.with_storage(|| ctx.insert_btree_set(
             &mut surface_ids,
             row.id,
             "creo generated arc cylinder ID nodes",
-        )?;
+        ))?;
     }
-    let Some(frame_records) = unique_available_positional_cylinder_frame_records(
-        ctx,
-        &surface_ids,
-        &scan.surfaces.parameters,
-    )?
+    }
+    let (frame_records, _frame_storage) = ctx.with_scoped_storage("creo generated arc frame scratch", || unique_available_positional_cylinder_frame_records(ctx, &surface_ids, &scan.surfaces.parameters))?;
+    let Some(frame_records) = frame_records
     else {
         return Ok(None);
     };
@@ -250,10 +216,10 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     {
         return Ok(None);
     }
-    Ok(agreed_generated_cylinder_extent(
-        transform,
+    agreed_generated_cylinder_extent(
+        ctx, transform,
         frame_records.iter().map(|(_, frame)| frame),
-    ))
+    )
 }
 
 fn cylinder_frame_agrees_with_model(
@@ -264,7 +230,8 @@ fn cylinder_frame_agrees_with_model(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut found = None;
-    for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
+    let mut surfaces = ir.model.surfaces.iter();
+    while let Some(surface) = ctx.next_charged(&mut surfaces, "creo numbered identity candidate scan")? {
         if crate::identity::matches_numbered_identity(
             surface.id.as_str(),
             "creo:visibgeom:surface#",
@@ -361,33 +328,25 @@ pub(in super::super) fn generated_cap_plane_extent(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
-    let Some((start_id, end_id)) = (|| {
-        let table = exactly_one(
-            scan.features
-                .entity_tables
-                .iter()
-                .filter(|table| table.feature_id == feature_id && table.table_class_id == 29),
-        )?;
-        let mut start_id = None;
-        let mut end_id = None;
-        let mut side_count = 0_usize;
-        for entry in &table.entries {
-            match (entry.class_id(), entry.source_entity_id()) {
-                (204, None) if start_id.replace(entry.entity_id).is_none() => {}
-                (203, None) if end_id.replace(entry.entity_id).is_none() => {}
-                (200, Some(_)) => side_count += 1,
-                _ => return None,
-            }
+    let Some(table) = exactly_one_by(ctx, &scan.features.entity_tables,
+        |table| Ok(table.feature_id == feature_id && table.table_class_id == 29), "creo generated cap table search")? else { return Ok(None); };
+    let mut start_id = None;
+    let mut end_id = None;
+    let mut side_count = 0_usize;
+    let mut entries = table.entries.iter();
+    while let Some(entry) = ctx.next_charged(&mut entries, "creo generated cap entry scan")? {
+        match (entry.class_id(), entry.source_entity_id()) {
+            (204, None) if start_id.replace(entry.entity_id).is_none() => {},
+            (203, None) if end_id.replace(entry.entity_id).is_none() => {},
+            (200, Some(_)) => side_count += 1,
+            _ => return Ok(None),
         }
-        (side_count > 0
-            && table.contains_surface_id(start_id?)
-            && table.contains_surface_id(end_id?))
-        .then_some(())?;
-        Some((start_id?, end_id?))
-    })() else {
-        return Ok(None);
-    };
-    let local_planes = placed_planes(ctx, scan)?;
+    }
+    let (Some(start_id), Some(end_id)) = (start_id, end_id) else { return Ok(None); };
+    if side_count == 0
+        || !ctx.contains_btree_set(table.unique_surface_ids(), &start_id, "creo generated cap surface membership")?
+        || !ctx.contains_btree_set(table.unique_surface_ids(), &end_id, "creo generated cap surface membership")? { return Ok(None); }
+    let (local_planes, _local_plane_storage) = ctx.with_scoped_storage("creo cap local plane scratch", || placed_planes(ctx, scan))?;
     let plane = |surface_id: u32| -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id) else {
             return Ok(None);
@@ -408,30 +367,37 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
     parameters: &[crate::surface::SurfaceParameterRecord],
 ) -> Result<Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>>, CodecError> {
     let mut frames = Vec::new();
-    for surface_id in surface_ids {
-        let mut matching = parameters
-            .iter()
-            .filter(|record| record.surface_id == *surface_id);
-        let first = matching.next();
-        if matching.next().is_some() {
-            return Ok(None);
+    if surface_ids.is_empty() { return Ok(Some(frames)); }
+    let mut storage = ctx.reserve_scoped(0, "creo positional cylinder parameter index")?;
+    let mut by_id = std::collections::HashMap::new();
+    let mut records = parameters.iter();
+    while let Some(record) = ctx.next_charged(&mut records, "creo positional cylinder parameter scan")? {
+        if !ctx.contains_btree_set(surface_ids, &record.surface_id, "creo positional cylinder ID lookup")? { continue; }
+        match storage.with_storage(|| ctx.entry_hash_map(&mut by_id, record.surface_id, "creo positional cylinder parameter index"))? {
+            std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(record); },
+            std::collections::hash_map::Entry::Occupied(_) => return Ok(None),
         }
-        if let Some(frame) = first.and_then(SurfaceParameterRecord::positional_cylinder_frame) {
-            ctx.reserve_vec(&mut frames, 1, "creo available positional cylinder frames")?;
-            frames.push((*surface_id, frame));
+    }
+    let mut ids = surface_ids.iter();
+    while let Some(surface_id) = ctx.next_charged(&mut ids, "creo positional cylinder frame ID scan")? {
+        let record = by_id.get(surface_id).copied();
+        if let Some(frame) = record.and_then(SurfaceParameterRecord::positional_cylinder_frame) {
+            ctx.push_vec(&mut frames, (*surface_id, frame), "creo available positional cylinder frames")?;
         }
     }
     Ok(Some(frames))
 }
 
 pub(in super::super) fn agreed_generated_cylinder_extent<'a>(
+    ctx: &DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     frames: impl IntoIterator<Item = &'a crate::surface::PositionalCylinderFrame>,
-) -> Option<(ExtrudeExtent, [f64; 3])> {
+) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
     let normal = transform.normal();
     let mut frames = frames.into_iter();
-    let first = *frames.next()?;
-    let length = first.length()?;
+    let Some(first) = ctx.next_charged(&mut frames, "creo generated cylinder frame scan")? else { return Ok(None); };
+    let first = *first;
+    let Some(length) = first.length() else { return Ok(None); };
     let direction = unit_length(*first.frame().orthonormal_frame().axis());
     let close = |left: f64, right: f64| {
         (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
@@ -454,9 +420,9 @@ pub(in super::super) fn agreed_generated_cylinder_extent<'a>(
                 0.0,
             )
     };
-    (agrees(&first) && frames.all(agrees)).then_some(())?;
-    close(dot(direction, normal).abs(), 1.0).then_some(())?;
-    Some((
+    if !agrees(&first) || !ctx.all_by(frames, |frame| Ok(agrees(frame)), "creo generated cylinder frame agreement")? { return Ok(None); }
+    if !close(dot(direction, normal).abs(), 1.0) { return Ok(None); }
+    Ok(Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
@@ -466,7 +432,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent<'a>(
             },
         },
         direction,
-    ))
+    )))
 }
 
 #[cfg(test)]

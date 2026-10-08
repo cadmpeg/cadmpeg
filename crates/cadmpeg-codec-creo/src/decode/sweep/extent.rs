@@ -41,7 +41,8 @@ fn unique_source_surface_geometry<'a>(
     surface_id: u32,
 ) -> Result<Option<SourceSurfaceGeometry<'a>>, cadmpeg_core::CodecError> {
     let mut found = None;
-    for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
+    let mut surfaces = ir.model.surfaces.iter();
+    while let Some(surface) = ctx.next_charged(&mut surfaces, "creo numbered identity candidate scan")? {
         if crate::identity::matches_numbered_identity(
             surface.id.as_str(),
             "creo:visibgeom:surface#",
@@ -61,39 +62,37 @@ fn unique_source_surface_geometry<'a>(
 }
 
 fn blind_extrusion_from_carriers(
+    ctx: &DecodeContext<'_>,
     carriers: &[ExtrusionCarrierSpan],
     planes: &[([f64; 3], [f64; 3])],
     transform: Option<&crate::placement::FeatureSectionTransform>,
-) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let first = carriers.first()?;
-    let first_start = *first.starts.first()?;
-    let direction = normalize(first.vector)?;
+) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    let Some(first) = carriers.first() else { return Ok(None); };
+    let Some(&first_start) = first.starts.first() else { return Ok(None); };
+    let Some(direction) = normalize(first.vector) else { return Ok(None); };
     let length = first.vector.into_iter().fold(0.0_f64, f64::hypot);
-    (length.is_finite() && length > 0.0).then_some(())?;
-    let coordinate_scale = carriers
-        .iter()
-        .flat_map(|carrier| carrier.starts.iter().flatten().copied())
-        .chain(planes.iter().flat_map(|(origin, _)| *origin))
-        .chain(
-            transform
-                .into_iter()
-                .flat_map(crate::placement::FeatureSectionTransform::origin),
-        )
-        .map(f64::abs)
-        .fold(length.max(1.0), f64::max);
+    if !length.is_finite() || length <= 0.0 { return Ok(None); }
+    let mut coordinate_scale = length.max(1.0);
+    for carrier in ctx.admit_iter(carriers, "creo carrier coordinate scale")? {
+        for start in ctx.admit_iter(&carrier.starts, "creo carrier start coordinate scale")? {
+            for coordinate in start { coordinate_scale = coordinate_scale.max(coordinate.abs()); }
+        }
+    }
+    for (origin, _) in ctx.admit_iter(planes, "creo carrier plane coordinate scale")? {
+        for coordinate in origin { coordinate_scale = coordinate_scale.max(coordinate.abs()); }
+    }
+    if let Some(transform) = transform { for coordinate in transform.origin() { coordinate_scale = coordinate_scale.max(coordinate.abs()); } }
     if !coordinate_scale.is_finite() {
-        return None;
+        return Ok(None);
     }
     let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * coordinate_scale;
     let vector_tolerance = EPS_SWEEP_EXTENT_GEOMETRY * length.max(1.0);
     let start_station = dot(first_start, direction);
     let end_station = start_station + length;
     let mut has_opposed_carrier = false;
-    carriers
-        .iter()
-        .all(|carrier| {
+    if !ctx.all_by(carriers, |carrier| {
             if carrier.starts.is_empty() {
-                return false;
+                return Ok(false);
             }
             let same_direction = carrier
                 .vector
@@ -106,22 +105,14 @@ fn blind_extrusion_from_carriers(
                 .zip(first.vector)
                 .all(|(candidate, reference)| (candidate + reference).abs() <= vector_tolerance);
             has_opposed_carrier |= opposite_direction;
-            (same_direction
-                && carrier
-                    .starts
-                    .iter()
-                    .all(|start| (dot(*start, direction) - start_station).abs() <= tolerance))
-                || (opposite_direction
-                    && carrier
-                        .starts
-                        .iter()
-                        .all(|start| (dot(*start, direction) - end_station).abs() <= tolerance))
-        })
-        .then_some(())?;
+            Ok((same_direction && ctx.all_by(&carrier.starts, |start| Ok((dot(*start, direction) - start_station).abs() <= tolerance), "creo carrier start station agreement")?)
+                || (opposite_direction && ctx.all_by(&carrier.starts, |start| Ok((dot(*start, direction) - end_station).abs() <= tolerance), "creo carrier end station agreement")?))
+        }, "creo carrier direction agreement")? { return Ok(None); }
     let mut unique_stations = [0.0; 2];
     let mut station_count = 0;
-    for (origin, normal) in planes {
-        let normal = normalize(*normal)?;
+    let mut planes = planes.iter();
+    while let Some((origin, normal)) = ctx.next_charged(&mut planes, "creo carrier plane station scan")? {
+        let Some(normal) = normalize(*normal) else { return Ok(None); };
         let alignment = dot(normal, direction).abs();
         if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
             let station = dot(*origin, direction);
@@ -130,13 +121,13 @@ fn blind_extrusion_from_carriers(
                 .all(|existing| (station - existing).abs() > tolerance)
             {
                 if station_count == unique_stations.len() {
-                    return None;
+                    return Ok(None);
                 }
                 unique_stations[station_count] = station;
                 station_count += 1;
             }
         } else if alignment > EPS_SWEEP_EXTENT_DEGENERATE || !alignment.is_finite() {
-            return None;
+            return Ok(None);
         }
     }
     let reverse = if has_opposed_carrier {
@@ -147,18 +138,18 @@ fn blind_extrusion_from_carriers(
             } else if (transform_station - end_station).abs() <= tolerance {
                 true
             } else {
-                return None;
+                return Ok(None);
             }
         } else {
             let [terminal_station] = &unique_stations[..station_count] else {
-                return None;
+                return Ok(None);
             };
             if (*terminal_station - end_station).abs() <= tolerance {
                 false
             } else if (*terminal_station - start_station).abs() <= tolerance {
                 true
             } else {
-                return None;
+                return Ok(None);
             }
         }
     } else {
@@ -175,9 +166,8 @@ fn blind_extrusion_from_carriers(
     };
     if let Some(transform) = transform {
         let normal = transform.normal();
-        ((dot(direction, normal).abs() - 1.0).abs() <= EPS_SWEEP_EXTENT_DEGENERATE
-            && (dot(transform.origin(), direction) - start_station).abs() <= tolerance)
-            .then_some(())?;
+        if !((dot(direction, normal).abs() - 1.0).abs() <= EPS_SWEEP_EXTENT_DEGENERATE
+            && (dot(transform.origin(), direction) - start_station).abs() <= tolerance) { return Ok(None); }
     }
     if reverse {
         for station in &mut unique_stations[..station_count] {
@@ -194,19 +184,19 @@ fn blind_extrusion_from_carriers(
             if cap_matches(*first_cap)
                 && cap_matches(*second_cap)
                 && ((first_cap - second_cap).abs() - length).abs() <= tolerance => {}
-        _ => return None,
+        _ => return Ok(None),
     }
-    Some((
+    Ok(Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
+                    length: match cadmpeg_ir::scalar::NonZeroLength::new(length) { Some(length) => length, None => return Ok(None) },
                 },
                 draft: None,
             },
         },
         direction,
-    ))
+    )))
 }
 
 #[cfg(test)]
@@ -230,7 +220,7 @@ mod tests {
                 vector: [0.0, 0.0, 1.0],
             },
         ];
-        assert!(blind_extrusion_from_carriers(&carriers, &[], None).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| blind_extrusion_from_carriers(ctx, &carriers, &[], None)).expect("service resources").is_none());
     }
 
     #[test]
@@ -378,7 +368,7 @@ mod tests {
     #[test]
     fn bounded_cylinder_cap_plane_limit_refuses() {
         assert!(
-            matches!(bounded_extent_at_limit(0), Err(CodecError::ResourceLimit(ref refusal))
+            matches!(bounded_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo bounded cylinder cap planes"), bounded_extent_at_limit)), Err(CodecError::ResourceLimit(ref refusal))
             if refusal.operation == "creo bounded cylinder cap planes")
         );
     }
@@ -386,7 +376,7 @@ mod tests {
     #[test]
     fn bounded_cylinder_frame_limit_refuses() {
         assert!(
-            matches!(bounded_extent_at_limit(2), Err(CodecError::ResourceLimit(ref refusal))
+            matches!(bounded_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo bounded cylinder frames"), bounded_extent_at_limit)), Err(CodecError::ResourceLimit(ref refusal))
             if refusal.operation == "creo bounded cylinder frames")
         );
     }
@@ -394,10 +384,10 @@ mod tests {
     #[test]
     fn bounded_cylinder_carrier_limit_refuses() {
         assert!(
-            matches!(bounded_extent_at_limit(4), Err(CodecError::ResourceLimit(ref refusal))
+            matches!(bounded_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo bounded cylinder carriers"), bounded_extent_at_limit)), Err(CodecError::ResourceLimit(ref refusal))
             if refusal.operation == "creo bounded cylinder carriers")
         );
-        assert!(bounded_extent_at_limit(5)
+        assert!(bounded_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, bounded_extent_at_limit))
             .expect("admitted extent")
             .is_some());
     }
@@ -479,7 +469,7 @@ mod tests {
     #[test]
     fn nurbs_translation_carrier_limit_refuses() {
         assert!(
-            matches!(nurbs_extent_at_limit(3), Err(CodecError::ResourceLimit(ref refusal))
+            matches!(nurbs_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo NURBS translation carriers"), nurbs_extent_at_limit)), Err(CodecError::ResourceLimit(ref refusal))
             if refusal.operation == "creo NURBS translation carriers")
         );
     }
@@ -487,10 +477,10 @@ mod tests {
     #[test]
     fn nurbs_translation_cap_plane_limit_refuses() {
         assert!(
-            matches!(nurbs_extent_at_limit(4), Err(CodecError::ResourceLimit(ref refusal))
+            matches!(nurbs_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo NURBS translation cap planes"), nurbs_extent_at_limit)), Err(CodecError::ResourceLimit(ref refusal))
             if refusal.operation == "creo NURBS translation cap planes")
         );
-        assert!(nurbs_extent_at_limit(5).expect("admitted extent").is_some());
+        assert!(nurbs_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, nurbs_extent_at_limit)).expect("admitted extent").is_some());
     }
 }
 
@@ -502,27 +492,25 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
     enum CylinderExtentSurface {
         Plane,
         Carrier,
     }
-    let local_planes = placed_planes(ctx, scan)?;
+    let (local_planes, _local_plane_storage) = ctx.with_scoped_storage("creo extent local plane scratch", || placed_planes(ctx, scan))?;
     let mut frames = Vec::new();
     let mut planes = Vec::new();
     let mut saw_row = false;
-    for row in scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| row.feature_id == feature_id)
-    {
+    let mut rows = scan.surfaces.rows.iter();
+    while let Some(row) = ctx.next_charged(&mut rows, "creo generated extent surface row scan")? {
+        if row.feature_id != feature_id { continue; }
         saw_row = true;
         let kind = match row.kind {
             crate::surface::SurfaceKind::Plane => CylinderExtentSurface::Plane,
             crate::surface::SurfaceKind::Cylinder => CylinderExtentSurface::Carrier,
             _ => return Ok(None),
         };
-        if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
+        if !scan.surfaces.rows.unique(row.id).is_some_and(|unique| std::ptr::eq(unique, row)) {
             return Ok(None);
         }
         let Some(source_geometry) =
@@ -533,8 +521,8 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         match kind {
             CylinderExtentSurface::Plane => match source_geometry {
                 SourceSurfaceGeometry::Missing => {
-                    if let Some(plane) = local_planes.get(&row.id) {
-                        ctx.reserve_vec(&mut planes, 1, "creo bounded cylinder cap planes")?;
+                    if let Some(plane) = ctx.get_btree_map(&local_planes, &row.id, "creo generated extent local plane lookup")? {
+                        scratch.with_storage(|| ctx.reserve_vec(&mut planes, 1, "creo bounded cylinder cap planes"))?;
                         planes.push((plane.origin, plane.normal));
                     }
                 }
@@ -546,14 +534,14 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     else {
                         return Ok(None);
                     };
-                    ctx.reserve_vec(&mut planes, 1, "creo bounded cylinder cap planes")?;
+                    scratch.with_storage(|| ctx.reserve_vec(&mut planes, 1, "creo bounded cylinder cap planes"))?;
                     planes.push((plane.origin, plane.normal));
                 }
                 SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
                     SolvedSurfaceGeometry::Unknown { .. },
                 )) => {
-                    if let Some(plane) = local_planes.get(&row.id) {
-                        ctx.reserve_vec(&mut planes, 1, "creo bounded cylinder cap planes")?;
+                    if let Some(plane) = ctx.get_btree_map(&local_planes, &row.id, "creo generated extent local plane lookup")? {
+                        scratch.with_storage(|| ctx.reserve_vec(&mut planes, 1, "creo bounded cylinder cap planes"))?;
                         planes.push((plane.origin, plane.normal));
                     }
                 }
@@ -569,7 +557,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     let origin = cylinder_surface.origin().get();
                     let axis = *cylinder_surface.frame().axis();
                     let Some(parameters) =
-                        crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
+                        crate::decode::uniqueness::exactly_one_by(ctx, &scan.surfaces.parameters, |record| Ok(record.surface_id == row.id), "creo generated extent cylinder parameter search")?
                     else {
                         return Ok(None);
                     };
@@ -599,7 +587,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     {
                         return Ok(None);
                     }
-                    ctx.reserve_vec(&mut frames, 1, "creo bounded cylinder frames")?;
+                    scratch.with_storage(|| ctx.reserve_vec(&mut frames, 1, "creo bounded cylinder frames"))?;
                     frames.push(frame);
                 }
                 _ => return Ok(None),
@@ -610,14 +598,15 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         return Ok(None);
     }
     let mut carriers = Vec::new();
-    for frame in frames {
-        let Some(span) = bounded_cylinder_span(ctx, frame, &planes)? else {
+    let mut frames = frames.into_iter();
+    while let Some(frame) = ctx.next_charged(&mut frames, "creo bounded cylinder frame scan")? {
+        let Some(span) = scratch.with_storage(|| bounded_cylinder_span(ctx, frame, &planes))? else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut carriers, 1, "creo bounded cylinder carriers")?;
+        scratch.with_storage(|| ctx.reserve_vec(&mut carriers, 1, "creo bounded cylinder carriers"))?;
         carriers.push(span);
     }
-    Ok(blind_extrusion_from_carriers(&carriers, &planes, transform))
+    blind_extrusion_from_carriers(ctx, &carriers, &planes, transform)
 }
 
 pub(in super::super) fn bounded_cylinder_span(
@@ -626,12 +615,11 @@ pub(in super::super) fn bounded_cylinder_span(
     planes: &[([f64; 3], [f64; 3])],
 ) -> Result<Option<ExtrusionCarrierSpan>, CodecError> {
     let axis = unit_length(*frame.frame().orthonormal_frame().axis());
-    let vector = (|| -> Option<[f64; 3]> {
+    let vector_for = || -> Result<Option<[f64; 3]>, CodecError> {
         let vector = match frame.length() {
             Some(length) => axis.map(|component| component * length.get()),
             None => {
-                let scale = planes
-                    .iter()
+                let scale = ctx.admit_iter(planes, "creo bounded cylinder plane scale")?
                     .flat_map(|(origin, _)| *origin)
                     .chain(frame.frame().origin())
                     .map(f64::abs)
@@ -639,30 +627,32 @@ pub(in super::super) fn bounded_cylinder_span(
                 let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * scale;
                 let start_station = dot(frame.frame().origin(), axis);
                 let mut terminal_offset: Option<f64> = None;
-                for (origin, normal) in planes {
-                    let normal = normalize(*normal)?;
+                let mut planes = planes.iter();
+                while let Some((origin, normal)) = ctx.next_charged(&mut planes, "creo bounded cylinder terminal plane scan")? {
+                    let Some(normal) = normalize(*normal) else { return Ok(None); };
                     let alignment = dot(normal, axis).abs();
                     if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
                         let offset = dot(*origin, axis) - start_station;
                         if offset.abs() > tolerance {
                             if let Some(existing) = terminal_offset {
                                 if (offset - existing).abs() > tolerance {
-                                    return None;
+                                    return Ok(None);
                                 }
                             } else {
                                 terminal_offset = Some(offset);
                             }
                         }
                     } else if alignment > EPS_SWEEP_EXTENT_DEGENERATE {
-                        return None;
+                        return Ok(None);
                     }
                 }
-                let offset = terminal_offset?;
+                let Some(offset) = terminal_offset else { return Ok(None); };
                 axis.map(|component| component * offset)
             }
         };
-        Some(vector)
-    })();
+        Ok(Some(vector))
+    };
+    let vector = vector_for()?;
     let Some(vector) = vector else {
         return Ok(None);
     };
@@ -710,7 +700,8 @@ fn nurbs_translation_candidate(
     let mut starts = Vec::new();
     ctx.reserve_vec(&mut starts, pair_count, "creo NURBS translation starts")?;
     let mut vector: Option<[f64; 3]> = None;
-    for index in 0..pair_count {
+    let mut pairs = 0..pair_count;
+    while let Some(index) = ctx.next_charged(&mut pairs, "creo NURBS translation pole pair scan")? {
         let (start_index, end_index) = if along_v {
             ((index, 0), (index, 1))
         } else {
@@ -778,27 +769,25 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     feature_id: u32,
     transform: Option<&crate::placement::FeatureSectionTransform>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
     enum TranslationExtentSurface {
         Plane,
         Carrier,
     }
     let mut carriers = Vec::new();
     let mut planes = Vec::new();
-    let local_planes = placed_planes(ctx, scan)?;
+    let (local_planes, _local_plane_storage) = ctx.with_scoped_storage("creo extent local plane scratch", || placed_planes(ctx, scan))?;
     let mut saw_row = false;
-    for row in scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| row.feature_id == feature_id)
-    {
+    let mut rows = scan.surfaces.rows.iter();
+    while let Some(row) = ctx.next_charged(&mut rows, "creo generated extent surface row scan")? {
+        if row.feature_id != feature_id { continue; }
         saw_row = true;
         let kind = match row.kind {
             crate::surface::SurfaceKind::Plane => TranslationExtentSurface::Plane,
             crate::surface::SurfaceKind::Extrusion(_) => TranslationExtentSurface::Carrier,
             _ => return Ok(None),
         };
-        if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
+        if !scan.surfaces.rows.unique(row.id).is_some_and(|unique| std::ptr::eq(unique, row)) {
             return Ok(None);
         }
         let Some(source_geometry) =
@@ -812,7 +801,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     SourceSurfaceGeometry::Missing
                     | SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
                         SolvedSurfaceGeometry::Unknown { .. },
-                    )) => local_planes.get(&row.id).copied(),
+                    )) => ctx.get_btree_map(&local_planes, &row.id, "creo generated extent local plane lookup")?.copied(),
                     SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
                         SolvedSurfaceGeometry::Plane(_),
                     )) => Some(
@@ -830,7 +819,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     SourceSurfaceGeometry::Present(_) => return Ok(None),
                 };
                 if let Some(plane) = plane {
-                    ctx.reserve_vec(&mut planes, 1, "creo NURBS translation cap planes")?;
+                    scratch.with_storage(|| ctx.reserve_vec(&mut planes, 1, "creo NURBS translation cap planes"))?;
                     planes.push((plane.origin, plane.normal));
                 }
             }
@@ -839,10 +828,10 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                 SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
                     SolvedSurfaceGeometry::Nurbs(nurbs),
                 )) => {
-                    let Some(span) = nurbs_translation_span(ctx, nurbs)? else {
+                    let Some(span) = scratch.with_storage(|| nurbs_translation_span(ctx, nurbs))? else {
                         return Ok(None);
                     };
-                    ctx.reserve_vec(&mut carriers, 1, "creo NURBS translation carriers")?;
+                    scratch.with_storage(|| ctx.reserve_vec(&mut carriers, 1, "creo NURBS translation carriers"))?;
                     carriers.push(span);
                 }
                 SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
@@ -855,7 +844,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     if !saw_row {
         return Ok(None);
     }
-    Ok(blind_extrusion_from_carriers(&carriers, &planes, transform))
+    blind_extrusion_from_carriers(ctx, &carriers, &planes, transform)
 }
 
 struct RectilinearPlaneStation {
@@ -895,17 +884,13 @@ fn unit_plane(normal: cadmpeg_ir::units::UnitVector3, origin: [f64; 3]) -> Optio
     })
 }
 
-fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence {
-    let mut datums = scan.planes.datums.iter().filter(|datum| datum.id == id);
-    let datum = datums.next();
-    let duplicate_datums = datums.next().is_some();
-    let mut model_planes = scan
-        .planes
-        .local_systems
-        .iter()
-        .filter(|plane| plane.surface_id == id);
-    let model_plane = model_planes.next();
-    let duplicate_model_planes = model_planes.next().is_some();
+fn section_plane_evidence(ctx: &DecodeContext<'_>, scan: &ContainerScan, id: u32) -> Result<SectionPlaneEvidence, CodecError> {
+    let datum_index = ctx.position_by(&scan.planes.datums, |datum| Ok(datum.id == id), "creo section datum plane search")?;
+    let datum = datum_index.map(|index| &scan.planes.datums[index]);
+    let duplicate_datums = match datum_index { Some(index) => ctx.any_by(&scan.planes.datums[index + 1..], |datum| Ok(datum.id == id), "creo section datum plane search")?, None => false };
+    let model_index = ctx.position_by(&scan.planes.local_systems, |plane| Ok(plane.surface_id == id), "creo section local plane search")?;
+    let model_plane = model_index.map(|index| &scan.planes.local_systems[index]);
+    let duplicate_model_planes = match model_index { Some(index) => ctx.any_by(&scan.planes.local_systems[index + 1..], |plane| Ok(plane.surface_id == id), "creo section local plane search")?, None => false };
     let model_equation = if duplicate_model_planes {
         None
     } else {
@@ -917,84 +902,60 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
                 .and_then(|(normal, origin)| unit_plane(normal, origin))
         })
     };
-    let has_outline = scan
-        .planes
-        .outlines
-        .iter()
-        .any(|plane| plane.surface_id == id);
-    let (outline_equation, duplicate_outline_planes) = if has_outline {
-        let mut planes = scan
-            .planes
-            .outlines
-            .iter()
-            .filter(|plane| plane.surface_id == id);
-        let first = planes.next();
-        let duplicate = planes.next().is_some();
-        (
-            first
-                .filter(|_| !duplicate)
-                .and_then(|plane| unit_plane(plane.normal, plane.origin)),
-            duplicate,
-        )
+    let outline_index = ctx.position_by(&scan.planes.outlines, |plane| Ok(plane.surface_id == id), "creo section outline plane search")?;
+    let (outline_equation, duplicate_outline_planes) = if let Some(index) = outline_index {
+        let duplicate = ctx.any_by(&scan.planes.outlines[index + 1..], |plane| Ok(plane.surface_id == id), "creo section outline plane search")?;
+        let plane = &scan.planes.outlines[index];
+        ((!duplicate).then(|| unit_plane(plane.normal, plane.origin)).flatten(), duplicate)
     } else {
-        let mut planes = scan
-            .planes
-            .positional_frames
-            .iter()
-            .filter(|plane| plane.surface_id == id);
-        let first = planes.next();
-        let duplicate = planes.next().is_some();
-        (
-            first
-                .filter(|_| !duplicate)
-                .and_then(|plane| unit_plane(plane.normal, plane.origin)),
-            duplicate,
-        )
+        let index = ctx.position_by(&scan.planes.positional_frames, |plane| Ok(plane.surface_id == id), "creo section positional plane search")?;
+        let duplicate = match index { Some(index) => ctx.any_by(&scan.planes.positional_frames[index + 1..], |plane| Ok(plane.surface_id == id), "creo section positional plane search")?, None => false };
+        (index.filter(|_| !duplicate).and_then(|index| { let plane = &scan.planes.positional_frames[index]; unit_plane(plane.normal, plane.origin) }), duplicate)
     };
 
     if duplicate_datums
         || (datum.is_some() && (model_equation.is_some() || outline_equation.is_some()))
     {
-        return SectionPlaneEvidence::Ambiguous;
+        return Ok(SectionPlaneEvidence::Ambiguous);
     }
     if let Some(datum) = datum {
-        return normalized_plane(datum.plane().normal(), datum.plane().offset()).map_or(
+        return Ok(normalized_plane(datum.plane().normal(), datum.plane().offset()).map_or(
             SectionPlaneEvidence::Ambiguous,
             SectionPlaneEvidence::Resolved,
-        );
+        ));
     }
     if let Some(equation) = model_equation {
-        return SectionPlaneEvidence::Resolved(equation);
+        return Ok(SectionPlaneEvidence::Resolved(equation));
     }
     if duplicate_model_planes || duplicate_outline_planes {
-        return SectionPlaneEvidence::Ambiguous;
+        return Ok(SectionPlaneEvidence::Ambiguous);
     }
-    outline_equation.map_or(
+    Ok(outline_equation.map_or(
         SectionPlaneEvidence::Missing,
         SectionPlaneEvidence::Resolved,
-    )
+    ))
 }
 
 fn rectilinear_family_extent(
+    ctx: &DecodeContext<'_>,
     family: &RectilinearPlaneFamily,
     start_reversed: bool,
     station_tolerance: f64,
-) -> Option<([f64; 3], f64)> {
-    let first = family
-        .stations
-        .iter()
-        .min_by(|left, right| left.coordinate.get().total_cmp(&right.coordinate.get()))?;
-    let last = family
-        .stations
-        .iter()
-        .max_by(|left, right| left.coordinate.get().total_cmp(&right.coordinate.get()))?;
-    ((last.coordinate.get() - first.coordinate.get()).abs() > station_tolerance).then_some(())?;
+) -> Result<Option<([f64; 3], f64)>, CodecError> {
+    let Some((initial, rest)) = family.stations.split_first() else { return Ok(None); };
+    let mut first = initial;
+    let mut last = initial;
+    for station in ctx.admit_iter(rest, "creo rectilinear extreme station scan")? {
+        if station.coordinate.get().total_cmp(&first.coordinate.get()).is_lt() { first = station; }
+        if !station.coordinate.get().total_cmp(&last.coordinate.get()).is_lt() { last = station; }
+    }
+    if (last.coordinate.get() - first.coordinate.get()).abs() <= station_tolerance { return Ok(None); }
     let (start, end) = if first.reversed == start_reversed && last.reversed != start_reversed {
         (first.coordinate.get(), last.coordinate.get())
     } else if last.reversed == start_reversed && first.reversed != start_reversed {
         (last.coordinate.get(), first.coordinate.get())
     } else {
-        return None;
+        return Ok(None);
     };
     let signed_length = end - start;
     let direction = if first.reversed == start_reversed {
@@ -1002,19 +963,20 @@ fn rectilinear_family_extent(
     } else {
         family.normal.map(|component| -component)
     };
-    (signed_length.abs() > station_tolerance).then_some((direction, signed_length.abs()))
+    Ok((signed_length.abs() > station_tolerance).then_some((direction, signed_length.abs())))
 }
 
 fn rectilinear_extent_from_section_plane(
+    ctx: &DecodeContext<'_>,
     family: &RectilinearPlaneFamily,
     section_origin: [f64; 3],
     section_normal: [f64; 3],
     start_reversed: bool,
     station_tolerance: f64,
-) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let (cap_direction, _) = rectilinear_family_extent(family, start_reversed, station_tolerance)?;
-    let section_normal = normalize(section_normal)?;
-    (dot(section_normal, family.normal).abs() >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE).then_some(())?;
+) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    let Some((cap_direction, _)) = rectilinear_family_extent(ctx, family, start_reversed, station_tolerance)? else { return Ok(None); };
+    let Some(section_normal) = normalize(section_normal) else { return Ok(None); };
+    if dot(section_normal, family.normal).abs() < 1.0 - EPS_SWEEP_EXTENT_DEGENERATE { return Ok(None); }
     let planes = family.stations.iter().map(|station| {
         (
             family
@@ -1023,14 +985,13 @@ fn rectilinear_extent_from_section_plane(
             family.normal,
         )
     });
-    let (extent, direction) =
-        extrusion_extent_and_direction(section_origin, section_normal, planes)?;
+    let Some((extent, direction)) = extrusion_extent_and_direction(ctx, section_origin, section_normal, planes)? else { return Ok(None); };
     if matches!(extent, ExtrudeExtent::OneSided { .. })
         && dot(cap_direction, direction) < 1.0 - EPS_SWEEP_EXTENT_DEGENERATE
     {
-        return None;
+        return Ok(None);
     }
-    Some((extent, direction))
+    Ok(Some((extent, direction)))
 }
 
 pub(in super::super) fn generated_rectilinear_plane_extent(
@@ -1041,6 +1002,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     feature_id: u32,
     section: Option<&crate::feature::definitions::FeatureSection3d>,
 ) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo generated extent scratch")?;
     let Some(section) = section else {
         return Ok(None);
     };
@@ -1062,26 +1024,20 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         crate::feature::definitions::BinaryFlag::Set => true,
     };
     let start_reversed = plane_flip ^ section_flip;
-    let rows = || {
-        scan.surfaces
-            .rows
-            .iter()
-            .filter(|row| row.feature_id == feature_id)
-    };
-    if ctx
-        .admit_iter(&*scan.surfaces.rows, "creo rectilinear source row count")?
-        .filter(|row| row.feature_id == feature_id)
-        .count()
-        < 4
-        || !rows().all(|row| row.kind == crate::surface::SurfaceKind::Plane)
-    {
-        return Ok(None);
+    let (mut rows, mut row_storage) = ctx.temporary_vec(0, "creo rectilinear source rows")?;
+    let mut source_rows = scan.surfaces.rows.iter();
+    while let Some(row) = ctx.next_charged(&mut source_rows, "creo rectilinear source row scan")? {
+        if row.feature_id != feature_id { continue; }
+        if row.kind != crate::surface::SurfaceKind::Plane { return Ok(None); }
+        ctx.push_scoped_vec(&mut row_storage, &mut rows, row, "creo rectilinear source rows")?;
     }
+    if rows.len() < 4 { return Ok(None); }
 
-    let local_planes = placed_planes(ctx, scan)?;
+    let (local_planes, _local_plane_storage) = ctx.with_scoped_storage("creo extent local plane scratch", || placed_planes(ctx, scan))?;
     let mut planes = Vec::new();
-    for row in rows() {
-        if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
+    let mut source_rows = rows.into_iter();
+    while let Some(row) = ctx.next_charged(&mut source_rows, "creo rectilinear source plane scan")? {
+        if !scan.surfaces.rows.unique(row.id).is_some_and(|unique| std::ptr::eq(unique, row)) {
             return Ok(None);
         }
         let Some(SourceSurfaceGeometry::Present(source_geometry)) =
@@ -1091,7 +1047,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         };
         let plane = match source_geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
-                local_planes.get(&row.id).copied()
+                ctx.get_btree_map(&local_planes, &row.id, "creo generated extent local plane lookup")?.copied()
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
                 let Some(plane) =
@@ -1112,57 +1068,53 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         }) else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut planes, 1, "creo rectilinear cap planes")?;
+        scratch.with_storage(|| ctx.reserve_vec(&mut planes, 1, "creo rectilinear cap planes"))?;
         planes.push((plane, row.reversed));
     }
 
-    let coordinate_scale = planes
-        .iter()
+    let coordinate_scale = ctx.admit_iter(&planes, "creo rectilinear plane coordinate scale")?
         .flat_map(|(plane, _)| plane.origin)
         .map(f64::abs)
         .fold(1.0, f64::max);
     let station_tolerance = EPS_SWEEP_EXTENT_GEOMETRY * coordinate_scale;
     let mut families: Vec<RectilinearPlaneFamily> = Vec::new();
-    for (plane, reversed) in planes {
+    let mut plane_rows = planes.into_iter();
+    while let Some((plane, reversed)) = ctx.next_charged(&mut plane_rows, "creo rectilinear family plane scan")? {
         let Some(station) = FiniteReal::new(dot(plane.origin, plane.normal)) else {
             return Ok(None);
         };
-        if let Some(family) = families.iter_mut().find(|family| {
+        if let Some(family) = ctx.find_by(families.iter_mut(), |family| {
+            Ok(
             family
                 .normal
                 .iter()
                 .zip(plane.normal)
-                .all(|(left, right)| (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE)
-        }) {
-            if let Some(known) = family
-                .stations
-                .iter()
-                .find(|known| (station.get() - known.coordinate.get()).abs() <= station_tolerance)
+                .all(|(left, right)| (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE))
+        }, "creo rectilinear matching family search")? {
+            if let Some(known) = ctx.find_by(&family.stations, |known| Ok((station.get() - known.coordinate.get()).abs() <= station_tolerance), "creo rectilinear matching station search")?
             {
                 if known.reversed != reversed {
                     return Ok(None);
                 }
             } else {
-                ctx.reserve_vec(&mut family.stations, 1, "creo rectilinear stations")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut family.stations, 1, "creo rectilinear stations"))?;
                 family.stations.push(RectilinearPlaneStation {
                     coordinate: station,
                     reversed,
                 });
             }
         } else {
-            if !families
-                .iter()
-                .all(|family| dot(family.normal, plane.normal).abs() <= EPS_SWEEP_EXTENT_DEGENERATE)
+            if !ctx.all_by(&families, |family| Ok(dot(family.normal, plane.normal).abs() <= EPS_SWEEP_EXTENT_DEGENERATE), "creo rectilinear family orthogonality")?
             {
                 return Ok(None);
             }
             let mut stations = Vec::new();
-            ctx.reserve_vec(&mut stations, 1, "creo rectilinear stations")?;
+            scratch.with_storage(|| ctx.reserve_vec(&mut stations, 1, "creo rectilinear stations"))?;
             stations.push(RectilinearPlaneStation {
                 coordinate: station,
                 reversed,
             });
-            ctx.reserve_vec(&mut families, 1, "creo rectilinear families")?;
+            scratch.with_storage(|| ctx.reserve_vec(&mut families, 1, "creo rectilinear families"))?;
             families.push(RectilinearPlaneFamily {
                 normal: plane.normal,
                 stations,
@@ -1179,7 +1131,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         return Ok(None);
     }
 
-    match section_plane_evidence(scan, section_plane_id) {
+    match section_plane_evidence(ctx, scan, section_plane_id)? {
         SectionPlaneEvidence::Ambiguous => return Ok(None),
         SectionPlaneEvidence::Resolved(section_plane) => {
             let mut section_normal = section_plane.normal;
@@ -1189,37 +1141,19 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             if section_flip {
                 section_normal = section_normal.map(|component| -component);
             }
-            let mut axial_families = families.iter().filter(|family| {
-                dot(section_normal, family.normal).abs() >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE
-            });
-            let Some(family) = axial_families.next() else {
-                return Ok(None);
-            };
-            if axial_families.next().is_some() {
-                return Ok(None);
-            }
-            return Ok(rectilinear_extent_from_section_plane(
-                family,
-                section_plane.origin,
-                section_normal,
-                start_reversed,
-                station_tolerance,
-            ));
+            let Some(family) = crate::decode::uniqueness::exactly_one_by(ctx, &families,
+                |family| Ok(dot(section_normal, family.normal).abs() >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE), "creo rectilinear axial family search")? else { return Ok(None); };
+            return rectilinear_extent_from_section_plane(ctx, family, section_plane.origin, section_normal, start_reversed, station_tolerance);
         }
         SectionPlaneEvidence::Missing => {}
     }
 
-    let mut candidates = families.iter().filter_map(|family| {
-        let (direction, length) =
-            rectilinear_family_extent(family, start_reversed, station_tolerance)?;
-        Some((direction.map(|component| component * length), length))
-    });
-    let Some((vector, length)) = candidates.next() else {
-        return Ok(None);
+    let mut families = families.iter();
+    let candidate = |family: &RectilinearPlaneFamily| -> Result<Option<([f64; 3], f64)>, CodecError> {
+        Ok(rectilinear_family_extent(ctx, family, start_reversed, station_tolerance)?.map(|(direction, length)| (direction.map(|component| component * length), length)))
     };
-    if candidates.next().is_some() {
-        return Ok(None);
-    }
+    let Some((vector, length)) = ctx.find_map(&mut families, candidate, "creo rectilinear extent candidate search")? else { return Ok(None); };
+    if ctx.find_map(&mut families, candidate, "creo rectilinear extent candidate search")?.is_some() { return Ok(None); }
     let Some(direction) = normalize(vector) else {
         return Ok(None);
     };
@@ -1303,15 +1237,10 @@ pub(in super::super) fn resolved_feature_extrusion_span(
                 derived_blind_extrusion_span(transform, &extent, direction)
             });
     if span.is_none() {
-        span = feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?.and_then(
-            |planes| {
-                extrusion_span(
-                    transform.origin(),
-                    transform.normal(),
-                    planes.into_iter().map(|plane| (plane.origin, plane.normal)),
-                )
-            },
-        );
+        let (planes, _plane_storage) = ctx.with_scoped_storage("creo resolved extrusion plane scratch", || feature_plane_equations(ctx, scan, ir, source_carriers, feature_id))?;
+        if let Some(planes) = planes {
+            span = extrusion_span(ctx, transform.origin(), transform.normal(), planes.into_iter().map(|plane| (plane.origin, plane.normal)))?;
+        }
     }
     if span.is_none() {
         span = generated_cap_plane_extent(ctx, scan, ir, source_carriers, feature_id)?.and_then(

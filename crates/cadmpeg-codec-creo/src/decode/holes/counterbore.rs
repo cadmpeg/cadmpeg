@@ -21,7 +21,8 @@ use crate::container::ContainerScan;
 use super::super::feature_history::dimensions::feature_dimension_table_complete;
 use super::super::feature_history::round::unique_surface_parameter_record;
 use super::super::sketch::equations_coordinate::approximately_equal;
-use super::super::uniqueness::exactly_one;
+use super::super::uniqueness::{exactly_one, exactly_one_by};
+use std::borrow::Borrow;
 use super::drilled::paired_corner_envelope_axis_spans;
 use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
 
@@ -30,12 +31,13 @@ const EPS_COUNTERBORE_GEOMETRY: f64 = 1.0e-9;
 /// Exact-geometry threshold for degenerate counterbore lengths.
 const EPS_COUNTERBORE_EXACT_GEOMETRY: f64 = 1.0e-12;
 
-fn unique_model_surface_geometries(
+fn unique_model_surface_geometries<'a>(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-) -> Result<Option<BTreeMap<u32, SurfaceGeometry>>, CodecError> {
+    ir: &'a CadIr,
+) -> Result<Option<BTreeMap<u32, &'a SurfaceGeometry>>, CodecError> {
     let mut geometries = BTreeMap::new();
-    for surface in &ir.model.surfaces {
+    let mut surfaces = ir.model.surfaces.iter();
+    while let Some(surface) = ctx.next_charged(&mut surfaces, "creo counterbore model surface scan")? {
         let Some(digits) = ctx.strip_prefix(
             surface.id.as_str(),
             "creo:visibgeom:surface#",
@@ -47,12 +49,10 @@ fn unique_model_surface_geometries(
         let Ok(surface_id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
             continue;
         };
-        if geometries.contains_key(&surface_id) {
+        if ctx.contains_key_btree_map(&geometries, &surface_id, "creo counterbore model surface lookup")? {
             return Ok(None);
         }
-        let geometry = surface
-            .geometry
-            .try_clone_for_decode(ctx, "creo counterbore model geometry")?;
+        let geometry = &surface.geometry;
         ctx.insert_btree_map(
             &mut geometries,
             surface_id,
@@ -69,52 +69,40 @@ pub(in crate::decode) fn counterbore_dimensions(
     ir: &CadIr,
     feature_id: u32,
 ) -> Result<Option<(f64, f64, f64)>, CodecError> {
-    let Some(table) = counterbore_entity_table(scan, feature_id) else {
+    let Some(table) = counterbore_entity_table(ctx, scan, feature_id)? else {
         return Ok(None);
     };
+    let mut generated_storage = ctx.reserve_scoped(0, "creo counterbore generated scratch")?;
     let mut generated_cylinders = BTreeSet::new();
-    for surface_id in table.surface_ids_iter().filter(|surface_id| {
-        crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_some_and(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-        })
-    }) {
-        ctx.insert_btree_set(
+    for entry in ctx.admit_iter(&table.entries, "creo counterbore generated cylinder scan")? {
+        let surface_id = entry.entity_id;
+        if !ctx.contains_btree_set(table.unique_surface_ids(), &surface_id, "creo counterbore table surface membership")?
+            || !scan.surfaces.rows.unique(surface_id).is_some_and(|row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder) { continue; }
+        generated_storage.with_storage(|| ctx.insert_btree_set(
             &mut generated_cylinders,
             surface_id,
             "creo counterbore generated cylinder nodes",
-        )?;
+        ))?;
     }
-    let Some(existing_geometries) = unique_model_surface_geometries(ctx, ir)? else {
+    let (existing_geometries, _existing_geometries_storage) = ctx.with_scoped_storage("creo counterbore scratch", || unique_model_surface_geometries(ctx, ir))?;
+    let Some(existing_geometries) = existing_geometries else {
         return Ok(None);
     };
     let mut generated_radii = Vec::new();
-    for radius in existing_geometries
-        .into_iter()
-        .filter_map(|(surface_id, geometry)| {
-            generated_cylinders.contains(&surface_id).then_some(())?;
-            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-                geometry
-            else {
-                return None;
-            };
-            let radius = cylinder_surface.radius().get();
-            Some(radius)
-        })
-    {
-        ctx.reserve_vec(&mut generated_radii, 1, "creo counterbore generated radii")?;
-        generated_radii.push(radius);
+    for (surface_id, geometry) in ctx.admit_iter(existing_geometries, "creo counterbore generated radius scan")? {
+        if !ctx.contains_btree_set(&generated_cylinders, &surface_id, "creo counterbore generated cylinder lookup")? { continue; }
+        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = geometry {
+            generated_storage.with_storage(|| ctx.push_vec(&mut generated_radii, cylinder.radius().get(), "creo counterbore generated radii"))?;
+        }
     }
-    let dimension_tables = || {
-        scan.features
-            .definitions
-            .iter()
-            .filter(|definition| definition.identity.id() == 911)
-            .filter_map(|definition| definition.dimensions.as_ref())
-    };
-    if let Some(dimensions) = counterbore_dimension_values(dimension_tables(), &generated_radii) {
+    let dimension_tables = || scan.features.definitions.iter().map(|definition| {
+        (definition.identity.id() == 911).then_some(definition.dimensions.as_ref()).flatten()
+    });
+    if let Some(dimensions) = counterbore_dimension_values(ctx, dimension_tables(), &generated_radii)? {
         return Ok(Some(dimensions));
     }
-    let Some(sources) = counterbore_cylinder_sources(ctx, scan, feature_id)? else {
+    let (sources, _sources_storage) = ctx.with_scoped_storage("creo counterbore scratch", || counterbore_cylinder_sources(ctx, scan, feature_id))?;
+    let Some(sources) = sources else {
         return Ok(None);
     };
     let [first_source, second_source] = sources.as_slice() else {
@@ -136,7 +124,7 @@ pub(in crate::decode) fn counterbore_dimensions(
     if source_spans.iter().any(Option::is_some) {
         counterbore_envelope_dimension_values(ctx, dimension_tables(), &source_spans)
     } else {
-        Ok(counterbore_unenveloped_dimension_values(dimension_tables()))
+        counterbore_unenveloped_dimension_values(ctx, dimension_tables())
     }
 }
 
@@ -156,11 +144,13 @@ pub(in crate::decode) fn counterbore_dimension_tuple_matches_radius(
 }
 
 pub(in crate::decode) fn counterbore_dimension_values<'a>(
-    tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
+    ctx: &DecodeContext<'_>,
+    mut tables: impl Iterator<Item = Option<&'a crate::feature::definitions::FeatureDimensionTable>>,
     generated_radii: &[f64],
-) -> Option<(f64, f64, f64)> {
+) -> Result<Option<(f64, f64, f64)>, CodecError> {
     let mut first = None;
-    for table in tables {
+    while let Some(table) = ctx.next_charged(&mut tables, "creo counterbore dimension definition scan")? {
+        let Some(table) = table else { continue; };
         if usize::try_from(table.declared_count).ok() != Some(table.rows.len())
             || table.rows.len() != 4
         {
@@ -180,26 +170,27 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
         if bore_radius <= 0.0
             || depth == 0.0
             || counterbore_radius <= bore_radius
-            || !generated_radii.iter().any(|radius| {
+            || !ctx.any_by(generated_radii, |radius| {
+                Ok(
                 (*radius - counterbore_radius).abs()
                     <= EPS_COUNTERBORE_GEOMETRY
-                        * radius.abs().max(counterbore_radius.abs()).max(1.0)
-            })
+                        * radius.abs().max(counterbore_radius.abs()).max(1.0))
+            }, "creo counterbore generated radius match")?
         {
             continue;
         }
-        let bore_diameter = PositiveLength::new(2.0 * bore_radius)?;
-        let counterbore_diameter = PositiveLength::new(2.0 * counterbore_radius)?;
+        let Some(bore_diameter) = PositiveLength::new(2.0 * bore_radius) else { return Ok(None); };
+        let Some(counterbore_diameter) = PositiveLength::new(2.0 * counterbore_radius) else { return Ok(None); };
         let candidate = (bore_diameter.get(), counterbore_diameter.get(), depth.abs());
         if let Some(first) = first {
             if !counterbore_values_agree(candidate, first) {
-                return None;
+                return Ok(None);
             }
         } else {
             first = Some(candidate);
         }
     }
-    first
+    Ok(first)
 }
 
 fn counterbore_values_agree(candidate: (f64, f64, f64), first: (f64, f64, f64)) -> bool {
@@ -214,7 +205,7 @@ fn counterbore_values_agree(candidate: (f64, f64, f64), first: (f64, f64, f64)) 
 
 pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
     ctx: &DecodeContext<'_>,
-    tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
+    mut tables: impl Iterator<Item = Option<&'a crate::feature::definitions::FeatureDimensionTable>>,
     source_spans: &[Option<[[Option<PositiveLength>; 2]; 3]>],
 ) -> Result<Option<(f64, f64, f64)>, CodecError> {
     let [first_source, second_source] = source_spans else {
@@ -222,8 +213,7 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
     };
     let cylinder_diameter_matches =
         |diameter: f64, spans: [[Option<PositiveLength>; 2]; 3]| -> Result<bool, CodecError> {
-            Ok(ctx
-                .admit_iter(&spans, "creo counterbore diameter axis count")?
+            Ok(spans.iter()
                 .filter(|spans| {
                     (**spans).into_iter().flatten().any(|span| {
                         (FiniteReal::new(span.get()))
@@ -261,7 +251,8 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
                 })
         };
     let mut first_candidate = None;
-    for table in tables {
+    while let Some(table) = ctx.next_charged(&mut tables, "creo counterbore dimension definition scan")? {
+        let Some(table) = table else { continue; };
         let Some((bore_diameter, counterbore_diameter, counterbore_depth)) =
             counterbore_envelope_dimension_tuple(table)
         else {
@@ -275,7 +266,7 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
                     cylinder_diameter_matches(bore_diameter, *second)?
                         && counterbore_matches(counterbore_diameter, counterbore_depth, *first),
                 ];
-                ctx.admit_iter(&alternatives, "creo counterbore envelope alternative count")?
+                alternatives.iter()
                     .filter(|matches| **matches)
                     .count()
                     == 1
@@ -301,20 +292,19 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
 }
 
 pub(in crate::decode) fn counterbore_unenveloped_dimension_values<'a>(
-    tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
-) -> Option<(f64, f64, f64)> {
-    let mut candidates = tables
-        .filter(|table| {
-            feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)
-        })
-        .map(counterbore_envelope_dimension_tuple);
-    let first = candidates.next()??;
-    for candidate in candidates {
-        if !counterbore_tuples_approximately_equal(candidate?, first) {
-            return None;
-        }
+    ctx: &DecodeContext<'_>,
+    mut tables: impl Iterator<Item = Option<&'a crate::feature::definitions::FeatureDimensionTable>>,
+) -> Result<Option<(f64, f64, f64)>, CodecError> {
+    let mut first = None;
+    while let Some(table) = ctx.next_charged(&mut tables, "creo counterbore dimension definition scan")? {
+        let Some(table) = table else { continue; };
+        if !feature_dimension_table_complete(table) || !matches!(table.rows.len(), 4 | 5) { continue; }
+        let Some(candidate) = counterbore_envelope_dimension_tuple(table) else { return Ok(None); };
+        if let Some(first) = first {
+            if !counterbore_tuples_approximately_equal(candidate, first) { return Ok(None); }
+        } else { first = Some(candidate); }
     }
-    Some(first)
+    Ok(first)
 }
 
 fn counterbore_envelope_dimension_tuple(
@@ -373,7 +363,8 @@ pub(in crate::decode) fn counterbore_patch_geometries<'a>(
 ) -> Result<Option<Vec<(&'a crate::surface::SurfaceRow, CylinderSurface)>>, CodecError> {
     let resolve_rows = |geometries: Vec<(u32, CylinderSurface)>| -> Result<_, CodecError> {
         let mut rows = Vec::new();
-        for (id, geometry) in geometries {
+        let mut geometries = geometries.into_iter();
+        while let Some((id, geometry)) = ctx.next_charged(&mut geometries, "creo counterbore patch row scan")? {
             let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, id) else {
                 return Ok(None);
             };
@@ -387,29 +378,32 @@ pub(in crate::decode) fn counterbore_patch_geometries<'a>(
     else {
         return Ok(None);
     };
-    let Some(cylinder_sources) = counterbore_cylinder_sources(ctx, scan, feature_id)? else {
+    let (cylinder_sources, _cylinder_sources_storage) = ctx.with_scoped_storage("creo counterbore scratch", || counterbore_cylinder_sources(ctx, scan, feature_id))?;
+    let Some(cylinder_sources) = cylinder_sources else {
         return Ok(None);
     };
-    let Some(existing_geometries) = unique_model_surface_geometries(ctx, ir)? else {
+    let (existing_geometries, _existing_geometries_storage) = ctx.with_scoped_storage("creo counterbore scratch", || unique_model_surface_geometries(ctx, ir))?;
+    let Some(existing_geometries) = existing_geometries else {
         return Ok(None);
     };
-    if let Some(geometries) = counterbore_source_patch_geometries(
+    let (geometries, _geometries_storage) = ctx.with_scoped_storage("creo counterbore scratch", || counterbore_source_patch_geometries(
         ctx,
         &cylinder_sources,
         &existing_geometries,
         bore_diameter,
         counterbore_diameter,
-    )? {
+    ))?;
+    if let Some(geometries) = geometries {
         return resolve_rows(geometries);
     }
-    if cylinder_sources
-        .iter()
-        .flatten()
-        .any(|id| existing_geometries.contains_key(id))
+    if ctx.any_by(&cylinder_sources, |ids| ctx.any_by(ids,
+        |id| ctx.contains_key_btree_map(&existing_geometries, id, "creo counterbore source geometry lookup"),
+        "creo counterbore observed cylinder scan"), "creo counterbore observed source scan")?
     {
         return Ok(None);
     }
-    let Some(source_corners) = counterbore_source_corner_envelopes(ctx, scan, &cylinder_sources)?
+    let (source_corners, _source_corners_storage) = ctx.with_scoped_storage("creo counterbore scratch", || counterbore_source_corner_envelopes(ctx, scan, &cylinder_sources))?;
+    let Some(source_corners) = source_corners
     else {
         return Ok(None);
     };
@@ -417,14 +411,15 @@ pub(in crate::decode) fn counterbore_patch_geometries<'a>(
         return Ok(None);
     };
     let source_corners = [[first.first, first.second], [second.first, second.second]];
-    let Some(geometries) = counterbore_source_corner_patch_geometries(
+    let (geometries, _geometries_storage) = ctx.with_scoped_storage("creo counterbore scratch", || counterbore_source_corner_patch_geometries(
         ctx,
         &cylinder_sources,
         &source_corners,
         bore_diameter,
         counterbore_diameter,
         counterbore_depth,
-    )?
+    ))?;
+    let Some(geometries) = geometries
     else {
         return Ok(None);
     };
@@ -436,12 +431,14 @@ pub(in crate::decode) fn counterbore_cylinder_sources(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<Option<Vec<Vec<u32>>>, CodecError> {
-    let Some(table) = counterbore_entity_table(scan, feature_id) else {
+    let Some(table) = counterbore_entity_table(ctx, scan, feature_id)? else {
         return Ok(None);
     };
     let mut cylinders_by_source = BTreeMap::<u32, Vec<u32>>::new();
-    for entry in table.entries.iter().filter(|entry| entry.class_id() == 200) {
-        if !table.contains_surface_id(entry.entity_id) {
+    let mut entries = table.entries.iter();
+    while let Some(entry) = ctx.next_charged(&mut entries, "creo counterbore source entry scan")? {
+        if entry.class_id() != 200 { continue; }
+        if !ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo counterbore table surface membership")? {
             continue;
         }
         let Some(source_id) = entry.source_entity_id() else {
@@ -464,7 +461,7 @@ pub(in crate::decode) fn counterbore_cylinder_sources(
         }
     }
     let mut sources = Vec::new();
-    for (_, ids) in cylinders_by_source {
+    for (_, ids) in ctx.admit_iter(cylinders_by_source, "creo counterbore source group scan")? {
         if ids.len() == 2 {
             ctx.reserve_vec(&mut sources, 1, "creo counterbore source groups")?;
             sources.push(ids);
@@ -499,7 +496,8 @@ fn counterbore_source_corner_envelopes(
     sources: &[Vec<u32>],
 ) -> Result<Option<Vec<SourceCornerEnvelopes>>, CodecError> {
     let mut envelopes = Vec::new();
-    for ids in sources {
+    let mut sources = sources.iter();
+    while let Some(ids) = ctx.next_charged(&mut sources, "creo counterbore corner source scan")? {
         let [first_id, second_id] = ids.as_slice() else {
             return Ok(None);
         };
@@ -521,26 +519,18 @@ fn counterbore_source_corner_envelopes(
 }
 
 fn counterbore_entity_table<'a>(
+    ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<&'a crate::feature::entity::FeatureEntityTable> {
-    exactly_one(
-        scan.features
-            .entity_tables
-            .iter()
-            .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
-            .filter(|table| {
-                table.entries.iter().any(|entry| {
-                    entry.source_entity_id().is_some()
-                        && table.contains_surface_id(entry.entity_id)
-                        && crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
-                            .is_some_and(|row| {
-                                row.feature_id == feature_id
-                                    && row.kind == crate::surface::SurfaceKind::Cylinder
-                            })
-                })
-            }),
-    )
+) -> Result<Option<&'a crate::feature::entity::FeatureEntityTable>, CodecError> {
+    exactly_one_by(ctx, &scan.features.entity_tables, |table| {
+        if table.feature_id != feature_id || table.table_class_id != 29 { return Ok(false); }
+        ctx.any_by(&table.entries, |entry| {
+            Ok(entry.source_entity_id().is_some()
+                && ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo counterbore table surface membership")?
+                && scan.surfaces.rows.unique(entry.entity_id).is_some_and(|row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder))
+        }, "creo counterbore table cylinder search")
+    }, "creo counterbore entity table search")
 }
 
 pub(in crate::decode) fn counterbore_axis_placement(
@@ -549,62 +539,54 @@ pub(in crate::decode) fn counterbore_axis_placement(
     ir: &CadIr,
     feature_id: u32,
 ) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError> {
-    let cylinder_axis = if let Some((_, counterbore_diameter, _)) =
-        counterbore_dimensions(ctx, scan, ir, feature_id)?
-    {
-        if let Some(sources) = counterbore_cylinder_sources(ctx, scan, feature_id)? {
-            unique_model_surface_geometries(ctx, ir)?.and_then(|geometries| {
-                counterbore_axis_placement_from_sources(&sources, &geometries, counterbore_diameter)
-            })
-        } else {
-            None
+    if let Some((_, counterbore_diameter, _)) = counterbore_dimensions(ctx, scan, ir, feature_id)? {
+        let (sources, _sources_storage) = ctx.with_scoped_storage("creo counterbore scratch", || counterbore_cylinder_sources(ctx, scan, feature_id))?;
+        if let Some(sources) = sources {
+            let (geometries, _geometries_storage) = ctx.with_scoped_storage("creo counterbore scratch", || unique_model_surface_geometries(ctx, ir))?;
+            if let Some(geometries) = geometries {
+                if let Some(axis) = counterbore_axis_placement_from_sources(ctx, &sources, &geometries, counterbore_diameter)? { return Ok(Some(axis)); }
+            }
         }
-    } else {
-        None
-    };
-    Ok(cylinder_axis.or_else(|| {
-        counterbore_support_axis_placement(
-            feature_id,
-            counterbore_entity_table(scan, feature_id)?,
-            &scan.surfaces.rows,
-            &scan.planes.local_systems,
-        )
-    }))
+    }
+    let Some(table) = counterbore_entity_table(ctx, scan, feature_id)? else { return Ok(None); };
+    counterbore_support_axis_placement(ctx, feature_id, table, &scan.surfaces.rows, &scan.planes.local_systems)
 }
 
 pub(in crate::decode) fn counterbore_support_axis_placement(
+    ctx: &DecodeContext<'_>,
     feature_id: u32,
     table: &crate::feature::entity::FeatureEntityTable,
     rows: &crate::surface::SurfaceRows,
     frames: &[crate::surface::PlaneLocalSystem],
-) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
-    (table.feature_id == feature_id).then_some(())?;
-    let plane_id = exactly_one(table.surface_ids_iter().filter(|surface_id| {
-        crate::surface::unique_surface_row(rows, *surface_id).is_some_and(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-        })
-    }))?;
-    let frame = exactly_one(frames.iter().filter(|frame| frame.surface_id == plane_id))?;
+) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError> {
+    if table.feature_id != feature_id { return Ok(None); }
+    let Some(entry) = exactly_one_by(ctx, &table.entries, |entry| {
+        Ok(ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo counterbore table surface membership")?
+            && rows.unique(entry.entity_id).is_some_and(|row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane))
+    }, "creo counterbore support plane search")? else { return Ok(None); };
+    let Some(frame) = exactly_one_by(ctx, frames, |frame| Ok(frame.surface_id == entry.entity_id), "creo counterbore support frame search")? else { return Ok(None); };
     let frame = frame.frame();
-    let origin = frame.origin?;
-    Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))?,
-        axis: frame.normal?.into(),
-    })
+    Ok(frame.origin.zip(frame.normal).and_then(|(origin, normal)| Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))?, axis: normal.into(),
+    })))
 }
 
 pub(in crate::decode) fn counterbore_axis_placement_from_sources(
+    ctx: &DecodeContext<'_>,
     cylinder_sources: &[Vec<u32>],
-    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    existing_geometries: &BTreeMap<u32, impl Borrow<SurfaceGeometry>>,
     counterbore_diameter: f64,
-) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
-    let carrier = exactly_one(cylinder_sources.iter().filter_map(|ids| {
-        complete_cylinder_source_carrier(ids, existing_geometries, 0.5 * counterbore_diameter)
-    }))?;
-    Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
-        origin: carrier.origin(),
-        axis: cadmpeg_ir::features::FeatureDirection3::from(*carrier.frame().axis()),
-    })
+) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError> {
+    let mut carrier = None;
+    let mut sources = cylinder_sources.iter();
+    while let Some(ids) = ctx.next_charged(&mut sources, "creo counterbore axis source scan")? {
+        let Some(candidate) = complete_cylinder_source_carrier(ctx, ids, existing_geometries, 0.5 * counterbore_diameter)? else { continue; };
+        if carrier.is_some() { return Ok(None); }
+        carrier = Some(candidate);
+    }
+    Ok(carrier.map(|carrier| cadmpeg_ir::features::holes::HolePlacement::Axis {
+        origin: carrier.origin(), axis: cadmpeg_ir::features::FeatureDirection3::from(*carrier.frame().axis()),
+    }))
 }
 
 #[derive(Debug)]
@@ -627,7 +609,8 @@ pub(in crate::decode) fn counterbore_directed_placement(
     else {
         return Ok(None);
     };
-    let Some(sources) = counterbore_cylinder_sources(ctx, scan, feature_id)? else {
+    let (sources, _sources_storage) = ctx.with_scoped_storage("creo counterbore scratch", || counterbore_cylinder_sources(ctx, scan, feature_id))?;
+    let Some(sources) = sources else {
         return Ok(None);
     };
     let [first, second] = sources.as_slice() else {
@@ -661,7 +644,8 @@ pub(in crate::decode) fn counterbore_directed_placement(
     if boundary_placement.is_some() {
         return Ok(boundary_placement);
     }
-    let Some(source_corners) = counterbore_source_corner_envelopes(ctx, scan, &sources)? else {
+    let (source_corners, _source_corners_storage) = ctx.with_scoped_storage("creo counterbore scratch", || counterbore_source_corner_envelopes(ctx, scan, &sources))?;
+    let Some(source_corners) = source_corners else {
         return Ok(None);
     };
     let [first, second] = source_corners.as_slice() else {
@@ -932,12 +916,12 @@ fn counterbore_source_boundary_circle(
     cylinder_ids: &[u32],
     radius: f64,
 ) -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
-    let local_planes = placed_planes(ctx, scan)?;
-    let unique_edges = crate::identity::uniquely_identified_rows_checked(
+    let (local_planes, _local_plane_storage) = ctx.with_scoped_storage("creo boundary plane scratch", || placed_planes(ctx, scan))?;
+    let (unique_edges, _edge_storage) = ctx.with_scoped_storage("creo boundary edge scratch", || crate::identity::uniquely_identified_rows_checked(
         ctx,
         &scan.curves.topology_rows,
         |row| row.id,
-    )?;
+    ))?;
     let boundary_for = |cylinder_id: u32| -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
         let Some(cylinder) = std::num::NonZeroU32::new(cylinder_id) else { return Ok(None); };
         let mut boundary = None;
@@ -1023,58 +1007,30 @@ fn counterbore_source_boundary_circle(
 pub(in crate::decode) fn counterbore_source_patch_geometries(
     ctx: &DecodeContext<'_>,
     cylinder_sources: &[Vec<u32>],
-    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    existing_geometries: &BTreeMap<u32, impl Borrow<SurfaceGeometry>>,
     bore_diameter: f64,
     counterbore_diameter: f64,
 ) -> Result<Option<Vec<(u32, CylinderSurface)>>, CodecError> {
-    let candidate = (|| {
-        let [first_source, second_source] = cylinder_sources else {
-            return None;
-        };
-        let counterbore_radius = 0.5 * counterbore_diameter;
-        let has_observed_geometry =
-            |source: &[u32]| source.iter().any(|id| existing_geometries.contains_key(id));
-        let (counterbore_source, bore_source, carrier) = match (
-            complete_cylinder_source_carrier(first_source, existing_geometries, counterbore_radius),
-            complete_cylinder_source_carrier(
-                second_source,
-                existing_geometries,
-                counterbore_radius,
-            ),
-        ) {
-            (Some(carrier), None) if !has_observed_geometry(second_source) => {
-                (first_source, second_source, carrier)
-            }
-            (None, Some(carrier)) if !has_observed_geometry(first_source) => {
-                (second_source, first_source, carrier)
-            }
-            _ => return None,
-        };
-        let geometry = |radius| {
-            Some(CylinderSurface::new(
-                carrier.origin(),
-                *carrier.frame(),
-                cadmpeg_ir::scalar::PositiveLength::new(radius)?,
-            ))
-        };
-        let counterbore_geometry = geometry(counterbore_radius)?;
-        let bore_geometry = geometry(0.5 * bore_diameter)?;
-        Some((
-            counterbore_source,
-            bore_source,
-            counterbore_geometry,
-            bore_geometry,
-        ))
-    })();
-    let Some((counterbore_source, bore_source, counterbore_geometry, bore_geometry)) = candidate
-    else {
-        return Ok(None);
+    let [first_source, second_source] = cylinder_sources else { return Ok(None); };
+    let counterbore_radius = 0.5 * counterbore_diameter;
+    let has_observed_geometry = |source: &[u32]| ctx.any_by(source,
+        |id| ctx.contains_key_btree_map(existing_geometries, id, "creo counterbore source geometry lookup"),
+        "creo counterbore observed source scan");
+    let (counterbore_source, bore_source, carrier) = match (
+        complete_cylinder_source_carrier(ctx, first_source, existing_geometries, counterbore_radius)?,
+        complete_cylinder_source_carrier(ctx, second_source, existing_geometries, counterbore_radius)?,
+    ) {
+        (Some(carrier), None) if !has_observed_geometry(second_source)? => (first_source, second_source, carrier),
+        (None, Some(carrier)) if !has_observed_geometry(first_source)? => (second_source, first_source, carrier),
+        _ => return Ok(None),
     };
+    let geometry = |radius| Some(CylinderSurface::new(carrier.origin(), *carrier.frame(), PositiveLength::new(radius)?));
+    let Some(counterbore_geometry) = geometry(counterbore_radius) else { return Ok(None); };
+    let Some(bore_geometry) = geometry(0.5 * bore_diameter) else { return Ok(None); };
     let mut patches = Vec::new();
-    for (id, geometry) in counterbore_source
-        .iter()
+    for (id, geometry) in ctx.admit_iter(counterbore_source, "creo counterbore patch source scan")?
         .map(|id| (*id, counterbore_geometry))
-        .chain(bore_source.iter().map(|id| (*id, bore_geometry)))
+        .chain(ctx.admit_iter(bore_source, "creo counterbore patch source scan")?.map(|id| (*id, bore_geometry)))
     {
         ctx.reserve_vec(&mut patches, 1, "creo counterbore source patches")?;
         patches.push((id, geometry));
@@ -1090,7 +1046,7 @@ fn counterbore_source_corner_patch_geometries(
     counterbore_diameter: f64,
     counterbore_depth: f64,
 ) -> Result<Option<Vec<(u32, CylinderSurface)>>, CodecError> {
-    let candidate = (|| {
+    let candidate_for = || {
         let [first_source, second_source] = cylinder_sources else {
             return None;
         };
@@ -1140,9 +1096,9 @@ fn counterbore_source_corner_patch_geometries(
             bore_geometry,
             counterbore_geometry,
         ))
-    })();
+    };
     let Some((first_source, second_source, assignment, bore_geometry, counterbore_geometry)) =
-        candidate
+        candidate_for()
     else {
         return Ok(None);
     };
@@ -1166,18 +1122,20 @@ fn counterbore_source_corner_patch_geometries(
 }
 
 fn complete_cylinder_source_carrier(
+    ctx: &DecodeContext<'_>,
     ids: &[u32],
-    existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
+    existing_geometries: &BTreeMap<u32, impl Borrow<SurfaceGeometry>>,
     radius: f64,
-) -> Option<CylinderSurface> {
-    let mut carriers = ids.iter().map(|id| existing_geometries.get(id));
-    let first = carriers.next()??;
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = first else {
-        return None;
-    };
-    ((cylinder.radius().get() - radius).abs() <= EPS_COUNTERBORE_GEOMETRY
-        && carriers.all(|candidate| candidate == Some(first)))
-    .then_some(*cylinder)
+) -> Result<Option<CylinderSurface>, CodecError> {
+    let Some((first_id, rest)) = ids.split_first() else { return Ok(None); };
+    let Some(first) = ctx.get_btree_map(existing_geometries, first_id, "creo counterbore source geometry lookup")? else { return Ok(None); };
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = first.borrow() else { return Ok(None); };
+    if (cylinder.radius().get() - radius).abs() > EPS_COUNTERBORE_GEOMETRY { return Ok(None); }
+    if !ctx.all_by(rest, |id| {
+        let Some(candidate) = ctx.get_btree_map(existing_geometries, id, "creo counterbore source geometry lookup")? else { return Ok(false); };
+        Ok(matches!(candidate.borrow(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(candidate)) if candidate == cylinder))
+    }, "creo counterbore carrier agreement scan")? { return Ok(None); }
+    Ok(Some(*cylinder))
 }
 
 #[cfg(test)]

@@ -39,7 +39,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
     };
     let frames = [frame([-12.5, 4.0, 0.0]), frame([12.5, 4.0, 0.0])];
     assert_eq!(
-        agreed_generated_cylinder_extent(&transform, &frames),
+        crate::decode::with_test_decode_ctx(|ctx| agreed_generated_cylinder_extent(ctx, &transform, (&frames).iter())).expect("service resources"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -72,7 +72,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         Some(33.0),
     )
     .expect("valid positional cylinder frame");
-    assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| agreed_generated_cylinder_extent(ctx, &transform, (&inconsistent).iter())).expect("service resources").is_none());
     inconsistent = frames;
     let mut origin = frames[1].frame().origin();
     origin[1] = 5.0;
@@ -84,7 +84,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         frames[1].length().map(PositiveLength::get),
     )
     .expect("valid positional cylinder frame");
-    assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| agreed_generated_cylinder_extent(ctx, &transform, (&inconsistent).iter())).expect("service resources").is_none());
 
     let diagonal = 0.5_f64.sqrt();
     let diagonal_transform = crate::placement::FeatureSectionTransform::new(
@@ -104,7 +104,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         frames[0].length().map(PositiveLength::get),
     )
     .expect("valid positional cylinder frame")];
-    assert!(agreed_generated_cylinder_extent(&diagonal_transform, &perpendicular).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| agreed_generated_cylinder_extent(ctx, &diagonal_transform, (&perpendicular).iter())).expect("service resources").is_none());
 }
 
 #[test]

@@ -104,7 +104,8 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
     }
 }
 
-fn feature_plane_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+fn feature_plane_limit_error(operation: &'static str) -> cadmpeg_core::CodecError {
+        let run = |limit| {
     let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(plane_row(31));
     scan.planes.outlines.push(plane_outline(31, 2.0));
@@ -128,8 +129,10 @@ fn feature_plane_limit_error(limit: u64) -> cadmpeg_core::CodecError {
                 .collect::<Vec<_>>()
         })
     })
-    .expect_err("next plane collection exceeds limit")
-}
+        };
+        let limit = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some(operation), &run);
+        run(limit).expect_err("named collection boundary")
+    }
 
 #[test]
 fn feature_outline_planes_refuse_collection_limit() {
@@ -152,7 +155,7 @@ fn feature_outline_planes_refuse_collection_limit() {
 
 #[test]
 fn feature_plane_id_nodes_refuse_collection_limit() {
-    assert!(matches!(feature_plane_limit_error(0),
+    assert!(matches!(feature_plane_limit_error("creo feature plane ID nodes"),
         cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
             && resource.operation == "creo feature plane ID nodes"));
@@ -160,7 +163,7 @@ fn feature_plane_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn feature_local_plane_nodes_refuse_collection_limit() {
-    assert!(matches!(feature_plane_limit_error(1),
+    assert!(matches!(feature_plane_limit_error("creo feature local plane nodes"),
         cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
             && resource.operation == "creo feature local plane nodes"));
@@ -168,7 +171,7 @@ fn feature_local_plane_nodes_refuse_collection_limit() {
 
 #[test]
 fn feature_plane_equations_refuse_collection_limit() {
-    assert!(matches!(feature_plane_limit_error(2),
+    assert!(matches!(feature_plane_limit_error("creo feature plane equations"),
         cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
             && resource.operation == "creo feature plane equations"));
@@ -299,9 +302,16 @@ fn available_positional_cylinder_frames_refuse_collection_limit() {
         body_offset: 0,
     }];
     let ids = std::collections::BTreeSet::from([1]);
+    let limit = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo available positional cylinder frames"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::unique_available_positional_cylinder_frame_records(&ctx, &ids, &parameters)
+    });
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let error = super::unique_available_positional_cylinder_frame_records(&ctx, &ids, &parameters)
@@ -425,7 +435,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
             917
         )
         .and_then(|planes| {
-            extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
+            crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)).expect("service resources")
         }),
         Some(expected_linear_plane_extent())
     );
@@ -452,7 +462,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
             917
         )
         .and_then(|planes| {
-            extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
+            crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)).expect("service resources")
         }),
         Some(expected_linear_plane_extent())
     );
@@ -475,7 +485,7 @@ fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_fram
             917
         )
         .and_then(|planes| {
-            extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
+            crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)).expect("service resources")
         }),
         Some(expected_linear_plane_extent())
     );
@@ -779,4 +789,38 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         ),
         expected
     );
+}
+
+#[test]
+fn duplicate_parameter_search_does_not_visit_unrelated_tail() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let frame = crate::surface::PositionalCylinderFrame::new(
+        [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 0.75, Some(2.0),
+    ).expect("frame");
+    let record = crate::surface::SurfaceParameterRecord {
+        surface_id: 1, body: Vec::new(), scalar_tokens: Vec::new(), opaque_spans: Vec::new(), scalar_frames: Vec::new(),
+        carrier: crate::surface::SurfaceParameterCarrier::Resolved(crate::surface::InlineSurfaceCarrier::Cylinder { frame, split_bounds: None }),
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose, offset: 0, body_offset: 0,
+    };
+    let ids = std::collections::BTreeSet::from([1]);
+    let short = vec![record.clone(), record.clone()];
+    let mut long = short.clone();
+    let mut unrelated = record;
+    unrelated.surface_id = 2;
+    long.extend(std::iter::repeat_n(unrelated, 128));
+    let work_limit = |parameters: &[crate::surface::SurfaceParameterRecord]| {
+        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::unique_available_positional_cylinder_frame_records(&ctx, &ids, parameters)
+        })
+    };
+    assert_eq!(work_limit(&short), work_limit(&long));
+    let result = crate::test_support::assert_work_boundaries(
+        &["creo positional cylinder parameter scan", "creo positional cylinder ID lookup", "creo positional cylinder parameter index"],
+        |ctx| super::unique_available_positional_cylinder_frame_records(ctx, &ids, &long),
+    );
+    assert!(result.is_none());
 }
