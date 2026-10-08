@@ -2242,7 +2242,7 @@ fn merge_records(
     ctx.retain_btree_map(
         &mut replacements,
         |key, record| {
-            Ok(ctx
+            Ok::<bool, CodecError>(ctx
                 .get_btree_map(&tombstones, key, "NX replacement tombstone lookup")?
                 .is_none_or(|tombstone| record.offset > tombstone.offset))
         },

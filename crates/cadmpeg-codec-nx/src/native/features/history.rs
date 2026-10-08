@@ -16,6 +16,10 @@ use crate::om::UnlabeledOperationRecord;
 pub(in crate::native) struct FeatureHistory<'c, 'a, 's> {
     container: &'c Container<'a>,
     sections: Vec<FeatureHistorySection<'c>>,
+    // History sections share these readers' Arc-backed lanes. Keep their
+    // materialized owners alive for the complete reader reservation.
+    _section_readers: Vec<(EntryRef<'c>, crate::om::Section<'c>)>,
+    _reader_storage: ScopedReservation<'s>,
     _storage: ScopedReservation<'s>,
 }
 
@@ -50,12 +54,12 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
         let links = storage.with_storage(|| {
             super::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)
         })?;
-        let (framed, _framed_storage) = container.om_sections(ctx)?;
+        let (framed, framed_storage) = container.om_sections(ctx)?;
         let mut index_storage = ctx.reserve_scoped(0, "NX feature history section index")?;
         let mut starts = Vec::new();
         let mut slots = Vec::new();
         for (index, (entry, section)) in ctx
-            .admit_iter(framed, "index NX feature history sections")?
+            .admit_iter(&framed, "index NX feature history sections")?
             .enumerate()
         {
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -70,7 +74,7 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
             ctx.push_scoped_vec(
                 &mut index_storage,
                 &mut slots,
-                Some((entry, entry_offset, section)),
+                Some((*entry, entry_offset, section.clone())),
                 "NX feature history section slots",
             )?;
         }
@@ -126,6 +130,8 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
         Ok(Self {
             container,
             sections,
+            _section_readers: framed,
+            _reader_storage: framed_storage,
             _storage: storage,
         })
     }
@@ -156,5 +162,62 @@ impl<'c> FeatureHistorySection<'c> {
         let records =
             storage.with_storage(|| self.section.unlabeled_operation_records_with_ordinals(ctx))?;
         Ok((records, storage))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FeatureHistory;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn history_keeps_reader_storage_live_until_its_readers_drop() {
+        let payload = crate::test_support::test_om::composed_feature_history_section(
+            &[(&[0xff; 4], "SUBTRACT", Vec::new())],
+        );
+        let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            payload,
+        )]);
+        let container = crate::test_support::with_decode_context(move |ctx| {
+            crate::container::scan_bytes(ctx, file)
+        })
+        .expect("the synthetic framed container is valid");
+        assert!(container.segment_index().is_none());
+
+        for drop_history in [false, true] {
+            crate::test_support::with_decode_context_over(&[], |policy| {
+                policy.limits.max_materialized_bytes = 8192;
+            }, |ctx| {
+                let history = FeatureHistory::new(ctx, &container)
+                    .expect("the framed reader fits the default limits");
+                // No segment-index entry links the framed section. Its reader
+                // reservation is the only live history storage in this case.
+                assert!(history.sections().is_empty());
+                assert_eq!(history._section_readers.len(), 1);
+                let max_materialized = ctx.policy().limits.max_materialized_bytes;
+                if drop_history {
+                    drop(history);
+                    let storage = ctx
+                        .reserve_scoped(max_materialized, "released feature history readers")
+                        .expect("dropping the history releases all reader storage");
+                    drop(storage);
+                } else {
+                    let error = ctx
+                        .reserve_scoped(max_materialized, "live feature history readers")
+                        .expect_err("live readers keep their materialized reservation");
+                    let CodecError::ResourceLimit(limit) = error else {
+                        panic!("the full-budget probe must refuse materialized storage");
+                    };
+                    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+                    assert_eq!(limit.operation, "live feature history readers");
+                    assert!(limit.used > 0);
+                    assert_eq!(limit.additional, max_materialized);
+                    assert_eq!(ctx.resource_refusal(), Some(limit));
+                    drop(history);
+                }
+            });
+        }
     }
 }

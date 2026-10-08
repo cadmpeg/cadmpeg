@@ -580,9 +580,12 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
-    let incomplete_expression_count = body_storage
-        .with_storage(|| incomplete_expression_parameters(ctx, ir))?
-        .len();
+    let mut expression_storage = ctx.reserve_scoped(0, "NX report incomplete expressions")?;
+    let incomplete_expressions =
+        expression_storage.with_storage(|| incomplete_expression_parameters(ctx, ir))?;
+    let incomplete_expression_count = incomplete_expressions.len();
+    drop(incomplete_expressions);
+    drop(expression_storage);
     if incomplete_expression_count != 0 {
         push_report_loss(
             ctx,

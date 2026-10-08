@@ -518,16 +518,18 @@ fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
-    let points = crate::test_support::with_decode_context(|ctx| {
-        ordered_point_candidates(ctx, &graph).unwrap()
+    crate::test_support::with_decode_context(|ctx| {
+        let (point_storage, points) = ordered_point_candidates(ctx, &graph).unwrap();
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].1.pos(), first);
+        assert_eq!(points[0].0, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+        assert_eq!(points[0].1.xmt(), 11);
+        assert_eq!(points[1].1.pos(), stream.len() - 40);
+        assert_eq!(points[1].0, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
+        assert_eq!(points[1].1.xmt(), 77);
+        drop(points);
+        drop(point_storage);
     });
-    assert_eq!(points.len(), 2);
-    assert_eq!(points[0].1.pos(), first);
-    assert_eq!(points[0].0, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
-    assert_eq!(points[0].1.xmt(), 11);
-    assert_eq!(points[1].1.pos(), stream.len() - 40);
-    assert_eq!(points[1].0, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
-    assert_eq!(points[1].1.xmt(), 77);
 }
 
 #[test]
@@ -562,23 +564,25 @@ fn decode_orders_graph_only_escaped_analytics_before_later_records() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
-    let surfaces = crate::test_support::with_decode_context(|ctx| {
-        ordered_surface_candidates(ctx, &graph).unwrap()
-    });
-    assert_eq!(surfaces.len(), 2);
-    assert_eq!(surfaces[0].1.pos(), first_surface);
-    assert_eq!(surfaces[0].1.xmt(), 6);
-    assert_eq!(surfaces[1].1.pos(), second_surface_offset);
-    assert_eq!(surfaces[1].1.xmt(), 77);
+    crate::test_support::with_decode_context(|ctx| {
+        let (surface_storage, surfaces) = ordered_surface_candidates(ctx, &graph).unwrap();
+        assert_eq!(surfaces.len(), 2);
+        assert_eq!(surfaces[0].1.pos(), first_surface);
+        assert_eq!(surfaces[0].1.xmt(), 6);
+        assert_eq!(surfaces[1].1.pos(), second_surface_offset);
+        assert_eq!(surfaces[1].1.xmt(), 77);
 
-    let curves = crate::test_support::with_decode_context(|ctx| {
-        ordered_curve_candidates(ctx, &graph).unwrap()
+        let (curve_storage, curves) = ordered_curve_candidates(ctx, &graph).unwrap();
+        assert_eq!(curves.len(), 2);
+        assert_eq!(curves[0].1.pos(), first_curve);
+        assert_eq!(curves[0].1.xmt(), 9);
+        assert_eq!(curves[1].1.pos(), second_curve_offset);
+        assert_eq!(curves[1].1.xmt(), 78);
+        drop(curves);
+        drop(curve_storage);
+        drop(surfaces);
+        drop(surface_storage);
     });
-    assert_eq!(curves.len(), 2);
-    assert_eq!(curves[0].1.pos(), first_curve);
-    assert_eq!(curves[0].1.xmt(), 9);
-    assert_eq!(curves[1].1.pos(), second_curve_offset);
-    assert_eq!(curves[1].1.xmt(), 78);
 }
 
 #[test]
@@ -603,7 +607,11 @@ fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
             .unwrap();
     assert!(graph.node(NodeKind::Plane, 77).is_none());
     assert!(crate::test_support::with_decode_context(|ctx| {
-        ordered_surface_candidates(ctx, &graph).unwrap().is_empty()
+        let (storage, candidates) = ordered_surface_candidates(ctx, &graph).unwrap();
+        let empty = candidates.is_empty();
+        drop(candidates);
+        drop(storage);
+        empty
     }));
 }
 
@@ -1134,7 +1142,14 @@ fn minimal_point_candidate_work(stream: &[u8]) -> u64 {
         let result = crate::test_support::with_decode_context_over(
             &[],
             |policy| policy.limits.max_work_units = cap,
-            |ctx| ordered_point_candidates(ctx, &graph).map(|candidates| candidates.len()),
+            |ctx| {
+                ordered_point_candidates(ctx, &graph).map(|(storage, candidates)| {
+                    let len = candidates.len();
+                    drop(candidates);
+                    drop(storage);
+                    len
+                })
+            },
         );
         match result {
             Ok(count) => {

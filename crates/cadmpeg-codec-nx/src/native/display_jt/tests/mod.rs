@@ -329,6 +329,7 @@ use cadmpeg_ir::topology::Color;
 const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
 
 mod framing;
+mod candidate_storage;
 mod late_parser_prefix;
 mod parser_prefix;
 mod wires;
@@ -1758,14 +1759,14 @@ fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            // One retained child ID precedes the filename's zero-byte allowance.
-            policy.limits.max_retained_bytes =
+            // One scoped child ID precedes the filename's zero-byte allowance.
+            policy.limits.max_materialized_bytes =
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
         },
         |limited| {
             assert!(
                 matches!(super::parse_jt9_partition_node_body(limited, &body), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.additional == 1 && limit.operation == "retain DisplayJT partition name")
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.additional == 1 && limit.operation == "retain DisplayJT partition name")
             );
         },
     );

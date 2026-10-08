@@ -62,6 +62,49 @@ fn native_external_record_route_preserves_indexed_record() {
 }
 
 #[test]
+fn native_external_record_route_retains_transferred_handle_storage() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let handle_storage = 2 * std::mem::size_of::<u32>();
+    let output_slots = std::mem::size_of::<super::super::ExternalReferenceRecord>();
+    let record_id = format!(
+        "nx:external-reference-record:{}#{}",
+        "/Root/ExternalReferences",
+        6
+    );
+    let source_entry = "/Root/ExternalReferences";
+    let exact_retained = handle_storage + output_slots + record_id.len() + source_entry.len();
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(exact_retained);
+        },
+        |ctx| {
+            let records = super::super::external_reference_records(ctx, &container)
+                .expect("one record and its nested handle storage fit exactly");
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].handles.serialized(), [0x10, 0x20]);
+            let error = ctx
+                .charge_retained(1, "probe transferred external reference handle storage")
+                .expect_err("the moved nested vector remains retained by the output");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.used == cadmpeg_core::decode::u64_from_index(exact_retained)
+                    && limit.additional == 1));
+            drop(records);
+        },
+    );
+}
+
+#[test]
 fn native_external_record_route_refuses_collection_limit() {
     let error = native_external_record_result(|policy| policy.limits.max_collection_items = 10)
         .expect_err("native record exceeds the parsed collection budget");

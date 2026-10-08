@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::container::Container;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 use crate::om::control_leading_value::ControlLeadingValue;
@@ -174,6 +174,25 @@ type FramedSection<'c> = (
     crate::om::Section<'c>,
 );
 
+/// Keep a borrowed-reader vector live until its scoped receipt is released.
+struct ScopedReaders<'ctx, T> {
+    readers: Vec<T>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx, T> ScopedReaders<'ctx, T> {
+    fn new((readers, storage): (Vec<T>, ScopedReservation<'ctx>)) -> Self {
+        Self {
+            readers,
+            _storage: storage,
+        }
+    }
+
+    fn as_slice(&self) -> &[T] {
+        &self.readers
+    }
+}
+
 /// The framed section whose absolute signature offset a segment link names.
 fn linked_section<'s, 'c>(
     ctx: &DecodeContext<'_>,
@@ -201,10 +220,10 @@ pub(super) fn om_record_areas(
     container: &Container,
 ) -> Result<Vec<OmRecordArea>, cadmpeg_core::CodecError> {
     let links = segment_om_links(ctx, container)?;
-    let (sections, _sections_storage) = container.om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.om_sections(ctx)?);
     let mut areas = Vec::new();
     for link in ctx.admit_iter(links, "NX OM record area links")? {
-        let Some((_, section)) = linked_section(ctx, &sections, &link)? else {
+        let Some((_, section)) = linked_section(ctx, sections.as_slice(), &link)? else {
             continue;
         };
         let Some(header) = section.record_area_header(ctx)? else {
@@ -269,7 +288,7 @@ pub(super) fn audit_trail_rows(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmAuditTrailRow>, cadmpeg_core::CodecError> {
-    let (sections, _sections_storage) = container.om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.om_sections(ctx)?);
     let mut out = Vec::new();
     let links = segment_om_links(ctx, container)?;
     for (section_ordinal, link) in ctx
@@ -277,7 +296,7 @@ pub(super) fn audit_trail_rows(
         .filter(|link| link.schema_role == OmSchemaRole::AuditTrail)
         .enumerate()
     {
-        let Some((entry, section)) = linked_section(ctx, &sections, link)? else {
+        let Some((entry, section)) = linked_section(ctx, sections.as_slice(), link)? else {
             continue;
         };
         let Some(rows) = section.audit_trail_rows(ctx)? else {
@@ -505,16 +524,27 @@ pub(super) fn operation_state_statuses(
         let link = &history_section.link;
         let entry = history_section.entry;
         let section = &history_section.section;
-        let Some(table) = section.operation_state_status_table(ctx)? else {
+        let Some((table, entry_storage)) = section.operation_state_status_table(ctx)? else {
             continue;
         };
         let entry_offset = history_section.entry_offset;
         let mut matched = 0_usize;
-        for table_entry in table.into_entries(ctx) {
-            ctx.charge_work(1, "NX operation state statuses")?;
+        let mut remaining = table.len();
+        let mut table_entries = table.into_entries(ctx);
+        while remaining != 0 {
+            let Some(table_entry) =
+                ctx.next_charged(&mut table_entries, "NX operation state statuses")?
+            else {
+                break;
+            };
+            remaining -= 1;
             let (offset, entry_row) = table_entry?;
-            let StateTableEntry::Status(row) = entry_row else {
-                continue;
+            let row = match entry_row {
+                StateTableEntry::Status(row) => row,
+                StateTableEntry::Slots(tokens) => {
+                    tokens.discard();
+                    continue;
+                }
             };
             let position = matched;
             matched = matched
@@ -554,6 +584,8 @@ pub(super) fn operation_state_statuses(
             ctx.reserve_vec(&mut output, 1, "NX operation state statuses")?;
             output.push(record);
         }
+        drop(table_entries);
+        drop(entry_storage);
     }
     Ok(output)
 }
@@ -569,32 +601,47 @@ pub(super) fn operation_state_slot_lanes(
         let link = &history_section.link;
         let entry = history_section.entry;
         let section = &history_section.section;
-        let Some(table) = section.operation_state_status_table(ctx)? else {
+        let Some((table, entry_storage)) = section.operation_state_status_table(ctx)? else {
             continue;
         };
         let entry_offset = history_section.entry_offset;
         let mut matched = 0_usize;
-        for table_entry in table.into_entries(ctx) {
-            ctx.charge_work(1, "NX operation state slot lanes")?;
+        let mut remaining = table.len();
+        let mut table_entries = table.into_entries(ctx);
+        while remaining != 0 {
+            let Some(table_entry) =
+                ctx.next_charged(&mut table_entries, "NX operation state slot lanes")?
+            else {
+                break;
+            };
+            remaining -= 1;
             let (offset, entry_row) = table_entry?;
-            let StateTableEntry::Slots(slots) = entry_row else {
-                continue;
+            let tokens = match entry_row {
+                StateTableEntry::Status(_) => continue,
+                StateTableEntry::Slots(tokens) => tokens,
             };
             let position = matched;
             matched = matched
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX operation state table rows", 0, 1))?;
             let Ok(lane_ordinal) = u32::try_from(position) else {
+                tokens.discard();
                 continue;
             };
             let Some(source_offset) =
                 entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(offset))
             else {
+                tokens.discard();
                 continue;
             };
-            let Ok(frame) =
-                crate::om::state_slot_lane::StateSlotLane::from_wire(ctx, source_offset, slots)?
-            else {
+            let (slots, slot_storage) = tokens.into_parts();
+            let frame = crate::om::state_slot_lane::StateSlotLane::from_wire(
+                ctx,
+                source_offset,
+                slots,
+            )?;
+            let Ok(frame) = frame else {
+                drop(slot_storage);
                 continue;
             };
             ctx.reserve_vec(&mut output, 1, "NX operation state slot lanes")?;
@@ -611,7 +658,10 @@ pub(super) fn operation_state_slot_lanes(
                 frame,
                 source_entry: ctx.copy_retained_text(&entry.name, "NX state slot source entry")?,
             });
+            slot_storage.commit()?;
         }
+        drop(table_entries);
+        drop(entry_storage);
     }
     Ok(output)
 }
@@ -3213,7 +3263,7 @@ pub(super) fn external_reference_records(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<ExternalReferenceRecord>, cadmpeg_core::CodecError> {
-    let (parsed, parsed_storage) = container.external_reference_records(ctx)?;
+    let (parsed, parsed_storage, handles_storage) = container.external_reference_records(ctx)?;
     let projection = (|| {
         let count = parsed.len();
         let mut output = ctx.vector_storage(count, "nx native external reference records")?;
@@ -3255,7 +3305,16 @@ pub(super) fn external_reference_records(
         Ok::<_, CodecError>(output)
     })();
     drop(parsed_storage);
-    projection
+    match projection {
+        Ok(output) => {
+            handles_storage.commit()?;
+            Ok(output)
+        }
+        Err(error) => {
+            drop(handles_storage);
+            Err(error)
+        }
+    }
 }
 
 fn external_reference_record_id(
@@ -4091,8 +4150,8 @@ fn registry_definitions<T>(
     kind: RegistryKind,
     project: impl Fn(RegistryDefinition) -> T,
 ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-    let (framed_sections, _framed_sections_storage) = container.om_sections(ctx)?;
-    let (indexed_sections, _indexed_sections_storage) = container.indexed_om_sections(ctx)?;
+    let framed_sections = ScopedReaders::new(container.om_sections(ctx)?);
+    let indexed_sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     let mut index_reservation = ctx.reserve_scoped(0, "nx registry definition index")?;
     let mut definitions = BTreeMap::new();
     // Framed definitions are visited first and take precedence over indexed ones.
@@ -4172,11 +4231,11 @@ fn registry_definitions<T>(
         }
         Ok(())
     };
-    for (entry, section) in ctx.admit_iter(&framed_sections, "NX framed registry input sections")? {
+    for (entry, section) in ctx.admit_iter(framed_sections.as_slice(), "NX framed registry input sections")? {
         visit(entry, section.offset, &section.types, &section.fields, true)?;
     }
     for (entry, section) in
-        ctx.admit_iter(&indexed_sections, "NX indexed registry input sections")?
+        ctx.admit_iter(indexed_sections.as_slice(), "NX indexed registry input sections")?
     {
         visit(
             entry,
@@ -4303,9 +4362,9 @@ pub(super) fn object_records(
     container: &Container,
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let Some(records) = section.as_fixed() else {
@@ -4610,9 +4669,9 @@ pub(super) fn data_blocks(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<DataBlock>, cadmpeg_core::CodecError> {
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     let mut count = 0usize;
-    for (_, section) in ctx.admit_iter(&sections, "NX data block section count")? {
+    for (_, section) in ctx.admit_iter(sections.as_slice(), "NX data block section count")? {
         if let Some((_, _, records)) = section.as_offset_only() {
             count = count
                 .checked_add(records.len())
@@ -4623,7 +4682,7 @@ pub(super) fn data_blocks(
     let mut map_guard = ctx.reserve_scoped(0, "reserve NX data block identities")?;
     let mut identity_counts = BTreeMap::<[u8; 32], usize>::new();
     let mut digests = Vec::new();
-    for (entry, section) in ctx.admit_iter(&sections, "NX data block record count")? {
+    for (entry, section) in ctx.admit_iter(sections.as_slice(), "NX data block record count")? {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
@@ -4662,7 +4721,7 @@ pub(super) fn data_blocks(
     let mut digests = digests.into_iter();
     let mut output = ctx.vector_storage(count, "NX data block records")?;
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX data block input sections")?
+        .admit_iter(sections.as_slice(), "NX data block input sections")?
         .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
@@ -4734,9 +4793,9 @@ pub(super) fn data_block_control_forms(
     container: &Container,
 ) -> Result<Vec<DataBlockControlForm>, CodecError> {
     let mut forms = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
@@ -4876,9 +4935,9 @@ pub(super) fn data_block_control_values(
     container: &Container,
 ) -> Result<Vec<DataBlockControlValue>, CodecError> {
     let mut rows = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
@@ -4957,11 +5016,11 @@ pub(super) fn data_block_control_class_references(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<DataBlockControlClassReference>, CodecError> {
-    let (framed_sections, _framed_sections_storage) = container.om_sections(ctx)?;
-    let (indexed_sections, _indexed_sections_storage) = container.indexed_om_sections(ctx)?;
+    let framed_sections = ScopedReaders::new(container.om_sections(ctx)?);
+    let indexed_sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     let mut rows = Vec::new();
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&indexed_sections, "NX indexed control input sections")?
+        .admit_iter(indexed_sections.as_slice(), "NX indexed control input sections")?
         .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
@@ -4986,11 +5045,11 @@ pub(super) fn data_block_control_class_references(
         let mut registry_reservation = ctx.reserve_scoped(0, "NX control class registry")?;
         let mut registry = BTreeMap::new();
         let framed = ctx
-            .admit_iter(&framed_sections, "NX control framed registries")?
+            .admit_iter(framed_sections.as_slice(), "NX control framed registries")?
             .filter(|(candidate, _)| candidate.index() == entry.index())
             .map(|(_, section)| section.types.as_ref());
         let indexed = ctx
-            .admit_iter(&indexed_sections, "NX control indexed registries")?
+            .admit_iter(indexed_sections.as_slice(), "NX control indexed registries")?
             .filter(|(candidate, _)| candidate.index() == entry.index())
             .map(|(_, section)| section.types.as_ref());
         for definitions in framed.chain(indexed) {
@@ -5087,9 +5146,9 @@ pub(super) fn data_block_control_index_values(
     container: &Container,
 ) -> Result<Vec<DataBlockControlIndexValue>, CodecError> {
     let mut rows = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
@@ -5244,9 +5303,9 @@ pub(super) fn data_block_control_references(
     container: &Container,
 ) -> Result<Vec<DataBlockControlReference>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let Some((control, _, _)) = section.as_offset_only() else {
@@ -5444,9 +5503,9 @@ pub(super) fn data_block_references(
         })?;
     }
     let mut output = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
@@ -5520,9 +5579,9 @@ pub(super) fn part_color_tables(
     let mut tables = Vec::new();
     let mut definitions = Vec::new();
 
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let Some((_, storage, records)) = section.as_offset_only() else {
@@ -5807,9 +5866,9 @@ pub(super) fn store_headers(
     container: &Container,
 ) -> Result<Vec<StoreHeader>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let candidate = match &section.store {
@@ -5871,9 +5930,9 @@ pub(super) fn string_values(
     container: &Container,
 ) -> Result<Vec<StringValue>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let Some(records) = section.as_fixed() else {
@@ -5936,9 +5995,9 @@ pub(super) fn object_references(
     container: &Container,
 ) -> Result<Vec<ObjectReference>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         let Some(records) = section.as_fixed() else {
@@ -6306,9 +6365,9 @@ pub(super) fn expression_declarations(
     container: &Container,
 ) -> Result<Vec<ExpressionDeclaration>, CodecError> {
     let mut declarations = Vec::new();
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&sections, "NX indexed OM section visits")?
+        .admit_iter(sections.as_slice(), "NX indexed OM section visits")?
         .enumerate()
     {
         if !ctx.any_by(
@@ -6394,11 +6453,11 @@ pub(super) fn expressions(
             )
         })?;
     }
-    let (sections, _sections_storage) = container.indexed_om_sections(ctx)?;
+    let sections = ScopedReaders::new(container.indexed_om_sections(ctx)?);
     let mut indexed_guard = ctx.reserve_scoped(0, "NX indexed expression lookup")?;
     let mut indexed = BTreeMap::<(&str, usize), (u32, usize, usize)>::new();
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(sections, "NX expression indexed input sections")?
+        .admit_iter(sections.as_slice(), "NX expression indexed input sections")?
         .enumerate()
     {
         let Some(directory_entry) = container.entries.get(entry.index()) else {

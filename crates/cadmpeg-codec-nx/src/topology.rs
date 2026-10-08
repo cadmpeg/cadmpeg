@@ -1022,18 +1022,26 @@ struct DomainCandidates {
     ownership: Vec<NodeCandidate>,
 }
 
-/// Validated faces of each body-shape shell.
-pub(crate) struct BodyShell<'graph> {
-    /// The SHELL record.
-    pub(crate) node: &'graph Node,
-    /// Face identities owned by the shell: physical order for a shell anchored
-    /// by its last face, ascending identity order for a FACE chain.
-    pub(crate) faces: Vec<u32>,
+pub(crate) enum BodyShapeShellVisitor<'graph, 'visit> {
+    Faces(
+        &'visit mut dyn FnMut(&'graph Node, u32, &[u32]) -> Result<ControlFlow<()>, CodecError>,
+    ),
+    Summary(&'visit mut dyn FnMut(u32, usize) -> Result<ControlFlow<()>, CodecError>),
 }
 
-enum BodyShapeShellVisitor<'graph, 'visit> {
-    Faces(&'visit mut dyn FnMut(BodyShell<'graph>) -> Result<ControlFlow<()>, CodecError>),
-    Summary(&'visit mut dyn FnMut(u32, usize) -> Result<ControlFlow<()>, CodecError>),
+enum BodyShapeShellTraversal<'graph, 'visit> {
+    Faces {
+        owners: BTreeMap<u32, Vec<u32>>,
+        visit: &'visit mut dyn FnMut(
+            &'graph Node,
+            u32,
+            &[u32],
+        ) -> Result<ControlFlow<()>, CodecError>,
+    },
+    Summary {
+        owner_counts: BTreeMap<u32, usize>,
+        visit: &'visit mut dyn FnMut(u32, usize) -> Result<ControlFlow<()>, CodecError>,
+    },
 }
 
 const INDEX_OPERATION: &str = "NX topology node index";
@@ -1723,25 +1731,6 @@ impl Graph {
         Ok(references)
     }
 
-    /// Return the SHELL nodes whose ownership fields define a body shape, each
-    /// with its validated faces.
-    ///
-    /// One pass indexes faces by their owning shell, so classifying every shell
-    /// visits each face a bounded number of times.
-    pub(crate) fn body_shape_shells<'graph>(
-        &'graph self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<BodyShell<'graph>>, CodecError> {
-        const OPERATION: &str = "classify NX body shells";
-        let mut body_shells = Vec::new();
-        let mut visit = |shell| {
-            ctx.push_vec(&mut body_shells, shell, OPERATION)?;
-            Ok(ControlFlow::Continue(()))
-        };
-        let _ = self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit))?;
-        Ok(body_shells)
-    }
-
     /// Visit each validated body-shape shell's body identity in physical shell
     /// order. A shared body identity may be visited more than once.
     pub(crate) fn visit_body_shape_body_ids(
@@ -1770,18 +1759,28 @@ impl Graph {
     }
 
     /// Traverse shells against one owner index. Both modes validate shell
-    /// fields and face ownership. `Faces` materializes face IDs and sorts
-    /// linked chains; `Summary` returns only body and face counts. A visitor
-    /// break stops the shell scan at that candidate.
-    fn visit_body_shape_shells<'graph>(
+    /// fields and face ownership. `Faces` stages the shell's owned face IDs
+    /// and calls back only after the whole chain is valid; `Summary` visits
+    /// only body and face counts. A visitor break stops the shell scan at
+    /// that candidate.
+    pub(crate) fn visit_body_shape_shells<'graph>(
         &'graph self,
         ctx: &DecodeContext<'_>,
-        mut visitor: BodyShapeShellVisitor<'graph, '_>,
+        visitor: BodyShapeShellVisitor<'graph, '_>,
     ) -> Result<ControlFlow<()>, CodecError> {
         const FACE_INDEX: &str = "NX shell face index";
         const SHELL_VISIT: &str = "classify NX body shells";
         let mut index_storage = ctx.reserve_scoped(0, FACE_INDEX)?;
-        let mut faces_by_shell = BTreeMap::<u32, Vec<u32>>::new();
+        let mut traversal = match visitor {
+            BodyShapeShellVisitor::Faces(visit) => BodyShapeShellTraversal::Faces {
+                owners: BTreeMap::new(),
+                visit,
+            },
+            BodyShapeShellVisitor::Summary(visit) => BodyShapeShellTraversal::Summary {
+                owner_counts: BTreeMap::new(),
+                visit,
+            },
+        };
         let mut remaining_faces = self.of_kind(NodeKind::Face).iter();
         while !remaining_faces.as_slice().is_empty() {
             let Some(face) = ctx.next_charged(&mut remaining_faces, FACE_INDEX)? else {
@@ -1790,40 +1789,39 @@ impl Graph {
             let Some(shell) = face.face_fields().and_then(|fields| fields.shell) else {
                 continue;
             };
-            index_storage.with_storage(|| {
-                ctx.push_btree_group(
-                    &mut faces_by_shell,
-                    u32::from(shell),
-                    face.xmt(),
-                    FACE_INDEX,
-                    FACE_INDEX,
-                )
-            })?;
+            let shell = u32::from(shell);
+            match &mut traversal {
+                BodyShapeShellTraversal::Faces { owners, .. } => {
+                    index_storage.with_storage(|| {
+                        ctx.push_btree_group(
+                            owners,
+                            shell,
+                            face.xmt(),
+                            FACE_INDEX,
+                            FACE_INDEX,
+                        )
+                    })?;
+                }
+                BodyShapeShellTraversal::Summary { owner_counts, .. } => {
+                    match ctx.get_mut_btree_map(owner_counts, &shell, FACE_INDEX)? {
+                        // The count cannot exceed the graph's physical FACE count.
+                        Some(count) => *count += 1,
+                        None => {
+                            index_storage.with_storage(|| {
+                                ctx.insert_btree_map(owner_counts, shell, 1usize, FACE_INDEX)
+                            })?;
+                        }
+                    }
+                }
+            }
         }
         let mut remaining_shells = self.of_kind(NodeKind::Shell).iter();
         while !remaining_shells.as_slice().is_empty() {
             let Some(shell) = ctx.next_charged(&mut remaining_shells, SHELL_VISIT)? else {
                 break;
             };
-            let flow = match &mut visitor {
-                BodyShapeShellVisitor::Faces(visit) => {
-                    let mut faces = Vec::new();
-                    if self
-                        .body_shell_faces(ctx, shell, &faces_by_shell, Some(&mut faces))?
-                        .is_none()
-                    {
-                        continue;
-                    }
-                    visit(BodyShell { node: shell, faces })?
-                }
-                BodyShapeShellVisitor::Summary(visit) => {
-                    let Some((body_id, face_count)) =
-                        self.body_shell_faces(ctx, shell, &faces_by_shell, None)?
-                    else {
-                        continue;
-                    };
-                    visit(body_id, face_count)?
-                }
+            let Some(flow) = self.visit_body_shell_faces(ctx, shell, &mut traversal)? else {
+                continue;
             };
             if let ControlFlow::Break(()) = flow {
                 return Ok(ControlFlow::Break(()));
@@ -1832,14 +1830,14 @@ impl Graph {
         Ok(ControlFlow::Continue(()))
     }
 
-    /// Validate one shell as a body shape, optionally collecting its faces.
-    fn body_shell_faces(
-        &self,
+    /// Validate one shell, publishing a complete linked face chain only after
+    /// every link resolves to a face owned by this shell.
+    fn visit_body_shell_faces<'graph>(
+        &'graph self,
         ctx: &DecodeContext<'_>,
-        shell: &Node,
-        faces_by_shell: &BTreeMap<u32, Vec<u32>>,
-        mut collected_faces: Option<&mut Vec<u32>>,
-    ) -> Result<Option<(u32, usize)>, CodecError> {
+        shell: &'graph Node,
+        traversal: &mut BodyShapeShellTraversal<'graph, '_>,
+    ) -> Result<Option<ControlFlow<()>>, CodecError> {
         const OPERATION: &str = "validate NX shell faces";
         let Some(fields) = shell.shell_fields() else {
             return Ok(None);
@@ -1856,13 +1854,19 @@ impl Graph {
         {
             return Ok(None);
         }
-        let owned = ctx
-            .get_btree_map(faces_by_shell, &shell.xmt(), OPERATION)?
-            .map_or(&[][..], Vec::as_slice);
+        let owner_count = match traversal {
+            BodyShapeShellTraversal::Faces { owners, .. } => ctx
+                .get_btree_map(owners, &shell.xmt(), OPERATION)?
+                .map_or(0, Vec::len),
+            BodyShapeShellTraversal::Summary { owner_counts, .. } => ctx
+                .get_btree_map(owner_counts, &shell.xmt(), OPERATION)?
+                .copied()
+                .unwrap_or(0),
+        };
         if fields.last_face.is_some() {
             // The last-face anchor names the first face; ownership comes from
             // each face's shell reference.
-            if fields.last_face != fields.first_face || owned.is_empty() {
+            if fields.last_face != fields.first_face || owner_count == 0 {
                 return Ok(None);
             }
             let anchored = self
@@ -1872,17 +1876,79 @@ impl Graph {
             if !anchored {
                 return Ok(None);
             }
-            if let Some(faces) = collected_faces {
-                *faces = ctx.copy_slice(owned, "NX shell face identities")?;
-            }
-            return Ok(Some((body_id, owned.len())));
+            return match traversal {
+                BodyShapeShellTraversal::Faces { owners, visit } => {
+                    let faces = ctx
+                        .get_btree_map(owners, &shell.xmt(), OPERATION)?
+                        .map_or(&[][..], Vec::as_slice);
+                    Ok(Some(visit(shell, body_id, faces)?))
+                }
+                BodyShapeShellTraversal::Summary { visit, .. } => {
+                    Ok(Some(visit(body_id, owner_count)?))
+                }
+            };
         }
-        // A FACE chain visits only faces owned by this shell, each once, so a
-        // chain longer than the owned faces repeats one.
+        // Every FACE link must resolve to this shell. A chain longer than the
+        // shell's owner count must repeat a face and cannot terminate.
+        match traversal {
+            BodyShapeShellTraversal::Faces { visit, .. } => {
+                let mut face_storage = ctx.reserve_scoped(0, "NX shell face identities")?;
+                let mut faces = Vec::new();
+                let Some(face_count) = face_storage.with_storage(|| {
+                    self.visit_shell_face_chain(
+                        ctx,
+                        shell,
+                        fields.first_face,
+                        owner_count,
+                        |face| {
+                            ctx.push_vec(&mut faces, face, "NX shell face identities")
+                        },
+                    )
+                })? else {
+                    return Ok(None);
+                };
+                if face_count == 0 {
+                    drop(faces);
+                    drop(face_storage);
+                    return Ok(None);
+                }
+                let flow = visit(shell, body_id, &faces)?;
+                drop(faces);
+                drop(face_storage);
+                Ok(Some(flow))
+            }
+            BodyShapeShellTraversal::Summary { visit, .. } => {
+                let Some(face_count) = self.visit_shell_face_chain(
+                    ctx,
+                    shell,
+                    fields.first_face,
+                    owner_count,
+                    |_| Ok(()),
+                )?
+                else {
+                    return Ok(None);
+                };
+                if face_count == 0 {
+                    return Ok(None);
+                }
+                Ok(Some(visit(body_id, face_count)?))
+            }
+        }
+    }
+
+    fn visit_shell_face_chain(
+        &self,
+        ctx: &DecodeContext<'_>,
+        shell: &Node,
+        first_face: Option<XmtTarget>,
+        owner_count: usize,
+        mut visit_face: impl FnMut(u32) -> Result<(), CodecError>,
+    ) -> Result<Option<usize>, CodecError> {
+        const OPERATION: &str = "validate NX shell faces";
         let mut face_count = 0;
-        let mut face_xmt = fields.first_face;
+        let mut face_xmt = first_face;
         while let Some(target) = face_xmt {
-            if face_count == owned.len() {
+            if face_count == owner_count {
                 return Ok(None);
             }
             ctx.charge_work(1, OPERATION)?;
@@ -1896,19 +1962,11 @@ impl Graph {
             if face.shell.map(u32::from) != Some(shell.xmt()) {
                 return Ok(None);
             }
-            if let Some(faces) = collected_faces.as_mut() {
-                ctx.push_vec(&mut **faces, current, "NX shell face identities")?;
-            }
+            visit_face(current)?;
             face_count += 1;
             face_xmt = face.next_face;
         }
-        if face_count == 0 {
-            return Ok(None);
-        }
-        if let Some(faces) = collected_faces {
-            ctx.sort_unstable_by(&mut *faces, |value| value, Ord::cmp, "sort NX shell faces")?;
-        }
-        Ok(Some((body_id, face_count)))
+        Ok((face_count != 0).then_some(face_count))
     }
 
     /// Return whether every body-shape face has a non-empty valid loop chain
@@ -1937,57 +1995,53 @@ impl Graph {
         Ok(face_count)
     }
 
-    /// Total faces of the body shells. Each face belongs to one shell, so the
-    /// sum cannot exceed the graph's face count.
-    fn face_count(ctx: &DecodeContext<'_>, shells: &[BodyShell<'_>]) -> Result<usize, CodecError> {
-        Ok(ctx
-            .admit_iter(shells, "count NX body faces")?
-            .map(|shell| shell.faces.len())
-            .sum())
-    }
-
     /// Whether the body topology is complete, and how many body-shape faces
     /// it has, from one classification of the shells.
     fn body_topology_census(&self, ctx: &DecodeContext<'_>) -> Result<(bool, usize), CodecError> {
         const OPERATION: &str = "NX reachable FIN identities";
-        let mut storage = ctx.reserve_scoped(0, "NX body shells")?;
-        let shells = storage.with_storage(|| self.body_shape_shells(ctx))?;
-        let faces = Self::face_count(ctx, &shells)?;
-        if shells.is_empty() {
-            return Ok((false, faces));
-        }
+        let mut reachable_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut reachable_fins = BTreeSet::new();
-        let mut remaining_shells = shells.iter();
-        while !remaining_shells.as_slice().is_empty() {
-            let Some(shell) = ctx.next_charged(&mut remaining_shells, "NX body shell faces")? else {
-                break;
-            };
-            let mut remaining_faces = shell.faces.iter();
-            while !remaining_faces.as_slice().is_empty() {
-                let Some(&face_xmt) = ctx.next_charged(&mut remaining_faces, "NX body shell faces")? else {
-                    break;
-                };
-                let mut ring_storage = ctx.reserve_scoped(0, "NX body face rings")?;
-                let Ok(rings) =
-                    ring_storage.with_storage(|| match self.face_loop_rings(ctx, face_xmt) {
-                        Ok(rings) => Ok(Ok(rings)),
-                        Err(FaceLoopError::Invalid(failure)) => Ok(Err(failure)),
-                        Err(FaceLoopError::Codec(error)) => Err(error),
-                    })?
-                else {
-                    return Ok((false, faces));
-                };
-                if rings.is_empty() {
-                    return Ok((false, faces));
-                }
-                for (_, ring) in ctx.admit_iter(rings, OPERATION)? {
-                    for xmt in ctx.admit_iter(ring, OPERATION)? {
-                        storage.with_storage(|| {
-                            ctx.insert_btree_set(&mut reachable_fins, xmt, OPERATION)
-                        })?;
+        let mut faces = 0usize;
+        let mut rings_complete = true;
+        let mut visit_shell = |_, _, face_xmts: &[u32]| {
+            faces += face_xmts.len();
+            if rings_complete {
+                for &face_xmt in ctx.admit_iter(face_xmts, "NX body shell faces")? {
+                    let mut ring_storage = ctx.reserve_scoped(0, "NX body face rings")?;
+                    let rings = ring_storage.with_storage(|| {
+                        match self.face_loop_rings(ctx, face_xmt) {
+                            Ok(rings) => Ok(Ok(rings)),
+                            Err(FaceLoopError::Invalid(failure)) => Ok(Err(failure)),
+                            Err(FaceLoopError::Codec(error)) => Err(error),
+                        }
+                    })?;
+                    match rings {
+                        Ok(rings) if !rings.is_empty() => {
+                            for (_, ring) in ctx.admit_iter(&rings, OPERATION)? {
+                                for &xmt in ctx.admit_iter(ring, OPERATION)? {
+                                    reachable_storage.with_storage(|| {
+                                        ctx.insert_btree_set(&mut reachable_fins, xmt, OPERATION)
+                                    })?;
+                                }
+                            }
+                            drop(rings);
+                            drop(ring_storage);
+                        }
+                        Ok(_) | Err(_) => {
+                            rings_complete = false;
+                            break;
+                        }
                     }
                 }
             }
+            Ok(ControlFlow::Continue(()))
+        };
+        let _ = self.visit_body_shape_shells(ctx, BodyShapeShellVisitor::Faces(&mut visit_shell))?;
+        drop(visit_shell);
+        if !rings_complete || faces == 0 {
+            drop(reachable_fins);
+            drop(reachable_storage);
+            return Ok((false, faces));
         }
         let mut remaining_fins = reachable_fins.iter();
         while remaining_fins.len() != 0 {
@@ -2002,10 +2056,14 @@ impl Graph {
             };
             if let Some(other) = fields.other {
                 if !ctx.contains_btree_set(&reachable_fins, &u32::from(other), OPERATION)? {
+                    drop(reachable_fins);
+                    drop(reachable_storage);
                     return Ok((false, faces));
                 }
             }
         }
+        drop(reachable_fins);
+        drop(reachable_storage);
         Ok((true, faces))
     }
 
