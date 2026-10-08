@@ -4,6 +4,7 @@
 #![allow(clippy::doc_markdown)]
 
 mod decode_budget;
+mod primitive_index;
 mod resource_admission;
 
 use cadmpeg_test_support::wire;
@@ -37,9 +38,10 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     let mut plan = super::AppearancePlan::new(&ctx).expect("plan storage");
+    let index = super::PrimitiveIndex::new(&ctx, &ir, style).expect("primitive index");
     super::transfer_primitive_appearance(
         &ctx,
-        &ir,
+        &index,
         &mut plan,
         &mut losses,
         super::PrimitiveAppearanceSource {
@@ -147,9 +149,10 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         super::PrimitiveStyle::Line(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
         super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
     ] {
+        let index = super::PrimitiveIndex::new(&ctx, &ir, style).expect("primitive index");
         super::transfer_primitive_appearance(
             &ctx,
-            &ir,
+            &index,
             &mut plan,
             &mut losses,
             super::PrimitiveAppearanceSource {

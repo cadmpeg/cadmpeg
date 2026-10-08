@@ -622,7 +622,7 @@ fn assert_native_shape_borrowed(shape: TextTShape) {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let builder = empty_builder(&ctx, &payload, &shapes).unwrap();
     let borrowed = builder.shape(1).unwrap();
-    assert!(std::ptr::eq(borrowed, &shapes[0]));
+    assert!(std::ptr::eq(borrowed, &raw const shapes[0]));
     assert_eq!(ctx.resource_refusal(), None);
 }
 

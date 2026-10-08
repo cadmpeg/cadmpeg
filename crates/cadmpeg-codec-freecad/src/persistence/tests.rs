@@ -1345,8 +1345,7 @@ fn link_child_scan_propagates_work_refusal() {
         let refusal = ctx.refuse_codec_limit("test link work", 0, 1);
         let error =
             super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx)
-                .err()
-                .expect("fused context");
+                .expect_err("fused context");
         assert_eq!(error.to_string(), refusal.to_string());
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     });
