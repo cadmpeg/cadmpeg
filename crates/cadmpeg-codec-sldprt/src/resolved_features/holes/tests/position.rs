@@ -2,8 +2,7 @@
 
 use super::{
     cylinder, lane, lane_with_position_reference, model_hole, native_history,
-    native_history_with_second_feature, native_feature_index_node_bytes,
-    work_refusal_at_additional, SECOND_NATIVE_INDEX_FEATURE_ID,
+    native_feature_index_node_bytes, work_refusal_at_additional,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -38,8 +37,157 @@ use crate::resolved_features::holes::HoleTopology;
 use crate::resolved_features::holes::{HoleLaneNames, PositionSketches};
 use crate::resolved_features::parameters::enrich_history_parameters;
 
+
+fn spatial_hole_axis_consumer() -> (
+    [cadmpeg_ir::features::Feature; 2],
+    SpatialSketch,
+    [SpatialSketchEntity; 3],
+    Surface,
+    crate::records::FeatureHistory,
+    crate::records::FeatureInputLane,
+) {
+    let hole = model_hole();
+    let sketch_id = SpatialSketchId::mint("synthetic:test:id#position-geometry").unwrap();
+    let sketch_feature = cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
+        ordinal: 1,
+        name: Some("Position".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                sketch: Some(sketch_id.clone()),
+            }),
+        ),
+        native_ref: Some("native-position-sketch".into()),
+    };
+    let mut history = native_history();
+    history.features.push(crate::records::Feature {
+        id: "native-position-sketch".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(6),
+        ordinal: 1,
+        name: "Position".into(),
+        kind: "3DSketch".into(),
+        input_class: Some("mo3DProfileFeature_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::default(),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: Vec::new(),
+    });
+    let mut lane = lane_with_position_reference(6);
+    lane.sketch_entities.push({
+        let marker_id: String = "authored-point".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 0, 80, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("native-position-sketch".into());
+        constructed_marker = constructed_marker.with_test_identity(Some(1), None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
+    });
+    lane.sketch_entities.push({
+        let marker_id: String = "same-axis-endpoint".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 1, 90, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("native-position-sketch".into());
+        constructed_marker = constructed_marker.with_test_identity(Some(2), None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
+    });
+    lane.sketch_entities.push({
+        let marker_id: String = "construction-point".into();
+        let marker_parent: String = "lane".into();
+        let mut constructed_marker =
+            SketchInputEntity::new(marker_id, marker_parent, 2, 100, SketchInputKind::Point);
+        constructed_marker.feature_ref = Some("native-position-sketch".into());
+        constructed_marker = constructed_marker.with_test_identity(Some(3), None);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
+        constructed_marker.coordinates_m = None;
+        constructed_marker.links = None;
+        constructed_marker
+    });
+    let sketch = SpatialSketch {
+        id: sketch_id.clone(),
+        name: Some("Position".into()),
+        configuration: None,
+        visible: None,
+        profiles: Vec::new(),
+        native_ref: Some("lane".into()),
+    };
+    let point = Point3::new(12.0, 23.0, 30.0);
+    let entity = SpatialSketchEntity::new(
+        SpatialSketchEntityId::mint("synthetic:test:id#point").unwrap(),
+        sketch_id.clone(),
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point { position: point })
+            .unwrap(),
+    )
+    .with_native_ref(Some("authored-point".into()));
+    let same_axis_endpoint = SpatialSketchEntity::new(
+        SpatialSketchEntityId::mint("synthetic:test:id#same-axis-endpoint").unwrap(),
+        sketch_id.clone(),
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+            position: Point3::new(12.0, 23.0, 20.0),
+        })
+        .unwrap(),
+    )
+    .with_native_ref(Some("same-axis-endpoint".into()));
+    let construction_point = SpatialSketchEntity::new(
+        SpatialSketchEntityId::mint("synthetic:test:id#construction-point").unwrap(),
+        sketch_id,
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+            position: Point3::new(100.0, 100.0, 100.0),
+        })
+        .unwrap(),
+    )
+    .with_construction(true)
+    .with_native_ref(Some("construction-point".into()));
+    let surface = Surface {
+        id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(12.0, 23.0, 10.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    };
+
+    (
+        [hole, sketch_feature],
+        sketch,
+        [entity, same_axis_endpoint, construction_point],
+        surface,
+        history,
+        lane,
+    )
+}
+
 #[test]
 fn spatial_hole_position_route_refuses_collection_growth() {
+    let (input_features, sketch, entities, surface, history, lane) =
+        spatial_hole_axis_consumer();
+    let sketches = [sketch];
+    let surfaces = [surface];
+    let histories = [history];
+    let lanes = [lane];
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
         "index SLDPRT spatial position native features",
@@ -48,14 +196,15 @@ fn spatial_hole_position_route_refuses_collection_growth() {
             let mut policy = DecodePolicy::default();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut features = input_features.clone();
             project_spatial_hole_position_sketches(
                 &ctx,
-                &mut [model_hole()],
-                &[],
-                &[],
-                &[],
-                &[native_history()],
-                &[],
+                &mut features,
+                &sketches,
+                &entities,
+                &surfaces,
+                &histories,
+                &lanes,
             )
         },
     );
@@ -66,6 +215,12 @@ fn spatial_hole_position_route_refuses_collection_growth() {
 
 #[test]
 fn spatial_hole_position_route_refuses_lookup_work() {
+    let (input_features, sketch, entities, surface, history, lane) =
+        spatial_hole_axis_consumer();
+    let sketches = [sketch];
+    let surfaces = [surface];
+    let histories = [history];
+    let lanes = [lane];
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
         "index SLDPRT spatial position features",
@@ -74,14 +229,15 @@ fn spatial_hole_position_route_refuses_lookup_work() {
             let mut policy = DecodePolicy::default();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut features = input_features.clone();
             project_spatial_hole_position_sketches(
                 &ctx,
-                &mut [model_hole()],
-                &[],
-                &[],
-                &[],
-                &[native_history()],
-                &[],
+                &mut features,
+                &sketches,
+                &entities,
+                &surfaces,
+                &histories,
+                &lanes,
             )
         },
     );
@@ -93,39 +249,50 @@ fn spatial_hole_position_route_refuses_lookup_work() {
 #[test]
 fn spatial_hole_native_feature_index_refuses_second_key_work() {
     const OPERATION: &str = "index SLDPRT spatial position native features";
-    let history = native_history_with_second_feature();
+    let (mut input_features, sketch, entities, surface, mut history, mut lane) =
+        spatial_hole_axis_consumer();
+    history.features[1].id = super::SECOND_NATIVE_INDEX_FEATURE_ID.into();
+    input_features[1].native_ref = Some(super::SECOND_NATIVE_INDEX_FEATURE_ID.into());
+    for marker in &mut lane.sketch_entities {
+        marker.feature_ref = Some(super::SECOND_NATIVE_INDEX_FEATURE_ID.into());
+    }
+    let sketches = [sketch];
+    let surfaces = [surface];
+    let histories = [history];
+    let lanes = [lane];
     let error = work_refusal_at_additional(
         OPERATION,
-        u64::try_from(SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap(),
+        u64::try_from(super::SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap(),
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut features = input_features.clone();
             project_spatial_hole_position_sketches(
                 &ctx,
-                &mut [model_hole()],
-                &[],
-                &[],
-                &[],
-                std::slice::from_ref(&history),
-                &[],
+                &mut features,
+                &sketches,
+                &entities,
+                &surfaces,
+                &histories,
+                &lanes,
             )
         },
     );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected native feature key work refusal: {error:?}");
     };
-    // One model target, one history, and two feature source steps precede
-    // the first insertion's three node-work passes. The second key comparison
-    // follows that admitted node work.
+    // One hole target, two positions checked by the new spatial-consumer gate,
+    // one history, and two source records precede the first insertion's three
+    // node-work passes. The second key comparison follows that admitted work.
     assert_eq!(
         limit.used,
-        4 + 3 * native_feature_index_node_bytes()
+        6 + 3 * native_feature_index_node_bytes()
     );
     assert_eq!(
         limit.additional,
-        u64::try_from(SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap()
+        u64::try_from(super::SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap()
     );
 }
 
@@ -872,141 +1039,23 @@ fn unique_unindexed_point_locus_is_projected() {
 
 #[test]
 fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
-    let hole = model_hole();
-    let sketch_id = SpatialSketchId::mint("synthetic:test:id#position-geometry").unwrap();
-    let sketch_feature = cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
-        ordinal: 1,
-        name: Some("Position".into()),
-        suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: BTreeMap::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: cadmpeg_ir::features::FeatureContent::default(),
-
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                sketch: Some(sketch_id.clone()),
-            }),
-        ),
-        native_ref: Some("native-position-sketch".into()),
-    };
-    let mut history = native_history();
-    history.features.push(crate::records::Feature {
-        id: "native-position-sketch".into(),
-        parent: "history".into(),
-        xml_tag: "Sketch".into(),
-        tree_parent: None,
-        source_id: FeatureSource::from_value(6),
-        ordinal: 1,
-        name: "Position".into(),
-        kind: "3DSketch".into(),
-        input_class: Some("mo3DProfileFeature_c".into()),
-        suppressed: false,
-        parameters: BTreeMap::default(),
-        dimension_properties: BTreeMap::default(),
-        properties: BTreeMap::default(),
-        text: None,
-        content: Vec::new(),
-    });
-    let mut lane = lane_with_position_reference(6);
-    lane.sketch_entities.push({
-        let marker_id: String = "authored-point".into();
-        let marker_parent: String = "lane".into();
-        let mut constructed_marker =
-            SketchInputEntity::new(marker_id, marker_parent, 0, 80, SketchInputKind::Point);
-        constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker = constructed_marker.with_test_identity(Some(1), None);
-        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = None;
-        constructed_marker.links = None;
-        constructed_marker
-    });
-    lane.sketch_entities.push({
-        let marker_id: String = "same-axis-endpoint".into();
-        let marker_parent: String = "lane".into();
-        let mut constructed_marker =
-            SketchInputEntity::new(marker_id, marker_parent, 1, 90, SketchInputKind::Point);
-        constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker = constructed_marker.with_test_identity(Some(2), None);
-        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = None;
-        constructed_marker.links = None;
-        constructed_marker
-    });
-    lane.sketch_entities.push({
-        let marker_id: String = "construction-point".into();
-        let marker_parent: String = "lane".into();
-        let mut constructed_marker =
-            SketchInputEntity::new(marker_id, marker_parent, 2, 100, SketchInputKind::Point);
-        constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker = constructed_marker.with_test_identity(Some(3), None);
-        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = None;
-        constructed_marker.links = None;
-        constructed_marker
-    });
-    let sketch = SpatialSketch {
-        id: sketch_id.clone(),
-        name: Some("Position".into()),
-        configuration: None,
-        visible: None,
-        profiles: Vec::new(),
-        native_ref: Some("lane".into()),
-    };
-    let point = Point3::new(12.0, 23.0, 30.0);
-    let entity = SpatialSketchEntity::new(
-        SpatialSketchEntityId::mint("synthetic:test:id#point").unwrap(),
-        sketch_id.clone(),
-        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point { position: point })
-            .unwrap(),
-    )
-    .with_native_ref(Some("authored-point".into()));
-    let same_axis_endpoint = SpatialSketchEntity::new(
-        SpatialSketchEntityId::mint("synthetic:test:id#same-axis-endpoint").unwrap(),
-        sketch_id.clone(),
-        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
-            position: Point3::new(12.0, 23.0, 20.0),
-        })
-        .unwrap(),
-    )
-    .with_native_ref(Some("same-axis-endpoint".into()));
-    let construction_point = SpatialSketchEntity::new(
-        SpatialSketchEntityId::mint("synthetic:test:id#construction-point").unwrap(),
-        sketch_id,
-        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
-            position: Point3::new(100.0, 100.0, 100.0),
-        })
-        .unwrap(),
-    )
-    .with_construction(true)
-    .with_native_ref(Some("construction-point".into()));
-    let surface = Surface {
-        id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(12.0, 23.0, 10.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                2.0,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-    };
-    let mut features = vec![hole, sketch_feature];
+    let (mut features, sketch, entities, surface, history, lane) =
+        spatial_hole_axis_consumer();
+    let sketches = [sketch];
+    let surfaces = [surface];
+    let histories = [history];
+    let lanes = [lane];
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     project_spatial_hole_position_sketches(
         &ctx,
         &mut features,
-        &[sketch],
-        &[entity, same_axis_endpoint, construction_point],
-        &[surface],
-        &[history],
-        &[lane],
+        &sketches,
+        &entities,
+        &surfaces,
+        &histories,
+        &lanes,
     )
     .unwrap();
 
@@ -1700,4 +1749,73 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
         unreachable!();
     };
     assert!(placements.is_none());
+}
+
+#[test]
+fn planar_hole_projection_skips_lane_indexes_without_a_model_sketch() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let histories = [native_history()];
+    let lanes = [lane()];
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT hole lane names",
+        None,
+    );
+    project_hole_position_sketches(
+        &ctx,
+        &mut [model_hole()],
+        &[],
+        &[],
+        &histories,
+        &lanes,
+    )
+    .unwrap();
+    let limit = ctx
+        .charge_work(1, "index SLDPRT hole lane names")
+        .expect_err("missing planar sketches leave the lane-index probe armed");
+    assert!(matches!(
+        limit,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "index SLDPRT hole lane names"
+                && limit.additional == 1
+    ));
+}
+
+#[test]
+fn spatial_hole_projection_skips_lane_indexes_without_a_model_sketch() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let histories = [native_history()];
+    let lanes = [lane()];
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT hole lane names",
+        None,
+    );
+    project_spatial_hole_position_sketches(
+        &ctx,
+        &mut [model_hole()],
+        &[],
+        &[],
+        &[],
+        &histories,
+        &lanes,
+    )
+    .unwrap();
+    let limit = ctx
+        .charge_work(1, "index SLDPRT hole lane names")
+        .expect_err("missing spatial sketches leave the lane-index probe armed");
+    assert!(matches!(
+        limit,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "index SLDPRT hole lane names"
+                && limit.additional == 1
+    ));
 }

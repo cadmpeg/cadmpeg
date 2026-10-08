@@ -3,6 +3,9 @@
 
 use super::*;
 
+mod position_fixtures;
+use position_fixtures::planar_position_source;
+
 fn hole_ownership_source(geometry: bool) -> Vec<u8> {
     let mut source = if geometry {
         crate::test_support::container::sldprt_with_body(&triangle_body())
@@ -360,7 +363,7 @@ fn metadata_hole_position_projection_refuses_collection_limit() {
         ..DecodeOptions::default()
     };
     let limit = collection_refusal_with_options(
-        &hole_ownership_source(false),
+        &planar_position_source(false),
         options,
         "project SLDPRT hole position sketches",
     );
@@ -378,7 +381,7 @@ fn metadata_hole_position_projection_refuses_work_limit() {
         ..DecodeOptions::default()
     };
     let limit = work_refusal_with_request(
-        &hole_ownership_source(false),
+        &planar_position_source(false),
         options,
         "project SLDPRT hole position sketches",
         Some(1), // One visitor work unit; key reads have separate requests.
@@ -402,7 +405,7 @@ fn metadata_hole_position_projection_scratch_refuses_work_limit() {
         |cap| {
             let mut options = options;
             options.policy.limits.max_work_units = cap;
-            match SldprtCodec.decode(&mut Cursor::new(hole_ownership_source(false)), &options) {
+            match SldprtCodec.decode(&mut Cursor::new(planar_position_source(false)), &options) {
                 Ok(decoded) => Ok(decoded),
                 Err(cadmpeg_ir::DecodeFailure::Codec(error)) => Err(error),
                 Err(error) => panic!("unexpected decode refusal: {error:?}"),
@@ -420,7 +423,7 @@ fn metadata_hole_position_projection_scratch_refuses_work_limit() {
 fn geometry_hole_position_projection_refuses_collection_limit() {
     let options = DecodeOptions::default();
     let limit = collection_refusal_with_options(
-        &hole_ownership_source(true),
+        &planar_position_source(true),
         options,
         "project SLDPRT hole position sketches",
     );
@@ -435,7 +438,7 @@ fn geometry_hole_position_projection_refuses_collection_limit() {
 fn geometry_hole_position_projection_refuses_work_limit() {
     let options = DecodeOptions::default();
     let limit = work_refusal_with_request(
-        &hole_ownership_source(true),
+        &planar_position_source(true),
         options,
         "project SLDPRT hole position sketches",
         Some(1),
@@ -456,7 +459,7 @@ fn geometry_hole_position_projection_scratch_refuses_work_limit() {
         |cap| {
             let mut options = options;
             options.policy.limits.max_work_units = cap;
-            match SldprtCodec.decode(&mut Cursor::new(hole_ownership_source(true)), &options) {
+            match SldprtCodec.decode(&mut Cursor::new(planar_position_source(true)), &options) {
                 Ok(decoded) => Ok(decoded),
                 Err(cadmpeg_ir::DecodeFailure::Codec(error)) => Err(error),
                 Err(error) => panic!("unexpected decode refusal: {error:?}"),

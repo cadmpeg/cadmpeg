@@ -1992,11 +1992,11 @@ pub(crate) fn project_profiled_hole_constructions(
             )
         })?;
     enriched_storage.with_storage(|| {
-        crate::history::configuration::enrich_history_parameters_semantic(
-            ctx,
-            &mut enriched_histories,
-            lanes,
-        )
+        let mut enrichment = super::parameters::ParameterEnrichment::new(ctx, &mut enriched_histories)?;
+        for (lane, names) in ctx.admit_iter(lanes, "scan SLDPRT parameter lanes")?.zip(&object_names) {
+            enrichment.collect(lane, &names.names)?;
+        }
+        enrichment.apply(true)
     })?;
     let (mut ownership_histories, mut ownership_storage) =
         ctx.with_scoped_storage("SLDPRT hole ownership history workspace", || {
@@ -2411,6 +2411,23 @@ pub(crate) fn project_hole_position_sketches(
         |feature| Ok(hole_needs_placements(feature)),
         "find SLDPRT hole projection target",
     )? {
+        return Ok(());
+    }
+    if sketches.is_empty()
+        || !ctx.any_by(
+            &*features,
+            |feature| {
+                Ok(feature.native_ref.is_some()
+                    && matches!(
+                        feature.evaluation.definition(),
+                        FeatureDefinition::Operation(FeatureOperation::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_)),
+                        })
+                    ))
+            },
+            "find SLDPRT planar hole position binding",
+        )?
+    {
         return Ok(());
     }
     let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
@@ -3153,6 +3170,23 @@ pub(crate) fn project_spatial_hole_position_sketches(
     if !ctx.any_by(&*features, |feature| Ok(hole_needs_placements(feature) && matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) if shape.diameter().is_some())), "find SLDPRT hole projection target")? {
         return Ok(());
     }
+    if spatial_sketches.is_empty()
+        || !ctx.any_by(
+            &*features,
+            |feature| {
+                Ok(feature.native_ref.is_some()
+                    && matches!(
+                        feature.evaluation.definition(),
+                        FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                            sketch: Some(_),
+                        })
+                    ))
+            },
+            "find SLDPRT spatial hole position binding",
+        )?
+    {
+        return Ok(());
+    }
     let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
     let mut native_features = BTreeMap::new();
     for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
@@ -3658,6 +3692,32 @@ pub(crate) fn project_generated_hole_axes(
     const OPERATION: &str = "sort SLDPRT generated hole lanes";
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
+    if histories.is_empty()
+        || lanes.is_empty()
+        || face_identities.is_empty()
+        || faces.is_empty()
+        || surfaces.is_empty()
+    {
+        return Ok(());
+    }
+    let has_target = ctx.any_by(
+        &*features,
+        |feature| {
+            Ok(feature.native_ref.is_some()
+                && matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Hole {
+                        placements: None,
+                        shape,
+                        ..
+                    }) if shape.diameter().is_some()
+                ))
+        },
+        "find SLDPRT generated hole target",
+    )?;
+    if !has_target {
+        return Ok(());
+    }
     let mut native_features_storage =
         ctx.reserve_scoped(0, "index SLDPRT generated hole features")?;
     let mut native_features = BTreeMap::new();
@@ -3674,6 +3734,40 @@ pub(crate) fn project_generated_hole_axes(
             })?;
         }
     }
+    let has_native_source = ctx.any_by(
+        &*features,
+        |feature| {
+            let eligible = feature.native_ref.is_some()
+                && matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Hole {
+                        placements: None,
+                        shape,
+                        ..
+                    }) if shape.diameter().is_some()
+                );
+            if !eligible {
+                return Ok(false);
+            }
+            let Some(native) = feature.native_ref.as_deref() else {
+                return Ok(false);
+            };
+            Ok(ctx
+                .get_btree_map(
+                    &native_features,
+                    native,
+                    "resolve SLDPRT holes references",
+                )?
+                .and_then(|record| record.source_id)
+                .and_then(FeatureSource::id)
+                .is_some())
+        },
+        "find SLDPRT generated hole source",
+    )?;
+    if !has_native_source {
+        return Ok(());
+    }
+
     let mut faces_by_id = HashMap::new();
     let mut source_items = faces.iter();
     while let Some(face) =
@@ -5069,6 +5163,23 @@ pub(crate) fn project_hole_axes(
     if !ctx.any_by(&*model_features, |feature| Ok(hole_needs_placements(feature) && matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) if shape.diameter().is_some())), "find SLDPRT hole projection target")? {
         return Ok(());
     }
+    let has_topology_geometry = !topology.surfaces.is_empty()
+        || !topology.faces.is_empty()
+        || !topology.loops.is_empty()
+        || !topology.coedges.is_empty()
+        || !topology.edges.is_empty()
+        || !topology.vertices.is_empty()
+        || !topology.points.is_empty()
+        || !sketch_entities.is_empty();
+    let has_lane_geometry = !has_topology_geometry
+        && ctx.any_by(
+            lanes,
+            |lane| Ok(!lane.native_payload.is_empty() || !lane.sketch_entities.is_empty()),
+            "find SLDPRT hole axis lane geometry",
+        )?;
+    if !has_topology_geometry && !has_lane_geometry {
+        return Ok(());
+    }
     let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
     let mut native_features = BTreeMap::new();
     for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
@@ -6003,6 +6114,34 @@ pub(crate) fn project_bore_backed_position_sketches(
     if !ctx.any_by(&*features, |feature| Ok(feature.native_ref.is_some() && matches!(feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Hole { placements: Some(placements), .. })
                 if matches!(placements.first(), Some(HolePlacement::Axis { .. })))), "find SLDPRT hole projection target")? {
+        return Ok(());
+    }
+    if surfaces.is_empty()
+        || !ctx.any_by(
+            &*features,
+            |feature| {
+                Ok(feature.native_ref.is_some()
+                    && matches!(
+                        feature.evaluation.definition(),
+                        FeatureDefinition::Operation(FeatureOperation::Sketch {
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+                                | cadmpeg_ir::features::SketchFeatureBinding::Planar(None)
+                        })
+                    ))
+            },
+            "find SLDPRT unresolved position sketch",
+        )?
+        || !ctx.any_by(
+            surfaces,
+            |surface| {
+                Ok(matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                ))
+            },
+            "find SLDPRT bore projection plane",
+        )?
+    {
         return Ok(());
     }
     let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;

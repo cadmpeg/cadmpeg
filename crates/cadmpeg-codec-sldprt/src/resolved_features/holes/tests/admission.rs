@@ -25,8 +25,39 @@ fn topology(surfaces: &[Surface]) -> HoleTopology<'_> {
     }
 }
 
+fn hole_axis_position_consumer() -> (
+    crate::records::FeatureHistory,
+    crate::records::FeatureInputLane,
+    [Surface; 2],
+) {
+    let mut history = native_history_with_second_feature();
+    let position = &mut history.features[1];
+    position.name = "Position".into();
+    position.kind = "Sketch".into();
+    position.xml_tag = "Sketch".into();
+    position.input_class = Some("moProfileFeature_c".into());
+
+    let mut lane = lane_with_position_reference(12);
+    for (ordinal, x) in [(0, -0.005), (1, 0.005)] {
+        let mut marker = SketchInputEntity::new(
+            format!("position-{ordinal}"),
+            "lane",
+            ordinal,
+            u64::from(ordinal),
+            SketchInputKind::Arc,
+        )
+        .with_test_identity(Some(ordinal + 1), None);
+        marker.feature_ref = Some(SECOND_NATIVE_INDEX_FEATURE_ID.into());
+        marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([x, 0.0]);
+        lane.sketch_entities.push(marker);
+    }
+    let surfaces = [cylinder(0, -5.0), cylinder(1, 5.0)];
+    (history, lane, surfaces)
+}
+
 #[test]
 fn hole_position_axes_refuse_collection_limit() {
+    let (history, lane, surfaces) = hole_axis_position_consumer();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
         "index SLDPRT hole position native features",
@@ -39,9 +70,9 @@ fn hole_position_axes_refuse_collection_limit() {
                 &ctx,
                 &mut [model_hole()],
                 &[],
-                &topology(&[]),
-                &[native_history()],
-                &[],
+                &topology(&surfaces),
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
             )
         },
     );
@@ -52,6 +83,7 @@ fn hole_position_axes_refuse_collection_limit() {
 
 #[test]
 fn hole_position_axes_refuse_work_limit() {
+    let (history, lane, surfaces) = hole_axis_position_consumer();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
         "index SLDPRT hole position features",
@@ -64,9 +96,9 @@ fn hole_position_axes_refuse_work_limit() {
                 &ctx,
                 &mut [model_hole()],
                 &[],
-                &topology(&[]),
-                &[native_history()],
-                &[],
+                &topology(&surfaces),
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
             )
         },
     );
@@ -77,8 +109,8 @@ fn hole_position_axes_refuse_work_limit() {
 
 #[test]
 fn hole_position_native_feature_index_refuses_second_key_work() {
+    let (history, lane, surfaces) = hole_axis_position_consumer();
     const OPERATION: &str = "index SLDPRT hole position native features";
-    let history = native_history_with_second_feature();
     let error = work_refusal_at_additional(
         OPERATION,
         u64::try_from(SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap(),
@@ -91,9 +123,9 @@ fn hole_position_native_feature_index_refuses_second_key_work() {
                 &ctx,
                 &mut [model_hole()],
                 &[],
-                &topology(&[]),
+                &topology(&surfaces),
                 std::slice::from_ref(&history),
-                &[],
+                std::slice::from_ref(&lane),
             )
         },
     );
@@ -115,6 +147,7 @@ fn hole_position_native_feature_index_refuses_second_key_work() {
 
 #[test]
 fn hole_position_axes_refuse_scoped_materialized_limit() {
+    let (history, lane, surfaces) = hole_axis_position_consumer();
     let mut feature = model_hole();
     feature
         .evaluation
@@ -123,6 +156,7 @@ fn hole_position_axes_refuse_scoped_materialized_limit() {
                 SketchId::mint("synthetic:test:id#position").unwrap(),
             )),
         }));
+    feature.native_ref = Some(SECOND_NATIVE_INDEX_FEATURE_ID.into());
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::MaterializedBytes,
         "resolve SLDPRT holes keys",
@@ -135,9 +169,9 @@ fn hole_position_axes_refuse_scoped_materialized_limit() {
                 &ctx,
                 &mut [feature.clone(), model_hole()],
                 &[],
-                &topology(&[]),
-                &[native_history()],
-                &[],
+                &topology(&surfaces),
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
             )
         },
     );
@@ -204,6 +238,58 @@ fn hole_position_axes_refuse_nesting_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RecursionDepth
             && limit.operation == "search SLDPRT congruent bore subsets"));
+}
+
+
+fn axis_placed_hole() -> cadmpeg_ir::features::Feature {
+    use cadmpeg_ir::features::holes::HolePlacement;
+    use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut hole = model_hole();
+    hole.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) = definition
+        else {
+            unreachable!();
+        };
+        *placements = Some(vec![HolePlacement::Axis {
+            origin: FinitePoint3::new(Point3::new(2.0, 3.0, 0.0)).unwrap(),
+            axis: FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+        }]);
+    });
+    hole
+}
+
+fn position_sketch(binding: SketchFeatureBinding) -> cadmpeg_ir::features::Feature {
+    let mut position = model_hole();
+    position.id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#position").unwrap();
+    position.native_ref = Some("native-position".into());
+    position.name = Some("Position".into());
+    position
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: binding,
+        }));
+    position
+}
+
+fn solved_position_plane() -> Surface {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    Surface {
+        id: SurfaceId::mint("synthetic:test:id#plane").unwrap(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    }
 }
 
 #[test]
@@ -476,6 +562,40 @@ fn hole_axis_projection_skips_indexes_without_target() {
 }
 
 #[test]
+fn hole_axis_projection_skips_lane_indexes_without_geometry_inputs() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let histories = [native_history()];
+    let lanes = [super::lane()];
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT hole lane names",
+        None,
+    );
+    project_hole_axes(
+        &ctx,
+        &mut [model_hole()],
+        &[],
+        &topology(&[]),
+        &histories,
+        &lanes,
+    )
+    .unwrap();
+    let limit = ctx
+        .charge_work(1, "index SLDPRT hole lane names")
+        .expect_err("empty geometry leaves the lane-index probe armed");
+    assert!(matches!(
+        limit,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "index SLDPRT hole lane names"
+                && limit.additional == 1
+    ));
+}
+
+#[test]
 fn bore_projection_skips_indexes_without_bore_target() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -502,4 +622,117 @@ fn bore_projection_skips_indexes_without_bore_target() {
         &[lane],
     )
     .unwrap();
+}
+
+#[test]
+fn bore_projection_skips_names_when_all_position_sketches_are_bound() {
+    use cadmpeg_ir::features::SketchFeatureBinding;
+
+    let mut features = [
+        axis_placed_hole(),
+        position_sketch(SketchFeatureBinding::Planar(Some(
+            SketchId::mint("synthetic:test:id#bound-position").unwrap(),
+        ))),
+    ];
+    let surfaces = [solved_position_plane()];
+    let histories = [native_history()];
+    let lanes = [lane_with_position_reference(12)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT hole lane names",
+        None,
+    );
+    super::super::project_bore_backed_position_sketches(
+        &ctx,
+        &mut features,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &surfaces,
+        &histories,
+        &lanes,
+    )
+    .unwrap();
+    assert!(matches!(
+        features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(_)),
+        })
+    ));
+    let limit = ctx
+        .charge_work(1, "index SLDPRT hole lane names")
+        .expect_err("bound positions leave the marker-index probe armed");
+    assert!(matches!(
+        limit,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "index SLDPRT hole lane names"
+                && limit.additional == 1
+    ));
+}
+
+#[test]
+fn bore_projection_skips_indexes_without_a_solved_plane() {
+    use cadmpeg_ir::features::SketchFeatureBinding;
+
+    let mut history = native_history();
+    let mut native_position = history.features[0].clone();
+    native_position.id = "native-position".into();
+    native_position.source_id = FeatureSource::from_value(12);
+    native_position.ordinal = 1;
+    native_position.name = "Position".into();
+    native_position.xml_tag = "Sketch".into();
+    native_position.kind = "Sketch".into();
+    native_position.input_class = Some("moProfileFeature_c".into());
+    history.features.push(native_position);
+    let surfaces = [cylinder(0, 0.0)];
+    let lanes = [lane_with_position_reference(12)];
+
+    for operation in [
+        "project SLDPRT bore backed position sketches",
+        "index SLDPRT hole lane names",
+    ] {
+        let mut features = [
+            axis_placed_hole(),
+            position_sketch(SketchFeatureBinding::Planar(None)),
+        ];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            operation,
+            None,
+        );
+        super::super::project_bore_backed_position_sketches(
+            &ctx,
+            &mut features,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &surfaces,
+            &[history.clone()],
+            &lanes,
+        )
+        .unwrap();
+        assert!(matches!(
+            features[1].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(None),
+            })
+        ));
+        let limit = ctx
+            .charge_work(1, operation)
+            .expect_err("the absent plane leaves both indexes unconstructed");
+        assert!(matches!(
+            limit,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == operation
+                    && limit.additional == 1
+        ));
+    }
 }

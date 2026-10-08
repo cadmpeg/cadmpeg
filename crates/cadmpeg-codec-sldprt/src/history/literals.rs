@@ -385,7 +385,7 @@ pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
 }
 
 /// The canonical literal of a parameter, written directly into the text sink.
-pub(super) struct ParameterLiteral<'a>(pub(super) &'a ParameterValue);
+pub(crate) struct ParameterLiteral<'a>(pub(crate) &'a ParameterValue);
 
 impl std::fmt::Display for ParameterLiteral<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

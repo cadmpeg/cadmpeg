@@ -285,7 +285,11 @@ fn embedded_coordinate_index_keeps_relative_tolerance_ambiguity() {
 
 #[test]
 fn object_sources_include_unlocated_records_and_all_owners_once() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let marker = |id, owner: Option<&str>, index, coordinates: Option<[f64; 2]>| {
         let mut marker = SketchInputEntity::new(id, "lane", 0, 0, SketchInputKind::Arc)
             .with_test_identity(Some(index), None);
@@ -320,7 +324,7 @@ fn object_sources_include_unlocated_records_and_all_owners_once() {
         ["unlocated", "located", "other", "unowned"]
     );
     let cached = sources.as_ptr();
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+    let cache_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "index SLDPRT object marker sources",
         None,
@@ -330,6 +334,36 @@ fn object_sources_include_unlocated_records_and_all_owners_once() {
         cached
     );
     assert!(geometry.object_sources(&ctx, Some(9)).unwrap().is_empty());
+    drop(cache_probe);
+
+    let fresh_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut fresh_policy = cadmpeg_core::decode::DecodePolicy::service();
+    fresh_policy.limits.max_work_units = u64::MAX;
+    let (fresh_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &fresh_arena,
+        &fresh_policy,
+    )
+    .unwrap();
+    let fresh_geometry = MarkerGeometryIndex::new(
+        &fresh_ctx,
+        &[&unlocated, &other_owner, &located, &unowned, &other_index],
+        MarkerPrefixIndex::new(&fresh_ctx, &[]).unwrap(),
+    )
+    .unwrap();
+    let positive_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT object marker sources",
+        None,
+    );
+    let positive = fresh_geometry.object_sources(&fresh_ctx, Some(7));
+    drop(positive_probe);
+    assert!(matches!(
+        positive,
+        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal.operation == "index SLDPRT object marker sources"
+    ));
+    assert!(fresh_ctx.resource_refusal().is_some());
 }
 
 #[test]
@@ -470,7 +504,11 @@ fn owner_point_rosters_are_lazy_and_sorted_for_the_selected_owner() {
 }
 #[test]
 fn point_position_index_keeps_owner_and_point_kind_and_reuses_storage() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let marker = |id, owner: &str, kind, coordinates| {
         let mut marker = SketchInputEntity::new(id, "lane", 0, 0, kind);
         marker.feature_ref = Some(owner.into());
@@ -505,7 +543,7 @@ fn point_position_index_keeps_owner_and_point_kind_and_reuses_storage() {
         .unwrap();
     coordinates.sort_unstable_by(|left, right| left[1].total_cmp(&right[1]));
     assert_eq!(coordinates, [[0.0, 0.0], [0.0, 2.0]]);
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+    let cache_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "index SLDPRT arc center positions",
         None,
@@ -514,4 +552,34 @@ fn point_position_index_keeps_owner_and_point_kind_and_reuses_storage() {
         index,
         geometry.point_positions(&arc).unwrap().unwrap()
     ));
+    drop(cache_probe);
+
+    let fresh_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut fresh_policy = cadmpeg_core::decode::DecodePolicy::service();
+    fresh_policy.limits.max_work_units = u64::MAX;
+    let (fresh_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &fresh_arena,
+        &fresh_policy,
+    )
+    .unwrap();
+    let fresh_geometry = MarkerGeometryIndex::new(
+        &fresh_ctx,
+        &[&arc, &other, &constrained, &point],
+        MarkerPrefixIndex::new(&fresh_ctx, &[]).unwrap(),
+    )
+    .unwrap();
+    let positive_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT arc center positions",
+        None,
+    );
+    let positive = fresh_geometry.point_positions(&arc);
+    drop(positive_probe);
+    assert!(matches!(
+        positive,
+        Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal.operation == "index SLDPRT arc center positions"
+    ));
+    assert!(fresh_ctx.resource_refusal().is_some());
 }
