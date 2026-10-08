@@ -958,7 +958,11 @@ pub(crate) fn resolve_transform(
             .map_err(|_| TransformFailure::NonFiniteComposed(sequence))
             .map_err(TransformResolutionError::from)
     })();
-    ctx.remove_btree_set(path, &sequence, "iges transform chain removal")?;
+    if let Err(error) = ctx.remove_btree_set(path, &sequence, "iges transform chain removal") {
+        // Refused cleanup must destroy the path before its frame storage expires.
+        drop(std::mem::take(path));
+        return Err(error.into());
+    }
     result
 }
 
