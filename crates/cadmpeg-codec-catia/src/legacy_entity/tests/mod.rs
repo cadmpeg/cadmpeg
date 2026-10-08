@@ -1098,9 +1098,8 @@ fn legacy_identity_reader_propagates_caller_work_refusal() {
     bytes.extend_from_slice(CATALOG_OPEN);
     let runs = parse_runs(&bytes);
     crate::test_support::with_work_limit(1, |ctx| {
-        let error = match runs[0].identities(ctx) {
-            Ok(_) => panic!("two following identities exceed caller work"),
-            Err(error) => error,
+        let Err(error) = runs[0].identities(ctx) else {
+            panic!("two following identities exceed caller work")
         };
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("resource refusal required")

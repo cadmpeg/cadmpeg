@@ -181,10 +181,10 @@ pub(super) fn b5_edge_support_definition(
     Option<(IdentityNamespace, &'static str, ProceduralCurveDefinition)>,
     cadmpeg_core::CodecError,
 > {
+    const LOOKUP: &str = "catia_b5_edge_support_lookup";
     let ([first] | [first, _]) = supports else {
         return Ok(None);
     };
-    const LOOKUP: &str = "catia_b5_edge_support_lookup";
     if ctx.any_by(
         supports,
         |(_, pcurve, range)| {

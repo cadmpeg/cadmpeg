@@ -60,7 +60,7 @@ fn native_cohort_ordinal_lookup_refuses_work_and_preserves_cohorts() {
                     limit.dimension,
                     cadmpeg_core::decode::ResourceDimension::WorkUnits
                 );
-                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
             result
         });
@@ -100,7 +100,7 @@ fn assert_semantic_lookup_refusal(native: &crate::native::CatiaNative, operation
                 limit.dimension,
                 cadmpeg_core::decode::ResourceDimension::WorkUnits
             );
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
         }
         result.map(|_| ())
     });

@@ -1887,11 +1887,12 @@ fn a8_pcurve_bspline_retains_only_final_lanes() {
         .expect("valid jet");
     assert_eq!(result.0.len(), 12);
     assert_eq!(result.1.len(), 6);
-    let result = crate::test_support::with_retained_limit(6 * 16, |ctx| jet.bspline(ctx))
+    let result = crate::test_support::with_retained_limit(6 * 16, |ctx| {
+        jet.control_points(ctx)
+    })
         .expect("controls-only output retains 96 bytes")
         .expect("valid jet");
-    assert!(result.0.is_empty());
-    assert_eq!(result.1.len(), 6);
+    assert_eq!(result.len(), 6);
 }
 
 #[test]

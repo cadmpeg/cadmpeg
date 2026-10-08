@@ -582,10 +582,10 @@ fn parse_run_before(
             "catia_legacy_run_roles",
         )?;
     }
-    let relations = parse_relations(ctx, &text_fields, &identities)?;
+    let relations = parse_relations(ctx, &text_fields, identities)?;
     let schema_fields = parse_schema_fields(ctx, data, &role_selectors, &text_fields)?;
     let synchronous_states =
-        parse_synchronous_states(ctx, data, &role_selectors, &identities, catalog_offset)?;
+        parse_synchronous_states(ctx, data, &role_selectors, identities, catalog_offset)?;
     let mut type_descriptors = Vec::new();
     let mut scalar_values = Vec::new();
     let mut string_values = Vec::new();
