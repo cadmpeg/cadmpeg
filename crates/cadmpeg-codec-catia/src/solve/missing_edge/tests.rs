@@ -14,8 +14,8 @@ fn row(handles: &[u32]) -> EdgeRow {
         .expect("admitted edge row")
 }
 
-fn handles(values: &[u32]) -> HashSet<u32> {
-    values.iter().copied().collect()
+fn handles(values: &[u32]) -> Vec<u32> {
+    values.to_vec()
 }
 
 #[test]
@@ -140,7 +140,6 @@ fn edge_port_queue_propagates_collection_refusal() {
         "catia_port_resolved_pairs",
         "catia_port_edge_entries",
         "catia_port_incident_edges",
-        "catia_port_pair_points",
         "catia_edge_port_initial_queue",
         "catia_edge_port_queue",
         "catia_port_resolved_port_rows",
@@ -472,7 +471,7 @@ fn repeated_long_row_selects_one_majority_sharing_face() {
 
 #[test]
 fn repeated_handle_candidates_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let rows = vec![row(&[10, 11])];
@@ -484,13 +483,15 @@ fn repeated_handle_candidates_refuse_collection_limit() {
         Some(vec![vec![1]])
     );
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let error = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
-        .expect_err("candidate collection exceeds the limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "catia_repeated_edge_handle_face_candidates",
+        |cap| {
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                repeated_edge_face_handle_candidates_from_sets(ctx, &rows, &faces, &[[0, 0]])
+            })
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_repeated_edge_handle_face_candidates"));
@@ -700,8 +701,8 @@ fn endpoint_degree_closure_refuses_closed_face_copy() {
             outcome => panic!("unexpected closed-face result: {outcome:?}"),
         }
     }
-    assert!(operations.contains("catia missing-edge closed faces"));
-    assert!(operations.contains("catia missing-edge closed solutions"));
+    assert!(operations.contains("catia missing-edge completed faces"));
+    assert!(operations.contains("catia missing-edge completed solutions"));
 }
 
 #[test]

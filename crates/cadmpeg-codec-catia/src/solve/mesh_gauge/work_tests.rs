@@ -25,9 +25,10 @@ fn relation_choice_sort_refuses_assignment_bytes() {
         edge_identity_evidence: &[],
         coordinate_gauge: None,
     };
-    let result = crate::test_support::with_work_limit(20_000, |ctx| {
-        map_endpoint_relation_state(ctx, &state, gauge, &[])
-    });
+    let result =
+        crate::test_support::with_work_refusal("catia_relation_mapped_choices_sort", |ctx| {
+            map_endpoint_relation_state(ctx, &state, gauge, &[])
+        });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "catia_relation_mapped_choices_sort"));
@@ -104,53 +105,51 @@ fn coordinate_gauge_refuses_unsearched_eight_point_class() {
 
 #[test]
 fn coordinate_permutation_search_refuses_caller_work_before_enumeration() {
-    let result = crate::test_support::with_work_limit(0, |ctx| {
-        super::enumerate_coordinate_permutations(
-            ctx,
-            &[0, 1],
-            0,
-            &mut vec![],
-            &mut [false; 2],
-            &mut vec![],
-        )
+    let result = crate::test_support::with_work_refusal("catia_gauge_permutation_search", |ctx| {
+        super::enumerate_coordinate_permutations(ctx, &[0, 1], 2)
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "catia_gauge_permutation_search"));
-    let mut output = vec![];
-    crate::test_support::with_service_context(|ctx| {
-        super::enumerate_coordinate_permutations(
-            ctx,
-            &[0, 1],
-            0,
-            &mut vec![],
-            &mut [false; 2],
-            &mut output,
-        )
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::enumerate_coordinate_permutations(ctx, &[0, 1], 2)
+        })
+        .expect("two permutations fit service work"),
+        vec![vec![0, 1], vec![1, 0]],
+    );
+    let output = crate::test_support::with_service_context(|ctx| {
+        super::enumerate_coordinate_permutations(ctx, &[0, 2, 5], 6)
     })
-    .expect("two permutations fit service work");
-    assert_eq!(output, vec![vec![0, 1], vec![1, 0]]);
+    .expect("six permutations fit service work");
+    assert_eq!(
+        output,
+        vec![
+            vec![0, 2, 5],
+            vec![0, 5, 2],
+            vec![2, 0, 5],
+            vec![2, 5, 0],
+            vec![5, 0, 2],
+            vec![5, 2, 0],
+        ]
+    );
 }
 
 #[test]
 fn gauge_signature_lookup_refuses_repeated_long_equal_keys() {
     let signatures = vec![vec![0usize; 128]; 2];
-    let result = crate::test_support::with_work_refusal("catia_gauge_signature_compare", |ctx| {
-        super::intern_gauge_signatures(ctx, signatures.clone(), |key| {
-            std::mem::size_of_val(key.as_slice())
-        })
+    let result = crate::test_support::with_work_refusal("catia_gauge_signature_keys", |ctx| {
+        super::intern_gauge_signatures(ctx, signatures.clone())
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "catia_gauge_signature_compare"));
+            && limit.operation == "catia_gauge_signature_keys"));
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            super::intern_gauge_signatures(ctx, signatures, |key| {
-                std::mem::size_of_val(key.as_slice())
-            })
+            super::intern_gauge_signatures(ctx, signatures)
         })
         .expect("service comparison work"),
-        vec![0, 0]
+        (vec![0, 0], 1)
     );
 }
 
@@ -197,7 +196,7 @@ fn coordinate_gauge_membership_scans_refuse_before_search() {
     for operation in [
         "catia_gauge_group_point_scan",
         "catia_gauge_affected_edge_scan",
-        "catia_gauge_affected_point_scan",
+        "catia_gauge_original_rows",
     ] {
         assert!(
             operations.contains(operation),
@@ -255,9 +254,8 @@ fn coordinate_refinement_and_automorphism_comparisons_refuse_key_bytes() {
             )
         });
         for operation in [
-            "catia_gauge_refinement_compare",
+            "catia_gauge_refinement_rounds",
             "catia_gauge_automorphism_rows_compare",
-            "catia_gauge_permutation_dedup_compare",
         ] {
             assert!(
                 operations.contains(operation),
@@ -383,7 +381,6 @@ fn candidate_equivalence_refuses_each_variable_length_comparison() {
     for operation in [
         "catia_gauge_candidate_point_compare",
         "catia_gauge_candidate_topology_compare",
-        "catia_gauge_candidate_assignment_compare",
     ] {
         assert!(
             operations.contains(operation),
