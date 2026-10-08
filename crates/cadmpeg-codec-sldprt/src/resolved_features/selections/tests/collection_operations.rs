@@ -226,3 +226,47 @@ fn curve_path_admits_each_output_item_once() {
         },
     ]);
 }
+
+#[test]
+fn surface_metadata_is_built_only_by_its_consuming_operation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let lane = crate::records::FeatureInputLane {
+        id: "lane".into(), configuration: None, native_payload: vec![0; 128],
+        classes: ["moCompSurfaceBody_c", "moPLineProjIdRep_c", "moPLineSurfIdRep_c"]
+            .into_iter().enumerate().map(|(ordinal, name)| crate::records::FeatureInputClass {
+                id: name.into(), parent: "lane".into(), ordinal: u32::try_from(ordinal).unwrap(),
+                offset: 0, name: name.into(),
+            }).collect(),
+        names: Vec::new(), scalars: Vec::new(), relation_bindings: Vec::new(),
+        relation_instances: Vec::new(), body_selections: Vec::new(), edge_selections: Vec::new(),
+        surface_selections: Vec::new(), generated_surface_identities: Vec::new(),
+        references: Vec::new(), sketch_entities: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "index SLDPRT operation surface classes", None,
+        );
+        assert!(super::super::compact_surface_selections(&ctx, &[], &[], &lane, &[])
+            .unwrap().is_empty());
+        let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
+        assert!(classes.surfaces.get().is_none());
+        assert!(classes.split_classes.get().is_none());
+        assert!(super::super::operation_surface_selection_candidates(
+            &ctx, crate::classification::FeatureClass::CutWithSurface, &lane,
+            &classes, 0, 0, None,
+        ).unwrap().is_empty());
+        assert!(classes.surfaces.get().is_none());
+        assert!(classes.split_classes.get().is_none());
+    }
+    let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
+    assert!(classes.has_split_classes(&lane).unwrap());
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "index SLDPRT operation surface classes", None,
+    );
+    assert!(classes.has_split_classes(&lane).unwrap());
+    assert!(classes.surfaces.get().is_none());
+}
