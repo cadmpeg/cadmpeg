@@ -2999,12 +2999,13 @@ fn hole_marker_index<'index, 'lane, 'ctx>(
     lane: &'lane FeatureInputLane,
 ) -> Result<&'index mut HoleMarkers<'lane, 'ctx>, CodecError> {
     const OPERATION: &str = "index SLDPRT hole position marker lanes";
-    if ctx.get_hash_map(indexes, &lane_index, OPERATION)?.is_none() {
-        let markers = HoleMarkers::new(ctx, lane)?;
-        storage.with_storage(|| ctx.insert_hash_map(indexes, lane_index, markers, OPERATION))?;
+    match storage.with_storage(|| ctx.entry_hash_map(indexes, lane_index, OPERATION))? {
+        std::collections::hash_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            let markers = HoleMarkers::new(ctx, lane)?;
+            Ok(entry.insert(markers))
+        }
     }
-    ctx.get_mut_hash_map(indexes, &lane_index, OPERATION)?
-        .ok_or_else(|| CodecError::malformed("missing SLDPRT hole marker lane index"))
 }
 
 struct PositionSketches<'history, 'ctx> {
@@ -3147,6 +3148,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const INDEX_OPERATION: &str = "index SLDPRT spatial position features";
+    const NATIVE_FEATURE_INDEX_OPERATION: &str =
+        "index SLDPRT spatial position native features";
     if !ctx.any_by(&*features, |feature| Ok(hole_needs_placements(feature) && matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) if shape.diameter().is_some())), "find SLDPRT hole projection target")? {
         return Ok(());
     }
@@ -3156,7 +3159,12 @@ pub(crate) fn project_spatial_hole_position_sketches(
         for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
             let key = feature.id.as_str();
             names_storage.with_storage(|| {
-                ctx.insert_btree_map(&mut native_features, key, feature, INDEX_OPERATION)
+                ctx.insert_btree_map(
+                    &mut native_features,
+                    key,
+                    feature,
+                    NATIVE_FEATURE_INDEX_OPERATION,
+                )
             })?;
         }
     }
@@ -5055,6 +5063,8 @@ pub(crate) fn project_hole_axes(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const INDEX_OPERATION: &str = "index SLDPRT hole position features";
+    const NATIVE_FEATURE_INDEX_OPERATION: &str =
+        "index SLDPRT hole position native features";
 
     if !ctx.any_by(&*model_features, |feature| Ok(hole_needs_placements(feature) && matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) if shape.diameter().is_some())), "find SLDPRT hole projection target")? {
         return Ok(());
@@ -5068,7 +5078,7 @@ pub(crate) fn project_hole_axes(
                     &mut native_features,
                     feature.id.as_str(),
                     feature,
-                    INDEX_OPERATION,
+                    NATIVE_FEATURE_INDEX_OPERATION,
                 )
             })?;
         }

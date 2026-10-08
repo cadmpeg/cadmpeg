@@ -1,6 +1,10 @@
 //! Hole position-sketch and spatial-locus tests.
 
-use super::{cylinder, lane, lane_with_position_reference, model_hole, native_history};
+use super::{
+    cylinder, lane, lane_with_position_reference, model_hole, native_history,
+    native_history_with_second_feature, native_feature_index_node_bytes,
+    work_refusal_at_additional, SECOND_NATIVE_INDEX_FEATURE_ID,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
@@ -38,7 +42,7 @@ use crate::resolved_features::parameters::enrich_history_parameters;
 fn spatial_hole_position_route_refuses_collection_growth() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
-        "index SLDPRT spatial position features",
+        "index SLDPRT spatial position native features",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
@@ -57,7 +61,7 @@ fn spatial_hole_position_route_refuses_collection_growth() {
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT spatial position features"));
+            && limit.operation == "index SLDPRT spatial position native features"));
 }
 
 #[test]
@@ -84,6 +88,45 @@ fn spatial_hole_position_route_refuses_lookup_work() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT spatial position features"));
+}
+
+#[test]
+fn spatial_hole_native_feature_index_refuses_second_key_work() {
+    const OPERATION: &str = "index SLDPRT spatial position native features";
+    let history = native_history_with_second_feature();
+    let error = work_refusal_at_additional(
+        OPERATION,
+        u64::try_from(SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap(),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            project_spatial_hole_position_sketches(
+                &ctx,
+                &mut [model_hole()],
+                &[],
+                &[],
+                &[],
+                std::slice::from_ref(&history),
+                &[],
+            )
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected native feature key work refusal: {error:?}");
+    };
+    // One model target, one history, and two feature source steps precede
+    // the first insertion's three node-work passes. The second key comparison
+    // follows that admitted node work.
+    assert_eq!(
+        limit.used,
+        4 + 3 * native_feature_index_node_bytes()
+    );
+    assert_eq!(
+        limit.additional,
+        u64::try_from(SECOND_NATIVE_INDEX_FEATURE_ID.len()).unwrap()
+    );
 }
 
 #[test]
