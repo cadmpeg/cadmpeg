@@ -549,7 +549,8 @@ pub(crate) fn round_replay_scalars(
             else {
                 continue;
             };
-            let Some(scalar_offset) = round_replay_short_scalar(ctx, &row.body, separator, record_end)?
+            let Some(scalar_offset) =
+                round_replay_short_scalar(ctx, &row.body, separator, record_end)?
             else {
                 continue;
             };
@@ -580,18 +581,38 @@ pub(crate) fn round_replay_scalars(
     Ok(result)
 }
 
-fn round_replay_short_scalar(ctx: &DecodeContext<'_>, body: &[u8], start: usize, end: usize) -> Result<Option<usize>, CodecError> {
+fn round_replay_short_scalar(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<usize>, CodecError> {
     let mut offset = start;
     while offset < end {
-        if body.get(offset) == Some(&0x29) && scalar::decode(body, offset).is_some_and(|(value, scalar_end)| scalar_end == offset + 3 && scalar_end <= end && value.is_finite()) { return Ok(Some(offset)); }
-        let Some(next) = round_replay_token_end(ctx, body, offset, end)? else { return Ok(None); };
+        if body.get(offset) == Some(&0x29)
+            && scalar::decode(body, offset).is_some_and(|(value, scalar_end)| {
+                scalar_end == offset + 3 && scalar_end <= end && value.is_finite()
+            })
+        {
+            return Ok(Some(offset));
+        }
+        let Some(next) = round_replay_token_end(ctx, body, offset, end)? else {
+            return Ok(None);
+        };
         offset = next;
     }
     Ok(None)
 }
 
-fn round_replay_token_end(ctx: &DecodeContext<'_>, body: &[u8], offset: usize, end: usize) -> Result<Option<usize>, CodecError> {
-    let Some(&head) = body.get(offset) else { return Ok(None); };
+fn round_replay_token_end(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    offset: usize,
+    end: usize,
+) -> Result<Option<usize>, CodecError> {
+    let Some(&head) = body.get(offset) else {
+        return Ok(None);
+    };
     let next = match head {
         0x19 | 0x28 | 0x32 | 0x37 | 0x41 => offset.checked_add(8),
         0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 => offset.checked_add(7),
@@ -600,7 +621,9 @@ fn round_replay_token_end(ctx: &DecodeContext<'_>, body: &[u8], offset: usize, e
         0x18 => Some(psb::compact_int(body, offset + 1).1),
         _ => match scalar::decode(body, offset) {
             Some((_, scalar_end)) => Some(scalar_end),
-            None => psb::token_at(ctx, body, offset)?.and_then(|token| offset.checked_add(token.length)),
+            None => {
+                psb::token_at(ctx, body, offset)?.and_then(|token| offset.checked_add(token.length))
+            }
         },
     };
     Ok(next.filter(|&next| next > offset && next <= end))

@@ -34,8 +34,10 @@ pub(crate) fn decode(
         ctx.reserve_scoped(u64_from_index(expected_length), "inflate Creo TOC section")?;
     let mut output = ctx.begin_expand(ExpandSpec::Exact(u64_from_index(expected_length)))?;
     let mut dictionary_storage = ctx.reserve_scoped(0, "decode Creo LZW dictionary")?;
-    let mut prefix = dictionary_storage.with_storage(|| ctx.alloc_filled(dictionary_limit, 0u16, "creo LZW prefix slots"))?;
-    let mut suffix = dictionary_storage.with_storage(|| ctx.alloc_filled(dictionary_limit, 0u8, "creo LZW suffix slots"))?;
+    let mut prefix = dictionary_storage
+        .with_storage(|| ctx.alloc_filled(dictionary_limit, 0u16, "creo LZW prefix slots"))?;
+    let mut suffix = dictionary_storage
+        .with_storage(|| ctx.alloc_filled(dictionary_limit, 0u8, "creo LZW suffix slots"))?;
     for (value, slot) in suffix.iter_mut().take(256).enumerate() {
         let Ok(value) = u8::try_from(value) else {
             return Ok(None);
@@ -65,7 +67,10 @@ pub(crate) fn decode(
     let mut stack = stack_storage
         .with_storage(|| ctx.collection_vec(dictionary_limit, "creo LZW stack slots"))?;
 
-    while let Some(raw_code) = ctx.next_charged(&mut std::iter::from_fn(|| reader.next(free_entry, false)), "decode Creo LZW code")? {
+    while let Some(raw_code) = ctx.next_charged(
+        &mut std::iter::from_fn(|| reader.next(free_entry, false)),
+        "decode Creo LZW code",
+    )? {
         if block_mode && raw_code == CLEAR {
             free_entry = 257;
             let Some(code) = reader.next(free_entry, true) else {
@@ -116,7 +121,12 @@ pub(crate) fn decode(
         }
         let mut chain_steps = 0..dictionary_limit;
         while code >= 256 {
-            if ctx.next_charged(&mut chain_steps, "decode Creo LZW dictionary chain")?.is_none() { return Ok(None); }
+            if ctx
+                .next_charged(&mut chain_steps, "decode Creo LZW dictionary chain")?
+                .is_none()
+            {
+                return Ok(None);
+            }
             if code >= free_entry || code >= dictionary_limit {
                 return Ok(None);
             }
@@ -291,12 +301,17 @@ mod tests {
         let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, Some("inflate Creo TOC section"), |cap| {
-            let mut trial = policy;
-            trial.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &trial).expect("root");
-            super::decode(&ctx, &stream, 3)
-        });
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            Some("inflate Creo TOC section"),
+            |cap| {
+                let mut trial = policy;
+                trial.limits.max_materialized_bytes = cap;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&stream, &arena, &trial).expect("root");
+                super::decode(&ctx, &stream, 3)
+            },
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("small compressed input is admitted");
         let error = super::decode(&ctx, &stream, 3)

@@ -167,7 +167,10 @@ pub(crate) fn double_xar_tables(
         let mut slot_storage = ctx.reserve_scoped(0, "creo double_xar slots")?;
         let mut entries = Vec::new();
         let mut slots = 0..count;
-        while ctx.next_charged(&mut slots, "creo double_xar slot parsing")?.is_some() {
+        while ctx
+            .next_charged(&mut slots, "creo double_xar slot parsing")?
+            .is_some()
+        {
             let Some(head) = data.get(cursor).copied() else {
                 entries.clear();
                 break;
@@ -191,7 +194,9 @@ pub(crate) fn double_xar_tables(
                         (
                             DoubleXarSlot::Literal {
                                 value,
-                                raw: literal_storage.with_storage(|| ctx.copy_retained(raw, "creo double_xar literal bytes"))?,
+                                raw: literal_storage.with_storage(|| {
+                                    ctx.copy_retained(raw, "creo double_xar literal bytes")
+                                })?,
                             },
                             end,
                         )
@@ -202,7 +207,8 @@ pub(crate) fn double_xar_tables(
                     }
                 },
             };
-            slot_storage.with_storage(|| ctx.reserve_vec(&mut entries, 1, "creo double_xar slots"))?;
+            slot_storage
+                .with_storage(|| ctx.reserve_vec(&mut entries, 1, "creo double_xar slots"))?;
             entries.push(slot);
             cursor = end;
         }
@@ -278,7 +284,10 @@ impl ScalarCache {
         let mut image_storage = ctx.reserve_scoped(0, "creo scalar cache image scratch")?;
         let mut seen = HashSet::<[u8; 8]>::new();
         let mut paired_byte_1_by_tail = HashMap::new();
-        for (offset, &head) in ctx.admit_iter(section, "creo scalar cache discovery")?.enumerate() {
+        for (offset, &head) in ctx
+            .admit_iter(section, "creo scalar cache discovery")?
+            .enumerate()
+        {
             if head != 0x46 {
                 continue;
             }
@@ -291,7 +300,9 @@ impl ScalarCache {
                 byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
             ];
             // Fixed-width image probes are constant; table growth is admitted.
-            if !image_storage.with_storage(|| ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images"))? {
+            if !image_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")
+            })? {
                 continue;
             }
             let mut ieee = raw;
@@ -1348,9 +1359,7 @@ pub(crate) fn decode_plane_support_local_system(
         return Ok(None);
     };
     let primary_frame = match finite_local_system_slots(values) {
-        Some(frame) if plane_support_values_have_valid_frame(frame.as_raw(), layout) => {
-            Some(frame)
-        }
+        Some(frame) if plane_support_values_have_valid_frame(frame.as_raw(), layout) => Some(frame),
         _ => None,
     };
     if let Some(frame) = primary_frame {
@@ -1409,7 +1418,9 @@ fn plane_support_values_have_valid_frame(
         [values[3], values[4], values[5]],
         [values[6], values[7], values[8]],
     ];
-    [(0usize, 1usize), (0, 2), (1, 2)].iter().filter(|(first, second)| {
+    [(0usize, 1usize), (0, 2), (1, 2)]
+        .iter()
+        .filter(|(first, second)| {
             valid_equal_scale_orthogonal_directions(supports[*first], supports[*second])
         })
         .count()
@@ -2563,13 +2574,29 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = b"double_xar\0\xf8\x02\x10\xe0";
         assert_eq!(
-            double_xar_with_limits(bytes, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, |cap| double_xar_with_limits(bytes, cap, u64::MAX)), u64::MAX)
-                .expect("table admitted")
-                .len(),
+            double_xar_with_limits(
+                bytes,
+                crate::test_support::allocation_limit_at(
+                    ResourceDimension::CollectionItems,
+                    None,
+                    |cap| double_xar_with_limits(bytes, cap, u64::MAX)
+                ),
+                u64::MAX
+            )
+            .expect("table admitted")
+            .len(),
             1
         );
-        let error =
-            double_xar_with_limits(bytes, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo double_xar slots"), |cap| double_xar_with_limits(bytes, cap, u64::MAX)), u64::MAX).expect_err("second slot needs admission");
+        let error = double_xar_with_limits(
+            bytes,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo double_xar slots"),
+                |cap| double_xar_with_limits(bytes, cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("second slot needs admission");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -2581,7 +2608,16 @@ mod tests {
     fn double_xar_table_refuses_before_result_growth() {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-        let error = double_xar_with_limits(bytes, crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo double_xar tables"), |cap| double_xar_with_limits(bytes, cap, u64::MAX)), u64::MAX).expect_err("table needs admission");
+        let error = double_xar_with_limits(
+            bytes,
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo double_xar tables"),
+                |cap| double_xar_with_limits(bytes, cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("table needs admission");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -2626,12 +2662,20 @@ mod tests {
 
     #[test]
     fn scalar_cache_unique_image_refuses_before_hash_growth() {
-        let cache = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, checked_cache_with_collection_limit))
-            .expect("service-sized collection budget admits one scalar");
+        let cache = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            None,
+            checked_cache_with_collection_limit,
+        ))
+        .expect("service-sized collection budget admits one scalar");
         assert_eq!(cache.entries.len(), 1);
         assert_eq!(cache.paired_byte_1(&[1, 2, 3, 4, 5, 6]), Some(0x08));
-        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache unique images"), checked_cache_with_collection_limit))
-            .expect_err("the unique image needs one collection item");
+        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo scalar cache unique images"),
+            checked_cache_with_collection_limit,
+        ))
+        .expect_err("the unique image needs one collection item");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -2641,8 +2685,12 @@ mod tests {
 
     #[test]
     fn scalar_cache_paired_tail_refuses_before_tree_insert() {
-        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache paired tails"), checked_cache_with_collection_limit))
-            .expect_err("the paired tail follows the unique image");
+        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo scalar cache paired tails"),
+            checked_cache_with_collection_limit,
+        ))
+        .expect_err("the paired tail follows the unique image");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -2652,8 +2700,12 @@ mod tests {
 
     #[test]
     fn scalar_cache_entry_refuses_before_vector_growth() {
-        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo scalar cache entries"), checked_cache_with_collection_limit))
-            .expect_err("the scalar entry follows the hash and tree nodes");
+        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo scalar cache entries"),
+            checked_cache_with_collection_limit,
+        ))
+        .expect_err("the scalar entry follows the hash and tree nodes");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -4160,8 +4212,10 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy).expect("small dictionary input");
-        assert!(double_xar_tables(&ctx, data).expect("rejected slots are temporary").is_empty());
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("small dictionary input");
+        assert!(double_xar_tables(&ctx, data)
+            .expect("rejected slots are temporary")
+            .is_empty());
     }
-
 }

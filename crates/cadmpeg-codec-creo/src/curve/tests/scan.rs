@@ -48,8 +48,15 @@ fn fc05_circle_parameter() -> crate::curve::CurveParameterRecord {
 
 fn assert_fc05_circle_collection_refusal(operation: &'static str) {
     let parameter = fc05_circle_parameter();
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| crate::curve::fc05_circles(ctx, std::slice::from_ref(&parameter)));
-    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| crate::curve::fc05_circles(ctx, std::slice::from_ref(&parameter)),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation)
+    );
 }
 
 fn fc_curve_parameter() -> crate::curve::CurveParameterRecord {
@@ -65,12 +72,17 @@ fn fc_curve_parameter() -> crate::curve::CurveParameterRecord {
     scan.curves.parameters.remove(0)
 }
 
-
-
 fn assert_fc_coordinate_collection_refusal(operation: &'static str) {
     let parameter = fc_curve_parameter();
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| crate::curve::fc_coordinates(ctx, std::slice::from_ref(&parameter)));
-    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| crate::curve::fc_coordinates(ctx, std::slice::from_ref(&parameter)),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation)
+    );
 }
 
 fn assert_fc_coordinate_retained_refusal(operation: &'static str) {
@@ -89,16 +101,21 @@ fn assert_fc_coordinate_retained_refusal(operation: &'static str) {
 
 fn assert_fc_coordinate_materialized_refusal(operation: &'static str) {
     let parameter = fc_curve_parameter();
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::MaterializedBytes, operation, |ctx| crate::curve::fc_coordinates(ctx, std::slice::from_ref(&parameter)));
-    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::MaterializedBytes && resource.operation == operation));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        operation,
+        |ctx| crate::curve::fc_coordinates(ctx, std::slice::from_ref(&parameter)),
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::MaterializedBytes && resource.operation == operation)
+    );
 }
 
 #[test]
 fn fc_coordinates_refuse_unique_parameter_count_node() {
     assert_fc_coordinate_collection_refusal("creo unique-row count nodes");
 }
-
-
 
 #[test]
 fn fc_coordinates_refuse_token_vector() {
@@ -139,8 +156,6 @@ fn fc_coordinates_refuse_body_retained_bytes() {
 fn fc05_circles_refuse_unique_parameter_count_node() {
     assert_fc05_circle_collection_refusal("creo unique-row count nodes");
 }
-
-
 
 #[test]
 fn fc05_circles_refuse_point_rows() {
@@ -834,12 +849,16 @@ fn prototype_topology_rows_refuse_collection_limit() {
     payload.extend_from_slice(b"topol_ref_data\0");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo prototype topology rows"), |cap| {
-        let mut trial = policy;
-        trial.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
-        crate::curve::prototype_topology(&ctx, &payload)
-    });
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo prototype topology rows"),
+        |cap| {
+            let mut trial = policy;
+            trial.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
+            crate::curve::prototype_topology(&ctx, &payload)
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = crate::curve::prototype_topology(&ctx, &payload)
         .expect_err("one labeled topology exceeds collection limit");
