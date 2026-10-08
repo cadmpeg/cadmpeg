@@ -1055,8 +1055,8 @@ fn native_overlap_filter_refuses_before_inventory_mutation() {
         else {
             panic!("resource refusal required")
         };
-        // The block retain charges one source slot before any overlap scan.
-        assert_eq!(limit.operation, "catia_native_inventory_blocks_retain");
+        // The index source visit is admitted before any inventory mutation.
+        assert_eq!(limit.operation, "catia_native_extent_index_visits");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
     assert_eq!(graphs.len(), 1);
