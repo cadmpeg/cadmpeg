@@ -3501,9 +3501,7 @@ fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
         ),
         _ if symbol.eq_ignore_ascii_case("r") => (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE),
         symbol => {
-            let Some((scale, dimension)) = multiplicative_relation_unit_symbol(symbol) else {
-                return None;
-            };
+            let (scale, dimension) = multiplicative_relation_unit_symbol(symbol)?;
             (scale, 0.0, dimension)
         }
     };
