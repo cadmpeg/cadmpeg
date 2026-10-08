@@ -42,11 +42,7 @@ pub(in super::super) fn feature_section_sweep_semantics_conflict(
     {
         return Ok(false);
     }
-    ctx.equal(
-        &operation.kind,
-        &crate::feature::operations::OperationKind::Native,
-        "creo feature operation kind comparison",
-    )
+    Ok(matches!(operation.kind, crate::feature::operations::OperationKind::Native))
 }
 
 pub(in super::super) fn current_additive_feature_recipe(
@@ -210,15 +206,22 @@ pub(in super::super) fn current_feature_operation<'operations>(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(CodecError::ResourceLimit(refusal));
     }
-    if operations.is_empty() {
-        return Ok(None);
+    let mut selected = None;
+    let mut operations = operations.iter();
+    while operations.len() != 0 {
+        let Some(operation) = ctx.next_charged(
+            &mut operations, "creo current feature operation rows",
+        )? else {
+            break;
+        };
+        if operation.feature_id == feature_id {
+            if selected.is_some() {
+                return Ok(None);
+            }
+            selected = Some(operation);
+        }
     }
-    crate::decode::uniqueness::exactly_one_by(
-        ctx,
-        operations,
-        |operation| Ok(operation.feature_id == feature_id),
-        "creo current feature operation rows",
-    )
+    Ok(selected)
 }
 
 pub(in super::super) fn feature_schema_class(
