@@ -2528,15 +2528,15 @@ pub(super) fn decode<'ctx>(
                 continue;
             };
 
-            let Some(parameter_scales) = procedural_surface_parameter_scales(
+            let Some(parameter_scales) = worklist_scale_storage.with_storage(|| procedural_surface_parameter_scales(
                 ir,
-                &worklist_scale_index,
+                &mut worklist_scale_index,
                 &SurfaceId::from(ids::data(kind!("surface"), support_step)),
                 geometry,
                 [record_scale, record_angle_scale],
                 &source_curve_parameter_scales,
                 ctx,
-            )?
+            ))?
             else {
                 ctx.push_vec(
                     &mut losses,
@@ -3191,14 +3191,14 @@ pub(super) fn decode<'ctx>(
         }
     }
     let mut surface_parameter_scales = BTreeMap::new();
-    let (scale_index, scale_index_workspace) = SurfaceScaleIndex::build(ir, ctx)?;
+    let (mut scale_index, mut scale_index_workspace) = SurfaceScaleIndex::build(ir, ctx)?;
     for surface in ctx.admit_iter(&ir.model.surfaces[..], "STEP decode traversal")? {
         let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
             continue;
         };
-        if let Some(scales) = procedural_surface_parameter_scales(
+        if let Some(scales) = scale_index_workspace.with_storage(|| procedural_surface_parameter_scales(
             ir,
-            &scale_index,
+            &mut scale_index,
             &surface.id,
             &surface.geometry,
             [
@@ -3207,7 +3207,7 @@ pub(super) fn decode<'ctx>(
             ],
             &source_curve_parameter_scales,
             ctx,
-        )? {
+        ))? {
             scratch.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut surface_parameter_scales,
@@ -6588,6 +6588,7 @@ fn nurbs_curve_definition<'a>(
     losses: &mut Vec<LossNote>,
     periodicity_field: &str,
     mut storage: Option<&mut ScopedReservation<'_>>,
+    weight_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsCurveDefinition<'a>>, CodecError> {
     let (base, offset) = if record.partials.len() > 1 {
@@ -6675,11 +6676,9 @@ fn nurbs_curve_definition<'a>(
         return Ok(None);
     }
     let weights = if let Some(leaf) = record.partial(ctx, "RATIONAL_B_SPLINE_CURVE")? {
-        Some(geometry_or_none!(if let Some(storage) = storage {
-            storage.with_storage(|| numbers(geometry_or_none!(leaf.parameters.first()), ctx))
-        } else {
+        Some(geometry_or_none!(weight_storage.with_storage(|| {
             numbers(geometry_or_none!(leaf.parameters.first()), ctx)
-        }?))
+        })?))
     } else {
         None
     };
@@ -6702,6 +6701,7 @@ fn default_nurbs_knots(
     let expected = geometry_or_none!(control_point_count
         .checked_add(degree)
         .and_then(|count| count.checked_add(1)));
+    let mut staging = ctx.reserve_scoped(0, "step finite knot staging")?;
     let mut knots = Vec::new();
     match kind {
         DefaultNurbsKnotKind::Uniform => {
@@ -6710,7 +6710,7 @@ fn default_nurbs_knots(
                 let index = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
                 let degree = geometry_or_none!(cadmpeg_core::convert::f64_from_index(degree));
                 let knot = geometry_or_none!(FiniteReal::new(index - degree));
-                ctx.push_vec(&mut knots, knot, "step_default_nurbs_knots")?;
+                ctx.push_scoped_vec(&mut staging, &mut knots, knot, "step_default_nurbs_knots")?;
             }
         }
         DefaultNurbsKnotKind::QuasiUniform => {
@@ -6730,7 +6730,7 @@ fn default_nurbs_knots(
                     cadmpeg_core::convert::f64_from_index(index)
                 )));
                 for _ in ctx.admit_iter(0..multiplicity, "STEP repeated knot traversal")? {
-                    ctx.push_vec(&mut knots, knot, "step_default_nurbs_knots")?;
+                    ctx.push_scoped_vec(&mut staging, &mut knots, knot, "step_default_nurbs_knots")?;
                 }
             }
         }
@@ -6757,7 +6757,7 @@ fn default_nurbs_knots(
                     cadmpeg_core::convert::f64_from_index(index)
                 )));
                 for _ in ctx.admit_iter(0..multiplicity, "STEP repeated knot traversal")? {
-                    ctx.push_vec(&mut knots, knot, "step_default_nurbs_knots")?;
+                    ctx.push_scoped_vec(&mut staging, &mut knots, knot, "step_default_nurbs_knots")?;
                 }
             }
         }
@@ -6775,12 +6775,14 @@ fn nurbs_curve(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsCurve>, CodecError> {
+    let mut staging = ctx.reserve_scoped(0, "step rational curve lanes")?;
     let definition = geometry_or_none!(nurbs_curve_definition(
         id,
         record,
         losses,
         "B_SPLINE_CURVE",
         None,
+        &mut staging,
         ctx
     )?);
     let mut control_points = Vec::new();
@@ -6790,11 +6792,13 @@ fn nurbs_curve(
         let point = geometry_or_none!(ctx
             .get_btree_map(points, &id, "step_geometry_lookup")?
             .copied());
-        ctx.push_vec(
-            &mut control_points,
-            point,
-            "step_nurbs_curve_control_points",
-        )?;
+        if definition.weights.is_some() {
+            ctx.push_scoped_vec(
+                &mut staging, &mut control_points, point, "step_nurbs_curve_control_points",
+            )?;
+        } else {
+            ctx.push_vec(&mut control_points, point, "step_nurbs_curve_control_points")?;
+        }
     }
     let curve = NurbsCurve::from_lanes(
         ctx,
@@ -6804,6 +6808,7 @@ fn nurbs_curve(
         definition.weights,
         definition.periodic,
     )?;
+    drop(staging);
     match curve {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
@@ -6828,12 +6833,14 @@ fn nurbs_pcurve(
     storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PcurveGeometry>, CodecError> {
+    let mut staging = ctx.reserve_scoped(0, "step rational curve lanes")?;
     let definition = geometry_or_none!(nurbs_curve_definition(
         id,
         record,
         losses,
         "B_SPLINE_CURVE pcurve",
         Some(storage),
+        &mut staging,
         ctx
     )?);
     let mut control_points = Vec::new();
@@ -6861,6 +6868,7 @@ fn nurbs_pcurve(
             definition.periodic,
         )
     })?;
+    drop(staging);
     match pcurve {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
@@ -7362,7 +7370,7 @@ fn shift_periodic_parameter(value: f64, [lower, upper]: [f64; 2]) -> f64 {
 
 fn procedural_surface_parameter_scales(
     ir: &CadIr,
-    index: &SurfaceScaleIndex,
+    index: &mut SurfaceScaleIndex,
     surface_id: &SurfaceId,
     geometry: &SurfaceGeometry,
     unit_scales: [f64; 2],
@@ -7371,30 +7379,56 @@ fn procedural_surface_parameter_scales(
 ) -> Result<Option<[f64; 2]>, CodecError> {
     let _depth = ctx.enter_nested("step_surface_parameter_scale_walk")?;
     let mut active_storage = ctx.reserve_scoped(0, "step surface scale traversal storage")?;
-    let mut active = BTreeSet::new();
+    let mut active = BTreeMap::new();
     let mut surface_id = surface_id;
     let mut geometry = geometry;
-    loop {
+    let (scales, terminal) = loop {
         ctx.charge_work(1, "step surface parameter scale walk")?;
-        if ctx.contains_btree_set(&active, surface_id, "STEP active membership")? {
-            return Ok(None);
+        let position = ctx.get_btree_map(
+            &index.surfaces, surface_id.as_str(), "step surface scale lookup",
+        )?.copied().filter(|&position| {
+            ir.model.surfaces.get(position).is_some_and(|carrier| {
+                std::ptr::eq(&carrier.geometry, geometry)
+            })
+        });
+        if let Some((generation, terminal)) = position.map(|position| {
+            ctx.get_btree_map(&index.terminals, &position, "step surface scale memo")
+        }).transpose()?.flatten().copied() {
+            if generation == index.generation {
+                let Some(terminal) = terminal else {
+                    break (None, None);
+                };
+                let Some(carrier) = ir.model.surfaces.get(terminal) else {
+                    return Ok(None);
+                };
+                let Some(solved) = carrier.geometry.solved() else {
+                    break (None, Some(terminal));
+                };
+                // Apply this requester's units at the terminal, never cache numeric scales.
+                match surface_geometry_parameter_scales(
+                    ir, index, &carrier.id, solved, unit_scales,
+                    source_curve_parameter_scales, ctx,
+                )? {
+                    SurfaceScaleStep::Value(scales) => break (scales, Some(terminal)),
+                    // A first procedure can turn a previously unknown terminal into a support.
+                    SurfaceScaleStep::Support(_) => index.generation += 1,
+                }
+            }
+        }
+        if ctx.contains_key_btree_map(&active, surface_id, "STEP active membership")? {
+            break (None, None);
         }
         active_storage.with_storage(|| {
-            ctx.insert_btree_set(&mut active, surface_id, "step_surface_scale_active")
+            ctx.insert_btree_map(&mut active, surface_id, position, "step_surface_scale_active")
         })?;
         let Some(solved) = geometry.solved() else {
-            return Ok(None);
+            break (None, position);
         };
         match surface_geometry_parameter_scales(
-            ir,
-            index,
-            surface_id,
-            solved,
-            unit_scales,
-            source_curve_parameter_scales,
-            ctx,
+            ir, index, surface_id, solved, unit_scales,
+            source_curve_parameter_scales, ctx,
         )? {
-            SurfaceScaleStep::Value(scales) => return Ok(scales),
+            SurfaceScaleStep::Value(scales) => break (scales, position),
             SurfaceScaleStep::Support(support) => {
                 let Some(carrier) = index.surface(ir, ctx, support)? else {
                     return Ok(None);
@@ -7403,7 +7437,16 @@ fn procedural_surface_parameter_scales(
                 geometry = &carrier.geometry;
             }
         }
+    };
+    for (_, position) in ctx.admit_iter(active, "step surface scale memo traversal")? {
+            if let Some(position) = position {
+                ctx.insert_btree_map(
+                    &mut index.terminals, position, (index.generation, terminal),
+                    "step surface scale memo",
+                )?;
+            }
     }
+    Ok(scales)
 }
 
 /// Arena positions remain valid when the worklist appends model records.
@@ -7413,6 +7456,9 @@ struct SurfaceScaleIndex {
     owners: BTreeMap<String, Option<String>>,
     procedurals: BTreeMap<String, Vec<usize>>,
     owned_procedurals: BTreeMap<String, BTreeSet<usize>>,
+    // A terminal position is independent of a requesting surface's unit context.
+    terminals: BTreeMap<usize, (usize, Option<usize>)>,
+    generation: usize,
 }
 
 impl SurfaceScaleIndex {
@@ -7427,6 +7473,8 @@ impl SurfaceScaleIndex {
             owners: BTreeMap::new(),
             procedurals: BTreeMap::new(),
             owned_procedurals: BTreeMap::new(),
+            terminals: BTreeMap::new(),
+            generation: 0,
         };
         workspace.with_storage(|| -> Result<(), CodecError> {
             for (position, curve) in ctx
@@ -7499,6 +7547,7 @@ impl SurfaceScaleIndex {
             "step surface scale owners",
         )? {
             if let Some(owner) = owner.take() {
+                self.generation += 1;
                 // A second owner invalidates every procedure for this construction.
                 if let Some(procedurals) = ctx.get_btree_map(
                     &self.procedurals,
@@ -7570,6 +7619,12 @@ impl SurfaceScaleIndex {
         position: usize,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
+        if ctx.contains_key_btree_map(
+            &self.procedurals, procedural.id.as_str(), "step surface scale procedurals",
+        )? {
+            // Additional procedures can change a unique terminal into an ambiguous owner.
+            self.generation += 1;
+        }
         let key = ctx.format_retained(
             format_args!("{}", procedural.id.as_str()),
             "step surface scale procedurals",
@@ -7952,7 +8007,6 @@ fn polyline(
             .map(|id| Ok::<_, CodecError>(
                 ctx.get_btree_map(points, &id, "step_geometry_lookup")?
                     .copied()
-                    .map(FinitePoint3::get)
             ))
             .transpose()?
             .flatten());
@@ -8058,6 +8112,8 @@ fn nurbs_surface(
     {
         return Ok(None);
     }
+    let rational_leaf = record.partial(ctx, "RATIONAL_B_SPLINE_SURFACE")?;
+    let mut staging = ctx.reserve_scoped(0, "step rational surface lanes")?;
     let mut control_points = Vec::new();
     let mut source_rows = rows.iter();
     while let Some(row) =
@@ -8073,13 +8129,20 @@ fn nurbs_surface(
                 .map(|id| Ok::<_, CodecError>(
                     ctx.get_btree_map(points, &id, "step_geometry_lookup")?
                         .copied()
-                        .map(FinitePoint3::get)
                 ))
                 .transpose()?
                 .flatten());
-            ctx.push_vec(&mut decoded_row, point, "step_nurbs_surface_control_points")?;
+            if rational_leaf.is_some() {
+                ctx.push_scoped_vec(&mut staging, &mut decoded_row, point, "step_nurbs_surface_control_points")?;
+            } else {
+                ctx.push_vec(&mut decoded_row, point, "step_nurbs_surface_control_points")?;
+            }
         }
-        ctx.push_vec(&mut control_points, decoded_row, "step_nurbs_surface_rows")?;
+        if rational_leaf.is_some() {
+            ctx.push_scoped_vec(&mut staging, &mut control_points, decoded_row, "step_nurbs_surface_rows")?;
+        } else {
+            ctx.push_vec(&mut control_points, decoded_row, "step_nurbs_surface_rows")?;
+        }
     }
     let surface_name = entity_type(
         ctx,
@@ -8171,7 +8234,7 @@ fn nurbs_surface(
     if u_knots.len() != expected_u || v_knots.len() != expected_v {
         return Ok(None);
     }
-    let weights = if let Some(leaf) = record.partial(ctx, "RATIONAL_B_SPLINE_SURFACE")? {
+    let weights = if let Some(leaf) = rational_leaf {
         let rows = geometry_or_none!(leaf.parameters.first().and_then(Value::list));
         let mut values = Vec::new();
         let mut source_rows = rows.iter();
@@ -8184,9 +8247,9 @@ fn nurbs_surface(
                 ctx.next_charged(&mut source_values, "STEP nurbs surface borrowed traversal")?
             {
                 let number = geometry_or_none!(value.number());
-                ctx.push_vec(&mut decoded_row, number, "step_nurbs_surface_weight_values")?;
+                ctx.push_scoped_vec(&mut staging, &mut decoded_row, number, "step_nurbs_surface_weight_values")?;
             }
-            ctx.push_vec(&mut values, decoded_row, "step_nurbs_surface_weight_rows")?;
+            ctx.push_scoped_vec(&mut staging, &mut values, decoded_row, "step_nurbs_surface_weight_rows")?;
         }
         Some(values)
     } else {
@@ -8199,6 +8262,7 @@ fn nurbs_surface(
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
         false,
     )?;
+    drop(staging);
     match surface {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
@@ -8226,6 +8290,7 @@ fn expand_knots(
     if multiplicities.len() != distinct.len() {
         return Ok(None);
     }
+    let mut staging = ctx.reserve_scoped(0, "step finite knot staging")?;
     let mut knots = Vec::new();
     let mut pairs = multiplicities.iter().zip(distinct);
     while let Some((multiplicity, knot)) =
@@ -8244,7 +8309,7 @@ fn expand_knots(
             return Ok(None);
         }
         for _ in ctx.admit_iter(0..count, "STEP knot repetition traversal")? {
-            ctx.push_vec(&mut knots, knot, "step_expanded_nurbs_knots")?;
+            ctx.push_scoped_vec(&mut staging, &mut knots, knot, "step_expanded_nurbs_knots")?;
         }
     }
     Ok(KnotVector::from_finite_lanes(ctx, knots)?.ok())

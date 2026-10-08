@@ -2,7 +2,7 @@
 //! AP242 indexed tessellation decoding.
 
 use crate::ids::kind;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
@@ -134,7 +134,7 @@ pub(super) fn decode(
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
             mode: AssociationMode::BodyItems,
-            active: BTreeSet::new(),
+            active: HashSet::new(),
             active_storage: ctx.reserve_scoped(0, "step_tessellation_active_items")?,
             reservations: &mut reservations,
             ctx,
@@ -201,7 +201,7 @@ pub(super) fn decode(
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
             mode: AssociationMode::Placements,
-            active: BTreeSet::new(),
+            active: HashSet::new(),
             active_storage: ctx.reserve_scoped(0, "step_tessellation_active_items")?,
             reservations: &mut reservations,
             ctx,
@@ -241,7 +241,7 @@ pub(super) fn decode(
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
             mode: AssociationMode::DetachedAnnotation,
-            active: BTreeSet::new(),
+            active: HashSet::new(),
             active_storage: ctx.reserve_scoped(0, "step_tessellation_active_items")?,
             reservations: &mut reservations,
             ctx,
@@ -873,7 +873,7 @@ struct TessellationItemAssociator<'a, 'ctx, 'arena> {
     unresolved_placements: &'a mut BTreeSet<u64>,
     body_context_items: &'a mut BTreeSet<u64>,
     mode: AssociationMode,
-    active: BTreeSet<u64>,
+    active: HashSet<u64>,
     reservations: &'a mut AssociationReservations<'ctx>,
     ctx: &'ctx DecodeContext<'arena>,
     active_storage: ScopedReservation<'ctx>,
@@ -884,20 +884,20 @@ impl TessellationItemAssociator<'_, '_, '_> {
         let _depth_guard = self.ctx.enter_nested("step_tessellation_association")?;
         if self
             .ctx
-            .contains_btree_set(&self.active, &id, "step_tessellation_lookup")?
+            .contains_hash_set(&self.active, &id, "step_tessellation_lookup")?
         {
             return Ok(());
         }
         self.active_storage.with_storage(|| {
             self.ctx
-                .insert_btree_set(&mut self.active, id, "step_tessellation_active_items")
+                .insert_hash_set(&mut self.active, id, "step_tessellation_active_items")
         })?;
         let Some(record) =
             self.ctx
                 .get_btree_map(self.exchange.records(), &id, "step_tessellation_lookup")?
         else {
             self.ctx
-                .remove_btree_set(&mut self.active, &id, "step_tessellation_lookup")?;
+                .remove_hash_set(&mut self.active, &id, "step_tessellation_lookup")?;
             return Ok(());
         };
         let local_placement = if has_entity(self.ctx, record, "REPOSITIONED_TESSELLATED_ITEM")? {
@@ -1034,7 +1034,7 @@ impl TessellationItemAssociator<'_, '_, '_> {
             )?;
         }
         self.ctx
-            .remove_btree_set(&mut self.active, &id, "step_tessellation_lookup")?;
+            .remove_hash_set(&mut self.active, &id, "step_tessellation_lookup")?;
         Ok(())
     }
 }

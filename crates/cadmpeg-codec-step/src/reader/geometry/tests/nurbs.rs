@@ -355,3 +355,100 @@ fn a_weight_lane_shorter_than_its_pole_lane_is_stated_as_a_loss() {
         result.report().losses
     );
 }
+
+
+#[test]
+fn finite_knot_staging_does_not_consume_retained_bytes() {
+    use cadmpeg_core::decode::DecodePolicy;
+    use crate::parse::Value;
+    for defaulted in [false, true] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1024;
+        policy.limits.max_materialized_bytes = 1024;
+        crate::test_support::with_policy_context(b"finite knots", &policy, |_, ctx| {
+            let knots = if defaulted {
+                super::super::default_nurbs_knots(
+                    3, 2, super::super::DefaultNurbsKnotKind::Bezier, ctx,
+                )
+            } else {
+                super::super::expand_knots(
+                    &Value::List(vec![Value::Integer(3), Value::Integer(3)]),
+                    &Value::List(vec![Value::Integer(0), Value::Integer(1)]), 6, ctx,
+                )
+            }.expect("admitted knots").expect("ordered knots").into_values();
+            assert_eq!(knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+            // Only the final f64 backing capacity survives. FiniteReal staging
+            // must not consume any of the remaining retained allowance.
+            let retained = u64::try_from(knots.capacity() * std::mem::size_of::<f64>()).expect("small knots");
+            ctx.charge_retained(1024 - retained, "remaining retained allowance").expect("no retained staging");
+            let _released = ctx.reserve_scoped(1024, "released finite knot staging").expect("staging released");
+        });
+    }
+}
+
+#[test]
+fn rational_nurbs_curve_separate_lanes_have_materialized_boundaries() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::FinitePoint3;
+    use std::collections::BTreeMap;
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=CARTESIAN_POINT('',(1.,1.,0.));#3=CARTESIAN_POINT('',(2.,0.,0.));#4=(BOUNDED_CURVE() B_SPLINE_CURVE(2,(#1,#2,#3),.UNSPECIFIED.,.F.,.F.) BEZIER_CURVE() RATIONAL_B_SPLINE_CURVE((1.,.5,1.)) CURVE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('rational'));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("exchange");
+    let points = BTreeMap::from([
+        (1, FinitePoint3::ZERO),
+        (2, FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0)).expect("point")),
+        (3, FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0)).expect("point")),
+    ]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes, "step_nurbs_curve_control_points", |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            crate::test_support::with_policy_context(source, &policy, |_, ctx| {
+                super::super::nurbs_curve(4, &exchange.records()[&4], &points, &mut Vec::new(), ctx)
+            })
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "step_nurbs_curve_control_points"));
+    crate::test_support::with_service_context(source, |_, ctx| {
+        let curve = super::super::nurbs_curve(
+            4, &exchange.records()[&4], &points, &mut Vec::new(), ctx,
+        ).expect("curve admission").expect("curve");
+        assert_eq!(curve.pole_rows().points(), vec![points[&1], points[&2], points[&3]]);
+        assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 0.5, 1.0]));
+    });
+}
+
+
+#[test]
+fn rational_nurbs_surface_separate_lanes_have_materialized_boundaries() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::FinitePoint3;
+    use std::collections::BTreeMap;
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=CARTESIAN_POINT('',(1.,0.,0.));#3=CARTESIAN_POINT('',(0.,1.,0.));#4=CARTESIAN_POINT('',(1.,1.,0.));#5=(BOUNDED_SURFACE() B_SPLINE_SURFACE(1,1,((#1,#2),(#3,#4)),.UNSPECIFIED.,.F.,.F.,.F.) BEZIER_SURFACE() RATIONAL_B_SPLINE_SURFACE(((1.,1.),(1.,1.))) SURFACE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('rational'));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("exchange");
+    let points = BTreeMap::from([
+        (1, FinitePoint3::ZERO),
+        (2, FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)).expect("point")),
+        (3, FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)).expect("point")),
+        (4, FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0)).expect("point")),
+    ]);
+    let run = |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        crate::test_support::with_policy_context(source, &policy, |_, ctx| {
+            super::super::nurbs_surface(5, &exchange.records()[&5], &points, &mut Vec::new(), ctx)
+        })
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes, "step_nurbs_surface_control_points", run,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "step_nurbs_surface_control_points"));
+    let surface = run(u64::MAX).expect("surface admission").expect("surface");
+    assert_eq!(surface.control_grid(), vec![vec![points[&1], points[&2]], vec![points[&3], points[&4]]]);
+    assert_eq!(surface.pole_grid().weights(), Some(vec![vec![1.0, 1.0], vec![1.0, 1.0]]));
+}

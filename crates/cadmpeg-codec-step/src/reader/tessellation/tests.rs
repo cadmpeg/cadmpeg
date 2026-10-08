@@ -1577,3 +1577,45 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
 mod placement_work;
 
 mod collection_limits;
+
+
+#[test]
+fn tessellation_sibling_visits_reuse_active_storage() {
+    use std::collections::{BTreeMap, BTreeSet, HashSet};
+    let mut source = String::from("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;");
+    for id in 1..=256 {
+        writeln!(source, "#{id}=UNKNOWN_ITEM();").expect("leaf");
+    }
+    source.push_str("ENDSEC;END-ISO-10303-21;");
+    let (exchange, _) = with_service_context(source.as_bytes(), parse_inner).expect("exchange");
+    with_service_context(source.as_bytes(), |_, geometry_ctx| {
+        let geometry = super::super::geometry::decode(&exchange, &mut CadIr::empty(), geometry_ctx).expect("geometry");
+        let run = |cap, siblings| -> Result<(), CodecError> {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)?;
+            let mut associator = super::TessellationItemAssociator {
+                bodies: &[], exchange: &exchange,
+                item_bodies: &mut BTreeMap::new(), declared_items: &mut BTreeSet::new(),
+                unresolved_containers: &mut BTreeSet::new(), typed: &mut BTreeSet::new(),
+                geometry: &geometry.value, placements: &mut BTreeMap::new(),
+                unresolved_placements: &mut BTreeSet::new(), body_context_items: &mut BTreeSet::new(),
+                mode: super::AssociationMode::Placements, active: HashSet::new(),
+                reservations: &mut super::AssociationReservations::new(&ctx)?, ctx: &ctx,
+                active_storage: ctx.reserve_scoped(0, "step_tessellation_active_items")?,
+            };
+            for id in 1..=siblings {
+                associator.visit(id, None)?;
+                assert!(associator.active.is_empty());
+            }
+            Ok(())
+        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes, "step_tessellation_active_items", |cap| run(cap, 1),
+        );
+        let CodecError::ResourceLimit(limit) = error else { panic!("active storage refusal"); };
+        // All 256 completed leaves use the first admitted backing allocation.
+        run(limit.used + limit.additional, 256).expect("sibling storage is reused");
+    });
+}
