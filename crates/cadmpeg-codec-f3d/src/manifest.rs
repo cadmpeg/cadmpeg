@@ -881,7 +881,18 @@ fn parse_revision_ten_design_asset<'ctx>(
     cursor.expect_u8("revision-10 Fusion asset subtype mode", 0)?;
     let mut link_count = 0_usize;
     loop {
-        cursor.expect_u32("revision-10 Fusion asset entry marker", 2)?;
+        let marker = cursor.u32("revision-10 Fusion asset entry marker")?;
+        if marker == 0 {
+            let _root_revision = cursor.u32("revision-10 Fusion asset root revision")?;
+            break;
+        }
+        if marker != 2 {
+            return Err(probe_malformed(
+                cursor.ctx,
+                "revision-10 Fusion asset entry marker",
+                format_args!("expected 0 or 2, found {marker}"),
+            ));
+        }
         let locator_units = cursor.count(
             "revision-10 Fusion asset locator length or root revision",
             MAX_MANIFEST_STRING_UNITS,
