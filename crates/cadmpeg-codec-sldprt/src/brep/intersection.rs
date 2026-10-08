@@ -233,6 +233,16 @@ fn chart_candidates(
         )? {
             continue;
         }
+        if !extended
+            && first == last
+            && ctx.all_by(
+                1..count - 1,
+                |index| Ok(finite_point(bytes, block + index * stride) == Some(first)),
+                "compare Parasolid chart points",
+            )?
+        {
+            continue;
+        }
         let mut interior_points =
             ctx.vector_storage(count - 2, "decode Parasolid chart interior points")?;
         for index in ctx.admit_iter(1..count - 1, "decode Parasolid chart interior points")? {
@@ -243,16 +253,6 @@ fn chart_candidates(
                     "decode Parasolid chart interior points",
                 )?;
             }
-        }
-        if !extended
-            && first == last
-            && ctx.all_by(
-                &interior_points,
-                |point| Ok(*point == first),
-                "compare Parasolid chart points",
-            )?
-        {
-            continue;
         }
         ctx.push_vec(
             &mut candidates,
