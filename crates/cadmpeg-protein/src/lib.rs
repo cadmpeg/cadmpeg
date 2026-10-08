@@ -1465,6 +1465,35 @@ mod tests {
     }
 
     #[test]
+    fn standard_schema_archive_ceiling_matches_the_context_refusal() {
+        let mut bytes = schema_archive(&[(
+            "Schemas/SimpleSchema.xml", "<Schema><UID val=\"Simple\"/></Schema>",
+        )]);
+        let size = u32::try_from(super::MAX_SCHEMA_BYTES + 1)
+            .expect("local ceiling fits ZIP32").to_le_bytes();
+        let central = bytes.windows(4).position(|bytes| bytes == b"PK\x01\x02")
+            .expect("central header");
+        bytes[central + 24..central + 28].copy_from_slice(&size);
+        bytes[22..26].copy_from_slice(&size);
+        let error = super::SchemaCatalog::load(super::admission::StandardAdmission, bytes.as_slice())
+            .err().expect("standard format ceiling");
+        let CodecError::ResourceLimit(expected) = error else { panic!("schema size refusal"); };
+        assert_eq!(expected.dimension, ResourceDimension::Codec("Protein schema bytes"));
+        assert_eq!(expected.operation, "Protein schema bytes");
+        assert_eq!(expected.limit, super::MAX_SCHEMA_BYTES);
+        assert_eq!(expected.used, super::MAX_SCHEMA_BYTES);
+        assert_eq!(expected.additional, 1);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("fixture input");
+        let error = super::SchemaCatalog::load(&ctx, root).err().expect("context format ceiling");
+        assert!(matches!(error, CodecError::ResourceLimit(actual) if actual == expected));
+        assert_eq!(ctx.resource_refusal(), Some(expected.clone()));
+        assert!(matches!(ctx.charge_work(0, "after schema size refusal"),
+            Err(CodecError::ResourceLimit(original)) if original == expected));
+    }
+
+    #[test]
     fn schema_catalog_storage_is_scoped_and_released_with_the_catalog() {
         let xml =
             br#"<Schema><UID val="Simple"/><Base val="Root"/><String id="comment"/></Schema>"#;
@@ -1718,6 +1747,97 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
         ));
+    }
+
+    #[test]
+    fn standard_counted_value_ceilings_match_the_context_refusal() {
+        let mut repeated = 1_025_u32.to_le_bytes().to_vec();
+        repeated.extend(std::iter::repeat_n(0_u8, 1_025 * 4));
+        let mut paths = vec![0_u8];
+        paths.extend_from_slice(&repeated);
+        let mut connections = vec![1_u8, 1];
+        connections.extend_from_slice(&repeated);
+        for (kind, bytes) in [(0, &repeated), (1, &paths), (2, &connections)] {
+            let standard = super::admission::StandardAdmission;
+            let error = match kind {
+                0 => super::read_property(standard, bytes, &mut 0,
+                    super::ValueLayout::Multiple(ValueCarrier::Integer), "values").map(|_| ()),
+                1 => read_texture_uri(standard, bytes, &mut 0, "paths").map(|_| ()),
+                _ => read_connections(standard, bytes, &mut 0).map(|_| ()),
+            }.expect_err("standard format ceiling");
+            let CodecError::ResourceLimit(expected) = error else { panic!("format refusal"); };
+            assert_eq!(expected.dimension, ResourceDimension::Codec("Protein counted value recovery"));
+            assert_eq!(expected.operation, "Protein counted value recovery");
+            assert_eq!(expected.limit, super::MAX_RECOVERY_VALUES);
+            assert_eq!(expected.used, super::MAX_RECOVERY_VALUES);
+            assert_eq!(expected.additional, 1);
+            with_service_context(bytes, |ctx| {
+                let error = match kind {
+                    0 => super::read_property(ctx, bytes, &mut 0,
+                        super::ValueLayout::Multiple(ValueCarrier::Integer), "values").map(|_| ()),
+                    1 => read_texture_uri(ctx, bytes, &mut 0, "paths").map(|_| ()),
+                    _ => read_connections(ctx, bytes, &mut 0).map(|_| ()),
+                }.expect_err("context format ceiling");
+                assert!(matches!(error, CodecError::ResourceLimit(actual) if actual == expected));
+                assert_eq!(ctx.resource_refusal(), Some(expected.clone()));
+                assert!(matches!(ctx.charge_work(0, "after format refusal"),
+                    Err(CodecError::ResourceLimit(original)) if original == expected));
+            });
+        }
+    }
+
+    #[test]
+    fn standard_record_format_ceiling_bypasses_recovery() {
+        let properties = || HashMap::from([("Simple".into(), BTreeMap::from([
+            ("values".into(), super::Property::Value {
+                layout: super::ValueLayout::Multiple(ValueCarrier::Integer), connectable: false,
+            }),
+        ]))]);
+        let stream = |count: u32| {
+            let mut record = Vec::new();
+            for value in ["Simple", "first", "base", "library"] { push_lp(&mut record, value); }
+            record.extend_from_slice(&count.to_le_bytes());
+            record.extend(std::iter::repeat_n(0_u8, usize::try_from(count).expect("fixture count") * 4));
+            let mut later = Vec::new();
+            for value in ["Simple", "later", "base", "library"] { push_lp(&mut later, value); }
+            later.extend_from_slice(&0_u32.to_le_bytes());
+            paged_stream(&[&record, &later])
+        };
+        let standard = super::admission::StandardAdmission;
+        let bytes = stream(1_025);
+        let frames = framing::record_frames_admitted(standard, &bytes).expect("fixture framing");
+        let mut catalog = super::SchemaCatalog::empty(standard).expect("standard catalog");
+        catalog.properties = properties();
+        let error = super::decode_frames_admitted(standard, &mut catalog, frames.frames())
+            .expect_err("a format refusal must not become a recovered record");
+        let CodecError::ResourceLimit(expected) = error else { panic!("format refusal"); };
+        with_service_context(&bytes, |ctx| {
+            let mut catalog = catalog_of(ctx, HashMap::new(), properties());
+            let error = super::decode_frames_admitted(ctx, &mut catalog, frames.frames())
+                .expect_err("context format refusal");
+            assert!(matches!(error, CodecError::ResourceLimit(actual) if actual == expected));
+            assert_eq!(ctx.resource_refusal(), Some(expected.clone()));
+        });
+        let bytes = stream(1_024);
+        let frames = framing::record_frames_admitted(standard, &bytes).expect("fixture framing");
+        let mut catalog = super::SchemaCatalog::empty(standard).expect("standard catalog");
+        catalog.properties = properties();
+        let outcome = super::decode_frames_admitted(standard, &mut catalog, frames.frames())
+            .expect("the exact format ceiling is accepted");
+        assert!(outcome.rejected.is_empty());
+        assert_eq!(outcome.records.len(), 2);
+        for (ordinal, guid) in [(0, "first"), (1, "later")] {
+            let record = &outcome.records[ordinal];
+            assert_eq!(record.ordinal, u64::try_from(ordinal).expect("fixture ordinal"));
+            assert_eq!(record.schema, "Simple");
+            assert_eq!(record.guid, guid);
+            assert_eq!(record.base, "base");
+            assert_eq!(record.asset_lib_id, "library");
+        }
+        let Some(PropertyValue::Multiple(values)) = outcome.records[0].properties["values"].value() else {
+            panic!("repeated integer values");
+        };
+        assert_eq!(values.values().len(), 1_024);
     }
 
     #[test]
