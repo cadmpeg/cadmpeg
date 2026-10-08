@@ -338,7 +338,7 @@ fn dimension_identity_includes_its_feature_definition() {
                 (sketch_1200, 3),
             ]
         )
-        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
+        .map(|result| result.map(|layout| layout.rows)))
         .expect("layout fits service limits"),
         Some(vec![
             (0, "d3".to_string(), None),
@@ -352,7 +352,7 @@ fn dimension_identity_includes_its_feature_definition() {
             ctx,
             &[(sketch_917.clone(), 3), (sketch_917.clone(), 3)]
         )
-        .map(|result| result.map(std::iter::Iterator::collect::<Vec<_>>)))
+        .map(|result| result.map(|layout| layout.rows)))
         .expect("layout fits service limits"),
         Some(vec![
             (0, "d917_3_1".to_string(), Some(0)),

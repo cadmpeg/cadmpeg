@@ -93,7 +93,21 @@ fn linked_feature_lookup_propagates_scan_refusal() {
     ir.model.features.push(feature("creo:model:feature#2"));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        Some("creo linked model feature lookup"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+
+            let target = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#2")
+                .expect("feature identity");
+            unique_model_feature_index(&ctx, &ir, &target).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
     let target =
@@ -150,7 +164,20 @@ fn history_link_refuses_dependency_vector_before_growth() {
     ]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo sketch history dependencies"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let mut ir = ir.clone();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+
+            link_feature_sketch_history(&ctx, &scan, &mut ir)
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
     let error = link_feature_sketch_history(&ctx, &scan, &mut ir)
@@ -240,7 +267,27 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        Some("creo generated surface feature tables"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            section_entity_is_generated_profile(
+                &ctx,
+                true,
+                Some(7),
+                11,
+                &[crate::surface::SurfaceKind::Plane],
+                std::slice::from_ref(&table),
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = section_entity_is_generated_profile(
         &ctx,
@@ -261,7 +308,7 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
 }
 
 #[test]
-fn blind_generated_profile_kind_membership_refuses_work_and_stays_lazy() {
+fn blind_generated_profile_kind_gate_stays_lazy() {
     let entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
@@ -295,47 +342,18 @@ fn blind_generated_profile_kind_membership_refuses_work_and_stays_lazy() {
     let tables = [table];
     let rows = [cylinder];
     let plane = [crate::surface::SurfaceKind::Plane];
-    let refusal = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo blind generated profile surface kind lookup",
-        |ctx| {
-            section_entity_is_generated_profile(
-                ctx,
-                true,
-                Some(7),
-                11,
-                &plane,
-                &tables,
-                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
-            )
-        },
-    );
-    let limit = match refusal {
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "creo blind generated profile surface kind lookup" =>
-        {
-            limit
-        }
-        error => panic!("expected blind-profile kind lookup refusal, got {error:?}"),
-    };
-    let cap = limit.used.checked_add(limit.additional).expect("work cap");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = cap;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    assert!(!section_entity_is_generated_profile(
-        &ctx,
-        true,
-        Some(7),
-        11,
-        &plane,
-        &tables,
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
-    )
-    .expect("the Plane-only gate returns before scanning blind profiles"));
+    assert!(!crate::test_support::assert_work_boundaries(
+        &["creo generated profile rowless tables"],
+        |ctx| section_entity_is_generated_profile(
+            ctx,
+            true,
+            Some(7),
+            11,
+            &plane,
+            &tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        ),
+    ));
     assert!(!crate::decode::with_test_decode_ctx(|ctx| {
         section_entity_is_generated_profile(
             ctx,
@@ -465,24 +483,24 @@ fn ordered_binding_fixture() -> (
     (table, order, rows)
 }
 
-fn ordered_binding_limit_error(limit: u64, operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn ordered_binding_limit_error(operation: &'static str) {
     let (table, order, rows) = ordered_binding_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = ordered_family_surface_bindings_for_feature(
-        &ctx,
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
-        17,
-        &[table],
-        &order,
-        [9],
-        crate::surface::SurfaceKind::TorusOrSphere,
-    )
-    .expect_err("one generated surface binding exceeds the collection limit");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            ordered_family_surface_bindings_for_feature(
+                ctx,
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                17,
+                std::slice::from_ref(&table),
+                &order,
+                [9],
+                crate::surface::SurfaceKind::TorusOrSphere,
+            )
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -492,12 +510,12 @@ fn ordered_binding_limit_error(limit: u64, operation: &'static str) {
 
 #[test]
 fn ordered_generated_surface_ids_refuse_collection_limit() {
-    ordered_binding_limit_error(0, "creo bound generated surface IDs");
+    ordered_binding_limit_error("creo bound generated surface IDs");
 }
 
 #[test]
 fn ordered_generated_surface_bindings_refuse_collection_limit() {
-    ordered_binding_limit_error(1, "creo ordered generated surface bindings");
+    ordered_binding_limit_error("creo ordered generated surface bindings");
 }
 
 #[test]
@@ -542,7 +560,18 @@ fn profile_segment_ids_refuse_collection_limit() {
     }]];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo profile segment ID nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            profile_segment_ids(&ctx, 2, &[&segment], &profiles).map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = profile_segment_ids(&ctx, 2, &[&segment], &profiles)
@@ -561,5 +590,32 @@ fn profile_segment_ids_refuse_collection_limit() {
         ))
         .expect("service profile admits one profile ID"),
         std::collections::BTreeSet::from([9]),
+    );
+}
+
+#[test]
+fn transformed_surface_kind_walks_bases_and_preserves_family() {
+    let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("plane fixture");
+    let mut geometry = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane);
+    for _ in 0..3 {
+        geometry = cadmpeg_ir::geometry::SolvedSurfaceGeometry::Transformed(
+            cadmpeg_ir::geometry::PlacedSurface::try_new(
+                Box::new(geometry),
+                cadmpeg_ir::transform::Transform::identity(),
+            )
+            .expect("placed plane fixture"),
+        );
+    }
+    let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(geometry);
+    assert_eq!(
+        crate::test_support::assert_work_boundaries(&["creo transformed surface bases"], |ctx| {
+            super::surface_kind_for_geometry(ctx, &geometry)
+        }),
+        Some(crate::surface::SurfaceKind::Plane)
     );
 }

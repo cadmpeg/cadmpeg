@@ -19,14 +19,6 @@ pub(in super::super) fn feature_recipe(
         .map(crate::feature::operations::FeatureRecipe::kind)
 }
 
-pub(in super::super) fn feature_recipe_effect(
-    scan: &ContainerScan,
-    feature_id: u32,
-) -> Option<crate::feature::operations::FeatureRecipeEffect> {
-    current_feature_recipe(&scan.features.operations, feature_id)
-        .map(crate::feature::operations::FeatureRecipe::effect)
-}
-
 pub(in super::super) fn feature_section_sweep_semantics_conflict(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
