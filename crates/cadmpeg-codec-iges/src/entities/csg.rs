@@ -53,6 +53,37 @@ fn profile_closed(
     Ok(result)
 }
 
+// The source model is unchanged for the lifetime of one CSG projection.
+struct ProfileClosureProofs<'ctx> {
+    proven: BTreeMap<(u32, u64), Option<bool>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl ProfileClosureProofs<'_> {
+    fn closed(
+        &mut self,
+        sequence: u32,
+        index: &ModelIndex<'_>,
+        edges: &[&Edge],
+        tolerance: f64,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<bool>, CodecError> {
+        let key = (sequence, tolerance.to_bits());
+        if let Some(proof) = ctx.get_btree_map(
+            &self.proven, &key, "iges solid profile closure lookup",
+        )? {
+            return Ok(*proof);
+        }
+        let proof = profile_closed(index, edges, tolerance, ctx)?;
+        self.storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut self.proven, key, proof, "iges solid profile closure proofs",
+            )
+        })?;
+        Ok(proof)
+    }
+}
+
 #[derive(Clone, Copy)]
 enum BooleanTerm {
     Operand(u32),
@@ -344,6 +375,10 @@ pub(super) fn project(
 
     let mut profile_index = None;
     let mut profile_edges = None;
+    let mut profile_proofs = ProfileClosureProofs {
+        proven: BTreeMap::new(),
+        storage: ctx.reserve_scoped(0, "iges solid profile closure proofs")?,
+    };
     for entry in ctx
         .admit_iter(directory, "iges csg directory traversal")?
         .filter(|entry| {
@@ -363,7 +398,7 @@ pub(super) fn project(
             continue;
         };
         let factor = global.length_factor_mm();
-        let Some(profile) = pointer(record, 1) else {
+        let Some(profile_sequence) = pointer(record, 1) else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -374,7 +409,7 @@ pub(super) fn project(
         };
         let mut profile_storage = [0_u8; 64];
         let profile_id =
-            crate::ids::directory_lookup_key("iges:model:curve#D", profile, &mut profile_storage);
+            crate::ids::directory_lookup_key("iges:model:curve#D", profile_sequence, &mut profile_storage);
         let profile = match profile_id {
             Some(profile_id) => {
                 let index = match &mut profile_index {
@@ -443,19 +478,29 @@ pub(super) fn project(
         }
         let groups = match &mut profile_edges {
             Some(groups) => groups,
-            slot @ None => slot.insert(
-                ctx.collect_scoped_btree_groups(
-                    ctx.admit_iter(&ir.model.edges, "iges solid profile edge indexing")?
-                        .filter_map(|edge| edge.curve().map(|curve| (curve.as_str(), edge))),
-                    "iges solid profile edge groups",
-                )?,
-            ),
+            slot @ None => slot.insert({
+                let mut groups = BTreeMap::new();
+                let mut storage = ctx.reserve_scoped(0, "iges solid profile edge groups")?;
+                let mut edges = ir.model.edges.iter();
+                while let Some(edge) =
+                    ctx.next_charged(&mut edges, "iges solid profile edge indexing")?
+                {
+                    if let Some(curve) = edge.curve() {
+                        ctx.push_scoped_btree_group(
+                            &mut storage, &mut groups, curve.as_str(), || edge, 0,
+                            "iges solid profile edge groups",
+                        )?;
+                    }
+                }
+                (groups, storage)
+            }),
         };
         let edges = ctx
             .get_btree_map(&groups.0, &profile_id, "iges solid profile edge lookup")?
             .map_or(&[][..], Vec::as_slice);
-        let Some(closed) = profile_closed(index, edges, global.minimum_resolution_mm(), ctx)?
-        else {
+        let Some(closed) = profile_proofs.closed(
+            profile_sequence, index, edges, global.minimum_resolution_mm(), ctx,
+        )? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -496,6 +541,7 @@ pub(super) fn project(
         ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
+    drop(profile_proofs);
     drop(profile_edges);
     drop(profile_index);
 
