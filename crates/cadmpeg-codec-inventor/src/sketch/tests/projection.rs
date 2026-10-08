@@ -110,6 +110,61 @@ fn short_closed_line_components_skip_profile_entity_id_copies() {
 }
 
 #[test]
+fn closed_line_profile_preserves_promotion_and_original_refusal() {
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("inventor:test:sketch#1").expect("sketch id");
+    let lines = [
+        ("inventor:test:entity#1", "point-a", "point-b"),
+        ("inventor:test:entity#2", "point-b", "point-c"),
+        ("inventor:test:entity#3", "point-c", "point-a"),
+    ]
+    .map(|(id, start, end)| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId::mint(id).expect("entity id"),
+            sketch.clone(),
+            cadmpeg_ir::sketches::SketchGeometry::try_from(
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
+                    start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                },
+            )
+            .expect("line geometry"),
+        )
+        .with_endpoint_refs(vec![start.into(), end.into()])
+    });
+    let references = lines.each_ref();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("profile context");
+    let profiles = super::super::build_profiles(&ctx, &references).expect("closed profile");
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].len(), 3);
+    for (index, entity_use) in profiles[0].iter().enumerate() {
+        assert_eq!(entity_use.entity, *lines[index].id());
+        assert!(!entity_use.reversed);
+    }
+    ctx.finish_session().expect("successful profile session");
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("profile context");
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "collect Inventor profile use",
+        None,
+    );
+    let CodecError::ResourceLimit(original) =
+        super::super::build_profiles(&ctx, &references).expect_err("promotion refusal")
+    else {
+        panic!("original resource refusal");
+    };
+    assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(original.operation, "collect Inventor profile use");
+    assert_eq!(ctx.resource_refusal(), Some(original));
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(found)) if found == original));
+}
+
+#[test]
 fn line_component_expands_shared_endpoint_neighbours_once() {
     let entity = cadmpeg_ir::sketches::SketchEntity::new(
         cadmpeg_ir::sketches::SketchEntityId::mint("inventor:test:entity#2").expect("entity id"),
