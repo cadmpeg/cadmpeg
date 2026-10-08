@@ -44,6 +44,7 @@ pub(super) fn decode<'ctx>(
     let mut claim_storage = ctx.reserve_scoped(0, "STEP stage claim storage")?;
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     let mut style_domains = StyleDomainIndex::new(ctx)?;
+    let mut invisible = InvisibleIndex::new(ctx)?;
     let mut typed = BTreeSet::new();
     let mut losses = Vec::new();
     let graph_limit = super::record_graph_limit(ctx);
@@ -197,25 +198,16 @@ pub(super) fn decode<'ctx>(
                     continue;
                 }
             }
-            let ((body_ids, target_supported), _body_storage) = ctx
-                .with_scoped_storage("STEP invisible body selection scratch", || {
-                    invisible_body_ids(target, exchange, topology, &body_indices, ctx)
-                })?;
-            let mut hidden = false;
-            let mut body_ids = body_ids.into_iter();
-            while let Some(body_id) =
+            let mut prepared = invisible.prepare(target, exchange, topology, &body_indices)?;
+            let mut body_ids = std::mem::take(&mut prepared.body_ids).into_iter();
+            while let Some((_body_id, index)) =
                 ctx.next_charged(&mut body_ids, "STEP presentation body_ids traversal")?
             {
-                if let Some(index) = ctx.get_btree_map(
-                    &body_indices,
-                    body_id.as_str(),
-                    "STEP presentation body_indices get",
-                )? {
-                    ir.model.bodies[*index].visible = Some(false);
-                    hidden = true;
+                if let Some(index) = index {
+                    ir.model.bodies[index].visible = Some(false);
                 }
             }
-            if !target_supported || !hidden {
+            if !prepared.summary.is_hidden() {
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
@@ -226,6 +218,10 @@ pub(super) fn decode<'ctx>(
                 )?;
                 supported = false;
             }
+            // Completed summaries are reusable only after this root's ordered
+            // effects and warning have succeeded. A later cached root contributes
+            // no repeated body IDs, because visibility is changed only to false.
+            invisible.publish(prepared)?;
         }
         if style_targets.is_empty() && layer_targets.is_empty() && supported {
             claim_storage.with_storage(|| {
@@ -831,34 +827,97 @@ pub(super) fn decode<'ctx>(
     })
 }
 
-fn invisible_body_ids(
-    id: u64,
-    exchange: &Exchange,
-    topology: &TopologyData,
-    body_indices: &BTreeMap<String, usize>,
-    ctx: &DecodeContext<'_>,
-) -> Result<(BTreeSet<BodyId>, bool), CodecError> {
-    let mut body_ids = BTreeSet::new();
-    let mut walk = InvisibleWalk {
-        active: BTreeSet::new(),
-        complete: BTreeMap::new(),
-        storage: ctx.reserve_scoped(0, "STEP invisible completion scratch")?,
-    };
-    let supported = collect_invisible_body_ids(
-        id,
-        exchange,
-        topology,
-        body_indices,
-        &mut walk,
-        &mut body_ids,
-        ctx,
-    )?;
-    Ok((body_ids, supported))
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InvisibleSummary {
+    Unsupported,
+    Supported { hidden: bool },
 }
 
-struct InvisibleWalk<'ctx> {
+impl InvisibleSummary {
+    fn is_hidden(self) -> bool {
+        matches!(self, Self::Supported { hidden: true })
+    }
+}
+
+struct InvisibleIndex<'ctx, 'arena> {
+    complete: BTreeMap<u64, InvisibleSummary>,
+    ctx: &'ctx DecodeContext<'arena>,
+    storage: ScopedReservation<'ctx>,
+}
+
+struct PreparedInvisible<'ctx> {
+    body_ids: BTreeMap<BodyId, Option<usize>>,
+    summary: InvisibleSummary,
+    pending: BTreeMap<u64, InvisibleSummary>,
+    pending_storage: ScopedReservation<'ctx>,
+    _body_storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx, 'arena> InvisibleIndex<'ctx, 'arena> {
+    fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
+        Ok(Self {
+            complete: BTreeMap::new(),
+            ctx,
+            storage: ctx.reserve_scoped(0, "STEP invisible stage completion scratch")?,
+        })
+    }
+
+    fn prepare(
+        &self,
+        id: u64,
+        exchange: &Exchange,
+        topology: &TopologyData,
+        body_indices: &BTreeMap<String, usize>,
+    ) -> Result<PreparedInvisible<'ctx>, CodecError> {
+        let ctx = self.ctx;
+        let mut body_storage = ctx.reserve_scoped(0, "STEP invisible body selection scratch")?;
+        let mut body_ids = BTreeMap::new();
+        let mut walk = InvisibleWalk {
+            active: BTreeSet::new(),
+            complete: BTreeMap::new(),
+            stage_complete: &self.complete,
+            storage: ctx.reserve_scoped(0, "STEP invisible completion scratch")?,
+        };
+        let summary = body_storage.with_storage(|| {
+            collect_invisible_body_ids(
+                id, exchange, topology, body_indices, &mut walk,
+                &mut body_ids, ctx,
+            )
+        })?;
+        Ok(PreparedInvisible {
+            body_ids,
+            summary,
+            pending: walk.complete,
+            pending_storage: walk.storage,
+            _body_storage: body_storage,
+        })
+    }
+
+    fn publish(&mut self, prepared: PreparedInvisible<'ctx>) -> Result<(), CodecError> {
+        let PreparedInvisible { pending_storage, pending, .. } = prepared;
+        if self.complete.is_empty() {
+            self.storage.with_storage(|| pending_storage.commit())?;
+            self.complete = pending;
+        } else {
+            let count = pending.len();
+            let mut pending = pending.into_iter();
+            for _ in 0..count {
+                let (id, summary) = self.ctx
+                    .next_charged(&mut pending, "STEP invisible publication traversal")?
+                    .ok_or_else(|| CodecError::malformed("STEP invisible completion source ended early"))?;
+                self.storage.with_storage(|| {
+                    self.ctx.insert_btree_map(&mut self.complete, id, summary, "step_invisible_complete")
+                })?;
+            }
+        }
+        Ok(())
+    }
+}
+
+struct InvisibleWalk<'stage, 'ctx> {
     active: BTreeSet<u64>,
-    complete: BTreeMap<u64, bool>,
+    complete: BTreeMap<u64, InvisibleSummary>,
+    stage_complete: &'stage BTreeMap<u64, InvisibleSummary>,
     storage: ScopedReservation<'ctx>,
 }
 
@@ -867,17 +926,20 @@ fn collect_invisible_body_ids(
     exchange: &Exchange,
     topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
-    walk: &mut InvisibleWalk<'_>,
-    body_ids: &mut BTreeSet<BodyId>,
+    walk: &mut InvisibleWalk<'_, '_>,
+    body_ids: &mut BTreeMap<BodyId, Option<usize>>,
     ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> Result<InvisibleSummary, CodecError> {
     if ctx.contains_btree_set(&walk.active, &id, "STEP presentation active contains")? {
-        return Ok(false);
+        return Ok(InvisibleSummary::Unsupported);
     }
     if let Some(supported) =
         ctx.get_btree_map(&walk.complete, &id, "STEP invisible completion lookup")?
     {
         return Ok(*supported);
+    }
+    if let Some(summary) = ctx.get_btree_map(walk.stage_complete, &id, "STEP invisible stage completion lookup")? {
+        return Ok(*summary);
     }
     let supported = collect_invisible_body_ids_uncached(
         id,
@@ -899,10 +961,10 @@ fn collect_invisible_body_ids_uncached(
     exchange: &Exchange,
     topology: &TopologyData,
     body_indices: &BTreeMap<String, usize>,
-    walk: &mut InvisibleWalk<'_>,
-    body_ids: &mut BTreeSet<BodyId>,
+    walk: &mut InvisibleWalk<'_, '_>,
+    body_ids: &mut BTreeMap<BodyId, Option<usize>>,
     ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> Result<InvisibleSummary, CodecError> {
     let _nested = ctx.enter_nested("step_presentation_invisible_body_walk")?;
     let (_inserted, _active_storage) =
         ctx.with_scoped_storage("STEP active key scratch", || {
@@ -917,38 +979,44 @@ fn collect_invisible_body_ids_uncached(
         &id,
         "STEP presentation topology.body_by_root get",
     )? {
+        let mut hidden = false;
         let mut source_body_ids = ids.iter();
         while let Some(body) =
             ctx.next_charged(&mut source_body_ids, "STEP presentation ids traversal")?
         {
-            if !ctx.contains_btree_set(body_ids, body, "STEP body ids membership")? {
-                let body =
-                    body.try_clone_for_decode(ctx, "step_presentation_invisible_body_identity")?;
-                ctx.insert_btree_set(body_ids, body, "step_presentation_invisible_body_ids")?;
-            }
+            let index = if let Some(index) = ctx.get_btree_map(body_ids, body, "STEP body ids membership")? {
+                *index
+            } else {
+                let body = body.try_clone_for_decode(ctx, "step_presentation_invisible_body_identity")?;
+                let index = ctx.get_btree_map(body_indices, body.as_str(), "STEP presentation body_indices get")?.copied();
+                ctx.insert_btree_map(body_ids, body, index, "step_presentation_invisible_body_ids")?;
+                index
+            };
+            hidden |= index.is_some();
         }
         ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-        return Ok(!ids.is_empty());
+        return Ok(if ids.is_empty() { InvisibleSummary::Unsupported } else { InvisibleSummary::Supported { hidden } });
     }
     let fallback = BodyId::from(ids::data(kind!("body"), id));
-    if ctx.contains_key_btree_map(
+    if let Some(index) = ctx.get_btree_map(
         body_indices,
         fallback.as_str(),
         "STEP presentation body_indices contains_key",
-    )? {
-        ctx.insert_btree_set(body_ids, fallback, "step_presentation_invisible_body_ids")?;
+    )?.copied() {
+        ctx.insert_btree_map(body_ids, fallback, Some(index), "step_presentation_invisible_body_ids")?;
         ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-        return Ok(true);
+        return Ok(InvisibleSummary::Supported { hidden: true });
     }
 
     let Some(record) =
         ctx.get_btree_map(exchange.records(), &id, "STEP presentation record get")?
     else {
         ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-        return Ok(false);
+        return Ok(InvisibleSummary::Unsupported);
     };
     let mut found_reference = false;
     let mut supported = true;
+    let mut hidden = false;
     if record.partial(ctx, "STYLED_ITEM")?.is_some()
         || record.partial(ctx, "OVER_RIDING_STYLED_ITEM")?.is_some()
     {
@@ -956,7 +1024,7 @@ fn collect_invisible_body_ids_uncached(
             styled_item_parts(ctx, record)?.and_then(|parts| parts.target.reference())
         {
             found_reference = true;
-            supported &= collect_invisible_body_ids(
+            let child = collect_invisible_body_ids(
                 reference,
                 exchange,
                 topology,
@@ -965,6 +1033,10 @@ fn collect_invisible_body_ids_uncached(
                 body_ids,
                 ctx,
             )?;
+            match child {
+                InvisibleSummary::Unsupported => supported = false,
+                InvisibleSummary::Supported { hidden: child_hidden } => hidden |= child_hidden,
+            }
         }
     } else if ctx.any_by(
         &(record.partials)[..],
@@ -978,7 +1050,7 @@ fn collect_invisible_body_ids_uncached(
             {
                 for reference in references(value, ctx) {
                     found_reference = true;
-                    supported &= collect_invisible_body_ids(
+                    let child = collect_invisible_body_ids(
                         reference?,
                         exchange,
                         topology,
@@ -987,12 +1059,16 @@ fn collect_invisible_body_ids_uncached(
                         body_ids,
                         ctx,
                     )?;
+                    match child {
+                        InvisibleSummary::Unsupported => supported = false,
+                        InvisibleSummary::Supported { hidden: child_hidden } => hidden |= child_hidden,
+                    }
                 }
             }
         }
     }
     ctx.remove_btree_set(&mut walk.active, &id, "STEP presentation active remove")?;
-    Ok(found_reference && supported)
+    Ok(if found_reference && supported { InvisibleSummary::Supported { hidden } } else { InvisibleSummary::Unsupported })
 }
 
 fn expand_style_targets<F: FnMut(u64) -> Result<(), CodecError>>(

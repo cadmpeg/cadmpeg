@@ -679,7 +679,7 @@ fn invisible_body_refuses(operation: &str, depth: bool) {
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
     assert!(matches!(
-        super::super::invisible_body_ids(1, &exchange, &topology.value, &std::collections::BTreeMap::new(), &ctx),
+        super::super::InvisibleIndex::new(&ctx).and_then(|index| index.prepare(1, &exchange, &topology.value, &std::collections::BTreeMap::new())),
         Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
     ));
 }

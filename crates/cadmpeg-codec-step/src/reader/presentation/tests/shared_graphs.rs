@@ -151,17 +151,29 @@ fn invisible_resolution_reuses_a_shared_dag() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 128;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let (bodies, supported) =
-            super::super::invisible_body_ids(1, &exchange, &topology.value, &indices, ctx)
-                .expect("linear invisibility walk");
-        assert!(supported);
+        let mut index = super::super::InvisibleIndex::new(ctx).expect("stage index");
+        let mut bodies = [test_body(33), test_body(34)];
+        let mut prepared = index.prepare(1, &exchange, &topology.value, &indices)
+            .expect("linear invisibility walk");
+        assert_eq!(prepared.summary, super::super::InvisibleSummary::Supported { hidden: true });
         assert_eq!(
-            bodies
-                .iter()
-                .map(cadmpeg_ir::ids::BodyId::as_str)
-                .collect::<Vec<_>>(),
+            prepared.body_ids.keys().map(cadmpeg_ir::ids::BodyId::as_str).collect::<Vec<_>>(),
             ["step:data:body#33", "step:data:body#34"]
         );
+        for (body_id, index) in std::mem::take(&mut prepared.body_ids) {
+            let index = index.expect("resolved test body index");
+            assert_eq!(body_id, bodies[index].id);
+            bodies[index].visible = Some(false);
+        }
+        index.publish(prepared).expect("completed effect publication");
+        assert_eq!(index.complete.len(), 33);
+        let prepared = index.prepare(2, &exchange, &topology.value, &indices)
+            .expect("distinct root reuses descendants");
+        assert_eq!(prepared.summary, super::super::InvisibleSummary::Supported { hidden: true });
+        assert!(prepared.body_ids.is_empty());
+        index.publish(prepared).expect("second completed root");
+        assert_eq!(index.complete.len(), 34);
+        assert!(bodies.iter().all(|body| body.visible == Some(false)));
     });
 }
 
@@ -190,11 +202,24 @@ fn domain_cycles_keep_any_and_invisibility_cycles_keep_unsupported() {
         let topology =
             crate::reader::topology::decode(&exchange, &mut ir, &carriers, ctx).expect("topology");
         let indices = BTreeMap::from([("step:data:body#3".to_owned(), 0)]);
-        let (bodies, supported) =
-            super::super::invisible_body_ids(1, &exchange, &topology.value, &indices, ctx)
-                .expect("cycle walk");
-        assert!(!supported);
-        assert_eq!(bodies.len(), 1);
+        let mut index = super::super::InvisibleIndex::new(ctx).expect("stage index");
+        let mut body = test_body(3);
+        let mut prepared = index.prepare(1, &exchange, &topology.value, &indices)
+            .expect("cycle walk");
+        assert_eq!(prepared.summary, super::super::InvisibleSummary::Unsupported);
+        assert_eq!(prepared.body_ids.len(), 1);
+        assert!(index.complete.is_empty());
+        for (id, index) in std::mem::take(&mut prepared.body_ids) {
+            assert_eq!(index, Some(0));
+            assert_eq!(id, body.id);
+            body.visible = Some(false);
+        }
+        index.publish(prepared).expect("completed cycle effects");
+        let prepared = index.prepare(2, &exchange, &topology.value, &indices)
+            .expect("completed cycle descendant");
+        assert_eq!(prepared.summary, super::super::InvisibleSummary::Unsupported);
+        assert!(prepared.body_ids.is_empty());
+        assert_eq!(body.visible, Some(false));
     });
 }
 
@@ -376,4 +401,12 @@ fn shared_style_color_query_keeps_ordered_local_cache_history() {
         })
         .join()
         .expect("color query assertions");
+}
+
+fn test_body(id: u64) -> cadmpeg_ir::topology::Body {
+    cadmpeg_ir::topology::Body {
+        id: cadmpeg_ir::ids::BodyId::from(crate::ids::data(crate::ids::kind!("body"), id)),
+        kind: cadmpeg_ir::topology::BodyKind::default(),
+        regions: Vec::new(), transform: None, name: None, color: None, visible: None,
+    }
 }
