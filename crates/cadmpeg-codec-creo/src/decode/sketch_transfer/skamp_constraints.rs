@@ -97,10 +97,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 ctx.admit_iter(&skamp.items, "creo SKAMP available entity item traversal")?
             {
                 let entity_id = item.entity_id;
-                if sketch_entity_id_admitted(ctx, sketch, entity_id)?
-                    .is_some_and(|id| geometry.contains_key(&id))
-                {
-                    ctx.insert_btree_set(&mut ids, entity_id, "creo skamp available entity nodes")?;
+                if let Some(id) = sketch_entity_id_admitted(ctx, sketch, entity_id)? {
+                    if ctx.contains_key_btree_map(geometry, &id, "creo SKAMP available geometry membership")? {
+                        ctx.insert_btree_set(&mut ids, entity_id, "creo skamp available entity nodes")?;
+                    }
                 }
             }
         }
@@ -112,7 +112,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     for skamp in ctx.admit_iter(relations.skamps(), "creo SKAMP constraint row traversal")? {
         let resource_error = Cell::new(None);
         let candidate = (|| {
-            let unique_skamp_id = complete_skamps && skamp_id_counts.get(&skamp.id) == Some(&1);
+            let unique_skamp_id = complete_skamps && defer_resource(ctx.get_btree_map(&skamp_id_counts, &skamp.id, "creo SKAMP identity count lookup"), &resource_error)? == Some(&1);
             let joined_equation_id = if unique_skamp_id
                 && relations
                     .triples
@@ -139,8 +139,8 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         .map_err(cadmpeg_core::CodecError::from),
                     resource_error,
                 )?
-                .filter(|item| available_entities.contains(&item.entity_id))
                 {
+                    if !defer_resource(ctx.contains_btree_set(&available_entities, &item.entity_id, "creo SKAMP available entity membership"), resource_error)? { continue; }
                     let Some(id) = defer_resource(
                         sketch_entity_id_admitted(ctx, sketch, item.entity_id),
                         resource_error,
@@ -262,7 +262,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             };
             let item_geometry = |item: &crate::feature::definitions::FeatureSkampItem| {
                 let entity = admitted_entity(ctx, sketch, item.entity_id, &resource_error)?;
-                geometry?.get(&entity)
+                defer_resource(ctx.get_btree_map(geometry?, &entity, "creo SKAMP item geometry lookup"), &resource_error)?
             };
             let inactive_curve_entity = |item: &crate::feature::definitions::FeatureSkampItem| {
                 (!active
@@ -868,7 +868,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             admitted_entity(ctx, sketch, result.entity_id, &resource_error)?;
                         let geometry_agrees = match geometry {
                             Some(geometry) => {
-                                match geometry.get(&source).zip(geometry.get(&result)) {
+                                match defer_resource(ctx.get_btree_map(geometry, &source, "creo SKAMP projected source lookup"), &resource_error)?.zip(defer_resource(ctx.get_btree_map(geometry, &result, "creo SKAMP projected result lookup"), &resource_error)?) {
                                     Some((source, result)) => defer_resource(
                                         ctx.equal(
                                             source,
@@ -1128,14 +1128,14 @@ fn sketch_constraint_loci_compatible_with_policy(
             ..
         }
     );
-    let locus_compatible = |locus: &SketchLocus| {
+    let locus_compatible = |locus: &SketchLocus| -> Result<bool, cadmpeg_core::CodecError> {
         let entity = match locus {
             SketchLocus::Entity(entity)
             | SketchLocus::Start(entity)
             | SketchLocus::End(entity)
             | SketchLocus::Center(entity) => entity,
         };
-        geometry.get(entity).is_some_and(|geometry| match locus {
+        Ok(ctx.get_btree_map(geometry, entity, "creo SKAMP compatible geometry lookup")?.is_some_and(|geometry| match locus {
             SketchLocus::Entity(_) => true,
             SketchLocus::Start(_) | SketchLocus::End(_) => {
                 !matches!(
@@ -1166,16 +1166,14 @@ fn sketch_constraint_loci_compatible_with_policy(
                             || native_line_center_allowed && native_kind.as_str() == "line"
                 )
             }
-        })
+        }))
     };
     let loci_compatible = match definition {
         SketchConstraintDefinitionInput::CoincidentLoci { loci }
         | SketchConstraintDefinitionInput::Group { elements: loci }
-        | SketchConstraintDefinitionInput::Text { elements: loci, .. } => ctx
-            .admit_iter(loci, "creo SKAMP compatible locus traversal")?
-            .all(locus_compatible),
+        | SketchConstraintDefinitionInput::Text { elements: loci, .. } => ctx.all_by(loci, &locus_compatible, "creo SKAMP compatible locus traversal")?,
         SketchConstraintDefinitionInput::SameCoordinate { relation } => {
-            locus_compatible(relation.first()) && locus_compatible(relation.second())
+            locus_compatible(relation.first())? && locus_compatible(relation.second())?
         }
         SketchConstraintDefinitionInput::TangentLoci { first, second }
         | SketchConstraintDefinitionInput::DistanceLoci { first, second, .. }
@@ -1183,34 +1181,34 @@ fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinitionInput::MidpointCoordinate { first, second, .. }
         | SketchConstraintDefinitionInput::HorizontalDistance { first, second, .. }
         | SketchConstraintDefinitionInput::VerticalDistance { first, second, .. } => {
-            locus_compatible(first) && locus_compatible(second)
+            locus_compatible(first)? && locus_compatible(second)?
         }
         SketchConstraintDefinitionInput::Midpoint { point, entity }
         | SketchConstraintDefinitionInput::PointOnObject { point, entity } => {
-            locus_compatible(point) && geometry.contains_key(entity)
+            locus_compatible(point)? && ctx.contains_key_btree_map(geometry, entity, "creo SKAMP compatible entity membership")?
         }
         SketchConstraintDefinitionInput::PointCoordinateValues { point, .. } => {
-            locus_compatible(point)
+            locus_compatible(point)?
         }
         SketchConstraintDefinitionInput::Symmetric {
             first,
             second,
             axis,
-        } => locus_compatible(first) && locus_compatible(second) && geometry.contains_key(axis),
+        } => locus_compatible(first)? && locus_compatible(second)? && ctx.contains_key_btree_map(geometry, axis, "creo SKAMP compatible entity membership")?,
         SketchConstraintDefinitionInput::PointSymmetric {
             first,
             second,
             center,
-        } => locus_compatible(first) && locus_compatible(second) && locus_compatible(center),
+        } => locus_compatible(first)? && locus_compatible(second)? && locus_compatible(center)?,
         SketchConstraintDefinitionInput::SnellsLaw {
             incident,
             refracted,
             interface,
             ..
         } => {
-            locus_compatible(incident)
-                && locus_compatible(refracted)
-                && geometry.contains_key(interface)
+            locus_compatible(incident)?
+                && locus_compatible(refracted)?
+                && ctx.contains_key_btree_map(geometry, interface, "creo SKAMP compatible entity membership")?
         }
         SketchConstraintDefinitionInput::Concentric { first, second }
         | SketchConstraintDefinitionInput::Coradial { first, second }
@@ -1224,7 +1222,7 @@ fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinitionInput::Tangent { first, second }
         | SketchConstraintDefinitionInput::Equal { first, second }
         | SketchConstraintDefinitionInput::Angle { first, second, .. } => {
-            geometry.contains_key(first) && geometry.contains_key(second)
+            ctx.contains_key_btree_map(geometry, first, "creo SKAMP compatible entity membership")? && ctx.contains_key_btree_map(geometry, second, "creo SKAMP compatible entity membership")?
         }
         SketchConstraintDefinitionInput::Horizontal { entity }
         | SketchConstraintDefinitionInput::Vertical { entity }
@@ -1233,26 +1231,24 @@ fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinitionInput::Diameter { entity, .. }
         | SketchConstraintDefinitionInput::ArcAngle { entity, .. }
         | SketchConstraintDefinitionInput::EllipseAngle { entity, .. } => {
-            geometry.contains_key(entity)
+            ctx.contains_key_btree_map(geometry, entity, "creo SKAMP compatible entity membership")?
         }
         SketchConstraintDefinitionInput::AtIntersection {
             point,
             first,
             second,
         } => {
-            locus_compatible(point) && geometry.contains_key(first) && geometry.contains_key(second)
+            locus_compatible(point)? && ctx.contains_key_btree_map(geometry, first, "creo SKAMP compatible entity membership")? && ctx.contains_key_btree_map(geometry, second, "creo SKAMP compatible entity membership")?
         }
         _ => true,
     };
     // A relation whose entity kind the IR refuses retains its native form.
-    Ok(loci_compatible
-        && definition
-            .entity_kind_restriction()
-            .is_none_or(|(entity, restriction)| {
-                geometry
-                    .get(entity)
-                    .is_some_and(|geometry| restriction.admits(geometry.definition()))
-            }))
+    if !loci_compatible { return Ok(false); }
+    match definition.entity_kind_restriction() {
+        Some((entity, restriction)) => Ok(ctx.get_btree_map(geometry, entity, "creo SKAMP restricted geometry lookup")?
+            .is_some_and(|geometry| restriction.admits(geometry.definition()))),
+        None => Ok(true),
+    }
 }
 
 #[cfg(test)]
@@ -1370,6 +1366,11 @@ mod tests {
             sketch_constraint_loci_compatible_with_policy(ctx, &definition, &geometry, false)
         })
         .expect("service locus traversal admitted"));
+        assert!(crate::test_support::assert_work_boundaries(
+            &["creo SKAMP compatible locus traversal", "creo SKAMP compatible geometry lookup"],
+            |ctx| sketch_constraint_loci_compatible_with_policy(ctx, &definition, &geometry, false),
+        ));
+
     }
 
     #[test]

@@ -96,6 +96,26 @@ fn empty_section_transfer_preserves_sketch_and_feature() {
 }
 
 #[test]
+fn empty_section_transfer_keeps_zero_family_coverage() {
+    use crate::coverage::SketchSegmentFamily;
+    let scan = empty_section_scan();
+    let coverage = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_sketches(ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(), &mut Vec::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default())
+    }).expect("empty section coverage");
+    assert_eq!(coverage.families().collect::<Vec<_>>(), vec![
+        (SketchSegmentFamily::Point, (0, 0)),
+        (SketchSegmentFamily::Circle, (0, 0)),
+        (SketchSegmentFamily::CenteredLine, (0, 0)),
+        (SketchSegmentFamily::ReferenceLine, (0, 0)),
+        (SketchSegmentFamily::BoundedCurve, (0, 0)),
+        (SketchSegmentFamily::Conic, (0, 0)),
+        (SketchSegmentFamily::Opaque, (0, 0)),
+    ]);
+}
+
+#[test]
 fn sketch_native_reference_refuses_below_retained_limit() {
     let sketch = SketchId::mint("creo:model:sketch#7").expect("valid sketch ID");
     let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#7".len());

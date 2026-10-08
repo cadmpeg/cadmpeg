@@ -467,7 +467,7 @@ pub(in super::super) fn section_skamp_incidence_locus(
     let Some(geometry) = geometry else {
         return Ok(None);
     };
-    let native = geometry.get(&entity).is_some_and(|geometry| {
+    let native = ctx.get_btree_map(geometry, &entity, "creo SKAMP locus geometry lookup")?.is_some_and(|geometry| {
         matches!(
             geometry.definition(),
             SketchGeometryDefinition::Native { .. }
@@ -577,7 +577,7 @@ pub(super) fn section_skamp_oriented_line(
     let Some(geometry) = geometry else {
         return Ok(None);
     };
-    let Some(geometry) = geometry.get(&entity) else {
+    let Some(geometry) = ctx.get_btree_map(geometry, &entity, "creo SKAMP locus geometry lookup")? else {
         return Ok(None);
     };
     if !matches!(
@@ -622,14 +622,13 @@ pub(super) fn section_skamp_same_coordinate(
         let Some(points) = resolved_points else {
             return Ok(None);
         };
-        let point = |source| {
-            Some(match source {
-                SectionPointSource::Point(point_id) => *points.get(&point_id)?,
-                SectionPointSource::Value(point) => point.get(),
-            })
+        let point = |source| -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+            match source {
+                SectionPointSource::Point(point_id) => Ok(ctx.get_btree_map(points, &point_id, "creo SKAMP resolved point lookup")?.copied()),
+                SectionPointSource::Value(point) => Ok(Some(point.get())),
+            }
         };
-        if let (Some(first_point), Some(second_point)) = (point(first_source), point(second_source))
-        {
+        if let (Some(first_point), Some(second_point)) = (point(first_source)?, point(second_source)?) {
             let scale = first_point
                 .iter()
                 .chain(&second_point)
