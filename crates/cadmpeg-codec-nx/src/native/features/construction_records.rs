@@ -115,7 +115,6 @@ pub(in crate::native) fn feature_projected_curve_references(
             };
             Ok(field
                 .into_references()
-                .into_iter()
                 .map(|reference| {
                     Some((
                         reference.token,
@@ -529,7 +528,7 @@ pub(in crate::native) fn feature_surface_construction_references(
             if let Some(field) =
                 crate::om::surface_envelope::surface_feature_payload_references(ctx, record)?
             {
-                if let Some(field) = field.relocate(ctx, base)? {
+                if let Some(field) = field.relocate(base) {
                     return Ok(Some(field.references().into_iter().collect()));
                 }
             }

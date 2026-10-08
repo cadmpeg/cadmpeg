@@ -99,32 +99,23 @@ impl CommonFrameSuffix {
         })
     }
 
-    pub(super) fn read(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        bytes: &[u8],
-    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        (|| {
-            let local_ordinal = CanonicalFeatureReferenceToken::read(bytes)?;
-            let width = local_ordinal.raw().len();
-            (propagate_resource!(ctx.equal(
-                &bytes.get(width..2 * width),
-                &Some(local_ordinal.raw()),
-                "NX common frame repeated ordinal equality"
-            )))
-            .then_some(())?;
-            let object_bytes = bytes.get(2 * width..)?;
-            let object = if *object_bytes.first()? == 0xff {
-                None
-            } else {
-                Some(CanonicalFeatureReferenceToken::read(object_bytes)?)
-            };
-            let suffix = Self {
-                local_ordinal,
-                object: object.map(|token| (token, ())),
-            };
-            (bytes.get(suffix.byte_len() - 1) == Some(&0)).then_some(Ok(suffix))
-        })()
-        .transpose()
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
+        let local_ordinal = CanonicalFeatureReferenceToken::read(bytes)?;
+        let width = local_ordinal.raw().len();
+        if bytes.get(width..2 * width) != Some(local_ordinal.raw()) {
+            return None;
+        }
+        let object_bytes = bytes.get(2 * width..)?;
+        let object = if *object_bytes.first()? == 0xff {
+            None
+        } else {
+            Some(CanonicalFeatureReferenceToken::read(object_bytes)?)
+        };
+        let suffix = Self {
+            local_ordinal,
+            object: object.map(|token| (token, ())),
+        };
+        (bytes.get(suffix.byte_len() - 1) == Some(&0)).then_some(suffix)
     }
 
     pub(crate) fn with_target<T>(
@@ -304,18 +295,9 @@ mod tests {
     use super::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 
     #[test]
-    fn repeated_ordinal_equality_refusal_propagates() {
-        for raw in [&[1, 1, 0xff, 0][..], &[1, 2, 0xff, 0][..]] {
-            let error = crate::test_support::resource_refusal_at(
-                &[],
-                cadmpeg_core::decode::ResourceDimension::WorkUnits,
-                "NX common frame repeated ordinal equality",
-                |ctx| CommonFrameSuffix::read(ctx, raw),
-            );
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 2)
-            );
-        }
+    fn repeated_ordinal_comparison_is_fixed_work() {
+        assert!(CommonFrameSuffix::read(&[1, 1, 0xff, 0]).is_some());
+        assert!(CommonFrameSuffix::read(&[1, 2, 0xff, 0]).is_none());
     }
 
     #[test]
@@ -325,10 +307,7 @@ mod tests {
             &[0x80, 0x80, 0x80, 0x80, 1, 0][..],
             &[0x90, 0x10, 0, 0x90, 0x10, 0, 0xff, 0][..],
         ] {
-            let suffix =
-                crate::test_support::with_decode_context(|ctx| CommonFrameSuffix::read(ctx, raw))
-                    .unwrap()
-                    .unwrap();
+            let suffix = CommonFrameSuffix::read(raw).unwrap();
             assert_eq!(suffix.byte_len(), raw.len());
             assert_eq!(
                 &raw[..suffix.raw_local_ordinal().len()],
@@ -344,11 +323,7 @@ mod tests {
             &[1, 1, 0xff][..],
             &[1, 1, 0xff, 1][..],
         ] {
-            assert!(
-                crate::test_support::with_decode_context(|ctx| CommonFrameSuffix::read(ctx, raw))
-                    .unwrap()
-                    .is_none()
-            );
+            assert!(CommonFrameSuffix::read(raw).is_none());
         }
     }
 
@@ -373,11 +348,7 @@ mod tests {
     #[test]
     fn checked_positions_admit_exact_end_boundary_and_reject_overflow() {
         let prefix = CommonFramePrefix::read(&[0, 0, 0, 1, 1, 1], [1, 1, 1]).unwrap();
-        let suffix = crate::test_support::with_decode_context(|ctx| {
-            CommonFrameSuffix::read(ctx, &[1, 1, 0xff, 0])
-        })
-        .unwrap()
-        .unwrap();
+        let suffix = CommonFrameSuffix::read(&[1, 1, 0xff, 0]).unwrap();
         let common = CommonFrame::<usize>::new(prefix, [0; 8], suffix, usize::MAX - 18).unwrap();
         assert_eq!(common.end_offset(), usize::MAX);
         assert!(CommonFrame::<usize>::new(prefix, [0; 8], suffix, usize::MAX - 17).is_none());

@@ -149,9 +149,12 @@ impl DraftIdentityFrame {
             return Ok(None);
         };
         let len = ctx
-            .admit_iter(tail, "NX draft identity hexadecimal run")?
-            .take_while(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
-            .count();
+            .position_by(
+                tail,
+                |byte| Ok(!byte.is_ascii_digit() && !(b'a'..=b'f').contains(byte)),
+                "NX draft identity hexadecimal run",
+            )?
+            .unwrap_or(tail.len());
         if len == 0 || tail.get(len) != Some(&b'?') {
             return Ok(None);
         }
@@ -161,8 +164,7 @@ impl DraftIdentityFrame {
         else {
             return Ok(None);
         };
-        let mut identity = ctx.retained_string(len, "NX draft identity text")?;
-        ctx.append_retained(&mut identity, text, "NX admitted text append")?;
+        let identity = ctx.copy_retained_text(text, "NX draft identity text")?;
         Ok(Some(Self {
             prefix,
             identity,
@@ -225,20 +227,37 @@ mod tests {
     use super::{DraftIdentityForm, DraftIdentityFrame};
 
     #[test]
+    fn draft_identity_scan_stops_at_the_first_non_hexadecimal_byte() {
+        let mut bytes = b"A\xf0\x27\xff\x02\x01abc123?".to_vec();
+        bytes.resize(4096, 0);
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| policy.limits.max_work_units = 25,
+            |ctx| {
+                let frame = DraftIdentityFrame::read(ctx, &bytes, 0).unwrap().unwrap();
+                assert_eq!(frame.identity(), "abc123");
+            },
+        );
+        crate::test_support::resource_refusal_at(
+            &bytes,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX draft identity hexadecimal run",
+            |ctx| DraftIdentityFrame::read(ctx, &bytes, 0),
+        );
+    }
+
+    #[test]
     fn draft_identity_text_refuses_retained_limit() {
         let bytes = b"A\xf0\x27\xff\x02\x01abc123?";
 
-        crate::test_support::with_decode_context_over(
+        let error = crate::test_support::resource_refusal_at(
             bytes,
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                let error = DraftIdentityFrame::read(ctx, bytes, 0).unwrap_err();
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-                );
-            },
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "NX draft identity text",
+            |ctx| DraftIdentityFrame::read(ctx, bytes, 0),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
     }
 

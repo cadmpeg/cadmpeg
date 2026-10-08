@@ -166,7 +166,6 @@ fn om_projected_curve_references_require_one_complete_field() {
     assert_eq!(
         field
             .into_references()
-            .iter()
             .map(|reference| (reference.token.value(), reference.offset))
             .collect::<Vec<_>>(),
         [(712, 203), (713, 206), (714, 214)]
@@ -216,7 +215,6 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
     assert_eq!(
         field
             .into_references()
-            .iter()
             .map(|reference| (reference.token.value(), reference.offset))
             .collect::<Vec<_>>(),
         [
@@ -295,7 +293,6 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     assert_eq!(
         field
             .into_references()
-            .iter()
             .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         (6920..=6928).collect::<Vec<_>>()
@@ -315,7 +312,7 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     })
     .unwrap()
     .expect("populated terminal slot");
-    let references = field.into_references();
+    let references: Vec<_> = field.into_references().collect();
     assert_eq!(references.len(), 10);
     assert_eq!(references[9].token.value(), 6929);
 
@@ -353,7 +350,6 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     assert_eq!(
         field
             .into_references()
-            .iter()
             .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         (0x1b20..=0x1b28).collect::<Vec<_>>()
@@ -674,7 +670,7 @@ fn projected_reference_candidate_range_refusal_precedes_rejection() {
                 matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                 && limit.operation == "NX projected curve reference candidate search"
-                && limit.additional == 3)
+                && limit.additional == 1)
             );
             if let cadmpeg_core::CodecError::ResourceLimit(limit) = error {
                 assert_eq!(ctx.resource_refusal(), Some(limit));
