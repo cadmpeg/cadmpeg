@@ -1169,14 +1169,12 @@ fn apply_body_placements(
         if is_two_dimensional_mapping(ctx, origin, target, exchange)? {
             continue;
         }
-        let bodies = super::topology::representation_bodies(
-            representation,
-            exchange,
-            topology,
-            &mut representation_cache,
-            &mut BTreeSet::new(),
-            ctx,
-        )?;
+        let bodies = scratch_storage.with_storage(|| {
+            super::topology::representation_bodies(
+                representation, exchange, topology, &mut representation_cache,
+                &mut BTreeSet::new(), ctx,
+            )
+        })?;
         if bodies.is_empty() {
             continue;
         }
@@ -1615,19 +1613,9 @@ fn occurrence_placements(
         ctx.admit_iter(&context_candidates, "STEP occurrence placements traversal")?
     {
         if source_ids.len() > 1 {
-            let mut copied = Vec::new();
-            scratch_storage.with_storage(|| {
-                ctx.reserve_vec(
-                    &mut copied,
-                    source_ids.len(),
-                    "step_ambiguous_context_source_copy",
-                )
+            let copied = scratch_storage.with_storage(|| {
+                ctx.copy_slice(source_ids, "step_ambiguous_context_source_copy")
             })?;
-            ctx.charge_work(
-                u64_from_index(source_ids.len()),
-                "STEP placement source copy",
-            )?;
-            copied.extend_from_slice(source_ids);
             let mut source_ids = copied;
             ctx.sort_unstable_by(
                 &mut source_ids,
@@ -1768,16 +1756,9 @@ fn occurrence_placements(
                     "STEP context placement source lookup",
                 )?
                 .ok_or_else(|| CodecError::malformed("STEP context placement was not indexed"))?;
-            let mut source_ids = Vec::new();
-            scratch_storage.with_storage(|| {
-                ctx.reserve_vec(
-                    &mut source_ids,
-                    original.len(),
-                    "step_competing_context_source_copy",
-                )
+            let mut source_ids = scratch_storage.with_storage(|| {
+                ctx.copy_slice(original, "step_competing_context_source_copy")
             })?;
-            ctx.charge_work(u64_from_index(original.len()), "STEP context source copy")?;
-            source_ids.extend_from_slice(original);
             scratch_storage.with_storage(|| {
                 ctx.reserve_vec(
                     &mut source_ids,
@@ -1797,15 +1778,9 @@ fn occurrence_placements(
             )?;
             ctx.dedup_vec(&mut source_ids, "STEP placement source deduplication")?;
             ctx.remove_btree_map(&mut result, &usage_id, "STEP product result remove")?;
-            let mut copied = Vec::new();
-            scratch_storage.with_storage(|| {
-                ctx.reserve_vec(&mut copied, source_ids.len(), "step_competing_source_copy")
+            let copied = scratch_storage.with_storage(|| {
+                ctx.copy_slice(&source_ids, "step_competing_source_copy")
             })?;
-            ctx.charge_work(
-                u64_from_index(source_ids.len()),
-                "STEP competing source copy",
-            )?;
-            copied.extend_from_slice(&source_ids);
             scratch_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     ambiguous,
