@@ -367,12 +367,12 @@ impl DecodeContext<'_> {
     /// admitted first; each removal admits its rebalancing before the entry is
     /// removed. The predicate admits child work. On refusal the remaining
     /// entries are kept and the original refusal is returned.
-    pub fn retain_btree_map<K: Ord, V>(
+    pub fn retain_btree_map<K: Ord, V, E: From<CodecError>>(
         &self,
         values: &mut BTreeMap<K, V>,
-        mut keep: impl FnMut(&K, &mut V) -> Result<bool, CodecError>,
+        mut keep: impl FnMut(&K, &mut V) -> Result<bool, E>,
         operation: &'static str,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), E> {
         self.charge_work(u64_from_index(values.len()), operation)?;
         let len = values.len();
         let mut refusal = None;
@@ -380,9 +380,10 @@ impl DecodeContext<'_> {
             if refusal.is_some() {
                 return true;
             }
-            match keep(key, value)
-                .and_then(|kept| self.admit_tree_removal::<K, V>(kept, len, operation))
-            {
+            match keep(key, value).and_then(|kept| {
+                self.admit_tree_removal::<K, V>(kept, len, operation)
+                    .map_err(E::from)
+            }) {
                 Ok(kept) => kept,
                 Err(error) => {
                     refusal = Some(error);
@@ -788,7 +789,7 @@ mod tests {
             &mut values,
             |key, value| {
                 *value += 1;
-                Ok(*key == 3)
+                Ok::<_, CodecError>(*key == 3)
             },
             "retain",
         )

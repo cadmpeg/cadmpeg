@@ -138,6 +138,9 @@ impl DecodeContext<'_> {
         mut compare: impl FnMut(&K, &K) -> Ordering,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
+        // Empty and singleton inputs do no comparison work, but they must
+        // still observe a refusal that already fused this context.
+        self.charge_work(0, operation)?;
         for pair in values.windows(2) {
             self.charge_work(1, operation)?;
             let left = key(&pair[0]);
@@ -296,5 +299,38 @@ mod tests {
         assert!(!ctx
             .is_sorted_by(&[2_u64, 1, 3], |value| value, Ord::cmp, "unsorted")
             .expect("one comparison"));
+    }
+
+    #[test]
+    fn sorted_check_preserves_fused_refusal_without_comparisons() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let empty: [u64; 0] = [];
+        let singleton = [1_u64];
+
+        assert!(ctx
+            .is_sorted_by(&empty, |value| value, Ord::cmp, "fresh empty")
+            .expect("fresh zero-work empty check succeeds"));
+        assert!(ctx
+            .is_sorted_by(&singleton, |value| value, Ord::cmp, "fresh singleton")
+            .expect("fresh zero-work singleton check succeeds"));
+
+        let CodecError::ResourceLimit(first) = ctx
+            .charge_work(1, "trigger refusal")
+            .expect_err("zero-work budget refuses positive work")
+        else {
+            panic!("resource refusal");
+        };
+
+        for values in [empty.as_slice(), singleton.as_slice()] {
+            assert!(matches!(
+                ctx.is_sorted_by(values, |value| value, Ord::cmp, "fused empty check"),
+                Err(CodecError::ResourceLimit(limit)) if limit == first
+            ));
+        }
+        assert_eq!(ctx.resource_refusal(), Some(first));
     }
 }

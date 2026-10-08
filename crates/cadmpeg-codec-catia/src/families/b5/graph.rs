@@ -2707,7 +2707,7 @@ pub(in crate::families) fn edge_vertex_references(
     if !ambiguous.is_empty() {
         ctx.retain_btree_map(
             &mut edges,
-            |object_id, _| Ok(!ctx.contains_hash_set(&ambiguous, object_id, AMBIGUOUS)?),
+            |object_id, _| Ok::<_, CodecError>(!ctx.contains_hash_set(&ambiguous, object_id, AMBIGUOUS)?),
             AMBIGUOUS,
         )?;
     }
@@ -3625,7 +3625,7 @@ fn implicit_pcurve_bindings(
     if !ambiguous.is_empty() {
         ctx.retain_btree_map(
             &mut bindings,
-            |pcurve, _| Ok(!ctx.contains_hash_set(&ambiguous, pcurve, AMBIGUOUS)?),
+            |pcurve, _| Ok::<_, CodecError>(!ctx.contains_hash_set(&ambiguous, pcurve, AMBIGUOUS)?),
             AMBIGUOUS,
         )?;
     }

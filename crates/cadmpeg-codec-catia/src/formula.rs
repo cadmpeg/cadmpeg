@@ -611,7 +611,7 @@ pub(crate) fn transfer_parameters<'ctx>(
     }
     ctx.retain_btree_map(
         &mut candidates,
-        |id, candidate| {
+        |id, candidate| -> Result<_, cadmpeg_core::CodecError> {
             if !candidate.role.is_formula_output() {
                 return Ok(true);
             }
@@ -674,7 +674,7 @@ pub(crate) fn transfer_parameters<'ctx>(
         |_, _| {
             let keep = derivable.get(position).copied().unwrap_or(false);
             position += 1;
-            Ok(keep)
+            Ok::<_, cadmpeg_core::CodecError>(keep)
         },
         "catia_formula_derivable_visits",
     )?;
