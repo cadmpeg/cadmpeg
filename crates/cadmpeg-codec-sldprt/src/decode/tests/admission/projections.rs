@@ -136,7 +136,7 @@ fn metadata_curve_projection_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "project SLDPRT composite curve segments",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_work_units = cap;
             match SldprtCodec.decode(&mut Cursor::new(composite_curve_source()), &options) {
                 Ok(decoded) => Ok(decoded),
@@ -212,7 +212,7 @@ fn metadata_edit_projection_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "parse SLDPRT fillet position",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_work_units = cap;
             match SldprtCodec.decode(&mut Cursor::new(variable_fillet_source()), &options) {
                 Ok(decoded) => Ok(decoded),
@@ -375,7 +375,7 @@ fn metadata_loft_projection_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "project SLDPRT loft references",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_work_units = cap;
             match SldprtCodec.decode(&mut Cursor::new(loft_reference_source()), &options) {
                 Ok(decoded) => Ok(decoded),

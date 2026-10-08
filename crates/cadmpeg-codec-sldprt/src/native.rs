@@ -1327,9 +1327,11 @@ impl SldprtNative {
                 crate::resolved_features::component_paths::FeaturesBySource::new(
                     ctx,
                     // Only surface selections read producers by source.
-                    (!lane.surface_selections.is_empty())
-                        .then_some(&lane_features[..])
-                        .unwrap_or_default(),
+                    if lane.surface_selections.is_empty() {
+                        &[]
+                    } else {
+                        &lane_features[..]
+                    },
                 )?;
             for record in ctx
                 .admit_iter(&lane.surface_selections, "scan SLDPRT store values")
@@ -2081,9 +2083,11 @@ fn validate_lane_selections(
     let features_by_source = crate::resolved_features::component_paths::FeaturesBySource::new(
         ctx,
         // Only surface selections read producers by source.
-        (!lane.surface_selections.is_empty())
-            .then_some(&lane_features[..])
-            .unwrap_or_default(),
+        if lane.surface_selections.is_empty() {
+            &[]
+        } else {
+            &lane_features[..]
+        },
     )?;
     let mut surface_selections = lane.surface_selections.iter();
     while let Some(record) = ctx.next_charged(&mut surface_selections, OPERATION)? {

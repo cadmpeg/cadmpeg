@@ -2607,8 +2607,7 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
         payload,
         curve,
         markers_by_id,
-        markers,
-        linking,
+        (markers, linking),
         Some(index),
         geometry,
     )
@@ -2631,8 +2630,7 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
         payload,
         curve,
         markers_by_id,
-        markers,
-        markers,
+        (markers, markers),
         None,
         geometry,
     )
@@ -2643,8 +2641,7 @@ fn marker_curve_endpoint_markers_from<'a>(
     payload: &[u8],
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
-    markers: &[&'a SketchInputEntity],
-    linking: &[&'a SketchInputEntity],
+    (markers, linking): (&[&'a SketchInputEntity], &[&'a SketchInputEntity]),
     index: Option<&CurveMarkers<'_, 'a>>,
     geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {

@@ -90,7 +90,7 @@ fn metadata_hole_ownership_scratch_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "copy SLDPRT hole profile ownership",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_work_units = cap;
             match SldprtCodec.decode(&mut Cursor::new(hole_ownership_source(false)), &options) {
                 Ok(decoded) => Ok(decoded),
@@ -113,7 +113,7 @@ fn geometry_hole_ownership_scratch_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "copy SLDPRT hole profile ownership",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_work_units = cap;
             match SldprtCodec.decode(&mut Cursor::new(hole_ownership_source(true)), &options) {
                 Ok(decoded) => Ok(decoded),
@@ -187,7 +187,7 @@ fn metadata_profiled_hole_projection_scratch_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "project SLDPRT profiled hole constructions",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_work_units = cap;
             match SldprtCodec.decode(&mut Cursor::new(hole_bound_sketch_source()), &options) {
                 Ok(decoded) => Ok(decoded),
@@ -241,7 +241,7 @@ fn geometry_profiled_hole_projection_scratch_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "project SLDPRT profiled hole constructions",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_work_units = cap;
             match SldprtCodec.decode(&mut Cursor::new(hole_bound_sketch_source()), &options) {
                 Ok(decoded) => Ok(decoded),
@@ -304,7 +304,7 @@ fn metadata_hole_position_projection_scratch_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "project SLDPRT hole position sketches",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_work_units = cap;
             match SldprtCodec.decode(&mut Cursor::new(hole_bound_sketch_source()), &options) {
                 Ok(decoded) => Ok(decoded),
@@ -358,7 +358,7 @@ fn geometry_hole_position_projection_scratch_refuses_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "project SLDPRT hole position sketches",
         |cap| {
-            let mut options = options.clone();
+            let mut options = options;
             options.policy.limits.max_work_units = cap;
             match SldprtCodec.decode(&mut Cursor::new(hole_bound_sketch_source()), &options) {
                 Ok(decoded) => Ok(decoded),

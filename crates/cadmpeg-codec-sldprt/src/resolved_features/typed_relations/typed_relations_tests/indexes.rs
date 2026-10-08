@@ -46,9 +46,12 @@ fn curve_marker_index_preserves_reverse_links_and_feature_separation() {
         .collect::<HashMap<_, _>>();
     let (index, _storage) = CurveMarkers::new(&ctx, &roster).unwrap();
     let geometry =
-        MarkerGeometryIndex::new(&ctx, &roster, MarkerPrefixIndex::new(&ctx, &[]).unwrap()).unwrap();
-    let indexed = marker_curve_endpoint_markers_in(&ctx, &[], &curve, &by_id, &index, &geometry).unwrap();
-    let plain = marker_curve_endpoint_markers(&ctx, &[], &curve, &by_id, &roster, &geometry).unwrap();
+        MarkerGeometryIndex::new(&ctx, &roster, MarkerPrefixIndex::new(&ctx, &[]).unwrap())
+            .unwrap();
+    let indexed =
+        marker_curve_endpoint_markers_in(&ctx, &[], &curve, &by_id, &index, &geometry).unwrap();
+    let plain =
+        marker_curve_endpoint_markers(&ctx, &[], &curve, &by_id, &roster, &geometry).unwrap();
     assert_eq!(
         indexed.iter().map(|marker| marker.id()).collect::<Vec<_>>(),
         ["first", "second"]
@@ -129,10 +132,14 @@ fn curve_object_index_preserves_zero_identity_and_duplicate_ambiguity() {
             &ctx,
             &roster,
             MarkerPrefixIndex::new(&ctx, &payload).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         let indexed =
-            marker_curve_endpoint_markers_in(&ctx, &payload, &curve, &by_id, &index, &geometry).unwrap();
-        let plain = marker_curve_endpoint_markers(&ctx, &payload, &curve, &by_id, &roster, &geometry).unwrap();
+            marker_curve_endpoint_markers_in(&ctx, &payload, &curve, &by_id, &index, &geometry)
+                .unwrap();
+        let plain =
+            marker_curve_endpoint_markers(&ctx, &payload, &curve, &by_id, &roster, &geometry)
+                .unwrap();
         assert_eq!(indexed, plain);
         if roster.len() == 4 {
             assert_eq!(
