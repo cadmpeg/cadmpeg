@@ -437,9 +437,14 @@ fn primitive_appearance_refusal(
         tolerance: None,
     });
     crate::test_support::refusal_at(dimension, &[], operation, |ctx| {
-        super::super::transfer_primitive_appearance(
+        let index = super::super::PrimitiveIndex::new(
             ctx,
             &ir,
+            super::super::PrimitiveStyle::Line(super::super::PrimitiveSize::Absent),
+        )?;
+        super::super::transfer_primitive_appearance(
+            ctx,
+            &index,
             &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
             &mut Vec::new(),
             super::super::PrimitiveAppearanceSource {
