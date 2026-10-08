@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Calls through core's typed admission traits.
 //!
-//! `cadmpeg_core::decode::Admission` and `AdmissionScope` are sealed and
-//! implemented only for the decode types (`DecodeContext`,
+//! `cadmpeg_core::decode::admission::Admission` and `AdmissionScope` are
+//! sealed and implemented only for the decode types (`DecodeContext`,
 //! `ScopedReservation`) and the standard admission used outside decode. A
 //! trait with `Admission` as a supertrait has the same two implementors.
 //! Each decode-type method is one call to the core operation of the same
