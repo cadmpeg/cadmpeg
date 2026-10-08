@@ -208,7 +208,10 @@ mod tests {
         let original = super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve).unwrap_err();
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, "sketch NURBS endpoint knot scan");
-        assert_eq!((original.limit, original.used, original.additional), (2, 2, 1));
+        assert_eq!(
+            (original.limit, original.used, original.additional),
+            (2, 2, 1)
+        );
         assert_eq!(
             super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve),
             Err(original)
