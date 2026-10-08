@@ -101,9 +101,13 @@ fn insert_source_attribute(
 fn append_summary_notes(
     ctx: &DecodeContext<'_>,
     notes: &mut Vec<String>,
-    mut additional: Vec<String>,
+    additional: (Vec<String>, ScopedReservation<'_>),
 ) -> Result<(), CodecError> {
-    ctx.append_vec(notes, &mut additional, "iges combined summary notes")
+    let (mut additional, storage) = additional;
+    ctx.append_vec(notes, &mut additional, "iges combined summary notes")?;
+    drop(additional);
+    drop(storage);
+    Ok(())
 }
 
 fn push_occurrence_loss(
@@ -152,7 +156,8 @@ fn attributed_sequences(
     }
 
     let mut attributed = BTreeSet::new();
-    for loss in ctx.admit_iter(losses, "iges attributed loss records")? {
+    let mut source = losses.iter();
+    while let Some(loss) = ctx.next_charged(&mut source, "iges attributed loss records")? {
         let Some(tag) = loss
             .provenance
             .as_ref()
@@ -191,7 +196,8 @@ fn projection_directory<'ctx>(
     }
     let (mut projected, storage) =
         ctx.temporary_vec(directory.len(), "iges projected directory entries")?;
-    for entry in ctx.admit_iter(directory, "iges projected directory entries")? {
+    let mut source = directory.iter();
+    while let Some(entry) = ctx.next_charged(&mut source, "iges projected directory entries")? {
         if !ctx.contains_btree_set(
             quarantined,
             &entry.sequence,
@@ -243,10 +249,11 @@ fn append_generic_losses(
     global_table: global::GlobalTable,
     attribution_storage: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
-    for entry in ctx
-        .admit_iter(directory, "iges generic loss directory entries")?
-        .filter(|entry| entry.entity_type != 0)
-    {
+    let mut source = directory.iter();
+    while let Some(entry) = ctx.next_charged(&mut source, "iges generic loss directory entries")? {
+        if entry.entity_type == 0 {
+            continue;
+        }
         let admitted =
             crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table);
         if admitted
@@ -353,7 +360,8 @@ fn mark_quarantined_placements(
     directory: &[directory::DirectoryEntry],
     quarantined: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
-    for sequence in ctx.admit_iter(quarantined, "iges quarantined placement sequences")? {
+    let mut source = quarantined.iter();
+    while let Some(sequence) = ctx.next_charged(&mut source, "iges quarantined placement sequences")? {
         let Some(entry) = directory::entry_by_sequence(directory, *sequence, ctx)?
             .filter(|entry| matches!(entry.entity_type, 408 | 420) && entry.form == 0)
         else {
@@ -386,7 +394,9 @@ struct PhysicalParse<'a, 'ctx> {
     quarantined_parameters: Vec<parameter::QuarantinedParameterRecord>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
+    global_loss_storage: Option<ScopedReservation<'ctx>>,
     _global_storage: ScopedReservation<'ctx>,
+    _directory_storage: ScopedReservation<'ctx>,
     _reference_storage: ScopedReservation<'ctx>,
     _scan_storage: ScopedReservation<'ctx>,
 }
@@ -404,9 +414,12 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         // The card framing borrows the source and is dropped with this parse.
         let mut scan_storage = ctx.reserve_scoped(0, card_storage)?;
         let scan = scan_storage.with_storage(|| card::scan_with_context(bytes, ctx))?;
-        let (global, mut global_losses, global_storage) = global::parse(&scan, ctx)?;
-        let (directory, quarantined_directory) =
-            directory::parse(&scan, global.global_table(), ctx)?;
+        let (global, (mut global_losses, mut global_loss_storage), global_storage) =
+            global::parse(&scan, ctx)?;
+        let ((directory, quarantined_directory), directory_storage) =
+            ctx.with_scoped_storage("iges parsed directory storage", || {
+                directory::parse(&scan, global.global_table(), ctx)
+            })?;
         if mode == ParseMode::Decode {
             entities::geometry::enforce_transform_depth(&directory, ctx)?;
         }
@@ -422,16 +435,17 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &global,
             ctx,
         )?;
-        let conditional_losses = global.conditional_double_precision_losses(
+        let (mut conditional_losses, conditional_loss_storage) = global.conditional_double_precision_losses(
             parameter::uses_double_precision(&parameters, ctx)?,
             ctx,
         )?;
-        let mut conditional_losses = conditional_losses;
-        ctx.append_vec(
+        global_loss_storage.with_storage(|| ctx.append_vec(
             &mut global_losses,
             &mut conditional_losses,
             "iges combined global loss notes",
-        )?;
+        ))?;
+        drop(conditional_losses);
+        drop(conditional_loss_storage);
         let (references, reference_storage) = graph::build(&directory, ctx)?;
         let mut scan = scan;
         let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
@@ -447,7 +461,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             quarantined_parameters,
             framing_recoveries,
             references,
+            global_loss_storage: Some(global_loss_storage),
             _global_storage: global_storage,
+            _directory_storage: directory_storage,
             _reference_storage: reference_storage,
             _scan_storage: scan_storage,
         })
@@ -464,6 +480,8 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &mut self.global_losses,
             "iges admission loss slots",
         )?;
+        drop(std::mem::take(&mut self.global_losses));
+        drop(self.global_loss_storage.take());
         if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
             if post_terminate_count > 0 {
@@ -482,23 +500,30 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         Ok(losses)
     }
 
-    fn record_losses(&self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
-        let mut losses = self.framing_recoveries.notes(ctx)?;
-        for record in ctx.admit_iter(&self.quarantined_directory, "iges record loss slots")? {
-            ctx.push_vec(
+    fn record_losses<'loss>(
+        &self,
+        ctx: &'loss DecodeContext<'_>,
+    ) -> Result<(Vec<LossNote>, ScopedReservation<'loss>), CodecError> {
+        let (mut losses, mut storage) = self.framing_recoveries.notes(ctx)?;
+        let mut directory_records = self.quarantined_directory.iter();
+        while let Some(record) = ctx.next_charged(&mut directory_records, "iges record loss slots")? {
+            ctx.push_scoped_vec(
+                &mut storage,
                 &mut losses,
                 record.loss_note(ctx)?,
                 "iges record loss slots",
             )?;
         }
-        for record in ctx.admit_iter(&self.quarantined_parameters, "iges record loss slots")? {
-            ctx.push_vec(
+        let mut parameter_records = self.quarantined_parameters.iter();
+        while let Some(record) = ctx.next_charged(&mut parameter_records, "iges record loss slots")? {
+            ctx.push_scoped_vec(
+                &mut storage,
                 &mut losses,
                 record.loss_note(ctx)?,
                 "iges record loss slots",
             )?;
         }
-        Ok(losses)
+        Ok((losses, storage))
     }
 }
 
@@ -511,12 +536,14 @@ pub(crate) fn inspect(
     let mut parse = PhysicalParse::run(window, ctx, ParseMode::Inspect)?;
     let primary = crate::dialect::classify(ctx, representation, &parse.global)?;
     let mut losses = parse.admission_losses(ctx)?;
-    let mut record_losses = parse.record_losses(ctx)?;
+    let (mut record_losses, record_loss_storage) = parse.record_losses(ctx)?;
     ctx.append_vec(
         &mut losses,
         &mut record_losses,
         "iges combined record losses",
     )?;
+    drop(record_losses);
+    drop(record_loss_storage);
     let mut summary = card::summarize(&parse.scan, primary, ctx)?;
     append_summary_notes(ctx, &mut summary.notes, parse.global.summary_notes(ctx)?)?;
     append_summary_notes(
@@ -685,17 +712,22 @@ fn decode_with_occurrence_limits(
         &mut projection.losses,
         "iges combined projection losses",
     )?;
-    let mut graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
+    let (mut graph_losses, graph_loss_storage) =
+        graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
     ctx.append_vec(&mut losses, &mut graph_losses, "iges combined graph losses")?;
-    let mut record_losses = parse.record_losses(ctx)?;
+    drop(graph_losses);
+    drop(graph_loss_storage);
+    let (mut record_losses, record_loss_storage) = parse.record_losses(ctx)?;
     ctx.append_vec(
         &mut losses,
         &mut record_losses,
         "iges combined record losses",
     )?;
-    for source_sequence in ctx.admit_iter(
-        product_occurrence_expansion.malformed_definition_sequences,
-        "iges occurrence loss sequences",
+    drop(record_losses);
+    drop(record_loss_storage);
+    let mut malformed_definitions = product_occurrence_expansion.malformed_definition_sequences.into_iter();
+    while let Some(source_sequence) = ctx.next_charged(
+        &mut malformed_definitions, "iges occurrence loss sequences",
     )? {
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrenceRootInferenceBlocked,
@@ -704,10 +736,11 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
+    drop(malformed_definitions);
     drop(definition_storage);
-    for source_sequence in ctx.admit_iter(
-        product_occurrence_expansion.malformed_placement_sequences,
-        "iges occurrence loss sequences",
+    let mut malformed_placements = product_occurrence_expansion.malformed_placement_sequences.into_iter();
+    while let Some(source_sequence) = ctx.next_charged(
+        &mut malformed_placements, "iges occurrence loss sequences",
     )? {
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrencePlacementMalformed,
@@ -716,12 +749,14 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
+    drop(malformed_placements);
     drop(placement_storage);
-    for native::AmbiguousParameterBoundary {
+    let mut boundaries = ambiguous_parameter_boundaries.into_iter();
+    while let Some(native::AmbiguousParameterBoundary {
         sequence: source_sequence,
         ambiguity,
-    } in ctx.admit_iter(
-        ambiguous_parameter_boundaries,
+    }) = ctx.next_charged(
+        &mut boundaries,
         "iges parameter boundary losses",
     )? {
         let (candidate_count, kind) = match ambiguity {
@@ -737,10 +772,11 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
+    drop(boundaries);
     drop(boundary_storage);
-    for (source_sequence, crate::parameter::OverdeclaredCount { declared, present }) in
-        ctx.admit_iter(overdeclared_counts, "iges overdeclared count losses")?
-    {
+    let mut counts = overdeclared_counts.into_iter();
+    while let Some((source_sequence, crate::parameter::OverdeclaredCount { declared, present })) =
+        ctx.next_charged(&mut counts, "iges overdeclared count losses")? {
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::ParameterCountOverdeclared,
             format_args!(
@@ -750,9 +786,11 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
+    drop(counts);
     drop(count_storage);
-    for (source_sequence, refusal) in ctx.admit_iter(
-        unstatable_attribute_tables,
+    let mut attributes = unstatable_attribute_tables.into_iter();
+    while let Some((source_sequence, refusal)) = ctx.next_charged(
+        &mut attributes,
         "iges attribute table count losses",
     )? {
         push_occurrence_loss(
@@ -766,6 +804,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
+    drop(attributes);
     drop(attribute_storage);
     let global_table = parse.global.global_table();
     let mut attribution_storage = ctx.reserve_scoped(0, "iges attributed loss index")?;
@@ -790,10 +829,13 @@ fn decode_with_occurrence_limits(
         attributed
     };
     let mut transfer_ledger = TransferLedger::default();
-    for entry in ctx
-        .admit_iter(&parse.directory, "iges transfer ledger directory records")?
-        .filter(|entry| entry.entity_type != 0)
-    {
+    let mut directory_records = parse.directory.iter();
+    while let Some(entry) = ctx.next_charged(
+        &mut directory_records, "iges transfer ledger directory records",
+    )? {
+        if entry.entity_type == 0 {
+            continue;
+        }
         let note = if ctx.container_only() {
             "native record retained; semantic projection was not requested"
         } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
@@ -831,8 +873,9 @@ fn decode_with_occurrence_limits(
     }
     drop(attributed);
     drop(attribution_storage);
-    for record in ctx.admit_iter(
-        &parse.quarantined_directory,
+    let mut quarantined_directory_records = parse.quarantined_directory.iter();
+    while let Some(record) = ctx.next_charged(
+        &mut quarantined_directory_records,
         "iges transfer ledger quarantined records",
     )? {
         let source = ctx.format_retained(
@@ -847,8 +890,9 @@ fn decode_with_occurrence_limits(
             "quarantined directory record retained; typed Directory fields were not recovered",
         )?;
     }
-    for record in ctx.admit_iter(
-        &parse.quarantined_parameters,
+    let mut quarantined_parameter_records = parse.quarantined_parameters.iter();
+    while let Some(record) = ctx.next_charged(
+        &mut quarantined_parameter_records,
         "iges transfer ledger quarantined records",
     )? {
         let source = ctx.format_retained(
@@ -871,7 +915,8 @@ fn decode_with_occurrence_limits(
                 "IGES transfer ledger is inconsistent: {message}"
             ))
         })?;
-    let mut notes = directory::summary_notes(&parse.directory, ctx)?;
+    let (mut notes, note_storage) = directory::summary_notes(&parse.directory, ctx)?;
+    note_storage.commit()?;
     append_summary_notes(
         ctx,
         &mut notes,

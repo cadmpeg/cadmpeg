@@ -817,11 +817,18 @@ fn parse_raw<'bytes>(
 }
 
 /// Recover the Global field boundaries, then resolve every field once.
-/// Keep the returned reservation alive with the resolved Global value.
+/// Keep both returned reservations alive with their Global values.
 pub(crate) fn parse<'ctx>(
     scan: &CardScan,
     ctx: &'ctx DecodeContext<'_>,
-) -> Result<(ResolvedGlobal, Vec<LossNote>, ScopedReservation<'ctx>), CodecError> {
+) -> Result<
+    (
+        ResolvedGlobal,
+        (Vec<LossNote>, ScopedReservation<'ctx>),
+        ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let (bytes, _stream_storage) = global_bytes(scan, ctx)?;
     let raw = parse_raw(&bytes, ctx)?;
     resolve(&raw, ctx)
@@ -934,6 +941,7 @@ struct Resolution<'ctx, 'arena, 'bytes> {
     ctx: &'ctx DecodeContext<'arena>,
     values: [Value<'bytes>; 26],
     losses: Vec<LossNote>,
+    loss_storage: ScopedReservation<'ctx>,
 }
 
 fn numeric_text<'bytes>(
@@ -1037,8 +1045,17 @@ impl Resolution<'_, '_, '_> {
         consequence: &str,
     ) -> Result<(), CodecError> {
         let note = global_loss_note(self.ctx, code, index, defect, consequence)?;
-        self.ctx
-            .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
+        self.push_loss(note)?;
+        Ok(())
+    }
+
+    fn push_loss(&mut self, note: LossNote) -> Result<(), CodecError> {
+        self.ctx.reserve_scoped_vec(
+            &mut self.loss_storage,
+            &mut self.losses,
+            1,
+            "iges global loss notes",
+        )?;
         self.losses.push(note);
         Ok(())
     }
@@ -1137,9 +1154,7 @@ impl Resolution<'_, '_, '_> {
                 self.declaration_text(index)
             })?;
         let note = recovered_real_loss_note(self.ctx, index, &source, value)?;
-        self.ctx
-            .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
-        self.losses.push(note);
+        self.push_loss(note)?;
         Ok(())
     }
 
@@ -1549,9 +1564,7 @@ impl Resolution<'_, '_, '_> {
                         IgesLossCode::GlobalLengthUnitUnresolved,
                         message,
                     )?;
-                    self.ctx
-                        .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
-                    self.losses.push(note);
+                    self.push_loss(note)?;
                 }
             }
         }
@@ -1562,7 +1575,14 @@ impl Resolution<'_, '_, '_> {
 fn resolve<'ctx>(
     raw: &RawGlobal<'_>,
     ctx: &'ctx DecodeContext<'_>,
-) -> Result<(ResolvedGlobal, Vec<LossNote>, ScopedReservation<'ctx>), CodecError> {
+) -> Result<
+    (
+        ResolvedGlobal,
+        (Vec<LossNote>, ScopedReservation<'ctx>),
+        ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let mut storage = ctx.reserve_scoped(0, "IGES resolved Global text")?;
     let RawGlobal {
         parameter_delimiter,
@@ -1570,10 +1590,12 @@ fn resolve<'ctx>(
         values,
         field_count,
     } = *raw;
+    let loss_storage = ctx.reserve_scoped(0, "iges global loss notes")?;
     let mut resolution = Resolution {
         ctx,
         values,
         losses: Vec::new(),
+        loss_storage,
     };
 
     let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG)? {
@@ -1595,10 +1617,9 @@ fn resolve<'ctx>(
         let message = ctx.format_retained(format_args!(
                 "IGES Global record has {field_count} fields; IGES {} Table 1 defines {global_field_count} and the decoder ignored the rest",
                 effective_version.name(),
-            ), "iges global framing loss message")?;
+        ), "iges global framing loss message")?;
         let note = admitted_global_loss(ctx, IgesLossCode::GlobalNoncanonicalFraming, message)?;
-        ctx.reserve_vec(&mut resolution.losses, 1, "iges global loss notes")?;
-        resolution.losses.push(note);
+        resolution.push_loss(note)?;
     }
 
     let sender_product =
@@ -1694,7 +1715,12 @@ fn resolve<'ctx>(
         line_weight_scale,
         declaration,
     };
-    Ok((resolved, resolution.losses, storage))
+    let Resolution {
+        losses,
+        loss_storage,
+        ..
+    } = resolution;
+    Ok((resolved, (losses, loss_storage), storage))
 }
 
 impl ResolvedGlobal {
@@ -1775,14 +1801,15 @@ impl ResolvedGlobal {
         self.declaration.effective_version().global_table()
     }
 
-    pub(crate) fn conditional_double_precision_losses(
+    pub(crate) fn conditional_double_precision_losses<'ctx>(
         &self,
         uses_double_precision: bool,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<LossNote>, CodecError> {
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<(Vec<LossNote>, ScopedReservation<'ctx>), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "iges global conditional loss notes")?;
         let global_table = self.global_table();
         if global_table != GlobalTable::V5_0 || !uses_double_precision {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), storage));
         }
         let mut losses = Vec::new();
         if matches!(self.numeric.double_magnitude, Supplied::Absent) {
@@ -1793,7 +1820,12 @@ impl ResolvedGlobal {
                 Defect::Absent,
                 METADATA_CONSEQUENCE,
             )?;
-            ctx.reserve_vec(&mut losses, 1, "iges global conditional loss notes")?;
+            ctx.reserve_scoped_vec(
+                &mut storage,
+                &mut losses,
+                1,
+                "iges global conditional loss notes",
+            )?;
             losses.push(note);
         }
         if matches!(self.numeric.double_significance, Supplied::Absent) {
@@ -1804,10 +1836,15 @@ impl ResolvedGlobal {
                 Defect::Absent,
                 SIGNIFICANCE_CONSEQUENCE,
             )?;
-            ctx.reserve_vec(&mut losses, 1, "iges global conditional loss notes")?;
+            ctx.reserve_scoped_vec(
+                &mut storage,
+                &mut losses,
+                1,
+                "iges global conditional loss notes",
+            )?;
             losses.push(note);
         }
-        Ok(losses)
+        Ok((losses, storage))
     }
 
     /// Inspection notes for this Global section.
@@ -1816,83 +1853,78 @@ impl ResolvedGlobal {
     /// effective Global table was not verified for the source declaration. In
     /// that case, retain the declared flag and label the effective version as
     /// recovery rather than presenting it as the document's verified version.
-    pub(crate) fn summary_notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<String>, CodecError> {
+    pub(crate) fn summary_notes<'ctx>(
+        &self,
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<(Vec<String>, ScopedReservation<'ctx>), CodecError> {
         let effective_version = self.declaration.effective_version();
         let global_table = effective_version.global_table();
         let version_name = effective_version.name();
+        let mut storage = ctx.reserve_scoped(0, "iges global summary notes")?;
         let mut notes = Vec::new();
-        ctx.push_formatted_retained(
-            &mut notes,
+        ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+        notes.push(ctx.format_retained(
             format_args!(
                 "parameter_delimiter={}",
                 char::from(self.parameter_delimiter)
             ),
-            "iges global summary notes",
             "iges global summary text",
-        )?;
-        ctx.push_formatted_retained(
-            &mut notes,
+        )?);
+        ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+        notes.push(ctx.format_retained(
             format_args!("record_delimiter={}", char::from(self.record_delimiter)),
-            "iges global summary notes",
             "iges global summary text",
-        )?;
+        )?);
         if let Some(product) = self.sender_product() {
-            ctx.push_formatted_retained(
-                &mut notes,
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
                 format_args!("sender_product={product}"),
-                "iges global summary notes",
                 "iges global summary text",
-            )?;
+            )?);
         }
         if global_table == GlobalTable::V5_0 {
             if let Some(product) = self.receiver_product() {
-                ctx.push_formatted_retained(
-                    &mut notes,
+                ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+                notes.push(ctx.format_retained(
                     format_args!("receiver_product={product}"),
-                    "iges global summary notes",
                     "iges global summary text",
-                )?;
+                )?);
             }
         }
         if let Some(units) = self.units_name() {
-            ctx.push_formatted_retained(
-                &mut notes,
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
                 format_args!("units={units}"),
-                "iges global summary notes",
                 "iges global summary text",
-            )?;
+            )?);
         }
         if matches!(self.dialect_recovery(), DialectRecovery::Verified) {
-            ctx.push_formatted_retained(
-                &mut notes,
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
                 format_args!("iges_version={version_name}"),
-                "iges global summary notes",
                 "iges global summary text",
-            )?;
+            )?);
         } else {
-            ctx.push_formatted_retained(
-                &mut notes,
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
                 format_args!("iges_version=unverified"),
-                "iges global summary notes",
                 "iges global summary text",
-            )?;
-            ctx.push_formatted_retained(
-                &mut notes,
+            )?);
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
                 format_args!(
                     "iges_declared_version_flag={}",
                     self.declaration.declared_flag()
                 ),
-                "iges global summary notes",
                 "iges global summary text",
-            )?;
-            ctx.push_formatted_retained(
-                &mut notes,
+            )?);
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
+            notes.push(ctx.format_retained(
                 format_args!("iges_effective_version={version_name}"),
-                "iges global summary notes",
                 "iges global summary text",
-            )?;
+            )?);
         }
-        Ok(notes)
+        Ok((notes, storage))
     }
 }
 

@@ -42,9 +42,141 @@ fn directory_summary_refuses_group_and_note_limits_before_storage() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::summary_notes(&entries, &ctx).unwrap(),
+        super::summary_notes(&entries, &ctx).unwrap().0,
         ["entities=1", "entity.116.form.0=1"]
     );
+}
+
+#[test]
+fn directory_summary_steps_source_entries_before_group_work_can_stop() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let entries = (1..=512)
+        .map(|sequence| crate::test_support::directory_target(sequence, 116))
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::summary_notes(&entries, &ctx).expect_err("the first group work exceeds 1");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected work refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "iges directory summary groups");
+    assert_eq!(limit.used, 1);
+    assert!(limit.additional > 0);
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
+    ));
+}
+
+#[test]
+fn directory_summary_releases_census_storage_and_scopes_note_slots() {
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+
+    let entries = [crate::test_support::directory_target(1, 116)];
+    let tree_limit = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "iges directory summary groups",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            super::summary_notes(&entries, &ctx).map(|_| ())
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(tree_limit) = tree_limit else {
+        panic!("expected census storage boundary: {tree_limit:?}");
+    };
+    assert_eq!(tree_limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(tree_limit.operation, "iges directory summary groups");
+    let tree_bytes = tree_limit
+        .used
+        .checked_add(tree_limit.additional)
+        .expect("census storage size fits");
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (notes, storage) = super::summary_notes(&entries, &ctx).unwrap();
+    assert_eq!(notes, ["entities=1", "entity.116.form.0=1"]);
+    let note_bytes = u64_from_index(
+        notes
+            .capacity()
+            .checked_mul(std::mem::size_of::<String>())
+            .expect("summary vector size fits"),
+    );
+    let text_bytes = u64_from_index(
+        notes
+            .iter()
+            .try_fold(0_usize, |total, note| total.checked_add(note.len()))
+            .expect("summary text size fits"),
+    );
+    drop(notes);
+    drop(storage);
+    let total_bytes = tree_bytes
+        .checked_add(note_bytes)
+        .expect("summary storage size fits");
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = total_bytes;
+    policy.limits.max_retained_bytes = text_bytes;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (notes, storage) = super::summary_notes(&entries, &ctx).unwrap();
+    let remaining = ctx
+        .reserve_scoped(tree_bytes, "test after directory census release")
+        .expect("the census guard is dropped when summary returns");
+    let error = ctx
+        .reserve_scoped(1, "test after live directory summary slots")
+        .expect_err("the returned note slots remain live");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.used == total_bytes
+                && limit.additional == 1
+                && limit.operation == "test after live directory summary slots"
+    ));
+    drop(remaining);
+    drop(notes);
+    drop(storage);
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = total_bytes;
+    policy.limits.max_retained_bytes = text_bytes;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (notes, storage) = super::summary_notes(&entries, &ctx).unwrap();
+    drop(notes);
+    drop(storage);
+    let released = ctx
+        .reserve_scoped(total_bytes, "test after released directory summary slots")
+        .expect("dropping the returned vector releases its backing");
+    drop(released);
+    let retained = ctx
+        .charge_retained(1, "test after retained directory summary text")
+        .expect_err("dropping the slots does not release note text");
+    assert!(matches!(
+        retained,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == text_bytes
+                && limit.additional == 1
+                && limit.operation == "test after retained directory summary text"
+    ));
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
 }
 
 #[test]

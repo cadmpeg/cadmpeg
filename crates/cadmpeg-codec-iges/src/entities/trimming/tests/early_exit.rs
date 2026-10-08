@@ -60,7 +60,7 @@ fn run_projection(
     input: &ProjectionInput,
     source_ir: &CadIr,
     work_limit: u64,
-) -> Result<super::super::super::geometry::ProjectionOutcome, CodecError> {
+) -> Result<Vec<String>, CodecError> {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = work_limit;
     crate::test_support::with_policy_context(&[], &policy, |ctx| {
@@ -75,7 +75,15 @@ fn run_projection(
             (&ctx, &mut derivation_storage),
             &mut sequences,
         )?;
-        Ok(outcome)
+        let messages = outcome
+            .losses
+            .into_iter()
+            .map(|loss| loss.message)
+            .collect();
+        drop(outcome.decoded);
+        drop(outcome.decoded_storage);
+        drop(outcome.loss_slots_storage);
+        Ok(messages)
     })
 }
 
@@ -157,9 +165,8 @@ fn assert_first_invalid_stops_before_large_tail(
     let result = run_projection(input, source_ir, replay_limit)
         .unwrap_or_else(|error| panic!("the first invalid value did not stop {operation}: {error:?}"));
     assert!(
-        result.losses.iter().any(|loss| loss.message == expected_message),
-        "expected loss {expected_message:?}; got {:#?}",
-        result.losses
+        result.iter().any(|loss| loss == &expected_message),
+        "expected loss {expected_message:?}; got {result:#?}"
     );
 }
 
@@ -344,9 +351,8 @@ fn trimming_boundary_walk_stops_at_a_missing_definition_before_the_tail() {
     let result = run_projection(&input, &source_ir, replay_limit)
         .unwrap_or_else(|error| panic!("the missing first boundary did not stop the tail: {error:?}"));
     assert!(
-        result.losses.iter().any(|loss| loss.message == expected_message),
-        "expected loss {expected_message:?}; got {:#?}",
-        result.losses
+        result.iter().any(|loss| loss == &expected_message),
+        "expected loss {expected_message:?}; got {result:#?}"
     );
 }
 

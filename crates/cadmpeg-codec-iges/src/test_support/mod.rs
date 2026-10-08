@@ -21,7 +21,10 @@ pub(crate) fn parse_global(
     ),
     cadmpeg_core::CodecError,
 > {
-    with_service_context(&[], |ctx| crate::global::parse(scan, ctx).map(|(global, losses, _storage)| (global, losses)))
+    with_service_context(&[], |ctx| {
+        crate::global::parse(scan, ctx)
+            .map(|(global, (losses, _loss_storage), _storage)| (global, losses))
+    })
 }
 
 /// Plans a write at one Fixed ASCII target, the request the command line

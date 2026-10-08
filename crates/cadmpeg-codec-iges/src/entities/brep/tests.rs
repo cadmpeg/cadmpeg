@@ -1165,6 +1165,7 @@ fn rejected_brep_definition_vectors_release_their_storage() {
     assert_eq!(outcome.losses.len(), usize::try_from(count).unwrap());
     assert!(ir.model.points.is_empty());
     assert!(ir.model.vertices.is_empty());
+    drop(outcome);
     drop(global_storage);
     ctx.finish_session().unwrap();
 }

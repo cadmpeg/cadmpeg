@@ -1503,95 +1503,82 @@ fn predefined_associativity_valid(
             )
         }
         6 => {
-            let visible_count = (record.integer(1) == Some(1))
-                .then(|| record.count(2))
-                .flatten();
+            if record.integer(1) != Some(1) {
+                return Ok(false);
+            }
+            let Some(visible_count) = record.count(2) else {
+                return Ok(false);
+            };
+            if end != 4 + visible_count {
+                return Ok(false);
+            }
             let view = existing_pointer(record, 3, entries, ctx)?;
-            let visible_valid = match visible_count {
-                Some(count) => ctx.all_by(
-                    0..count,
-                    |offset| {
-                        let Some((sequence, _)) =
-                            existing_pointer(record, 4 + offset, entries, ctx)?
-                        else {
-                            return Ok(false);
-                        };
-                        let Some(owner) = ctx.get_btree_map(
-                            records,
-                            &sequence,
-                            "iges predefined associativity record lookup",
-                        )? else {
-                            return Ok(false);
-                        };
-                        has_association_back_pointer(
-                            owner,
+            let visible_valid = ctx.all_by(
+                0..visible_count,
+                |offset| {
+                    let Some((sequence, _)) =
+                        existing_pointer(record, 4 + offset, entries, ctx)?
+                    else {
+                        return Ok(false);
+                    };
+                    let Some(owner) = ctx.get_btree_map(
+                        records,
+                        &sequence,
+                        "iges predefined associativity record lookup",
+                    )? else {
+                        return Ok(false);
+                    };
+                    has_association_back_pointer(owner, entry.sequence, association_owners, ctx)
+                },
+                "iges predefined associativity fields",
+            )?;
+            let view_back_pointer_valid = match view {
+                Some((sequence, target)) if target.entity_type == 410 => {
+                    match ctx.get_btree_map(
+                        records,
+                        &sequence,
+                        "iges predefined associativity record lookup",
+                    )? {
+                        Some(record) => has_association_back_pointer(
+                            record,
                             entry.sequence,
                             association_owners,
                             ctx,
-                        )
-                    },
-                    "iges predefined associativity fields",
-                )?,
-                None => false,
-            };
-            let count_and_end_valid = visible_count.is_some_and(|count| end == 4 + count);
-            let view_back_pointer_valid = if count_and_end_valid {
-                match view {
-                    Some((sequence, target)) if target.entity_type == 410 => {
-                        match ctx.get_btree_map(
-                            records,
-                            &sequence,
-                            "iges predefined associativity record lookup",
-                        )? {
-                            Some(record) => has_association_back_pointer(
-                                record,
-                                entry.sequence,
-                                association_owners,
-                                ctx,
-                            )?,
-                            None => false,
-                        }
+                        )?,
+                        None => false,
                     }
-                    _ => false,
                 }
-            } else {
-                false
+                _ => false,
             };
-            Ok(count_and_end_valid
-                && view_back_pointer_valid
-                && visible_valid)
+            Ok(view_back_pointer_valid && visible_valid)
         }
         9 => {
-            let child_count = record.count(2).filter(|count| *count > 0);
-            let members_valid = match child_count {
-                Some(count) => ctx.all_by(
-                    3..4 + count,
-                    |index| {
-                        let Some((sequence, _)) = existing_pointer(record, index, entries, ctx)?
-                        else {
-                            return Ok(false);
-                        };
-                        let Some(member) = ctx.get_btree_map(
-                            records,
-                            &sequence,
-                            "iges predefined associativity record lookup",
-                        )? else {
-                            return Ok(false);
-                        };
-                        has_association_back_pointer(
-                            member,
-                            entry.sequence,
-                            association_owners,
-                            ctx,
-                        )
-                    },
-                    "iges predefined associativity fields",
-                )?,
-                None => false,
+            if record.integer(1) != Some(1) {
+                return Ok(false);
+            }
+            let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
+                return Ok(false);
             };
-            Ok(record.integer(1) == Some(1)
-                && child_count.is_some_and(|count| end == 4 + count)
-                && members_valid)
+            if end != 4 + child_count {
+                return Ok(false);
+            }
+            ctx.all_by(
+                3..4 + child_count,
+                |index| {
+                    let Some((sequence, _)) = existing_pointer(record, index, entries, ctx)? else {
+                        return Ok(false);
+                    };
+                    let Some(member) = ctx.get_btree_map(
+                        records,
+                        &sequence,
+                        "iges predefined associativity record lookup",
+                    )? else {
+                        return Ok(false);
+                    };
+                    has_association_back_pointer(member, entry.sequence, association_owners, ctx)
+                },
+                "iges predefined associativity fields",
+            )
         }
         2 | 12 => {
             let count = record.count(1).filter(|count| *count > 0);
@@ -1612,19 +1599,21 @@ fn predefined_associativity_valid(
                 .unwrap_or(false))
         }
         13 => {
-            let geometry_count = record.count(2).filter(|count| *count > 0);
-            let dimension = existing_pointer(record, 3, entries, ctx)?;
             if record.integer(1) != Some(1) {
                 return Ok(false);
             }
-            let geometry_valid = match geometry_count {
-                Some(count) if end == 4 + count => ctx.all_by(
-                    0..count,
-                    |offset| Ok(existing_pointer(record, 4 + offset, entries, ctx)?.is_some()),
-                    "iges predefined associativity fields",
-                )?,
-                _ => false,
+            let Some(geometry_count) = record.count(2).filter(|count| *count > 0) else {
+                return Ok(false);
             };
+            if end != 4 + geometry_count {
+                return Ok(false);
+            }
+            let dimension = existing_pointer(record, 3, entries, ctx)?;
+            let geometry_valid = ctx.all_by(
+                0..geometry_count,
+                |offset| Ok(existing_pointer(record, 4 + offset, entries, ctx)?.is_some()),
+                "iges predefined associativity fields",
+            )?;
             if !geometry_valid {
                 return Ok(false);
             }
@@ -1644,60 +1633,78 @@ fn predefined_associativity_valid(
             has_association_back_pointer(member, entry.sequence, association_owners, ctx)
         }
         16 => {
-            let count = record.count(2).filter(|count| *count > 0);
+            if record.integer(1) != Some(1) {
+                return Ok(false);
+            }
+            let Some(count) = record.count(2).filter(|count| *count > 0) else {
+                return Ok(false);
+            };
+            if end != 4 + count {
+                return Ok(false);
+            }
             let transform_valid = match record.integer(3) {
                 Some(0) => true,
                 Some(_) => existing_pointer(record, 3, entries, ctx)?
                     .is_some_and(|(_, target)| target.entity_type == 124 && target.form == 0),
                 None => false,
             };
-            if record.integer(1) != Some(1) || !transform_valid {
+            if !transform_valid {
                 return Ok(false);
             }
-            let members_valid = match count {
-                Some(count) if end == 4 + count => ctx.all_by(
-                    0..count,
-                    |offset| Ok(existing_pointer(record, 4 + offset, entries, ctx)?.is_some()),
-                    "iges predefined associativity fields",
-                )?,
-                _ => false,
-            };
-            Ok(members_valid)
+            ctx.all_by(
+                0..count,
+                |offset| Ok(existing_pointer(record, 4 + offset, entries, ctx)?.is_some()),
+                "iges predefined associativity fields",
+            )
         }
         21 => {
-            let geometry_count = record.count(2).filter(|count| *count > 0);
+            if record.integer(1) != Some(1) {
+                return Ok(false);
+            }
+            let Some(geometry_count) = record.count(2).filter(|count| *count > 0) else {
+                return Ok(false);
+            };
+            if end != 6 + geometry_count * 5 {
+                return Ok(false);
+            }
+            let Some(orientation) = record
+                .integer(4)
+                .filter(|orientation| (0..=7).contains(orientation))
+            else {
+                return Ok(false);
+            };
+            let angle_valid = record.number(5).is_some();
+            if !angle_valid || !entry.status.is_physically_dependent() {
+                return Ok(false);
+            }
             let dimension = existing_pointer(record, 3, entries, ctx)?;
-            let orientation_valid = record.integer(4).is_some_and(|orientation| {
-                dimension.is_some_and(|(_, dimension)| match dimension.entity_type {
+            let orientation_valid = dimension.is_some_and(|(_, dimension)| {
+                match dimension.entity_type {
                     202 => matches!(orientation, 0..=3),
                     216 => matches!(orientation, 4..=7),
                     218 => matches!(orientation, 6..=7),
                     206 | 220 | 222 => orientation == 0,
                     _ => false,
-                })
+                }
             });
-            let angle_valid = record.number(5).is_some();
-            let geometry_valid = match geometry_count {
-                Some(count) if end == 6 + count * 5 => ctx.all_by(
-                    0..count,
-                    |offset| {
-                        let start = 6 + offset * 5;
-                        let pointer_valid = match record.integer(start) {
-                            Some(0) => offset + 1 == count,
-                            Some(_) => existing_pointer(record, start, entries, ctx)?.is_some(),
-                            None => false,
-                        };
-                        Ok(pointer_valid
-                            && record
-                                .integer(start + 1)
-                                .is_some_and(|location| matches!(location, 0..=5))
-                            && (start + 2..=start + 4)
-                                .all(|index| record.number(index).is_some()))
-                    },
-                    "iges predefined associativity fields",
-                )?,
-                _ => false,
-            };
+            let geometry_valid = ctx.all_by(
+                0..geometry_count,
+                |offset| {
+                    let start = 6 + offset * 5;
+                    let pointer_valid = match record.integer(start) {
+                        Some(0) => offset + 1 == geometry_count,
+                        Some(_) => existing_pointer(record, start, entries, ctx)?.is_some(),
+                        None => false,
+                    };
+                    Ok(pointer_valid
+                        && record
+                            .integer(start + 1)
+                            .is_some_and(|location| matches!(location, 0..=5))
+                        && (start + 2..=start + 4)
+                            .all(|index| record.number(index).is_some()))
+                },
+                "iges predefined associativity fields",
+            )?;
             let arrow_count = match dimension {
                 Some((sequence, dimension)) if dimension.entity_type == 216 => {
                     match ctx.get_btree_map(
@@ -1724,7 +1731,7 @@ fn predefined_associativity_valid(
             let arrow_cardinality_valid = !dimension
                 .is_some_and(|(_, dimension)| dimension.entity_type == 216)
                 || arrow_count != 2
-                || geometry_count == Some(2);
+                || geometry_count == 2;
             let back_pointer_owners = ctx.get_btree_map(
                 association_owners,
                 &entry.sequence,
@@ -1736,13 +1743,10 @@ fn predefined_associativity_valid(
                 }
                 _ => false,
             };
-            Ok(record.integer(1) == Some(1)
-                && orientation_valid
-                && angle_valid
+            Ok(orientation_valid
                 && geometry_valid
                 && arrow_cardinality_valid
-                && dimension_back_pointer_valid
-                && entry.status.is_physically_dependent())
+                && dimension_back_pointer_valid)
         }
         _ => Ok(false),
     }
@@ -3047,7 +3051,7 @@ pub(crate) fn placement_affine(
     ))
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     indexes: (
@@ -3056,12 +3060,14 @@ pub(super) fn project(
     ),
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
+    ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
+) -> Result<(ProjectionOutcome<'ctx>, BTreeMap<u32, PlacementRejection>), CodecError> {
     let (entries, records) = indexes;
     let mut scratch = ctx.reserve_scoped(0, "iges structure scratch")?;
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges structure decoded sequences")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
     let mut placement_rejections = BTreeMap::new();
     let mut assemblies = BTreeMap::new();
@@ -3145,8 +3151,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3518,14 +3525,17 @@ pub(super) fn project(
             _ => true,
         };
         if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
+                "iges structure decoded sequences",
             )?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3541,8 +3551,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3557,9 +3568,11 @@ pub(super) fn project(
             ctx,
         )?;
         if definition_valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
+                "iges structure decoded sequences",
                 "iges structure decoded sequences",
             )?;
             if entry.form == 0 {
@@ -3574,7 +3587,7 @@ pub(super) fn project(
             }
         } else {
             drop(shape);
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"))?;
+            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"))?;
         }
     }
 
@@ -3583,8 +3596,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3647,14 +3661,17 @@ pub(super) fn project(
             }
         }
         if values_valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
+                "iges structure decoded sequences",
             )?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3672,8 +3689,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3684,13 +3702,15 @@ pub(super) fn project(
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if units_valid && directory_valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
+                "iges structure decoded sequences",
             )?;
         } else {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid"))?;
+            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid"))?;
         }
     }
 
@@ -3699,8 +3719,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 302)
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3737,13 +3758,15 @@ pub(super) fn project(
             && entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if directory_valid && classes_valid && cursor == record.parameter_end() {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
+                "iges structure decoded sequences",
             )?;
         } else {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "associativity form, class count, class flags, item layout, or Directory fields are invalid"))?;
+            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "associativity form, class count, class flags, item layout, or Directory fields are invalid"))?;
         }
     }
 
@@ -3757,8 +3780,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3798,14 +3822,17 @@ pub(super) fn project(
             .transpose()?
             .unwrap_or(false);
         if members_valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
+                "iges structure decoded sequences",
             )?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3824,8 +3851,9 @@ pub(super) fn project(
         })
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3854,9 +3882,11 @@ pub(super) fn project(
                 )?
             };
         if valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
+                "iges structure decoded sequences",
                 "iges structure decoded sequences",
             )?;
             let legacy_parent = if entry.form == 9 {
@@ -3904,8 +3934,9 @@ pub(super) fn project(
                         legacy_face_candidates.push((entry, candidate));
                     }
                     Ok(None) => {}
-                    Err(reason) => super::push_entity_loss(
+                    Err(reason) => super::push_entity_loss_with_scoped_slots(
                         ctx,
+                        &mut loss_slots_storage,
                         &mut losses,
                         entry,
                         format_args!("{}", reason.non_resource()?),
@@ -3913,7 +3944,7 @@ pub(super) fn project(
                 }
             }
         } else {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "predefined associativity counts, class layout, links, back pointers, or structure are invalid"))?;
+            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "predefined associativity counts, class layout, links, back pointers, or structure are invalid"))?;
         }
     }
 
@@ -3989,16 +4020,18 @@ pub(super) fn project(
                             })?;
                             legacy_face_candidates.push((entry, candidate));
                         }
-                        Err(reason) => super::push_entity_loss(
+                        Err(reason) => super::push_entity_loss_with_scoped_slots(
                             ctx,
+                            &mut loss_slots_storage,
                             &mut losses,
                             entry,
                             format_args!("{}", reason.non_resource()?),
                         )?,
                     }
                 }
-                Err(reason) => super::push_entity_loss(
+                Err(reason) => super::push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("{}", reason.message()?),
@@ -4013,16 +4046,18 @@ pub(super) fn project(
                 ctx,
                 &mut plane_proofs,
             ) {
-                Ok(_) => super::push_entity_loss(
+                Ok(_) => super::push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!(
                         "negative bounded plane requires an enclosing positive plane face"
                     ),
                 )?,
-                Err(reason) => super::push_entity_loss(
+                Err(reason) => super::push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("{}", reason.message()?),
@@ -4039,8 +4074,9 @@ pub(super) fn project(
         ctx.admit_iter(legacy_face_candidates, "iges structure list traversal")?
     {
         if commit_session.commit_model(candidate)?.is_err() {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4138,13 +4174,15 @@ pub(super) fn project(
             })
         })?;
         if flow_targets_valid && !cyclic {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
+                "iges structure decoded sequences",
             )?;
         } else {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid"))?;
+            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid"))?;
         }
     }
 
@@ -4153,8 +4191,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -4168,14 +4207,17 @@ pub(super) fn project(
             _ => false,
         };
         if fields_valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
+                "iges structure decoded sequences",
             )?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4216,8 +4258,9 @@ pub(super) fn project(
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -4278,14 +4321,17 @@ pub(super) fn project(
                 }
         };
         if target_valid && !cyclic && transform_valid && fields_valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
+                "iges structure decoded sequences",
             )?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4301,8 +4347,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -4385,14 +4432,17 @@ pub(super) fn project(
             && transform_valid
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::LogicalPositional)
         {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
+                "iges structure decoded sequences",
             )?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4409,8 +4459,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -4431,8 +4482,9 @@ pub(super) fn project(
                 )
             })?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid-instance target pointer is invalid"),
@@ -4467,10 +4519,17 @@ pub(super) fn project(
             single_target_cycle(*sequence, &solid_instances, &mut visited_instances, ctx)
         })?;
         if target_valid && transform_valid && !cyclic {
-            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4486,8 +4545,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -4495,8 +4555,9 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid-assembly item count is not positive"),
@@ -4524,8 +4585,9 @@ pub(super) fn project(
             items.push(item);
         }
         if !items_valid {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid-assembly item tuple is invalid"),
@@ -4651,8 +4713,9 @@ pub(super) fn project(
             || cyclic
             || !own_transform_valid
         {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4662,7 +4725,13 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            *sequence,
+            "iges structure decoded sequences",
+            "iges structure decoded sequences",
+        )?;
     }
 
     let mut definitions = BTreeMap::new();
@@ -4672,8 +4741,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 308 && entry.form == 0)
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -4698,8 +4768,9 @@ pub(super) fn project(
             None => None,
         };
         let (Some(depth), Some(members)) = (depth, members) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4745,8 +4816,9 @@ pub(super) fn project(
                 PlacementRejection::MissingRecord,
                 "iges placement rejection nodes",
             )?;
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -4805,8 +4877,9 @@ pub(super) fn project(
                     "iges placement rejection nodes",
                 )?;
             }
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "subfigure-instance definition pointer is invalid"),
@@ -4839,8 +4912,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 320 && entry.form == 0)
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges structure parameter record lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -4869,8 +4943,9 @@ pub(super) fn project(
             .zip(members)
             .map(|((depth, member_count), members)| (depth, member_count, members))
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "network definition header or member list is invalid"),
@@ -4907,8 +4982,9 @@ pub(super) fn project(
             )
         })?
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "network definition connect-point count is invalid"),
@@ -4958,8 +5034,9 @@ pub(super) fn project(
                 PlacementRejection::MissingRecord,
                 "iges placement rejection nodes",
             )?;
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -5050,8 +5127,9 @@ pub(super) fn project(
                     "iges placement rejection nodes",
                 )?;
             }
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "network instance definition or count is invalid"),
@@ -5162,10 +5240,17 @@ pub(super) fn project(
             "iges subfigure definition field lookup",
         )? && nesting_valid
         {
-            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -5199,7 +5284,13 @@ pub(super) fn project(
             "iges decoded subfigure definition lookup",
         )?
         {
-            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+                "iges structure decoded sequences",
+            )?;
         } else {
             if !ctx.contains_key_btree_map(
                 &placement_rejections,
@@ -5213,8 +5304,9 @@ pub(super) fn project(
                     "iges placement rejection nodes",
                 )?;
             }
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -5303,10 +5395,17 @@ pub(super) fn project(
             "iges network definition field lookup",
         )? && nesting_valid
         {
-            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -5354,7 +5453,13 @@ pub(super) fn project(
             None
         };
         if instance_fields_valid && definition_valid && definition_decoded == Some(true) {
-            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+                "iges structure decoded sequences",
+            )?;
         } else {
             if !ctx.contains_key_btree_map(
                 &placement_rejections,
@@ -5382,8 +5487,9 @@ pub(super) fn project(
                     "iges placement rejection nodes",
                 )?;
             }
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -5394,7 +5500,7 @@ pub(super) fn project(
         }
     }
 
-    Ok((ProjectionOutcome { decoded, losses }, placement_rejections))
+    Ok((ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage }, placement_rejections))
 }
 
 #[cfg(test)]

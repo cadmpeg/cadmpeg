@@ -60,29 +60,27 @@ fn assert_collection_refusal_at(bytes: &[u8], operation: &str) {
         if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
 }
 
-fn assert_retained_refusal_at(bytes: &[u8], operation: &str) {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
-        operation,
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            IgesCodec
-                .decode(
-                    &mut Cursor::new(bytes),
-                    &DecodeOptions {
-                        policy,
-                        ..DecodeOptions::default()
-                    },
-                )
-                .map_err(|failure| match failure {
-                    DecodeFailure::Codec(error) => error,
-                    other => panic!("unexpected decode failure: {other:?}"),
-                })
+fn assert_retained_not_charged_at(bytes: &[u8], operation: &str) {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+
+    // Retained bytes are cumulative, so an exact-operation hit detects a
+    // source allocation that escaped its per-arena materialization scope.
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::MAX;
+    let probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+    let result = IgesCodec.decode(
+        &mut Cursor::new(bytes),
+        &DecodeOptions {
+            policy,
+            ..DecodeOptions::default()
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation));
+    drop(probe);
+    assert!(
+        result.is_ok(),
+        "{operation}: full decode refused while probing retained source storage: {:?}",
+        result.err()
+    );
 }
 
 fn assert_native_arena(bytes: &[u8], arena: &str) {
@@ -162,7 +160,7 @@ fn native_line_font_outer_lengths_and_pattern_refuse_limits() {
     ] {
         assert_collection_refusal_at(&bytes, operation);
     }
-    assert_retained_refusal_at(&bytes, "iges native line font pattern");
+    assert_retained_not_charged_at(&bytes, "iges native line font pattern");
 }
 
 #[test]
@@ -183,7 +181,7 @@ fn native_text_font_outer_glyph_and_motion_slots_refuse_limits() {
     ] {
         assert_collection_refusal_at(&bytes, operation);
     }
-    assert_retained_refusal_at(&bytes, "iges native text font name");
+    assert_retained_not_charged_at(&bytes, "iges native text font name");
 }
 
 #[test]
@@ -199,7 +197,7 @@ fn native_definition_level_outer_and_value_slots_refuse_limits() {
 }
 
 #[test]
-fn native_basic_record_ids_and_payloads_refuse_retained_limits() {
+fn native_basic_record_ids_and_payloads_stay_out_of_retained_storage() {
     let cases: &[(i64, i64, &str, &[&str])] = &[
         (
             123,
@@ -283,7 +281,7 @@ fn native_basic_record_ids_and_payloads_refuse_retained_limits() {
     for (entity_type, form, parameters, operations) in cases {
         let bytes = owned_test_file(&[native_entity(*entity_type, *form, parameters)]);
         for operation in *operations {
-            assert_retained_refusal_at(&bytes, operation);
+            assert_retained_not_charged_at(&bytes, operation);
         }
     }
 }
@@ -315,10 +313,12 @@ fn native_display_definition_refuses_retained_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let edges = ctx
+                .get_btree_map(&graph, &1, "iges native display reference lookup")
+                .unwrap();
             super::super::resolve_display_ref(
                 &ctx,
-                &graph,
-                1,
+                edges.map(Vec::as_slice),
                 -3,
                 crate::graph::ReferenceKind::Color,
                 "color",
@@ -331,10 +331,12 @@ fn native_display_definition_refuses_retained_limit() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let edges = ctx
+        .get_btree_map(&graph, &1, "iges native display reference lookup")
+        .unwrap();
     let reference = super::super::resolve_display_ref(
         &ctx,
-        &graph,
-        1,
+        edges.map(Vec::as_slice),
         -3,
         crate::graph::ReferenceKind::Color,
         "color",
@@ -358,7 +360,7 @@ fn native_primitive_dimension_nodes_and_names_refuse_limits() {
         "iges native primitive solid id",
         "iges native primitive solid source",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -371,7 +373,7 @@ fn native_procedural_solid_slots_and_ids_refuse_limits() {
         "iges native procedural solid id",
         "iges native procedural solid source",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -389,7 +391,7 @@ fn native_boolean_tree_slots_and_terms_refuse_limits() {
         "iges native boolean tree id",
         "iges native boolean tree source",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -402,7 +404,7 @@ fn native_selected_component_slot_and_ids_refuse_limits() {
         "iges native selected component id",
         "iges native selected component source",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -424,7 +426,7 @@ fn native_solid_assembly_outer_and_item_slots_refuse_limits() {
         "iges native solid assembly source",
         "iges native solid assembly member",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -442,7 +444,7 @@ fn native_manifold_outer_and_void_slots_refuse_limits() {
         "iges native manifold solid id",
         "iges native manifold solid source",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -455,7 +457,7 @@ fn native_solid_instance_slot_and_ids_refuse_limits() {
         "iges native solid instance id",
         "iges native solid instance source",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -484,7 +486,7 @@ fn native_subfigure_definition_members_and_instance_slots_refuse_limits() {
         "iges native subfigure instance source",
         "iges native subfigure instance definition",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -511,7 +513,7 @@ fn native_network_definition_member_and_connect_point_slots_refuse_limits() {
         "iges native network designator",
         "iges native network connect point",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -534,7 +536,7 @@ fn native_network_instance_connect_point_slots_and_designator_refuse_limits() {
         "iges native network instance definition",
         "iges native network instance designator",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -553,7 +555,7 @@ fn native_connect_point_slot_and_function_bytes_refuse_limits() {
         "iges native connect function identifier",
         "iges native connect function name",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -571,7 +573,7 @@ fn native_rectangular_array_outer_and_position_slots_refuse_limits() {
         "iges native rectangular array id",
         "iges native rectangular array source",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -589,7 +591,7 @@ fn native_circular_array_outer_and_position_slots_refuse_limits() {
         "iges native circular array id",
         "iges native circular array source",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -612,7 +614,7 @@ fn native_external_reference_slots_and_copied_names_refuse_limits() {
             "iges native external symbolic name",
             payload_operation,
         ] {
-            assert_retained_refusal_at(&bytes, operation);
+            assert_retained_not_charged_at(&bytes, operation);
         }
     }
 }
@@ -632,7 +634,7 @@ fn native_group_outer_and_member_slots_refuse_limits() {
         "iges native group source",
         "iges native group member",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -646,7 +648,7 @@ fn native_associativity_definition_classes_and_item_types_refuse_limits() {
     ] {
         assert_collection_refusal_at(&bytes, operation);
     }
-    assert_retained_refusal_at(&bytes, "iges native associativity definition id");
+    assert_retained_not_charged_at(&bytes, "iges native associativity definition id");
 }
 
 #[test]
@@ -670,7 +672,7 @@ fn native_bounded_associativity_nested_lists_refuse_limits() {
         "iges native external index name",
         "iges native associativity link",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -695,7 +697,7 @@ fn native_legacy_associativity_nested_values_refuse_limits() {
         "iges native connect node point",
         "iges native token value bytes",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -713,10 +715,10 @@ fn native_flow_and_recalculable_dimension_lists_refuse_limits() {
     ] {
         assert_collection_refusal_at(&flow, operation);
     }
-    assert_retained_refusal_at(&flow, "iges native flow name");
+    assert_retained_not_charged_at(&flow, "iges native flow name");
     let dimension = recalculable_dimension_associativity_file();
     assert_collection_refusal_at(&dimension, "iges native recalculable geometry slots");
-    assert_retained_refusal_at(&dimension, "iges native recalculable dimension");
+    assert_retained_not_charged_at(&dimension, "iges native recalculable dimension");
 }
 
 #[test]
@@ -747,7 +749,7 @@ fn native_attribute_definition_and_instance_nested_values_refuse_limits() {
         "iges native attribute definition id",
         "iges native token value bytes",
     ] {
-        assert_retained_refusal_at(&definition, operation);
+        assert_retained_not_charged_at(&definition, operation);
     }
 
     let instance = owned_test_file_with_structures(
@@ -771,8 +773,8 @@ fn native_attribute_definition_and_instance_nested_values_refuse_limits() {
     ] {
         assert_collection_refusal_at(&instance, operation);
     }
-    assert_retained_refusal_at(&instance, "iges native attribute instance definition");
-    assert_retained_refusal_at(&instance, "iges native token value bytes");
+    assert_retained_not_charged_at(&instance, "iges native attribute instance definition");
+    assert_retained_not_charged_at(&instance, "iges native token value bytes");
 }
 
 #[test]
@@ -802,7 +804,7 @@ fn native_product_property_and_property_strings_refuse_limits() {
         "iges native property source",
         "iges native property string",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -864,7 +866,7 @@ fn native_property_nested_tabular_layer_and_token_lists_refuse_limits() {
             assert_collection_refusal_at(&bytes, operation);
         }
         if form == 27 {
-            assert_retained_refusal_at(&bytes, "iges native token value bytes");
+            assert_retained_not_charged_at(&bytes, "iges native token value bytes");
         }
     }
 }
@@ -885,7 +887,7 @@ fn native_units_data_nested_definitions_and_copied_bytes_refuse_limits() {
         "iges native unit type",
         "iges native unit value",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -900,13 +902,13 @@ fn native_view_records_clipping_slots_and_perspective_box_refuse_limits() {
         assert_collection_refusal_at(&bytes, operation);
     }
     for operation in ["iges native view id", "iges native view source"] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
     let clipping = owned_test_file(&[
         native_entity(108, 0, "108,0,0,1,0,0,0,0,0,0,0;"),
         native_entity(410, 0, "410,1,1,1,0,0,0,0,0;"),
     ]);
-    assert_retained_refusal_at(&clipping, "iges native view clipping plane");
+    assert_retained_not_charged_at(&clipping, "iges native view clipping plane");
 }
 
 #[test]
@@ -923,7 +925,7 @@ fn native_visibility_display_and_segment_slots_refuse_limits() {
         "iges native view visibility source",
         "iges native view display view",
     ] {
-        assert_retained_refusal_at(&visible, operation);
+        assert_retained_not_charged_at(&visible, operation);
     }
     let segments = segmented_view_visibility_file();
     for operation in [
@@ -932,20 +934,20 @@ fn native_visibility_display_and_segment_slots_refuse_limits() {
     ] {
         assert_collection_refusal_at(&segments, operation);
     }
-    assert_retained_refusal_at(&segments, "iges native segment display view");
+    assert_retained_not_charged_at(&segments, "iges native segment display view");
     let visible_entity = owned_test_file(&[
         native_entity(116, 0, "116,1,2,3,0;"),
         native_entity(410, 0, "410,1,1,0,0,0,0,0,0;"),
         native_entity(402, 3, "402,1,1,3,1;"),
     ]);
     assert_collection_refusal_at(&visible_entity, "iges native visible entity slots");
-    assert_retained_refusal_at(&visible_entity, "iges native visible entity");
+    assert_retained_not_charged_at(&visible_entity, "iges native visible entity");
     let line_font = owned_test_file(&[
         native_entity(304, 1, "304,1,1,1,1;"),
         native_entity(410, 0, "410,1,1,0,0,0,0,0,0;"),
         native_entity(402, 4, "402,1,0,3,1,1,0,0;"),
     ]);
-    assert_retained_refusal_at(&line_font, "iges native view display line font");
+    assert_retained_not_charged_at(&line_font, "iges native view display line font");
 }
 
 #[test]
@@ -967,7 +969,7 @@ fn native_drawing_view_annotation_and_property_bytes_refuse_limits() {
         "iges native drawing name",
         "iges native drawing units name",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
     let conflicting = drawing_with_conflicting_size_properties_file();
     assert_collection_refusal_at(&conflicting, "iges native drawing ambiguous property slots");
@@ -997,7 +999,7 @@ fn native_occurrence_indexes_paths_and_copied_links_refuse_limits() {
         "iges native occurrence path entry",
         "iges occurrence neutral link copy",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -1014,7 +1016,7 @@ fn native_occurrence_issues_and_malformed_placements_refuse_limits() {
         &malformed_placement,
         "iges malformed occurrence placement result slots",
     );
-    assert_retained_refusal_at(&malformed_placement, "iges occurrence expansion state id");
+    assert_retained_not_charged_at(&malformed_placement, "iges occurrence expansion state id");
 }
 
 #[test]
@@ -1032,7 +1034,7 @@ fn native_boundary_vertex_sewing_nested_endpoints_refuse_limits() {
         "iges boundary vertex sewing vertex",
         "iges boundary vertex endpoint edge",
     ] {
-        assert_retained_refusal_at(&bytes, operation);
+        assert_retained_not_charged_at(&bytes, operation);
     }
 }
 
@@ -1055,16 +1057,16 @@ fn native_annotation_text_runs_and_copied_bytes_refuse_limits() {
         "iges native annotation source",
         "iges native text run bytes",
     ] {
-        assert_retained_refusal_at(&note, operation);
+        assert_retained_not_charged_at(&note, operation);
     }
     let new_note = defaulted_text_and_view_fields_file();
     assert_collection_refusal_at(&new_note, "iges native new note text run slots");
-    assert_retained_refusal_at(&new_note, "iges native new note control codes");
+    assert_retained_not_charged_at(&new_note, "iges native new note control codes");
     let font_note = owned_test_file(&[
         native_entity(310, 0, "310,101,4HBASE,,10,1,65,8,0,0;"),
         native_entity(212, 0, "212,1,1,1,1,-1,1.5707963267948966,0,0,0,0,0,0,1HA;"),
     ]);
-    assert_retained_refusal_at(&font_note, "iges native text run font");
+    assert_retained_not_charged_at(&font_note, "iges native text run font");
 }
 
 #[test]
@@ -1075,7 +1077,7 @@ fn native_annotation_leaders_and_typed_links_refuse_limits() {
         "iges native annotation link",
         "iges native annotation entity link",
     ] {
-        assert_retained_refusal_at(&dimension, operation);
+        assert_retained_not_charged_at(&dimension, operation);
     }
     let legacy = legacy_dimension_and_label_forms_file();
     assert_collection_refusal_at(&legacy, "iges native annotation leader slots");

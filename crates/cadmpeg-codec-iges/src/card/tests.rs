@@ -12,6 +12,8 @@ use crate::test_support::test_cards::{
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
+mod storage_lifetimes;
+
 #[test]
 fn framing_recovery_record_refuses_text_and_node_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -53,7 +55,7 @@ fn framing_recovery_record_refuses_text_and_node_limits() {
             format_args!("1"),
         )
         .unwrap();
-    assert_eq!(recoveries.notes(&ctx).unwrap().len(), 1);
+    assert_eq!(recoveries.notes(&ctx).unwrap().0.len(), 1);
 }
 
 #[test]
@@ -91,7 +93,7 @@ fn merging_framing_recoveries_refuses_new_node_limit() {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         merged.merge(incoming, &ctx).unwrap();
-        assert_eq!(merged.notes(&ctx).unwrap().len(), 1);
+        assert_eq!(merged.notes(&ctx).unwrap().0.len(), 1);
     });
 }
 
@@ -137,9 +139,7 @@ fn framing_recovery_losses_refuse_slot_and_retained_limits() {
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>(),
-        );
+        policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             recoveries.notes(&ctx),
@@ -151,7 +151,7 @@ fn framing_recovery_losses_refuse_slot_and_retained_limits() {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let notes = recoveries.notes(&ctx).unwrap();
+        let (notes, _loss_storage) = recoveries.notes(&ctx).unwrap();
         assert_eq!(notes.len(), 1);
         assert_eq!(
             notes[0].provenance.as_ref().unwrap().tag.as_deref(),

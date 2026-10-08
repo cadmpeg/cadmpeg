@@ -1488,7 +1488,7 @@ fn sectioned_area_valid<'ctx>(
         && exact_parameter_count(record, 9 + island_count))
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &CadIr,
     directory: &[DirectoryEntry],
     (entries, records): (
@@ -1496,11 +1496,13 @@ pub(super) fn project(
         &BTreeMap<u32, &ParameterRecord>,
     ),
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
-) -> Result<ProjectionOutcome, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<ProjectionOutcome<'ctx>, CodecError> {
     let mut validation = AnnotationValidation::new(ctx)?;
     let mut section_geometry = SectionedAreaGeometryCache::new(ir, ctx)?;
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges annotation decoded sequences")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
 
     for (entry, kind) in ctx
@@ -1601,9 +1603,11 @@ pub(super) fn project(
             .transpose()?
             .unwrap_or(false);
         if valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
+                "iges annotation decoded sequences",
                 "iges annotation decoded sequences",
             )?;
         } else {
@@ -1629,11 +1633,11 @@ pub(super) fn project(
                 | AnnotationKind::NewGeneralNote
                 | AnnotationKind::Leader => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
         }
     }
 
-    Ok(ProjectionOutcome { decoded, losses })
+    Ok(ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage })
 }
 
 #[cfg(test)]

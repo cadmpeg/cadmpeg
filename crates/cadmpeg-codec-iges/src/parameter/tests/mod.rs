@@ -65,15 +65,14 @@ fn parameter_summary_refuses_note_slot_and_text_limits() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        (cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len()) - 1)
-            + cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
+        cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::summary_notes(&records, &ctx);
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>())
+                && limit.used == 0
                 && limit.additional == cadmpeg_core::decode::u64_from_index(b"parameter_records=0".len())
                 && limit.operation == "iges parameter summary text"
     ));
@@ -81,13 +80,92 @@ fn parameter_summary_refuses_note_slot_and_text_limits() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::summary_notes(&records, &ctx).unwrap(),
+        super::summary_notes(&records, &ctx).unwrap().0,
         [
             "parameter_records=0",
             "parameter_tokens=0",
             "external_references=0"
         ]
     );
+}
+
+#[test]
+fn parameter_summary_slots_are_scoped_and_note_text_is_retained() {
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+
+    let records = [];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (notes, storage) = super::summary_notes(&records, &ctx).unwrap();
+    let slots = u64_from_index(
+        notes
+            .capacity()
+            .checked_mul(std::mem::size_of::<String>())
+            .expect("summary vector size fits"),
+    );
+    let text_bytes = u64_from_index(
+        notes
+            .iter()
+            .try_fold(0_usize, |total, note| total.checked_add(note.len()))
+            .expect("summary text size fits"),
+    );
+    assert_eq!(notes.len(), 3);
+    drop(notes);
+    drop(storage);
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = slots;
+    policy.limits.max_retained_bytes = text_bytes;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (notes, storage) = super::summary_notes(&records, &ctx).unwrap();
+    let error = ctx
+        .reserve_scoped(1, "test after live parameter summary slots")
+        .expect_err("the returned note slots remain live");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.used == slots
+                && limit.additional == 1
+                && limit.operation == "test after live parameter summary slots"
+    ));
+    drop(notes);
+    drop(storage);
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = slots;
+    policy.limits.max_retained_bytes = text_bytes;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (notes, storage) = super::summary_notes(&records, &ctx).unwrap();
+    drop(notes);
+    drop(storage);
+    let released = ctx
+        .reserve_scoped(slots, "test after released parameter summary slots")
+        .expect("dropping the returned vector releases its backing");
+    drop(released);
+    let retained = ctx
+        .charge_retained(1, "test after retained parameter summary text")
+        .expect_err("dropping the slots does not release note text");
+    assert!(matches!(
+        retained,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == text_bytes
+                && limit.additional == 1
+                && limit.operation == "test after retained parameter summary text"
+    ));
+    assert!(matches!(
+        ctx.finish_session(),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
 }
 
 #[test]

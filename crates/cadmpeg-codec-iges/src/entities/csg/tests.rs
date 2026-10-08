@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
@@ -20,6 +20,95 @@ use crate::test_support::test_solids_and_structure::{
     procedural_and_boolean_solids_file,
 };
 use crate::IgesCodec;
+
+struct CsgProjectionInput {
+    directory: Vec<crate::directory::DirectoryEntry>,
+    records: Vec<crate::parameter::ParameterRecord>,
+    global: crate::global::ProjectedGlobal,
+}
+
+fn parse_csg_projection_input(bytes: &[u8]) -> CsgProjectionInput {
+    crate::test_support::with_service_context(bytes, |ctx| {
+        let scan = crate::card::scan_with_context(bytes, ctx).unwrap();
+        let (global, _, _) = crate::global::parse(&scan, ctx).unwrap();
+        let (directory, quarantined) =
+            crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
+        let parameters = crate::parameter::assemble_with_context(
+            &scan,
+            &directory,
+            &quarantined,
+            &global,
+            ctx,
+        )
+        .unwrap();
+        CsgProjectionInput {
+            directory,
+            records: parameters.records,
+            global: global.length_context().unwrap(),
+        }
+    })
+}
+
+fn project_csg(
+    input: &CsgProjectionInput,
+    policy: &DecodePolicy,
+) -> Result<(BTreeSet<u32>, Vec<String>), CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let entries = input
+        .directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+    let records = input
+        .records
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect::<BTreeMap<_, _>>();
+    let mut ir = CadIr::empty();
+    let outcome = super::project(
+        &mut ir,
+        &input.directory,
+        &entries,
+        &records,
+        &input.global,
+        &ctx,
+    )?;
+    let decoded = outcome.decoded.iter().copied().collect();
+    let losses = outcome
+        .losses
+        .iter()
+        .map(|loss| loss.message.clone())
+        .collect();
+    drop(outcome);
+    drop(ir);
+    ctx.finish_session()?;
+    Ok((decoded, losses))
+}
+
+fn set_directory_transform(bytes: &mut [u8], sequence: u32, transform: u32) {
+    let card_sequence = format!("{sequence:>7}");
+    let transform = format!("{transform:>8}");
+    for card in bytes.chunks_exact_mut(crate::test_support::test_cards::CARD_LINE_BYTES) {
+        if card[72] == b'D' && &card[73..80] == card_sequence.as_bytes() {
+            card[48..56].copy_from_slice(transform.as_bytes());
+            return;
+        }
+    }
+    panic!("missing Directory Entry card D{sequence}");
+}
+
+fn btree_storage_bytes<K, V>(nodes: usize) -> u64 {
+    // Match the core node bound: eleven key/value slots, links, and alignment.
+    let alignment = std::mem::align_of::<K>()
+        .max(std::mem::align_of::<V>())
+        .max(std::mem::align_of::<usize>());
+    let bytes_per_node = 11
+        * (std::mem::size_of::<K>() + std::mem::size_of::<V>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * alignment;
+    u64::try_from(bytes_per_node).unwrap() * u64::try_from(nodes).unwrap()
+}
 
 const EPS_PROFILE_CLOSURE: f64 = 1.0e-9;
 
@@ -74,6 +163,136 @@ fn csg_boolean_terms_and_validation_nodes_refuse_collection_limits() {
         "iges boolean term validation",
         ResourceDimension::WorkUnits,
     );
+}
+
+#[test]
+fn rejected_boolean_definitions_release_each_postfix_vector_before_the_next() {
+    const TERM_COUNT: usize = 1024;
+
+    let invalid_term = (0..TERM_COUNT)
+        .map(|index| if index == 0 { "0" } else { "-1" })
+        .collect::<Vec<_>>()
+        .join(",");
+    let unbalanced_stack = (0..TERM_COUNT)
+        .map(|_| "-1")
+        .collect::<Vec<_>>()
+        .join(",");
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "BADTERM".into(),
+            status: "00000000",
+            parameters: format!("180,{TERM_COUNT},{invalid_term};"),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "BADSTACK".into(),
+            status: "00000000",
+            parameters: format!("180,{TERM_COUNT},{unbalanced_stack};"),
+        },
+    ]);
+    let input = parse_csg_projection_input(&bytes);
+
+    let loss_note_bytes = u64::try_from(std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>())
+        .unwrap();
+    assert!(std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>() <= 1024);
+    let term_vector_bytes = u64::try_from(TERM_COUNT).unwrap()
+        * u64::try_from(std::mem::size_of::<super::BooleanTerm>()).unwrap();
+    let loss_slot_bytes = loss_note_bytes * 4;
+    let mut policy = DecodePolicy::service();
+    // Each rejected record reserves one exact postfix vector. LossNote's
+    // amortized slot reservation starts at four entries. The second vector
+    // must reuse the first vector's released bytes while those loss slots live.
+    policy.limits.max_materialized_bytes = term_vector_bytes + loss_slot_bytes;
+
+    let (decoded, losses) = project_csg(&input, &policy).unwrap();
+    assert!(decoded.is_empty());
+    assert_eq!(
+        losses,
+        [
+            "IGES entity type 180 form 0 was not projected: Boolean postfix term is invalid",
+            "IGES entity type 180 form 0 was not projected: Boolean postfix stack is unbalanced",
+        ]
+        .map(str::to_owned)
+    );
+}
+
+#[test]
+fn selected_component_transform_runs_after_boolean_validation_storage_drops() {
+    const BOOLEAN_TERM_COUNT: usize = 31;
+    const TRANSFORM_CHAIN_LENGTH: usize = 36;
+
+    let terms = (0..BOOLEAN_TERM_COUNT)
+        .map(|index| if index < 2 || index % 2 == 1 { "-1" } else { "1" })
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut entities = vec![
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00000000",
+            parameters: "158,1,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "TREE".into(),
+            status: "00000000",
+            parameters: format!("180,{BOOLEAN_TERM_COUNT},{terms};"),
+        },
+        OwnedTestEntity {
+            entity_type: 182,
+            form: 0,
+            label: "SELECTED".into(),
+            status: "00000300",
+            parameters: "182,3,0,0,0;".into(),
+        },
+    ];
+    for _ in 0..TRANSFORM_CHAIN_LENGTH {
+        entities.push(OwnedTestEntity {
+            entity_type: 124,
+            form: 0,
+            label: "IDENTITY".into(),
+            status: "00000000",
+            parameters: "124,1,0,0,0,0,1,0,0,0,0,1,0;".into(),
+        });
+    }
+    let mut bytes = owned_test_file(&entities);
+    set_directory_transform(&mut bytes, 5, 7);
+    for index in 0..TRANSFORM_CHAIN_LENGTH {
+        let sequence = 7 + u32::try_from(index * 2).unwrap();
+        let parent = if index + 1 == TRANSFORM_CHAIN_LENGTH {
+            0
+        } else {
+            sequence + 2
+        };
+        set_directory_transform(&mut bytes, sequence, parent);
+    }
+    let input = parse_csg_projection_input(&bytes);
+
+    let decoded_storage = btree_storage_bytes::<u32, ()>(1);
+    // The core bound adds one tree node at entry 1 and then every fifth key.
+    let transform_nodes = TRANSFORM_CHAIN_LENGTH.div_ceil(5);
+    let selected_phase_peak = decoded_storage + btree_storage_bytes::<u32, ()>(transform_nodes);
+    let boolean_phase_bound = decoded_storage
+        + u64::try_from(BOOLEAN_TERM_COUNT).unwrap()
+            * u64::try_from(std::mem::size_of::<super::BooleanTerm>()).unwrap()
+        + btree_storage_bytes::<u32, Vec<super::BooleanTerm>>(1)
+        + btree_storage_bytes::<u32, ()>(1)
+        + btree_storage_bytes::<u32, bool>(1);
+    assert!(
+        selected_phase_peak > boolean_phase_bound,
+        "selected phase bound {selected_phase_peak} must exceed the conservative Boolean-phase bound {boolean_phase_bound}"
+    );
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = selected_phase_peak;
+    let (decoded, losses) = project_csg(&input, &policy).unwrap();
+    assert_eq!(decoded, BTreeSet::from([1, 3, 5]));
+    assert!(losses.is_empty());
 }
 
 #[test]

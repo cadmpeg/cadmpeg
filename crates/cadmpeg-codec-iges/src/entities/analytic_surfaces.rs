@@ -5,7 +5,7 @@ use super::geometry::{
     resolve_transform, source_object, ProjectionOutcome, TransformResolutionError,
 };
 use super::pointer;
-use super::push_entity_loss;
+use super::push_entity_loss_with_scoped_slots;
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -27,12 +27,13 @@ fn admit_analytic<T>(
     result: Result<T, &str>,
     entry: &DirectoryEntry,
     losses: &mut Vec<LossNote>,
+    slots: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<T>, CodecError> {
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
-            push_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
+            push_entity_loss_with_scoped_slots(ctx, slots, losses, entry, format_args!("{message}"))?;
             Ok(None)
         }
     }
@@ -283,14 +284,14 @@ fn surface_transform(
     )
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
+    ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-) -> Result<ProjectionOutcome, CodecError> {
+) -> Result<ProjectionOutcome<'ctx>, CodecError> {
     // The transform resolver requires sequence maps. Their storage is local to this projection.
     let mut transform_storage = ctx.reserve_scoped(0, "iges analytic-surface transform indexes")?;
     let (records, entries) = transform_storage.with_storage(|| {
@@ -319,7 +320,9 @@ pub(super) fn project(
     })?;
     let mut point_storage = ctx.reserve_scoped(0, "iges analytic point index")?;
     let mut point_index = None;
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges analytic-surface decoded sequences")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
 
     for entry in ctx
@@ -331,8 +334,9 @@ pub(super) fn project(
         let factor = global.length_factor_mm();
         let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
         else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -346,7 +350,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -384,8 +388,9 @@ pub(super) fn project(
             None => None,
         };
         let Some(location) = location else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("analytic surface location point is missing"),
@@ -393,8 +398,9 @@ pub(super) fn project(
             continue;
         };
         let Some(location) = transform.apply_point(location) else {
-            push_entity_loss(
+            push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("placement produces a non-finite point"),
@@ -415,7 +421,7 @@ pub(super) fn project(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -431,7 +437,7 @@ pub(super) fn project(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -444,6 +450,7 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
+                    &mut loss_slots_storage,
                     ctx,
                 )?
                 else {
@@ -465,13 +472,14 @@ pub(super) fn project(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
                 let Some(radius) = record.number(3).map(|radius| radius * factor) else {
-                    push_entity_loss(
+                    push_entity_loss_with_scoped_slots(
                         ctx,
+                        &mut loss_slots_storage,
                         &mut losses,
                         entry,
                         format_args!("cylinder radius is not numeric"),
@@ -490,7 +498,7 @@ pub(super) fn project(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -503,6 +511,7 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
+                    &mut loss_slots_storage,
                     ctx,
                 )?
                 else {
@@ -513,6 +522,7 @@ pub(super) fn project(
                         .ok_or("CylinderSurface.radius must be positive and finite"),
                     entry,
                     &mut losses,
+                    &mut loss_slots_storage,
                     ctx,
                 )?
                 else {
@@ -535,13 +545,14 @@ pub(super) fn project(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
                 let Some(radius) = record.number(3).map(|radius| radius * factor) else {
-                    push_entity_loss(
+                    push_entity_loss_with_scoped_slots(
                         ctx,
+                        &mut loss_slots_storage,
                         &mut losses,
                         entry,
                         format_args!("cone radius is not numeric"),
@@ -554,8 +565,9 @@ pub(super) fn project(
                     .and_then(Angle::new)
                     .filter(|angle| angle.get() > 0.0 && angle.get() < std::f64::consts::FRAC_PI_2)
                 else {
-                    push_entity_loss(
+                    push_entity_loss_with_scoped_slots(
                         ctx,
+                        &mut loss_slots_storage,
                         &mut losses,
                         entry,
                         format_args!("cone semi-angle is outside (0, 90) degrees"),
@@ -574,7 +586,7 @@ pub(super) fn project(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -587,6 +599,7 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
+                    &mut loss_slots_storage,
                     ctx,
                 )?
                 else {
@@ -597,6 +610,7 @@ pub(super) fn project(
                         .ok_or("ConeSurface.radius must be nonnegative and finite"),
                     entry,
                     &mut losses,
+                    &mut loss_slots_storage,
                     ctx,
                 )?
                 else {
@@ -617,8 +631,9 @@ pub(super) fn project(
                     .map(|radius| radius * factor)
                     .and_then(cadmpeg_ir::scalar::PositiveLength::new)
                 else {
-                    push_entity_loss(
+                    push_entity_loss_with_scoped_slots(
                         ctx,
+                        &mut loss_slots_storage,
                         &mut losses,
                         entry,
                         format_args!("sphere radius is not positive and finite"),
@@ -645,7 +660,7 @@ pub(super) fn project(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -661,7 +676,7 @@ pub(super) fn project(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -674,6 +689,7 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
+                    &mut loss_slots_storage,
                     ctx,
                 )?
                 else {
@@ -699,14 +715,15 @@ pub(super) fn project(
                     Ok(axis) => axis,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
                 let radii = [record.number(3), record.number(4)];
                 let [Some(major_radius), Some(minor_radius)] = radii else {
-                    push_entity_loss(
+                    push_entity_loss_with_scoped_slots(
                         ctx,
+                        &mut loss_slots_storage,
                         &mut losses,
                         entry,
                         format_args!("torus radii are not numeric"),
@@ -715,8 +732,9 @@ pub(super) fn project(
                 };
                 let (major_radius, minor_radius) = (major_radius * factor, minor_radius * factor);
                 if minor_radius <= 0.0 || minor_radius >= major_radius {
-                    push_entity_loss(
+                    push_entity_loss_with_scoped_slots(
                         ctx,
+                        &mut loss_slots_storage,
                         &mut losses,
                         entry,
                         format_args!("torus radii do not satisfy 0 < minor < major"),
@@ -735,7 +753,7 @@ pub(super) fn project(
                     Ok(candidate) => candidate,
                     Err(message) => {
                         let message = message.non_resource()?;
-                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -748,6 +766,7 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
+                    &mut loss_slots_storage,
                     ctx,
                 )?
                 else {
@@ -758,6 +777,7 @@ pub(super) fn project(
                         .ok_or("TorusSurface.major_radius must be positive and finite"),
                     entry,
                     &mut losses,
+                    &mut loss_slots_storage,
                     ctx,
                 )?
                 else {
@@ -768,6 +788,7 @@ pub(super) fn project(
                         .ok_or("TorusSurface.minor_radius must be finite and nonzero"),
                     entry,
                     &mut losses,
+                    &mut loss_slots_storage,
                     ctx,
                 )?
                 else {
@@ -782,8 +803,9 @@ pub(super) fn project(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(payload))
             }
             _ => {
-                push_entity_loss(
+                push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("analytic surface type is unsupported"),
@@ -805,19 +827,21 @@ pub(super) fn project(
                 Ok(source) => source,
                 Err(error) => {
                     let message = super::non_resource_error(error, ctx)?;
-                    push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                    push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                     continue;
                 }
             }),
         });
-        ctx.insert_btree_set(
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
             &mut decoded,
             entry.sequence,
+            "iges analytic-surface decoded sequences",
             "iges analytic-surface decoded sequences",
         )?;
     }
 
-    Ok(ProjectionOutcome { decoded, losses })
+    Ok(ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage })
 }
 
 #[cfg(test)]

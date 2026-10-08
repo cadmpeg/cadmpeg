@@ -2,7 +2,7 @@
 //! Directory display attributes and color definitions.
 
 use super::geometry::ProjectionOutcome;
-use super::{mirror_flag_valid, push_attributed_loss, vertical_text_flag_valid, PropertyTextIndex};
+use super::{mirror_flag_valid, vertical_text_flag_valid, PropertyTextIndex};
 
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
@@ -50,12 +50,14 @@ fn retained_utf8(
 
 fn push_presentation_loss(
     ctx: &DecodeContext<'_>,
+    slots: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     entry: &DirectoryEntry,
     reason: &str,
 ) -> Result<(), CodecError> {
-    push_attributed_loss(
+    super::push_attributed_loss_with_scoped_slots(
         ctx,
+        slots,
         losses,
         entry,
         IgesLossCode::DisplayDataNotProjected,
@@ -319,7 +321,7 @@ fn text_font_definition(
     Ok((cursor == parameter_end).then_some(TextFontDefinition { supersedes }))
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     (entries, records): (
@@ -328,10 +330,12 @@ pub(super) fn project(
     ),
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
+    ctx: &'ctx DecodeContext<'_>,
     sequences: &super::geometry::SourceSequences<'_>,
-) -> Result<ProjectionOutcome, CodecError> {
+) -> Result<ProjectionOutcome<'ctx>, CodecError> {
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges presentation decoded sequences")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
     let mut scratch = ctx.reserve_scoped(0, "iges presentation scratch")?;
     let mut appearances = None;
@@ -422,13 +426,15 @@ pub(super) fn project(
             None => false,
         };
         if target_valid && !cyclic {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges presentation decoded sequences",
+                "iges presentation decoded sequences",
             )?;
         } else {
-            push_presentation_loss(ctx, &mut losses, entry, "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid")?;
+            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid")?;
         }
     }
 
@@ -444,7 +450,7 @@ pub(super) fn project(
             )?
             .copied()
         else {
-            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let parameter_end = record.parameter_end();
@@ -476,13 +482,15 @@ pub(super) fn project(
                 .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some());
         if directory_valid && fields_valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
                 "iges presentation decoded sequences",
+                "iges presentation decoded sequences",
             )?;
         } else {
-            push_presentation_loss(ctx, &mut losses, entry, "text-template metrics, font, orientation, placement, or Directory fields are invalid")?;
+            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "text-template metrics, font, orientation, placement, or Directory fields are invalid")?;
         }
     }
 
@@ -498,7 +506,7 @@ pub(super) fn project(
             )?
             .copied()
         else {
-            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let levels_valid = if let Some(count) = record.count(1).filter(|count| *count > 0) {
@@ -524,14 +532,17 @@ pub(super) fn project(
             false
         };
         if levels_valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
+                "iges presentation decoded sequences",
                 "iges presentation decoded sequences",
             )?;
         } else {
             push_presentation_loss(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 "definition-level count, value, or uniqueness is invalid",
@@ -551,12 +562,13 @@ pub(super) fn project(
             )?
             .copied()
         else {
-            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         if !line_font_definition_directory_valid(entry, global.global_table()) {
             push_presentation_loss(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 "line-font definition use flag or fallback pattern is invalid",
@@ -620,14 +632,17 @@ pub(super) fn project(
             }
         };
         if valid {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 entry.sequence,
+                "iges presentation decoded sequences",
                 "iges presentation decoded sequences",
             )?;
         } else {
             push_presentation_loss(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 "line-font definition parameters are invalid",
@@ -647,7 +662,7 @@ pub(super) fn project(
             )?
             .copied()
         else {
-            push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
+            push_presentation_loss(ctx, &mut loss_slots_storage, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let components = [1, 2, 3].map(|index| {
@@ -658,6 +673,7 @@ pub(super) fn project(
         let [Some(red), Some(green), Some(blue)] = components else {
             push_presentation_loss(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 "RGB percentage is outside 0 through 100",
@@ -677,6 +693,7 @@ pub(super) fn project(
             ) => {
                 push_presentation_loss(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     "optional color name is not a string",
@@ -690,6 +707,7 @@ pub(super) fn project(
         if !directory_valid {
             push_presentation_loss(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 "color definition Directory fields are invalid",
@@ -703,6 +721,7 @@ pub(super) fn project(
         let Some(color) = color else {
             push_presentation_loss(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 "color definition components are outside [0, 100]",
@@ -729,9 +748,11 @@ pub(super) fn project(
             ctx,
             (&mut appearances, &mut scratch),
         )?;
-        ctx.insert_btree_set(
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
             &mut decoded,
             entry.sequence,
+            "iges presentation decoded sequences",
             "iges presentation decoded sequences",
         )?;
     }
@@ -793,6 +814,7 @@ pub(super) fn project(
         if resolve_color(entry.color)?.is_none() {
             push_presentation_loss(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 "Directory color number or definition pointer is invalid",
@@ -820,6 +842,7 @@ pub(super) fn project(
         if !target_valid {
             push_presentation_loss(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 "negative Directory level does not reference a decoded Definition Levels property",
@@ -836,6 +859,7 @@ pub(super) fn project(
         if !global.line_weight_number_is_valid(entry.line_weight) {
             push_presentation_loss(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 "line-weight number is outside the Global gradation range",
@@ -1041,8 +1065,9 @@ pub(super) fn project(
                 &sequence,
                 "iges body name owner lookup",
             )? {
-                push_attributed_loss(
+                super::push_attributed_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     IgesLossCode::BodyNameAmbiguous,
@@ -1112,7 +1137,7 @@ pub(super) fn project(
         });
     }
 
-    Ok(ProjectionOutcome { decoded, losses })
+    Ok(ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage })
 }
 
 #[cfg(test)]

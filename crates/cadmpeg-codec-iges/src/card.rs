@@ -4,7 +4,7 @@
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::report::loss::LossNote;
@@ -304,10 +304,14 @@ impl FramingRecoveries {
         Ok(())
     }
 
-    pub(crate) fn notes(&self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
+    pub(crate) fn notes<'ctx>(
+        &self,
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<(Vec<LossNote>, ScopedReservation<'ctx>), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "iges framing recovery loss slots")?;
         let mut notes = Vec::new();
         for ((section, defect), recovery) in &self.0 {
-            ctx.reserve_vec(&mut notes, 1, "iges framing recovery loss slots")?;
+            ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges framing recovery loss slots")?;
             let message = ctx.format_retained(format_args!(
                         "IGES {} section recovered {} from the card census: the first offending {} is at position {} in the section, which declared {}, and the decoder used {}; {} {} in this section required the same recovery",
                         section.name(),
@@ -340,7 +344,7 @@ impl FramingRecoveries {
                 ),
             );
         }
-        Ok(notes)
+        Ok((notes, storage))
     }
 }
 

@@ -1033,9 +1033,11 @@ pub(crate) fn enforce_transform_depth(
 /// a neutral entity, and the losses the pass charged. The generic retention
 /// pass spares a record only when it is decoded, consumed, or already
 /// attributed, so membership in `decoded` is what marks projection success.
-pub(super) struct ProjectionOutcome {
+pub(super) struct ProjectionOutcome<'ctx> {
     pub(super) decoded: BTreeSet<u32>,
+    pub(super) decoded_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     pub(super) losses: Vec<LossNote>,
+    pub(super) loss_slots_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 /// One source endpoint that participates in a face-local boundary vertex.
@@ -1106,7 +1108,7 @@ impl BoundaryVertexDerivation {
 // field a sub-projector returns has to be handed to an accumulator, so an
 // outcome field cannot be dropped silently at the merge site. The accumulator
 // element types are pairwise distinct, so arguments cannot be transposed.
-impl ProjectionOutcome {
+impl ProjectionOutcome<'_> {
     fn merge_into(
         self,
         decoded: &mut BTreeSet<u32>,
@@ -1114,12 +1116,20 @@ impl ProjectionOutcome {
         losses: &mut Vec<LossNote>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        for sequence in ctx.admit_iter(self.decoded, "iges merged decoded traversal")? {
+        let Self {
+            decoded: source_decoded,
+            decoded_storage: source_decoded_storage,
+            losses: source_losses,
+            loss_slots_storage,
+        } = self;
+        for sequence in ctx.admit_iter(source_decoded, "iges merged decoded traversal")? {
             decoded_storage.with_storage(|| {
                 ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")
             })?;
         }
-        ctx.extend_vec(losses, self.losses, "iges merged loss slots")?;
+        drop(source_decoded_storage);
+        ctx.extend_vec(losses, source_losses, "iges merged loss slots")?;
+        drop(loss_slots_storage);
         Ok(())
     }
 }

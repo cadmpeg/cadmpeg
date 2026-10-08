@@ -788,6 +788,46 @@ fn type402_view_visibility_entity_count_requirement_follows_dialect() {
 }
 
 #[test]
+fn primary_layout_directory_lookup_is_admitted_and_keeps_missing_entry_fallback() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::BTreeMap;
+
+    let source = directory_target(1, 116);
+    let directory = BTreeMap::from([(source.sequence, &source)]);
+    let record = token_parameter_record(9, vec![116.into(), 0.into()]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges parameter primary layout directory lookup",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            entity_primary_end_for_global_table(
+                &record,
+                &directory,
+                GlobalTable::V5Later,
+                &ctx,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.additional > 0
+                && limit.operation == "iges parameter primary layout directory lookup"
+    ));
+
+    let result = crate::test_support::with_service_context(&[], |ctx| {
+        entity_primary_end_for_global_table(&record, &directory, GlobalTable::V5Later, ctx)
+    })
+    .unwrap();
+    assert_eq!(result, None);
+}
+
+#[test]
 fn type402_view_visibility_malformed_counts_do_not_enable_generic_recovery() {
     let mut source = directory_target(9, 402);
     source.form = 4;

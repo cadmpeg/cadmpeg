@@ -421,7 +421,7 @@ fn resolve_pcurve_uses<'a>(
     )
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     (entries, records): (
@@ -429,10 +429,12 @@ pub(super) fn project(
         &BTreeMap<u32, &ParameterRecord>,
     ),
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
+    ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
-) -> Result<ProjectionOutcome, CodecError> {
+) -> Result<ProjectionOutcome<'ctx>, CodecError> {
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges brep decoded sequences")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
     let factor = global.length_factor_mm();
     let tolerance = global.minimum_resolution_mm();
@@ -451,8 +453,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 502 && entry.form == 1)
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -460,8 +463,9 @@ pub(super) fn project(
             continue;
         };
         if entry.transform != 0 {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "vertex lists cannot carry a transformation"),
@@ -469,8 +473,9 @@ pub(super) fn project(
             continue;
         }
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "vertex-list count is not positive"),
@@ -499,8 +504,9 @@ pub(super) fn project(
             points.push(Point3::new(x * factor, y * factor, z * factor));
         }
         if points.len() != count {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "vertex-list coordinates are truncated or non-finite"),
@@ -530,8 +536,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 504 && entry.form == 1)
     {
         if entry.transform != 0 {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "edge lists cannot carry a transformation"),
@@ -539,8 +546,9 @@ pub(super) fn project(
             continue;
         }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -548,8 +556,9 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "edge-list count is not positive"),
@@ -591,8 +600,9 @@ pub(super) fn project(
             edges.push(edge);
         }
         if edges.len() != count {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "edge-list tuple is invalid or names a missing vertex"),
@@ -622,8 +632,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 508 && entry.form == 1)
     {
         if entry.transform != 0 {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "loops cannot carry a transformation"),
@@ -631,8 +642,9 @@ pub(super) fn project(
             continue;
         }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -640,8 +652,9 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "loop edge-use count is not positive"),
@@ -748,8 +761,9 @@ pub(super) fn project(
             index += 5 + pcurve_count * 2;
         }
         if uses.len() != count {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "loop edge-use tuple is invalid"),
@@ -774,8 +788,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 510 && entry.form == 1)
     {
         if entry.transform != 0 {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "faces cannot carry a transformation"),
@@ -783,8 +798,9 @@ pub(super) fn project(
             continue;
         }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -792,8 +808,9 @@ pub(super) fn project(
             continue;
         };
         let Some(surface) = pointer(record, 1) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "face surface pointer is invalid"),
@@ -801,8 +818,9 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(2).filter(|count| *count > 0) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "face loop count is not positive"),
@@ -813,8 +831,9 @@ pub(super) fn project(
             Some(1) => true,
             Some(0) => false,
             _ => {
-                super::push_entity_loss(
+                super::push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("{}", "face outer-loop flag is not logical"),
@@ -823,8 +842,9 @@ pub(super) fn project(
             }
         };
         let Some(first) = pointer(record, 4) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "face loop pointer is invalid"),
@@ -844,8 +864,9 @@ pub(super) fn project(
             rest.push(sequence);
         }
         if !valid_pointers {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "face loop pointer is invalid"),
@@ -865,8 +886,9 @@ pub(super) fn project(
             |sequence| ctx.contains_key_btree_map(&loops, &sequence, "iges B-rep loop lookup").map(|exists| !exists),
             "iges B-rep face loop references",
         )? {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "face loop is missing"),
@@ -902,8 +924,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 514 && matches!(entry.form, 1 | 2))
     {
         if entry.transform != 0 {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "shells cannot carry a transformation"),
@@ -911,8 +934,9 @@ pub(super) fn project(
             continue;
         }
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -920,8 +944,9 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "shell face count is not positive"),
@@ -952,8 +977,9 @@ pub(super) fn project(
             face_uses.push((face, sense));
         }
         if face_uses.len() != count {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "shell face-use tuple is invalid"),
@@ -1008,8 +1034,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 186 && entry.form == 0)
     {
         let Some(record) = ctx.get_btree_map(records, &entry.sequence, "iges B-rep parameter lookup")?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -1017,8 +1044,9 @@ pub(super) fn project(
             continue;
         };
         let Some(outer) = pointer(record, 1) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid outer-shell pointer is invalid"),
@@ -1029,8 +1057,9 @@ pub(super) fn project(
             Some(1) => Sense::Forward,
             Some(0) => Sense::Reversed,
             _ => {
-                super::push_entity_loss(
+                super::push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("{}", "solid outer-shell orientation is not logical"),
@@ -1039,8 +1068,9 @@ pub(super) fn project(
             }
         };
         let Some(void_count) = record.count(3) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid void-shell count is invalid"),
@@ -1081,8 +1111,9 @@ pub(super) fn project(
                 "iges B-rep solid shell references",
             )?
         {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid shell-use tuple is invalid or not closed"),
@@ -1113,7 +1144,7 @@ pub(super) fn project(
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -1375,8 +1406,9 @@ pub(super) fn project(
                                 Ok(resolved) => resolved,
                                 Err(error) => {
                                     let error = error.non_resource()?;
-                                    super::push_entity_loss(
+                                    super::push_entity_loss_with_scoped_slots(
                                         ctx,
+                                        &mut loss_slots_storage,
                                         &mut losses,
                                         entry,
                                         format_args!(
@@ -1387,8 +1419,9 @@ pub(super) fn project(
                                     break;
                                 }
                             }) else {
-                                super::push_entity_loss(
+                                super::push_entity_loss_with_scoped_slots(
                                     ctx,
+                                    &mut loss_slots_storage,
                                     &mut losses,
                                     entry,
                                     format_args!(
@@ -1409,8 +1442,9 @@ pub(super) fn project(
                             ) {
                                 Ok(projected) => projected,
                                 Err(PcurveProjectionError::Invalid(error)) => {
-                                    super::push_entity_loss(
+                                    super::push_entity_loss_with_scoped_slots(
                                         ctx,
+                                        &mut loss_slots_storage,
                                         &mut losses,
                                         entry,
                                         format_args!("{error}"),
@@ -1448,8 +1482,9 @@ pub(super) fn project(
                                 && placed;
                         }
                         if !placed {
-                            super::push_entity_loss(
+                            super::push_entity_loss_with_scoped_slots(
                                 ctx,
+                                &mut loss_slots_storage,
                                 &mut losses,
                                 entry,
                                 format_args!(
@@ -1494,8 +1529,9 @@ pub(super) fn project(
                             Ok(resolved) => resolved,
                             Err(error) => {
                                 let error = error.non_resource()?;
-                                super::push_entity_loss(
+                                super::push_entity_loss_with_scoped_slots(
                                     ctx,
+                                    &mut loss_slots_storage,
                                     &mut losses,
                                     entry,
                                     format_args!(
@@ -1506,8 +1542,9 @@ pub(super) fn project(
                                 break;
                             }
                         }) else {
-                            super::push_entity_loss(
+                            super::push_entity_loss_with_scoped_slots(
                                 ctx,
+                                &mut loss_slots_storage,
                                 &mut losses,
                                 entry,
                                 format_args!(
@@ -1592,8 +1629,9 @@ pub(super) fn project(
                                 )?
                                 .and_then(|position| ir.model.curves.get(*position))
                             else {
-                                super::push_entity_loss(
+                                super::push_entity_loss_with_scoped_slots(
                                     ctx,
+                                    &mut loss_slots_storage,
                                     &mut losses,
                                     entry,
                                     format_args!(
@@ -1615,12 +1653,12 @@ pub(super) fn project(
                             ) {
                                 Ok(source_edge) => source_edge,
                                 Err(SourceEdgeSelectionError::NoMatch) => {
-                                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "edge curve endpoints disagree with the vertex-list points"))?;
+                                    super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "edge curve endpoints disagree with the vertex-list points"))?;
                                     valid = false;
                                     break;
                                 }
                                 Err(SourceEdgeSelectionError::Ambiguous) => {
-                                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "edge curve maps to multiple ambiguous edge occurrences"))?;
+                                    super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "edge curve maps to multiple ambiguous edge occurrences"))?;
                                     valid = false;
                                     break;
                                 }
@@ -1640,8 +1678,9 @@ pub(super) fn project(
                             ) {
                                 Ok(carrier) => carrier,
                                 Err(error) => {
-                                    super::push_entity_loss(
+                                    super::push_entity_loss_with_scoped_slots(
                                         ctx,
+                                        &mut loss_slots_storage,
                                         &mut losses,
                                         entry,
                                         format_args!("{error}"),
@@ -1689,8 +1728,9 @@ pub(super) fn project(
                         ) {
                             Ok(projected) => projected,
                             Err(PcurveProjectionError::Invalid(error)) => {
-                                super::push_entity_loss(
+                                super::push_entity_loss_with_scoped_slots(
                                     ctx,
+                                    &mut loss_slots_storage,
                                     &mut losses,
                                     entry,
                                     format_args!("{error}"),
@@ -1742,12 +1782,12 @@ pub(super) fn project(
                     let boundary = if coedge_ids.is_empty() {
                         let mut uses = loop_vertex_uses.into_iter();
                         let Some((vertex, None, pcurves)) = uses.next() else {
-                            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
+                            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
                             valid = false;
                             break;
                         };
                         if uses.next().is_some() {
-                            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
+                            super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
                             valid = false;
                             break;
                         }
@@ -1769,8 +1809,9 @@ pub(super) fn project(
                             "iges B-rep anchored vertex uses",
                         )?
                         else {
-                            super::push_entity_loss(
+                            super::push_entity_loss_with_scoped_slots(
                                 ctx,
+                                &mut loss_slots_storage,
                                 &mut losses,
                                 entry,
                                 format_args!("{}", "edge loop contains an unanchored vertex use"),
@@ -1783,8 +1824,9 @@ pub(super) fn project(
                             cadmpeg_ir::topology::LoopRing::new(ctx, coedge_ids, vertex_uses)
                                 .map_err(cadmpeg_core::CodecError::from)?
                         else {
-                            super::push_entity_loss(
+                            super::push_entity_loss_with_scoped_slots(
                                 ctx,
+                                &mut loss_slots_storage,
                                 &mut losses,
                                 entry,
                                 format_args!("{}", "edge loop has no coedges"),
@@ -1907,8 +1949,9 @@ pub(super) fn project(
             })?;
         }
         if !valid {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "shell topology references missing geometry"),
@@ -1926,8 +1969,9 @@ pub(super) fn project(
                 "iges B-rep radial closure",
             )?
         {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -1979,15 +2023,22 @@ pub(super) fn project(
         candidate.model_mut().finalize(ctx)?;
         drop(model_index);
         if commit_session.commit_model(candidate)?.is_err() {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "shell candidate failed neutral validation"),
             )?;
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges brep decoded sequences")?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            entry.sequence,
+            "iges brep decoded sequences",
+            "iges brep decoded sequences",
+        )?;
         for sequence in ctx
             .admit_iter(consumed, "iges B-rep consumed traversal")?
             .chain(
@@ -1999,15 +2050,17 @@ pub(super) fn project(
                     .map(|(key, _)| key.0),
             )
         {
-            ctx.insert_btree_set(
+            ctx.insert_scoped_btree_set(
+                &mut decoded_storage,
                 &mut decoded,
                 sequence,
+                "iges B-rep decoded topology sequences",
                 "iges B-rep decoded topology sequences",
             )?;
         }
     }
 
-    Ok(ProjectionOutcome { decoded, losses })
+    Ok(ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage })
 }
 
 #[cfg(test)]

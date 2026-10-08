@@ -80,7 +80,7 @@ fn reference_summary_refuses_note_limit_without_heap_group_index() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::summary_notes(&graph, &ctx)
+            super::summary_notes(&graph, &ctx).map(|_| ())
         },
     );
     assert!(matches!(
@@ -95,7 +95,7 @@ fn reference_summary_refuses_note_limit_without_heap_group_index() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::summary_notes(&graph, &ctx).unwrap(),
+        super::summary_notes(&graph, &ctx).unwrap().0,
         ["references.dangling=1"]
     );
 }
@@ -424,6 +424,7 @@ fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
     let scan = crate::test_support::scan(&source).unwrap();
     let messages = super::losses(&graph, &scan, &[], &ctx)
         .unwrap()
+        .0
         .into_iter()
         .map(|note| note.message)
         .collect::<Vec<_>>();
@@ -459,7 +460,7 @@ fn graph_losses_admit_indexes_notes_and_provenance_text() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::losses(&graph, &scan, &[], &ctx)
+            super::losses(&graph, &scan, &[], &ctx).map(|_| ())
         },
     );
     assert!(matches!(
@@ -481,7 +482,7 @@ fn graph_losses_admit_indexes_notes_and_provenance_text() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = limit;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                super::losses(&graph, &scan, &[], &ctx)
+                super::losses(&graph, &scan, &[], &ctx).map(|_| ())
             },
         );
         assert!(matches!(
@@ -502,21 +503,21 @@ fn graph_losses_admit_indexes_notes_and_provenance_text() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::losses(&graph, &scan, &[], &ctx)
+            super::losses(&graph, &scan, &[], &ctx).map(|_| ())
         },
     );
     assert!(matches!(
         result,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>())
+                && limit.used == 0
                 && limit.additional == 2
                 && limit.operation == "iges graph loss tag"
     ));
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let losses = super::losses(&graph, &scan, &[], &ctx).unwrap();
+    let (losses, _loss_storage) = super::losses(&graph, &scan, &[], &ctx).unwrap();
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].provenance.as_ref().unwrap().tag.as_deref(),
@@ -712,7 +713,7 @@ fn zero_pointer_absence_creates_no_reference_edge() {
     );
     let _storage = resolver.append_to(&mut graph).unwrap();
     assert!(graph[&1].is_empty());
-    assert!(super::summary_notes(&graph, &ctx).unwrap().is_empty());
+    assert!(super::summary_notes(&graph, &ctx).unwrap().0.is_empty());
 }
 
 #[test]

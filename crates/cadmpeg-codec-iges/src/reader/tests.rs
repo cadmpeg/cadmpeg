@@ -20,6 +20,8 @@ use crate::test_support::test_curves_and_surfaces::{
 use crate::test_support::test_drawing_and_trimming::test_surface_domains::transform_chain_overflow_file;
 use crate::IgesCodec;
 
+mod storage_lifetimes;
+
 #[test]
 fn normalized_inspection_notes_refuse_text_and_slot_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -389,7 +391,8 @@ fn combined_summary_refuses_collection_limit_before_append() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut notes = Vec::new();
-    let result = super::append_summary_notes(&ctx, &mut notes, vec!["a".into()]);
+    let result = super::append_summary_notes(&ctx, &mut notes,
+        (vec!["a".into()], ctx.reserve_scoped(0, "test summary input").unwrap()));
     assert!(matches!(
         result,
         Err(CodecError::ResourceLimit(limit))
@@ -402,7 +405,8 @@ fn combined_summary_refuses_collection_limit_before_append() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    super::append_summary_notes(&ctx, &mut notes, vec!["a".into()]).unwrap();
+    super::append_summary_notes(&ctx, &mut notes,
+        (vec!["a".into()], ctx.reserve_scoped(0, "test summary input").unwrap())).unwrap();
     assert_eq!(notes, ["a"]);
 }
 
