@@ -1184,7 +1184,7 @@ fn positional_plane_frame_decodes_outline_separator_zero_suffix() {
 #[test]
 fn outline_separator_precedes_compact_integer_alias_of_compound_close() {
     let payload = [0x0f, 0x00, 0x0c, 0x98, 0xe3, 0xe0, 0x01, b'x', 0];
-    assert_eq!(first_compound_close(&payload, 0, payload.len()), Some(4));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| first_compound_close(ctx, &payload, 0, payload.len())).expect("token admission"), Some(4));
 }
 
 #[test]
@@ -1202,7 +1202,7 @@ fn plane_local_system_close_validates_past_an_e0_numeric_byte() {
     payload.extend_from_slice(&[psb::token::NAMED_RECORD, 0x01, b'x', 0]);
     let cache = scalar::ScalarCache::from_section(&payload);
 
-    assert_eq!(first_compound_close(&payload, 0, payload.len()), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| first_compound_close(ctx, &payload, 0, payload.len())).expect("token admission"), None);
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             plane_local_system_compound_close(ctx, &payload, 0, payload.len(), &cache)

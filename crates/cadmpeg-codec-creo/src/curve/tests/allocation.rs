@@ -679,6 +679,17 @@ evaluation_retained_test!(
 );
 
 macro_rules! evaluation_materialized_test {
+    ($name:ident, $source:expr, $external:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            evaluation_limit_reaches(
+                $source,
+                &$external,
+                ResourceDimension::MaterializedBytes,
+                $operation,
+            );
+        }
+    };
     ($name:ident, $source:expr, $operation:literal) => {
         #[test]
         fn $name() {
@@ -917,19 +928,46 @@ solve_storage_test!(
     &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
     "creo nonlinear Jacobian rows"
 );
-evaluation_retained_test!(
+fn nonlinear_materialized_limit_reaches(source: &[&str], external_symbols: &super::super::ExternalRelationSymbols, operation: &'static str) {
+    let lines = expression_lines(source);
+    with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols)
+    }).expect("service profile solves the original expression");
+    let block = with_expression_policy(DecodePolicy::service(), |ctx| super::super::curve_expression_solve_program(ctx, &lines)).expect("solve program").blocks.pop().expect("one solve block");
+    let preceding: Vec<_> = lines.iter().take_while(|line| line.offset < block.offset).cloned().collect();
+    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| super::super::evaluate_expression_program_details(ctx, &preceding, None, external_symbols)).expect("preceding assignments");
+    let mut values = std::collections::BTreeMap::new();
+    for assignment in preceding.assignments {
+        if let (Some((name, _)), Some(value)) = (assignment.scalar_target(), assignment.value.as_ref()) { values.insert(name.to_ascii_lowercase(), value.clone()); }
+    }
+    let point: Vec<_> = block.unknowns.iter().map(|unknown| values.get(&unknown.name.to_ascii_lowercase()).and_then(super::super::quantity_parts_ref).expect("initial numeric value").0).collect();
+    let dimensions = vec![super::super::RelationDimension::default(); point.len()];
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::MaterializedBytes, operation, |ctx| {
+        super::super::solve::evaluate_nonlinear_residuals(ctx, &block, &values, &dimensions, &point, super::super::RelationEvaluationContext::default())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == operation));
+}
+
+macro_rules! nonlinear_materialized_test {
+    ($name:ident, $source:expr, $external:expr, $operation:literal) => {
+        #[test]
+        fn $name() { nonlinear_materialized_limit_reaches($source, &$external, $operation); }
+    };
+}
+
+nonlinear_materialized_test!(
     nonlinear_known_value_names_refuse,
     &["y=3", "x=2", "SOLVE", "x*x*x=8", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
     "creo nonlinear known value names"
 );
-evaluation_retained_test!(
+nonlinear_materialized_test!(
     nonlinear_unknown_value_names_refuse,
     &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
     "creo nonlinear unknown value names"
 );
-evaluation_retained_test!(
+nonlinear_materialized_test!(
     nonlinear_known_string_values_refuse,
     &["y=\"text\"", "x=2", "SOLVE", "x*x*x=8", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
@@ -1162,52 +1200,19 @@ fn scalar_lane_with_limits(
 #[test]
 fn curve_parameter_references_refuse_before_vector_growth() {
     let body = [0xf7, 1];
-    assert_eq!(
-        scalar_lane_with_limits(&body, 0, 3, 100)
-            .expect("service limits admit reference")
-            .references
-            .len(),
-        1
-    );
-    let error =
-        scalar_lane_with_limits(&body, 0, 2, 100).expect_err("reference follows two claim slots");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo curve parameter references"));
+    let admitted = crate::decode::with_test_decode_ctx(|ctx| super::super::curve_scalar_lane(ctx, &body, 0, &crate::scalar::ScalarCache::default())).expect("service admits lane");
+    assert_eq!(admitted.references.len(), 1);
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo curve parameter references", |ctx| super::super::curve_scalar_lane(ctx, &body, 0, &crate::scalar::ScalarCache::default()));
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo curve parameter references"));
 }
 
 #[test]
 fn curve_parameter_scalars_refuse_before_vector_growth() {
-    assert_eq!(
-        scalar_lane_with_limits(
-            &[0x0e],
-            8,
-            2,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| scalar_lane_with_limits(&[0x0e], 8, u64::MAX, cap)
-            )
-        )
-        .expect("service limits admit scalar")
-        .scalar_tokens
-        .len(),
-        1
-    );
-    let error = scalar_lane_with_limits(
-        &[0x0e],
-        8,
-        1,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            None,
-            |cap| scalar_lane_with_limits(&[0x0e], 8, u64::MAX, cap),
-        ),
-    )
-    .expect_err("scalar follows one claim slot");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo curve parameter scalars"));
+    let body = [0x0e];
+    let admitted = crate::decode::with_test_decode_ctx(|ctx| super::super::curve_scalar_lane(ctx, &body, 8, &crate::scalar::ScalarCache::default())).expect("service admits lane");
+    assert_eq!(admitted.scalar_tokens.len(), 1);
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo curve parameter scalars", |ctx| super::super::curve_scalar_lane(ctx, &body, 8, &crate::scalar::ScalarCache::default()));
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo curve parameter scalars"));
 }
 
 #[test]
@@ -1280,36 +1285,11 @@ fn curve_zero_raw_token_refuses_before_copy() {
 
 #[test]
 fn curve_opaque_spans_refuse_before_vector_growth() {
-    assert_eq!(
-        scalar_lane_with_limits(
-            &[0xff],
-            0,
-            2,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                None,
-                |cap| scalar_lane_with_limits(&[0xff], 0, u64::MAX, cap)
-            )
-        )
-        .expect("one opaque span is admitted")
-        .opaque_spans
-        .len(),
-        1
-    );
-    let error = scalar_lane_with_limits(
-        &[0xff],
-        0,
-        1,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            None,
-            |cap| scalar_lane_with_limits(&[0xff], 0, u64::MAX, cap),
-        ),
-    )
-    .expect_err("opaque span follows one claim slot");
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo curve opaque spans"));
+    let body = [0xff];
+    let admitted = crate::decode::with_test_decode_ctx(|ctx| super::super::curve_scalar_lane(ctx, &body, 0, &crate::scalar::ScalarCache::default())).expect("service admits lane");
+    assert_eq!(admitted.opaque_spans.len(), 1);
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo curve opaque spans", |ctx| super::super::curve_scalar_lane(ctx, &body, 0, &crate::scalar::ScalarCache::default()));
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo curve opaque spans"));
 }
 
 #[test]

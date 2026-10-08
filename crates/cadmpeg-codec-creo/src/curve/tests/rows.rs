@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::curve::curve_scalar_lane;
 use crate::curve::depdb_cross_section_rows;
 use crate::curve::expression_records;
 use crate::curve::fc02_short_pcurve_endpoints;
@@ -31,7 +30,6 @@ use crate::curve::Fc02ShortPcurveEndpoints;
 use crate::curve::Fc05Circle;
 use crate::curve::Fc05CylinderCapPair;
 use crate::curve::TopologySuffixCandidate;
-use crate::scalar;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
@@ -143,32 +141,27 @@ fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
     (record, topology)
 }
 
-fn assert_pcurve_endpoint_collection_refusal(limit: u64, operation: &'static str) {
+fn assert_pcurve_endpoint_collection_refusal(operation: &'static str) {
     let (record, topology) = pcurve_zero_lane_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = pcurve_endpoints(&ctx, &[record], &[topology])
-        .expect_err("one eight-slot pcurve exceeds limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+        pcurve_endpoints(ctx, std::slice::from_ref(&record), std::slice::from_ref(&topology))
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation));
 }
 
 #[test]
 fn pcurve_endpoints_refuse_unique_parameter_count_node() {
-    assert_pcurve_endpoint_collection_refusal(0, "creo unique-row count nodes");
+    assert_pcurve_endpoint_collection_refusal("creo unique-row count nodes");
 }
 
 #[test]
 fn pcurve_endpoints_refuse_unique_parameter_projection() {
-    assert_pcurve_endpoint_collection_refusal(1, "creo unique-row projection");
+    assert_pcurve_endpoint_collection_refusal("creo unique-row projection");
 }
 
 #[test]
 fn pcurve_endpoints_refuse_output_vector() {
-    assert_pcurve_endpoint_collection_refusal(2, "creo pcurve endpoint rows");
+    assert_pcurve_endpoint_collection_refusal("creo pcurve endpoint rows");
 }
 
 #[test]
@@ -589,32 +582,27 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
     assert!(fc02_short_pcurve_endpoints_service(&[malformed], &[topology]).is_empty());
 }
 
-fn assert_fc02_short_collection_refusal(limit: u64, operation: &'static str) {
+fn assert_fc02_short_collection_refusal(operation: &'static str) {
     let (record, topology) = fc02_short_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = fc02_short_pcurve_endpoints(&ctx, &[record], &[topology])
-        .expect_err("one complete FC02 path exceeds limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+        fc02_short_pcurve_endpoints(ctx, std::slice::from_ref(&record), std::slice::from_ref(&topology))
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation));
 }
 
 #[test]
 fn fc02_short_pcurve_refuses_unique_parameter_node() {
-    assert_fc02_short_collection_refusal(0, "creo unique-row count nodes");
+    assert_fc02_short_collection_refusal("creo unique-row count nodes");
 }
 
 #[test]
 fn fc02_short_pcurve_refuses_unique_parameter_projection() {
-    assert_fc02_short_collection_refusal(1, "creo unique-row projection");
+    assert_fc02_short_collection_refusal("creo unique-row projection");
 }
 
 #[test]
 fn fc02_short_pcurve_refuses_endpoint_output() {
-    assert_fc02_short_collection_refusal(2, "creo FC02 short pcurve endpoints");
+    assert_fc02_short_collection_refusal("creo FC02 short pcurve endpoints");
 }
 
 #[test]
@@ -1090,11 +1078,11 @@ fn materialized_face_evidence_precedes_namespace_face_evidence() {
     let namespace_face_ids = std::collections::BTreeSet::from([115, 369, 371]);
 
     assert_eq!(
-        topology_suffix_with_face_ids(
-            &row,
+        crate::decode::with_test_decode_ctx(|ctx| topology_suffix_with_face_ids(
+            ctx, &row,
             Some(&materialized_face_ids),
             Some(&namespace_face_ids),
-        ),
+        )).expect("face lookup admission"),
         Some(TopologySuffixCandidate {
             start: 0,
             faces: [371, 369].map(NonZeroU32::new),
@@ -1167,25 +1155,6 @@ fn decodes_complete_depdb_one_sided_curve_array() {
     assert_eq!(rows[0].scalar_tokens[0].value, 1.0);
     assert_eq!(rows[0].opaque_spans.len(), 1);
     assert_eq!(rows[0].opaque_spans[0].raw, [0xff]);
-}
-
-#[test]
-fn curve_scalar_claims_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    let error = curve_scalar_lane(&ctx, &[0xff], 0, &scalar::ScalarCache::default())
-        .expect_err("one scalar claim exceeds the collection limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo curve scalar claims"
-    ));
 }
 
 #[test]

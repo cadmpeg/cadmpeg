@@ -187,19 +187,19 @@ fn row_prefix(data: &[u8], offset: usize, end: usize) -> Option<Prefix> {
     })
 }
 
-fn row_end(data: &[u8], body_start: usize, end: usize) -> Option<usize> {
+fn row_end(ctx: &DecodeContext<'_>, data: &[u8], body_start: usize, end: usize) -> Result<Option<usize>, CodecError> {
     let mut cursor = body_start;
     while cursor < end {
-        let token = psb::token_at(data, cursor)?;
+        let Some(token) = psb::token_at(ctx, data, cursor)? else { return Ok(None); };
         if matches!(token.kind, psb::TokenKind::CompoundClose) {
-            return Some(cursor);
+            return Ok(Some(cursor));
         }
         // `token_at` answers only for an offset inside `data`, so every token
         // it states spans at least its own head byte. A zero-length token would
         // not advance the walk, and the mint refuses it instead of flooring it.
-        cursor = cursor.checked_add(std::num::NonZeroUsize::new(token.length)?.get())?;
+        let Some(next) = std::num::NonZeroUsize::new(token.length).and_then(|length| cursor.checked_add(length.get())) else { return Ok(None); }; cursor = next;
     }
-    None
+    Ok(None)
 }
 
 fn parse_frame(
@@ -282,11 +282,7 @@ fn parse_frame(
         let Some(prefix) = row_prefix(data, cursor, end) else {
             break;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(end - prefix.body_offset),
-            "creo loop row token walk",
-        )?;
-        let Some(close) = row_end(data, prefix.body_offset, end) else {
+        let Some(close) = row_end(ctx, data, prefix.body_offset, end)? else {
             break;
         };
         ctx.reserve_vec(&mut records, 1, "creo loop array frame records")?;

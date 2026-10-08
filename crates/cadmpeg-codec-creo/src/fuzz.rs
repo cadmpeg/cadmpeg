@@ -62,7 +62,10 @@ pub fn compact_int(data: &[u8]) {
 
 /// Exercise Creo PSB token stream parsing.
 pub fn psb_tokens(data: &[u8]) {
-    let _probe = crate::psb::tokens(data).count();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy) else { return; };
+    let _probe = crate::psb::tokens(&ctx, data).try_fold(0usize, |count, token| token.map(|_| count + 1));
 }
 
 /// Exercise Creo short-form float decoding.
