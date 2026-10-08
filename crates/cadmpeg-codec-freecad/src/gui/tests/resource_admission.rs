@@ -15,10 +15,10 @@ fn assert_gui_decode_limit_at(
         let mut options = DecodeOptions::default();
         match dimension {
             cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                options.policy.limits.max_collection_items = cap
+                options.policy.limits.max_collection_items = cap;
             }
             cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                options.policy.limits.max_retained_bytes = cap
+                options.policy.limits.max_retained_bytes = cap;
             }
             _ => panic!("unsupported GUI test dimension"),
         }
@@ -1128,7 +1128,7 @@ fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
                 })
         },
     );
-    let error = cadmpeg_ir::DecodeFailure::Codec(error.into());
+    let error = cadmpeg_ir::DecodeFailure::Codec(error);
     assert!(
         matches!(
             &error,
@@ -1297,7 +1297,6 @@ fn gui_presentation_document_refuses_at_caller_limit() {
                 None,
                 &mut Vec::new(),
             )
-            .map(|_| ())
         },
     );
     assert!(
@@ -1404,7 +1403,6 @@ fn gui_view_presentation_refuses_at_caller_limit() {
                 None,
                 &mut Vec::new(),
             )
-            .map(|_| ())
         },
     );
     assert!(
@@ -1444,7 +1442,6 @@ fn gui_presentation_states_refuse_at_caller_limit() {
                 None,
                 &mut Vec::new(),
             )
-            .map(|_| ())
         },
     );
     assert!(
@@ -1484,7 +1481,6 @@ fn gui_presentation_assets_refuse_at_caller_limit() {
                 None,
                 &mut Vec::new(),
             )
-            .map(|_| ())
         },
     );
     assert!(
@@ -1525,7 +1521,6 @@ fn gui_asset_identity_refuses_at_retained_limit() {
                 None,
                 &mut Vec::new(),
             )
-            .map(|_| ())
         },
     );
     assert!(
@@ -1598,7 +1593,7 @@ fn gui_refused_property_loss_refuses_at_caller_limit() {
             let refused = [cadmpeg_core::text::NamedEntryError::Blank {
                 record: "record".into(),
             }];
-            super::super::charge_refused_gui_keys(ctx, &mut Vec::new(), &refused).map(|_| ())
+            super::super::charge_refused_gui_keys(ctx, &mut Vec::new(), &refused)
         },
     );
     assert!(
@@ -1657,7 +1652,6 @@ fn gui_provider_record_refuses_at_caller_limit() {
                 &mut Vec::new(),
                 &mut Vec::new(),
             )
-            .map(|_| ())
         },
     );
     assert!(
@@ -1684,7 +1678,6 @@ fn gui_provider_property_nodes_refuse_at_caller_limit() {
                 &mut Vec::new(),
                 &mut Vec::new(),
             )
-            .map(|_| ())
         },
     );
     assert!(
