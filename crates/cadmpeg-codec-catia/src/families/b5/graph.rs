@@ -2102,7 +2102,7 @@ fn parse_a8_class21_pcurve(
             &knot_values,
             &points,
             &first,
-            &second,
+            &second, cadmpeg_ir::units::FiniteVector::new,
         ) {
             Ok(Some(curve)) => curve,
             Ok(None) => return None,

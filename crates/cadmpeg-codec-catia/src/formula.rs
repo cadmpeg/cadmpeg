@@ -57,8 +57,8 @@ pub(crate) fn transfer_parameters<'ctx>(
     let mut formula_definition_counts = HashMap::<ParameterId, usize>::new();
     for entity in ctx
         .admit_iter(&native.entity_records, "catia_formula_entity_visits")?
-        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
     {
+        if !graph_scope.contains(ctx, entity.object_graph.as_str())? { continue; }
         let outputs = entity
             .formula_relation()
             .and_then(|relation| relation.output_entity.reference.entity())
@@ -87,7 +87,7 @@ pub(crate) fn transfer_parameters<'ctx>(
     } else {
         ctx.find_by(
             &native.object_graphs,
-            |graph| Ok(graph_scope.contains(graph.id.as_str())),
+            |graph| graph_scope.contains(ctx, graph.id.as_str()),
             "catia_formula_scope_graph_visits",
         )?
         .and_then(|graph| graph.outer_container.as_ref())
@@ -102,9 +102,9 @@ pub(crate) fn transfer_parameters<'ctx>(
         BTreeMap::<ParameterId, Option<(DesignParameter, FormulaParameterType)>>::new();
     for program_entity in ctx
         .admit_iter(&native.entity_records, "catia_formula_entity_visits")?
-        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
     {
         const OPERATION: &str = "catia_relation_program_parameter_index";
+        if !graph_scope.contains(ctx, program_entity.object_graph.as_str())? { continue; }
         let Some(inputs) = program_entity
             .relation_program_instance()
             .and_then(|instance| instance.inputs.as_ref())
@@ -180,8 +180,8 @@ pub(crate) fn transfer_parameters<'ctx>(
 
     for formula_entity in ctx
         .admit_iter(&native.entity_records, "catia_formula_entity_visits")?
-        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
     {
+        if !graph_scope.contains(ctx, formula_entity.object_graph.as_str())? { continue; }
         let Some(formula) = &formula_entity.formula_relation() else {
             continue;
         };
@@ -475,8 +475,8 @@ pub(crate) fn transfer_parameters<'ctx>(
 
     for relation_entity in ctx
         .admit_iter(&native.entity_records, "catia_formula_entity_visits")?
-        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
     {
+        if !graph_scope.contains(ctx, relation_entity.object_graph.as_str())? { continue; }
         let Some(instance) = relation_entity.relation_program_instance() else {
             continue;
         };
@@ -758,17 +758,13 @@ pub(crate) fn transfer_parameters<'ctx>(
             ctx,
             &mut annotation_builder,
             candidate.parameter.id.as_str(),
-            "properties",
-            "catia_formula_annotations",
-        )?;
+            "properties",)?;
         if !candidate.role.is_formula_output() && candidate.parameter.dependencies.is_empty() {
             resource::derived_annotation(
                 ctx,
                 &mut annotation_builder,
                 candidate.parameter.id.as_str(),
-                "expression",
-                "catia_formula_annotations",
-            )?;
+                "expression",)?;
         }
     }
     *annotations = annotation_builder.build();
@@ -912,8 +908,8 @@ fn collect_definition_chain_parameters(
 ) -> Result<(), cadmpeg_core::CodecError> {
     for entity in ctx
         .admit_iter(&native.entity_records, "catia_formula_entity_visits")?
-        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
     {
+        if !graph_scope.contains(ctx, entity.object_graph.as_str())? { continue; }
         let Some(chain) = entity.definition_chain_value() else {
             continue;
         };

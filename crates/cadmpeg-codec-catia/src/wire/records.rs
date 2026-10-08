@@ -18,7 +18,11 @@ type NativePcurveLanesOutput = Result<
     CodecError,
 >;
 
-use std::{borrow::Borrow, collections::HashSet, ops::Range};
+use std::{
+    borrow::Borrow,
+    collections::{BTreeSet, HashSet},
+    ops::Range,
+};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -105,9 +109,9 @@ pub(crate) fn family_pcurves_from_records(
     family: ConsolidatedFamily,
 ) -> Result<Vec<ConsolidatedPcurve>, CodecError> {
     let mut pcurves = Vec::new();
-    for frame in
-        family_frames_from_records(ctx, records, family, 0x20, "catia_consolidated_pcurve_scan")?
-    {
+    let mut frames =
+        family_frames_from_records(ctx, records, family, 0x20, "catia_consolidated_pcurve_scan")?;
+    while let Some(frame) = ctx.next_charged(&mut frames, "catia_pcurve_frame_visits")? {
         if let Some(pcurve) =
             parse_consolidated_pcurve(ctx, data, frame.pos, frame.payload, frame.end)?
         {
@@ -121,23 +125,13 @@ impl ConsolidatedPcurve {
     pub(crate) const DEGREE: u32 = 5;
 
     pub(crate) fn native_lanes(&self, ctx: &DecodeContext<'_>) -> NativePcurveLanesOutput {
-        let mut knots = Vec::new();
-        let mut points = Vec::new();
-        let mut first = Vec::new();
-        let mut second = Vec::new();
-        ctx.reserve_vec(&mut knots, self.sites.len(), "catia_native_pcurve_knots")?;
-        ctx.reserve_vec(&mut points, self.sites.len(), "catia_native_pcurve_points")?;
-        ctx.reserve_vec(
-            &mut first,
-            self.sites.len(),
-            "catia_native_pcurve_first_derivatives",
-        )?;
-        ctx.reserve_vec(
-            &mut second,
-            self.sites.len(),
-            "catia_native_pcurve_second_derivatives",
-        )?;
-        for site in &self.sites {
+        let mut knots = ctx.collection_vec(self.sites.len(), "catia_native_pcurve_knots")?;
+        let mut points = ctx.collection_vec(self.sites.len(), "catia_native_pcurve_points")?;
+        let mut first =
+            ctx.collection_vec(self.sites.len(), "catia_native_pcurve_first_derivatives")?;
+        let mut second =
+            ctx.collection_vec(self.sites.len(), "catia_native_pcurve_second_derivatives")?;
+        for site in ctx.admit_iter(&self.sites.0, "catia_native_pcurve_site_visits")? {
             knots.push(site.knot);
             points.push(site.point);
             first.push(site.first_derivatives);
@@ -177,30 +171,40 @@ fn parse_consolidated_pcurve(
     else {
         return Ok(None);
     };
-    let scalar_work = u64_from_index(count).checked_mul(7 * 8).ok_or_else(|| {
-        ctx.refuse_codec_limit("catia_pcurve_scalar_scan", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_work(scalar_work, "catia_pcurve_scalar_scan")?;
+    let mut output_storage = ctx.reserve_scoped(0, "catia_pcurve_output")?;
     let mut sites = Vec::new();
-    ctx.reserve_vec(&mut sites, count, "catia_consolidated_pcurve_sites")?;
-    for index in 0..count {
+    let mut indices = 0..count;
+    while let Some(index) = ctx.next_charged(&mut indices, "catia_pcurve_scalar_scan")? {
         let offset = index * 8;
         let values = lanes.map(|lane| f64_le(data, lane + offset));
         let [Some(knot), Some(u), Some(v), Some(du), Some(dv), Some(ddu), Some(ddv)] = values
         else {
             return Ok(None);
         };
-        sites.push(ConsolidatedPcurveSite {
-            knot,
-            point: [u, v].into(),
-            first_derivatives: [du, dv].into(),
-            second_derivatives: [ddu, ddv].into(),
-        });
+        output_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut sites,
+                ConsolidatedPcurveSite {
+                    knot,
+                    point: [u, v].into(),
+                    first_derivatives: [du, dv].into(),
+                    second_derivatives: [ddu, ddv].into(),
+                },
+                "catia_consolidated_pcurve_sites",
+            )
+        })?;
     }
-    ctx.charge_work(u64_from_index(sites.len()), "catia_pcurve_site_order")?;
-    let Ok(sites) = OrderedPcurveSites::try_from(sites) else {
+    if sites.len() < 2
+        || ctx.any_by(
+            sites.windows(2),
+            |pair| Ok(pair[0].knot.get() >= pair[1].knot.get()),
+            "catia_pcurve_site_order",
+        )?
+    {
         return Ok(None);
-    };
+    }
+    let sites = OrderedPcurveSites(sites);
+    output_storage.commit()?;
     Ok(Some(ConsolidatedPcurve {
         pos,
         support_id,
@@ -599,11 +603,26 @@ impl ConsolidatedRecord {
 /// bytes whose grammar is not known. Those frames remain useful for individual
 /// typed decoding, but they cannot establish an ordered multi-frame owner
 /// relationship. Every semantic window must prove this invariant locally.
-pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
+pub(crate) fn records_are_contiguous<const N: usize>(records: &[&ConsolidatedRecord; N]) -> bool {
     records.windows(2).all(|pair| {
         pair[0].source_index == pair[1].source_index
             && pair[0].source_range.end == pair[1].source_range.start
     })
+}
+
+/// Check an input-sized record run, stopping at the first logical gap.
+pub(crate) fn record_run_is_contiguous(
+    ctx: &DecodeContext<'_>,
+    records: &[ConsolidatedRecord],
+) -> Result<bool, CodecError> {
+    ctx.all_by(
+        records.windows(2),
+        |pair| {
+            Ok(pair[0].source_index == pair[1].source_index
+                && pair[0].source_range.end == pair[1].source_range.start)
+        },
+        "catia_record_run_contiguity",
+    )
 }
 
 /// Inventory length-closed consolidated A/B records in one bounded source.
@@ -731,11 +750,19 @@ where
     R::Item: Borrow<SourceExtent>,
 {
     let mut records = Vec::new();
-    for (source_index, extents) in sources.into_iter().enumerate() {
+    let mut source_input = sources.into_iter().enumerate();
+    while let Some((source_index, extents)) =
+        ctx.next_charged(&mut source_input, "catia_record_source_visits")?
+    {
         // Revalidate extents against this image before using their ranges.
+        let mut workspace = ctx.reserve_scoped(0, "catia_record_source_workspace")?;
         let mut source_ranges = Vec::new();
-        for extent in extents {
-            ctx.charge_work(1, "catia_record_source_extent_admission")?;
+        let mut logical_ends = Vec::new();
+        let mut source_length = 0usize;
+        let mut extent_input = extents.into_iter();
+        while let Some(extent) =
+            ctx.next_charged(&mut extent_input, "catia_record_source_extent_admission")?
+        {
             let range = extent.borrow().range();
             if range.end > data.len() || range.start > range.end {
                 return Err(CodecError::malformed(
@@ -743,12 +770,28 @@ where
                 ));
             }
             if range.start < range.end {
-                ctx.push_vec(&mut source_ranges, range, "catia_record_source_ranges")?;
+                source_length = source_length
+                    .checked_add(range.end - range.start)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("catia_record_source_ranges", u64::MAX, u64::MAX)
+                    })?;
+                ctx.push_scoped_vec(
+                    &mut workspace,
+                    &mut source_ranges,
+                    range,
+                    "catia_record_source_ranges",
+                )?;
+                ctx.push_scoped_vec(
+                    &mut workspace,
+                    &mut logical_ends,
+                    source_length,
+                    "catia_record_source_boundaries",
+                )?;
             }
         }
         let mut source_records = Vec::new();
         let mut source_offset = 0usize;
-        for range in &source_ranges {
+        for range in ctx.admit_iter(&source_ranges, "catia_record_source_range_visits")? {
             let start = range.start;
             let end = range.end;
             let mut pos = start;
@@ -771,7 +814,12 @@ where
                 };
                 pos = physical_range.end;
                 record.source_range = source_start..source_end;
-                ctx.push_vec(&mut source_records, record, "catia_source_records")?;
+                ctx.push_scoped_vec(
+                    &mut workspace,
+                    &mut source_records,
+                    record,
+                    "catia_source_records",
+                )?;
             }
             let Some(next_source_offset) = source_offset.checked_add(end - start) else {
                 return Ok(records);
@@ -780,74 +828,83 @@ where
         }
         let mut record_starts = HashSet::new();
         let mut record_ranges = HashSet::new();
-        for record in &source_records {
-            ctx.insert_hash_set(
-                &mut record_starts,
-                record.source_range.start,
-                "catia_record_starts",
-            )?;
-            ctx.insert_hash_set(
-                &mut record_ranges,
-                (record.source_range.start, record.source_range.end),
-                "catia_record_ranges",
-            )?;
-        }
-        loop {
-            ctx.charge_work(1, "catia_records_iteration")?;
-            let mut added = Vec::new();
-            let mut source_ends = HashSet::new();
-            ctx.charge_work(
-                u64_from_index(source_records.len()),
-                "catia_spanning_record_inventory",
-            )?;
-            for record in &source_records {
+        for record in ctx.admit_iter(&source_records, "catia_record_index_visits")? {
+            workspace.with_storage(|| {
                 ctx.insert_hash_set(
-                    &mut source_ends,
-                    record.source_range.end,
-                    "catia_record_source_ends",
-                )?;
-            }
-            for source_start in source_ends {
-                ctx.charge_work(1, "catia_spanning_record_lookup")?;
-                if record_starts.contains(&source_start) {
-                    continue;
-                }
-                let work = u64_from_index(source_ranges.len())
-                    .checked_mul(14)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "catia_spanning_record_probe",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                ctx.charge_work(work, "catia_spanning_record_probe")?;
-                let Some(record) = parse_spanning_consolidated_record(
-                    data,
-                    &source_ranges,
-                    source_index,
-                    source_start,
-                ) else {
-                    continue;
-                };
-                if ctx.insert_hash_set(
+                    &mut record_starts,
+                    record.source_range.start,
+                    "catia_record_starts",
+                )
+            })?;
+            workspace.with_storage(|| {
+                ctx.insert_hash_set(
                     &mut record_ranges,
                     (record.source_range.start, record.source_range.end),
                     "catia_record_ranges",
+                )
+            })?;
+        }
+        loop {
+            ctx.charge_work(1, "catia_records_iteration")?;
+            let mut added_storage = ctx.reserve_scoped(0, "catia_spanning_record_workspace")?;
+            let mut added = Vec::new();
+            let mut source_ends = BTreeSet::new();
+            for record in ctx.admit_iter(&source_records, "catia_spanning_record_inventory")? {
+                added_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut source_ends,
+                        record.source_range.end,
+                        "catia_record_source_ends",
+                    )
+                })?;
+            }
+            for source_start in ctx.admit_iter(source_ends, "catia_spanning_record_lookup")? {
+                if ctx.contains_hash_set(
+                    &record_starts,
+                    &source_start,
+                    "catia_record_start_lookup",
                 )? {
+                    continue;
+                }
+                let Some(record) = parse_spanning_consolidated_record(
+                    data,
+                    ctx,
+                    &source_ranges,
+                    &logical_ends,
+                    source_index,
+                    source_start,
+                )?
+                else {
+                    continue;
+                };
+                if workspace.with_storage(|| {
                     ctx.insert_hash_set(
-                        &mut record_starts,
-                        record.source_range.start,
-                        "catia_record_starts",
+                        &mut record_ranges,
+                        (record.source_range.start, record.source_range.end),
+                        "catia_record_ranges",
+                    )
+                })? {
+                    workspace.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut record_starts,
+                            record.source_range.start,
+                            "catia_record_starts",
+                        )
+                    })?;
+                    ctx.push_scoped_vec(
+                        &mut added_storage,
+                        &mut added,
+                        record,
+                        "catia_spanning_records",
                     )?;
-                    ctx.push_vec(&mut added, record, "catia_spanning_records")?;
                 }
             }
             if added.is_empty() {
                 break;
             }
-            ctx.reserve_vec(&mut source_records, added.len(), "catia_source_records")?;
-            source_records.extend(added);
+            workspace.with_storage(|| {
+                ctx.append_vec(&mut source_records, &mut added, "catia_source_records")
+            })?;
             ctx.stable_sort_by(
                 &mut source_records,
                 |value| &value.source_range.start,
@@ -855,112 +912,125 @@ where
                 "catia_source_records_sort",
             )?;
         }
-        ctx.reserve_vec(
+        ctx.append_vec(
             &mut records,
-            source_records.len(),
+            &mut source_records,
             "catia_consolidated_records",
         )?;
-        records.extend(source_records);
     }
     Ok(records)
 }
 
 fn parse_spanning_consolidated_record(
     data: &[u8],
+    ctx: &DecodeContext<'_>,
     ranges: &[Range<usize>],
+    logical_ends: &[usize],
     source_index: usize,
     source_start: usize,
-) -> Option<ConsolidatedRecord> {
-    let source_length = ranges.iter().try_fold(0usize, |length, range| {
-        length.checked_add(range.end - range.start)
-    })?;
-    let source_byte = |offset: usize| {
-        let mut logical_start = 0usize;
-        for range in ranges {
-            let logical_end = logical_start.checked_add(range.end - range.start)?;
-            if offset < logical_end {
-                return data
-                    .get(
-                        range
-                            .start
-                            .checked_add(offset.checked_sub(logical_start)?)?,
-                    )
-                    .copied();
-            }
-            logical_start = logical_end;
-        }
-        None
+) -> Result<Option<ConsolidatedRecord>, CodecError> {
+    let Some(&source_length) = logical_ends.last() else {
+        return Ok(None);
     };
-    let first = source_byte(source_start)?;
-    let (family, width, header_len, length) = if let Some(width) = first
-        .checked_sub(0xa4)
-        .and_then(ConsolidatedFrameWidth::from_byte)
-    {
-        let length_bytes = [
-            source_byte(source_start.checked_add(3)?)?,
-            source_byte(source_start.checked_add(4)?)?,
-            source_byte(source_start.checked_add(5)?)?,
-            source_byte(source_start.checked_add(6)?)?,
-        ];
-        let length =
-            View::u32_le_at(&length_bytes, 0).and_then(|value| usize::try_from(value).ok())?;
-        (ConsolidatedFamily::A, width, a_frame::LEN, length)
-    } else {
-        let width = first
-            .checked_sub(0xb1)
-            .and_then(ConsolidatedFrameWidth::from_byte)?;
-        (
-            ConsolidatedFamily::B,
-            width,
-            b_frame::LEN,
-            usize::from(source_byte(
-                source_start.checked_add(b_frame::PAYLOAD_LEN)?,
-            )?),
-        )
-    };
-    let flag =
-        ConsolidatedFrameFlag::from_byte(source_byte(source_start.checked_add(a_frame::FLAG)?)?)?;
-    let class = source_byte(source_start.checked_add(a_frame::CLASS)?)?;
-    let token_at = source_start.checked_add(header_len)?;
-    let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
-    let source_end = payload_start.checked_add(length)?;
-    if source_end > source_length {
-        return None;
-    }
-    let mut logical_boundary = 0usize;
-    let mut crosses_extent = false;
-    let (_, preceding_ranges) = ranges.split_last()?;
-    for range in preceding_ranges {
-        logical_boundary = logical_boundary.checked_add(range.end - range.start)?;
-        crosses_extent |= source_start < logical_boundary && logical_boundary < source_end;
-    }
-    if !crosses_extent {
-        return None;
-    }
-    let header_token = (0..usize::from(u8::from(width))).try_fold(0u32, |value, relative| {
-        Some(value | (u32::from(source_byte(token_at.checked_add(relative)?)?) << (8 * relative)))
-    })?;
-    let mut logical_start = 0usize;
-    let byte_offset = ranges.iter().find_map(|range| {
-        let logical_end = logical_start.checked_add(range.end - range.start)?;
-        if source_start < logical_end {
-            range
-                .start
-                .checked_add(source_start.checked_sub(logical_start)?)
+    let source_location = |offset| -> Result<Option<usize>, CodecError> {
+        let index = ctx.partition_point(
+            logical_ends,
+            |end| Ok(*end <= offset),
+            "catia_spanning_record_probe",
+        )?;
+        let Some(range) = ranges.get(index) else {
+            return Ok(None);
+        };
+        let start = if index == 0 {
+            0
         } else {
-            logical_start = logical_end;
-            None
+            logical_ends[index - 1]
+        };
+        Ok(offset
+            .checked_sub(start)
+            .and_then(|relative| range.start.checked_add(relative)))
+    };
+    let source_byte = |offset| -> Result<Option<u8>, CodecError> {
+        Ok(match source_location(offset)? {
+            Some(offset) => data.get(offset).copied(),
+            None => None,
+        })
+    };
+    (|| -> Option<Result<ConsolidatedRecord, CodecError>> {
+        macro_rules! admitted {
+            ($value:expr) => {
+                match $value {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
         }
-    })?;
-    Some(ConsolidatedRecord {
-        source_index,
-        source_range: source_start..source_end,
-        placement: ConsolidatedPlacement::Spanning { byte_offset },
-        family,
-        token: WidthCodedToken::new(width, header_token).ok()?,
-        flag,
-        class,
-    })
+        let first = admitted!(source_byte(source_start))?;
+        let (family, width, header_len, length) = if let Some(width) = first
+            .checked_sub(0xa4)
+            .and_then(ConsolidatedFrameWidth::from_byte)
+        {
+            let length_bytes = [
+                admitted!(source_byte(source_start.checked_add(3)?))?,
+                admitted!(source_byte(source_start.checked_add(4)?))?,
+                admitted!(source_byte(source_start.checked_add(5)?))?,
+                admitted!(source_byte(source_start.checked_add(6)?))?,
+            ];
+            let length =
+                View::u32_le_at(&length_bytes, 0).and_then(|value| usize::try_from(value).ok())?;
+            (ConsolidatedFamily::A, width, a_frame::LEN, length)
+        } else {
+            let width = first
+                .checked_sub(0xb1)
+                .and_then(ConsolidatedFrameWidth::from_byte)?;
+            (
+                ConsolidatedFamily::B,
+                width,
+                b_frame::LEN,
+                usize::from(admitted!(source_byte(
+                    source_start.checked_add(b_frame::PAYLOAD_LEN)?
+                ))?),
+            )
+        };
+        let flag = ConsolidatedFrameFlag::from_byte(admitted!(source_byte(
+            source_start.checked_add(a_frame::FLAG)?
+        ))?)?;
+        let class = admitted!(source_byte(source_start.checked_add(a_frame::CLASS)?))?;
+        let token_at = source_start.checked_add(header_len)?;
+        let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
+        let source_end = payload_start.checked_add(length)?;
+        if source_end > source_length {
+            return None;
+        }
+        let first_extent = admitted!(ctx.partition_point(
+            logical_ends,
+            |end| Ok(*end <= source_start),
+            "catia_spanning_record_probe"
+        ));
+        if logical_ends
+            .get(first_extent)
+            .is_none_or(|end| *end >= source_end)
+        {
+            return None;
+        }
+        let mut header_token = 0u32;
+        // Frame width is at most four bytes.
+        for relative in 0..usize::from(u8::from(width)) {
+            header_token |= u32::from(admitted!(source_byte(token_at.checked_add(relative)?))?)
+                << (8 * relative);
+        }
+        let byte_offset = admitted!(source_location(source_start))?;
+        Some(Ok(ConsolidatedRecord {
+            source_index,
+            source_range: source_start..source_end,
+            placement: ConsolidatedPlacement::Spanning { byte_offset },
+            family,
+            token: WidthCodedToken::new(width, header_token).ok()?,
+            flag,
+            class,
+        }))
+    })()
+    .transpose()
 }
 
 fn parse_consolidated_record(
@@ -1219,9 +1289,8 @@ mod tests {
             );
         });
         crate::test_support::with_work_limit(work - 1, |ctx| {
-            let error = match super::scan_vertex_rows(ctx, &bytes) {
-                Ok(_) => panic!("whole source must be admitted"),
-                Err(error) => error,
+            let Err(error) = super::scan_vertex_rows(ctx, &bytes) else {
+                panic!("whole source must be admitted")
             };
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
                 panic!("resource refusal required")
@@ -1248,19 +1317,27 @@ mod tests {
     #[test]
     fn consolidated_record_scan_refuses_marker_free_work() {
         let bytes = [0_u8; 64];
-        crate::test_support::with_work_limit(1, |ctx| {
+        let refusal = crate::test_support::with_work_refusal("catia_record_scan", |ctx| {
             let error = super::consolidated_records_in_sources(
                 ctx,
                 &bytes,
                 std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
-            )
-            .expect_err("marker-free scan consumes work");
+            );
+            let error = match error {
+                Ok(value) => return Ok(value),
+                Err(error) => error,
+            };
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
                 panic!("resource refusal required")
             };
             assert_eq!(limit.operation, "catia_record_scan");
             assert_eq!(ctx.resource_refusal(), Some(limit));
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         });
+        assert!(
+            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_record_scan")
+        );
     }
 
     #[test]
@@ -1268,11 +1345,12 @@ mod tests {
         let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
         for (limit, operation) in [
             (0, "catia_record_source_ranges"),
-            (1, "catia_source_records"),
-            (2, "catia_record_starts"),
-            (3, "catia_record_ranges"),
-            (4, "catia_record_source_ends"),
-            (5, "catia_consolidated_records"),
+            (1, "catia_record_source_boundaries"),
+            (2, "catia_source_records"),
+            (3, "catia_record_starts"),
+            (4, "catia_record_ranges"),
+            (5, "catia_record_source_ends"),
+            (6, "catia_consolidated_records"),
         ] {
             let limited = crate::test_support::with_collection_limit(limit, |ctx| {
                 super::consolidated_records_in_sources(
@@ -1336,9 +1414,9 @@ mod tests {
         bytes.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
         let split = spanning_start + 10;
         for (limit, operation) in [
-            (8, "catia_spanning_records"),
-            (9, "catia_source_records"),
-            (13, "catia_consolidated_records"),
+            (10, "catia_spanning_records"),
+            (11, "catia_source_records"),
+            (15, "catia_consolidated_records"),
         ] {
             let limited = crate::test_support::with_collection_limit(limit, |ctx| {
                 super::consolidated_records_in_sources(
@@ -1377,7 +1455,7 @@ mod tests {
             let result =
                 super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
             result
         });
@@ -1597,12 +1675,38 @@ mod tests {
             ..first.clone()
         };
 
-        assert!(super::records_are_contiguous(&[first.clone(), adjacent]));
-        assert!(!super::records_are_contiguous(&[
+        let continuous_run = [first.clone(), adjacent.clone()];
+        let gap_run = [
             first.clone(),
-            adjacent_other_source
-        ]));
-        assert!(!super::records_are_contiguous(&[first, separated]));
+            separated.clone(),
+            adjacent_other_source.clone(),
+        ];
+        let refusal =
+            crate::test_support::with_work_refusal("catia_record_run_contiguity", |ctx| {
+                let result = super::record_run_is_contiguous(ctx, &continuous_run);
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            });
+        assert!(
+            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_record_run_contiguity")
+        );
+        assert!(
+            !crate::test_support::with_work_limit(1, |ctx| super::record_run_is_contiguous(
+                ctx, &gap_run
+            ))
+            .expect("first gap stops the scan")
+        );
+        assert!(super::records_are_contiguous(
+            &[first.clone(), adjacent].each_ref()
+        ));
+        assert!(!super::records_are_contiguous(
+            &[first.clone(), adjacent_other_source].each_ref()
+        ));
+        assert!(!super::records_are_contiguous(
+            &[first, separated].each_ref()
+        ));
     }
 
     #[test]

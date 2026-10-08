@@ -123,38 +123,40 @@ pub(crate) fn with_retained_refusal<T, E: std::fmt::Debug>(
     run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, E>,
 ) -> Result<T, E> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let mut cap = 0;
-    for _ in 0..4096 {
+    let need = {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::RetainedBytes,
+            operation,
+            None,
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
+        policy.limits.max_retained_bytes = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
         let result = run(&ctx);
-        let Some(refusal) = ctx.resource_refusal() else {
+        let refusal = ctx.resource_refusal().unwrap_or_else(|| {
             panic!(
                 "named retained refusal {operation} was not reached: {:?}",
-                result.err()
-            );
-        };
+                result.as_ref().err()
+            )
+        });
         assert!(result.is_err());
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
-        let need = refusal
+        assert_eq!(refusal.operation, operation);
+        refusal
             .used
             .checked_add(refusal.additional)
-            .expect("retained need");
-        assert!(need > cap);
-        if refusal.operation == operation {
-            policy.limits.max_retained_bytes = need - 1;
-            let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
-            let result = run(&ctx);
-            assert!(result.is_err());
-            let below = ctx.resource_refusal().expect("named refusal sets fuse");
-            assert_eq!(below.dimension, ResourceDimension::RetainedBytes);
-            assert_eq!(below.operation, operation);
-            assert_eq!(below.used.checked_add(below.additional), Some(need));
-            return result;
-        }
-        cap = need;
-    }
-    panic!("named retained refusal {operation} exceeded the boundary count");
+            .expect("retained need")
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = need - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy).expect("root");
+    let result = run(&ctx);
+    assert!(result.is_err());
+    let below = ctx.resource_refusal().expect("named refusal sets fuse");
+    assert_eq!(below.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(below.operation, operation);
+    assert_eq!(below.used.checked_add(below.additional), Some(need));
+    result
 }

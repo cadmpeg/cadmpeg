@@ -92,8 +92,11 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
     let transfer = crate::test_support::with_service_context(|ctx| {
         transfer_design_features(
             ctx,
+            &mut ctx
+                .reserve_scoped(0, "catia_test_transfer_membership")
+                .expect("membership workspace"),
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })

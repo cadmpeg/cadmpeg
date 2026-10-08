@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of exact CATIA reference history nodes.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -19,7 +19,68 @@ use crate::native::{
     CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectRecord,
     CatiaRangeInterval, CatiaRangeNominalFraming,
 };
-use crate::object_graph::{PayloadField, PayloadSubtype};
+use crate::object_graph::PayloadField;
+
+/// Borrowed native indexes shared by feature transfer and parameter ownership.
+pub(crate) struct DesignFeatureSources<'native, 'ctx> {
+    native: &'native CatiaNative,
+    entities: HashMap<&'native str, &'native CatiaEntityRecord>,
+    object_records: HashMap<&'native str, &'native CatiaObjectRecord>,
+    design_objects: BTreeMap<&'native str, &'native CatiaDesignObject>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'native, 'ctx> DesignFeatureSources<'native, 'ctx> {
+    pub(crate) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        native: &'native CatiaNative,
+    ) -> Result<Self, CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "catia_feature_sources")?;
+        let entities = storage.with_storage(|| {
+            ctx.collect_hash_map(
+                native
+                    .entity_records
+                    .iter()
+                    .map(|entity| (entity.id.as_str(), entity)),
+                "catia_feature_transfer_entities",
+            )
+        })?;
+        let mut object_records = HashMap::new();
+        for graph in ctx.admit_iter(&native.object_graphs, "catia_feature_transfer_graphs")? {
+            for record in ctx.admit_iter(&graph.records, "catia_feature_transfer_record_visits")? {
+                storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut object_records,
+                        record.id.as_str(),
+                        record,
+                        "catia_feature_transfer_records",
+                    )
+                })?;
+            }
+        }
+        let mut design_objects = BTreeMap::new();
+        for object in ctx.admit_iter(
+            &native.design_objects,
+            "catia_feature_transfer_object_visits",
+        )? {
+            storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut design_objects,
+                    object.id.as_str(),
+                    object,
+                    "catia_feature_transfer_objects",
+                )
+            })?;
+        }
+        Ok(Self {
+            native,
+            entities,
+            object_records,
+            design_objects,
+            _storage: storage,
+        })
+    }
+}
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
@@ -55,19 +116,20 @@ impl DesignFeatureTransfer {
         record: &str,
     ) -> Result<bool, CodecError> {
         const OPERATION: &str = "catia_design_feature_consumed_records";
-        ctx.any_by(
-            [
-                &self.principal_plane_records,
-                &self.sketch_owner_records,
-                &self.reference_plane_records,
-                &self.native_operation_records,
-                &self.native_operation_definition_value_records,
-                &self.native_operation_definition_chain_value_records,
-                &self.native_operation_range_records,
-            ],
-            |records| ctx.contains_hash_set(records, record, OPERATION),
-            OPERATION,
-        )
+        for records in [
+            &self.principal_plane_records,
+            &self.sketch_owner_records,
+            &self.reference_plane_records,
+            &self.native_operation_records,
+            &self.native_operation_definition_value_records,
+            &self.native_operation_definition_chain_value_records,
+            &self.native_operation_range_records,
+        ] {
+            if ctx.contains_hash_set(records, record, OPERATION)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Bind parameters to a transferred feature only through their exact
@@ -77,40 +139,28 @@ impl DesignFeatureTransfer {
         &self,
         ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
-        native: &CatiaNative,
+        sources: &DesignFeatureSources<'_, '_>,
     ) -> Result<(), CodecError> {
-        let entities = ctx.collect_hash_map(
-            native
-                .entity_records
-                .iter()
-                .map(|entity| (entity.id.as_str(), entity)),
-            "catia_feature_owner_entities",
-        )?;
-        let object_records = ctx.collect_hash_map(
-            native
-                .object_graphs
-                .iter()
-                .flat_map(|graph| &graph.records)
-                .map(|record| (record.id.as_str(), record)),
-            "catia_feature_owner_records",
-        )?;
-        let design_objects = ctx.collect_hash_map(
-            native
-                .design_objects
-                .iter()
-                .map(|object| (object.id.as_str(), object)),
-            "catia_feature_owner_objects",
-        )?;
+        let entities = &sources.entities;
+        let object_records = &sources.object_records;
+        let design_objects = &sources.design_objects;
         let mut exact_feature_owners = HashMap::new();
+        let mut owner_storage = ctx.reserve_scoped(0, "catia_feature_exact_owners")?;
 
-        for parameter in &mut ir.model.parameters {
+        for parameter in ctx.admit_iter(&mut ir.model.parameters, "catia_feature_visits")? {
             let Some(native_ref) = parameter.native_ref.as_deref() else {
                 continue;
             };
-            let Some(entity) = entities.get(native_ref) else {
+            let Some(entity) = ctx.get_hash_map(entities, native_ref, "catia_feature_lookup")?
+            else {
                 continue;
             };
-            let Some(object_record) = object_records.get(entity.object_record.as_str()) else {
+            let Some(object_record) = ctx.get_hash_map(
+                object_records,
+                entity.object_record.as_str(),
+                "catia_feature_lookup",
+            )?
+            else {
                 continue;
             };
             let Some(design_object) = object_record.design_object.as_deref() else {
@@ -119,7 +169,7 @@ impl DesignFeatureTransfer {
             let Some(feature_id) = nearest_feature_for_design_object(
                 ctx,
                 design_object,
-                &design_objects,
+                design_objects,
                 &self.feature_ids,
             )?
             else {
@@ -129,28 +179,34 @@ impl DesignFeatureTransfer {
                 parameter.owner =
                     Some(feature_id.try_clone_for_decode(ctx, "catia_feature_parameter_owner")?);
             }
-            if parameter.owner.as_ref() == Some(feature_id) {
-                let parameter_id = parameter
-                    .id
-                    .try_clone_for_decode(ctx, "catia_feature_owner_parameter_id")?;
-                let feature_id =
-                    feature_id.try_clone_for_decode(ctx, "catia_feature_owner_feature_id")?;
-                ctx.insert_hash_map(
-                    &mut exact_feature_owners,
-                    parameter_id,
-                    feature_id,
-                    "catia_feature_exact_owners",
-                )?;
+            if ctx.equal(
+                &parameter.owner.as_ref(),
+                &Some(feature_id),
+                "catia_feature_parameter_owner_match",
+            )? {
+                owner_storage.with_storage(|| {
+                    let parameter_id = parameter
+                        .id
+                        .try_clone_for_decode(ctx, "catia_feature_owner_parameter_id")?;
+                    let feature_id =
+                        feature_id.try_clone_for_decode(ctx, "catia_feature_owner_feature_id")?;
+                    ctx.insert_hash_map(
+                        &mut exact_feature_owners,
+                        parameter_id,
+                        feature_id,
+                        "catia_feature_exact_owners",
+                    )?;
+                    Ok::<_, CodecError>(())
+                })?;
             }
         }
 
         assign_feature_parameter_ordinals(
             ctx,
             ir,
-            &entities,
-            &object_records,
+            entities,
+            object_records,
             &exact_feature_owners,
-            &self.feature_ids,
         )?;
         assign_document_parameter_ordinals(ctx, ir)?;
         normalize_parameter_names(ctx, ir)?;
@@ -171,17 +227,22 @@ impl DesignFeatureTransfer {
         &self,
         ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
-        native: &CatiaNative,
+        sources: &DesignFeatureSources<'_, '_>,
     ) -> Result<(), CodecError> {
-        let parents = self.feature_parents(ctx, ir, native)?;
-        for feature in &mut ir.model.features {
-            feature.dependencies.retain(|dependency| {
-                parents
-                    .get(&feature.id)
-                    .is_none_or(|parent| dependency != parent)
-            });
+        let (parents, _parent_storage) = ctx
+            .with_scoped_storage("catia_feature_parent_map", || {
+                self.feature_parents(ctx, ir, sources)
+            })?;
+        for feature in ctx.admit_iter(&mut ir.model.features, "catia_feature_parent_features")? {
+            if let Some(parent) =
+                ctx.get_btree_map(&parents, &feature.id, "catia_feature_parent_lookup")?
+            {
+                feature
+                    .dependencies
+                    .retain(|dependency| dependency != parent);
+            }
         }
-        for (child, parent) in parents {
+        for (child, parent) in ctx.admit_iter(parents, "catia_feature_parent_assignments")? {
             ir.model
                 .set_feature_regeneration_parent(ctx, &child, &parent)?;
         }
@@ -192,28 +253,27 @@ impl DesignFeatureTransfer {
         &self,
         ctx: &DecodeContext<'_>,
         ir: &CadIr,
-        native: &CatiaNative,
-    ) -> Result<HashMap<FeatureId, FeatureId>, CodecError> {
-        let design_objects = ctx.collect_hash_map(
-            native
-                .design_objects
-                .iter()
-                .map(|object| (object.id.as_str(), object)),
-            "catia_feature_parent_objects",
-        )?;
-        let feature_ordinals = ctx.collect_hash_map(
-            ir.model
-                .features
-                .iter()
-                .map(|feature| (&feature.id, feature.ordinal)),
-            "catia_feature_parent_ordinals",
-        )?;
-        let mut parents = HashMap::new();
-        for feature in &ir.model.features {
+        sources: &DesignFeatureSources<'_, '_>,
+    ) -> Result<BTreeMap<FeatureId, FeatureId>, CodecError> {
+        let design_objects = &sources.design_objects;
+        let (feature_ordinals, _ordinal_storage) =
+            ctx.with_scoped_storage("catia_feature_parent_ordinals", || {
+                ctx.collect_hash_map(
+                    ir.model
+                        .features
+                        .iter()
+                        .map(|feature| (&feature.id, feature.ordinal)),
+                    "catia_feature_parent_ordinals",
+                )
+            })?;
+        let mut parents = BTreeMap::new();
+        for feature in ctx.admit_iter(&ir.model.features, "catia_feature_visits")? {
             let Some(native_ref) = feature.native_ref.as_deref() else {
                 continue;
             };
-            let Some(object) = design_objects.get(native_ref) else {
+            let Some(object) =
+                ctx.get_btree_map(design_objects, native_ref, "catia_feature_lookup")?
+            else {
                 continue;
             };
             let Some(parent_object) = object.owner_design_object.as_deref() else {
@@ -222,33 +282,27 @@ impl DesignFeatureTransfer {
             let Some(parent) = nearest_feature_for_design_object(
                 ctx,
                 parent_object,
-                &design_objects,
+                design_objects,
                 &self.feature_ids,
             )?
             else {
                 continue;
             };
-            let Some(parent_ordinal) = feature_ordinals.get(parent) else {
+            let Some(parent_ordinal) =
+                ctx.get_hash_map(&feature_ordinals, parent, "catia_feature_lookup")?
+            else {
                 continue;
             };
-            if parent == &feature.id || *parent_ordinal >= feature.ordinal {
+            if ctx.equal(parent, &feature.id, "catia_feature_parent_match")?
+                || *parent_ordinal >= feature.ordinal
+            {
                 continue;
             }
             let child = feature
                 .id
                 .try_clone_for_decode(ctx, "catia_feature_parent_child")?;
             let parent = parent.try_clone_for_decode(ctx, "catia_feature_parent_id")?;
-            ctx.insert_hash_map(&mut parents, child, parent, "catia_feature_parent_map")?;
-        }
-        let mut cyclic = Vec::new();
-        for feature in parents.keys() {
-            if !feature_parent_chain_is_acyclic(ctx, feature, &parents)? {
-                let id = feature.try_clone_for_decode(ctx, "catia_feature_cyclic_id")?;
-                ctx.push_vec(&mut cyclic, id, "catia_feature_cyclic_ids")?;
-            }
-        }
-        for feature in cyclic {
-            parents.remove(&feature);
+            ctx.insert_btree_map(&mut parents, child, parent, "catia_feature_parent_map")?;
         }
         Ok(parents)
     }
@@ -261,34 +315,52 @@ impl DesignFeatureTransfer {
         &self,
         ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
-        native: &CatiaNative,
+        sources: &DesignFeatureSources<'_, '_>,
     ) -> Result<(), CodecError> {
-        let design_objects = ctx.collect_hash_map(
-            native
-                .design_objects
-                .iter()
-                .map(|object| (object.id.as_str(), object)),
-            "catia_feature_dependency_objects",
-        )?;
-        let feature_ordinals = ctx.collect_hash_map(
-            ir.model
-                .features
-                .iter()
-                .map(|feature| (&feature.id, feature.ordinal)),
-            "catia_feature_dependency_ordinals",
-        )?;
-        let mut dependencies_by_feature = HashMap::<FeatureId, Vec<FeatureId>>::new();
-
-        for feature in &ir.model.features {
+        let mut ordinal_storage = ctx.reserve_scoped(0, "catia_feature_dependency_ordinals")?;
+        let mut feature_ordinals = HashMap::new();
+        for feature in ctx.admit_iter(
+            &ir.model.features,
+            "catia_feature_dependency_ordinal_visits",
+        )? {
+            ordinal_storage.with_storage(|| {
+                let id = feature
+                    .id
+                    .try_clone_for_decode(ctx, "catia_feature_dependency_ordinal_id")?;
+                ctx.insert_hash_map(
+                    &mut feature_ordinals,
+                    id,
+                    feature.ordinal,
+                    "catia_feature_dependency_ordinals",
+                )
+            })?;
+        }
+        for feature in
+            ctx.admit_iter(&mut ir.model.features, "catia_feature_dependency_features")?
+        {
             let Some(native_ref) = feature.native_ref.as_deref() else {
                 continue;
             };
-            let Some(object) = design_objects.get(native_ref) else {
+            let Some(object) =
+                ctx.get_btree_map(&sources.design_objects, native_ref, "catia_feature_lookup")?
+            else {
                 continue;
             };
-            let mut seen =
-                ctx.collect_hash_set(feature.dependencies.iter(), "catia_feature_dependency_seen")?;
-            for relation in &object.relations {
+            let mut seen_storage = ctx.reserve_scoped(0, "catia_feature_dependency_seen")?;
+            let mut seen = HashSet::new();
+            for dependency in ctx.admit_iter(
+                feature.dependencies.as_slice(),
+                "catia_feature_dependency_existing",
+            )? {
+                seen_storage.with_storage(|| {
+                    let id =
+                        dependency.try_clone_for_decode(ctx, "catia_feature_dependency_seen_id")?;
+                    ctx.insert_hash_set(&mut seen, id, "catia_feature_dependency_seen")
+                })?;
+            }
+            for relation in
+                ctx.admit_iter(&object.relations, "catia_feature_dependency_relations")?
+            {
                 if !matches!(
                     &relation.source,
                     CatiaDesignObjectRelationSource::Payload { .. }
@@ -301,52 +373,34 @@ impl DesignFeatureTransfer {
                 let Some(target) = nearest_feature_for_design_object(
                     ctx,
                     target_object,
-                    &design_objects,
+                    &sources.design_objects,
                     &self.feature_ids,
                 )?
                 else {
                     continue;
                 };
-                if target == &feature.id || seen.contains(target) {
+                if ctx.equal(target, &feature.id, "catia_feature_dependency_match")?
+                    || ctx.contains_hash_set(&seen, target, "catia_feature_dependency_seen")?
+                {
                     continue;
                 }
-                let Some(target_ordinal) = feature_ordinals.get(target) else {
+                let Some(target_ordinal) =
+                    ctx.get_hash_map(&feature_ordinals, target, "catia_feature_lookup")?
+                else {
                     continue;
                 };
                 if *target_ordinal >= feature.ordinal {
                     continue;
                 }
-                ctx.insert_hash_set(&mut seen, target, "catia_feature_dependency_seen")?;
-                if !dependencies_by_feature.contains_key(&feature.id) {
-                    let id = feature
-                        .id
-                        .try_clone_for_decode(ctx, "catia_feature_dependency_owner")?;
-                    ctx.insert_hash_map(
-                        &mut dependencies_by_feature,
-                        id,
-                        Vec::new(),
-                        "catia_feature_dependency_map",
-                    )?;
-                }
+                seen_storage.with_storage(|| {
+                    let id =
+                        target.try_clone_for_decode(ctx, "catia_feature_dependency_seen_id")?;
+                    ctx.insert_hash_set(&mut seen, id, "catia_feature_dependency_seen")
+                })?;
                 let target = target.try_clone_for_decode(ctx, "catia_feature_dependency_target")?;
-                if let Some(dependencies) = dependencies_by_feature.get_mut(&feature.id) {
-                    ctx.push_vec(dependencies, target, "catia_feature_dependency_values")?;
-                }
-            }
-        }
-
-        for feature in &mut ir.model.features {
-            if let Some(dependencies) = dependencies_by_feature.remove(&feature.id) {
-                feature.dependencies.reserve_for_decode(
-                    ctx,
-                    dependencies.len(),
-                    "catia_feature_dependency_values",
-                )?;
-                feature.dependencies.append(
-                    ctx,
-                    dependencies,
-                    "catia_feature_dependency_values",
-                )?;
+                feature
+                    .dependencies
+                    .insert(ctx, target, "catia_feature_dependency_values")?;
             }
         }
         Ok(())
@@ -359,77 +413,96 @@ fn assign_feature_parameter_ordinals(
     entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
     object_records: &HashMap<&str, &CatiaObjectRecord>,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
-    feature_ids: &HashMap<String, FeatureId>,
 ) -> Result<(), CodecError> {
-    let transferred_features =
-        ctx.collect_hash_set(feature_ids.values(), "catia_feature_transferred_ids")?;
-    let mut parameters_by_feature = HashMap::<FeatureId, Vec<(u64, u64, ParameterId)>>::new();
-    for parameter in &ir.model.parameters {
-        let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
-            continue;
-        };
-        if !transferred_features.contains(feature_id) {
-            continue;
-        }
-        let Some(entity_id) = parameter.native_ref.as_deref() else {
-            continue;
-        };
-        let Some(entity) = entities.get(entity_id) else {
-            continue;
-        };
-        let Some(object_record) = object_records.get(entity.object_record.as_str()) else {
-            continue;
-        };
-        if !parameters_by_feature.contains_key(feature_id) {
-            let id = feature_id.try_clone_for_decode(ctx, "catia_feature_parameter_bucket_id")?;
-            ctx.insert_hash_map(
-                &mut parameters_by_feature,
-                id,
-                Vec::new(),
-                "catia_feature_parameter_buckets",
-            )?;
-        }
-        let id = parameter
-            .id
-            .try_clone_for_decode(ctx, "catia_feature_parameter_ordinal_id")?;
-        if let Some(parameters) = parameters_by_feature.get_mut(feature_id) {
-            ctx.push_vec(
-                parameters,
-                (object_record.byte_offset, entity.byte_offset, id),
-                "catia_feature_parameter_rows",
-            )?;
-        }
-    }
-
-    let mut parameter_ordinals = HashMap::new();
-    for parameters in parameters_by_feature.values_mut() {
-        ctx.sort_unstable_by(
-            parameters,
-            |value| value,
-            Ord::cmp,
-            "catia_feature_parameter_order_sort",
-        )?;
-        for (ordinal, parameter) in parameters.iter().enumerate() {
-            let Some(ordinal) = u32::try_from(ordinal).ok() else {
+    drop(ctx.with_scoped_storage("catia_feature_ordinal_tables", || {
+        let mut parameters_by_feature = BTreeMap::<FeatureId, Vec<(u64, u64, ParameterId)>>::new();
+        for parameter in ctx.admit_iter(&ir.model.parameters, "catia_feature_visits")? {
+            let Some(feature_id) =
+                ctx.get_hash_map(exact_feature_owners, &parameter.id, "catia_feature_lookup")?
+            else {
                 continue;
             };
+            let Some(entity_id) = parameter.native_ref.as_deref() else {
+                continue;
+            };
+            let Some(entity) = ctx.get_hash_map(entities, entity_id, "catia_feature_lookup")?
+            else {
+                continue;
+            };
+            let Some(object_record) = ctx.get_hash_map(
+                object_records,
+                entity.object_record.as_str(),
+                "catia_feature_lookup",
+            )?
+            else {
+                continue;
+            };
+            if !ctx.contains_key_btree_map(
+                &parameters_by_feature,
+                feature_id,
+                "catia_feature_lookup",
+            )? {
+                let id =
+                    feature_id.try_clone_for_decode(ctx, "catia_feature_parameter_bucket_id")?;
+                ctx.insert_btree_map(
+                    &mut parameters_by_feature,
+                    id,
+                    Vec::new(),
+                    "catia_feature_parameter_buckets",
+                )?;
+            }
             let id = parameter
-                .2
-                .try_clone_for_decode(ctx, "catia_feature_ordinal_map_id")?;
-            ctx.insert_hash_map(
-                &mut parameter_ordinals,
-                id,
-                ordinal,
-                "catia_feature_ordinal_map",
-            )?;
+                .id
+                .try_clone_for_decode(ctx, "catia_feature_parameter_ordinal_id")?;
+            if let Some(parameters) = ctx.get_mut_btree_map(
+                &mut parameters_by_feature,
+                feature_id,
+                "catia_feature_lookup",
+            )? {
+                ctx.push_vec(
+                    parameters,
+                    (object_record.byte_offset, entity.byte_offset, id),
+                    "catia_feature_parameter_rows",
+                )?;
+            }
         }
-    }
 
-    for parameter in &mut ir.model.parameters {
-        if let Some(ordinal) = parameter_ordinals.get(&parameter.id) {
-            parameter.ordinal = *ordinal;
+        let mut parameter_ordinals = HashMap::new();
+        for (_, parameters) in ctx.admit_iter(&mut parameters_by_feature, "catia_feature_visits")? {
+            ctx.sort_unstable_by(
+                parameters,
+                |value| value,
+                Ord::cmp,
+                "catia_feature_parameter_order_sort",
+            )?;
+            for (ordinal, parameter) in ctx
+                .admit_iter(parameters.as_slice(), "catia_feature_ordinal_visits")?
+                .enumerate()
+            {
+                let Some(ordinal) = u32::try_from(ordinal).ok() else {
+                    continue;
+                };
+                let id = parameter
+                    .2
+                    .try_clone_for_decode(ctx, "catia_feature_ordinal_map_id")?;
+                ctx.insert_hash_map(
+                    &mut parameter_ordinals,
+                    id,
+                    ordinal,
+                    "catia_feature_ordinal_map",
+                )?;
+            }
         }
-    }
+
+        for parameter in ctx.admit_iter(&mut ir.model.parameters, "catia_feature_visits")? {
+            if let Some(ordinal) =
+                ctx.get_hash_map(&parameter_ordinals, &parameter.id, "catia_feature_lookup")?
+            {
+                parameter.ordinal = *ordinal;
+            }
+        }
+        Ok::<_, CodecError>(())
+    })?);
     Ok(())
 }
 
@@ -443,46 +516,56 @@ fn assign_document_parameter_ordinals(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
 ) -> Result<(), CodecError> {
-    let mut parameters = Vec::new();
-    for parameter in ir
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.owner.is_none())
-    {
-        let id = parameter
-            .id
-            .try_clone_for_decode(ctx, "catia_document_parameter_sort_id")?;
-        ctx.push_vec(
-            &mut parameters,
-            (parameter.ordinal, id),
-            "catia_document_parameter_sort_rows",
-        )?;
-    }
-    ctx.sort_unstable_by(
-        &mut parameters,
-        |value| value,
-        Ord::cmp,
-        "catia_document_parameter_order_sort",
-    )?;
+    drop(
+        ctx.with_scoped_storage("catia_document_ordinal_tables", || {
+            let mut parameters = Vec::new();
+            for parameter in
+                ctx.admit_iter(&ir.model.parameters, "catia_document_parameter_visits")?
+            {
+                if parameter.owner.is_some() {
+                    continue;
+                }
+                let id = parameter
+                    .id
+                    .try_clone_for_decode(ctx, "catia_document_parameter_sort_id")?;
+                ctx.push_vec(
+                    &mut parameters,
+                    (parameter.ordinal, id),
+                    "catia_document_parameter_sort_rows",
+                )?;
+            }
+            ctx.sort_unstable_by(
+                &mut parameters,
+                |value| value,
+                Ord::cmp,
+                "catia_document_parameter_order_sort",
+            )?;
 
-    let mut parameter_ordinals = HashMap::new();
-    for (ordinal, (_, parameter)) in parameters.into_iter().enumerate() {
-        let Some(ordinal) = u32::try_from(ordinal).ok() else {
-            continue;
-        };
-        ctx.insert_hash_map(
-            &mut parameter_ordinals,
-            parameter,
-            ordinal,
-            "catia_document_parameter_ordinals",
-        )?;
-    }
-    for parameter in &mut ir.model.parameters {
-        if let Some(ordinal) = parameter_ordinals.get(&parameter.id) {
-            parameter.ordinal = *ordinal;
-        }
-    }
+            let mut parameter_ordinals = HashMap::new();
+            for (ordinal, (_, parameter)) in ctx
+                .admit_iter(parameters, "catia_document_ordinal_visits")?
+                .enumerate()
+            {
+                let Some(ordinal) = u32::try_from(ordinal).ok() else {
+                    continue;
+                };
+                ctx.insert_hash_map(
+                    &mut parameter_ordinals,
+                    parameter,
+                    ordinal,
+                    "catia_document_parameter_ordinals",
+                )?;
+            }
+            for parameter in ctx.admit_iter(&mut ir.model.parameters, "catia_feature_visits")? {
+                if let Some(ordinal) =
+                    ctx.get_hash_map(&parameter_ordinals, &parameter.id, "catia_feature_lookup")?
+                {
+                    parameter.ordinal = *ordinal;
+                }
+            }
+            Ok::<_, CodecError>(())
+        })?,
+    );
     Ok(())
 }
 
@@ -498,48 +581,80 @@ fn assign_native_operation_parameter_values(
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
 ) -> Result<(), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "catia_feature_operation_values")?;
     let mut values_by_feature =
-        HashMap::<FeatureId, BTreeMap<cadmpeg_core::text::NonBlankString, String>>::new();
-    for parameter in &ir.model.parameters {
-        let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
-            continue;
-        };
-        let Some(name) = cadmpeg_core::text::NonBlankString::for_decode(
-            ctx,
-            ctx.copy_retained_text(&parameter.name, "catia_feature_operation_parameter_name")?,
-            "validate nonblank text",
-        )?
+        BTreeMap::<&FeatureId, BTreeMap<&str, &cadmpeg_ir::features::DesignParameter>>::new();
+    for parameter in ctx.admit_iter(
+        &ir.model.parameters,
+        "catia_feature_operation_parameter_visits",
+    )? {
+        let Some(feature_id) =
+            ctx.get_hash_map(exact_feature_owners, &parameter.id, "catia_feature_lookup")?
         else {
             continue;
         };
-        if !values_by_feature.contains_key(feature_id) {
-            let id = feature_id.try_clone_for_decode(ctx, "catia_feature_operation_owner")?;
-            ctx.insert_hash_map(
-                &mut values_by_feature,
-                id,
-                BTreeMap::new(),
-                "catia_feature_operation_values",
-            )?;
-        }
-        let expression =
-            ctx.copy_retained_text(&parameter.expression, "catia_feature_operation_expression")?;
-        if let Some(values) = values_by_feature.get_mut(feature_id) {
+        storage.with_storage(|| {
+            let values = ctx
+                .entry_btree_map(
+                    &mut values_by_feature,
+                    feature_id,
+                    "catia_feature_operation_values",
+                )?
+                .or_default();
             ctx.insert_btree_map(
                 values,
-                name,
-                expression,
+                parameter.name.as_str(),
+                parameter,
                 "catia_feature_operation_parameters",
-            )?;
-        }
+            )
+        })?;
     }
-
-    for feature in &mut ir.model.features {
-        let Some(values) = values_by_feature.remove(&feature.id) else {
+    for feature in ctx.admit_iter(
+        &mut ir.model.features,
+        "catia_feature_operation_feature_visits",
+    )? {
+        let Some(values) =
+            ctx.get_btree_map(&values_by_feature, &feature.id, "catia_feature_lookup")?
+        else {
             continue;
         };
         match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters }) => {
-                if parameters.is_empty() {
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters })
+                if parameters.is_empty() =>
+            {
+                let mut parameters = BTreeMap::new();
+                for (name, parameter) in
+                    ctx.admit_iter(values, "catia_feature_operation_value_visits")?
+                {
+                    let (name, name_storage) = ctx.with_scoped_storage(
+                        "catia_feature_operation_parameter_name",
+                        || -> Result<_, CodecError> {
+                            Ok(cadmpeg_core::text::NonBlankString::for_decode(
+                                ctx,
+                                ctx.copy_retained_text(
+                                    name,
+                                    "catia_feature_operation_parameter_name",
+                                )?,
+                                "validate nonblank text",
+                            )?)
+                        },
+                    )?;
+                    let Some(name) = name else {
+                        continue;
+                    };
+                    name_storage.commit()?;
+                    let expression = ctx.copy_retained_text(
+                        &parameter.expression,
+                        "catia_feature_operation_expression",
+                    )?;
+                    ctx.insert_btree_map(
+                        &mut parameters,
+                        name,
+                        expression,
+                        "catia_feature_operation_parameters",
+                    )?;
+                }
+                if !parameters.is_empty() {
                     let kind = match kind {
                         cadmpeg_ir::features::NativeFeatureKind::Other(name) => {
                             cadmpeg_ir::features::NativeFeatureKind::Other(
@@ -552,7 +667,7 @@ fn assign_native_operation_parameter_values(
                         .evaluation
                         .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
                             kind,
-                            parameters: values,
+                            parameters,
                         }));
                 }
             }
@@ -564,7 +679,12 @@ fn assign_native_operation_parameter_values(
                 | FeatureOperation::Pattern { .. }
                 | FeatureOperation::Sweep { .. },
             ) => {
-                for (name, expression) in values {
+                for (name, parameter) in
+                    ctx.admit_iter(values, "catia_feature_operation_value_visits")?
+                {
+                    if ctx.trim_text(name, "validate nonblank text")?.is_empty() {
+                        continue;
+                    }
                     let key = ctx.format_retained(
                         format_args!("catia_parameter_{name}"),
                         "catia_feature_source_parameter_key",
@@ -575,6 +695,10 @@ fn assign_native_operation_parameter_values(
                         "validate nonblank text",
                     )?
                     .ok_or_else(|| CodecError::malformed("CATIA source parameter key is blank"))?;
+                    let expression = ctx.copy_retained_text(
+                        &parameter.expression,
+                        "catia_feature_operation_expression",
+                    )?;
                     ctx.insert_btree_map(
                         &mut feature.source_properties,
                         key,
@@ -604,10 +728,18 @@ fn copy_feature_scope(
 }
 
 fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "catia_parameter_name_indexes")?;
     let mut reserved_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
-    for parameter in &ir.model.parameters {
-        if !parameter.name.is_empty() {
-            if !reserved_by_scope.contains_key(&parameter.owner) {
+    for parameter in ctx.admit_iter(&ir.model.parameters, "catia_parameter_reserved_visits")? {
+        if parameter.name.is_empty() {
+            continue;
+        }
+        storage.with_storage(|| {
+            if !ctx.contains_key_hash_map(
+                &reserved_by_scope,
+                &parameter.owner,
+                "catia_parameter_scope_lookup",
+            )? {
                 let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
                 ctx.insert_hash_map(
                     &mut reserved_by_scope,
@@ -616,76 +748,98 @@ fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
                     "catia_parameter_reserved_scopes",
                 )?;
             }
-            let name = ctx.copy_retained_text(&parameter.name, "catia_parameter_reserved_name")?;
-            if let Some(reserved) = reserved_by_scope.get_mut(&parameter.owner) {
-                ctx.insert_hash_set(reserved, name, "catia_parameter_reserved_names")?;
-            }
-        }
-    }
-
-    let mut used_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
-    for parameter in &mut ir.model.parameters {
-        if !reserved_by_scope.contains_key(&parameter.owner) {
-            let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
-            ctx.insert_hash_map(
+            if let Some(reserved) = ctx.get_mut_hash_map(
                 &mut reserved_by_scope,
-                scope,
-                HashSet::new(),
-                "catia_parameter_reserved_scopes",
-            )?;
-        }
-        if !used_by_scope.contains_key(&parameter.owner) {
-            let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
-            ctx.insert_hash_map(
-                &mut used_by_scope,
-                scope,
-                HashSet::new(),
-                "catia_parameter_used_scopes",
-            )?;
-        }
-        let Some(reserved) = reserved_by_scope.get(&parameter.owner) else {
+                &parameter.owner,
+                "catia_parameter_scope_lookup",
+            )? {
+                ctx.insert_string_set(reserved, &parameter.name, "catia_parameter_reserved_names")?;
+            }
+            Ok::<_, CodecError>(())
+        })?;
+    }
+    let mut used_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
+    for parameter in ctx.admit_iter(&mut ir.model.parameters, "catia_parameter_name_visits")? {
+        storage.with_storage(|| {
+            if !ctx.contains_key_hash_map(
+                &reserved_by_scope,
+                &parameter.owner,
+                "catia_parameter_scope_lookup",
+            )? {
+                let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
+                ctx.insert_hash_map(
+                    &mut reserved_by_scope,
+                    scope,
+                    HashSet::new(),
+                    "catia_parameter_reserved_scopes",
+                )?;
+            }
+            if !ctx.contains_key_hash_map(
+                &used_by_scope,
+                &parameter.owner,
+                "catia_parameter_scope_lookup",
+            )? {
+                let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
+                ctx.insert_hash_map(
+                    &mut used_by_scope,
+                    scope,
+                    HashSet::new(),
+                    "catia_parameter_used_scopes",
+                )?;
+            }
+            Ok::<_, CodecError>(())
+        })?;
+        let Some(reserved) = ctx.get_hash_map(
+            &reserved_by_scope,
+            &parameter.owner,
+            "catia_parameter_scope_lookup",
+        )?
+        else {
             continue;
         };
-        let Some(used) = used_by_scope.get_mut(&parameter.owner) else {
+        let Some(used) = ctx.get_mut_hash_map(
+            &mut used_by_scope,
+            &parameter.owner,
+            "catia_parameter_scope_lookup",
+        )?
+        else {
             continue;
         };
-        let source_name = ctx.copy_retained_text(&parameter.name, "catia_parameter_source_name")?;
-        if !source_name.is_empty()
-            && ctx.insert_hash_set(
-                used,
-                ctx.copy_retained_text(&source_name, "catia_parameter_used_name")?,
-                "catia_parameter_used_names",
-            )?
+        if !parameter.name.is_empty()
+            && storage.with_storage(|| {
+                ctx.insert_string_set(used, &parameter.name, "catia_parameter_used_names")
+            })?
         {
             continue;
         }
-
-        let base = if source_name.is_empty() {
+        let base = if parameter.name.is_empty() {
             "Parameter"
         } else {
-            source_name.as_str()
+            parameter.name.as_str()
         };
         let mut suffix = 1u32;
         let neutral_name = loop {
             ctx.charge_work(1, "catia_parameter_name_collision")?;
-            let candidate = ctx.format_retained(
-                format_args!("{base}#{suffix}"),
-                "catia_parameter_neutral_name",
-            )?;
+            let (candidate, candidate_storage) =
+                ctx.with_scoped_storage("catia_parameter_neutral_name", || {
+                    ctx.format_retained(
+                        format_args!("{base}#{suffix}"),
+                        "catia_parameter_neutral_name",
+                    )
+                })?;
             suffix = suffix.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit("catia_parameter_name_collision", u64::MAX, u64::MAX)
             })?;
-            if !reserved.contains(&candidate)
-                && ctx.insert_hash_set(
-                    used,
-                    ctx.copy_retained_text(&candidate, "catia_parameter_used_name")?,
-                    "catia_parameter_used_names",
-                )?
+            if !ctx.contains_hash_set(reserved, &candidate, "catia_parameter_reserved_lookup")?
+                && storage.with_storage(|| {
+                    ctx.insert_string_set(used, &candidate, "catia_parameter_used_names")
+                })?
             {
+                candidate_storage.commit()?;
                 break candidate;
             }
         };
-        parameter.name = neutral_name;
+        let source_name = std::mem::replace(&mut parameter.name, neutral_name);
         ctx.insert_btree_map(
             &mut parameter.properties,
             cadmpeg_core::nonblank_literal!("source_name"),
@@ -694,26 +848,6 @@ fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
         )?;
     }
     Ok(())
-}
-
-fn feature_parent_chain_is_acyclic(
-    ctx: &DecodeContext<'_>,
-    feature_id: &FeatureId,
-    parents: &HashMap<FeatureId, FeatureId>,
-) -> Result<bool, CodecError> {
-    let mut current = feature_id;
-    let mut traversed = 0usize;
-    while let Some(parent) = parents.get(current) {
-        ctx.charge_work(1, "catia_feature_parent_chain")?;
-        traversed = traversed.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_feature_parent_chain", u64::MAX, u64::MAX)
-        })?;
-        if traversed > parents.len() {
-            return Ok(false);
-        }
-        current = parent;
-    }
-    Ok(true)
 }
 
 /// Resolve the nearest transferred feature on one exact owner chain.
@@ -725,7 +859,7 @@ fn feature_parent_chain_is_acyclic(
 fn nearest_feature_for_design_object<'a>(
     ctx: &DecodeContext<'_>,
     start: &str,
-    design_objects: &HashMap<&str, &CatiaDesignObject>,
+    design_objects: &BTreeMap<&str, &CatiaDesignObject>,
     feature_ids: &'a HashMap<String, FeatureId>,
 ) -> Result<Option<&'a FeatureId>, CodecError> {
     let mut current = Some(start);
@@ -739,16 +873,27 @@ fn nearest_feature_for_design_object<'a>(
         if traversed > design_objects.len() {
             return Ok(None);
         }
-        let Some(object) = design_objects.get(current_id).copied() else {
+        let Some(object) = ctx
+            .get_btree_map(design_objects, current_id, "catia_feature_lookup")?
+            .copied()
+        else {
             return Ok(None);
         };
-        if let Some(feature) = feature_ids.get(current_id) {
+        if let Some(feature) = ctx.get_hash_map(feature_ids, current_id, "catia_feature_lookup")? {
             return Ok(Some(feature));
         }
-        current = object
-            .owner_design_object
-            .as_deref()
-            .filter(|parent| *parent != current_id);
+        current = match object.owner_design_object.as_deref() {
+            Some(parent)
+                if !ctx.equal_bytes(
+                    parent.as_bytes(),
+                    current_id.as_bytes(),
+                    "catia_feature_owner_parent_match",
+                )? =>
+            {
+                Some(parent)
+            }
+            _ => None,
+        };
     }
 
     Ok(None)
@@ -757,57 +902,71 @@ fn nearest_feature_for_design_object<'a>(
 /// Transfer exact owner-bound reference history nodes.
 pub(crate) fn transfer_design_features(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    membership_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ir: &mut CadIr,
-    native: &CatiaNative,
+    sources: &DesignFeatureSources<'_, '_>,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<DesignFeatureTransfer, cadmpeg_core::CodecError> {
-    let records = ctx.collect_hash_map(
-        native
-            .object_graphs
-            .iter()
-            .flat_map(|graph| &graph.records)
-            .map(|record| (record.id.as_str(), record)),
-        "catia_feature_transfer_records",
-    )?;
-    let entities = ctx.collect_hash_map(
-        native
-            .entity_records
-            .iter()
-            .map(|entity| (entity.id.as_str(), entity)),
-        "catia_feature_transfer_entities",
-    )?;
-    let design_objects = ctx.collect_hash_map(
-        native
-            .design_objects
-            .iter()
-            .map(|object| (object.id.as_str(), object)),
-        "catia_feature_transfer_objects",
-    )?;
-    let native_operation_object_ids = ctx.collect_hash_set(
-        native
-            .design_objects
-            .iter()
-            .filter(|object| native_operation_candidate(object, &records).is_some())
-            .map(|object| object.id.as_str()),
-        "catia_feature_operation_object_ids",
-    )?;
+    let native = sources.native;
+    let records = &sources.object_records;
+    let entities = &sources.entities;
+    let design_objects = &sources.design_objects;
+    let ((native_operation_object_ids, native_operations), _operation_storage) = ctx
+        .with_scoped_storage("catia_feature_operation_candidates", || {
+            let mut ids = HashSet::new();
+            let mut candidates = HashMap::new();
+            for object in ctx.admit_iter(
+                &native.design_objects,
+                "catia_feature_operation_candidate_visits",
+            )? {
+                if let Some(candidate) = native_operation_candidate(ctx, object, records)? {
+                    ctx.insert_hash_set(
+                        &mut ids,
+                        object.id.as_str(),
+                        "catia_feature_operation_object_ids",
+                    )?;
+                    ctx.insert_hash_map(
+                        &mut candidates,
+                        object.id.as_str(),
+                        candidate,
+                        "catia_feature_operation_candidates",
+                    )?;
+                }
+            }
+            Ok::<_, CodecError>((ids, candidates))
+        })?;
     let operation_sources = NativeOperationSources {
-        object_records: &records,
-        entities: &entities,
-        design_objects: &design_objects,
+        object_records: records,
+        entities,
+        design_objects,
         object_ids: &native_operation_object_ids,
     };
     let mut transfer = DesignFeatureTransfer::default();
 
-    for object in native
-        .design_objects
-        .iter()
-        .filter(|object| graph_scope.contains(object.parent.as_str()))
-    {
-        let plane_candidate = principal_plane_candidate(ctx, object, &records)?;
-        let sketch_owner = sketch_candidate(object, &records);
-        let reference_plane = reference_plane_candidate(object, &records);
-        let native_operation = native_operation_candidate(object, &records);
+    for object in ctx.admit_iter(&native.design_objects, "catia_feature_object_visits")? {
+        let in_scope = match graph_scope {
+            crate::decode::ModelingGraphScope::Unscoped => true,
+            crate::decode::ModelingGraphScope::Unresolved => false,
+            crate::decode::ModelingGraphScope::Scoped(part) => ctx.equal_bytes(
+                part.as_bytes(),
+                object.parent.as_bytes(),
+                "catia_feature_graph_scope",
+            )?,
+        };
+        if !in_scope {
+            continue;
+        }
+        let (plane_candidate, _plane_storage) = ctx
+            .with_scoped_storage("catia_principal_plane_declarations", || {
+                principal_plane_candidate(ctx, object, records)
+            })?;
+        let sketch_owner = sketch_candidate(ctx, object, records)?;
+        let reference_plane = reference_plane_candidate(ctx, object, records)?;
+        let native_operation = ctx.get_hash_map(
+            &native_operations,
+            object.id.as_str(),
+            "catia_feature_operation_candidate_lookup",
+        )?;
         match (
             plane_candidate,
             sketch_owner,
@@ -815,16 +974,30 @@ pub(crate) fn transfer_design_features(
             native_operation,
         ) {
             (Some(candidate), None, None, None) => {
-                transfer_principal_plane(ctx, ir, &mut transfer, candidate)?;
+                transfer_principal_plane(ctx, membership_storage, ir, &mut transfer, candidate)?;
             }
             (None, Some(owner_record), None, None) => {
-                transfer_sketch(ctx, ir, &mut transfer, object, owner_record)?;
+                transfer_sketch(
+                    ctx,
+                    membership_storage,
+                    ir,
+                    &mut transfer,
+                    object,
+                    owner_record,
+                )?;
             }
             (None, None, Some(candidate), None) => {
-                transfer_reference_plane(ctx, ir, &mut transfer, &candidate)?;
+                transfer_reference_plane(ctx, membership_storage, ir, &mut transfer, &candidate)?;
             }
             (None, None, None, Some(candidate)) => {
-                transfer_native_operation(ctx, ir, &mut transfer, &candidate, &operation_sources)?;
+                transfer_native_operation(
+                    ctx,
+                    membership_storage,
+                    ir,
+                    &mut transfer,
+                    candidate,
+                    &operation_sources,
+                )?;
             }
             _ => {
                 // One object cannot safely occupy two neutral feature identities.
@@ -834,13 +1007,14 @@ pub(crate) fn transfer_design_features(
         }
     }
 
-    transfer.assign_feature_parents(ctx, ir, native)?;
-    transfer.assign_feature_dependencies(ctx, ir, native)?;
+    transfer.assign_feature_parents(ctx, ir, sources)?;
+    transfer.assign_feature_dependencies(ctx, ir, sources)?;
     Ok(transfer)
 }
 
 fn transfer_principal_plane(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    membership_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: PrincipalPlaneCandidate<'_>,
@@ -852,7 +1026,8 @@ fn transfer_principal_plane(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_principal_feature_map_id")?;
+    let map_feature_id = membership_storage
+        .with_storage(|| feature_id.try_clone_for_decode(ctx, "catia_principal_feature_map_id"))?;
     let source_tag =
         ctx.copy_retained_text(candidate.declaration_class, "catia_principal_feature_tag")?;
     let native_ref = ctx.copy_retained_text(&object.id, "catia_principal_feature_ref")?;
@@ -878,26 +1053,33 @@ fn transfer_principal_plane(
         },
         "catia_principal_features",
     )?;
-    let map_key = ctx.copy_retained_text(&object.id, "catia_principal_feature_key")?;
-    ctx.insert_hash_map(
-        &mut transfer.feature_ids,
-        map_key,
-        map_feature_id,
-        "catia_principal_feature_ids",
-    )?;
-    for record in candidate.declarations {
-        let id = ctx.copy_retained_text(&record.id, "catia_principal_record_id")?;
-        ctx.insert_hash_set(
-            &mut transfer.principal_plane_records,
-            id,
-            "catia_principal_records",
-        )?;
+    let map_key = membership_storage
+        .with_storage(|| ctx.copy_retained_text(&object.id, "catia_principal_feature_key"))?;
+    membership_storage.with_storage(|| {
+        ctx.insert_hash_map(
+            &mut transfer.feature_ids,
+            map_key,
+            map_feature_id,
+            "catia_principal_feature_ids",
+        )
+    })?;
+    for record in ctx.admit_iter(candidate.declarations, "catia_principal_record_visits")? {
+        let id = membership_storage
+            .with_storage(|| ctx.copy_retained_text(&record.id, "catia_principal_record_id"))?;
+        membership_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut transfer.principal_plane_records,
+                id,
+                "catia_principal_records",
+            )
+        })?;
     }
     Ok(())
 }
 
 fn transfer_reference_plane(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    membership_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: &ReferencePlaneCandidate<'_>,
@@ -909,7 +1091,8 @@ fn transfer_reference_plane(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id = feature_id.try_clone_for_decode(ctx, "catia_reference_feature_map_id")?;
+    let map_feature_id = membership_storage
+        .with_storage(|| feature_id.try_clone_for_decode(ctx, "catia_reference_feature_map_id"))?;
     let source_tag = ctx.copy_retained_text(candidate.kind, "catia_reference_feature_tag")?;
     let native_ref = ctx.copy_retained_text(&object.id, "catia_reference_feature_ref")?;
     ctx.push_vec(
@@ -934,24 +1117,32 @@ fn transfer_reference_plane(
         },
         "catia_reference_features",
     )?;
-    let map_key = ctx.copy_retained_text(&object.id, "catia_reference_feature_key")?;
-    ctx.insert_hash_map(
-        &mut transfer.feature_ids,
-        map_key,
-        map_feature_id,
-        "catia_reference_feature_ids",
-    )?;
-    let record = ctx.copy_retained_text(&candidate.owner_record.id, "catia_reference_record_id")?;
-    ctx.insert_hash_set(
-        &mut transfer.reference_plane_records,
-        record,
-        "catia_reference_records",
-    )?;
+    let map_key = membership_storage
+        .with_storage(|| ctx.copy_retained_text(&object.id, "catia_reference_feature_key"))?;
+    membership_storage.with_storage(|| {
+        ctx.insert_hash_map(
+            &mut transfer.feature_ids,
+            map_key,
+            map_feature_id,
+            "catia_reference_feature_ids",
+        )
+    })?;
+    let record = membership_storage.with_storage(|| {
+        ctx.copy_retained_text(&candidate.owner_record.id, "catia_reference_record_id")
+    })?;
+    membership_storage.with_storage(|| {
+        ctx.insert_hash_set(
+            &mut transfer.reference_plane_records,
+            record,
+            "catia_reference_records",
+        )
+    })?;
     Ok(())
 }
 
 fn transfer_sketch(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    membership_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     object: &CatiaDesignObject,
@@ -986,8 +1177,9 @@ fn transfer_sketch(
         "catia_design_sketches",
     )?;
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id =
-        feature_id.try_clone_for_decode(ctx, "catia_design_sketch_feature_map_id")?;
+    let map_feature_id = membership_storage.with_storage(|| {
+        feature_id.try_clone_for_decode(ctx, "catia_design_sketch_feature_map_id")
+    })?;
     let feature_ref = ctx.copy_retained_text(&object.id, "catia_design_sketch_feature_ref")?;
     let source_tag = ctx.copy_retained_text("Sketch", "catia_design_sketch_feature_tag")?;
     ctx.push_vec(
@@ -1014,19 +1206,26 @@ fn transfer_sketch(
         },
         "catia_design_sketch_features",
     )?;
-    let map_key = ctx.copy_retained_text(&object.id, "catia_design_sketch_feature_key")?;
-    ctx.insert_hash_map(
-        &mut transfer.feature_ids,
-        map_key,
-        map_feature_id,
-        "catia_design_sketch_feature_ids",
-    )?;
-    let record = ctx.copy_retained_text(&owner_record.id, "catia_design_sketch_owner_id")?;
-    ctx.insert_hash_set(
-        &mut transfer.sketch_owner_records,
-        record,
-        "catia_design_sketch_owners",
-    )?;
+    let map_key = membership_storage
+        .with_storage(|| ctx.copy_retained_text(&object.id, "catia_design_sketch_feature_key"))?;
+    membership_storage.with_storage(|| {
+        ctx.insert_hash_map(
+            &mut transfer.feature_ids,
+            map_key,
+            map_feature_id,
+            "catia_design_sketch_feature_ids",
+        )
+    })?;
+    let record = membership_storage.with_storage(|| {
+        ctx.copy_retained_text(&owner_record.id, "catia_design_sketch_owner_id")
+    })?;
+    membership_storage.with_storage(|| {
+        ctx.insert_hash_set(
+            &mut transfer.sketch_owner_records,
+            record,
+            "catia_design_sketch_owners",
+        )
+    })?;
     Ok(())
 }
 
@@ -1043,45 +1242,86 @@ struct ReferencePlaneCandidate<'a> {
 }
 
 fn reference_plane_candidate<'a>(
+    ctx: &DecodeContext<'_>,
     object: &'a CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
-) -> Option<ReferencePlaneCandidate<'a>> {
-    let owner_class = object.owner_class.as_ref()?;
-    is_admitted_native_reference_plane_class(&owner_class.name).then_some(())?;
-    let owner_record_id = object.owner_record.as_deref()?;
-    let owner_record = records.get(owner_record_id).copied()?;
-    (owner_record.class_name() == Some(owner_class.name.as_str())
-        && owner_record.class_entry() == Some(owner_class.entry.as_str())
-        && owner_record.entity_id() == Some(object.owner_entity_id)
-        && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
-    .then_some(ReferencePlaneCandidate {
-        object,
-        owner_record,
-        kind: owner_class.name.as_str(),
-    })
+) -> Result<Option<ReferencePlaneCandidate<'a>>, CodecError> {
+    let Some(owner_class) = object.owner_class.as_ref() else {
+        return Ok(None);
+    };
+    if !is_admitted_native_reference_plane_class(&owner_class.name) {
+        return Ok(None);
+    }
+    let Some(owner_record_id) = object.owner_record.as_deref() else {
+        return Ok(None);
+    };
+    let Some(owner_record) = ctx
+        .get_hash_map(records, owner_record_id, "catia_feature_candidate_lookup")?
+        .copied()
+    else {
+        return Ok(None);
+    };
+    Ok(
+        (owner_record.class_name() == Some(owner_class.name.as_str())
+            && ctx.equal(
+                &owner_record.class_entry(),
+                &Some(owner_class.entry.as_str()),
+                "catia_feature_candidate_class_entry",
+            )?
+            && owner_record.entity_id() == Some(object.owner_entity_id)
+            && ctx.equal(
+                &owner_record.design_object.as_deref(),
+                &object.owner_design_object.as_deref(),
+                "catia_feature_candidate_owner",
+            )?)
+        .then_some(ReferencePlaneCandidate {
+            object,
+            owner_record,
+            kind: owner_class.name.as_str(),
+        }),
+    )
 }
 
 fn native_operation_candidate<'a>(
+    ctx: &DecodeContext<'_>,
     object: &'a CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
-) -> Option<NativeOperationCandidate<'a>> {
-    let owner_record_id = object.owner_record.as_deref()?;
-    let owner_record = records.get(owner_record_id).copied()?;
-    // `owner_class` is populated only by a complete separator-form owner
-    // declaration. A compact root's class entry remains field vocabulary.
-    let owner_class = object.owner_class.as_ref()?;
-    let owner_class_name = owner_class.name.as_str();
-    let owner_class_entry = owner_class.entry.as_str();
-    let kind = NativeOperationClass::try_from(owner_class_name).ok()?;
-    (owner_record.class_name() == Some(owner_class_name)
-        && owner_record.class_entry() == Some(owner_class_entry)
-        && owner_record.entity_id() == Some(object.owner_entity_id)
-        && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
-    .then_some(NativeOperationCandidate {
-        object,
-        owner_record,
-        kind,
-    })
+) -> Result<Option<NativeOperationCandidate<'a>>, CodecError> {
+    let Some(owner_record_id) = object.owner_record.as_deref() else {
+        return Ok(None);
+    };
+    let Some(owner_record) = ctx
+        .get_hash_map(records, owner_record_id, "catia_feature_candidate_lookup")?
+        .copied()
+    else {
+        return Ok(None);
+    };
+    // Only a complete separator-form owner declaration states an operation class.
+    let Some(owner_class) = object.owner_class.as_ref() else {
+        return Ok(None);
+    };
+    let Ok(kind) = NativeOperationClass::try_from(owner_class.name.as_str()) else {
+        return Ok(None);
+    };
+    Ok(
+        (owner_record.class_name() == Some(owner_class.name.as_str())
+            && ctx.equal(
+                &owner_record.class_entry(),
+                &Some(owner_class.entry.as_str()),
+                "catia_feature_candidate_class_entry",
+            )?
+            && owner_record.entity_id() == Some(object.owner_entity_id)
+            && ctx.equal(
+                &owner_record.design_object.as_deref(),
+                &object.owner_design_object.as_deref(),
+                "catia_feature_candidate_owner",
+            )?)
+        .then_some(NativeOperationCandidate {
+            object,
+            owner_record,
+            kind,
+        }),
+    )
 }
 
 /// Admitted native operation class.
@@ -1134,17 +1374,19 @@ fn is_admitted_native_reference_plane_class(name: &str) -> bool {
 struct NativeOperationSources<'a> {
     object_records: &'a HashMap<&'a str, &'a CatiaObjectRecord>,
     entities: &'a HashMap<&'a str, &'a CatiaEntityRecord>,
-    design_objects: &'a HashMap<&'a str, &'a CatiaDesignObject>,
+    design_objects: &'a BTreeMap<&'a str, &'a CatiaDesignObject>,
     object_ids: &'a HashSet<&'a str>,
 }
 
 fn transfer_native_operation(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    membership_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: &NativeOperationCandidate<'_>,
     sources: &NativeOperationSources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut record_storage = ctx.reserve_scoped(0, "catia_feature_property_record_workspace")?;
     let object = candidate.object;
     let kind = candidate.kind;
     let NativeOperationDefinitionProperties {
@@ -1157,6 +1399,7 @@ fn transfer_native_operation(
         range_records,
     } = native_operation_definition_properties(
         ctx,
+        &mut record_storage,
         object,
         sources.object_records,
         sources.entities,
@@ -1170,8 +1413,9 @@ fn transfer_native_operation(
         &cadmpeg_ir::identity_component!("feature"),
     )?);
     ctx.charge_entities(1, "admit CATIA design feature")?;
-    let map_feature_id =
-        feature_id.try_clone_for_decode(ctx, "catia_native_operation_feature_map_id")?;
+    let map_feature_id = membership_storage.with_storage(|| {
+        feature_id.try_clone_for_decode(ctx, "catia_native_operation_feature_map_id")
+    })?;
     let source_tag = ctx.copy_retained_text(kind.as_str(), "catia_native_operation_feature_tag")?;
     let native_ref = ctx.copy_retained_text(&object.id, "catia_native_operation_feature_ref")?;
     ctx.push_vec(
@@ -1192,45 +1436,71 @@ fn transfer_native_operation(
         },
         "catia_native_operation_features",
     )?;
-    let map_key = ctx.copy_retained_text(&object.id, "catia_native_operation_feature_key")?;
-    ctx.insert_hash_map(
-        &mut transfer.feature_ids,
-        map_key,
-        map_feature_id,
-        "catia_native_operation_feature_ids",
-    )?;
-    let owner_id = ctx.copy_retained_text(
-        &candidate.owner_record.id,
-        "catia_native_operation_owner_id",
-    )?;
-    ctx.insert_hash_set(
-        &mut transfer.native_operation_records,
-        owner_id,
-        "catia_native_operation_records",
-    )?;
+    let map_key = membership_storage.with_storage(|| {
+        ctx.copy_retained_text(&object.id, "catia_native_operation_feature_key")
+    })?;
+    membership_storage.with_storage(|| {
+        ctx.insert_hash_map(
+            &mut transfer.feature_ids,
+            map_key,
+            map_feature_id,
+            "catia_native_operation_feature_ids",
+        )
+    })?;
+    let owner_id = membership_storage.with_storage(|| {
+        ctx.copy_retained_text(
+            &candidate.owner_record.id,
+            "catia_native_operation_owner_id",
+        )
+    })?;
+    membership_storage.with_storage(|| {
+        ctx.insert_hash_set(
+            &mut transfer.native_operation_records,
+            owner_id,
+            "catia_native_operation_records",
+        )
+    })?;
     transfer.native_operation_definition_value_count += definition_value_count;
     transfer.native_operation_definition_chain_value_count += definition_chain_value_count;
     transfer.native_operation_range_count += range_count;
-    for record in definition_value_records {
-        ctx.insert_hash_set(
-            &mut transfer.native_operation_definition_value_records,
-            record,
-            "catia_native_operation_definition_records",
-        )?;
+    for record in ctx.admit_iter(
+        definition_value_records,
+        "catia_feature_property_record_visits",
+    )? {
+        let record = membership_storage
+            .with_storage(|| ctx.copy_retained_text(record, "catia_feature_transferred_record"))?;
+        membership_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut transfer.native_operation_definition_value_records,
+                record,
+                "catia_native_operation_definition_records",
+            )
+        })?;
     }
-    for record in definition_chain_value_records {
-        ctx.insert_hash_set(
-            &mut transfer.native_operation_definition_chain_value_records,
-            record,
-            "catia_native_operation_chain_records",
-        )?;
+    for record in ctx.admit_iter(
+        definition_chain_value_records,
+        "catia_feature_property_record_visits",
+    )? {
+        let record = membership_storage
+            .with_storage(|| ctx.copy_retained_text(record, "catia_feature_transferred_record"))?;
+        membership_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut transfer.native_operation_definition_chain_value_records,
+                record,
+                "catia_native_operation_chain_records",
+            )
+        })?;
     }
-    for record in range_records {
-        ctx.insert_hash_set(
-            &mut transfer.native_operation_range_records,
-            record,
-            "catia_native_operation_range_records",
-        )?;
+    for record in ctx.admit_iter(range_records, "catia_feature_property_record_visits")? {
+        let record = membership_storage
+            .with_storage(|| ctx.copy_retained_text(record, "catia_feature_transferred_record"))?;
+        membership_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut transfer.native_operation_range_records,
+                record,
+                "catia_native_operation_range_records",
+            )
+        })?;
     }
     Ok(())
 }
@@ -1294,14 +1564,14 @@ fn native_operation_definition(
 }
 
 /// Exact source properties and records retained for one native operation.
-struct NativeOperationDefinitionProperties {
+struct NativeOperationDefinitionProperties<'a> {
     source_properties: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     definition_value_count: usize,
     definition_chain_value_count: usize,
     range_count: usize,
-    definition_value_records: HashSet<String>,
-    definition_chain_value_records: HashSet<String>,
-    range_records: HashSet<String>,
+    definition_value_records: BTreeSet<&'a str>,
+    definition_chain_value_records: BTreeSet<&'a str>,
+    range_records: BTreeSet<&'a str>,
 }
 
 /// Retain complete definition-bound values and source-schema `Range` fields
@@ -1310,48 +1580,126 @@ struct NativeOperationDefinitionProperties {
 /// carries its repeated selector, role, and selected payload. Neither
 /// production assigns an operation role here. Supported two-definition roles
 /// are exposed separately through the typed-parameter transfer.
-fn native_operation_definition_properties(
+fn native_operation_definition_properties<'a>(
     ctx: &DecodeContext<'_>,
-    object: &CatiaDesignObject,
-    object_records: &HashMap<&str, &CatiaObjectRecord>,
-    entities: &HashMap<&str, &CatiaEntityRecord>,
-    design_objects: &HashMap<&str, &CatiaDesignObject>,
+    membership_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    object: &'a CatiaDesignObject,
+    object_records: &HashMap<&'a str, &'a CatiaObjectRecord>,
+    entities: &HashMap<&'a str, &'a CatiaEntityRecord>,
+    design_objects: &BTreeMap<&'a str, &'a CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) -> Result<NativeOperationDefinitionProperties, CodecError> {
+) -> Result<NativeOperationDefinitionProperties<'a>, CodecError> {
     let mut properties = BTreeMap::new();
     let mut definition_value_count = 0;
     let mut definition_chain_value_count = 0;
     let mut range_count = 0;
-    let mut definition_value_records = HashSet::new();
-    let mut definition_chain_value_records = HashSet::new();
-    let mut range_records = HashSet::new();
+    let mut definition_value_records = BTreeSet::new();
+    let mut definition_chain_value_records = BTreeSet::new();
+    let mut range_records = BTreeSet::new();
 
-    let mut owned_objects = Vec::new();
-    for candidate in design_objects.values() {
-        if candidate.parent == object.parent
-            && native_operation_owner_chain_reaches(
-                ctx,
-                candidate.id.as_str(),
-                object.id.as_str(),
-                design_objects,
-                native_operation_object_ids,
-            )?
-        {
-            ctx.push_vec(
-                &mut owned_objects,
-                *candidate,
-                "catia_feature_operation_owned_objects",
-            )?;
+    let mut definition_values_storage = ctx.reserve_scoped(0, "catia_feature_definition_values")?;
+    let mut definition_chain_values_storage =
+        ctx.reserve_scoped(0, "catia_feature_definition_chain_values")?;
+    let mut range_intervals_storage = ctx.reserve_scoped(0, "catia_feature_range_intervals")?;
+    let mut definition_values = Vec::new();
+    let mut definition_chain_values = Vec::new();
+    let mut range_intervals = Vec::new();
+    for (_, owned) in ctx.admit_iter(design_objects, "catia_feature_operation_object_visits")? {
+        if !ctx.equal(
+            &owned.parent,
+            &object.parent,
+            "catia_feature_operation_parent_match",
+        )? || !native_operation_owner_chain_reaches(
+            ctx,
+            &owned.id,
+            &object.id,
+            design_objects,
+            native_operation_object_ids,
+        )? {
+            continue;
+        }
+        for entity_id in ctx.admit_iter(
+            &owned.definition_values,
+            "catia_feature_definition_value_visits",
+        )? {
+            let Some(entity) = ctx
+                .get_hash_map(entities, entity_id.as_str(), "catia_feature_lookup")?
+                .copied()
+            else {
+                continue;
+            };
+            if let Some(value) = entity.definition_value() {
+                definition_values_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut definition_values,
+                        (entity, value),
+                        "catia_feature_definition_values",
+                    )
+                })?;
+            }
+        }
+        for entity_id in ctx.admit_iter(
+            &owned.definition_chain_values,
+            "catia_feature_definition_chain_visits",
+        )? {
+            let Some(entity) = ctx
+                .get_hash_map(entities, entity_id.as_str(), "catia_feature_lookup")?
+                .copied()
+            else {
+                continue;
+            };
+            if let Some(value) = entity.definition_chain_value() {
+                definition_chain_values_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut definition_chain_values,
+                        (entity, value),
+                        "catia_feature_definition_chain_values",
+                    )
+                })?;
+            }
+        }
+        for field_id in ctx.admit_iter(&owned.fields, "catia_feature_range_field_visits")? {
+            let Some(field) = ctx
+                .get_hash_map(object_records, field_id.as_str(), "catia_feature_lookup")?
+                .copied()
+            else {
+                continue;
+            };
+            if !ctx.equal(
+                &field.design_object.as_deref(),
+                &Some(owned.id.as_str()),
+                "catia_feature_range_owner_match",
+            )? {
+                continue;
+            }
+            let Some(entity_id) = field.entity_record() else {
+                continue;
+            };
+            let Some(entity) = ctx
+                .get_hash_map(entities, entity_id, "catia_feature_lookup")?
+                .copied()
+            else {
+                continue;
+            };
+            if !ctx.equal(
+                &entity.object_record,
+                &field.id,
+                "catia_feature_range_record_match",
+            )? {
+                continue;
+            }
+            if let Some(range) = entity.range_interval.as_ref() {
+                range_intervals_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut range_intervals,
+                        (entity, range),
+                        "catia_feature_range_intervals",
+                    )
+                })?;
+            }
         }
     }
-    let mut definition_values = ctx.collect_vec(
-        owned_objects
-            .iter()
-            .flat_map(|owned| owned.definition_values.iter())
-            .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-            .filter_map(|entity| entity.definition_value().map(|value| (entity, value))),
-        "catia_feature_definition_values",
-    )?;
+
     ctx.sort_unstable_by_key(
         &mut definition_values,
         |value| {
@@ -1361,53 +1709,54 @@ fn native_operation_definition_properties(
         Ord::cmp,
         "catia_feature_definition_values_sort",
     )?;
-    for (ordinal, (entity, value)) in definition_values.into_iter().enumerate() {
+    for (ordinal, (entity, value)) in ctx
+        .admit_iter(definition_values, "catia_feature_property_value_visits")?
+        .enumerate()
+    {
         definition_value_count += 1;
-        let record =
-            ctx.copy_retained_text(&entity.object_record, "catia_feature_definition_record")?;
-        ctx.insert_hash_set(
-            &mut definition_value_records,
-            record,
-            "catia_feature_definition_records",
-        )?;
-        let prefix = property_prefix_args(ctx, format_args!("catia_definition_value_{ordinal}"))?;
+        let record = entity.object_record.as_str();
+        membership_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut definition_value_records,
+                record,
+                "catia_feature_definition_records",
+            )
+        })?;
+        let prefix = OrdinalPropertyPrefix {
+            label: "catia_definition_value_",
+            ordinal,
+        };
+        let prefix: &dyn std::fmt::Display = &prefix;
         insert_property(
             ctx,
             &mut properties,
-            prefix.as_str(),
+            prefix,
             "_entity",
             format_args!("{}", entity.id),
         )?;
         insert_schema_value_properties(
             ctx,
             &mut properties,
-            &property_prefix(ctx, prefix.as_str(), "_definition")?,
+            &property_prefix(prefix, "_definition"),
             &value.definition,
         )?;
         insert_suffix_payload_properties(
             ctx,
             &mut properties,
-            &property_prefix(ctx, prefix.as_str(), "_payload")?,
+            &property_prefix(prefix, "_payload"),
             &value.payload,
         )?;
         if let Some(selection) = value.schema_selection.as_ref() {
             insert_schema_selection_properties(
                 ctx,
                 &mut properties,
-                &property_prefix(ctx, prefix.as_str(), "_schema_selection")?,
+                &property_prefix(prefix, "_schema_selection"),
                 selection,
             )?;
         }
     }
 
-    let mut definition_chain_values = ctx.collect_vec(
-        owned_objects
-            .iter()
-            .flat_map(|owned| owned.definition_chain_values.iter())
-            .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-            .filter_map(|entity| entity.definition_chain_value().map(|value| (entity, value))),
-        "catia_feature_definition_chain_values",
-    )?;
+    drop(definition_values_storage);
     ctx.sort_unstable_by_key(
         &mut definition_chain_values,
         |value| {
@@ -1417,60 +1766,55 @@ fn native_operation_definition_properties(
         Ord::cmp,
         "catia_feature_definition_chain_values_sort",
     )?;
-    for (ordinal, (entity, value)) in definition_chain_values.into_iter().enumerate() {
+    for (ordinal, (entity, value)) in ctx
+        .admit_iter(
+            definition_chain_values,
+            "catia_feature_property_value_visits",
+        )?
+        .enumerate()
+    {
         definition_chain_value_count += 1;
-        let record = ctx.copy_retained_text(&entity.object_record, "catia_feature_chain_record")?;
-        ctx.insert_hash_set(
-            &mut definition_chain_value_records,
-            record,
-            "catia_feature_chain_records",
-        )?;
-        let prefix =
-            property_prefix_args(ctx, format_args!("catia_definition_chain_value_{ordinal}"))?;
+        let record = entity.object_record.as_str();
+        membership_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut definition_chain_value_records,
+                record,
+                "catia_feature_chain_records",
+            )
+        })?;
+        let prefix = OrdinalPropertyPrefix {
+            label: "catia_definition_chain_value_",
+            ordinal,
+        };
+        let prefix: &dyn std::fmt::Display = &prefix;
         insert_property(
             ctx,
             &mut properties,
-            prefix.as_str(),
+            prefix,
             "_entity",
             format_args!("{}", entity.id),
         )?;
         insert_schema_value_properties(
             ctx,
             &mut properties,
-            &property_prefix(ctx, prefix.as_str(), "_selector")?,
+            &property_prefix(prefix, "_selector"),
             &value.selector,
         )?;
         insert_schema_value_properties(
             ctx,
             &mut properties,
-            &property_prefix(ctx, prefix.as_str(), "_role")?,
+            &property_prefix(prefix, "_role"),
             &value.role,
         )?;
         insert_schema_selected_value_properties(
             ctx,
             &mut properties,
-            &property_prefix(ctx, prefix.as_str(), "_value")?,
+            &property_prefix(prefix, "_value"),
             &value.value,
         )?;
     }
 
-    let mut range_intervals = ctx.collect_vec(
-        owned_objects
-            .iter()
-            .flat_map(|owned| {
-                owned.fields.iter().filter_map(|field_id| {
-                    let field = object_records.get(field_id.as_str()).copied()?;
-                    (field.design_object.as_deref() == Some(owned.id.as_str())).then_some(field)
-                })
-            })
-            .filter_map(|field| {
-                let entity_id = field.entity_record()?;
-                let entity = entities.get(entity_id).copied()?;
-                (entity.object_record == field.id).then_some(())?;
-                entity.range_interval.as_ref().map(|range| (entity, range))
-            }),
-        "catia_feature_range_intervals",
-    )?;
+    drop(definition_chain_values_storage);
     ctx.sort_unstable_by_key(
         &mut range_intervals,
         |value| {
@@ -1480,22 +1824,38 @@ fn native_operation_definition_properties(
         Ord::cmp,
         "catia_feature_range_intervals_sort",
     )?;
-    range_intervals.dedup_by(|(left, _), (right, _)| left.id == right.id);
-    for (ordinal, (entity, range)) in range_intervals.into_iter().enumerate() {
+    ctx.dedup_by(
+        &mut range_intervals,
+        |(left, _), (right, _)| {
+            ctx.equal(&left.id, &right.id, "catia_feature_range_identity_match")
+        },
+        "catia_feature_range_dedup",
+    )?;
+    for (ordinal, (entity, range)) in ctx
+        .admit_iter(range_intervals, "catia_feature_property_value_visits")?
+        .enumerate()
+    {
         range_count += 1;
-        let record = ctx.copy_retained_text(&entity.object_record, "catia_feature_range_record")?;
-        ctx.insert_hash_set(&mut range_records, record, "catia_feature_range_records")?;
-        let prefix = property_prefix_args(ctx, format_args!("catia_range_{ordinal}"))?;
+        let record = entity.object_record.as_str();
+        membership_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut range_records, record, "catia_feature_range_records")
+        })?;
+        let prefix = OrdinalPropertyPrefix {
+            label: "catia_range_",
+            ordinal,
+        };
+        let prefix: &dyn std::fmt::Display = &prefix;
         insert_property(
             ctx,
             &mut properties,
-            prefix.as_str(),
+            prefix,
             "_entity",
             format_args!("{}", entity.id),
         )?;
         insert_range_interval_properties(ctx, &mut properties, &prefix, range)?;
     }
 
+    drop(range_intervals_storage);
     Ok(NativeOperationDefinitionProperties {
         source_properties: properties,
         definition_value_count,
@@ -1515,7 +1875,7 @@ fn native_operation_owner_chain_reaches(
     ctx: &DecodeContext<'_>,
     design_object_id: &str,
     operation_object_id: &str,
-    design_objects: &HashMap<&str, &CatiaDesignObject>,
+    design_objects: &BTreeMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
 ) -> Result<bool, CodecError> {
     let mut current = Some(design_object_id);
@@ -1528,48 +1888,81 @@ fn native_operation_owner_chain_reaches(
         if traversed > design_objects.len() {
             return Ok(false);
         }
-        if current_id == operation_object_id {
+        if ctx.equal_bytes(
+            current_id.as_bytes(),
+            operation_object_id.as_bytes(),
+            "catia_feature_operation_owner_match",
+        )? {
             return Ok(true);
         }
-        if native_operation_object_ids.contains(current_id) {
+        if ctx.contains_hash_set(
+            native_operation_object_ids,
+            current_id,
+            "catia_feature_operation_owner_lookup",
+        )? {
             return Ok(false);
         }
-        let Some(object) = design_objects.get(current_id).copied() else {
+        let Some(object) = ctx
+            .get_btree_map(design_objects, current_id, "catia_feature_lookup")?
+            .copied()
+        else {
             return Ok(false);
         };
-        current = object
-            .owner_design_object
-            .as_deref()
-            .filter(|parent| *parent != current_id);
+        current = match object.owner_design_object.as_deref() {
+            Some(parent)
+                if !ctx.equal_bytes(
+                    parent.as_bytes(),
+                    current_id.as_bytes(),
+                    "catia_feature_owner_parent_match",
+                )? =>
+            {
+                Some(parent)
+            }
+            _ => None,
+        };
     }
     Ok(false)
 }
 
-fn property_prefix(
-    ctx: &DecodeContext<'_>,
-    prefix: &str,
-    suffix: &str,
-) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
-    property_prefix_args(ctx, format_args!("{prefix}{suffix}"))
+struct OrdinalPropertyPrefix {
+    label: &'static str,
+    ordinal: usize,
 }
 
-fn property_prefix_args(
-    ctx: &DecodeContext<'_>,
-    args: std::fmt::Arguments<'_>,
-) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
-    let key = ctx.format_retained(args, "catia_feature_property_key")?;
-    cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
-        .ok_or_else(|| CodecError::malformed("CATIA feature property key is blank"))
+impl std::fmt::Display for OrdinalPropertyPrefix {
+    fn fmt(&self, output: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(output, "{}{}", self.label, self.ordinal)
+    }
+}
+
+struct PropertyPrefix<'a> {
+    parent: &'a dyn std::fmt::Display,
+    suffix: &'a str,
+}
+
+impl std::fmt::Display for PropertyPrefix<'_> {
+    fn fmt(&self, output: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(output, "{}{}", self.parent, self.suffix)
+    }
+}
+
+fn property_prefix<'a>(parent: &'a dyn std::fmt::Display, suffix: &'a str) -> PropertyPrefix<'a> {
+    PropertyPrefix { parent, suffix }
 }
 
 fn insert_property(
     ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    prefix: &str,
+    prefix: &dyn std::fmt::Display,
     suffix: &str,
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    let key = property_prefix(ctx, prefix, suffix)?;
+    let key = ctx.format_retained(
+        format_args!("{prefix}{suffix}"),
+        "catia_feature_property_key",
+    )?;
+    let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
+        .ok_or_else(|| CodecError::malformed("CATIA feature property key is blank"))?;
     let value = ctx.format_retained(value, "catia_feature_property_value")?;
     ctx.insert_btree_map(properties, key, value, "catia_feature_property_entries")?;
     Ok(())
@@ -1578,34 +1971,34 @@ fn insert_property(
 fn insert_schema_value_properties(
     ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    prefix: &cadmpeg_core::text::NonBlankString,
+    prefix: &dyn std::fmt::Display,
     value: &crate::native::CatiaEntitySchemaValue,
 ) -> Result<(), CodecError> {
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_entry",
         format_args!("{}", value.entry),
     )?;
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_ordinal",
         format_args!("{}", value.ordinal),
     )?;
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_offset",
         format_args!("{}", value.offset),
     )?;
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_value",
         format_args!("{}", value.value),
     )?;
@@ -1615,13 +2008,13 @@ fn insert_schema_value_properties(
 fn insert_range_interval_properties(
     ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    prefix: &cadmpeg_core::text::NonBlankString,
+    prefix: &dyn std::fmt::Display,
     range: &CatiaRangeInterval,
 ) -> Result<(), CodecError> {
     insert_schema_value_properties(
         ctx,
         properties,
-        &property_prefix(ctx, prefix.as_str(), "_selector")?,
+        &property_prefix(prefix, "_selector"),
         &range.range,
     )?;
     match &range.interval.prefix {
@@ -1629,21 +2022,21 @@ fn insert_range_interval_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_prefix_kind",
                 format_args!("{}", "compact"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_prefix_value",
                 format_args!("{value}"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_prefix_width",
                 format_args!("{width}"),
             )?;
@@ -1652,14 +2045,14 @@ fn insert_range_interval_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_prefix_kind",
                 format_args!("{}", "escaped_word"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_prefix_word",
                 format_args!("{word}"),
             )?;
@@ -1667,23 +2060,17 @@ fn insert_range_interval_properties(
     }
     match &range.interval.slots {
         Some([lower, upper]) => {
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
-                "_slots",
-                format_args!("{}", "two"),
-            )?;
+            insert_property(ctx, properties, prefix, "_slots", format_args!("{}", "two"))?;
             insert_range_slot_properties(
                 ctx,
                 properties,
-                &property_prefix(ctx, prefix.as_str(), "_lower")?,
+                &property_prefix(prefix, "_lower"),
                 lower,
             )?;
             insert_range_slot_properties(
                 ctx,
                 properties,
-                &property_prefix(ctx, prefix.as_str(), "_upper")?,
+                &property_prefix(prefix, "_upper"),
                 upper,
             )?;
         }
@@ -1691,7 +2078,7 @@ fn insert_range_interval_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_slots",
                 format_args!("{}", "none"),
             )?;
@@ -1701,28 +2088,28 @@ fn insert_range_interval_properties(
         insert_property(
             ctx,
             properties,
-            prefix.as_str(),
+            prefix,
             "_nominal_kind",
             format_args!("{}", "finite"),
         )?;
         insert_property(
             ctx,
             properties,
-            prefix.as_str(),
+            prefix,
             "_nominal_framing",
             format_args!("{}", range_nominal_framing_name(nominal.framing)),
         )?;
         insert_property(
             ctx,
             properties,
-            prefix.as_str(),
+            prefix,
             "_nominal_bits",
             format_args!("{:016x}", nominal.bits),
         )?;
         insert_property(
             ctx,
             properties,
-            prefix.as_str(),
+            prefix,
             "_nominal_opcode_offset",
             format_args!("{}", nominal.evaluation_opcode_offset),
         )?;
@@ -1730,7 +2117,7 @@ fn insert_range_interval_properties(
         insert_property(
             ctx,
             properties,
-            prefix.as_str(),
+            prefix,
             "_nominal_kind",
             format_args!("{}", "absent"),
         )?;
@@ -1738,14 +2125,14 @@ fn insert_range_interval_properties(
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_incoming_payload_reference_count",
         format_args!("{}", range.incoming_references.len()),
     )?;
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_incoming_storage_reference_count",
         format_args!("{}", range.incoming_storage_references.len()),
     )?;
@@ -1755,7 +2142,7 @@ fn insert_range_interval_properties(
 fn insert_range_slot_properties(
     ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    prefix: &cadmpeg_core::text::NonBlankString,
+    prefix: &dyn std::fmt::Display,
     slot: &RangeIntervalSlot,
 ) -> Result<(), CodecError> {
     match slot {
@@ -1763,40 +2150,28 @@ fn insert_range_slot_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "binary64"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_bits",
                 format_args!("{bits:016x}"),
             )?;
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
-                "_offset",
-                format_args!("{offset}"),
-            )?;
+            insert_property(ctx, properties, prefix, "_offset", format_args!("{offset}"))?;
         }
         RangeIntervalSlot::Unset { offset } => {
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "unset"),
             )?;
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
-                "_offset",
-                format_args!("{offset}"),
-            )?;
+            insert_property(ctx, properties, prefix, "_offset", format_args!("{offset}"))?;
         }
     }
     Ok(())
@@ -1814,7 +2189,7 @@ fn range_nominal_framing_name(framing: CatiaRangeNominalFraming) -> &'static str
 fn insert_suffix_payload_properties(
     ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    prefix: &cadmpeg_core::text::NonBlankString,
+    prefix: &dyn std::fmt::Display,
     payload: &crate::native::CatiaEntitySuffixPayload,
 ) -> Result<(), CodecError> {
     match payload {
@@ -1826,41 +2201,29 @@ fn insert_suffix_payload_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "evaluation"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_opcode_offset",
                 format_args!("{opcode_offset}"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_encoding",
                 format_args!("{}", evaluation_encoding_name(*encoding)),
             )?;
             insert_evaluation_properties(ctx, properties, prefix, evaluation)?;
         }
         crate::native::CatiaEntitySuffixPayload::Atom { value } => {
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
-                "_kind",
-                format_args!("{}", "atom"),
-            )?;
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
-                "_value",
-                format_args!("{value}"),
-            )?;
+            insert_property(ctx, properties, prefix, "_kind", format_args!("{}", "atom"))?;
+            insert_property(ctx, properties, prefix, "_value", format_args!("{value}"))?;
         }
         crate::native::CatiaEntitySuffixPayload::SchemaSelected {
             selector_offset,
@@ -1870,28 +2233,28 @@ fn insert_suffix_payload_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "schema_selected"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_selector_offset",
                 format_args!("{selector_offset}"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_selector",
                 format_args!("{selector}"),
             )?;
             insert_selected_value_properties(
                 ctx,
                 properties,
-                &property_prefix(ctx, prefix.as_str(), "_selected")?,
+                &property_prefix(prefix, "_selected"),
                 value,
             )?;
         }
@@ -1899,7 +2262,7 @@ fn insert_suffix_payload_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "control_e8"),
             )?;
@@ -1908,7 +2271,7 @@ fn insert_suffix_payload_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "control_e9"),
             )?;
@@ -1917,7 +2280,7 @@ fn insert_suffix_payload_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "separator_37"),
             )?;
@@ -1929,25 +2292,13 @@ fn insert_suffix_payload_properties(
 fn insert_selected_value_properties(
     ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    prefix: &cadmpeg_core::text::NonBlankString,
+    prefix: &dyn std::fmt::Display,
     value: &crate::native::CatiaEntitySuffixSelectedValue,
 ) -> Result<(), CodecError> {
     match value {
         crate::native::CatiaEntitySuffixSelectedValue::Atom { value } => {
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
-                "_kind",
-                format_args!("{}", "atom"),
-            )?;
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
-                "_value",
-                format_args!("{value}"),
-            )?;
+            insert_property(ctx, properties, prefix, "_kind", format_args!("{}", "atom"))?;
+            insert_property(ctx, properties, prefix, "_value", format_args!("{value}"))?;
         }
         crate::native::CatiaEntitySuffixSelectedValue::Evaluation {
             opcode_offset,
@@ -1956,14 +2307,14 @@ fn insert_selected_value_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "evaluation"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_opcode_offset",
                 format_args!("{opcode_offset}"),
             )?;
@@ -1973,7 +2324,7 @@ fn insert_selected_value_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "control_e8"),
             )?;
@@ -1982,7 +2333,7 @@ fn insert_selected_value_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "separator_37"),
             )?;
@@ -1993,21 +2344,15 @@ fn insert_selected_value_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "schema_selector"),
             )?;
+            insert_property(ctx, properties, prefix, "_offset", format_args!("{offset}"))?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
-                "_offset",
-                format_args!("{offset}"),
-            )?;
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
+                prefix,
                 "_ordinal",
                 format_args!("{ordinal}"),
             )?;
@@ -2019,41 +2364,41 @@ fn insert_selected_value_properties(
 fn insert_schema_selection_properties(
     ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    prefix: &cadmpeg_core::text::NonBlankString,
+    prefix: &dyn std::fmt::Display,
     selection: &crate::native::CatiaEntitySuffixSchemaSelection,
 ) -> Result<(), CodecError> {
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_offset",
         format_args!("{}", selection.offset),
     )?;
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_ordinal",
         format_args!("{}", selection.ordinal),
     )?;
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_entry",
         format_args!("{}", selection.entry),
     )?;
     insert_property(
         ctx,
         properties,
-        prefix.as_str(),
+        prefix,
         "_name",
         format_args!("{}", selection.name),
     )?;
     insert_schema_selected_value_properties(
         ctx,
         properties,
-        &property_prefix(ctx, prefix.as_str(), "_value")?,
+        &property_prefix(prefix, "_value"),
         &selection.value,
     )?;
     Ok(())
@@ -2062,25 +2407,13 @@ fn insert_schema_selection_properties(
 fn insert_schema_selected_value_properties(
     ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    prefix: &cadmpeg_core::text::NonBlankString,
+    prefix: &dyn std::fmt::Display,
     value: &crate::native::CatiaEntitySuffixSchemaValue,
 ) -> Result<(), CodecError> {
     match value {
         crate::native::CatiaEntitySuffixSchemaValue::Atom { value } => {
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
-                "_kind",
-                format_args!("{}", "atom"),
-            )?;
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
-                "_atom",
-                format_args!("{value}"),
-            )?;
+            insert_property(ctx, properties, prefix, "_kind", format_args!("{}", "atom"))?;
+            insert_property(ctx, properties, prefix, "_atom", format_args!("{value}"))?;
         }
         crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset,
@@ -2089,14 +2422,14 @@ fn insert_schema_selected_value_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "evaluation"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_opcode_offset",
                 format_args!("{opcode_offset}"),
             )?;
@@ -2106,7 +2439,7 @@ fn insert_schema_selected_value_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "control_e8"),
             )?;
@@ -2115,7 +2448,7 @@ fn insert_schema_selected_value_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "separator_37"),
             )?;
@@ -2128,21 +2461,15 @@ fn insert_schema_selected_value_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_kind",
                 format_args!("{}", "schema_selector"),
             )?;
+            insert_property(ctx, properties, prefix, "_offset", format_args!("{offset}"))?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
-                "_offset",
-                format_args!("{offset}"),
-            )?;
-            insert_property(
-                ctx,
-                properties,
-                prefix.as_str(),
+                prefix,
                 "_ordinal",
                 format_args!("{ordinal}"),
             )?;
@@ -2150,14 +2477,14 @@ fn insert_schema_selected_value_properties(
                 insert_property(
                     ctx,
                     properties,
-                    prefix.as_str(),
+                    prefix,
                     "_entry",
                     format_args!("{}", class.entry),
                 )?;
                 insert_property(
                     ctx,
                     properties,
-                    prefix.as_str(),
+                    prefix,
                     "_name",
                     format_args!("{}", class.name),
                 )?;
@@ -2170,7 +2497,7 @@ fn insert_schema_selected_value_properties(
 fn insert_evaluation_properties(
     ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    prefix: &cadmpeg_core::text::NonBlankString,
+    prefix: &dyn std::fmt::Display,
     evaluation: &crate::native::CatiaEntityEvaluation,
 ) -> Result<(), CodecError> {
     match evaluation {
@@ -2178,7 +2505,7 @@ fn insert_evaluation_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_evaluation",
                 format_args!("{}", "unset"),
             )?;
@@ -2187,14 +2514,14 @@ fn insert_evaluation_properties(
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_evaluation",
                 format_args!("{}", "scalar"),
             )?;
             insert_property(
                 ctx,
                 properties,
-                prefix.as_str(),
+                prefix,
                 "_evaluation_bits",
                 format_args!("{bits:016x}"),
             )?;
@@ -2227,11 +2554,13 @@ fn principal_plane_candidate<'a>(
     if object.owner_record.is_none() {
         return Ok(None);
     }
-    let Some(declarations) = ctx.collect_options(
-        object
-            .fields
-            .iter()
-            .map(|field| records.get(field.as_str()).copied()),
+    let Some(declarations) = ctx.collect_fallible_options(
+        object.fields.iter().map(|field| {
+            Ok::<_, CodecError>(
+                ctx.get_hash_map(records, field.as_str(), "catia_feature_candidate_lookup")?
+                    .copied(),
+            )
+        }),
         "catia_principal_plane_declarations",
     )?
     else {
@@ -2249,13 +2578,20 @@ fn principal_plane_candidate<'a>(
     let Some(plane) = principal_plane(class_name) else {
         return Ok(None);
     };
-    Ok(declarations
-        .iter()
-        .all(|record| {
-            record.class_name() == Some(class_name)
-                && record.class_entry() == Some(class_entry)
-                && complete_empty_declaration(record, &object.id, object.owner_entity_id)
-        })
+    Ok(ctx
+        .all_by(
+            &declarations,
+            |record| {
+                Ok(record.class_name() == Some(class_name)
+                    && ctx.equal(
+                        &record.class_entry(),
+                        &Some(class_entry),
+                        "catia_principal_declaration_class_entry",
+                    )?
+                    && complete_empty_declaration(ctx, record, &object.id, object.owner_entity_id)?)
+            },
+            "catia_principal_declaration_checks",
+        )?
         .then_some(PrincipalPlaneCandidate {
             object,
             declarations,
@@ -2265,17 +2601,37 @@ fn principal_plane_candidate<'a>(
 }
 
 fn sketch_candidate<'a>(
+    ctx: &DecodeContext<'_>,
     object: &CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
-) -> Option<&'a CatiaObjectRecord> {
-    let owner_class = object.owner_class.as_ref()?;
-    (owner_class.name == "Sketch").then_some(())?;
-    let owner_record_id = object.owner_record.as_deref()?;
-    let owner_record = records.get(owner_record_id).copied()?;
-    (owner_record.class_name() == Some("Sketch")
-        && owner_record.class_entry() == Some(owner_class.entry.as_str())
-        && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
-    .then_some(owner_record)
+) -> Result<Option<&'a CatiaObjectRecord>, CodecError> {
+    let Some(owner_class) = object.owner_class.as_ref() else {
+        return Ok(None);
+    };
+    if owner_class.name != "Sketch" {
+        return Ok(None);
+    }
+    let Some(owner_record_id) = object.owner_record.as_deref() else {
+        return Ok(None);
+    };
+    let Some(owner_record) = ctx
+        .get_hash_map(records, owner_record_id, "catia_feature_candidate_lookup")?
+        .copied()
+    else {
+        return Ok(None);
+    };
+    Ok((owner_record.class_name() == Some("Sketch")
+        && ctx.equal(
+            &owner_record.class_entry(),
+            &Some(owner_class.entry.as_str()),
+            "catia_feature_candidate_class_entry",
+        )?
+        && ctx.equal(
+            &owner_record.design_object.as_deref(),
+            &object.owner_design_object.as_deref(),
+            "catia_feature_candidate_owner",
+        )?)
+    .then_some(owner_record))
 }
 
 fn principal_plane(class_name: &str) -> Option<PrincipalPlane> {
@@ -2287,26 +2643,21 @@ fn principal_plane(class_name: &str) -> Option<PrincipalPlane> {
     }
 }
 
-fn bound_declaration(
-    record: &CatiaObjectRecord,
-    design_object: &str,
-    owner_entity_id: u32,
-) -> bool {
-    record.design_object.as_deref() == Some(design_object)
-        && record.owner_entity_id() == Some(owner_entity_id)
-}
-
 fn complete_empty_declaration(
+    ctx: &DecodeContext<'_>,
     record: &CatiaObjectRecord,
     design_object: &str,
     owner_entity_id: u32,
-) -> bool {
-    bound_declaration(record, design_object, owner_entity_id)
+) -> Result<bool, CodecError> {
+    Ok(ctx.equal(
+        &record.design_object.as_deref(),
+        &Some(design_object),
+        "catia_principal_declaration_owner",
+    )? && record.owner_entity_id() == Some(owner_entity_id)
         && record.storage_ref().is_none()
         && record.references.is_empty()
-        && record.subtype() == PayloadSubtype::Empty
         && record.payload.size == 1
-        && record.payload.fields == [PayloadField::Terminator]
+        && matches!(record.payload.fields.as_slice(), [PayloadField::Terminator]))
 }
 
 #[cfg(test)]

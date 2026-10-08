@@ -107,10 +107,7 @@ impl CodecBackend for CatiaCodec {
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
+        ctx.charge_work(0, "detect input")?;
         if container::looks_like_catia(prefix) {
             Ok(Confidence::High)
         } else {

@@ -144,9 +144,7 @@ pub(super) fn emit_vertices(
             admission.context(),
             annotations,
             vertex_id.as_str(),
-            "point",
-            "catia_b5_vertex_annotation",
-        )?;
+            "point",)?;
         admission.reserve_entity(&mut ir.model.vertices, "catia_b5_emit_vertices")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
@@ -206,9 +204,7 @@ pub(super) fn emit_vertices(
             admission.context(),
             annotations,
             vertex_id.as_str(),
-            "point",
-            "catia_b5_vertex_annotation",
-        )?;
+            "point",)?;
         admission.reserve_entity(&mut ir.model.vertices, "catia_b5_emit_vertices")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,

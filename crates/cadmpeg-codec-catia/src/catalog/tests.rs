@@ -31,25 +31,25 @@ fn catalog_entries_refuse_count_limit_before_reservation() {
 }
 
 #[test]
-fn catalog_value_refuses_retained_limit_before_copy() {
+fn catalog_value_refuses_temporary_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     let bytes = catalog_stream(&PREFIX);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         "catia_catalog_entry_value",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("catalog input");
             super::parse(&ctx, &bytes)
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "catia_catalog_entry_value"));
     assert_eq!(parse(&bytes).len(), 1);
 }

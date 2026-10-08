@@ -442,9 +442,7 @@ pub(super) fn emit_edges(
                 admission.context(),
                 annotations,
                 curve_id.as_str(),
-                "geometry",
-                "catia_b5_curve_geometry_annotation",
-            )?;
+                "geometry",)?;
         }
         let model_curve_id =
             curve_id.try_clone_for_decode(admission.context(), "catia_b5_model_edge_curve_id")?;
@@ -498,18 +496,14 @@ pub(super) fn emit_edges(
                     admission.context(),
                     annotations,
                     procedural_id.as_str(),
-                    field,
-                    "catia_b5_procedural_curve_annotation",
-                )?;
+                    field,)?;
             }
             if cache_fit_tolerance.is_some() {
                 crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     procedural_id.as_str(),
-                    "cache_fit_tolerance",
-                    "catia_b5_procedural_curve_annotation",
-                )?;
+                    "cache_fit_tolerance",)?;
             }
             let mut definition = definition;
             if let Some(tolerance) = cache_fit_tolerance {
@@ -539,27 +533,21 @@ pub(super) fn emit_edges(
                 admission.context(),
                 annotations,
                 id.as_str(),
-                field,
-                "catia_b5_edge_annotation",
-            )?;
+                field,)?;
         }
         if edge_range.is_some() {
             crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 id.as_str(),
-                "param_range",
-                "catia_b5_edge_annotation",
-            )?;
+                "param_range",)?;
         }
         if edge_tolerance.is_some() {
             crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 id.as_str(),
-                "tolerance",
-                "catia_b5_edge_annotation",
-            )?;
+                "tolerance",)?;
         }
         let map_id = id.try_clone_for_decode(admission.context(), "catia_b5_edge_map_id")?;
         admission.context().insert_hash_map(
