@@ -22,7 +22,7 @@ pub(crate) fn directory_lookup_key<'a>(
     prefix: &str,
     sequence: u32,
     storage: &'a mut [u8],
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
 ) -> Result<Option<&'a str>, CodecError> {
     let mut digits = [0_u8; 10];
     let mut value = sequence;
@@ -46,9 +46,7 @@ pub(crate) fn directory_lookup_key<'a>(
     };
     result[..prefix.len()].copy_from_slice(prefix.as_bytes());
     result[prefix.len()..].copy_from_slice(&digits[start..]);
-    Ok(ctx
-        .validate_utf8(result, "iges directory lookup text")?
-        .ok())
+    Ok(std::str::from_utf8(result).ok())
 }
 
 /// A decoded number an identity key may be spelled with.
@@ -491,7 +489,8 @@ mod tests {
 
     #[test]
     fn directory_lookup_key_uses_stack_storage_for_full_u32_range() {
-        let policy = DecodePolicy::service();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
         let arena = DecodeArena::new();
         let ctx = DecodeContext::new(&arena, &policy, false);
         let mut storage = [0_u8; 64];
@@ -586,21 +585,6 @@ mod tests {
         assert_eq!(
             stem.to_string(),
             format!("D4294967295:D4294967295:D4294967295:{0}:{0}", usize::MAX)
-        );
-    }
-    #[test]
-    fn directory_lookup_text_refuses_utf8_scan() {
-        cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits,
-            "iges directory lookup text",
-            |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let arena = DecodeArena::new();
-                let ctx = DecodeContext::new(&arena, &policy, false);
-                let mut storage = [0_u8; 64];
-                directory_lookup_key("D", 1, &mut storage, &ctx).map(|_| ())
-            },
         );
     }
 }

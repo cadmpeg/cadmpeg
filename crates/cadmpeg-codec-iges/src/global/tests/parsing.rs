@@ -132,20 +132,6 @@ fn global_field_scan_refuses_work_before_value() {
 }
 
 #[test]
-fn global_date_component_refuses_utf8_work() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "iges global date component",
-        |cap| {
-            with_work_limit(b"010100.000000", cap, |ctx| {
-                crate::global::date_value_is_valid(b"010100.000000", true, ctx)
-            })
-        },
-    );
-    assert_work_limit(&error, "iges global date component", 2);
-}
-
-#[test]
 fn global_numeric_text_refuses_utf8_work() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
@@ -445,10 +431,12 @@ fn global_excess_fields_are_counted_without_retaining_values() {
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.additional == 1 && limit.operation == "iges global loss notes"));
+            && limit.used == 0 && limit.additional == 1
+            && limit.operation == "iges global loss notes"));
 
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let (_, losses, _global_storage) = crate::global::parse(&scan, &ctx).unwrap();
     assert!(losses
@@ -714,20 +702,6 @@ fn global_hollerith_parse_refuses_after_utf8_admission() {
 }
 
 #[test]
-fn global_date_component_parse_refuses_after_utf8_admission() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "iges global date component number",
-        |cap| {
-            with_work_limit(b"010100.000000", cap, |ctx| {
-                crate::global::date_value_is_valid(b"010100.000000", true, ctx)
-            })
-        },
-    );
-    assert_work_limit(&error, "iges global date component number", 2);
-}
-
-#[test]
 fn global_plain_real_parse_refuses_work_before_conversion() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
@@ -786,7 +760,6 @@ fn global_variable_scans_refuse_at_their_own_boundaries() {
         "iges global numeric exponent",
         "iges global exponent normalization",
         "iges global recovered exponent",
-        "iges global date digits",
         "iges global string policy",
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(
@@ -806,10 +779,6 @@ fn global_variable_scans_refuse_at_their_own_boundaries() {
                     }
                     "iges global recovered exponent" => {
                         crate::global::recovered_real_text("1D+0.", ctx).map(|_| ())
-                    }
-                    "iges global date digits" => {
-                        crate::global::date_value_is_valid(b"20260714.000000", true, ctx)
-                            .map(|_| ())
                     }
                     _ => {
                         let mut resolution = crate::global::Resolution {
@@ -887,4 +856,44 @@ fn recovered_real_declaration_refuses_temporary_storage() {
             resolution.charge_recovered_real(0, 1.0)
         },
     );
+}
+
+#[test]
+fn global_date_validation_checks_fixed_components_and_version_width() {
+    for (text, accepts_long, valid) in [
+        ("010101.000000", true, true),
+        ("010101.000000", false, true),
+        ("010100.000000", true, false),
+        ("20260714.235959", true, true),
+        ("20260714.235959", false, false),
+        ("20260014.000000", true, false),
+        ("20261314.000000", true, false),
+        ("20260700.000000", true, false),
+        ("20260732.000000", true, false),
+        ("20260714.240000", true, false),
+        ("20260714.006000", true, false),
+        ("20260714.000060", true, false),
+        ("20260714x000000", true, false),
+        ("20260714.00000x", true, false),
+        ("20260714.00000", true, false),
+        ("20260714.0000000", true, false),
+    ] {
+        assert_eq!(crate::global::date_value_is_valid(text.as_bytes(), accepts_long), valid, "{text}");
+    }
+}
+
+#[test]
+fn global_layout_field_spans_charge_one_visited_field() {
+    let bytes = format!(",,{}{};", "a".repeat(73), ",".repeat(1_000));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "iges global layout field spans", |cap| {
+            with_work_limit(bytes.as_bytes(), cap, |ctx| {
+                crate::global::layout_global_cards(bytes.as_bytes(), ctx)
+            })
+        },
+    );
+    assert_work_limit(&error, "iges global layout field spans", 1);
+    with_work_limit(bytes.as_bytes(), u64::MAX, |ctx| {
+        assert!(matches!(crate::global::layout_global_cards(bytes.as_bytes(), ctx), Err(CodecError::Malformed(_))));
+    });
 }

@@ -75,22 +75,22 @@ impl Serialize for Resolution {
 fn classify(
     target_sequence: Option<u32>,
     target: Option<&DirectoryEntry>,
-    accepts: impl FnOnce(&DirectoryEntry) -> Result<bool, CodecError>,
-) -> Result<Resolution, CodecError> {
-    Ok(match (target_sequence, target) {
+    accepts: impl FnOnce(&DirectoryEntry) -> bool,
+) -> Resolution {
+    match (target_sequence, target) {
         (None, _) => Resolution::OutOfRange,
         (Some(sequence), target) if sequence % 2 == 0 => {
             Resolution::EvenSequence(target.map(|entry| entry.sequence))
         }
         (Some(_), None) => Resolution::Dangling,
         (Some(sequence), Some(entry)) => {
-            if accepts(entry)? {
+            if accepts(entry) {
                 Resolution::Resolved(sequence)
             } else {
                 Resolution::WrongType(entry.sequence)
             }
         }
-    })
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -275,7 +275,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             raw_pointer,
             target_sequence,
             expected,
-            |target| Ok(accepts(target)),
+            accepts,
         )
     }
 
@@ -297,7 +297,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             raw_pointer,
             target_sequence,
             expected,
-            |target| Ok(accepts(target)),
+            accepts,
         )
     }
 
@@ -308,7 +308,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         raw_pointer: i64,
         target_sequence: Option<u32>,
         expected: ReferenceExpectation,
-        accepts: impl FnOnce(&DirectoryEntry) -> Result<bool, CodecError>,
+        accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Result<Option<u32>, CodecError> {
         let target = match target_sequence {
             Some(sequence) => {
@@ -316,7 +316,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             }
             None => None,
         };
-        let resolution = classify(target_sequence, target, accepts)?;
+        let resolution = classify(target_sequence, target, accepts);
         let mut graph = self.edges.borrow_mut();
         let edge = ReferenceEdge {
             origin: ReferenceOrigin::Parameter { index: parameter_index },
@@ -374,13 +374,8 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             positive_pointer_sequence(raw_pointer),
             expected,
             |target| {
-                Ok(target.entity_type == entity_type
-                    && (forms.is_empty()
-                        || self.ctx.any_by(
-                            forms,
-                            |form| Ok(*form == target.form),
-                            "iges parameter expected form search",
-                        )?))
+                target.entity_type == entity_type
+                    && (forms.is_empty() || forms.contains(&target.form))
             },
         )
     }
@@ -411,13 +406,8 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             negative_pointer_sequence(raw_pointer),
             expected,
             |target| {
-                Ok(target.entity_type == entity_type
-                    && (forms.is_empty()
-                        || self.ctx.any_by(
-                            forms,
-                            |form| Ok(*form == target.form),
-                            "iges parameter expected form search",
-                        )?))
+                target.entity_type == entity_type
+                    && (forms.is_empty() || forms.contains(&target.form))
             },
         )
     }
@@ -643,11 +633,10 @@ fn cyclic_transform_nodes(
     let mut index_storage = ctx.reserve_scoped(0, "IGES transform cycle indices")?;
     let mut next = BTreeMap::new();
     for (source, values) in ctx.admit_iter(edges, "iges transform cycle sources")? {
-        if let Some(target) = ctx.find_map(
-            values,
-            |edge| Ok(edge.resolved_target_sequence_for(ReferenceKind::Transform)),
-            "iges transform successor search",
-        )? {
+        // Directory graphs have at most seven reference kinds per source.
+        if let Some(target) = values.iter().find_map(
+            |edge| edge.resolved_target_sequence_for(ReferenceKind::Transform),
+        ) {
             index_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut next,
@@ -726,8 +715,8 @@ pub(crate) fn build<'ctx>(
                     None => None,
                 };
                 let resolution = classify(candidate.target_sequence, target, |value| {
-                    Ok(accepts(candidate.kind, entry, value))
-                })?;
+                    accepts(candidate.kind, entry, value)
+                });
                 let expected = expected(candidate.kind, entry, ctx)?;
                 ctx.reserve_vec(&mut edges, 1, "iges directory reference edges")?;
                 edges.push(ReferenceEdge {
@@ -750,11 +739,9 @@ pub(crate) fn build<'ctx>(
             })?;
         for source in ctx.admit_iter(cyclic, "iges cyclic transform sources")? {
             let edge = match ctx.get_mut_btree_map(&mut graph, &source, "iges cyclic transform source lookup")? {
-                Some(edges) => ctx.find_by(
-                    edges.iter_mut(),
-                    |edge| Ok(edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform)),
-                    "iges cyclic transform edge",
-                )?,
+                Some(edges) => edges.iter_mut().find(
+                    |edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform),
+                ),
                 None => None,
             };
             if let Some(edge) = edge {
