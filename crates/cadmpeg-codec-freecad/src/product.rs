@@ -32,14 +32,11 @@ pub(crate) fn transfer(
     properties: &[PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<ProductNodeRecord>, CodecError> {
-    let owner_index = ctx.collect_scoped_btree_groups(
-        properties
-            .iter()
-            .map(|property| (property.owner.as_str(), property)),
-        "fcstd product owner index",
-    )?;
-    let _storage = owner_index.1;
-    let by_owner = owner_index.0;
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let mut _owner_storage = None;
+    let mut by_owner = None;
     let mut output = Vec::new();
     let mut object_visits = objects.iter();
     while object_visits.len() != 0 {
@@ -49,9 +46,22 @@ pub(crate) fn transfer(
         let Some(kind) = product_kind(&object.type_name) else {
             continue;
         };
+        if by_owner.is_none() {
+            let owner_index = ctx.collect_scoped_btree_groups(
+                properties
+                    .iter()
+                    .map(|property| (property.owner.as_str(), property)),
+                "fcstd product owner index",
+            )?;
+            _owner_storage = Some(owner_index.1);
+            by_owner = Some(owner_index.0);
+        }
+        let by_owner = by_owner
+            .as_ref()
+            .expect("supported product object initializes the owner index");
         let owned = ctx
             .get_btree_map(
-                &by_owner,
+                by_owner,
                 object.id().as_str(),
                 "fcstd product owner lookup",
             )?
@@ -277,6 +287,7 @@ pub(crate) fn transfer_neutral(
     let record_by_object = storage.with_storage(|| product_record_index(ctx, records))?;
     let mut component_objects = Vec::new();
     let mut occurrence_objects = HashSet::new();
+    let mut has_container_record = false;
     let mut record_visits = records.iter();
     while record_visits.len() != 0 {
         let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product component records")? else {
@@ -291,6 +302,7 @@ pub(crate) fn transfer_neutral(
                 )
             })?;
         } else {
+            has_container_record = true;
             storage.with_storage(|| {
                 ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names")
             })?;
@@ -403,14 +415,18 @@ pub(crate) fn transfer_neutral(
             break;
         };
         if let Some((_, Some(placement))) = selected_placement(ctx, owned)? {
-            storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut placements_by_object,
-                    owner,
-                    placement.transform(),
-                    "fcstd product placements",
-                )
-            })?;
+            // Keep validating every placement, but retain transforms only when
+            // a local component or prototype can query this index below.
+            if !component_objects.is_empty() {
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut placements_by_object,
+                        owner,
+                        placement.transform(),
+                        "fcstd product placements",
+                    )
+                })?;
+            }
         }
     }
 
@@ -433,44 +449,46 @@ pub(crate) fn transfer_neutral(
         .map_err(CodecError::malformed)
     };
     let mut parent_by_object = HashMap::<&str, &str>::new();
-    let mut record_visits = records.iter();
-    while record_visits.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product projection records")? else {
-            break;
-        };
-        if matches!(record.node, ProductNode::Occurrence(_)) {
-            continue;
-        }
-        let mut member_visits = record.members().iter();
-        while member_visits.len() != 0 {
-            let Some(member) = ctx.next_charged(&mut member_visits, "fcstd product parent members")? else {
+    if has_container_record {
+        let mut record_visits = records.iter();
+        while record_visits.len() != 0 {
+            let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product projection records")? else {
                 break;
             };
-            let member = member.as_str();
-            match ctx.get_hash_map(&parent_by_object, member, "fcstd product parent lookup")? {
-                None => {
-                    storage.with_storage(|| {
-                        ctx.insert_hash_map(
-                            &mut parent_by_object,
-                            member,
+            if matches!(record.node, ProductNode::Occurrence(_)) {
+                continue;
+            }
+            let mut member_visits = record.members().iter();
+            while member_visits.len() != 0 {
+                let Some(member) = ctx.next_charged(&mut member_visits, "fcstd product parent members")? else {
+                    break;
+                };
+                let member = member.as_str();
+                match ctx.get_hash_map(&parent_by_object, member, "fcstd product parent lookup")? {
+                    None => {
+                        storage.with_storage(|| {
+                            ctx.insert_hash_map(
+                                &mut parent_by_object,
+                                member,
+                                record.object.as_str(),
+                                "fcstd product parent index",
+                            )
+                        })?;
+                    }
+                    Some(previous)
+                        if !ctx.equal(
+                            *previous,
                             record.object.as_str(),
-                            "fcstd product parent index",
-                        )
-                    })?;
+                            "fcstd product parent comparison",
+                        )? =>
+                    {
+                        return Err(CodecError::Malformed(ctx.format_retained(
+                            format_args!("product member {member} has multiple parent containers"),
+                            "fcstd product parent conflict",
+                        )?));
+                    }
+                    Some(_) => {}
                 }
-                Some(previous)
-                    if !ctx.equal(
-                        *previous,
-                        record.object.as_str(),
-                        "fcstd product parent comparison",
-                    )? =>
-                {
-                    return Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("product member {member} has multiple parent containers"),
-                        "fcstd product parent conflict",
-                    )?));
-                }
-                Some(_) => {}
             }
         }
     }

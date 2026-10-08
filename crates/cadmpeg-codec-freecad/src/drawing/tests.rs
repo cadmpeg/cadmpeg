@@ -21,6 +21,34 @@ fn drawing_diagnostic_refuses_at_matching_retained_limit() {
 }
 
 #[test]
+fn drawing_empty_exact_sources_are_free_and_keep_original_refusal() {
+    let scalar = crate::native::ValueRecord {
+        tag: "Float".into(), order: 0, attributes: std::collections::BTreeMap::new(),
+        text: None, raw_xml: String::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    assert_eq!(super::scalar_value(&ctx, "X", "App::PropertyFloat", &scalar)
+        .expect("empty scalar attributes"), None);
+    let index = super::ensure_unique_property_names(&ctx, &[]).expect("empty property index");
+    assert!(index.0.is_empty());
+    drop(index);
+    let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
+        .charge_work(1, "prior drawing source refusal").expect_err("work limit")
+        else { panic!("resource refusal") };
+    assert!(matches!(super::scalar_value(&ctx, "X", "App::PropertyFloat", &scalar),
+        Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original));
+    assert!(matches!(super::ensure_unique_property_names(&ctx, &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original));
+}
+
+#[test]
 fn drawing_record_collection_refuses_at_caller_limit() {
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
@@ -42,6 +70,89 @@ fn drawing_record_collection_refuses_at_caller_limit() {
     });
 }
 
+#[test]
+fn drawing_empty_object_and_neutral_transfers_are_zero_work_and_sticky() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+
+    assert!(super::transfer(&ctx, &[], &[])
+        .expect("empty drawing object scan does no positive work")
+        .is_empty());
+    super::transfer_neutral(
+        &ctx,
+        &mut cadmpeg_ir::document::Model::default(),
+        &[],
+        &[],
+    )
+    .expect("empty neutral drawing transfer does no positive work");
+
+    let prior = ctx
+        .charge_work(1, "prior drawing refusal")
+        .expect_err("work limit");
+    let object_error = super::transfer(&ctx, &[], &[])
+        .expect_err("empty drawing object scan preserves sticky refusal");
+    let neutral_error = super::transfer_neutral(
+        &ctx,
+        &mut cadmpeg_ir::document::Model::default(),
+        &[],
+        &[],
+    )
+    .expect_err("empty neutral drawing transfer preserves sticky refusal");
+    let cadmpeg_core::CodecError::ResourceLimit(prior) = prior else {
+        panic!("resource refusal")
+    };
+    assert!(matches!(object_error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == prior));
+    assert!(matches!(neutral_error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == prior));
+}
+
+#[test]
+fn drawing_duplicate_property_index_does_not_charge_unvisited_suffix() {
+    let small = vec![
+        property_record("fcstd:native:object#View", "Duplicate", "App::PropertyString"),
+        property_record("fcstd:native:object#View", "Duplicate", "App::PropertyString"),
+    ];
+    let mut long = small.clone();
+    for index in 0..32 {
+        long.push(property_record(
+            "fcstd:native:object#View",
+            &format!("Suffix{index}"),
+            "App::PropertyString",
+        ));
+    }
+    assert_eq!(
+        work_before_duplicate_property_follow_up(&small),
+        work_before_duplicate_property_follow_up(&long)
+    );
+}
+
+#[test]
+fn drawing_malformed_page_carrier_does_not_charge_unvisited_object_suffix() {
+    let page = object_record("Page", "TechDraw::DrawPage");
+    let small = vec![page.clone(), object_record("Suffix0", "Part::Feature")];
+    let mut long = small.clone();
+    for index in 1..32 {
+        long.push(object_record(
+            &format!("Suffix{index}"),
+            "Part::Feature",
+        ));
+    }
+    let properties = [property_record(
+        "fcstd:native:object#Page",
+        "Views",
+        "App::PropertyString",
+    )];
+    assert_eq!(
+        work_before_malformed_drawing_object_suffix(&small, &properties),
+        work_before_malformed_drawing_object_suffix(&long, &properties)
+    );
+}
+
 fn resource_drawing_record() -> crate::native::DrawingRecord {
     crate::native::DrawingRecord {
         id: "fcstd:native:drawing#Page".into(),
@@ -56,6 +167,84 @@ fn resource_drawing_record() -> crate::native::DrawingRecord {
         parameters: std::collections::BTreeMap::default(),
         side_entries: Vec::new(),
     }
+}
+
+fn object_record(name: &str, type_name: &str) -> crate::native::ObjectRecord {
+    crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            crate::native::native_id("object", name),
+            name.to_owned(),
+        )
+        .expect("object identity"),
+        type_name: type_name.to_owned(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    }
+}
+
+fn property_record(owner: &str, name: &str, type_name: &str) -> crate::native::PropertyRecord {
+    crate::native::PropertyRecord {
+        id: format!("fcstd:native:property#{name}"),
+        owner: owner.to_owned(),
+        name: name.to_owned(),
+        type_name: type_name.to_owned(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
+    }
+}
+
+fn work_before_duplicate_property_follow_up(properties: &[crate::native::PropertyRecord]) -> u64 {
+    let property_refs = properties.iter().collect::<Vec<_>>();
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "after duplicate drawing property",
+        |ctx| {
+            assert!(matches!(
+                super::ensure_unique_property_names(ctx, &property_refs),
+                Err(cadmpeg_core::CodecError::Malformed(message))
+                    if message.contains("drawing property Duplicate occurs more than once")
+            ));
+            ctx.charge_work(1, "after duplicate drawing property")
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal")
+    };
+    assert_eq!(limit.operation, "after duplicate drawing property");
+    limit.used
+}
+
+fn work_before_malformed_drawing_object_suffix(
+    objects: &[crate::native::ObjectRecord],
+    properties: &[crate::native::PropertyRecord],
+) -> u64 {
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "after malformed drawing page carrier",
+        |ctx| {
+            assert!(matches!(
+                super::transfer(ctx, objects, properties),
+                Err(cadmpeg_core::CodecError::Malformed(message))
+                    if message.contains("Views has runtime type")
+            ));
+            ctx.charge_work(1, "after malformed drawing page carrier")
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal")
+    };
+    assert_eq!(limit.operation, "after malformed drawing page carrier");
+    limit.used
 }
 
 #[test]

@@ -156,7 +156,7 @@ pub(crate) fn scan<'a, 'c>(
             id: crate::native::native_id_charged(ctx, "archive-span", &index.to_string())?,
             span: crate::native::ByteSpan::try_new(span.start, span.end)
                 .map_err(CodecError::Malformed)?,
-            role: crate::native::ArchiveSpanRole::from(&span.role),
+            role: crate::native::ArchiveSpanRole::from(span.role),
         });
     }
     Ok(Scan {

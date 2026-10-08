@@ -925,6 +925,43 @@ mod tests {
         assert_eq!(role, super::ArchiveSpanRole::EndRecord);
     }
 
+    #[test]
+    fn owned_archive_roles_preserve_labels_and_entry_allocations() {
+        use cadmpeg_container::ZipSpanRole;
+        let constructors: [(fn(String) -> ZipSpanRole, &str); 12] = [
+            (ZipSpanRole::LocalSignature, "local-signature"),
+            (ZipSpanRole::LocalFields, "local-fields"),
+            (ZipSpanRole::LocalName, "local-name"),
+            (ZipSpanRole::LocalExtra, "local-extra"),
+            (ZipSpanRole::CompressedPayload, "compressed-payload"),
+            (ZipSpanRole::DataDescriptor, "data-descriptor"),
+            (ZipSpanRole::CentralSignature, "central-signature"),
+            (ZipSpanRole::CentralFields, "central-fields"),
+            (ZipSpanRole::CentralName, "central-name"),
+            (ZipSpanRole::CentralExtra, "central-extra"),
+            (ZipSpanRole::CentralComment, "central-comment"),
+            (|entry| ZipSpanRole::Padding { entry: Some(entry) }, "archive-padding"),
+        ];
+        for (constructor, label) in constructors {
+            let entry = "SyntheticEntry.xml".to_owned();
+            let allocation = entry.as_ptr();
+            let role = super::ArchiveSpanRole::from(constructor(entry));
+            assert_eq!(role.as_str(), label);
+            assert_eq!(role.entry(), Some("SyntheticEntry.xml"));
+            assert_eq!(role.entry().expect("named role").as_ptr(), allocation);
+        }
+        for (role, label) in [
+            (ZipSpanRole::Padding { entry: None }, "archive-padding"),
+            (ZipSpanRole::Zip64EndRecord, "zip64-end-record"),
+            (ZipSpanRole::Zip64EndLocator, "zip64-end-locator"),
+            (ZipSpanRole::EndRecord, "end-record"),
+        ] {
+            let role = super::ArchiveSpanRole::from(role);
+            assert_eq!(role.as_str(), label);
+            assert_eq!(role.entry(), None);
+        }
+    }
+
     fn charged_string_table(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         entries: Vec<super::StringTableEntry>,
@@ -3378,6 +3415,30 @@ pub(crate) enum ArchiveSpanRole {
     EndRecord,
     /// ZIP padding not owned by an entry.
     ArchivePadding,
+}
+
+impl From<cadmpeg_container::ZipSpanRole> for ArchiveSpanRole {
+    fn from(role: cadmpeg_container::ZipSpanRole) -> Self {
+        use cadmpeg_container::ZipSpanRole;
+        match role {
+            ZipSpanRole::LocalSignature(entry) => Self::LocalSignature(entry),
+            ZipSpanRole::LocalFields(entry) => Self::LocalFields(entry),
+            ZipSpanRole::LocalName(entry) => Self::LocalName(entry),
+            ZipSpanRole::LocalExtra(entry) => Self::LocalExtra(entry),
+            ZipSpanRole::CompressedPayload(entry) => Self::CompressedPayload(entry),
+            ZipSpanRole::DataDescriptor(entry) => Self::DataDescriptor(entry),
+            ZipSpanRole::CentralSignature(entry) => Self::CentralSignature(entry),
+            ZipSpanRole::CentralFields(entry) => Self::CentralFields(entry),
+            ZipSpanRole::CentralName(entry) => Self::CentralName(entry),
+            ZipSpanRole::CentralExtra(entry) => Self::CentralExtra(entry),
+            ZipSpanRole::CentralComment(entry) => Self::CentralComment(entry),
+            ZipSpanRole::Padding { entry: Some(entry) } => Self::EntryArchivePadding(entry),
+            ZipSpanRole::Padding { entry: None } => Self::ArchivePadding,
+            ZipSpanRole::Zip64EndRecord => Self::Zip64EndRecord,
+            ZipSpanRole::Zip64EndLocator => Self::Zip64EndLocator,
+            ZipSpanRole::EndRecord => Self::EndRecord,
+        }
+    }
 }
 
 impl From<&cadmpeg_container::ZipSpanRole> for ArchiveSpanRole {

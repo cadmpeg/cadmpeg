@@ -24,6 +24,10 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<DrawingRecord>, CodecError> {
+    if objects.is_empty() {
+        ctx.reserve_scoped(0, "fcstd drawing object search")?;
+        return Ok(Vec::new());
+    }
     if !ctx.any_by(
         objects,
         |object| Ok(is_registered_drawing_type(&object.type_name)),
@@ -31,17 +35,23 @@ pub(crate) fn transfer(
     )? {
         return Ok(Vec::new());
     }
-    let (by_owner, _owner_storage) = ctx.collect_scoped_btree_groups(
+    let by_owner = ctx.collect_scoped_btree_groups(
         properties
             .iter()
             .map(|property| (property.owner.as_str(), property)),
         "fcstd drawing owner properties",
     )?;
+    let _owner_storage = by_owner.1;
+    let by_owner = by_owner.0;
     let mut drawings = Vec::new();
-    for object in ctx
-        .admit_iter(objects, "fcstd drawing objects")?
-        .filter(|object| is_registered_drawing_type(&object.type_name))
-    {
+    let mut object_iter = objects.iter();
+    while object_iter.len() != 0 {
+        let Some(object) = ctx.next_charged(&mut object_iter, "fcstd drawing objects")? else {
+            break;
+        };
+        if !is_registered_drawing_type(&object.type_name) {
+            continue;
+        }
         let owned = ctx
             .get_btree_map(
                 &by_owner,
@@ -49,17 +59,20 @@ pub(crate) fn transfer(
                 "fcstd drawing owner lookup",
             )?
             .map_or(&[][..], Vec::as_slice);
-        let (property_index, _property_storage) = ensure_unique_property_names(ctx, owned)?;
+        let property_index = ensure_unique_property_names(ctx, owned)?;
+        let _property_storage = property_index.1;
+        let property_index = property_index.0;
         let kind = if is_page_type(&object.type_name) {
             let view_links =
                 typed_property(ctx, &property_index, "Views", "App::PropertyLinkList")?
                     .map_or(&[][..], PropertyRecord::links);
             let mut views = ctx.collection_vec(view_links.len(), "fcstd drawing page views")?;
-            for link in ctx
-                .admit_iter(view_links, "fcstd drawing page links")?
-                .flatten()
-            {
-                if let Some(name) = link.object() {
+            let mut view_link_iter = view_links.iter();
+            while view_link_iter.len() != 0 {
+                let Some(link) = ctx.next_charged(&mut view_link_iter, "fcstd drawing page links")? else {
+                    break;
+                };
+                if let Some(name) = link.as_ref().and_then(crate::native::LinkTarget::object) {
                     views.push(ctx.copy_retained_text(name, "fcstd drawing page view")?);
                 }
             }
@@ -98,13 +111,24 @@ pub(crate) fn transfer(
             append_source_links(ctx, &property_index, name, &mut sources)?;
         }
         let mut relationships = BTreeMap::new();
-        for property in ctx
-            .admit_iter(owned, "fcstd drawing relationship properties")?
-            .filter(|property| !property.links().is_empty())
-        {
+        let mut relationship_property_iter = owned.iter();
+        while relationship_property_iter.len() != 0 {
+            let Some(property) = ctx.next_charged(
+            &mut relationship_property_iter,
+            "fcstd drawing relationship properties",
+        )? else {
+                break;
+            };
+            if property.links().is_empty() {
+                continue;
+            }
             let mut links =
                 ctx.collection_vec(property.links().len(), "fcstd drawing relationship links")?;
-            for link in ctx.admit_iter(property.links(), "fcstd drawing link visits")? {
+            let mut link_iter = property.links().iter();
+            while link_iter.len() != 0 {
+                let Some(link) = ctx.next_charged(&mut link_iter, "fcstd drawing link visits")? else {
+                    break;
+                };
                 links.push(
                     link.as_ref()
                         .map(|link| link.clone_with_context(ctx))
@@ -119,8 +143,16 @@ pub(crate) fn transfer(
             )?;
         }
         let mut side_entries = Vec::new();
-        for property in ctx.admit_iter(owned, "fcstd drawing asset properties")? {
-            for name in ctx.admit_iter(property.side_entries(), "fcstd drawing side-entry names")? {
+        let mut asset_property_iter = owned.iter();
+        while asset_property_iter.len() != 0 {
+            let Some(property) = ctx.next_charged(&mut asset_property_iter, "fcstd drawing asset properties")? else {
+                break;
+            };
+            let mut side_entry_iter = property.side_entries().iter();
+            while side_entry_iter.len() != 0 {
+                let Some(name) = ctx.next_charged(&mut side_entry_iter, "fcstd drawing side-entry names")? else {
+                    break;
+                };
                 ctx.reserve_vec(&mut side_entries, 1, "fcstd drawing side entries")?;
                 side_entries.push(ctx.copy_retained_text(name, "fcstd drawing side entry")?);
             }
@@ -148,12 +180,19 @@ pub(crate) fn transfer_neutral(
     records: &[DrawingRecord],
     properties: &[PropertyRecord],
 ) -> Result<(), CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "FreeCAD drawing neutral lookup")?;
     if records.is_empty() {
         return Ok(());
     }
-    let mut lookup_storage = ctx.reserve_scoped(0, "FreeCAD drawing neutral lookup")?;
     let mut neutral_ids = BTreeMap::new();
-    for record in ctx.admit_iter(records, "fcstd drawing neutral identity records")? {
+    let mut identity_record_iter = records.iter();
+    while identity_record_iter.len() != 0 {
+        let Some(record) = ctx.next_charged(
+        &mut identity_record_iter,
+        "fcstd drawing neutral identity records",
+    )? else {
+            break;
+        };
         lookup_storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut neutral_ids,
@@ -169,16 +208,19 @@ pub(crate) fn transfer_neutral(
             )
         })?;
     }
-    let (by_owner, _owner_storage) = ctx.collect_scoped_btree_groups(
+    let by_owner = ctx.collect_scoped_btree_groups(
         properties
             .iter()
             .map(|property| (property.owner.as_str(), property)),
         "fcstd neutral drawing properties",
     )?;
-    for (order, record) in ctx
-        .admit_iter(records, "fcstd neutral drawing records")?
-        .enumerate()
-    {
+    let _owner_storage = by_owner.1;
+    let by_owner = by_owner.0;
+    let mut record_iter = records.iter().enumerate();
+    while record_iter.len() != 0 {
+        let Some((order, record)) = ctx.next_charged(&mut record_iter, "fcstd neutral drawing records")? else {
+            break;
+        };
         let owned = ctx
             .get_btree_map(
                 &by_owner,
@@ -186,7 +228,9 @@ pub(crate) fn transfer_neutral(
                 "fcstd neutral drawing owner lookup",
             )?
             .map_or(&[][..], Vec::as_slice);
-        let (property_index, _property_storage) = ensure_unique_property_names(ctx, owned)?;
+        let property_index = ensure_unique_property_names(ctx, owned)?;
+        let _property_storage = property_index.1;
+        let property_index = property_index.0;
         let relationship = |link: &Option<crate::native::LinkTarget>| {
             let Some(link) = link.as_ref() else {
                 return Ok(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
@@ -259,12 +303,18 @@ pub(crate) fn transfer_neutral(
         };
         let position = position.map(FiniteVector::from);
         let mut relationships = BTreeMap::new();
-        for (role, targets) in
-            ctx.admit_iter(&record.relationships, "fcstd drawing relationship roles")?
-        {
+        let mut role_iter = record.relationships.iter();
+        while role_iter.len() != 0 {
+            let Some((role, targets)) = ctx.next_charged(&mut role_iter, "fcstd drawing relationship roles")? else {
+                break;
+            };
             let mut selections =
                 ctx.collection_vec(targets.len(), "fcstd drawing neutral relationships")?;
-            for link in ctx.admit_iter(targets, "fcstd drawing relationship targets")? {
+            let mut target_iter = targets.iter();
+            while target_iter.len() != 0 {
+                let Some(link) = ctx.next_charged(&mut target_iter, "fcstd drawing relationship targets")? else {
+                    break;
+                };
                 selections.push(relationship(link)?);
             }
             ctx.insert_btree_map(
@@ -302,9 +352,14 @@ pub(crate) fn transfer_neutral(
             .transpose()?;
         ctx.reserve_vec(&mut model.drawings, 1, "fcstd neutral drawings")?;
         let mut parameters = BTreeMap::new();
-        for (name, value) in
-            ctx.admit_iter(&record.parameters, "fcstd drawing parameter entries")?
-        {
+        let mut parameter_iter = record.parameters.iter();
+        while parameter_iter.len() != 0 {
+            let Some((name, value)) = ctx.next_charged(
+            &mut parameter_iter,
+            "fcstd drawing parameter entries",
+        )? else {
+                break;
+            };
             ctx.insert_btree_map(
                 &mut parameters,
                 ctx.copy_retained_text(name, "fcstd drawing parameter name")?,
@@ -313,7 +368,11 @@ pub(crate) fn transfer_neutral(
             )?;
         }
         let mut assets = ctx.collection_vec(record.side_entries.len(), "fcstd drawing assets")?;
-        for name in ctx.admit_iter(&record.side_entries, "fcstd drawing asset names")? {
+        let mut asset_iter = record.side_entries.iter();
+        while asset_iter.len() != 0 {
+            let Some(name) = ctx.next_charged(&mut asset_iter, "fcstd drawing asset names")? else {
+                break;
+            };
             assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
         }
         model.drawings.push(Drawing {
@@ -527,7 +586,11 @@ fn append_source_links(
         ));
     }
     ctx.reserve_vec(links, property.links().len(), "fcstd drawing source links")?;
-    for link in ctx.admit_iter(property.links(), "fcstd drawing source link visits")? {
+    let mut link_iter = property.links().iter();
+    while link_iter.len() != 0 {
+        let Some(link) = ctx.next_charged(&mut link_iter, "fcstd drawing source link visits")? else {
+            break;
+        };
         links.push(
             link.as_ref()
                 .map(|link| link.clone_with_context(ctx))
@@ -739,9 +802,13 @@ fn ensure_unique_property_names<'ctx, 'prop>(
     ctx: &'ctx DecodeContext<'_>,
     properties: &[&'prop PropertyRecord],
 ) -> Result<(PropertyIndex<'prop>, ScopedReservation<'ctx>), CodecError> {
-    let mut names = BTreeMap::new();
     let mut storage = ctx.reserve_scoped(0, "fcstd drawing property index")?;
-    for property in ctx.admit_iter(properties, "fcstd drawing unique property visits")? {
+    let mut names = BTreeMap::new();
+    let mut property_iter = properties.iter();
+    while property_iter.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut property_iter, "fcstd drawing unique property visits")? else {
+            break;
+        };
         let previous = storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut names,
@@ -846,6 +913,9 @@ fn scalar_value(
     type_name: &str,
     value: &ValueRecord,
 ) -> Result<Option<FiniteReal>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let allowed_attributes: &[&str] =
         if name == "Scale" && type_name == "App::PropertyFloatConstraint" {
             &["value", "min", "max", "step"]
@@ -854,9 +924,10 @@ fn scalar_value(
         };
     let mut scalar = None;
     let mut attributes = value.attributes.iter();
-    while let Some((attribute, text)) =
-        ctx.next_charged(&mut attributes, "fcstd drawing scalar attributes")?
-    {
+    while attributes.len() != 0 {
+        let Some((attribute, text)) = ctx.next_charged(&mut attributes, "fcstd drawing scalar attributes")? else {
+            break;
+        };
         if !allowed_attributes.contains(&attribute.as_str()) {
             return Ok(None);
         }
