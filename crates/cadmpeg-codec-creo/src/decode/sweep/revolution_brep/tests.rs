@@ -280,6 +280,53 @@ fn closed_off_axis_revolution_reaches_brep_admission() {
     assert!(losses.is_empty());
 }
 
+#[test]
+fn revolution_coedge_transfer_keeps_reciprocal_radial_identity() {
+    use cadmpeg_ir::topology::{LoopBoundary, Sense};
+
+    let (scan, mut ir) = closed_off_axis_revolution();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    assert_eq!(transfer_resolved_revolution_breps(
+        &ctx, &scan, &mut ir, &mut AnnotationBuilder::new(), &mut losses,
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    ).expect("closed revolution"), 1);
+    assert!(losses.is_empty());
+    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.model.shells.len(), 1);
+    assert_eq!(ir.model.faces.len(), 4);
+    assert_eq!(ir.model.edges.len(), 4);
+    assert_eq!(ir.model.loops.len(), 8);
+    assert_eq!(ir.model.coedges.len(), 8);
+    for index in 0..4 {
+        for (slot, boundary, vertex, radial, other, sense) in [
+            (0, "start", index, (index + 3) % 4, "end", Sense::Reversed),
+            (1, "end", (index + 1) % 4, (index + 1) % 4, "start", Sense::Forward),
+        ] {
+            let coedge = &ir.model.coedges[index * 2 + slot];
+            let loop_record = &ir.model.loops[index * 2 + slot];
+            assert_eq!(coedge.id.as_str(), format!("creo:feature:revolution#40:coedge:{index}:{boundary}"));
+            assert_eq!(coedge.owner_loop.as_str(), format!("creo:feature:revolution#40:loop:{index}:{boundary}"));
+            assert_eq!(coedge.edge.as_str(), format!("creo:feature:revolution#40:edge:vertex:{vertex}"));
+            assert_eq!(coedge.radial_next.as_str(), format!("creo:feature:revolution#40:coedge:{radial}:{other}"));
+            assert_eq!(coedge.sense, sense);
+            assert_eq!(loop_record.id, coedge.owner_loop);
+            assert_eq!(loop_record.face, ir.model.faces[index].id);
+            let LoopBoundary::Ring(ring) = &loop_record.boundary else {
+                panic!("revolution boundary is a ring");
+            };
+            assert_eq!(ring.coedges(), std::slice::from_ref(&coedge.id));
+            assert_eq!(coedge.pcurves.len(), 1);
+            let radial = ir.model.coedges.iter().find(|other| other.id == coedge.radial_next)
+                .expect("radial peer");
+            assert_eq!(radial.radial_next, coedge.id);
+            assert_eq!(radial.edge, coedge.edge);
+        }
+    }
+}
+
 fn revolution_refuses_at_collection_boundary(operation: &'static str) {
     let run = |limit| {
         let (scan, mut ir) = closed_off_axis_revolution();

@@ -352,10 +352,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let region_id: RegionId = revolution_identity(ctx, feature_id, "region")?;
         let shell_id: ShellId = revolution_identity(ctx, feature_id, "shell")?;
         let count = profile.len();
-        let (mut edges, mut edge_storage) = ctx
-            .with_scoped_storage("creo revolution profile edges", || {
-                ctx.collect_indexed_vec(count, "creo revolution profile edges", |_| Ok(None))
-            })?;
+        let mut edge_storage = ctx.reserve_scoped(0, "creo revolution profile edges")?;
+        let mut edges = edge_storage.with_storage(|| {
+            ctx.collect_indexed_vec(count, "creo revolution profile edges", |_| Ok(None))
+        })?;
         for (index, (entity, curve_geometry)) in ctx
             .admit_iter(profile.as_slice(), "creo revolution edge traversal")?
             .zip(vertex_curves)
@@ -474,14 +474,11 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     feature_id,
                     format_args!("loop:{index}:{boundary_key}"),
                 )?;
-                let (coedge_id, _coedge_storage) =
-                    ctx.with_scoped_storage("creo revolution coedge identity scratch", || {
-                        revolution_identity::<CoedgeId>(
-                            ctx,
-                            feature_id,
-                            format_args!("coedge:{index}:{boundary_key}"),
-                        )
-                    })?;
+                let coedge_id: CoedgeId = revolution_identity(
+                    ctx,
+                    feature_id,
+                    format_args!("coedge:{index}:{boundary_key}"),
+                )?;
                 let radial_index = match boundary {
                     RevolutionBoundary::Start => (index + count - 1) % count,
                     RevolutionBoundary::End => next,
@@ -527,7 +524,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     ctx,
                     ir,
                     Coedge {
-                        id: coedge_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                        id: coedge_id,
                         owner_loop: loop_id
                             .try_clone_for_decode(ctx, "creo revolution identity copy")?,
                         edge: edge_id,
@@ -562,6 +559,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             ctx.reserve_vec(&mut faces, 1, "creo revolution shell face IDs")?;
             faces.push(face_id);
         }
+        drop(edges);
+        drop(edge_storage);
         let Ok(shell) = Shell::new(
             shell_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
             region_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
