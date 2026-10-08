@@ -398,3 +398,19 @@ fn kernel_recovery_text_matches_shared_dialect_message() {
     .expect("shared kernel message");
     assert_eq!(loss.message, expected);
 }
+
+#[test]
+fn recovery_declared_lookups_preserve_work_refusals() {
+    let matched = classify_document("3-3-0-0");
+    for operation in [
+        "find F3D manifest recovery version",
+        "find F3D dialect archive member",
+    ] {
+        crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| dialect_loss(ctx, &matched),
+        );
+    }
+}

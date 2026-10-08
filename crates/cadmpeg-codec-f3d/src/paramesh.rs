@@ -138,6 +138,22 @@ pub(crate) enum MeshAttributeDomain {
     Triangle,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for MeshAttributeDomain {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 /// One attribute channel a container's registry declares.
 pub(crate) struct MeshAttribute {
     /// The role the registry records for the attribute.
@@ -531,17 +547,17 @@ impl UniqueFaceGroups {
     fn new(ctx: &DecodeContext<'_>, groups: Vec<(u32, String)>) -> Result<Self, CodecError> {
         let mut keys = ctx.temporary_set::<u32>(0, "index paramesh group keys")?;
         let mut guids = ctx.temporary_set::<[u8; 36]>(0, "index paramesh group GUIDs")?;
-        for (key, guid) in ctx.admit_iter(&groups, "validate paramesh face groups")? {
+        let mut entries = groups.iter();
+        while let Some((key, guid)) =
+            ctx.next_charged(&mut entries, "validate paramesh face groups")?
+        {
             if !crate::bytes::is_guid_hyphenated(guid) {
                 return Err(CodecError::malformed(
                     "paramesh face-group identity is not a GUID",
                 ));
             }
             let mut canonical = [0; 36];
-            for (target, source) in canonical.iter_mut().zip(
-                ctx.admit_iter(guid.as_bytes(), "canonicalize paramesh group GUID")?
-                    .copied(),
-            ) {
+            for (target, source) in canonical.iter_mut().zip(guid.as_bytes().iter().copied()) {
                 *target = source.to_ascii_lowercase();
             }
             if !keys.1.with_storage(|| {
@@ -669,7 +685,10 @@ fn channel_streams<'a>(
     let mut element_code = None;
     let mut values = None;
     let mut index = None;
-    let fields = protobuf_fields(ctx, entry)?;
+    let (fields, _fields_storage) = ctx
+        .with_scoped_storage("stage paramesh protobuf fields", || {
+            protobuf_fields(ctx, entry)
+        })?;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf entry fields")? {
         match (*field, *value) {
             (STREAM_ELEMENT_CODE, ProtobufValue::Varint(code)) => {
@@ -728,7 +747,10 @@ fn channel_streams<'a>(
 fn channel_group(ctx: &DecodeContext<'_>, entry: &[u8]) -> Result<(u32, String), CodecError> {
     let mut key = None;
     let mut group_guid = None;
-    let fields = protobuf_fields(ctx, entry)?;
+    let (fields, _fields_storage) = ctx
+        .with_scoped_storage("stage paramesh protobuf fields", || {
+            protobuf_fields(ctx, entry)
+        })?;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf entry fields")? {
         match (*field, *value) {
             (GROUP_KEY, ProtobufValue::Varint(value)) => {
@@ -778,7 +800,10 @@ fn registry_channel<'a>(
     let mut resource_guid = None;
     let mut streams = None;
     let mut groups: Vec<(u32, String)> = Vec::new();
-    let fields = protobuf_fields(ctx, entry)?;
+    let (fields, _fields_storage) = ctx
+        .with_scoped_storage("stage paramesh protobuf fields", || {
+            protobuf_fields(ctx, entry)
+        })?;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf entry fields")? {
         match (*field, *value) {
             (CHANNEL_ROLE, ProtobufValue::Varint(value)) => {
@@ -843,7 +868,10 @@ fn registry_property(
 ) -> Result<(String, RegistryProperty), CodecError> {
     let mut key = None;
     let mut value = None;
-    let fields = protobuf_fields(ctx, entry)?;
+    let (fields, _fields_storage) = ctx
+        .with_scoped_storage("stage paramesh protobuf fields", || {
+            protobuf_fields(ctx, entry)
+        })?;
     for (field, field_value) in ctx.admit_iter(&fields, "read paramesh registry property fields")? {
         match (*field, *field_value) {
             (PROPERTY_KEY, ProtobufValue::Bytes(bytes)) => {
@@ -883,18 +911,26 @@ fn registry_property(
 }
 
 /// Decode every singleton and property in the version-2 top-level registry.
-fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry, CodecError> {
+fn mesh_registry<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    message: &[u8],
+) -> Result<(MeshRegistry, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    let mut registry_storage = ctx.reserve_scoped(0, "stage paramesh registry names")?;
     let mut properties = std::collections::BTreeMap::new();
     let mut face_group_count = None;
     let mut mesh_uuid = None;
     let mut vertex_stream = None;
     let mut triangle_stream = None;
-    let fields = protobuf_fields(ctx, message)?;
+    let (fields, _fields_storage) = ctx
+        .with_scoped_storage("stage paramesh protobuf fields", || {
+            protobuf_fields(ctx, message)
+        })?;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf message fields")? {
         match (*field, *value) {
             (REGISTRY_VERTEX_CHANNEL | REGISTRY_TRIANGLE_CHANNEL | REGISTRY_FEATURE_EDGES, _) => {}
             (REGISTRY_PROPERTY, ProtobufValue::Bytes(entry)) => {
-                let (key, value) = registry_property(ctx, entry)?;
+                let (key, value) =
+                    registry_storage.with_storage(|| registry_property(ctx, entry))?;
                 if ctx.contains_key_btree_map(
                     &properties,
                     &key,
@@ -904,12 +940,14 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
                         "paramesh registry repeats a property key",
                     ));
                 }
-                ctx.insert_btree_map(
-                    &mut properties,
-                    key,
-                    value,
-                    "index paramesh registry properties",
-                )?;
+                registry_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut properties,
+                        key,
+                        value,
+                        "index paramesh registry properties",
+                    )
+                })?;
             }
             (REGISTRY_FACE_GROUP_COUNT, ProtobufValue::Varint(value)) => {
                 let value = u32::try_from(value).map_err(|_| {
@@ -933,7 +971,8 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
                 }
             }
             (REGISTRY_VERTICES, ProtobufValue::Bytes(value)) => {
-                let value = utf8(ctx, value, "vertex-stream name")?;
+                let value =
+                    registry_storage.with_storage(|| utf8(ctx, value, "vertex-stream name"))?;
                 if vertex_stream.replace(value).is_some() {
                     return Err(CodecError::malformed(
                         "paramesh registry repeats its vertex-stream name",
@@ -941,7 +980,8 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
                 }
             }
             (REGISTRY_TRIANGLES, ProtobufValue::Bytes(value)) => {
-                let value = utf8(ctx, value, "triangle-stream name")?;
+                let value =
+                    registry_storage.with_storage(|| utf8(ctx, value, "triangle-stream name"))?;
                 if triangle_stream.replace(value).is_some() {
                     return Err(CodecError::malformed(
                         "paramesh registry repeats its triangle-stream name",
@@ -968,20 +1008,25 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
         }
     }
 
-    let fusion_uuid = match properties.remove("fusion_uuid") {
-        Some(RegistryProperty::Text(value)) => guid(ctx, value.as_bytes(), "fusion_uuid")?,
-        Some(RegistryProperty::Stream(_)) => {
-            return Err(CodecError::malformed(
-                "paramesh fusion_uuid property is not text",
-            ));
-        }
-        None => {
-            return Err(CodecError::malformed(
-                "paramesh registry has no fusion_uuid property",
-            ))
-        }
-    };
-    let attribute_name_stream = match properties.remove("attname.amt.autodesk") {
+    let fusion_uuid =
+        match ctx.remove_btree_map(&mut properties, "fusion_uuid", "select paramesh mesh UUID")? {
+            Some(RegistryProperty::Text(value)) => guid(ctx, value.as_bytes(), "fusion_uuid")?,
+            Some(RegistryProperty::Stream(_)) => {
+                return Err(CodecError::malformed(
+                    "paramesh fusion_uuid property is not text",
+                ));
+            }
+            None => {
+                return Err(CodecError::malformed(
+                    "paramesh registry has no fusion_uuid property",
+                ))
+            }
+        };
+    let attribute_name_stream = match ctx.remove_btree_map(
+        &mut properties,
+        "attname.amt.autodesk",
+        "select paramesh attribute-name stream",
+    )? {
         Some(RegistryProperty::Stream(value)) => Some(value),
         Some(RegistryProperty::Text(_)) => {
             return Err(CodecError::malformed(
@@ -990,19 +1035,24 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
         }
         None => None,
     };
-    Ok(MeshRegistry {
-        fusion_uuid,
-        mesh_uuid: mesh_uuid
-            .ok_or_else(|| CodecError::malformed("paramesh registry has no mesh UUID"))?,
-        face_group_count: face_group_count
-            .ok_or_else(|| CodecError::malformed("paramesh registry has no face-group count"))?,
-        vertex_stream: vertex_stream
-            .ok_or_else(|| CodecError::malformed("paramesh registry has no vertex-stream name"))?,
-        triangle_stream: triangle_stream.ok_or_else(|| {
-            CodecError::malformed("paramesh registry has no triangle-stream name")
-        })?,
-        attribute_name_stream,
-    })
+    Ok((
+        MeshRegistry {
+            fusion_uuid,
+            mesh_uuid: mesh_uuid
+                .ok_or_else(|| CodecError::malformed("paramesh registry has no mesh UUID"))?,
+            face_group_count: face_group_count.ok_or_else(|| {
+                CodecError::malformed("paramesh registry has no face-group count")
+            })?,
+            vertex_stream: vertex_stream.ok_or_else(|| {
+                CodecError::malformed("paramesh registry has no vertex-stream name")
+            })?,
+            triangle_stream: triangle_stream.ok_or_else(|| {
+                CodecError::malformed("paramesh registry has no triangle-stream name")
+            })?,
+            attribute_name_stream,
+        },
+        registry_storage,
+    ))
 }
 
 /// Read one `MessagePack` value from a stream-name table. The table uses string
@@ -1020,12 +1070,12 @@ fn message_pack_name_table(
             .get(*at)
             .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?;
         *at += 1;
-        let (width, value) = match tag {
+        let width = match tag {
             0x00..=0x7f => return Ok(u64::from(tag)),
-            0xcc => (1, 0),
-            0xcd => (2, 0),
-            0xce => (4, 0),
-            0xcf => (8, 0),
+            0xcc => 1,
+            0xcd => 2,
+            0xce => 4,
+            0xcf => 8,
             _ => {
                 return Err(CodecError::malformed(
                     "paramesh name table holds a non-integer stream id",
@@ -1036,10 +1086,16 @@ fn message_pack_name_table(
             .get(*at..*at + width)
             .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?;
         *at += width;
-        // MessagePack integers are big-endian.
-        Ok(ctx
-            .admit_iter(raw, "parse paramesh name-table integer bytes")?
-            .fold(value, |total, byte| (total << 8) | u64::from(*byte)))
+        ctx.charge_work(0, "parse paramesh name-table integer bytes")?;
+        let mut view = View::over_retained(raw);
+        match width {
+            1 => view.u8().map(u64::from),
+            2 => view.u16_be().map(u64::from),
+            4 => view.u32_be().map(u64::from),
+            8 => view.u64_be(),
+            _ => None,
+        }
+        .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))
     }
 
     fn take_string(
@@ -1123,6 +1179,8 @@ struct MeshStream {
     bytes: Vec<u8>,
 }
 
+type NamedStreams<'a> = std::collections::HashMap<&'a str, Option<&'a MeshStream>>;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StreamDescriptorValue {
     Integer(u64),
@@ -1130,22 +1188,18 @@ enum StreamDescriptorValue {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for StreamDescriptorValue {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
     fn decode_cost(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<u64, CodecError> {
-        let value_bytes = match self {
-            Self::Integer(value) => {
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
-            }
-            Self::Boolean(value) => {
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
-            }
-        };
-        1_u64
-            .checked_add(value_bytes)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -1181,10 +1235,17 @@ fn stream_descriptor(
             .get(*at..*at + width)
             .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
         *at += width;
-        Ok(StreamDescriptorValue::Integer(
-            ctx.admit_iter(raw, "parse paramesh descriptor scalar bytes")?
-                .fold(0, |value, byte| (value << 8) | u64::from(*byte)),
-        ))
+        ctx.charge_work(0, "parse paramesh descriptor scalar bytes")?;
+        let mut view = View::over_retained(raw);
+        let integer = match width {
+            1 => view.u8().map(u64::from),
+            2 => view.u16_be().map(u64::from),
+            4 => view.u32_be().map(u64::from),
+            8 => view.u64_be(),
+            _ => None,
+        }
+        .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
+        Ok(StreamDescriptorValue::Integer(integer))
     }
 
     let mut at = 0usize;
@@ -1254,9 +1315,8 @@ fn stream_descriptor(
 fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, CodecError> {
     // LZMA1 uses 8 literal contexts, four 64-entry position trees, a
     // 16-entry alignment tree and two length decoders of 512 probabilities.
-    // The dictionary reservation also covers its old buffer during growth.
     const PROBABILITY_COUNT: u64 = 8 * 0x300 + 4 * 64 + 16 + 2 * 512;
-    const SCRATCH_BYTES: u64 = 2 * (1 << LZMA_DICTIONARY_LOG) + 2 * PROBABILITY_COUNT;
+    const SCRATCH_BYTES: u64 = 2 * PROBABILITY_COUNT;
 
     let descriptor_count = usize::from(
         View::u16_le_at(body, 0)
@@ -1305,22 +1365,6 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
         ));
     }
     let _decoder_storage = ctx.reserve_scoped(SCRATCH_BYTES, "paramesh LZMA scratch")?;
-    // Each symbol emits a byte or ends the stream. At most 256 range-bit,
-    // lookahead and dictionary steps are admitted per output byte, including
-    // a final 273-byte match that crosses the declared output boundary.
-    let work = u64::from(declared)
-        .checked_add(273)
-        .and_then(|count| count.checked_mul(256))
-        .and_then(|count| count.checked_add(PROBABILITY_COUNT))
-        .and_then(|count| count.checked_add(2 * (1 << LZMA_DICTIONARY_LOG)))
-        .and_then(|count| {
-            cadmpeg_core::decode::u64_from_index(payload.len())
-                .checked_mul(2)
-                .and_then(|bytes| count.checked_add(bytes))
-        })
-        .and_then(|count| count.checked_add(5))
-        .ok_or_else(|| ctx.refuse_codec_limit("paramesh LZMA work", 0, u64::MAX))?;
-    ctx.charge_work(work, "paramesh LZMA work")?;
     // `lzma-rs` reads the properties byte and the four-byte dictionary size
     // from the stream. The container stores a properties byte and a base-2
     // dictionary exponent.
@@ -1412,6 +1456,7 @@ fn require_layout(
     stream: &MeshStream,
     layout: StreamLayout,
 ) -> Result<(), CodecError> {
+    const MISMATCH: &str = "paramesh stream descriptor does not match its implemented layout";
     let expected: &[(&str, StreamDescriptorValue)] = match layout {
         StreamLayout::Byte => &[("T", StreamDescriptorValue::Integer(0))],
         StreamLayout::Float2 => &[
@@ -1436,31 +1481,26 @@ fn require_layout(
             ("d", StreamDescriptorValue::Integer(1)),
         ],
     };
-    if stream.descriptor.len() != expected.len()
-        || !ctx.all_by(
-            expected,
-            |(expected_name, expected_value)| {
-                ctx.any_by(
-                    &stream.descriptor,
-                    |(name, value)| {
-                        if !ctx.equal(
-                            name.as_str(),
-                            *expected_name,
-                            "compare paramesh descriptor names",
-                        )? {
-                            return Ok(false);
-                        }
-                        ctx.equal(value, expected_value, "compare paramesh descriptor values")
-                    },
-                    "find paramesh descriptor member",
-                )
+    if stream.descriptor.len() != expected.len() {
+        return Err(CodecError::malformed(MISMATCH));
+    }
+    for (expected_name, expected_value) in expected {
+        if !ctx.any_by(
+            &stream.descriptor,
+            |(name, value)| {
+                if !ctx.equal(
+                    name.as_str(),
+                    *expected_name,
+                    "compare paramesh descriptor names",
+                )? {
+                    return Ok(false);
+                }
+                ctx.equal(value, expected_value, "compare paramesh descriptor values")
             },
-            "validate paramesh descriptor members",
-        )?
-    {
-        return Err(CodecError::malformed(
-            "paramesh stream descriptor does not match its implemented layout",
-        ));
+            "find paramesh descriptor member",
+        )? {
+            return Err(CodecError::malformed(MISMATCH));
+        }
     }
     Ok(())
 }
@@ -1470,18 +1510,15 @@ fn require_version_2_descriptor(
     ctx: &DecodeContext<'_>,
     stream: &MeshStream,
 ) -> Result<(), CodecError> {
-    for layout in ctx.admit_iter(
-        &[
-            StreamLayout::Byte,
-            StreamLayout::Float2,
-            StreamLayout::Float3,
-            StreamLayout::Float4,
-            StreamLayout::PackedDirection,
-            StreamLayout::TerminalDelta,
-        ],
-        "match paramesh version-2 descriptor",
-    )? {
-        match require_layout(ctx, stream, *layout) {
+    for layout in [
+        StreamLayout::Byte,
+        StreamLayout::Float2,
+        StreamLayout::Float3,
+        StreamLayout::Float4,
+        StreamLayout::PackedDirection,
+        StreamLayout::TerminalDelta,
+    ] {
+        match require_layout(ctx, stream, layout) {
             Ok(()) => return Ok(()),
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => {}
@@ -1527,14 +1564,14 @@ fn attribute_names(
                 _ => CodecError::malformed("paramesh attribute-name stream is not XML"),
             })?;
     let document = admitted_document.document();
-    ctx.charge_work(1, "select paramesh XML root element")?;
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "select paramesh XML root element")?;
     if root.tag_name().name() != "Root" || root.attributes().next().is_some() {
         return Err(CodecError::malformed(
             "paramesh attribute-name stream has an invalid fragment envelope",
         ));
     }
-    for node in root.children() {
+    let mut children = root.children();
+    while let Some(node) = ctx.next_charged(&mut children, "scan paramesh XML envelope nodes")? {
         if !node.is_element() {
             if !node.is_text() {
                 return Err(CodecError::malformed(
@@ -1556,7 +1593,10 @@ fn attribute_names(
     }
 
     let mut names = std::collections::BTreeMap::new();
-    for attribute in root.children() {
+    let mut attributes = root.children();
+    while let Some(attribute) =
+        ctx.next_charged(&mut attributes, "scan paramesh XML attribute records")?
+    {
         if !attribute.is_element() {
             continue;
         }
@@ -1565,7 +1605,8 @@ fn attribute_names(
                 "paramesh attribute-name stream has an undefined element",
             ));
         }
-        for node in attribute.children() {
+        let mut nodes = attribute.children();
+        while let Some(node) = ctx.next_charged(&mut nodes, "scan paramesh XML attribute nodes")? {
             if node.is_element() {
                 continue;
             }
@@ -1586,10 +1627,24 @@ fn attribute_names(
                 ));
             }
         }
-        let mut children = attribute.children().filter(roxmltree::Node::is_element);
-        let (Some(triangle_name), Some(authored_name), None) =
-            (children.next(), children.next(), children.next())
-        else {
+        let mut children = attribute.children();
+        let (Some(triangle_name), Some(authored_name), None) = (
+            ctx.find_by(
+                &mut children,
+                |node| Ok(node.is_element()),
+                "select paramesh XML member",
+            )?,
+            ctx.find_by(
+                &mut children,
+                |node| Ok(node.is_element()),
+                "select paramesh XML member",
+            )?,
+            ctx.find_by(
+                &mut children,
+                |node| Ok(node.is_element()),
+                "select paramesh XML member",
+            )?,
+        ) else {
             return Err(CodecError::malformed(
                 "paramesh attribute-name record does not have two members",
             ));
@@ -1603,9 +1658,15 @@ fn attribute_names(
                 "paramesh attribute-name record has an undefined member",
             ));
         }
-        if triangle_name.children().any(|node| !node.is_text())
-            || authored_name.children().any(|node| !node.is_text())
-        {
+        if ctx.any_by(
+            triangle_name.children(),
+            |node| Ok(!node.is_text()),
+            "check paramesh XML triangle-name text",
+        )? || ctx.any_by(
+            authored_name.children(),
+            |node| Ok(!node.is_text()),
+            "check paramesh XML authored-name text",
+        )? {
             return Err(CodecError::malformed(
                 "paramesh attribute-name record member is not text",
             ));
@@ -1644,7 +1705,7 @@ fn attribute_names(
             ));
         }
         let mut key = ctx.copy_retained_text(resource_guid, "retain paramesh attribute GUID")?;
-        ctx.make_ascii_uppercase(&mut key, "normalize paramesh resource GUID")?;
+        key.make_ascii_uppercase();
         if ctx.contains_key_btree_map(&names, &key, "find duplicate paramesh attribute GUID")? {
             return Err(CodecError::malformed(
                 "paramesh attribute-name stream repeats a channel GUID",
@@ -1709,10 +1770,12 @@ fn decode_triangles(
     vertices: usize,
 ) -> Result<Vec<[u32; 3]>, CodecError> {
     let mut view = View::over_retained(stream);
+    let mut scratch = ctx.reserve_scoped(0, "stage paramesh corners")?;
     let mut words = Vec::new();
     while !view.is_empty() {
         ctx.charge_work(1, "scan paramesh scalar stream")?;
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut scratch,
             &mut words,
             i64::from(view.i32_le().ok_or_else(|| {
                 CodecError::malformed("paramesh corner stream is not a whole number of values")
@@ -1759,7 +1822,8 @@ fn decode_triangles(
 
     let mut current = lowest_start;
     let mut corners = Vec::new();
-    ctx.push_vec(
+    ctx.push_scoped_vec(
+        &mut scratch,
         &mut corners,
         u32::try_from(current)
             .map_err(|_| CodecError::malformed("paramesh corner index is out of range"))?,
@@ -1774,7 +1838,12 @@ fn decode_triangles(
                 "paramesh corner index names no vertex",
             ));
         }
-        ctx.push_vec(&mut corners, index, "collect paramesh corner indices")?;
+        ctx.push_scoped_vec(
+            &mut scratch,
+            &mut corners,
+            index,
+            "collect paramesh corner indices",
+        )?;
     }
     let mut triangles = Vec::new();
     let mut corners = ctx
@@ -1830,7 +1899,7 @@ fn decode_terminal_delta_values(
     let mut current = i64::from(*terminal)
         .checked_sub(delta_total)
         .ok_or_else(|| CodecError::malformed("paramesh terminal-delta start overflows"))?;
-    for word in deltas {
+    for word in ctx.admit_iter(deltas, "resolve paramesh terminal deltas")? {
         let delta = i64::from(word.cast_signed());
         *word = u32::try_from(current)
             .map_err(|_| CodecError::malformed("paramesh terminal-delta value is out of range"))?;
@@ -1881,7 +1950,10 @@ fn decode_index_positions(
         return Ok(Vec::new());
     }
 
-    let decoded = decode_terminal_delta_values(ctx, stream)?;
+    let (decoded, _decoded_storage) = ctx
+        .with_scoped_storage("stage paramesh index deltas", || {
+            decode_terminal_delta_values(ctx, stream)
+        })?;
     let mut positions = Vec::new();
     let mut previous = None;
     for position in ctx.admit_iter(&decoded, "validate paramesh index positions")? {
@@ -1968,6 +2040,7 @@ fn decode_corner_normals(
         return Ok(None);
     };
     let mut view = View::over_retained(values);
+    let mut table_storage = ctx.reserve_scoped(0, "stage paramesh normal table")?;
     let mut table = Vec::new();
     while !view.is_empty() {
         ctx.charge_work(1, "scan paramesh scalar stream")?;
@@ -1976,7 +2049,8 @@ fn decode_corner_normals(
                 "paramesh corner-normal channel has no complete packed-direction table",
             )
         })?;
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut table_storage,
             &mut table,
             decode_packed_direction([pair.0, pair.1])?,
             "collect paramesh normal table",
@@ -1988,11 +2062,13 @@ fn decode_corner_normals(
             "paramesh role-0 packed directions do not address triangles",
         ));
     }
-    let selectors = attribute
-        .corner_selectors(ctx, vertices, triangles)?
-        .ok_or_else(|| {
-            CodecError::malformed("paramesh corner-normal addressing is inconsistent")
+    let (selectors, _selectors_storage) = ctx
+        .with_scoped_storage("stage paramesh normal selectors", || {
+            attribute.corner_selectors(ctx, vertices, triangles)
         })?;
+    let selectors = selectors.ok_or_else(|| {
+        CodecError::malformed("paramesh corner-normal addressing is inconsistent")
+    })?;
     let mut normals = Vec::new();
     for selector in ctx.admit_iter(&selectors, "project paramesh corner normals")? {
         let normal = table
@@ -2012,13 +2088,15 @@ fn decode_corner_normals(
 fn registry_feature_edges(
     ctx: &DecodeContext<'_>,
     message: &[u8],
-    name_table: &[(String, u64)],
-    streams: &[MeshStream],
+    streams: &NamedStreams<'_>,
     triangles: &[[u32; 3]],
     vertices: usize,
 ) -> Result<Vec<[u32; 2]>, CodecError> {
     let mut declaration = None;
-    let fields = protobuf_fields(ctx, message)?;
+    let (fields, _fields_storage) = ctx
+        .with_scoped_storage("stage paramesh protobuf fields", || {
+            protobuf_fields(ctx, message)
+        })?;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf message fields")? {
         if *field != REGISTRY_FEATURE_EDGES {
             continue;
@@ -2039,7 +2117,10 @@ fn registry_feature_edges(
     };
 
     let mut stream_name = None;
-    let fields = protobuf_fields(ctx, entry)?;
+    let (fields, _fields_storage) = ctx
+        .with_scoped_storage("stage paramesh protobuf fields", || {
+            protobuf_fields(ctx, entry)
+        })?;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf entry fields")? {
         let (FEATURE_EDGE_STREAM, ProtobufValue::Bytes(name)) = (*field, *value) else {
             return Err(CodecError::malformed(
@@ -2059,35 +2140,35 @@ fn registry_feature_edges(
         CodecError::malformed("paramesh feature-edge declaration has no stream name")
     })?;
     let stream = ctx
-        .position_by(
-            name_table,
-            |(name, _)| {
-                ctx.equal(
-                    name.as_str(),
-                    stream_name,
-                    "compare paramesh feature-edge stream names",
-                )
-            },
-            "find paramesh feature-edge stream",
-        )?
-        .and_then(|position| streams.get(position))
+        .get_hash_map(streams, stream_name, "find paramesh feature-edge stream")?
+        .and_then(Option::as_ref)
+        .copied()
         .ok_or_else(|| {
             CodecError::malformed("paramesh feature-edge declaration names no stream")
         })?;
     require_layout(ctx, stream, StreamLayout::TerminalDelta)?;
-    let endpoints = decode_terminal_delta_values(ctx, &stream.bytes)?;
+    let (endpoints, _endpoints_storage) = ctx
+        .with_scoped_storage("stage paramesh feature-edge endpoints", || {
+            decode_terminal_delta_values(ctx, &stream.bytes)
+        })?;
     if !endpoints.len().is_multiple_of(2) {
         return Err(CodecError::malformed(
             "paramesh feature-edge stream has an unmatched endpoint",
         ));
     }
 
+    let mut scratch = ctx.reserve_scoped(0, "stage paramesh feature-edge indexes")?;
     let mut topology_edges = std::collections::BTreeSet::new();
     for [a, b, c] in ctx.admit_iter(triangles, "index paramesh topology edges")? {
         for [left, right] in [[*a, *b], [*b, *c], [*c, *a]] {
             if left != right {
                 let edge = [left.min(right), left.max(right)];
-                ctx.insert_btree_set(&mut topology_edges, edge, "index paramesh topology edges")?;
+                ctx.insert_scoped_btree_value(
+                    &mut scratch,
+                    &mut topology_edges,
+                    edge,
+                    "index paramesh topology edges",
+                )?;
             }
         }
     }
@@ -2097,7 +2178,6 @@ fn registry_feature_edges(
         .admit_iter(&endpoints, "collect paramesh feature-edge endpoints")?
         .copied();
     while let (Some(first), Some(second)) = (endpoint_values.next(), endpoint_values.next()) {
-        ctx.charge_work(1, "validate paramesh feature-edge pair")?;
         let edge = [first, second];
         let high_in_domain = index_from_u32(edge[1]) < vertices;
         if edge[0] >= edge[1] || !high_in_domain {
@@ -2115,7 +2195,12 @@ fn registry_feature_edges(
                 "paramesh feature-edge stream repeats an edge",
             ));
         }
-        ctx.insert_btree_set(&mut seen, edge, "index paramesh feature edges")?;
+        ctx.insert_scoped_btree_value(
+            &mut scratch,
+            &mut seen,
+            edge,
+            "index paramesh feature edges",
+        )?;
         ctx.push_vec(&mut feature_edges, edge, "collect paramesh feature edges")?;
     }
     ctx.sort_unstable_by(
@@ -2134,10 +2219,7 @@ struct ParamMeshHeader {
 
 impl ParamMeshHeader {
     fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Self, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(PROTOBUF_AT),
-            "validate paramesh header",
-        )?;
+        ctx.charge_work(0, "validate paramesh header")?;
         if bytes.get(..MAGIC.len()) != Some(&MAGIC[..]) {
             return Err(CodecError::malformed("paramesh container has no magic"));
         }
@@ -2149,10 +2231,7 @@ impl ParamMeshHeader {
         let reserved = bytes
             .get(MAGIC.len() + 4..PROTOBUF_COUNT_AT)
             .ok_or_else(|| CodecError::malformed("paramesh container is truncated"))?;
-        if ctx
-            .admit_iter(reserved, "validate paramesh reserved header bytes")?
-            .any(|byte| *byte != 0)
-        {
+        if reserved.iter().any(|byte| *byte != 0) {
             return Err(CodecError::malformed(
                 "paramesh reserved header bytes are not zero",
             ));
@@ -2193,9 +2272,10 @@ pub(crate) fn decode_mesh_container(
 ) -> Result<MeshContainer, CodecError> {
     let header = ParamMeshHeader::parse(ctx, bytes)?;
     let message = &bytes[header.protobuf.clone()];
-    let registry = mesh_registry(ctx, message)?;
+    let (registry, _registry_storage) = mesh_registry(ctx, message)?;
     let mut at = header.protobuf.end;
     let mut state = MeshChunkState::AwaitNameTable;
+    let mut streams_storage = ctx.reserve_scoped(0, "stage paramesh streams")?;
     let mut streams = Vec::new();
     while at < bytes.len() {
         ctx.charge_work(1, "scan paramesh container chunks")?;
@@ -2223,7 +2303,9 @@ pub(crate) fn decode_mesh_container(
                         "paramesh container repeats its name table",
                     ));
                 }
-                state = MeshChunkState::Streams(message_pack_name_table(ctx, body)?);
+                state = MeshChunkState::Streams(
+                    streams_storage.with_storage(|| message_pack_name_table(ctx, body))?,
+                );
             }
             CHUNK_STREAM => {
                 let MeshChunkState::Streams(names) = &state else {
@@ -2236,8 +2318,13 @@ pub(crate) fn decode_mesh_container(
                         "paramesh has more streams than admitted names",
                     ));
                 }
-                let stream = inflate_stream(ctx, body)?;
-                ctx.push_vec(&mut streams, stream, "collect paramesh streams")?;
+                let stream = streams_storage.with_storage(|| inflate_stream(ctx, body))?;
+                ctx.push_scoped_vec(
+                    &mut streams_storage,
+                    &mut streams,
+                    stream,
+                    "collect paramesh streams",
+                )?;
             }
             _ => {
                 return Err(CodecError::malformed(
@@ -2267,14 +2354,17 @@ pub(crate) fn decode_mesh_container(
         Ord::cmp,
         "sort paramesh name table",
     )?;
+    let (named_streams, _named_streams_storage) = ctx.unique_index(
+        ctx.admit_iter(&name_table, "index paramesh named streams")?
+            .zip(ctx.admit_iter(&streams, "index paramesh stream positions")?)
+            .map(|((name, _), stream)| (name.as_str(), stream)),
+        "index paramesh named streams",
+    )?;
     let named = |name: &str| -> Result<Option<&MeshStream>, CodecError> {
         Ok(ctx
-            .position_by(
-                &name_table,
-                |(entry, _)| ctx.equal(entry.as_str(), name, "compare paramesh stream names"),
-                "find paramesh named stream",
-            )?
-            .and_then(|position| streams.get(position)))
+            .get_hash_map(&named_streams, name, "find paramesh named stream")?
+            .and_then(Option::as_ref)
+            .copied())
     };
     let vertex_stream = named(&registry.vertex_stream)?
         .ok_or_else(|| CodecError::malformed("paramesh registry names no vertex stream"))?;
@@ -2297,24 +2387,20 @@ pub(crate) fn decode_mesh_container(
             })
         })
         .transpose()?;
-    let attribute_names = attribute_names(ctx, attribute_name_stream)?;
+    let (attribute_names, _attribute_names_storage) = ctx
+        .with_scoped_storage("stage paramesh attribute names", || {
+            attribute_names(ctx, attribute_name_stream)
+        })?;
     let attributes = registry_attributes(
         ctx,
         message,
-        &name_table,
-        &streams,
+        &named_streams,
         &attribute_names,
         vertices.len(),
         corner_count,
     )?;
-    let feature_edges = registry_feature_edges(
-        ctx,
-        message,
-        &name_table,
-        &streams,
-        &triangles,
-        vertices.len(),
-    )?;
+    let feature_edges =
+        registry_feature_edges(ctx, message, &named_streams, &triangles, vertices.len())?;
     let corner_normals = decode_corner_normals(ctx, &attributes, vertices.len(), &triangles)?;
     let triangle_groups = registry_triangle_groups(ctx, &attributes, registry.face_group_count)?;
     let texture_ids = registry_texture_ids(ctx, &attributes)?;
@@ -2338,23 +2424,22 @@ pub(crate) fn decode_mesh_container(
 fn registry_attributes(
     ctx: &DecodeContext<'_>,
     message: &[u8],
-    name_table: &[(String, u64)],
-    streams: &[MeshStream],
+    streams: &NamedStreams<'_>,
     attribute_names: &std::collections::BTreeMap<String, RegisteredAttributeName>,
     vertices: usize,
     corners: usize,
 ) -> Result<Vec<MeshAttribute>, CodecError> {
     let named = |name: &str| -> Result<Option<&MeshStream>, CodecError> {
         Ok(ctx
-            .position_by(
-                name_table,
-                |(entry, _)| ctx.equal(entry.as_str(), name, "compare paramesh stream names"),
-                "find paramesh named stream",
-            )?
-            .and_then(|position| streams.get(position)))
+            .get_hash_map(streams, name, "find paramesh named stream")?
+            .and_then(Option::as_ref)
+            .copied())
     };
     let mut attributes = Vec::new();
-    let fields = protobuf_fields(ctx, message)?;
+    let (fields, _fields_storage) = ctx
+        .with_scoped_storage("stage paramesh protobuf fields", || {
+            protobuf_fields(ctx, message)
+        })?;
     for (field, value) in ctx.admit_iter(&fields, "read paramesh protobuf message fields")? {
         let declared_domain = match *field {
             REGISTRY_VERTEX_CHANNEL => MeshAttributeDomain::Vertex,
@@ -2404,17 +2489,25 @@ fn registry_attributes(
         if let Some(index_stream) = index_stream {
             require_layout(ctx, index_stream, StreamLayout::TerminalDelta)?;
         }
-        let mut registered_name = None;
-        if let Some(resource_guid) = registration.resource_guid.as_deref() {
-            for (guid, name) in
-                ctx.admit_iter(attribute_names, "find paramesh registered attribute name")?
-            {
-                if ctx.eq_ignore_ascii_case(guid, resource_guid, "match paramesh attribute GUID")? {
-                    registered_name = Some(name);
-                    break;
-                }
-            }
-        }
+        let registered_name = registration
+            .resource_guid
+            .as_deref()
+            .map(|resource_guid| {
+                ctx.find_by(
+                    attribute_names,
+                    |(guid, _)| {
+                        ctx.eq_ignore_ascii_case(
+                            guid,
+                            resource_guid,
+                            "match paramesh attribute GUID",
+                        )
+                    },
+                    "find paramesh registered attribute name",
+                )
+                .map(|entry| entry.map(|(_, name)| name))
+            })
+            .transpose()?
+            .flatten();
         if registered_name.is_some_and(|name| !match name.kind {
             AttributeNameKind::Color => {
                 registration.role == 4 && registration.streams.element_code == ELEMENT_QUAD
@@ -2507,12 +2600,14 @@ fn registry_attributes(
         }
         ctx.push_vec(&mut attributes, attribute, "collect paramesh attributes")?;
     }
+    let mut resource_storage = ctx.reserve_scoped(0, "index paramesh channel resources")?;
     let mut resources = std::collections::BTreeSet::new();
     for attribute in ctx.admit_iter(&attributes, "scan paramesh channel resources")? {
         if let Some(resource_guid) = &attribute.resource_guid {
-            let mut key =
-                ctx.copy_retained_text(resource_guid, "index paramesh channel resource GUID")?;
-            ctx.make_ascii_uppercase(&mut key, "normalize paramesh resource GUID")?;
+            let mut key = [0; 36];
+            for (target, source) in key.iter_mut().zip(resource_guid.as_bytes()) {
+                *target = source.to_ascii_uppercase();
+            }
             if ctx.contains_btree_set(
                 &resources,
                 &key,
@@ -2522,17 +2617,22 @@ fn registry_attributes(
                     "paramesh registry repeats a channel resource GUID",
                 ));
             }
-            ctx.insert_btree_set(&mut resources, key, "index paramesh channel resources")?;
+            ctx.insert_scoped_btree_value(
+                &mut resource_storage,
+                &mut resources,
+                key,
+                "index paramesh channel resources",
+            )?;
         }
     }
     for (resource_guid, _) in
         ctx.admit_iter(attribute_names, "validate paramesh attribute resources")?
     {
-        if !ctx.contains_btree_set(
-            &resources,
-            resource_guid,
-            "find paramesh attribute resource",
-        )? {
+        let mut key = [0; 36];
+        for (target, source) in key.iter_mut().zip(resource_guid.as_bytes()) {
+            *target = source.to_ascii_uppercase();
+        }
+        if !ctx.contains_btree_set(&resources, &key, "find paramesh attribute resource")? {
             return Err(CodecError::malformed(
                 "paramesh attribute-name stream names no registry channel",
             ));
@@ -2579,6 +2679,7 @@ fn registry_triangle_groups(
         ));
     }
     let mut memberships = Vec::new();
+    let mut group_storage = ctx.reserve_scoped(0, "index paramesh face group keys")?;
     let mut group_indices = std::collections::BTreeMap::new();
     for (index, (key, group_guid)) in ctx
         .admit_iter(&channel.groups[..], "collect paramesh face groups")?
@@ -2593,20 +2694,24 @@ fn registry_triangle_groups(
             },
             "collect paramesh face groups",
         )?;
-        ctx.insert_btree_map(
-            &mut group_indices,
-            *key,
-            index,
-            "index paramesh face group keys",
-        )?;
+        group_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut group_indices,
+                *key,
+                index,
+                "index paramesh face group keys",
+            )
+        })?;
     }
     for (triangle, key) in ctx
         .admit_iter(values, "assign paramesh face groups")?
         .enumerate()
     {
-        let group_index = group_indices.get(key).ok_or_else(|| {
-            CodecError::malformed("paramesh triangle selects no face-group record")
-        })?;
+        let group_index = ctx
+            .get_btree_map(&group_indices, key, "find paramesh triangle group")?
+            .ok_or_else(|| {
+                CodecError::malformed("paramesh triangle selects no face-group record")
+            })?;
         let ordinal = u32::try_from(triangle)
             .map_err(|_| CodecError::malformed("paramesh triangle ordinal is out of range"))?;
         ctx.push_vec(
@@ -2632,13 +2737,19 @@ fn registry_texture_ids(
     ctx: &DecodeContext<'_>,
     attributes: &[MeshAttribute],
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let mut named = attributes
-        .iter()
-        .filter(|attribute| attribute.authored_name.as_deref() == Some("tid"));
-    let Some(channel) = named.next() else {
+    let mut attributes = attributes.iter();
+    let named = |attribute: &&MeshAttribute| match attribute.authored_name.as_deref() {
+        Some(name) => ctx.equal(name, "tid", "match paramesh texture channel name"),
+        None => Ok(false),
+    };
+    let Some(channel) = ctx.find_by(&mut attributes, named, "select paramesh texture channel")?
+    else {
         return Ok(None);
     };
-    if named.next().is_some() {
+    if ctx
+        .find_by(&mut attributes, named, "select paramesh texture channel")?
+        .is_some()
+    {
         return Err(CodecError::malformed(
             "paramesh registry declares more than one tid channel",
         ));
@@ -2866,80 +2977,19 @@ mod tests {
     }
 
     #[test]
-    fn paramesh_lzma_refuses_expansion_work_limit() {
-        let chunk = stream_chunk(&[0x80], &[7; 1024]);
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 1024;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = inflate_stream_charged(ctx, &chunk[12..])
-                .err()
-                .expect("work limit");
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "paramesh LZMA work"
-                    && ctx.resource_refusal() == Some(limit)));
-        });
-    }
-
-    #[test]
     fn paramesh_lzma_output_refuses_work_limit() {
-        const PROBABILITY_COUNT: u64 = 8 * 0x300 + 4 * 64 + 16 + 2 * 512;
-        const FRAME_INITIAL_CAPACITY: usize = 8;
         let payload = [7; 1024];
         let descriptor = [0x80];
         let chunk = stream_chunk(&descriptor, &payload);
-        let body = &chunk[12..];
-        let compressed_len = body
-            .len()
-            .checked_sub(
-                std::mem::size_of::<u16>() + descriptor.len() + std::mem::size_of::<u32>() + 2,
-            )
-            .expect("fixture has the fixed kind-4 header");
-        let decoder_work = u64::from(u32::try_from(payload.len()).expect("fixture fits u32"))
-            .checked_add(273)
-            .and_then(|count| count.checked_mul(256))
-            .and_then(|count| count.checked_add(PROBABILITY_COUNT))
-            .and_then(|count| count.checked_add(2 * (1 << super::LZMA_DICTIONARY_LOG)))
-            .and_then(|count| {
-                u64_from_index(compressed_len)
-                    .checked_mul(2)
-                    .and_then(|bytes| count.checked_add(bytes))
-            })
-            .and_then(|count| count.checked_add(5))
-            .expect("fixture LZMA work bound");
-        let framed_prefix_len = std::mem::size_of::<u8>()
-            .checked_add(std::mem::size_of::<u32>())
-            .expect("fixture framed prefix length");
-        let framed_len = framed_prefix_len
-            .checked_add(compressed_len)
-            .expect("fixture framed input length");
-        let framed_copy_work = u64_from_index(compressed_len)
-            .checked_add(u64_from_index(std::mem::size_of::<u32>()))
-            .and_then(|bytes| bytes.checked_mul(2))
-            .expect("fixture framed-input copy work");
-        let relocation_work = if framed_len > FRAME_INITIAL_CAPACITY {
-            u64_from_index(FRAME_INITIAL_CAPACITY)
-        } else {
-            0
-        };
-        let framed_input_work = framed_copy_work
-            .checked_add(relocation_work)
-            .expect("fixture framed-input growth work");
-        let work = decoder_work
-            .checked_add(framed_input_work)
-            .expect("fixture pre-output work total");
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        // Count decoder, framed input and any relocation; leave output-copy work refused.
-        policy.limits.max_work_units = work;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = inflate_stream_charged(ctx, body)
-                .err()
-                .expect("output work limit");
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "expand_write copy"
-                    && ctx.resource_refusal() == Some(limit)));
-        });
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "expand_write copy",
+            0,
+            |ctx| inflate_stream_charged(ctx, &chunk[12..]),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "expand_write copy"));
     }
 
     #[test]
@@ -3633,7 +3683,7 @@ mod tests {
     }
 
     #[test]
-    fn paramesh_feature_edge_pair_validation_refuses_work_limit() {
+    fn paramesh_feature_edge_endpoint_scan_refuses_work_limit() {
         let registry = feature_edge_entry("edges");
         let bytes = container_with_registry(
             &TRIANGLE_VERTICES,
@@ -3647,14 +3697,14 @@ mod tests {
         );
         let error = crate::test_support::resource_refusal_at(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "validate paramesh feature-edge pair",
+            "collect paramesh feature-edge endpoints",
             0,
             |ctx| decode_mesh_container_charged(ctx, &bytes).map(|_| ()),
         );
         assert!(matches!(
             error,
             CodecError::ResourceLimit(limit)
-                if limit.operation == "validate paramesh feature-edge pair"
+                if limit.operation == "collect paramesh feature-edge endpoints"
                     && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
         ));
     }
@@ -3788,6 +3838,32 @@ mod tests {
             &[("r0", delta_descriptor(), terminal_delta_values(&[0, 2]))],
             2,
         )));
+    }
+
+    #[test]
+    fn paramesh_xml_node_walks_preserve_work_refusal() {
+        let stream = MeshStream {
+            descriptor: vec![("T".to_owned(), StreamDescriptorValue::Integer(0))],
+            bytes: b"<?xml version=\"1.0\"?>\n<Attrib>\n<TriName>grp_tt2060d08b-7434-4786-9506-b0ee951bb9dc</TriName>\n<AmtName>tid</AmtName>\n</Attrib>\n".to_vec(),
+        };
+        for operation in [
+            "select paramesh XML root element",
+            "scan paramesh XML envelope nodes",
+            "scan paramesh XML attribute records",
+            "scan paramesh XML attribute nodes",
+            "select paramesh XML member",
+            "check paramesh XML triangle-name text",
+            "check paramesh XML authored-name text",
+        ] {
+            let error = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                0,
+                |ctx| super::attribute_names(ctx, Some(&stream)),
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.operation == operation));
+        }
     }
 
     #[test]
@@ -4198,5 +4274,29 @@ mod tests {
                 Err(CodecError::Malformed(_))
             ));
         }
+    }
+
+    #[test]
+    fn face_group_validation_admits_one_visited_group() {
+        let groups = vec![
+            (1, "bad".to_owned()),
+            (2, "11111111-2222-3333-4444-555555555555".to_owned()),
+        ];
+        let normal = cadmpeg_test_support::service_decode_context();
+        let error = super::UniqueFaceGroups::new(&normal, groups.clone())
+            .err()
+            .expect("invalid GUID");
+        assert!(
+            matches!(error, CodecError::Malformed(message) if message == "paramesh face-group identity is not a GUID")
+        );
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "validate paramesh face groups",
+            0,
+            |ctx| super::UniqueFaceGroups::new(ctx, groups.clone()),
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "validate paramesh face groups" && limit.additional == 1)
+        );
     }
 }

@@ -700,24 +700,26 @@ fn feature_history_scans_preserve_work_refusals() {
         feature("f3d:test:feature#parent", 5),
         feature("f3d:test:feature#other", 6),
     ];
-    for (work, operation) in [
-        (0, "scan F3Z component feature ordinals"),
-        (1, "scan F3Z parent feature ordinals"),
-        (3, "rewrite F3Z feature ordinals"),
+    for operation in [
+        "scan F3Z component feature ordinals",
+        "scan F3Z parent feature ordinals",
+        "rewrite F3Z feature ordinals",
     ] {
-        let mut component = Model::default();
-        component.features = vec![feature("f3d:test:feature#component", 10)];
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = work;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = append_feature_history(ctx, &parent, &mut component).unwrap_err();
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("ordinal scan must refuse");
-            };
-            assert_eq!(limit.operation, operation);
-            assert_eq!(Some(limit), ctx.resource_refusal());
-            assert_eq!(component.features[0].ordinal, 10);
-        });
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                let mut component = Model::default();
+                component.features = vec![feature("f3d:test:feature#component", 10)];
+                let result = append_feature_history(ctx, &parent, &mut component);
+                assert_eq!(component.features[0].ordinal, 10);
+                result
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+        );
     }
 }
 
@@ -752,4 +754,33 @@ fn occurrence_body_composition_preserves_work_refusal() {
         assert_eq!(Some(limit), ctx.resource_refusal());
         assert!(model.bodies[0].transform.is_none());
     });
+}
+
+#[test]
+fn occurrence_escaping_preserves_scan_and_storage_refusals() {
+    use cadmpeg_core::decode::ResourceDimension;
+    for (dimension, operation) in [
+        (
+            ResourceDimension::WorkUnits,
+            "scan F3Z occurrence component",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "escape F3Z occurrence component",
+        ),
+    ] {
+        crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            crate::f3z::merge::escaped_occurrence_component(ctx, "role /#: value").map(|_| ())
+        });
+    }
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (escaped, storage) =
+        crate::f3z::merge::escaped_occurrence_component(&ctx, "é /#: %").unwrap();
+    assert_eq!(escaped, "é%20%2F%23%3A%20%25");
+    drop((escaped, storage));
+    ctx.finish_session().unwrap();
 }

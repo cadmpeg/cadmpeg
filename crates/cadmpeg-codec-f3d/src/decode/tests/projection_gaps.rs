@@ -1124,7 +1124,7 @@ fn dimension_parameter_index_refuses_collection_limit() {
 
 #[test]
 fn container_only_dimension_parameter_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -1216,21 +1216,27 @@ fn container_only_dimension_parameter_refuses_collection_limit() {
     .unwrap()]
     .try_into()
     .unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(container_only_dimension_parameters(&ctx, &native),
-        Err(CodecError::ResourceLimit(failure))
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "collect F3D container-only dimension parameters",
+        |cap| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = cap;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                container_only_dimension_parameters(ctx, &native)
+            })
+        },
+    );
+    assert!(matches!(error,
+        CodecError::ResourceLimit(failure)
             if failure.operation == "collect F3D container-only dimension parameters"
                 && failure.dimension == ResourceDimension::CollectionItems));
-    let default_policy = DecodePolicy::default();
-    let (default_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &default_policy).unwrap();
     assert_eq!(
-        container_only_dimension_parameters(&default_ctx, &native)
-            .unwrap()
-            .len(),
+        crate::test_support::with_decode_context(|ctx| container_only_dimension_parameters(
+            ctx, &native
+        ))
+        .unwrap()
+        .len(),
         1
     );
 }
@@ -1318,7 +1324,7 @@ fn projection_body_binding_scan_preserves_work_refusal() {
 }
 
 #[test]
-fn appearance_attribute_guid_scan_preserves_work_refusal() {
+fn appearance_attribute_guid_values_scan_preserves_work_refusal() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     use cadmpeg_ir::ids::{AttributeId, FaceId};
 
@@ -1343,7 +1349,7 @@ fn appearance_attribute_guid_scan_preserves_work_refusal() {
     };
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D face material GUID case",
+        "scan F3D face material GUID values",
         0,
         |ctx| {
             let mut ir = ir.borrow_mut();
@@ -1356,7 +1362,7 @@ fn appearance_attribute_guid_scan_preserves_work_refusal() {
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "scan F3D face material GUID case")
+        if limit.operation == "scan F3D face material GUID values")
     );
 }
 

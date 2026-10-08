@@ -16,13 +16,16 @@ fn model_brep_basename_lookup_preserves_work_refusal() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert!(!blob_names.is_empty());
-    let candidates = super::super::super::model_brep_candidates(&ctx, &scan, &blob_names).unwrap();
+    let (candidates, _storage) =
+        super::super::super::model_brep_candidates(&ctx, &scan, &blob_names).unwrap();
     assert_eq!(candidates.len(), blob_names.len());
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "find F3D model BREP by basename",
         0,
-        |limited| super::super::super::model_brep_candidates(limited, &scan, &blob_names),
+        |limited| {
+            super::super::super::model_brep_candidates(limited, &scan, &blob_names).map(|_| ())
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -52,7 +55,7 @@ fn unique_asset_identity_search_preserves_work_refusal() {
     });
     for operation in [
         "find F3D embedded asset identity",
-        "compare F3D embedded asset identities",
+        "index F3D embedded asset identities",
     ] {
         let error = crate::test_support::resource_refusal_at(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -71,4 +74,27 @@ fn unique_asset_identity_search_preserves_work_refusal() {
             if limit.operation == operation)
         );
     }
+}
+
+#[test]
+fn missing_brep_candidate_diagnostic_refuses_retained_storage() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (normal, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&normal, root).unwrap();
+    let names = vec!["absent.brep".to_owned()];
+    let error = super::super::super::model_brep_candidates(&normal, &scan, &names).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::Malformed(message) if message == "Design body map references missing BREP entry absent.brep")
+    );
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D malformed diagnostic",
+        0,
+        |ctx| super::super::super::model_brep_candidates(ctx, &scan, &names).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "retain F3D malformed diagnostic")
+    );
 }
