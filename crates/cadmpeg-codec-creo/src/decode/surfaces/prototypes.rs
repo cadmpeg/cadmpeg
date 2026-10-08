@@ -473,13 +473,16 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     (Some(radius1), Some(radius2)) => Some([radius1, radius2]),
                     _ => None,
                 };
-                let parameter = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
-                    .filter(|parameter| parameter.offset == row.offset);
+                let parameter =
+                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
+                        .filter(|parameter| parameter.offset == row.offset);
                 let overrides = match parameter {
                     Some(parameter) => parameter.torus_radius_overrides_checked(ctx)?,
                     None => None,
                 };
-                let radii = overrides.map(|overrides| [overrides.radius1, overrides.radius2]).or(prototype_radii);
+                let radii = overrides
+                    .map(|overrides| [overrides.radius1, overrides.radius2])
+                    .or(prototype_radii);
                 let Some([radius1, radius2]) = radii else {
                     continue;
                 };

@@ -375,8 +375,11 @@ fn selector_envelope_places_a_compact_y_cylinder() {
     assert_eq!(decode(&build(&[5])), Some(frame));
     for placeholder_slots in [&[1][..], &[3, 5][..]] {
         assert!(decode_inline_selector_cylinder_envelope(
-            SurfaceKind::Cylinder, &build(placeholder_slots), &scalar::ScalarCache::default(),
-        ).is_none());
+            SurfaceKind::Cylinder,
+            &build(placeholder_slots),
+            &scalar::ScalarCache::default(),
+        )
+        .is_none());
     }
     assert_eq!(frame.frame().origin(), [0.0, 0.0, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);

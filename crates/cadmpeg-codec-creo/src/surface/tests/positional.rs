@@ -223,11 +223,16 @@ fn tabulated_cylinder_replay_requires_the_immediately_preceding_row() {
 
 #[test]
 fn tabulated_curve_signature_positions_refuse_before_growth() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let payload = [
         0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7,
     ];
-    let error = crate::test_support::last_refusal_at(&payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo tabulated curve signatures", |ctx| { checked_tabulated_cylinder_curve_replays(ctx, &payload) });
+    let error = crate::test_support::last_refusal_at(
+        &payload,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo tabulated curve signatures",
+        |ctx| checked_tabulated_cylinder_curve_replays(ctx, &payload),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -282,7 +287,11 @@ fn tabulated_curve_replay_refuses_each_retained_copy_and_record() {
                 && limit.operation == operation)
         );
     }
-    let item_limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo tabulated curve replays"), |cap| run(cap, u64::MAX));
+    let item_limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo tabulated curve replays"),
+        |cap| run(cap, u64::MAX),
+    );
     let error = run(item_limit, u64::MAX).expect_err("replay record needs a collection item");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

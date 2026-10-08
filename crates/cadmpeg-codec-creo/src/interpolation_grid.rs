@@ -17,26 +17,36 @@ fn finite_vectors(
     vectors: &[[f64; 3]],
     operation: &'static str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    ctx.all_by(vectors, |vector| Ok(vector.iter().all(|value| value.is_finite())), operation)
-
+    ctx.all_by(
+        vectors,
+        |vector| Ok(vector.iter().all(|value| value.is_finite())),
+        operation,
+    )
 }
 
 fn valid_grid_points(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>, points: &[[f64; 3]],
-    u_parameters: &[f64], v_parameters: &[f64],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    points: &[[f64; 3]],
+    u_parameters: &[f64],
+    v_parameters: &[f64],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-        let ordered_finite = |parameters: &[f64]| -> Result<bool, cadmpeg_core::CodecError> {
-            let mut previous = None;
-            ctx.all_by(parameters, |&value| {
+    let ordered_finite = |parameters: &[f64]| -> Result<bool, cadmpeg_core::CodecError> {
+        let mut previous = None;
+        ctx.all_by(
+            parameters,
+            |&value| {
                 let valid = value.is_finite() && previous.is_none_or(|previous| previous < value);
                 previous = Some(value);
                 Ok(valid)
-            }, "creo interpolation grid parameter validation")
-
-        };
-    Ok(u_parameters.len() >= 2 && v_parameters.len() >= 2
+            },
+            "creo interpolation grid parameter validation",
+        )
+    };
+    Ok(u_parameters.len() >= 2
+        && v_parameters.len() >= 2
         && Some(points.len()) == u_parameters.len().checked_mul(v_parameters.len())
-        && ordered_finite(u_parameters)? && ordered_finite(v_parameters)?
+        && ordered_finite(u_parameters)?
+        && ordered_finite(v_parameters)?
         && finite_vectors(ctx, points, "creo interpolation grid vector validation")?)
 }
 
@@ -67,7 +77,10 @@ impl InterpolationGrid {
                 &v_derivatives,
                 "creo interpolation grid vector validation",
             )?
-            && mixed_derivatives.iter().flatten().all(|value| value.is_finite()))
+            && mixed_derivatives
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite()))
         {
             return Ok(None);
         }
@@ -146,18 +159,41 @@ impl InterpolationGrid {
             mixed_derivatives[upper_u + upper_v],
         ];
         Ok(Some(Self {
-            points, u_parameters, v_parameters, u_derivatives, v_derivatives, mixed_derivatives,
+            points,
+            u_parameters,
+            v_parameters,
+            u_derivatives,
+            v_derivatives,
+            mixed_derivatives,
         }))
     }
 
     /// Copy a checked scratch grid into retained decode storage.
-    pub(crate) fn copy_retained(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
+    pub(crate) fn copy_retained(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
-            points: ctx.collect_retained_vec(self.points.iter().copied(), "creo interpolation retained points")?,
-            u_parameters: ctx.collect_retained_vec(self.u_parameters.iter().copied(), "creo interpolation retained u parameters")?,
-            v_parameters: ctx.collect_retained_vec(self.v_parameters.iter().copied(), "creo interpolation retained v parameters")?,
-            u_derivatives: ctx.collect_retained_vec(self.u_derivatives.iter().copied(), "creo interpolation retained u derivatives")?,
-            v_derivatives: ctx.collect_retained_vec(self.v_derivatives.iter().copied(), "creo interpolation retained v derivatives")?,
+            points: ctx.collect_retained_vec(
+                self.points.iter().copied(),
+                "creo interpolation retained points",
+            )?,
+            u_parameters: ctx.collect_retained_vec(
+                self.u_parameters.iter().copied(),
+                "creo interpolation retained u parameters",
+            )?,
+            v_parameters: ctx.collect_retained_vec(
+                self.v_parameters.iter().copied(),
+                "creo interpolation retained v parameters",
+            )?,
+            u_derivatives: ctx.collect_retained_vec(
+                self.u_derivatives.iter().copied(),
+                "creo interpolation retained u derivatives",
+            )?,
+            v_derivatives: ctx.collect_retained_vec(
+                self.v_derivatives.iter().copied(),
+                "creo interpolation retained v derivatives",
+            )?,
             mixed_derivatives: self.mixed_derivatives,
         })
     }
@@ -265,9 +301,15 @@ mod tests {
 
     #[test]
     fn legacy_spline_u_derivatives_refuse_collection_limit() {
-        assert!(derivative_limit_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, derivative_limit_result))
+        assert!(
+            derivative_limit_result(crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                None,
+                derivative_limit_result
+            ))
             .expect("service admits derivatives")
-            .is_some());
+            .is_some()
+        );
         assert!(matches!(
             derivative_limit_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo legacy spline u derivatives"), derivative_limit_result)),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))

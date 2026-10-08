@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{service_scalar_tokens, service_scalar_frames, service_opaque_spans};
 use super::super::parameter_records;
-use crate::surface::SurfaceParameterOpaqueSpan;
+use super::{service_opaque_spans, service_scalar_frames, service_scalar_tokens};
 use crate::scalar;
-use crate::surface::{OutlinePlane, SurfaceBodyBoundary, SurfaceKind, SurfaceParameterRecord, SurfaceParameterScalar, SurfaceParameterScalarFrame, SurfaceRow};
+use crate::surface::SurfaceParameterOpaqueSpan;
+use crate::surface::{
+    OutlinePlane, SurfaceBodyBoundary, SurfaceKind, SurfaceParameterRecord, SurfaceParameterScalar,
+    SurfaceParameterScalarFrame, SurfaceRow,
+};
 
 fn positional_frame_planes(
     parameters: &[SurfaceParameterRecord],
@@ -93,11 +96,13 @@ fn positional_frame_limit_error(limit: u64) -> cadmpeg_core::CodecError {
     .expect_err("positional plane collection exceeds limit")
 }
 
-
-
 #[test]
 fn positional_frame_refuses_output_vector() {
-    let error = positional_frame_limit_error(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo positional frame planes"), |cap| Err::<(), _>(positional_frame_limit_error(cap))));
+    let error = positional_frame_limit_error(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo positional frame planes"),
+        |cap| Err::<(), _>(positional_frame_limit_error(cap)),
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo positional frame planes")

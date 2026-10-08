@@ -609,8 +609,14 @@ pub(super) fn fc05_cap_pair_model_frame(
     let mut placed_caps = ctx
         .admit_iter(&pair.cap_edges, "creo cap pair placed edge traversal")?
         .map(|edge| {
-            Ok::<_, cadmpeg_core::CodecError>(crate::surface::unique_outline_plane(ctx, &scan.planes.outlines, edge.cap_plane_id)?
-                .map(|plane| (plane, edge.cap_ordinate_row_frame)))
+            Ok::<_, cadmpeg_core::CodecError>(
+                crate::surface::unique_outline_plane(
+                    ctx,
+                    &scan.planes.outlines,
+                    edge.cap_plane_id,
+                )?
+                .map(|plane| (plane, edge.cap_ordinate_row_frame)),
+            )
         });
     let Some(Some((first_cap, first_ordinate))) = placed_caps.next().transpose()? else {
         return Ok(None);
@@ -656,8 +662,11 @@ pub(super) fn fc05_cap_pair_model_frame(
     if ctx.any_by(
         &pair.cap_edges,
         |edge| {
-            let Some(plane) =
-                crate::surface::unique_outline_plane(ctx, &scan.planes.outlines, edge.cap_plane_id)?
+            let Some(plane) = crate::surface::unique_outline_plane(
+                ctx,
+                &scan.planes.outlines,
+                edge.cap_plane_id,
+            )?
             else {
                 return Ok(true);
             };
@@ -712,8 +721,13 @@ pub(super) fn transfer_fc05_cap_circles(
         let mut cap_plane_count = 0;
         for face in topology.bounded_face_ids() {
             if crate::surface::unique_surface_row(&scan.surfaces.rows, face)
-                .is_none_or(|row| row.kind != crate::surface::SurfaceKind::Plane) { continue; }
-            if let Some(plane) = crate::surface::unique_outline_plane(ctx, &scan.planes.outlines, face)? {
+                .is_none_or(|row| row.kind != crate::surface::SurfaceKind::Plane)
+            {
+                continue;
+            }
+            if let Some(plane) =
+                crate::surface::unique_outline_plane(ctx, &scan.planes.outlines, face)?
+            {
                 cap_planes[cap_plane_count] = Some(plane);
                 cap_plane_count += 1;
             }

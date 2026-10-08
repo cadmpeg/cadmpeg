@@ -843,12 +843,10 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     scan.surfaces
         .prototype_records
         .push(crate::surface::SurfacePrototypeRecord::new_for_test(
-crate::surface::SurfacePrototypeFamily::Torus(
-                crate::surface::TorusLabel::Torus,
-            ),
-vec![scalar("radius1", 10.0), scalar("radius2", 0.5)],
-150,
-));
+            crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+            vec![scalar("radius1", 10.0), scalar("radius2", 0.5)],
+            150,
+        ));
 
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {

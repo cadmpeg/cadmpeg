@@ -1332,11 +1332,13 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         offset: 0,
         value_offset: 0,
     };
-    let prototype = |offset| crate::surface::SurfacePrototypeRecord::new_for_test(
-crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
-vec![scalar("radius1", 10.0), scalar("radius2", 0.5)],
-offset,
-);
+    let prototype = |offset| {
+        crate::surface::SurfacePrototypeRecord::new_for_test(
+            crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+            vec![scalar("radius1", 10.0), scalar("radius2", 0.5)],
+            offset,
+        )
+    };
     let row = |id, offset| crate::surface::SurfaceRow {
         id,
         kind: crate::surface::SurfaceKind::TorusOrSphere,
@@ -1436,10 +1438,8 @@ fn torus_radius_samples_refuse_collection_limit() {
     scan.surfaces
         .prototype_records
         .push(crate::surface::SurfacePrototypeRecord::new_for_test(
-crate::surface::SurfacePrototypeFamily::Torus(
-                crate::surface::TorusLabel::Torus,
-            ),
-vec![
+            crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+            vec![
                 crate::surface::SurfaceNamedParameter {
                     name: "radius1".to_string(),
                     value: crate::surface::SurfaceNamedValue::ScalarSequence(vec![10.0]),
@@ -1455,8 +1455,8 @@ vec![
                     value_offset: 0,
                 },
             ],
-5,
-));
+            5,
+        ));
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 1,
         kind: crate::surface::SurfaceKind::TorusOrSphere,

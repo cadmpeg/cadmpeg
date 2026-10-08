@@ -76,7 +76,8 @@ fn scan(payload: &[u8]) -> super::LoopArrayScan {
 fn assert_loop_array_collection_refusal(operation: &'static str) {
     let payload = frame(1, &row(1, &[0xe2, 0x10]));
     let limit = crate::test_support::allocation_limit_at(
-        ResourceDimension::CollectionItems, Some(operation),
+        ResourceDimension::CollectionItems,
+        Some(operation),
         |limit| scan_with_limits(&payload, limit, u64::MAX),
     );
     let error = scan_with_limits(&payload, limit, u64::MAX)

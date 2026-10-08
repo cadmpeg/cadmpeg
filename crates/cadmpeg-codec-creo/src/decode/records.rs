@@ -3210,8 +3210,8 @@ mod surface_projection_limit_tests {
         scan.surfaces
             .prototype_records
             .push(SurfacePrototypeRecord::new_for_test(
-SurfacePrototypeFamily::Plane,
-values
+                SurfacePrototypeFamily::Plane,
+                values
                     .into_iter()
                     .enumerate()
                     .map(|(offset, value)| SurfaceNamedParameter {
@@ -3222,8 +3222,8 @@ values
                         value_offset: offset + 1,
                     })
                     .collect(),
-11,
-));
+                11,
+            ));
         scan
     }
 
@@ -3811,13 +3811,13 @@ pub(super) fn surface_parameter_records<'a>(
                     minor_radius: frame.minor_radius().get(),
                 }
             }),
-            torus_outline_frame: record
-                .torus_outline_frame_checked(ctx)?
-                .map(|frame| CreoTorusOutlineFrame {
+            torus_outline_frame: record.torus_outline_frame_checked(ctx)?.map(|frame| {
+                CreoTorusOutlineFrame {
                     values: frame.values,
                     selector: frame.selector,
                     offset: frame.offset,
-                }),
+                }
+            }),
             type26_five_coordinate_envelope: record.type26_five_coordinate_envelope().map(
                 |envelope| CreoType26FiveCoordinateEnvelope {
                     values: envelope.values,
@@ -3830,8 +3830,9 @@ pub(super) fn surface_parameter_records<'a>(
                     offset: envelope.offset,
                 },
             ),
-            torus_radius_overrides: record.torus_radius_overrides_checked(ctx)?.map(|overrides| {
-                CreoTorusRadiusOverrides {
+            torus_radius_overrides: record
+                .torus_radius_overrides_checked(ctx)?
+                .map(|overrides| CreoTorusRadiusOverrides {
                     radius1: overrides.radius1,
                     radius2: overrides.radius2,
                     radius2_encoding: match overrides.radius2_encoding {
@@ -3841,8 +3842,7 @@ pub(super) fn surface_parameter_records<'a>(
                         }
                     },
                     offset: overrides.offset,
-                }
-            }),
+                }),
             replayed_torus_minor_radius: replayed_torus_minor_radius(ctx, scan, row, record)?,
             cone_half_angle_override: record.cone_half_angle_override().map(|half_angle| {
                 CreoConeHalfAngleOverride {
