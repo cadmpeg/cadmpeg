@@ -121,13 +121,6 @@ fn lp_ascii_printable<'a>(
 }
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &crate::writer::primitives::WRITING_POLICY,
-    )?;
-
     if !appearance.textures.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D cannot synthesize connected Protein texture assets".into(),
@@ -154,12 +147,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     let value_block = logical.len();
     match schema {
         "GenericSchema" => {
-            ctx.resize_retained_bytes(
-                &mut logical,
-                value_block + 209,
-                0,
-                "generate F3D Protein property bytes",
-            )?;
+            logical.resize(value_block + 209, 0);
             write_color(&mut logical, value_block + 112, appearance.base_color)?;
             if let Some(value) = appearance.properties.get("reflectivity_at_0deg") {
                 logical[value_block + 171..value_block + 175].copy_from_slice(b"\x0c\x00\x00\x00");
@@ -173,12 +161,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
             }
         }
         "PrismOpaqueSchema" | "PrismMetalSchema" => {
-            ctx.resize_retained_bytes(
-                &mut logical,
-                value_block + 96,
-                0,
-                "generate F3D Protein property bytes",
-            )?;
+            logical.resize(value_block + 96, 0);
             write_color(&mut logical, value_block + 8, appearance.base_color)?;
             if let Some(value) = appearance.properties.get("surface_roughness") {
                 logical[value_block + 64..value_block + 68].copy_from_slice(b"\x0e\x20\x00\x00");
@@ -187,12 +170,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
             }
         }
         "PrismTransparentSchema" => {
-            ctx.resize_retained_bytes(
-                &mut logical,
-                value_block + 177,
-                0,
-                "generate F3D Protein property bytes",
-            )?;
+            logical.resize(value_block + 177, 0);
             write_color(&mut logical, value_block + 121, appearance.base_color)?;
             if let Some(value) = appearance.properties.get("refraction_index") {
                 logical[value_block + 169..value_block + 177]
@@ -202,19 +180,14 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
         "PhysMatSchema"
         | "StructuralMetalSchema"
         | "StructuralPlasticSchema"
-        | "ThermalSolidSchema" => ctx.resize_retained_bytes(
-            &mut logical,
-            value_block + 8,
-            0,
-            "generate F3D Protein property bytes",
-        )?,
+        | "ThermalSolidSchema" => logical.resize(value_block + 8, 0),
         _ => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less Protein schema {schema} is unsupported"
             )));
         }
     }
-    let instance = page_logical(&ctx, &logical)?;
+    let instance = page_logical(&logical)?;
     let mut catalog = RECORD_MARKER.to_vec();
     push_lp(&mut catalog, schema)?;
     catalog.push(0);
@@ -230,7 +203,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     catalog.extend_from_slice(&0_u32.to_le_bytes());
     catalog.extend_from_slice(&1_u32.to_le_bytes());
     push_lp(&mut catalog, "")?;
-    let catalog = page_logical(&ctx, &catalog)?;
+    let catalog = page_logical(&catalog)?;
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("AssetData/InstanceProperties.bin", options)
@@ -273,7 +246,7 @@ fn write_color(out: &mut [u8], offset: usize, color: Option<Color>) -> Result<()
     Ok(())
 }
 
-fn page_logical(ctx: &DecodeContext<'_>, logical: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn page_logical(logical: &[u8]) -> Result<Vec<u8>, CodecError> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(
         &u32::try_from(PAGE_SIZE)
@@ -285,12 +258,7 @@ fn page_logical(ctx: &DecodeContext<'_>, logical: &[u8]) -> Result<Vec<u8>, Code
     let first = logical.len().min(PAGE_SIZE - 4);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&logical[..first]);
-    ctx.resize_retained_bytes(
-        &mut bytes,
-        STREAM_HEADER_LEN + PAGE_SIZE,
-        0,
-        "generate F3D Protein first page",
-    )?;
+    bytes.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
     let mut rest = &logical[first..];
     while rest.len() > PAGE_SIZE - 8 {
         bytes.extend_from_slice(&0u32.to_le_bytes());
@@ -306,7 +274,7 @@ fn page_logical(ctx: &DecodeContext<'_>, logical: &[u8]) -> Result<Vec<u8>, Code
         bytes.extend_from_slice(&0u16.to_le_bytes());
         bytes.extend_from_slice(rest);
         let end = STREAM_HEADER_LEN + (bytes.len() - STREAM_HEADER_LEN).next_multiple_of(PAGE_SIZE);
-        ctx.resize_retained_bytes(&mut bytes, end, 0, "generate F3D Protein tail page")?;
+        bytes.resize(end, 0);
     }
     Ok(bytes)
 }
@@ -367,20 +335,13 @@ fn patch_instance_colors(
     patched: &mut std::collections::BTreeSet<String>,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    // The record parsers are shared with decode and charge a context; this
-    // writer runs them under a policy no input can exhaust.
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, protein_view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        protein,
-        &arena,
-        &crate::writer::primitives::WRITING_POLICY,
-    )?;
-    let ctx = &ctx;
-    let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, bytes)?;
-    let catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein_view)?;
+    let admission = cadmpeg_protein::admission::StandardAdmission;
+    let frames = cadmpeg_protein::framing::record_frames_admitted(admission, bytes)?;
+    let catalog = cadmpeg_protein::SchemaCatalog::load(admission, protein)?;
     let schema_driven = catalog.is_some();
     let decoded = if let Some(mut catalog) = catalog {
-        let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
+        let outcome =
+            cadmpeg_protein::decode_frames_admitted(admission, &mut catalog, frames.frames())?;
         notes.extend(outcome.rejected.iter().map(|rejected| {
             format!(
                 "Protein record {} rejected: {}",

@@ -73,9 +73,9 @@ impl DecodeCost for TextureAsset {
 }
 
 impl TextureAsset {
-    /// Bind this texture to an appearance property.
+    /// Bind this texture to an appearance property. The caller admits the
+    /// collection slot that keeps the reference.
     pub fn to_ref(&self, ctx: &DecodeContext<'_>, slot: &str) -> Result<TextureRef, CodecError> {
-        ctx.charge_collection_items(1, "Protein appearance texture")?;
         Ok(TextureRef {
             asset_guid: ctx
                 .copy_retained_text(&self.asset_guid, "Protein appearance texture field")?,
@@ -155,17 +155,22 @@ pub fn texture_asset(
             count: unknown_count,
         });
     }
-    let mut source_paths = None;
-    for (id, property) in ctx.admit_iter(&record.properties, "Protein texture bitmap search")? {
-        if !id.ends_with("_Bitmap") {
-            continue;
-        }
-        let Some(crate::property::PropertyValue::TextureUri(paths)) = property.value() else {
-            continue;
-        };
-        source_paths = Some(paths);
-        break;
-    }
+    // The suffix tests compare fixed literals; each search pays for the
+    // properties it visits.
+    let source_paths = ctx.find_map(
+        &record.properties,
+        |(id, property)| {
+            Ok(match property.value() {
+                Some(crate::property::PropertyValue::TextureUri(paths))
+                    if id.ends_with("_Bitmap") =>
+                {
+                    Some(paths)
+                }
+                _ => None,
+            })
+        },
+        "Protein texture bitmap search",
+    )?;
     let paths = match source_paths {
         Some(paths) => ctx.try_collect_vec(
             paths
@@ -175,20 +180,23 @@ pub fn texture_asset(
         )?,
         None => Vec::new(),
     };
-    let mut urn = None;
-    for (id, property) in ctx.admit_iter(&record.properties, "Protein texture URN search")? {
-        if !id.ends_with("_Bitmap_urn") {
-            continue;
-        }
-        let Some(crate::property::PropertyValue::String(value)) = property.value() else {
-            continue;
-        };
-        if value.is_empty() {
-            continue;
-        }
-        urn = Some(ctx.copy_retained_text(value, "Protein texture URN")?);
-        break;
-    }
+    let urn = ctx
+        .find_map(
+            &record.properties,
+            |(id, property)| {
+                Ok(match property.value() {
+                    Some(crate::property::PropertyValue::String(value))
+                        if !value.is_empty() && id.ends_with("_Bitmap_urn") =>
+                    {
+                        Some(value)
+                    }
+                    _ => None,
+                })
+            },
+            "Protein texture URN search",
+        )?
+        .map(|urn| ctx.copy_retained_text(urn, "Protein texture URN"))
+        .transpose()?;
     let mapping = TextureMap2d {
         map_channel: integer_property(ctx, record, "MapChannel")?.unwrap_or(1),
         uvw_source: integer_property(ctx, record, "MapChannel_UVWSource_Advanced")?.unwrap_or(0),
@@ -240,23 +248,24 @@ pub fn texture_asset(
     Ok(TextureAssetResult::Usable(texture))
 }
 
+/// The value of the first property named `suffix` or `<prefix>_<suffix>`.
 fn property_with_suffix<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a crate::DecodedRecord,
     suffix: &str,
 ) -> Result<Option<&'a crate::property::PropertyValue>, CodecError> {
-    let (qualified_suffix, _reservation) = ctx.format_scoped(
-        format_args!("_{suffix}"),
-        "Protein qualified property suffix",
-    )?;
-    for (id, property) in ctx.admit_iter(&record.properties, "Protein property suffix search")? {
-        if ctx.equal(id.as_str(), suffix, "Protein property name comparison")?
-            || ctx.ends_with(id, &qualified_suffix, "Protein property suffix comparison")?
-        {
-            return Ok(property.value());
-        }
-    }
-    Ok(None)
+    Ok(ctx
+        .find_map(
+            &record.properties,
+            |(id, property)| {
+                let named = ctx
+                    .strip_suffix(id.as_str(), suffix, "Protein property suffix comparison")?
+                    .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('_'));
+                Ok(named.then(|| property.value()))
+            },
+            "Protein property suffix search",
+        )?
+        .flatten())
 }
 
 /// Map Protein property names to the neutral material vocabulary.
