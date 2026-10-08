@@ -948,7 +948,11 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(placed) = placed else {
                 continue;
             };
-            let Some(directrix) = translated_nurbs_curve(ctx, &placed, lower_translation)? else {
+            let (directrix, directrix_storage) = ctx.with_scoped_storage(
+                "creo saved extrusion translated curve",
+                || translated_nurbs_curve(ctx, &placed, lower_translation),
+            )?;
+            let Some(directrix) = directrix else {
                 continue;
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -1037,6 +1041,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         }),
                     },
                 )?;
+                directrix_storage.commit()?;
+            } else {
+                drop(directrix);
+                drop(directrix_storage);
             }
             let surface_id = crate::identity::compose_checked::<SurfaceId>(
                 ctx,
