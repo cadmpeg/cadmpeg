@@ -299,26 +299,38 @@ pub(in crate::decode) fn solve_planes(
         _ => {}
     }
     let mut traversal = (planes).iter().enumerate();
-    while let Some((first_index, a)) =
-        ctx.next_charged(&mut traversal, "creo plane solver candidates")?
-    {
+    while traversal.len() != 0 {
+        let Some((first_index, a)) =
+            ctx.next_charged(&mut traversal, "creo plane solver candidates")?
+        else {
+            break;
+        };
         let mut traversal = planes[first_index + 1..].iter().enumerate();
-        while let Some((second_offset, b)) =
-            ctx.next_charged(&mut traversal, "creo plane solver second candidates")?
-        {
+        while traversal.len() != 0 {
+            let Some((second_offset, b)) =
+                ctx.next_charged(&mut traversal, "creo plane solver second candidates")?
+            else {
+                break;
+            };
             let second_index = first_index + 1 + second_offset;
             let mut traversal = planes[second_index + 1..].iter();
-            while let Some(c) =
-                ctx.next_charged(&mut traversal, "creo plane solver third candidates")?
-            {
+            while traversal.len() != 0 {
+                let Some(c) =
+                    ctx.next_charged(&mut traversal, "creo plane solver third candidates")?
+                else {
+                    break;
+                };
                 let Some(point) = plane_triple_intersection([*a, *b, *c]) else {
                     continue;
                 };
                 let mut agrees = true;
                 let mut traversal = (planes).iter();
-                while let Some(plane) =
-                    ctx.next_charged(&mut traversal, "creo plane solver residual candidates")?
-                {
+                while traversal.len() != 0 {
+                    let Some(plane) =
+                        ctx.next_charged(&mut traversal, "creo plane solver residual candidates")?
+                    else {
+                        break;
+                    };
                     if !crate::vecmath::within(
                         (dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs(),
                         EPS_PLANE_RESIDUAL,
