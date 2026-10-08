@@ -34,7 +34,8 @@ fn admit_offset_controls(
     operation: &'static str,
 ) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
     let mut admitted = ctx.collection_vec(controls.len(), operation)?;
-    for point in ctx.admit_iter(controls, "iges offset control admission")? {
+    let mut controls = controls.into_iter();
+    while let Some(point) = ctx.next_charged(&mut controls, "iges offset control admission")? {
         let Some(point) = FinitePoint3::new(point) else {
             return Ok(None);
         };
@@ -1211,10 +1212,10 @@ pub(super) fn project(
                 let offset_direction = normal_direction.cross(direction);
                 let (mut controls, _control_storage) = ctx
                     .temporary_vec(function_nurbs.pole_count(), "iges function-offset controls")?;
-                for index in ctx.admit_iter(
-                    0..function_nurbs.pole_count(),
-                    "iges function-offset control traversal",
-                )? {
+                let mut indices = 0..function_nurbs.pole_count();
+                while let Some(index) =
+                    ctx.next_charged(&mut indices, "iges function-offset control traversal")?
+                {
                     let Some(function_control) = function_nurbs.pole_rows().point_at(index) else {
                         ctx.clear_vec(&mut controls, "iges offset rejected controls")?;
                         break;
