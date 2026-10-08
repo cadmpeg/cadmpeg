@@ -318,3 +318,38 @@ fn hash_growth_after_removals_admits_the_real_allocation() {
     );
     assert!(ctx.budget.retained_used() >= u64::try_from(bytes(32_768)).expect("bound"));
 }
+
+#[test]
+fn churned_hash_table_retains_at_most_one_bucket_ratio_per_removal() {
+    let bytes = |buckets: usize| buckets * std::mem::size_of::<u64>() + 15 + buckets + 16;
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let mut values = HashSet::<u64>::new();
+    let window = 14_000;
+    for value in 0..window {
+        ctx.insert_hash_set(&mut values, value, "fill")
+            .expect("fill");
+    }
+    let filled = ctx.budget.retained_used();
+    assert_eq!(filled, u64::try_from(bytes(16_384)).expect("bound"));
+    // A sliding window: every step inserts one new key and removes the oldest.
+    let removals = 200_000;
+    for step in 0..removals {
+        ctx.insert_hash_set(&mut values, window + step, "slide")
+            .expect("slide");
+        assert!(ctx
+            .remove_hash_set(&mut values, &step, "slide")
+            .expect("slide"));
+    }
+    assert_eq!(values.len(), usize::try_from(window).expect("bound"));
+    let retained = ctx.budget.retained_used();
+    let real = u64::try_from(bytes(values.capacity() * 8 / 7)).expect("bound");
+    // Growth after removals cannot tell an in-place rehash from a doubling,
+    // so it charges as if the table doubled: more than the table holds, but
+    // at most 8/7 of a bucket (entry plus control byte) per removal.
+    assert!(retained > real);
+    let per_removal =
+        (8 * (u64::try_from(std::mem::size_of::<u64>()).expect("bound") + 1)).div_ceil(7);
+    assert!(retained <= real + removals * per_removal);
+}

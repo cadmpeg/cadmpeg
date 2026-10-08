@@ -2,7 +2,8 @@
 //! Charges of the scoped tables that layer metadata parsing builds: the seen
 //! layer UUIDs, the per-index occurrence counts and the parent references.
 
-use super::{layer_fixture, retained_limit_context};
+use super::layers::layer_fixture;
+use super::retained_limit_context;
 
 /// Admits one layer UUID twice on a fresh context with the given
 /// materialized and retained allowances.

@@ -73,6 +73,26 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
 }
 
 #[test]
+fn surface_trim_indexed_scanner_refuses_work_limit_through_optional_chain_parse() {
+    let (bytes, scope) = surface_trim_selection_and_cell_table();
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "find F3D indexed record header",
+        6,
+        |ctx| {
+            let records = crate::design::decode::sketch::IndexedRecordOffsets::build(ctx, &bytes)?;
+            exact_surface_trim_operation(ctx, &bytes, &records, &scope).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == "find F3D indexed record header"
+    ));
+}
+
+#[test]
 fn surface_trim_output_refuses_identifier_and_collection_limits() {
     const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let (bytes, mut scope) = surface_trim_selection_and_cell_table();
@@ -285,24 +305,20 @@ fn surface_trim_rejects_nonzero_cell_table_tail() {
     .is_none());
 }
 
-fn surface_trim_refusal(maximum: u64) -> CodecError {
+fn surface_trim_refusal(operation: &str) -> CodecError {
     let (bytes, scope) = surface_trim_selection_and_cell_table();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = maximum;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    exact_surface_trim_operation(
-        &ctx,
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| exact_surface_trim_operation(ctx, &bytes, &records, &scope),
     )
-    .expect_err("two cell entries exceed the selected collection limit")
 }
 
 #[test]
 fn surface_trim_cell_entries_refuse_collection_limit() {
-    let error = surface_trim_refusal(1);
+    let error = surface_trim_refusal("f3d surface-trim cell entries");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "f3d surface-trim cell entries"));
@@ -310,7 +326,7 @@ fn surface_trim_cell_entries_refuse_collection_limit() {
 
 #[test]
 fn surface_trim_record_indices_refuse_collection_limit() {
-    let error = surface_trim_refusal(3);
+    let error = surface_trim_refusal("f3d surface-trim cell record indices");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "f3d surface-trim cell record indices"));
@@ -318,7 +334,7 @@ fn surface_trim_record_indices_refuse_collection_limit() {
 
 #[test]
 fn surface_trim_ordinals_refuse_collection_limit() {
-    let error = surface_trim_refusal(5);
+    let error = surface_trim_refusal("f3d surface-trim cell ordinals");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "f3d surface-trim cell ordinals"));

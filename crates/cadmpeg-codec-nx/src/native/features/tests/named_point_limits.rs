@@ -78,7 +78,10 @@ fn named_point_block_use_refusal(
     .expect("composed feature-history container");
     let (references, points) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
-            feature_sketch_references(ctx, &container)?,
+            feature_sketch_references(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
             offset_store_named_points(ctx, &container)?,
         ))
     })

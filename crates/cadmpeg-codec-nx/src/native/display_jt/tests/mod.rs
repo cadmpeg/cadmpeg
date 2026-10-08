@@ -689,8 +689,9 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
         compression: None,
         source_offset: 0,
     };
+    let segments = [scene, shape];
     let bindings = with_jt_context(&container, |ctx| {
-        super::display_jt_shape_lod_bindings(ctx, &container, &[scene, shape])
+        super::display_jt_shape_lod_bindings(ctx, &container, &segments)
     })
     .unwrap();
     assert_eq!(bindings.len(), 1);
@@ -698,6 +699,21 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
     assert_eq!(bindings[0].shape_segment, "shape");
     assert_eq!(bindings[0].payload_object_id, 12);
     assert_eq!(bindings[0].key, key);
+
+    let error = crate::test_support::resource_refusal_at(
+        container.data.as_ref(),
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan DisplayJT shape LOD property pairs",
+        |ctx| super::display_jt_shape_lod_bindings(ctx, &container, &segments),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan DisplayJT shape LOD property pairs"
+                && limit.used == limit.limit
+                && limit.additional == 1
+    ));
 }
 
 #[test]
@@ -1371,6 +1387,25 @@ fn jt9_topology_bounds_variable_high_degree_lane_count() {
     let beyond_legacy_ceiling = representation(65, 20);
     assert_eq!(high_degree_lane_count(&beyond_legacy_ceiling, 10), Some(65));
     assert_eq!(high_degree_lane_count(&populated, 11), None);
+}
+
+#[test]
+fn jt9_topology_lane_scan_refuses_work_limit_before_packet_probe() {
+    let representation = vec![0; 21 * 4 + 4];
+    let error = crate::test_support::resource_refusal_at(
+        &representation,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan JT topology high-degree lanes",
+        |ctx| super::jt9_topology_high_degree_lane_count(ctx, &representation, 10),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan JT topology high-degree lanes"
+                && limit.used == limit.limit
+                && limit.additional == 1
+    ));
 }
 
 #[test]

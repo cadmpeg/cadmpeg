@@ -80,7 +80,7 @@ fn recipe_operand_ids_refuse_retained_limit() {
                     dimension => panic!("unsupported refusal dimension: {dimension:?}"),
                 }
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                ((crate::design::decode::operands::parse_edge_operand(
+                (crate::design::decode::operands::parse_edge_operand(
                     &ctx,
                     &bytes,
                     &records,
@@ -89,7 +89,6 @@ fn recipe_operand_ids_refuse_retained_limit() {
                     std::slice::from_ref(&recipe),
                     None,
                 ))
-                .transpose())
                 .map(|_| ())
             },
         ) {
@@ -127,7 +126,7 @@ fn recipe_operand_ids_refuse_retained_limit() {
         );
         assert!(
             matches!(&result,
-                Some(Err(CodecError::ResourceLimit(failure)))
+                Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::RetainedBytes
                         && failure.operation == operation
             ),
