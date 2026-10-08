@@ -489,7 +489,8 @@ pub(in crate::families) struct A8PcurveSite {
 impl A8Pcurve {
     pub(in crate::families) const DEGREE: u32 = 5;
 
-    pub(in crate::families) fn knots(
+    #[cfg(test)]
+    fn knots(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Vec<FiniteReal>, cadmpeg_core::CodecError> {
@@ -509,6 +510,85 @@ impl A8Pcurve {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> A8BSplineOutput {
+        self.with_jet_lanes(ctx, None, |ctx, knots, points, first, second| {
+            crate::nurbs::quintic_jet_bspline(
+                ctx,
+                Self::DEGREE,
+                knots,
+                points,
+                first,
+                second,
+                cadmpeg_ir::units::FiniteVector::new,
+            )
+        })
+    }
+
+    /// Lower the jet to controls while retaining its source knots for B5's
+    /// separate multiplicity representation.
+    pub(in crate::families) fn control_points_and_knots(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<(Vec<FiniteReal>, Vec<FiniteVector<2>>)>, CodecError> {
+        let (mut source_knots, mut source_knot_storage) =
+            ctx.scoped_vector_storage(0, "catia_a8_pcurve_source_knots")?;
+        ctx.reserve_scoped_vec(
+            &mut source_knot_storage,
+            &mut source_knots,
+            self.sites.len(),
+            "catia_a8_pcurve_source_knots",
+        )?;
+        let Some(control_points) = self.with_jet_lanes(
+            ctx,
+            Some(&mut source_knots),
+            |ctx, knots, points, first, second| {
+                crate::nurbs::quintic_jet_controls(
+                    ctx,
+                    Self::DEGREE,
+                    knots,
+                    points,
+                    first,
+                    second,
+                    cadmpeg_ir::units::FiniteVector::new,
+                )
+            },
+        )? else {
+            return Ok(None);
+        };
+        source_knot_storage.commit()?;
+        Ok(Some((source_knots, control_points)))
+    }
+
+    /// Lower the jet without retaining knots that the caller does not need.
+    #[cfg(test)]
+    pub(in crate::families) fn control_points(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Vec<FiniteVector<2>>>, CodecError> {
+        self.with_jet_lanes(ctx, None, |ctx, knots, points, first, second| {
+            crate::nurbs::quintic_jet_controls(
+                ctx,
+                Self::DEGREE,
+                knots,
+                points,
+                first,
+                second,
+                cadmpeg_ir::units::FiniteVector::new,
+            )
+        })
+    }
+
+    fn with_jet_lanes<T>(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut source_knots: Option<&mut Vec<FiniteReal>>,
+        project: impl FnOnce(
+            &cadmpeg_core::decode::DecodeContext<'_>,
+            &[f64],
+            &[[f64; 2]],
+            &[[f64; 2]],
+            &[[f64; 2]],
+        ) -> Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
         // The projected lanes are solver input and are released when it returns.
         let ((knots, points, first, second), _lanes) =
             ctx.with_scoped_storage("catia_a8_pcurve_jet_lanes", || {
@@ -519,21 +599,16 @@ impl A8Pcurve {
                 let mut second = ctx.collection_vec(count, "catia A8 pcurve second jets")?;
                 for site in ctx.admit_iter(&self.sites, "catia_a8_pcurve_jet_projection")? {
                     knots.push(site.knot.get());
+                    if let Some(source_knots) = source_knots.as_mut() {
+                        source_knots.push(site.knot);
+                    }
                     points.push(site.point.get());
                     first.push(site.first_derivative.get());
                     second.push(site.second_derivative.get());
                 }
                 Ok::<_, CodecError>((knots, points, first, second))
             })?;
-        crate::nurbs::quintic_jet_bspline(
-            ctx,
-            Self::DEGREE,
-            &knots,
-            &points,
-            &first,
-            &second,
-            cadmpeg_ir::units::FiniteVector::new,
-        )
+        project(ctx, &knots, &points, &first, &second)
     }
 }
 

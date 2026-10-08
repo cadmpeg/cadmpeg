@@ -2322,14 +2322,14 @@ fn object_stream_pcurve_candidate(
     ctx: &DecodeContext<'_>,
     jet: &crate::families::a5a8::records::A8Pcurve,
 ) -> Result<Option<B5Pcurve>, CodecError> {
-    let Some((_, control_points)) = jet.bspline(ctx)? else {
+    let Some((distinct_knots, control_points)) = jet.control_points_and_knots(ctx)? else {
         return Ok(None);
     };
     Ok(Some(B5Pcurve {
         object_id: jet.object_id,
         surface: jet.support_id,
         degree: crate::families::a5a8::records::A8Pcurve::DEGREE,
-        distinct_knots: jet.knots(ctx)?,
+        distinct_knots,
         multiplicities: ctx.alloc_filled(
             jet.sites.len(),
             crate::families::a5a8::records::A8Pcurve::DEGREE + 1,
@@ -2617,7 +2617,7 @@ fn parse_a8_class21_pcurve(
                 Err(error) => return Some(Err(error.into())),
             };
             second.extend(admitted.zip(ddv).map(|(u, v)| [u, v]));
-            let (_, control_points) = match crate::nurbs::quintic_jet_bspline(
+            let control_points = match crate::nurbs::quintic_jet_controls(
                 ctx,
                 degree,
                 &knot_values,
@@ -2626,7 +2626,7 @@ fn parse_a8_class21_pcurve(
                 &second,
                 cadmpeg_ir::units::FiniteVector::new,
             ) {
-                Ok(Some(curve)) => curve,
+                Ok(Some(control_points)) => control_points,
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };

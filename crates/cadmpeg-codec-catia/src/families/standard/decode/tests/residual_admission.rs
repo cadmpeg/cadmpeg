@@ -564,7 +564,7 @@ fn native_edge_face_support_rows_propagate_work_refusal() {
             }];
             let mut edge_faces = [[0, 0]];
             apply_standard_native_edge_faces(ctx, &mut edge_faces, &supports, &[], &HashMap::new())
-                .map(|_| edge_faces)
+                .map(|()| edge_faces)
         },
         |edge_faces| assert_eq!(edge_faces, [[0, 0]]),
     );
@@ -713,7 +713,7 @@ fn native_endpoint_candidate_rows_propagate_work_refusal() {
         |ctx| {
             let mut candidates = [Vec::new()];
             let pairs = [Some([0, 1])];
-            include_native_endpoint_pairs(ctx, &mut candidates, &pairs).map(|_| candidates)
+            include_native_endpoint_pairs(ctx, &mut candidates, &pairs).map(|()| candidates)
         },
         |candidates| assert_eq!(candidates, [vec![0, 1]]),
     );
@@ -726,7 +726,7 @@ fn successor_endpoint_evidence_rows_propagate_work_refusal() {
         |ctx| {
             let mut options = [vec![[0, 1]]];
             let points = [[Some(0), None]];
-            corroborate_successor_endpoint_points(ctx, &mut options, &points).map(|_| options)
+            corroborate_successor_endpoint_points(ctx, &mut options, &points).map(|()| options)
         },
         |options| assert_eq!(options, [vec![[0, 1]]]),
     );
@@ -785,7 +785,7 @@ fn repeated_face_geometry_rows_propagate_work_refusal() {
                 None,
                 &edge_geometries,
             )
-            .map(|_| allowed_faces)
+            .map(|()| allowed_faces)
         },
         |allowed_faces| assert_eq!(allowed_faces, [vec![1]]),
     );
