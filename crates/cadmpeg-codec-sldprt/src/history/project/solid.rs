@@ -28,12 +28,12 @@ use crate::history::literals::{
 /// Records of one history by identity, `None` where an identity repeats.
 pub(super) type RecordsById<'a> = HashMap<&'a str, Option<&'a Feature>>;
 
-/// Source records and non-origin sketches in source-key order. Repeated source
-/// keys select the last record in history order.
+/// Source records with a lazy index of non-origin sketches in source-key order.
+/// Repeated source keys select the last record in history order.
 pub(super) struct SourceFeatures<'f, 'c> {
     pub(super) records: BTreeMap<crate::records::FeatureSource, &'f Feature>,
-    profiles: Vec<(crate::records::FeatureSource, &'f Feature)>,
-    _storage: ScopedReservation<'c>,
+    profiles: Option<Vec<(crate::records::FeatureSource, &'f Feature)>>,
+    storage: ScopedReservation<'c>,
 }
 
 impl<'f, 'c> SourceFeatures<'f, 'c> {
@@ -51,34 +51,44 @@ impl<'f, 'c> SourceFeatures<'f, 'c> {
                 })?;
             }
         }
-        let mut profiles = Vec::new();
-        for (&source, &feature) in ctx.admit_iter(&records, OPERATION)? {
-            if classify(feature) == Some(FeatureClass::Sketch)
-                && feature.input_class.as_deref() != Some("moOriginProfileFeature_c")
-            {
-                ctx.push_scoped_vec(&mut storage, &mut profiles, (source, feature), OPERATION)?;
-            }
-        }
         Ok(Self {
             records,
-            profiles,
-            _storage: storage,
+            profiles: None,
+            storage,
         })
     }
 
     fn preceding_profile(
-        &self,
+        &mut self,
         ctx: &DecodeContext<'_>,
         source: crate::records::FeatureSource,
     ) -> Result<Option<&'f str>, CodecError> {
+        if self.profiles.is_none() {
+            const OPERATION: &str = "index SLDPRT source profiles";
+            let mut profiles = Vec::new();
+            for (&key, &feature) in ctx.admit_iter(&self.records, OPERATION)? {
+                if classify(feature) == Some(FeatureClass::Sketch)
+                    && feature.input_class.as_deref() != Some("moOriginProfileFeature_c")
+                {
+                    ctx.push_scoped_vec(
+                        &mut self.storage,
+                        &mut profiles,
+                        (key, feature),
+                        OPERATION,
+                    )?;
+                }
+            }
+            self.profiles = Some(profiles);
+        }
+        let profiles = self.profiles.as_deref().unwrap_or_default();
         let end = ctx.partition_point(
-            &self.profiles,
+            profiles,
             |(key, _)| Ok(*key < source),
             "find SLDPRT preceding source profile",
         )?;
         Ok(end
             .checked_sub(1)
-            .map(|index| self.profiles[index].1.id.as_str()))
+            .map(|index| profiles[index].1.id.as_str()))
     }
 }
 
@@ -91,7 +101,7 @@ pub(super) fn project_extrude(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
-    source_features: &SourceFeatures<'_, '_>,
+    source_features: &mut SourceFeatures<'_, '_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     const OPERATION: &str = "scan SLDPRT extrusion dimensions";
     // The one dimension name the content lists, however often it repeats.
@@ -135,24 +145,13 @@ pub(super) fn project_extrude(
     let history_profile_extrusion = legacy_history_extrusion || root_history_extrusion;
     let implicit_modern_blind =
         feature.input_class.as_deref() == Some("moExtrusion_c") && source_depth.is_some();
-    let history_profile = match feature.source_id {
-        Some(source) if history_profile_extrusion => {
-            source_features.preceding_profile(ctx, source)?
-        }
-        _ => None,
-    };
-    let op = match property_value(ctx, feature, "Operation")?.and_then(parse_boolean_op) {
-        Some(op) => op,
+    let resolved_op = match property_value(ctx, feature, "Operation")?.and_then(parse_boolean_op) {
+        Some(op) => Some(op),
         None => {
             if feature.input_class.as_deref() != Some("moCut_c") {
                 admit_literal(ctx, &feature.kind, "classify SLDPRT extrusion operation")?;
             }
             extrude_feature_op(feature)
-                .or_else(|| {
-                    (legacy_history_extrusion && history_profile.is_some())
-                        .then_some(BooleanOp::Join)
-                })
-                .unwrap_or(BooleanOp::Unresolved)
         }
     };
     let sole_length = || -> Result<_, CodecError> {
@@ -319,6 +318,25 @@ pub(super) fn project_extrude(
         }
         Some(_) => one_sided(LinearTermination::Unresolved {}),
     };
+    let mut cached_history_profile = None;
+    let mut history_profile = || -> Result<Option<&str>, CodecError> {
+        if let Some(profile) = cached_history_profile {
+            return Ok(profile);
+        }
+        let profile = match feature.source_id {
+            Some(source) if history_profile_extrusion => {
+                source_features.preceding_profile(ctx, source)?
+            }
+            _ => None,
+        };
+        cached_history_profile = Some(profile);
+        Ok(profile)
+    };
+    let op = match resolved_op {
+        Some(op) => op,
+        None if legacy_history_extrusion && history_profile()?.is_some() => BooleanOp::Join,
+        None => BooleanOp::Unresolved,
+    };
     let native_profile = |source: &str| -> Result<ProfileRef, CodecError> {
         let native = ctx
             .get_hash_map(native_by_source, source, "look up SLDPRT hash key")?
@@ -370,7 +388,7 @@ pub(super) fn project_extrude(
             }
             None => unresolved_profile()?,
         }
-    } else if let Some(profile) = history_profile {
+    } else if let Some(profile) = history_profile()? {
         ProfileRef::Planar(PlanarProfileRef::Native(copy_projected_feature_text(
             ctx, profile,
         )?))
@@ -999,6 +1017,143 @@ mod tests {
     }
 
     #[test]
+    fn source_records_without_fallback_do_not_collect_profiles() {
+        let features = [sketch("first", "9"), sketch("second", "19")];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let index = SourceFeatures::new(&ctx, &features).unwrap();
+        assert_eq!(index.records.len(), 2);
+        assert!(index.profiles.is_none());
+    }
+
+    #[test]
+    fn explicit_extrusion_profile_does_not_build_preceding_profiles() {
+        let features = [sketch("first", "9"), sketch("second", "19")];
+        let mut extrusion = feature("extrusion", Some("20"), 0);
+        extrusion.kind = "BossExtrude".into();
+        extrusion
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Profile"), "first".into());
+        extrusion.properties.insert(
+            cadmpeg_core::nonblank_literal!("EndCondition"),
+            "ThroughAll".into(),
+        );
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut index = SourceFeatures::new(&ctx, &features).unwrap();
+        let definition = super::project_extrude(
+            &ctx,
+            &extrusion,
+            &std::collections::HashMap::new(),
+            &mut index,
+        )
+        .unwrap();
+        assert!(
+            matches!(definition, Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude { profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(ref profile)), .. })) if profile == "first")
+        );
+        assert!(index.profiles.is_none());
+    }
+
+    #[test]
+    fn explicit_legacy_operation_and_profile_do_not_build_preceding_profiles() {
+        let features = [sketch("first", "9"), sketch("second", "19")];
+        let mut extrusion = feature("extrusion", Some("20"), 0);
+        extrusion.xml_tag = "Extrusion".into();
+        extrusion.content = vec![crate::records::FeatureContent::Dimension("D1".into())];
+        extrusion
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
+        extrusion
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Operation"), "join".into());
+        extrusion
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Profile"), "first".into());
+        extrusion.properties.insert(
+            cadmpeg_core::nonblank_literal!("EndCondition"),
+            "ThroughAll".into(),
+        );
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut index = SourceFeatures::new(&ctx, &features).unwrap();
+        let definition = super::project_extrude(
+            &ctx,
+            &extrusion,
+            &std::collections::HashMap::new(),
+            &mut index,
+        )
+        .unwrap();
+        assert!(
+            matches!(definition, Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude { profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(ref profile)), .. })) if profile == "first")
+        );
+        assert!(index.profiles.is_none());
+    }
+
+    #[test]
+    fn explicit_legacy_profile_preserves_preceding_profile_operation_inference() {
+        use cadmpeg_ir::features::{
+            BooleanOp, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
+        };
+        let mut extrusion = feature("extrusion", Some("20"), 0);
+        extrusion.xml_tag = "Extrusion".into();
+        extrusion.content = vec![crate::records::FeatureContent::Dimension("D1".into())];
+        extrusion
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
+        extrusion.properties.insert(
+            cadmpeg_core::nonblank_literal!("Profile"),
+            "explicit".into(),
+        );
+        extrusion.properties.insert(
+            cadmpeg_core::nonblank_literal!("EndCondition"),
+            "ThroughAll".into(),
+        );
+        for (features, expected) in [
+            (vec![sketch("preceding", "19")], BooleanOp::Join),
+            (Vec::new(), BooleanOp::Unresolved),
+        ] {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut index = SourceFeatures::new(&ctx, &features).unwrap();
+            let definition = super::project_extrude(
+                &ctx,
+                &extrusion,
+                &std::collections::HashMap::new(),
+                &mut index,
+            )
+            .unwrap();
+            assert!(
+                matches!(definition, Some(FeatureDefinition::Operation(FeatureOperation::Extrude { profile: ProfileRef::Planar(PlanarProfileRef::Native(profile)), op, .. })) if profile == "explicit" && op == expected)
+            );
+        }
+    }
+
+    #[test]
+    fn rejected_legacy_extrusion_does_not_build_preceding_profiles() {
+        let features = [sketch("preceding", "19")];
+        let mut extrusion = feature("extrusion", Some("20"), 0);
+        extrusion.xml_tag = "Extrusion".into();
+        extrusion.content = vec![crate::records::FeatureContent::Dimension("D1".into())];
+        extrusion
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
+        extrusion
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Direction"), "0,0,0".into());
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut index = SourceFeatures::new(&ctx, &features).unwrap();
+        assert!(super::project_extrude(
+            &ctx,
+            &extrusion,
+            &std::collections::HashMap::new(),
+            &mut index
+        )
+        .unwrap()
+        .is_none());
+        assert!(index.profiles.is_none());
+    }
+
+    #[test]
     fn source_profile_index_preserves_key_order_and_last_duplicate() {
         let mut origin = sketch("origin", "18");
         origin.input_class = Some("moOriginProfileFeature_c".into());
@@ -1010,7 +1165,7 @@ mod tests {
             feature("last-duplicate-is-not-a-sketch", Some("10"), 0),
         ];
         let ctx = cadmpeg_test_support::service_decode_context();
-        let index = SourceFeatures::new(&ctx, &features).unwrap();
+        let mut index = SourceFeatures::new(&ctx, &features).unwrap();
         for (source, expected) in [("9", None), ("19", Some("first")), ("20", Some("later"))] {
             assert_eq!(
                 index
@@ -1034,7 +1189,7 @@ mod tests {
         let features = [sketch("first", "9"), sketch("second", "19")];
         let error =
             crate::test_support::work_refusal_at("find SLDPRT preceding source profile", |ctx| {
-                let index = SourceFeatures::new(ctx, &features)?;
+                let mut index = SourceFeatures::new(ctx, &features)?;
                 index.preceding_profile(ctx, FeatureSource::try_from("20").unwrap())
             });
         assert!(
