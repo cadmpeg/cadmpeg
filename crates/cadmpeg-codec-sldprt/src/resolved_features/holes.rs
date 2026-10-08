@@ -1773,7 +1773,7 @@ fn profiled_hole_construction_with_evidence(
                             (axis_end, axis_entry),
                         ];
                         let mut materialized_edges = 0usize;
-                        for (first, second) in ctx.admit_iter(&edges, OPERATION)? {
+                        for (first, second) in &edges {
                             if has_line(*first, *second)? {
                                 materialized_edges =
                                     materialized_edges.checked_add(1).ok_or_else(|| {
@@ -1785,7 +1785,7 @@ fn profiled_hole_construction_with_evidence(
                             continue;
                         }
                         let mut all_edges_materialized = true;
-                        for (first, second) in ctx.admit_iter(&edges, OPERATION)? {
+                        for (first, second) in &edges {
                             if !has_line(*first, *second)? && !has_point_pair(*first, *second)? {
                                 all_edges_materialized = false;
                                 break;
@@ -5075,7 +5075,7 @@ fn direct_hole_position_feature<'a, 's>(
                 continue;
             }
             let mut repeated = false;
-            for previous in ctx.admit_iter(&direct_sketches, OPERATION)?.flatten() {
+            for previous in direct_sketches.iter().flatten() {
                 if ctx.equal(&previous.id, &child.id, OPERATION)? {
                     repeated = true;
                     break;

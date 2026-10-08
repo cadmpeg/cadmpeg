@@ -472,6 +472,25 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
         (included_angle - 2.0 * ((terminal_radius - entry_radius) / 42.0_f64).atan()).abs()
             < 1.0e-12
     );
+    let probe_arena = DecodeArena::new();
+    let mut probe_policy = DecodePolicy::service();
+    probe_policy.limits.max_work_units = u64::MAX;
+    let (probe_ctx, _) = DecodeContext::from_root_bytes(&[], &probe_arena, &probe_policy).unwrap();
+    // The two geometry passes each visit a fixed four-edge array. Source
+    // lines, point candidates and identity comparisons have separate visits.
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "resolve SLDPRT axial hole profile",
+        Some(4),
+    );
+    assert!(profiled_hole_construction(&probe_ctx, &profile, &sketch, &entities)
+        .unwrap().is_some());
+    let error = probe_ctx.charge_work(4, "resolve SLDPRT axial hole profile")
+        .expect_err("fixed edge passes leave the four-step probe armed");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "resolve SLDPRT axial hole profile"
+            && limit.additional == 4));
 }
 
 #[test]
@@ -941,6 +960,31 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         Some("native-position")
     );
 
+    let probe_arena = DecodeArena::new();
+    let mut probe_policy = DecodePolicy::service();
+    probe_policy.limits.max_work_units = u64::MAX;
+    let (probe_ctx, _) = DecodeContext::from_root_bytes(&[], &probe_arena, &probe_policy).unwrap();
+    // The duplicate roster has two fixed slots. Child token visits and
+    // variable identity comparisons remain admitted by their own operations.
+    let direct_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "resolve SLDPRT direct hole position",
+        Some(2),
+    );
+    assert_eq!(direct_hole_position_feature(
+        &probe_ctx,
+        &histories[0].features[0],
+        &[HoleHistoryIndex::new(&probe_ctx, &histories[0]).unwrap()],
+        |id| Ok(model_sketches.get(id)),
+        &entities,
+    ).unwrap().map(|feature| feature.id.as_str()), Some("native-position"));
+    let error = probe_ctx.charge_work(2, "resolve SLDPRT direct hole position")
+        .expect_err("fixed duplicate slots leave the two-step probe armed");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "resolve SLDPRT direct hole position"
+            && limit.additional == 2));
+    drop(direct_probe);
     project_profiled_hole_constructions(&ctx, &mut features, &entities, &[history], &[lane])
         .unwrap();
 
