@@ -246,8 +246,8 @@ fn byte_accounting_claims_controls_inside_print_directives() {
     let input = b"1\\\x01N\x02\\2";
     let mut classes = vec![ByteClass::Unclassified; input.len()];
 
-    crate::test_support::with_service_context(input, |_, ctx| {
-        claim_trivia(ctx, input, 1..input.len(), &mut classes)
+    crate::test_support::with_service_context(input, |input, ctx| {
+        claim_trivia(input, 1..input.len(), &mut classes, ctx)
     })
     .expect("print directive fits the trivia range");
 

@@ -42,7 +42,7 @@ fn lex_under_policy(
         }
         let token = lexer
             .next_token()
-            .map_err(super::LexError::into_codec_error)?;
+            .map_err(|error| error.into_codec_error(&ctx))?;
         Ok(token.expect("nonempty token input").kind)
     };
     if transient {
@@ -95,45 +95,20 @@ fn quoted_string_refuses_collection_item_limit() {
 }
 
 #[test]
-fn binary_lexeme_reserves_temporary_digits_before_allocation() {
-    let input = b"\"0A1F2\"";
-    let service = DecodePolicy::service();
-    assert!(lex_under_policy(input, service, false).is_ok());
-    let mut limited = service;
-    limited.limits.max_materialized_bytes = 4;
-    let error = lex_under_policy(input, limited, false)
-        .expect_err("five digits exceed four temporary bytes");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_binary_lexeme_temp")
-    );
-}
-
-#[test]
-fn binary_hex_digits_refuse_collection_limit() {
-    let input = b"\"0A1F2\"";
-    let service = DecodePolicy::service();
-    assert!(lex_under_policy(input, service, false).is_ok());
-    let mut limited = service;
-    limited.limits.max_collection_items = 4;
-    let error = lex_under_policy(input, limited, false)
-        .expect_err("five hex digits exceed four collection items");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "step_binary_hex_digits"
-    ));
-}
-
-#[test]
 fn binary_packed_bytes_refuse_collection_limit() {
     let input = b"\"0A1F2\"";
     let service = DecodePolicy::service();
     assert!(lex_under_policy(input, service, false).is_ok());
-    let mut limited = service;
-    limited.limits.max_collection_items = 6;
-    let error = lex_under_policy(input, limited, false)
-        .expect_err("five hex digits plus two packed bytes exceed six collection items");
+    // Two packed bytes; scanning hexadecimal digits allocates no collection slots.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "step_binary_packed_bytes",
+        |cap| {
+            let mut limited = service;
+            limited.limits.max_collection_items = cap;
+            lex_under_policy(input, limited, false)
+        },
+    );
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -164,10 +139,16 @@ fn binary_lexeme_charges_packed_bytes_before_retention() {
     let input = b"\"0A1F2\"";
     let service = DecodePolicy::service();
     assert!(lex_under_policy(input, service, false).is_ok());
-    let mut limited = service;
-    limited.limits.max_retained_bytes = 5 + 1;
-    let error = lex_under_policy(input, limited, false)
-        .expect_err("five digit bytes leave only one byte for two packed bytes");
+    // Two retained packed bytes; the hexadecimal digits have no retained storage.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "step_binary_lexeme_retained",
+        |cap| {
+            let mut limited = service;
+            limited.limits.max_retained_bytes = cap;
+            lex_under_policy(input, limited, false)
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_binary_lexeme_retained")
     );
@@ -183,7 +164,7 @@ fn uri_lexeme_reserves_temporary_bytes_before_allocation() {
     let error = lex_under_policy(input, limited, false)
         .expect_err("nine URI bytes exceed eight temporary bytes");
     assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_uri_lexeme_temp")
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_uri_lexeme_bytes")
     );
 }
 
@@ -207,10 +188,16 @@ fn transient_binary_lexeme_reserves_packed_bytes_without_retention() {
     let mut service = DecodePolicy::service();
     service.limits.max_retained_bytes = 0;
     assert!(lex_under_policy(input, service, true).is_ok());
-    let mut limited = service;
-    limited.limits.max_materialized_bytes = 5 + 5 + 1;
-    let error = lex_under_policy(input, limited, true)
-        .expect_err("five digit slots and their reservation leave one byte for two packed bytes");
+    // Two live packed bytes; no digit reservation or duplicate slot storage.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_binary_packed_temp",
+        |cap| {
+            let mut limited = service;
+            limited.limits.max_materialized_bytes = cap;
+            lex_under_policy(input, limited, true)
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_binary_packed_temp")
     );
@@ -227,7 +214,7 @@ fn transient_uri_lexeme_uses_only_temporary_bytes() {
     let error = lex_under_policy(input, limited, true)
         .expect_err("nine URI bytes exceed eight temporary bytes");
     assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_uri_lexeme_temp")
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_uri_lexeme_bytes")
     );
 }
 
@@ -448,7 +435,12 @@ fn real_lexeme_rejects_binary64_overflow() {
         let error = crate::test_support::with_service_context(source, crate::lex::lex_with_context)
             .expect_err("overflow cannot enter a real token");
         assert!(error.message.contains("finite binary64 range"));
-        assert!(matches!(error.into_codec_error(), CodecError::Malformed(_)));
+        crate::test_support::with_service_context(source, |_, ctx| {
+            assert!(matches!(
+                error.into_codec_error(ctx),
+                CodecError::Malformed(_)
+            ));
+        });
     }
 }
 
@@ -493,7 +485,7 @@ fn occurrence_number_parse_preserves_refusal() {
                     .unwrap();
             let result = super::lex_with_context(b"#7", &ctx)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -516,7 +508,7 @@ fn real_number_parse_preserves_refusal() {
                     .unwrap();
             let result = super::lex_with_context(b"2.5", &ctx)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -539,7 +531,7 @@ fn integer_number_parse_preserves_refusal() {
                     .unwrap();
             let result = super::lex_with_context(b"7", &ctx)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -584,7 +576,7 @@ fn normalized_retained_character_preserves_refusal() {
             let result = lexer
                 .normalized(0, 2, super::LiteralStorage::Retained)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -607,11 +599,88 @@ fn normalized_temp_character_preserves_refusal() {
             let result = lexer
                 .normalized(0, 2, super::LiteralStorage::Transient)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
             result
         },
+    );
+}
+
+#[test]
+fn lexer_cursor_and_control_lookahead_preserve_refusal() {
+    for (input, operation) in [
+        (
+            b" /* comment */ NAME".as_slice(),
+            "STEP lexer cursor traversal",
+        ),
+        (
+            b"/* comment */NAME".as_slice(),
+            "STEP lexer comment traversal",
+        ),
+        (b"\\\x01N\\".as_slice(), "STEP lexer control lookahead"),
+        (b"<name>".as_slice(), "STEP resource UTF-8 validation"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                lex_under_policy(input, policy, false)
+            },
+        );
+    }
+}
+
+#[test]
+fn transient_token_storage_stays_live_until_the_next_token() {
+    crate::test_support::with_service_context(b"\"0A1F2\"", |input, ctx| {
+        let mut lexer = super::Lexer::new(input, ctx);
+        lexer.set_transient_literals();
+        let token = lexer.next_token().unwrap().unwrap();
+        let CodecError::ResourceLimit(limit) = ctx
+            .reserve_scoped(u64::MAX, "live token probe")
+            .unwrap_err()
+        else {
+            panic!("probe must refuse");
+        };
+        assert_eq!(limit.used, 2);
+        assert!(matches!(token.kind, super::TokenKind::Binary(_)));
+    });
+}
+
+#[test]
+fn control_run_lookahead_is_linear_and_preserves_resource_error_offset() {
+    fn work(source: &[u8]) -> u64 {
+        crate::test_support::with_service_context(source, |input, ctx| {
+            super::lex_with_context(input, ctx).expect("control run input lexes");
+            let CodecError::ResourceLimit(refusal) = ctx
+                .charge_work(u64::MAX, "test completed lexer work")
+                .expect_err("work probe refuses")
+            else {
+                panic!("work refusal required");
+            };
+            refusal.used
+        })
+    }
+    for (prefix, suffix) in [
+        (b"<a".as_slice(), b"b>".as_slice()),
+        (b"SIGNATURE;AAAA".as_slice(), b"ENDSEC;".as_slice()),
+    ] {
+        let short = [prefix, &[0; 16], suffix].concat();
+        let long = [prefix, &[0; 128], suffix].concat();
+        // One cursor visit and one normalized-byte/signature validation visit per control;
+        // the run skipper has one additional outer visit, independent of run length.
+        assert_eq!(work(&long) - work(&short), 2 * (128 - 16));
+    }
+    let invalid = [b"<a".as_slice(), &[0; 16], b"\\N\\>".as_slice()].concat();
+    let error = crate::test_support::with_service_context(&invalid, super::lex_with_context)
+        .expect_err("print directives are forbidden in resources");
+    assert_eq!(error.offset, 2);
+    assert_eq!(
+        error.message,
+        "print control directive is not allowed in a resource"
     );
 }

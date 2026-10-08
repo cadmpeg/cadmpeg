@@ -56,36 +56,21 @@ impl CodecBackend for StepCodec {
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let view = prefix;
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect STEP trivia",
-        )?;
         if starts_with_step_magic(ctx, prefix)? {
             return Ok(Confidence::High);
         }
         if archive::has_root_marker(ctx, view)? {
             return Ok(Confidence::Medium);
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect STEP HDF5",
-        )?;
         if is_part26_hdf5(prefix) {
             return Ok(Confidence::Medium);
         }
-        let xml_bytes = cadmpeg_core::decode::u64_from_index(prefix.len().min(4096));
-        ctx.charge_work(xml_bytes * 6, "detect STEP Part 28 XML")?;
         if is_part28_xml(ctx, prefix)? {
             return Ok(Confidence::Medium);
         }
-        ctx.charge_work(xml_bytes * 5, "detect STEP business-object XML")?;
         if is_ap242_bo_model_xml(ctx, prefix)? {
             return Ok(Confidence::Medium);
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len().min(4)),
-            "detect STEP ZIP",
-        )?;
         Ok(if archive::has_zip_magic(prefix) {
             Confidence::Low
         } else {
@@ -144,10 +129,6 @@ fn insert_attribute(
     key: &'static str,
     value: String,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(key.len()),
-        "step_inspect_attribute_key",
-    )?;
     let key = ctx.copy_retained_text(key, "step_inspect_attribute_key")?;
     ctx.insert_btree_map(attributes, key, value, "step_inspect_attributes")?;
     Ok(())
@@ -178,8 +159,8 @@ fn inspect_exchange(
     if codec.detect_impl(ctx, root)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
-    let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
-    inspect_parsed_exchange(bytes, ctx, &mut exchange, &diagnostics)
+    let mut parsed = parse::parse_with_context(bytes, ctx, "STEP inspect parsed graph storage")?;
+    inspect_parsed_exchange(bytes, ctx, &mut parsed.exchange, &parsed.diagnostics)
 }
 
 fn inspect_parsed_exchange(
@@ -188,11 +169,20 @@ fn inspect_parsed_exchange(
     exchange: &mut parse::Exchange,
     diagnostics: &[parse::ParseDiagnostic],
 ) -> Result<InspectedExchange, CodecError> {
+    let mut analysis_storage = ctx.reserve_scoped(0, "STEP inspection analysis storage")?;
+    let analyzed = analysis_storage
+        .with_storage(|| reader::analyze_exchange(bytes, exchange, diagnostics, ctx));
     let reader::AnalyzedExchange {
         decoded,
         matched,
         opaque_offsets,
-    } = reader::analyze_exchange(bytes, exchange, diagnostics, ctx)?;
+    } = analyzed.or_else(|error| match error {
+        CodecError::Malformed(message) => Err(CodecError::Malformed(
+            ctx.copy_retained_text(&message, "STEP inspection analysis error")?,
+        )),
+        error => Err(error),
+    })?;
+    let matched = matched.try_clone_for_decode(ctx, "STEP inspection retained dialect")?;
     let mut entries = Vec::new();
     ctx.push_vec(
         &mut entries,
@@ -259,32 +249,39 @@ fn inspect_parsed_exchange(
         )?;
     }
     for (index, section) in ctx
-        .admit_iter(
-            &(exchange.data())[..],
-            "STEP inspect parsed exchange traversal",
-        )?
+        .admit_iter(exchange.data(), "STEP inspect parsed exchange traversal")?
         .enumerate()
     {
+        let mut counts_storage = ctx.reserve_scoped(0, "STEP inspect unknown count storage")?;
         let mut counts = BTreeMap::<&str, usize>::new();
         for id in ctx.admit_iter(
             &(section.records)[..],
             "STEP inspect parsed exchange traversal",
         )? {
-            if !opaque_offsets.contains(&exchange.records()[id].span.start) {
+            let record = ctx
+                .get_btree_map(exchange.records(), id, "STEP inspect record lookup")?
+                .ok_or_else(|| CodecError::malformed("DATA section names no record"))?;
+            if !ctx.contains_btree_set(
+                &opaque_offsets,
+                &record.span.start,
+                "STEP inspect opaque offset lookup",
+            )? {
                 continue;
             }
             for partial in ctx.admit_iter(
-                &(exchange.records()[id].partials)[..],
+                &record.partials[..],
                 "STEP inspect parsed exchange traversal",
             )? {
                 let name = partial.name.as_str();
-                ctx.admit_btree_entry(&counts, &name, "step_inspect_unknown_counts")?;
-                match counts.entry(name) {
-                    Entry::Occupied(mut entry) => *entry.get_mut() += 1,
-                    Entry::Vacant(entry) => {
-                        entry.insert(1);
+                counts_storage.with_storage(|| {
+                    match ctx.entry_btree_map(&mut counts, name, "step_inspect_unknown_counts")? {
+                        Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+                        Entry::Vacant(entry) => {
+                            entry.insert(1);
+                        }
                     }
-                }
+                    Ok::<(), CodecError>(())
+                })?;
             }
         }
         let unknown = ctx.join_display_retained(
@@ -317,10 +314,21 @@ fn inspect_parsed_exchange(
             "step_inspect_entries",
         )?;
     }
-    let external_dependencies = decoded.body.notes.iter().filter(|note| {
-        note.starts_with("external document ") || note.starts_with("external source ")
-    });
-    let dependency_count = external_dependencies.clone().count();
+    let (external_dependencies, _dependency_storage) =
+        ctx.with_scoped_storage("STEP inspect dependency storage", || {
+            ctx.collect_vec(
+                ctx.admit_iter(
+                    decoded.body.notes.as_slice(),
+                    "STEP inspect dependency traversal",
+                )?
+                .filter(|note| {
+                    note.starts_with("external document ") || note.starts_with("external source ")
+                })
+                .map(String::as_str),
+                "STEP inspect dependency slots",
+            )
+        })?;
+    let dependency_count = external_dependencies.len();
     if dependency_count > 0 {
         let mut attributes = std::collections::BTreeMap::new();
         insert_attribute(
@@ -337,7 +345,7 @@ fn inspect_parsed_exchange(
             &mut attributes,
             "dependencies",
             ctx.join_display_retained(
-                external_dependencies.map(String::as_str),
+                external_dependencies.iter().copied(),
                 ",",
                 "step_inspect_dependency_text",
             )?,
@@ -356,7 +364,7 @@ fn inspect_parsed_exchange(
     }
     for (index, signature) in ctx
         .admit_iter(
-            &(exchange.signatures())[..],
+            exchange.signatures(),
             "STEP inspect parsed exchange traversal",
         )?
         .enumerate()
@@ -382,12 +390,15 @@ fn inspect_parsed_exchange(
             "step_inspect_entries",
         )?;
     }
-    let identifiers = exchange.joined_schema_identifiers(ctx)?;
-    let schema = if identifiers.is_empty() {
-        "unspecified".into()
-    } else {
-        identifiers
-    };
+    let (schema, _schema_storage) =
+        ctx.with_scoped_storage("STEP inspect schema text storage", || {
+            let identifiers = exchange.joined_schema_identifiers(ctx)?;
+            if identifiers.is_empty() {
+                ctx.copy_retained_text("unspecified", "STEP inspect unspecified schema text")
+            } else {
+                Ok(identifiers)
+            }
+        })?;
     let dialect = matched.dialect();
     let mut notes = Vec::new();
     ctx.push_vec(
@@ -405,10 +416,15 @@ fn inspect_parsed_exchange(
         )?;
         ctx.push_vec(&mut notes, note, "step_codec_notes")?;
     }
+    let losses = ctx.try_collect_retained_with(
+        decoded.body.losses.iter(),
+        "STEP inspection retained loss slots",
+        |loss| loss.try_clone_for_decode(ctx, "STEP inspection retained loss"),
+    )?;
     Ok(InspectedExchange {
         matched,
         entries,
-        losses: decoded.body.losses,
+        losses,
         notes,
     })
 }
@@ -416,10 +432,12 @@ fn inspect_parsed_exchange(
 fn starts_with_step_magic(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     let mut at = 0;
     loop {
+        ctx.charge_work(1, "STEP magic cursor traversal")?;
         while bytes
             .get(at)
             .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
         {
+            ctx.charge_work(1, "STEP magic cursor traversal")?;
             at += 1;
         }
         if bytes.get(at..at + 2) == Some(b"/*") {
@@ -446,6 +464,7 @@ fn starts_with_step_magic(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool,
     }
     for &expected_byte in b"ISO-10303-21;" {
         while bytes.get(at).is_some_and(u8::is_ascii_control) {
+            ctx.charge_work(1, "STEP magic cursor traversal")?;
             at += 1;
         }
         if !bytes
@@ -463,19 +482,20 @@ fn inspect_zip(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<ContainerSummary, CodecError> {
-    let archive::OpenedRoot {
-        archive,
-        view: root_view,
-        data_start: root_data_offset,
-    } = archive::open_root(ctx, root)?;
+    let opened = archive::open_root(ctx, root)?;
+    let archive = &opened.archive;
+    let root_view = opened.view;
+    let root_data_offset = opened.data_start;
     let root_bytes = root_view.window();
     refuse_alternate_encoding(ctx, root_bytes)?;
     if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
-    let (mut exchange, diagnostics) = parse::parse_with_context(root_bytes, ctx)?;
-    let resource_notes = archive::root_reference_notes(ctx, &archive, &exchange);
-    let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut exchange, &diagnostics)?;
+    let mut parsed =
+        parse::parse_with_context(root_bytes, ctx, "STEP inspect parsed graph storage")?;
+    let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange);
+    let mut inspected =
+        inspect_parsed_exchange(root_bytes, ctx, &mut parsed.exchange, &parsed.diagnostics)?;
     let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
     let logical_entries = ctx.join_display_retained(
@@ -515,10 +535,11 @@ fn inspect_zip(
     }
     drop(roles);
     drop(role_storage);
-    if let Some(root_entry) = entries
-        .iter_mut()
-        .find(|entry| entry.name == archive::ROOT_NAME)
-    {
+    if let Some(root_entry) = ctx.find_by(
+        entries.iter_mut(),
+        |entry| Ok(entry.name == archive::ROOT_NAME),
+        "STEP inspect root entry search",
+    )? {
         insert_attribute(
             ctx,
             &mut root_entry.attributes,
@@ -564,18 +585,18 @@ fn decode_zip(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     root: cadmpeg_core::decode::View<'_>,
 ) -> Result<Decoded, CodecError> {
-    let archive::OpenedRoot {
-        archive,
-        view: root_view,
-        data_start: root_data_offset,
-    } = archive::open_root(ctx, root)?;
-    let (exchange, diagnostics) = parse::parse_with_context(root_view.window(), ctx)?;
-    let resource_notes = archive::root_reference_notes(ctx, &archive, &exchange)?;
+    let opened = archive::open_root(ctx, root)?;
+    let archive = &opened.archive;
+    let root_view = opened.view;
+    let root_data_offset = opened.data_start;
+    let parsed =
+        parse::parse_with_context(root_view.window(), ctx, "STEP ZIP parsed graph storage")?;
+    let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange)?;
     let entry_count = archive.entries().len();
     let mut decoded = reader::decode_exchange(
         root_view.window(),
-        exchange,
-        &diagnostics,
+        parsed.exchange,
+        &parsed.diagnostics,
         ctx,
         reader::Packaging::Zip {
             entry_count,
@@ -616,7 +637,7 @@ pub(crate) fn is_part26_hdf5(bytes: &[u8]) -> bool {
 
 pub(crate) fn is_part28_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     let bytes = &bytes[..bytes.len().min(4096)];
-    let Some((name, attributes)) = xml_root_start_tag(ctx, bytes)? else {
+    let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(ctx, bytes)? else {
         return Ok(false);
     };
     let local_name = ctx
@@ -627,7 +648,7 @@ pub(crate) fn is_part28_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<boo
         )?
         .map_or(name, |separator| &name[separator + 1..]);
     if local_name.eq_ignore_ascii_case(b"iso_10303_28")
-        || ascii_starts_with(ctx, local_name, b"iso_10303_28_")?
+        || ascii_starts_with(local_name, b"iso_10303_28_")
     {
         return Ok(true);
     }
@@ -636,12 +657,7 @@ pub(crate) fn is_part28_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<boo
     // Its governing-schema namespace varies by AP, but the Part 28 common
     // namespace remains the bounded admission marker. Schema selection and
     // the derived XML Schema remain caller inputs.
-    for namespace in PART28_COMMON_NAMESPACES {
-        if has_namespace_value(ctx, attributes, namespace)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    has_namespace_value(ctx, attributes, &PART28_COMMON_NAMESPACES)
 }
 
 const PART28_COMMON_NAMESPACES: [&[u8]; 3] = [
@@ -650,32 +666,32 @@ const PART28_COMMON_NAMESPACES: [&[u8]; 3] = [
     b"urn:iso.org:standard:10303:part(28):version(2):xmlschema:common",
 ];
 
-fn ascii_starts_with(
-    ctx: &DecodeContext<'_>,
-    value: &[u8],
-    prefix: &[u8],
-) -> Result<bool, CodecError> {
-    if value.len() < prefix.len() {
-        return Ok(false);
-    }
-    ctx.all_by(
-        value[..prefix.len()].iter().zip(prefix.iter()),
-        |(value, prefix)| Ok(value.eq_ignore_ascii_case(prefix)),
-        "STEP XML name prefix traversal",
-    )
+fn ascii_starts_with(value: &[u8], prefix: &[u8]) -> bool {
+    value.len() >= prefix.len()
+        && value[..prefix.len()]
+            .iter()
+            .zip(prefix)
+            .all(|(value, prefix)| value.eq_ignore_ascii_case(prefix))
+}
+
+struct XmlRootTag<'a> {
+    name: &'a [u8],
+    attributes: &'a [u8],
 }
 
 fn xml_root_start_tag<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
-) -> Result<Option<(&'a [u8], &'a [u8])>, CodecError> {
+) -> Result<Option<XmlRootTag<'a>>, CodecError> {
     let mut cursor = if bytes.starts_with(b"\xef\xbb\xbf") {
         3
     } else {
         0
     };
     loop {
+        ctx.charge_work(1, "STEP XML root cursor traversal")?;
         while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            ctx.charge_work(1, "STEP XML root cursor traversal")?;
             cursor += 1;
         }
         if bytes.get(cursor) != Some(&b'<') {
@@ -732,7 +748,7 @@ fn xml_root_start_tag<'a>(
         break;
     }
 
-    let Some(tag_end) = find_xml_tag_end(bytes, cursor + 1) else {
+    let Some(tag_end) = find_xml_tag_end(ctx, bytes, cursor + 1)? else {
         return Ok(None);
     };
     let mut name_end = cursor + 1;
@@ -740,40 +756,46 @@ fn xml_root_start_tag<'a>(
         .get(name_end)
         .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'/' && *byte != b'>')
     {
+        ctx.charge_work(1, "STEP XML root cursor traversal")?;
         name_end += 1;
     }
     if name_end == cursor + 1 {
         return Ok(None);
     }
-    Ok(Some((
-        &bytes[cursor + 1..name_end],
-        &bytes[name_end..tag_end],
-    )))
+    Ok(Some(XmlRootTag {
+        name: &bytes[cursor + 1..name_end],
+        attributes: &bytes[name_end..tag_end],
+    }))
 }
 
-fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
+fn find_xml_tag_end(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    mut cursor: usize,
+) -> Result<Option<usize>, CodecError> {
     let mut quote = None;
     while let Some(byte) = bytes.get(cursor).copied() {
+        ctx.charge_work(1, "STEP XML tag cursor traversal")?;
         match quote {
             Some(delimiter) if byte == delimiter => quote = None,
             Some(_) => {}
             None if byte == b'\'' || byte == b'"' => quote = Some(byte),
-            None if byte == b'>' => return Some(cursor),
+            None if byte == b'>' => return Ok(Some(cursor)),
             None => {}
         }
         cursor += 1;
     }
-    None
+    Ok(None)
 }
 
 fn has_namespace_value(
     ctx: &DecodeContext<'_>,
     attributes: &[u8],
-    expected: &[u8],
+    namespaces: &[&[u8]],
 ) -> Result<bool, CodecError> {
-    Ok(xml_attribute_value(ctx, attributes, |ctx, name, value| {
-        Ok((name == b"xmlns" || name.starts_with(b"xmlns:"))
-            && ctx.equal_bytes(value, expected, "STEP XML namespace value equality")?)
+    // Every caller supplies a fixed catalog of namespace literals.
+    Ok(xml_attribute_value(ctx, attributes, |_, name, value| {
+        Ok((name == b"xmlns" || name.starts_with(b"xmlns:")) && namespaces.contains(&value))
     })?
     .is_some())
 }
@@ -785,7 +807,9 @@ fn xml_attribute_value<'a>(
 ) -> Result<Option<&'a [u8]>, CodecError> {
     let mut cursor = 0;
     while cursor < attributes.len() {
+        ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         if attributes.get(cursor).is_none_or(|byte| *byte == b'/') {
@@ -796,10 +820,12 @@ fn xml_attribute_value<'a>(
             .get(cursor)
             .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'=' && *byte != b'/')
         {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         let name = &attributes[name_start..cursor];
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         if attributes.get(cursor) != Some(&b'=') {
@@ -807,6 +833,7 @@ fn xml_attribute_value<'a>(
         }
         cursor += 1;
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         let Some(&delimiter) = attributes.get(cursor) else {
@@ -821,6 +848,7 @@ fn xml_attribute_value<'a>(
             .get(cursor)
             .is_some_and(|byte| *byte != delimiter)
         {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         let value = &attributes[value_start..cursor];
@@ -837,7 +865,7 @@ pub(crate) fn is_ap242_bo_model_xml(
     bytes: &[u8],
 ) -> Result<bool, CodecError> {
     let bytes = &bytes[..bytes.len().min(4096)];
-    let Some((name, attributes)) = xml_root_start_tag(ctx, bytes)? else {
+    let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(ctx, bytes)? else {
         return Ok(false);
     };
     let local_name = ctx
@@ -853,12 +881,7 @@ pub(crate) fn is_ap242_bo_model_xml(
     if local_name != b"Uos" {
         return Ok(false);
     }
-    for namespace in BO_MODEL_NAMESPACES {
-        if has_namespace_value(ctx, attributes, namespace)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    has_namespace_value(ctx, attributes, &BO_MODEL_NAMESPACES)
 }
 
 const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
@@ -868,6 +891,7 @@ const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
     use std::io::Cursor;
 
     use cadmpeg_core::decode::{
@@ -879,24 +903,316 @@ mod tests {
     use super::{insert_attribute, starts_with_step_magic, StepCodec};
 
     #[test]
-    fn xml_namespace_value_equality_preserves_resource_refusal() {
-        let attributes = b" xmlns='urn:test:namespace'";
+    fn scoped_parse_errors_retain_only_the_escaping_text() {
+        for (source, operation) in [
+            (
+                format!("ISO-10303-21;{};", "A".repeat(8192)).into_bytes(),
+                "STEP parse error",
+            ),
+            (b"ISO-10303-21;#0".to_vec(), "STEP lexical error"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            for inspect in [false, true] {
+                crate::test_support::with_policy_context(&source, &policy, |source, ctx| {
+                    let result = if inspect {
+                        super::inspect_exchange(
+                            &StepCodec::default(),
+                            ctx,
+                            cadmpeg_core::decode::View::over_retained(source),
+                        )
+                        .map(|_| ())
+                    } else {
+                        use cadmpeg_ir::codec::CodecBackend;
+                        StepCodec::default()
+                            .decode_impl(ctx, cadmpeg_core::decode::View::over_retained(source))
+                            .map(|_| ())
+                    };
+                    assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
+                        if refusal.dimension == ResourceDimension::RetainedBytes
+                            && refusal.operation == operation));
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn zip_scoped_parse_errors_retain_only_the_escaping_text() {
+        use std::io::Write;
+        for (root, operation) in [
+            (
+                format!("ISO-10303-21;{};", "A".repeat(8192)).into_bytes(),
+                "STEP parse error",
+            ),
+            (b"ISO-10303-21;#0".to_vec(), "STEP lexical error"),
+        ] {
+            let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            writer
+                .start_file(
+                    "ISO-10303.p21",
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Stored),
+                )
+                .expect("ZIP root");
+            writer.write_all(&root).expect("root content");
+            let source = writer.finish().expect("ZIP envelope").into_inner();
+            for inspect in [false, true] {
+                cadmpeg_test_support::refusal::resource_limit_at(
+                    ResourceDimension::RetainedBytes,
+                    operation,
+                    |cap| {
+                        let mut policy = DecodePolicy::service();
+                        policy.limits.max_retained_bytes = cap;
+                        crate::test_support::with_policy_context(&source, &policy, |source, ctx| {
+                            let view = cadmpeg_core::decode::View::over_retained(source);
+                            if inspect {
+                                super::inspect_zip(ctx, view).map(|_| ())
+                            } else {
+                                super::decode_zip(ctx, view).map(|_| ())
+                            }
+                        })
+                    },
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scoped_parse_graph_uses_materialized_storage_until_drop() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 1_048_576;
+        crate::test_support::with_policy_context(INSPECTION_TEXT_SOURCE, &policy, |source, ctx| {
+            let parsed = crate::parse::parse_with_context(source, ctx, "test parsed graph")
+                .expect("temporary graph needs no retained allowance");
+            assert_eq!(parsed.exchange.records().len(), 1);
+            drop(parsed);
+            ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released graph")
+                .expect("dropping the graph releases its reservation");
+        });
+    }
+
+    fn point_source(count: usize) -> Vec<u8> {
+        let mut records = (1..=count).fold(String::new(), |mut records, id| {
+            write!(records, "#{id}=CARTESIAN_POINT('',(1.,2.,3.));").expect("point fixture text");
+            records
+        });
+        let members = (1..=count)
+            .map(|id| format!("#{id}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        write!(records, "#{}=GEOMETRIC_SET('',({members}));", count + 1).expect("set fixture text");
+        format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;").into_bytes()
+    }
+
+    #[test]
+    fn bare_decode_does_not_retain_the_discarded_parse_graph() {
+        use cadmpeg_ir::codec::CodecBackend;
+        let source = point_source(128);
+        let retained = |scoped| {
+            crate::test_support::with_service_context(&source, |source, ctx| {
+                let decoded = if scoped {
+                    StepCodec::default()
+                        .decode_impl(ctx, cadmpeg_core::decode::View::over_retained(source))
+                } else {
+                    let (exchange, diagnostics) =
+                        crate::parse::parse_retained(source, ctx).expect("unscoped control graph");
+                    crate::reader::decode_exchange(
+                        source,
+                        exchange,
+                        &diagnostics,
+                        ctx,
+                        crate::reader::Packaging::Bare,
+                    )
+                }
+                .expect("valid points decode");
+                assert_eq!(decoded.ir.model.points.len(), 128);
+                let CodecError::ResourceLimit(refusal) = ctx
+                    .charge_retained(u64::MAX, "test retained storage")
+                    .expect_err("storage probe refuses")
+                else {
+                    panic!("retained refusal required");
+                };
+                refusal.used
+            })
+        };
+        assert!(retained(true) < retained(false));
+    }
+
+    #[test]
+    fn inspection_retains_summary_storage_instead_of_geometry() {
+        let source = point_source(1024);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 16_384;
+        crate::test_support::with_policy_context(&source, &policy, |source, ctx| {
+            let inspected = super::inspect_exchange(
+                &StepCodec::default(),
+                ctx,
+                cadmpeg_core::decode::View::over_retained(source),
+            )
+            .expect("summary fits without the discarded point graph");
+            let data = inspected
+                .entries
+                .iter()
+                .find(|entry| entry.name == "DATA[0]")
+                .expect("DATA entry");
+            // The section contains 1024 points and their geometric-set carrier.
+            assert_eq!(data.attributes["entity_count"], "1025");
+        });
+    }
+
+    #[test]
+    fn inspection_surviving_dialect_and_losses_preserve_retained_refusal() {
+        let source = include_bytes!("../tests/fixtures/noncanonical_solid_angle.p21");
+        for operation in [
+            "STEP inspection retained dialect",
+            "STEP inspection retained loss",
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes,
+                operation,
+                |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_retained_bytes = cap;
+                    crate::test_support::with_policy_context(source, &policy, |source, ctx| {
+                        super::inspect_exchange(
+                            &StepCodec::default(),
+                            ctx,
+                            cadmpeg_core::decode::View::over_retained(source),
+                        )
+                        .map(|_| ())
+                    })
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn inspection_schema_note_keeps_all_declared_identifiers_in_order() {
+        let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','CUSTOM_SCHEMA'));ENDSEC;DATA('main',('AP242'));ENDSEC;END-ISO-10303-21;";
+        crate::test_support::with_service_context(source, |source, ctx| {
+            let inspected = super::inspect_exchange(
+                &StepCodec::default(),
+                ctx,
+                cadmpeg_core::decode::View::over_retained(source),
+            )
+            .expect("named section and multiple schemas");
+            assert!(inspected
+                .notes
+                .iter()
+                .any(|note| note.starts_with("schema AP242,CUSTOM_SCHEMA; dialect ")));
+        });
+    }
+
+    #[test]
+    fn header_cursor_walks_refuse_work_before_advancing() {
+        for (source, operation) in [
+            (
+                b" \0 ISO-10303-21;".as_slice(),
+                "STEP magic cursor traversal",
+            ),
+            (
+                b" \n <Uos a='v'>".as_slice(),
+                "STEP XML root cursor traversal",
+            ),
+            (b"<Uos a='v'>".as_slice(), "STEP XML tag cursor traversal"),
+            (
+                b"<Uos xmlns='urn:test'>".as_slice(),
+                "STEP XML attribute cursor traversal",
+            ),
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+                    if operation == "STEP magic cursor traversal" {
+                        starts_with_step_magic(&ctx, source)
+                    } else {
+                        super::is_ap242_bo_model_xml(&ctx, source)
+                    }
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn magic_detection_does_not_charge_unvisited_suffix() {
+        use cadmpeg_ir::codec::CodecBackend;
+
+        let source = [b"ISO-10303-21;".as_slice(), &[b' '; 8192]].concat();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(attributes, &arena, &policy).unwrap();
-        let error =
-            super::has_namespace_value(&ctx, attributes, b"urn:test:namespace").unwrap_err();
-        let CodecError::ResourceLimit(refusal) = error else {
-            panic!("namespace comparison must preserve its resource refusal");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(refusal.operation, "STEP XML namespace value equality");
-        assert_eq!(ctx.resource_refusal(), Some(refusal));
+        // One trivia-loop visit; the fixed magic contains no ignored controls.
+        policy.limits.max_work_units = 1;
+        let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+        assert_eq!(
+            StepCodec::default().detect_impl(&ctx, root).unwrap(),
+            Confidence::High
+        );
+    }
+
+    #[test]
+    fn xml_namespace_values_match_literal_namespaces() {
+        let attributes = b" xmlns='urn:test:namespace'";
         let service = cadmpeg_test_support::service_decode_context();
-        assert!(super::has_namespace_value(&service, attributes, b"urn:test:namespace").unwrap());
-        assert!(!super::has_namespace_value(&service, attributes, b"urn:test:different").unwrap());
-        assert!(!super::has_namespace_value(&service, b" xmlns", b"urn:test:namespace").unwrap());
+        assert!(super::has_namespace_value(
+            &service,
+            attributes,
+            &[b"urn:test:namespace".as_slice()]
+        )
+        .unwrap());
+        assert!(!super::has_namespace_value(
+            &service,
+            attributes,
+            &[b"urn:test:different".as_slice()]
+        )
+        .unwrap());
+        assert!(!super::has_namespace_value(
+            &service,
+            b" xmlns",
+            &[b"urn:test:namespace".as_slice()]
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn namespace_match_leaves_following_attributes_unvisited() {
+        fn work(attributes: &[u8], namespaces: &[&[u8]]) -> u64 {
+            crate::test_support::with_service_context(attributes, |_, ctx| {
+                assert!(super::has_namespace_value(ctx, attributes, namespaces)
+                    .expect("literal namespace matches"));
+                let CodecError::ResourceLimit(refusal) = ctx
+                    .charge_work(u64::MAX, "test completed XML namespace work")
+                    .expect_err("work probe refuses")
+                else {
+                    panic!("work refusal required");
+                };
+                refusal.used
+            })
+        }
+        for namespaces in [
+            super::PART28_COMMON_NAMESPACES.as_slice(),
+            super::BO_MODEL_NAMESPACES.as_slice(),
+        ] {
+            let namespace = std::str::from_utf8(namespaces.last().expect("catalog is nonempty"))
+                .expect("namespace literal is UTF-8");
+            let attributes = format!(" xmlns='{namespace}'");
+            let extended = [
+                attributes.as_bytes(),
+                b" ignored='".as_slice(),
+                &[b'x'; 1024],
+                b"'".as_slice(),
+            ]
+            .concat();
+            assert_eq!(
+                work(attributes.as_bytes(), namespaces),
+                work(&extended, namespaces)
+            );
+        }
     }
 
     const INSPECTION_TEXT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";

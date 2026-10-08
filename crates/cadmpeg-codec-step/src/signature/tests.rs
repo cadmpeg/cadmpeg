@@ -6,7 +6,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 #[test]
 fn ber_cursor_past_input_refuses_remaining_length() {
-    let mut ber = super::Ber::new(b"");
+    let mut ber = super::Ber::new(super::BerValue::root(b""));
     ber.at = 1;
     assert_eq!(super::require_empty(&ber), Err("BER cursor exceeds input"));
 }
@@ -137,20 +137,28 @@ fn accepts_cms_ber_indefinite_lengths() {
 #[test]
 fn accepts_ber_contextual_subject_key_identifier_and_octet_string() {
     assert_eq!(
-        crate::test_support::with_service_context(&[], |_, ctx| super::validate_signer_identifier(
-            ctx,
-            0x80,
-            &[0x01, 0x02, 0x03]
-        ))
+        crate::test_support::with_service_context(&[], |_, ctx| {
+            let mut extents = super::BerExtents::new(ctx)?;
+            super::validate_signer_identifier(
+                ctx,
+                &mut extents,
+                0x80,
+                super::BerValue::root(&[0x01, 0x02, 0x03]),
+            )
+        })
         .map_err(|error| error.to_string()),
         Ok(())
     );
     assert_eq!(
-        crate::test_support::with_service_context(&[], |_, ctx| super::validate_octet_string(
-            ctx,
-            0x24,
-            &[0x04, 0x01, 0xaa]
-        ))
+        crate::test_support::with_service_context(&[], |_, ctx| {
+            let mut extents = super::BerExtents::new(ctx)?;
+            super::validate_octet_string(
+                ctx,
+                &mut extents,
+                0x24,
+                super::BerValue::root(&[0x04, 0x01, 0xaa]),
+            )
+        })
         .map_err(|error| error.to_string()),
         Ok(())
     );
@@ -458,16 +466,42 @@ fn parser_rejects_invalid_signature_base64() {
 }
 
 #[test]
-fn ber_length_iteration_refusal_reaches_cms_validation() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    crate::test_support::with_policy_context(&[], &policy, |_, ctx| {
-        let error = super::validate_detached_cms(ctx, &[0x30, 0x81, 0])
-            .expect_err("one length octet requires admission");
-        assert!(matches!(error,
-            super::CmsError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "STEP BER length octet traversal"
-                    && Some(limit) == ctx.resource_refusal()));
-    });
+fn ber_cursor_and_nested_values_preserve_resource_refusal() {
+    for (dimension, operation) in [
+        (
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "STEP signature cursor traversal",
+        ),
+        (
+            cadmpeg_core::decode::ResourceDimension::RecursionDepth,
+            "STEP BER nesting",
+        ),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            match dimension {
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap;
+                }
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
+                    policy.limits.max_recursion_depth = cap;
+                }
+                _ => unreachable!(),
+            }
+            crate::test_support::with_policy_context(BER_CMS_INDEFINITE, &policy, |input, ctx| {
+                match super::validate_detached_cms(ctx, input) {
+                    Ok(()) => Ok(()),
+                    Err(super::CmsError::Resource(error)) => {
+                        if let cadmpeg_core::CodecError::ResourceLimit(refusal) = &error {
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                        }
+                        Err(error)
+                    }
+                    other => panic!("valid BER must not fail syntax: {other:?}"),
+                }
+            })
+        });
+    }
 }
+
+mod extent_index;

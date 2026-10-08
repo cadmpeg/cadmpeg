@@ -115,7 +115,8 @@ pub(super) fn decode<'ctx>(
         &mut scratch_storage,
         ctx,
     )?;
-    for (id, record) in exchange.entities(ctx, "DATUM")? {
+    for indexed_entity in exchange.entities(ctx, "DATUM")? {
+        let (id, record) = indexed_entity?;
         let identification = record
             .partial(ctx, "DATUM")?
             .and_then(|partial| partial.parameters.first())
@@ -230,7 +231,8 @@ pub(super) fn decode<'ctx>(
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
     }
 
-    for (id, record) in exchange.entities(ctx, "DATUM_SYSTEM")? {
+    for indexed_entity in exchange.entities(ctx, "DATUM_SYSTEM")? {
+        let (id, record) = indexed_entity?;
         let constituents = ctx
             .find_map(
                 record.parameters().iter().rev(),
@@ -451,7 +453,8 @@ pub(super) fn decode<'ctx>(
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
     }
 
-    for (id, record) in exchange.entities(ctx, "PLUS_MINUS_TOLERANCE")? {
+    for indexed_entity in exchange.entities(ctx, "PLUS_MINUS_TOLERANCE")? {
+        let (id, record) = indexed_entity?;
         let (refs, _reference_storage) = ctx
             .with_scoped_storage("STEP PMI reference scratch", || {
                 collect_pmi_references(record.parameters(), ctx, "step_pmi_plus_minus_references")
@@ -880,7 +883,8 @@ pub(super) fn decode<'ctx>(
         }
     }
 
-    for (id, record) in exchange.entities(ctx, "DRAUGHTING_MODEL_ITEM_ASSOCIATION")? {
+    for indexed_entity in exchange.entities(ctx, "DRAUGHTING_MODEL_ITEM_ASSOCIATION")? {
+        let (id, record) = indexed_entity?;
         let Some(definition) = record
             .partial(ctx, "DRAUGHTING_MODEL_ITEM_ASSOCIATION")?
             .and_then(|partial| partial.parameters.get(2))
@@ -1141,7 +1145,8 @@ fn mark_characteristic_representations(
 ) -> Result<(), CodecError> {
     let mut visited = BTreeSet::new();
     let mut visited_storage = ctx.reserve_scoped(0, "STEP characteristic claim index scratch")?;
-    for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
+    for indexed_entity in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
+        let (id, record) = indexed_entity?;
         let Some(_) = find_record_value(record, ctx, |value| {
             first_matching([value], ctx, |reference| {
                 Ok(annotations.get(ctx, reference)?.is_some())
@@ -1229,7 +1234,8 @@ fn resolve_feature_for_datum_target_relationships(
     let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
     let mut target_storage = ctx.reserve_scoped(0, "STEP PMI target indices")?;
 
-    for (id, record) in exchange.entities(ctx, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP")? {
+    for indexed_entity in exchange.entities(ctx, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP")? {
+        let (id, record) = indexed_entity?;
         let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
             continue;
         };
@@ -2692,7 +2698,8 @@ fn characteristic_values(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
-    for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
+    for indexed_entity in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
+        let (id, record) = indexed_entity?;
         let mut measurements =
             measure_context(geometry, id, (losses, slot_storage), graph_limit, ctx)?;
         let Some(characteristic) = find_record_value(record, ctx, |value| {

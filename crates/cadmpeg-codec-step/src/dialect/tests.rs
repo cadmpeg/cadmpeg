@@ -406,39 +406,11 @@ fn the_implementation_level_is_recorded_and_never_classified_on() {
 }
 
 #[test]
-fn schema_identifier_case_equality_preserves_refusal() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "STEP schema identifier case equality",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = StepDialect::from_schema_identifier(
-                &ctx,
-                "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-                None,
-            )
-            .map(|_| ());
-            if let Err(CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-    let CodecError::ResourceLimit(refusal) = error else {
-        panic!("comparison must preserve its refusal");
-    };
-    assert_eq!(refusal.operation, "STEP schema identifier case equality");
-}
-
-#[test]
-fn schema_list_separator_character_preserves_refusal() {
+fn schema_list_join_preserves_refusal() {
     let exchange = exchange(&["AUTOMOTIVE_DESIGN", "CONFIG_CONTROL_DESIGN"], "2;1");
     cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "STEP schema list separator character",
+        "step_schema_identifier_list",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();

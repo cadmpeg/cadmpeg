@@ -214,7 +214,7 @@ impl StepDialect {
             return Ok(Self::Unknown);
         };
         let ap242_name = Part21Dialect::Ap242.schema_identifier();
-        if ctx.eq_ignore_ascii_case(name, ap242_name, "STEP schema identifier case equality")? {
+        if name.eq_ignore_ascii_case(ap242_name) {
             if object_identifier_text.is_none() {
                 return Ok(Self::Part21(Part21Dialect::Ap242));
             }
@@ -225,14 +225,12 @@ impl StepDialect {
             Part21Dialect::Schema(StepSchema::Ap203Edition2),
             Part21Dialect::Schema(StepSchema::Ap214),
         ] {
-            if let Some((candidate, _)) = split_schema_identifier(ctx, row.schema_identifier())? {
-                if ctx.eq_ignore_ascii_case(
-                    name,
-                    candidate,
-                    "STEP schema identifier case equality",
-                )? {
-                    return Ok(Self::Part21(row));
-                }
+            let candidate = row
+                .schema_identifier()
+                .split_once('{')
+                .map_or(row.schema_identifier(), |(name, _)| name.trim_end());
+            if name.eq_ignore_ascii_case(candidate) {
+                return Ok(Self::Part21(row));
             }
         }
         Ok(Self::Unknown)
@@ -272,7 +270,10 @@ impl StepDialect {
         ctx: &DecodeContext<'_>,
     ) -> Result<DialectMatch, CodecError> {
         let first = exchange.schema_identifiers().next();
-        let object_identifier = exchange.primary_schema_object_identifier(ctx)?;
+        let (object_identifier, _object_storage) = ctx
+            .with_scoped_storage("STEP dialect object identifier storage", || {
+                exchange.primary_schema_object_identifier(ctx)
+            })?;
         let dialect = match first {
             Some(identifier) => {
                 Self::from_schema_identifier(ctx, identifier, object_identifier.as_deref())?
@@ -340,7 +341,7 @@ pub(crate) fn dialect_loss(
         return Ok(None);
     };
     let operation = "step_dialect_unverified_loss_text";
-    let message = match matched.declared().get(DECLARED_FILE_SCHEMA_IDENTIFIER) {
+    let message = match ctx.get_btree_map(matched.declared(), DECLARED_FILE_SCHEMA_IDENTIFIER, "STEP dialect declaration lookup")? {
         Some(identifier) => ctx.format_retained(
             format_args!(
                 "FILE_SCHEMA identifier {identifier}; it satisfies no declared STEP dialect, so this decode read the exchange \
