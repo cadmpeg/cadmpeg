@@ -811,7 +811,10 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
         .reserve_scoped(0, "test loss slots")
         .expect("empty loss storage");
     let ir = cadmpeg_ir::CadIr::empty();
+    let mut face_cache = super::super::FaceAttributeCache::new(&ctx)
+        .expect("empty face attribute cache");
     let mut state = super::super::BuildState {
+        face_cache: &mut face_cache,
         failure: None,
         selection_index: None,
     };
@@ -893,14 +896,19 @@ fn face_attribute_attempt(
     policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    super::super::face_attributes(
-        face_id,
-        exchange.records().get(&face_id).expect("face record"),
-        &exchange,
-        &mut std::collections::BTreeSet::new(),
-        &ctx,
-    )
-    .map(|_| ())
+    let mut cache = super::super::FaceAttributeCache::new(&ctx)?;
+    let info = super::super::face_attributes(
+        face_id, exchange.records().get(&face_id).expect("face record"), &exchange,
+        &mut std::collections::BTreeSet::new(), &mut cache, &ctx,
+    )?;
+    if let super::super::FaceResolution::Resolved(info) = info {
+        super::super::claim_face_ancestors(
+            info.parent, &cache.completed,
+            (&mut std::collections::BTreeSet::new(), &mut ctx.reserve_scoped(0, "test claims")?),
+            (&mut std::collections::BTreeSet::new(), &mut ctx.reserve_scoped(0, "test ancestry")?), &ctx,
+        )?;
+    }
+    Ok(())
 }
 
 fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64) -> CodecError {
@@ -918,7 +926,7 @@ fn face_attribute_active_refuses_collection_limit() {
 
 #[test]
 fn face_attribute_typed_refuses_collection_limit() {
-    // Two active recursion nodes precede the typed claim; ancestor bounds are borrowed.
+    // Two active nodes, two completed-cache entries and one ancestry entry precede the typed claim; bounds are borrowed.
     assert!(
         matches!(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "step_face_attribute_typed", |cap| face_attribute_attempt(cap, u64::MAX, 4)),
         CodecError::ResourceLimit(refusal)
@@ -1077,26 +1085,81 @@ fn pcurve_selection_fractions_refuse_collection_limit() {
 
 #[test]
 fn rejected_pcurve_does_not_clone_the_output_identity() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
+    use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+        SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{CurveId, PcurveId, PointId, SurfaceId};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#4=LINE('',#5,#6);#5=DUMMY();#6=DUMMY();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("valid empty exchange");
+            .expect("valid line exchange");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let candidate = PcurveId::mint("step:data:pcurve#1").expect("valid pcurve identity");
+    ir.model.pcurves.push(Pcurve {
+        id: candidate.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .expect("finite pcurve"),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId::mint("step:data:surface#1").expect("valid surface identity"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("finite plane"),
+        )),
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("step:data:curve#4").expect("valid curve identity"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                .expect("finite line"),
+        )),
+        source_object: None,
+    });
+    for (id, position) in [
+        (7, Point3::new(0.0, 1.0, 0.0)),
+        (8, Point3::new(1.0, 1.0, 0.0)),
+    ] {
+        ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            PointId::from(crate::ids::data(crate::ids::kind!("point"), id)),
+            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite vertex point"),
+            None,
+        ));
+    }
+    let setup_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &setup_ctx)
+        .expect("selection index fits setup policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup_ctx)
+        .expect("point carriers fit setup policy");
+    let vdefs = BTreeMap::from([
+        (2, super::super::VertexDef { point: 7 }),
+        (3, super::super::VertexDef { point: 8 }),
+    ]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
-        .expect("empty carrier index fits policy");
-    let candidate =
-        cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#1").expect("valid pcurve identity");
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
     assert!(matches!(super::super::select_associated_pcurve(
-        None, &exchange, 1,
-        &super::super::EdgeDef::Bare { start: 1, end: 2 },
+        Some(&index), &exchange, 1,
+        &super::super::EdgeDef::Curve { start: 2, end: 3, curve: 4, same: true },
         super::super::PcurveAssociationSources {
-            vdefs: &BTreeMap::new(), point_positions: &carriers, candidates: &[candidate],
+            vdefs: &vdefs, point_positions: &carriers,
+            candidates: std::slice::from_ref(&candidate),
         }, &ctx,
-    ), Err(super::super::PcurveSelectionFailure::Carrier)));
+    ), Err(super::super::PcurveSelectionFailure::Endpoint)));
     assert_eq!(ctx.resource_refusal(), None);
 }
 
