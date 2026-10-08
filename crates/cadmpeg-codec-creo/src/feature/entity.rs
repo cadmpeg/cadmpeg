@@ -366,9 +366,8 @@ pub(crate) fn entity_graph(
     let mut references = Vec::new();
     let mut source = None;
     let mut offset = 0;
-    let mut steps = std::iter::repeat(());
     while offset < payload.len() {
-        ctx.next_charged(&mut steps, "creo feature entity token traversal")?;
+        ctx.next_charged(&mut (offset..payload.len()), "creo feature entity token traversal")?;
         if payload[offset] == psb::token::NAMED_RECORD {
             let Some(rest) = payload.get(offset + 2..) else { break; };
             let Some(name_len) = ctx.position_by(rest, |byte| Ok(*byte == 0), "creo feature entity name terminator")? else { break; };

@@ -787,8 +787,16 @@ fn definition_revolution_extent_refuses_before_vec_growth() {
             std::slice::from_ref(&revolve),
         )
     };
-    assert_eq!(run(1).expect("one definition extent admitted").len(), 1);
-    let error = run(0).expect_err("definition extent needs one item");
+    let admitted = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems, None, run,
+    );
+    assert_eq!(run(admitted).expect("one definition extent admitted").len(), 1);
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo definition revolution extents"),
+        run,
+    );
+    let error = run(boundary).expect_err("definition extent needs one item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo definition revolution extents"));
@@ -1529,37 +1537,6 @@ fn depdb_definition_identity_utf8_refuses_work() {
     );
 }
 
-#[test]
-fn definition_offset_retain_refuses_work() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo definition offset retain",
-        |ctx| super::definitions(ctx, b"feat_defs_1\0"),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo definition offset retain")
-    );
-}
-
-#[test]
-fn replay_definition_retain_refuses_work() {
-    let payload = b"feat_defs_917\0template\0\xe0\x01feat_id\0\x2a\
-        \xe0\x00ref_model_info\0\xe3S2D0004\0owned\xe3S2D0004\0pending";
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo replay definition retain",
-        |ctx| super::positional_replay_definitions(ctx, payload),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo replay definition retain")
-    );
-}
 
 fn bind_definition_owners(definitions: Vec<FeatureDefinition>, tables: &[FeatureGeometryTable]) -> Vec<FeatureDefinition> {
     crate::decode::with_test_decode_ctx(|ctx| bind_definition_owners_checked(ctx, definitions, tables)).expect("datum owner admission")

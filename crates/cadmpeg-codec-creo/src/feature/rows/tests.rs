@@ -104,9 +104,9 @@ fn assert_row_item_refusal(error: &CodecError, operation: &'static str) {
 
 #[test]
 fn feature_row_start_refuses_before_vec_growth() {
-    assert_eq!(limited_row_spans(5).expect("span admitted").len(), 1);
+    assert_eq!(limited_row_spans(u64::MAX).expect("span admitted").len(), 1);
     assert_row_item_refusal(
-        &limited_row_spans(0).expect_err("start item"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature row starts"), |cap| limited_row_spans(cap))).expect_err("named collection boundary"),
         "creo feature row starts",
     );
 }
@@ -114,7 +114,7 @@ fn feature_row_start_refuses_before_vec_growth() {
 #[test]
 fn feature_row_seen_id_refuses_before_btree_insert() {
     assert_row_item_refusal(
-        &limited_row_spans(1).expect_err("seen id node"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature row seen ids"), |cap| limited_row_spans(cap))).expect_err("named collection boundary"),
         "creo feature row seen ids",
     );
 }
@@ -122,7 +122,7 @@ fn feature_row_seen_id_refuses_before_btree_insert() {
 #[test]
 fn feature_row_schema_class_refuses_before_btree_insert() {
     assert_row_item_refusal(
-        &limited_row_spans(2).expect_err("schema class node"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature row schema classes"), |cap| limited_row_spans(cap))).expect_err("named collection boundary"),
         "creo feature row schema classes",
     );
 }
@@ -130,7 +130,7 @@ fn feature_row_schema_class_refuses_before_btree_insert() {
 #[test]
 fn feature_row_retained_start_refuses_before_vec_growth() {
     assert_row_item_refusal(
-        &limited_row_spans(3).expect_err("retained start item"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature retained starts"), |cap| limited_row_spans(cap))).expect_err("named collection boundary"),
         "creo feature retained starts",
     );
 }
@@ -138,16 +138,16 @@ fn feature_row_retained_start_refuses_before_vec_growth() {
 #[test]
 fn feature_row_span_refuses_before_vec_growth() {
     assert_row_item_refusal(
-        &limited_row_spans(4).expect_err("span item"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature row spans"), |cap| limited_row_spans(cap))).expect_err("named collection boundary"),
         "creo feature row spans",
     );
 }
 
 #[test]
 fn feature_row_output_refuses_before_vec_growth() {
-    assert_eq!(limited_rows(6, u64::MAX).expect("row admitted").len(), 1);
+    assert_eq!(limited_rows(u64::MAX, u64::MAX).expect("row admitted").len(), 1);
     assert_row_item_refusal(
-        &limited_rows(5, u64::MAX).expect_err("row item"),
+        &limited_rows(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo feature rows"), |cap| limited_rows(cap, u64::MAX)), u64::MAX).expect_err("named collection boundary"),
         "creo feature rows",
     );
 }
@@ -155,11 +155,11 @@ fn feature_row_output_refuses_before_vec_growth() {
 #[test]
 fn feature_row_body_refuses_before_retained_copy() {
     let error = limited_rows(
-        6,
+        u64::MAX,
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             Some("creo feature row bodies"),
-            |cap| limited_rows(6, cap),
+            |cap| limited_rows(u64::MAX, cap),
         ),
     )
     .expect_err("eight-byte body needs retention");
