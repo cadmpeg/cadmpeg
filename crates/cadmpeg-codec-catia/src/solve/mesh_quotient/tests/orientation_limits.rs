@@ -199,3 +199,31 @@ fn endpoint_configuration_generations_release_storage_after_consumption() {
         drop(all_scratch);
     }
 }
+
+#[test]
+fn rejected_endpoint_directions_release_storage_without_retaining_rows() {
+    const SCRATCH_BYTES: u64 = 128;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let boundary = [0, 1].map(|edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: None,
+    });
+    let pairs = std::collections::HashMap::from([(0, [0, 1]), (1, [2, 3])]);
+    for _ in 0..2 {
+        assert_eq!(
+            super::super::endpoint_configuration_boundary_directions(&ctx, &boundary, &pairs,)
+                .expect("temporary directions"),
+            Ok(Vec::new())
+        );
+        let storage = ctx
+            .reserve_scoped(SCRATCH_BYTES, "fixture released directions")
+            .expect("rejected directions release all workspace");
+        drop(storage);
+    }
+}

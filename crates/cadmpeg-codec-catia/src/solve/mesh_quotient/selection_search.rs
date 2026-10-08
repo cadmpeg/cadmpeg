@@ -824,10 +824,13 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         for label_directions in
             ctx.admit_iter(direction_options, "catia_fixed_direction_options")?
         {
-            let mut next_orientations = ctx.copy_slice(
-                &self.fixed_edge_orientations,
-                "catia_fixed_next_orientations",
-            )?;
+            let (mut next_orientations, orientation_storage) =
+                ctx.with_scoped_storage("catia_fixed_next_orientations", || {
+                    ctx.copy_slice(
+                        &self.fixed_edge_orientations,
+                        "catia_fixed_next_orientations",
+                    )
+                })?;
             let mut orient = |use_: &MeshBoundaryEdgeCandidate, label_direction: bool| {
                 let Some(required) = use_.reversed else {
                     return Ok(true);
@@ -868,15 +871,24 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             let Some((directions, quotient)) = option else {
                 continue;
             };
+            let (signature, signature_storage) =
+                ctx.with_scoped_storage("catia_fixed_orientation_signature", || {
+                    Ok::<_, CodecError>((
+                        canonical_mesh_boundary_directions(self.ctx, &directions)?,
+                        self.ctx
+                            .copy_slice(&next_orientations, "catia_fixed_orientation_signature")?,
+                    ))
+                })?;
             let fresh = seen_storage.with_storage(|| {
-                let signature = (
-                    canonical_mesh_boundary_directions(self.ctx, &directions)?,
-                    self.ctx
-                        .copy_slice(&next_orientations, "catia_fixed_orientation_signature")?,
-                );
-                ctx.insert_hash_set(&mut seen, signature, "catia_fixed_direction_signatures")
+                let fresh =
+                    ctx.insert_hash_set(&mut seen, signature, "catia_fixed_direction_signatures")?;
+                if fresh {
+                    signature_storage.commit()?;
+                }
+                Ok::<_, CodecError>(fresh)
             })?;
             if fresh {
+                orientation_storage.commit()?;
                 self.ctx.push_vec(
                     &mut output,
                     (directions, quotient, next_orientations),

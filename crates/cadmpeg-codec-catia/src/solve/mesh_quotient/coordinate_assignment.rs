@@ -153,44 +153,63 @@ fn partial_compact_assignment_viable(
             if ctx.contains_hash_set(&seen_edges, &first, "catia coordinate seen edges")? {
                 continue;
             }
-            let mut stack = Vec::new();
-            ctx.push_vec(&mut stack, first, "catia coordinate component stack")?;
+            let mut component_storage =
+                ctx.reserve_scoped(0, "catia coordinate component edges")?;
             let mut component = Vec::new();
-            let mut vertices = BTreeSet::new();
-            while let Some(edge) = ctx.next_charged(
-                &mut std::iter::from_fn(|| stack.pop()),
-                "catia coordinate component walk",
-            )? {
-                if !ctx.insert_hash_set(&mut seen_edges, edge, "catia coordinate seen edges")? {
-                    continue;
-                }
-                ctx.push_vec(&mut component, edge, "catia coordinate component edges")?;
-                let Some(&index) =
-                    ctx.get_hash_map(&selected_index, &edge, "catia coordinate selected edges")?
-                else {
-                    continue;
-                };
-                for point in selected_points[index] {
-                    ctx.insert_btree_set(
-                        &mut vertices,
-                        point,
+            let closed = ctx
+                .with_scoped_storage("catia coordinate component scratch", || {
+                    let mut stack = Vec::new();
+                    ctx.push_vec(&mut stack, first, "catia coordinate component stack")?;
+                    let mut vertices = BTreeSet::new();
+                    while let Some(edge) = ctx.next_charged(
+                        &mut std::iter::from_fn(|| stack.pop()),
+                        "catia coordinate component walk",
+                    )? {
+                        if !ctx.insert_hash_set(
+                            &mut seen_edges,
+                            edge,
+                            "catia coordinate seen edges",
+                        )? {
+                            continue;
+                        }
+                        component_storage.with_storage(|| {
+                            ctx.push_vec(&mut component, edge, "catia coordinate component edges")
+                        })?;
+                        let Some(&index) = ctx.get_hash_map(
+                            &selected_index,
+                            &edge,
+                            "catia coordinate selected edges",
+                        )?
+                        else {
+                            continue;
+                        };
+                        for point in selected_points[index] {
+                            ctx.insert_btree_set(
+                                &mut vertices,
+                                point,
+                                "catia coordinate component points",
+                            )?;
+                            ctx.extend_from_slice(
+                                &mut stack,
+                                adjacent(point)?,
+                                "catia coordinate component stack",
+                            )?;
+                        }
+                    }
+                    ctx.all_by(
+                        &vertices,
+                        |point| Ok(adjacent(*point)?.len() == 2),
                         "catia coordinate component points",
-                    )?;
-                    ctx.extend_from_slice(
-                        &mut stack,
-                        adjacent(point)?,
-                        "catia coordinate component stack",
-                    )?;
-                }
-            }
-            if ctx.all_by(
-                &vertices,
-                |point| Ok(adjacent(*point)?.len() == 2),
-                "catia coordinate component points",
-            )? {
+                    )
+                })?
+                .0;
+            if closed {
                 ctx.push_vec(
                     &mut closed_components,
-                    component,
+                    ScopedValue {
+                        value: component,
+                        storage: Some(component_storage),
+                    },
                     "catia coordinate closed components",
                 )?;
             }
@@ -229,7 +248,10 @@ fn partial_compact_assignment_viable(
                     .admit_iter(&mut compatible, "catia_deferred_compatible_rows")?
                     .zip(&closed_components)
                 {
-                    let incidence = incidence_cycles(ctx, component, &edge_points)?;
+                    let (incidence, _incidence_storage) = ctx
+                        .with_scoped_storage("catia coordinate incidence scratch", || {
+                            incidence_cycles(ctx, component, &edge_points)
+                        })?;
                     let Some([incidence]) = incidence.as_deref() else {
                         return Ok(false);
                     };
@@ -255,12 +277,16 @@ fn partial_compact_assignment_viable(
                 for component in
                     ctx.admit_iter(0..closed_components.len(), "catia_deferred_matched")?
                 {
-                    let mut visited = ctx.alloc_filled(
-                        domain.cycles.len(),
-                        false,
-                        "catia_deferred_augment_visit",
-                    )?;
-                    if !augment(ctx, component, &compatible, &mut visited, &mut matched)? {
+                    let (augmented, _visit_storage) =
+                        ctx.with_scoped_storage("catia deferred augmentation scratch", || {
+                            let mut visited = ctx.alloc_filled(
+                                domain.cycles.len(),
+                                false,
+                                "catia_deferred_augment_visit",
+                            )?;
+                            augment(ctx, component, &compatible, &mut visited, &mut matched)
+                        })?;
+                    if !augmented {
                         return Ok(false);
                     }
                 }
