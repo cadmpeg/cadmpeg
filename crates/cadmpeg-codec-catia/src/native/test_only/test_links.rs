@@ -428,7 +428,10 @@ pub(super) fn validate_native_links(
             )));
         }
         if graph.finjpl_segment.as_deref()
-            != containing_finjpl_segment(graph.byte_offset, graph.byte_len, segments)
+            != crate::test_support::with_service_context(|ctx| {
+                containing_finjpl_segment(ctx, graph.byte_offset, graph.byte_len, segments)
+            })
+            .map_err(cadmpeg_ir::NativeConvertError::Resource)?
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "object graph `{}` has an invalid FINJPL segment link",
