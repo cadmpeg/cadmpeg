@@ -138,7 +138,8 @@ fn native_plane_carriers_collector_preserves_work_refusal() {
     assert_source_work_refusal(
         "catia_native_plane_carriers",
         |ctx| {
-            crate::native::consolidated_plane_carriers(ctx, &bytes, &records).map(|rows| rows.len())
+            crate::native::projection::consolidated_plane_carriers(ctx, &bytes, &records)
+                .map(|rows| rows.len())
         },
         |count| *count > 0,
     );
@@ -151,7 +152,7 @@ fn native_reference_lists_collector_preserves_work_refusal() {
     assert_source_work_refusal(
         "catia_native_reference_lists",
         |ctx| {
-            crate::native::consolidated_reference_lists(ctx, &bytes, &records)
+            crate::native::projection::consolidated_reference_lists(ctx, &bytes, &records)
                 .map(|rows| rows.len())
         },
         |count| *count > 0,

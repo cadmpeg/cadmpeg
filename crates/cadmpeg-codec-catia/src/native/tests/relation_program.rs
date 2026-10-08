@@ -422,7 +422,8 @@ fn native_resolved_input_refuses_entity_set_limit() {
             Some("param".to_string()),
         )],
     }];
-    let refused = crate::test_support::with_collection_limit(1, |ctx| {
+    // One signature index entry, one group slot and one dependency slot.
+    let refused = crate::test_support::with_collection_limit(3, |ctx| {
         crate::native::resolved_relation_program_inputs(ctx, &signature, &dependencies)
     });
     assert!(

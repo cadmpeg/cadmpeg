@@ -392,6 +392,7 @@ pub(super) fn consolidated_vertex_identities(
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
     let mut identity_storage = ctx.reserve_scoped(0, "CATIA vertex identity lookup")?;
     let mut identity_indices = HashMap::<IdentityKey, usize>::new();
+    let mut reference_members = std::collections::HashSet::new();
     for node in ctx.admit_iter(nodes, "catia_native_vertex_identity_nodes")? {
         if node.endpoint_records.is_none() && node.uses.is_none() {
             continue;
@@ -445,14 +446,23 @@ pub(super) fn consolidated_vertex_identities(
                         "catia_native_vertex_identity_index",
                     )
                 })?;
+                identity_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut reference_members,
+                        (index, identity),
+                        "catia_native_vertex_identity_reference_checks",
+                    )
+                })?;
                 index
             };
             let vertex = &mut identities[index];
-            if !ctx.contains(
-                &vertex.reference_values,
-                &identity,
-                "catia_native_vertex_identity_reference_checks",
-            )? {
+            if identity_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut reference_members,
+                    (index, identity),
+                    "catia_native_vertex_identity_reference_checks",
+                )
+            })? {
                 ctx.push_vec(
                     &mut vertex.reference_values,
                     identity,
