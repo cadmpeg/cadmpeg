@@ -419,6 +419,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         .transpose()?;
     if let Some(explicit) = &explicit_incident {
         for (vertex, entities) in ctx.admit_iter(explicit, "creo explicit incident vertices")? {
+            let mut comparison_storage = ctx.reserve_scoped(0, "creo incident comparison scratch")?;
             if entities.len() < 2
                 || ctx.any_by(
                     entities.windows(2),
@@ -430,11 +431,11 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             }
             let mut derived =
                 match ctx.get_btree_map(&incident, vertex, "creo sketch incident vertex lookup")? {
-                    Some(rows) => ctx.collect_vec(
+                    Some(rows) => comparison_storage.with_storage(|| ctx.collect_vec(
                         ctx.admit_iter(rows, "creo sketch incident comparison source")?
                             .copied(),
                         "creo sketch incident comparison copy",
-                    )?,
+                    ))?,
                     None => Vec::new(),
                 };
             ctx.sort_unstable_by(

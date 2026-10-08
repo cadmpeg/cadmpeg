@@ -593,7 +593,7 @@ fn section_solved_coordinates_refuse_before_tree_insert() {
 fn section_stored_fallback_refuses_before_solved_node() {
     let error = collection_refusal_at("creo section solved coordinates", |ctx| {
         let mut solved = BTreeMap::new();
-        super::insert_solved_coordinate(ctx, &mut solved, (1, SectionAxis::U), 2.0)
+        ctx.insert_btree_map(&mut solved, (1, SectionAxis::U), 2.0, "creo section solved coordinates").map(|_| ())
     })
     .expect_err("a stored fallback value needs the same solved-map admission");
     assert!(

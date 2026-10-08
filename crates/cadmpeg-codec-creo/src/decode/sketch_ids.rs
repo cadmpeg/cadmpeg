@@ -74,6 +74,7 @@ pub(super) fn sketch_table_headers(
             definition.body_position(table.offset)?.source()?.get(),
         )?;
     }
+    drop(equation_storage);
     if let Some(table) = &definition.segments {
         push(
             CreoSketchTableKind::Segments {

@@ -167,7 +167,7 @@ fn append_point_on_line_equations(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     equations: &mut Vec<SectionCoordinateEquation>,
 ) -> Result<bool, CodecError> {
-    let mut index = CoordinateEquationIndex::from_equations(ctx, equations)?;
+    let mut index: Option<CoordinateEquationIndex<'_>> = None;
     let mut appended = false;
     for &(target, first, second) in ctx.admit_iter(constraints, "creo point-on-line constraints")? {
         let (
@@ -188,18 +188,20 @@ fn append_point_on_line_equations(
         }
         let delta_u = second_u - first_u;
         let delta_v = second_v - first_v;
+        let rhs = delta_u * first_v - delta_v * first_u;
+        if !rhs.is_finite() { continue; }
+        let missing_coefficient = if target_u.is_none() { delta_v.abs() } else { delta_u.abs() };
+        if missing_coefficient.is_nan() || missing_coefficient <= EPS_POINT_ON_LINE_COEFFICIENT { continue; }
         let mut candidate_storage = ctx.reserve_scoped(0, "creo point-on-line candidate scratch")?;
         let mut equation = SectionCoordinateEquation::default();
         candidate_storage.with_storage(|| equation.add_point(ctx, target, SectionAxis::U, -delta_v))?;
         candidate_storage.with_storage(|| equation.add_point(ctx, target, SectionAxis::V, delta_u))?;
-        equation.rhs = delta_u * first_v - delta_v * first_u;
-        if !equation.rhs.is_finite() { continue; }
-        let missing_coefficient = if target_u.is_none() {
-            delta_v.abs()
-        } else {
-            delta_u.abs()
+        equation.rhs = rhs;
+        let index = match &mut index {
+            Some(index) => index,
+            slot @ None => slot.insert(CoordinateEquationIndex::from_equations(ctx, equations)?),
         };
-        if !(missing_coefficient > EPS_POINT_ON_LINE_COEFFICIENT) || index.contains(ctx, &equation)? { continue; }
+        if index.contains(ctx, &equation)? { continue; }
         index.insert(ctx, &equation)?;
         candidate_storage.commit()?;
         ctx.push_vec(equations, equation, "creo section coordinate equations")?;
@@ -215,7 +217,7 @@ fn append_equal_length_coordinate_values(
     equations: &mut Vec<SectionCoordinateEquation>,
 ) -> Result<bool, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo append equal length coordinate values scratch")?;
-    let mut index = CoordinateEquationIndex::from_equations(ctx, equations)?;
+    let mut index: Option<CoordinateEquationIndex<'_>> = None;
     let mut appended = false;
     let candidates = scratch.with_storage(|| section_equal_length_coordinate_values(ctx, constraints, coordinates))?;
     for (variable, value) in ctx.admit_iter(&candidates, "creo equal-length coordinate values")? {
@@ -224,6 +226,10 @@ fn append_equal_length_coordinate_values(
         };
         let mut candidate_storage = ctx.reserve_scoped(0, "creo equal-length candidate scratch")?;
         let equation = candidate_storage.with_storage(|| SectionCoordinateEquation::point_value(ctx, variable.0, variable.1, value))?;
+        let index = match &mut index {
+            Some(index) => index,
+            slot @ None => slot.insert(CoordinateEquationIndex::from_equations(ctx, equations)?),
+        };
         if index.contains(ctx, &equation)? { continue; }
         index.insert(ctx, &equation)?;
         candidate_storage.commit()?;
@@ -244,9 +250,13 @@ fn append_unique_auxiliary_coordinate_constraints(
     append_section_equation_auxiliary_coordinate_constraints(ctx, constraints, scalar_values, stored_coordinates, equations)?;
     let mut storage = ctx.reserve_scoped(0, "creo auxiliary coordinate suffix scratch")?;
     let additions = storage.with_storage(|| ctx.split_off_vec(equations, previous_len, "creo auxiliary coordinate suffix movement"))?;
-    let mut index = CoordinateEquationIndex::from_equations(ctx, equations)?;
+    let mut index: Option<CoordinateEquationIndex<'_>> = None;
     let mut appended = false;
     for equation in ctx.admit_iter(additions, "creo auxiliary coordinate dedup passes")? {
+        let index = match &mut index {
+            Some(index) => index,
+            slot @ None => slot.insert(CoordinateEquationIndex::from_equations(ctx, equations)?),
+        };
         if index.contains(ctx, &equation)? { continue; }
         index.insert(ctx, &equation)?;
         ctx.push_vec(equations, equation, "creo auxiliary coordinate equations")?;
@@ -377,229 +387,109 @@ pub(in crate::decode) fn resolved_section_coordinates(
         if unambiguous { scratch.with_storage(|| ctx.push_vec(&mut segments, segment, "creo section line segments"))?; }
     }
     let mut coincident_points = Vec::new();
-    let ControlFlow::Continue(()) =
-        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
-            let [first, second] = skamp.items.as_slice() else {
-                return Ok(ControlFlow::Continue(()));
-            };
+    let mut same_coordinate_points = Vec::new();
+    let mut point_on_line_coordinates = Vec::new();
+    let mut saved_point_on_line_coordinates = Vec::new();
+    let mut line_midpoint_constraints = Vec::new();
+    let mut symmetric_point_constraints = Vec::new();
+    let mut point_symmetric_constraints = Vec::new();
+    let ControlFlow::Continue(()) = visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
+        if let [first, second] = skamp.items.as_slice() {
             let pair = match skamp.kind {
                 0 => {
-                    let Some(first) = section_skamp_incidence_point(ctx, definition, first)? else {
-                        return Ok(ControlFlow::Continue(()));
-                    };
-                    let Some(second) = section_skamp_incidence_point(ctx, definition, second)?
-                    else {
-                        return Ok(ControlFlow::Continue(()));
-                    };
-                    Some([Some(first), Some(second)])
+                    if let Some(first) = section_skamp_incidence_point(ctx, definition, first)? {
+                        section_skamp_incidence_point(ctx, definition, second)?.map(|second| [first, second])
+                    } else { None }
                 }
                 3 => {
-                    let first_point = section_skamp_point_entity_id(definition, first);
-                    let second_point = section_skamp_point_entity_id(definition, second);
-                    match (first_point, second_point) {
-                        (Some(first), Some(second)) => Some([
-                            Some(SectionPointSource::Point(first)),
-                            Some(SectionPointSource::Point(second)),
-                        ]),
-                        (Some(point), None) => Some([
-                            Some(SectionPointSource::Point(point)),
-                            section_skamp_incidence_point(ctx, definition, second)?,
-                        ]),
-                        (None, Some(point)) => Some([
-                            section_skamp_incidence_point(ctx, definition, first)?,
-                            Some(SectionPointSource::Point(point)),
-                        ]),
+                    match (section_skamp_point_entity_id(definition, first), section_skamp_point_entity_id(definition, second)) {
+                        (Some(first), Some(second)) => Some([SectionPointSource::Point(first), SectionPointSource::Point(second)]),
+                        (Some(point), None) => section_skamp_incidence_point(ctx, definition, second)?.map(|second| [SectionPointSource::Point(point), second]),
+                        (None, Some(point)) => section_skamp_incidence_point(ctx, definition, first)?.map(|first| [first, SectionPointSource::Point(point)]),
                         _ => None,
                     }
                 }
                 _ => None,
             };
-            let Some([Some(first), Some(second)]) = pair else {
-                return Ok(ControlFlow::Continue(()));
-            };
-            let pair = [first, second];
-            if pair
-                .iter()
-                .any(|point| matches!(point, SectionPointSource::Point(_)))
-                && {
-                    let mut unambiguous = true;
-                    for point in pair {
-                        if let SectionPointSource::Point(point_id) = point {
-                            if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")? { unambiguous = false; break; }
-                        }
-                    }
-                    unambiguous
-                }
-            {
-                scratch.with_storage(|| ctx.push_vec(
-                    &mut coincident_points,
-                    pair,
-                    "creo section coincident point pairs",
-                ))?;
-            }
-            Ok(ControlFlow::Continue(()))
-        })?;
-    let mut same_coordinate_points = Vec::new();
-    let ControlFlow::Continue(()) =
-        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
-            let Some((pair, coordinate)) =
-                section_skamp_same_coordinate_sources(ctx, definition, skamp)?
-            else {
-                return Ok(ControlFlow::Continue(()));
-            };
-            let has_point = pair
-                .iter()
-                .any(|point| matches!(point, SectionPointSource::Point(_)));
-            if !has_point {
-                return Ok(ControlFlow::Continue(()));
-            }
-            let unambiguous = {
+            if let Some(pair) = pair.filter(|pair| pair.iter().any(|point| matches!(point, SectionPointSource::Point(_)))) {
                 let mut unambiguous = true;
-                for point in pair.iter() {
+                for point in pair {
                     if let SectionPointSource::Point(point_id) = point {
-                        if ctx.contains_btree_set(&ambiguous_point_ids, point_id, "creo section ambiguous point ids contains")? { unambiguous = false; break; }
+                        if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")? { unambiguous = false; break; }
                     }
                 }
-                unambiguous
-            };
+                if unambiguous {
+                    scratch.with_storage(|| ctx.push_vec(&mut coincident_points, pair, "creo section coincident point pairs"))?;
+                }
+            }
+        }
+        if let Some((pair, coordinate)) = section_skamp_same_coordinate_sources(ctx, definition, skamp)? .filter(|(pair, _)| pair.iter().any(|point| matches!(point, SectionPointSource::Point(_)))) {
+            let mut unambiguous = true;
+            for point in pair {
+                if let SectionPointSource::Point(point_id) = point {
+                    if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")? { unambiguous = false; break; }
+                }
+            }
             if unambiguous {
-                scratch.with_storage(|| ctx.push_vec(
-                    &mut same_coordinate_points,
-                    (pair, coordinate),
-                    "creo section same-coordinate pairs",
-                ))?;
+                scratch.with_storage(|| ctx.push_vec(&mut same_coordinate_points, (pair, coordinate), "creo section same-coordinate pairs"))?;
             }
-            Ok(ControlFlow::Continue(()))
-        })?;
-    let mut point_on_line_coordinates = Vec::new();
-    let mut saved_point_on_line_coordinates = Vec::new();
-    let ControlFlow::Continue(()) =
-        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
-            if let Some((first, second, coordinate)) =
-                section_skamp_point_on_line(ctx, definition, skamp)?
-            {
-                if !ctx.contains_btree_set(&ambiguous_point_ids, &first, "creo section ambiguous point ids contains")? && !ctx.contains_btree_set(&ambiguous_point_ids, &second, "creo section ambiguous point ids contains")? {
-                    scratch.with_storage(|| ctx.push_vec(
-                        &mut point_on_line_coordinates,
-                        (first, second, coordinate),
-                        "creo section point-on-line coordinates",
-                    ))?;
+        }
+        if let Some((first, second, coordinate)) = section_skamp_point_on_line(ctx, definition, skamp)? {
+            if !ctx.contains_btree_set(&ambiguous_point_ids, &first, "creo section ambiguous point lookup")?
+                && !ctx.contains_btree_set(&ambiguous_point_ids, &second, "creo section ambiguous point lookup")? {
+                scratch.with_storage(|| ctx.push_vec(&mut point_on_line_coordinates, (first, second, coordinate), "creo section point-on-line coordinates"))?;
+            }
+        }
+        if let Some((point_id, coordinate, value)) = section_skamp_saved_point_on_line(ctx, definition, skamp)? {
+            if !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")? {
+                scratch.with_storage(|| ctx.push_vec(&mut saved_point_on_line_coordinates, (point_id, coordinate, value), "creo section saved point-on-line coordinates"))?;
+            }
+        }
+        if let Some((point_sources, point)) = section_skamp_line_midpoint_sources(ctx, definition, skamp)? {
+            let mut unambiguous = true;
+            for source in point_sources {
+                if let SectionPointSource::Point(point_id) = source {
+                    if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")? { unambiguous = false; break; }
                 }
             }
-            if let Some((point_id, coordinate, value)) =
-                section_skamp_saved_point_on_line(ctx, definition, skamp)?
-            {
-                if !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")? {
-                    scratch.with_storage(|| ctx.push_vec(
-                        &mut saved_point_on_line_coordinates,
-                        (point_id, coordinate, value),
-                        "creo section saved point-on-line coordinates",
-                    ))?;
-                }
-            }
-            Ok(ControlFlow::Continue(()))
-        })?;
-    let mut line_midpoint_constraints = Vec::new();
-    let ControlFlow::Continue(()) =
-        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
-            let Some((point_sources, point)) =
-                section_skamp_line_midpoint_sources(ctx, definition, skamp)?
-            else {
-                return Ok(ControlFlow::Continue(()));
-            };
-            let sources_unambiguous = {
-                let mut unambiguous = true;
-                for source in point_sources.iter() {
-                    if let SectionPointSource::Point(point_id) = source {
-                        if ctx.contains_btree_set(&ambiguous_point_ids, point_id, "creo section ambiguous point ids contains")? { unambiguous = false; break; }
-                    }
-                }
-                unambiguous
-            };
-            if !sources_unambiguous {
-                return Ok(ControlFlow::Continue(()));
-            }
-            let point_unambiguous = match point {
-                SectionPointSource::Point(point_id) => !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")?,
+            let point_unambiguous = unambiguous && match point {
+                SectionPointSource::Point(point_id) => !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")?,
                 SectionPointSource::Value(_) => true,
             };
-            if point_unambiguous {
-                scratch.with_storage(|| ctx.push_vec(
-                    &mut line_midpoint_constraints,
-                    (point_sources, point),
-                    "creo section line midpoint constraints",
-                ))?;
+            if unambiguous && point_unambiguous {
+                scratch.with_storage(|| ctx.push_vec(&mut line_midpoint_constraints, (point_sources, point), "creo section line midpoint constraints"))?;
             }
-            Ok(ControlFlow::Continue(()))
-        })?;
-    let mut symmetric_point_constraints = Vec::new();
-    let ControlFlow::Continue(()) =
-        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
-            let Some((axis, first, second, coordinate)) =
-                section_skamp_axis_symmetry(ctx, definition, skamp)?
-            else {
-                return Ok(ControlFlow::Continue(()));
-            };
-            let has_point = [first, second]
-                .into_iter()
-                .any(|point| matches!(point, SectionPointSource::Point(_)));
-            if !has_point {
-                return Ok(ControlFlow::Continue(()));
-            }
-            let points_unambiguous = {
-                let mut unambiguous = true;
-                for point in [first, second].into_iter() {
-                    if let SectionPointSource::Point(point_id) = point {
-                        if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")? { unambiguous = false; break; }
-                    }
+        }
+        if let Some((axis, first, second, coordinate)) = section_skamp_axis_symmetry(ctx, definition, skamp)? .filter(|(_, first, second, _)| [first, second].iter().any(|point| matches!(point, SectionPointSource::Point(_)))) {
+            let mut unambiguous = true;
+            for point in [first, second] {
+                if let SectionPointSource::Point(point_id) = point {
+                    if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")? { unambiguous = false; break; }
                 }
-                unambiguous
-            };
-            if !points_unambiguous {
-                return Ok(ControlFlow::Continue(()));
             }
-            let axis_unambiguous = match axis {
-                SectionSymmetryAxis::Point(point_id) => !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")?,
+            let axis_unambiguous = unambiguous && match axis {
+                SectionSymmetryAxis::Point(point_id) => !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")?,
                 SectionSymmetryAxis::Value(_) => true,
             };
             if axis_unambiguous {
-                scratch.with_storage(|| ctx.push_vec(
-                    &mut symmetric_point_constraints,
-                    (axis, first, second, coordinate),
-                    "creo section axis symmetry constraints",
-                ))?;
+                scratch.with_storage(|| ctx.push_vec(&mut symmetric_point_constraints, (axis, first, second, coordinate), "creo section axis symmetry constraints"))?;
             }
-            Ok(ControlFlow::Continue(()))
-        })?;
-    let mut point_symmetric_constraints = Vec::new();
-    let ControlFlow::Continue(()) =
-        visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
-            let Some((center, first, second)) =
-                section_skamp_point_symmetry(ctx, definition, skamp)?
-            else {
-                return Ok(ControlFlow::Continue(()));
-            };
-            if ctx.contains_btree_set(&ambiguous_point_ids, &center, "creo section ambiguous point ids contains")? {
-                return Ok(ControlFlow::Continue(()));
-            }
-            let points_unambiguous = {
-                let mut unambiguous = true;
-                for point in [first, second].into_iter() {
+        }
+        if let Some((center, first, second)) = section_skamp_point_symmetry(ctx, definition, skamp)? {
+            let mut unambiguous = !ctx.contains_btree_set(&ambiguous_point_ids, &center, "creo section ambiguous point lookup")?;
+            if unambiguous {
+                for point in [first, second] {
                     if let SectionPointSource::Point(point_id) = point {
-                        if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")? { unambiguous = false; break; }
+                        if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")? { unambiguous = false; break; }
                     }
                 }
-                unambiguous
-            };
-            if points_unambiguous {
-                scratch.with_storage(|| ctx.push_vec(
-                    &mut point_symmetric_constraints,
-                    (center, first, second),
-                    "creo section point symmetry constraints",
-                ))?;
             }
-            Ok(ControlFlow::Continue(()))
-        })?;
+            if unambiguous {
+                scratch.with_storage(|| ctx.push_vec(&mut point_symmetric_constraints, (center, first, second), "creo section point symmetry constraints"))?;
+            }
+        }
+        Ok(ControlFlow::Continue(()))
+    })?;
     let auxiliary_constraints =
         scratch.with_storage(|| section_equation_auxiliary_constraints(ctx, definition, &ambiguous_point_ids))?;
     let mut auxiliary_scalar_values = scratch.with_storage(|| section_equation_scalar_seed_values(ctx, definition))?;
@@ -608,7 +498,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
         definition,
         &mut auxiliary_scalar_values,
     ))?;
-    let mut linear_dimension_candidates = Vec::new();
+    let mut signed_dimensions = BTreeMap::<(u32, u32, SectionAxis), Option<f64>>::new();
+    let mut unsigned_dimension_candidates = Vec::new();
     if let Some(relation_table) = definition.relations.as_ref() {
         if feature_relation_table_complete(relation_table) {
             for relation in ctx.admit_iter(&relation_table.rows, "creo section relation rows")? {
@@ -641,48 +532,20 @@ pub(in crate::decode) fn resolved_section_coordinates(
                 else {
                     continue;
                 };
-                if matches!(relation.sign, 0 | 1 | 0xf6) {
-                    scratch.with_storage(|| ctx.reserve_vec(
-                        &mut linear_dimension_candidates,
-                        1,
-                        "creo section linear dimension candidates",
-                    ))?;
-                    linear_dimension_candidates.push((
-                        first,
-                        second,
-                        coordinate,
-                        magnitude,
-                        relation.sign,
-                    ));
+                match relation.sign {
+                    0 => { scratch.with_storage(|| ctx.push_vec(&mut unsigned_dimension_candidates, (first, second, coordinate, magnitude), "creo section unsigned dimension candidates"))?; }
+                    1 | 0xf6 => {
+                        let delta = if relation.sign == 1 { magnitude } else { -magnitude };
+                        let (key, canonical_delta) = if first <= second { ((first, second, coordinate), delta) } else { ((second, first, coordinate), -delta) };
+                        scratch.with_storage(|| ctx.entry_btree_map(&mut signed_dimensions, key, "creo section signed dimension nodes"))?
+                            .and_modify(|stored| { if stored.is_some_and(|stored| stored != canonical_delta) { *stored = None; } })
+                            .or_insert(Some(canonical_delta));
+                    }
+                    _ => {}
                 }
             }
         }
     }
-    let signed_dimension_candidates = scratch.with_storage(|| ctx.collect_vec(
-        ctx.admit_iter(
-            &linear_dimension_candidates,
-            "creo linear dimension candidate rows",
-        )?
-        .filter_map(|&(first, second, coordinate, magnitude, sign)| {
-            let delta = match sign {
-                1 => magnitude,
-                0xf6 => -magnitude,
-                _ => return None,
-            };
-            Some((first, second, coordinate, delta))
-        }),
-        "creo section signed dimension candidates",
-    ))?;
-    let mut unsigned_dimension_candidates = scratch.with_storage(|| ctx.collect_vec(
-        ctx.admit_iter(
-            &linear_dimension_candidates,
-            "creo linear dimension candidate rows",
-        )?
-        .filter_map(|&(first, second, coordinate, magnitude, sign)| {
-            (sign == 0).then_some((first, second, coordinate, magnitude))
-        }),
-        "creo section unsigned dimension candidates",
-    ))?;
     let unsigned_equation_distances =
         scratch.with_storage(|| section_equation_unsigned_coordinate_distances(ctx, definition, &ambiguous_point_ids))?;
     scratch.with_storage(|| ctx.reserve_vec(
@@ -708,32 +571,6 @@ pub(in crate::decode) fn resolved_section_coordinates(
         scratch.with_storage(|| section_equation_radial_constraints(ctx, definition, &points, &ambiguous_point_ids))?;
     let equal_length_constraints =
         scratch.with_storage(|| section_equation_equal_length_constraints(ctx, definition, &ambiguous_point_ids))?;
-    let mut signed_dimensions = BTreeMap::<(u32, u32, SectionAxis), Option<f64>>::new();
-    for &(first, second, coordinate, delta) in ctx.admit_iter(
-        &signed_dimension_candidates,
-        "creo signed dimension candidates",
-    )? {
-        let (key, canonical_delta) = if first <= second {
-            ((first, second, coordinate), delta)
-        } else {
-            ((second, first, coordinate), -delta)
-        };
-        scratch.with_storage(|| ctx.entry_btree_map(&mut signed_dimensions, key, "creo section signed dimension nodes"))?
-            .and_modify(|stored| {
-                if stored.is_some_and(|stored| stored != canonical_delta) {
-                    *stored = None;
-                }
-            })
-            .or_insert(Some(canonical_delta));
-    }
-    let signed_dimensions = scratch.with_storage(|| ctx.collect_vec(
-        ctx.admit_iter(&signed_dimensions, "creo canonical signed dimension rows")?
-            .map(|(key, value)| (*key, *value))
-            .filter_map(|((first, second, coordinate), delta)| {
-                Some((first, second, coordinate, delta?))
-            }),
-        "creo section canonical signed dimensions",
-    ))?;
     let mut equations = Vec::new();
     for (&point_id, coordinates) in ctx.admit_iter(&points, "creo solved source points")? {
         for (coordinate, value) in SectionAxis::ALL
@@ -763,9 +600,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
                 )?, "creo section coordinate equations"))?;
         }
     }
-    for &(first, second, coordinate, delta) in
-        ctx.admit_iter(&signed_dimensions, "creo canonical signed dimensions")?
-    {
+    for (&(first, second, coordinate), &delta) in ctx.admit_iter(&signed_dimensions, "creo canonical signed dimensions")? {
+        let Some(delta) = delta else { continue; };
         scratch.with_storage(|| ctx.push_vec(&mut equations, SectionCoordinateEquation::point_difference(ctx, first, second, coordinate, delta)?, "creo section coordinate equations"))?;
     }
     for &[first, second] in ctx.admit_iter(&coincident_points, "creo coincident point pairs")? {
@@ -821,9 +657,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
     {
         for coordinate in SectionAxis::ALL {
             let mut equation = SectionCoordinateEquation::default();
-            equation.add_source(ctx, point_sources[0], coordinate, 1.0)?;
-            equation.add_source(ctx, point_sources[1], coordinate, 1.0)?;
-            equation.add_source(ctx, point, coordinate, -2.0)?;
+            scratch.with_storage(|| equation.add_source(ctx, point_sources[0], coordinate, 1.0))?;
+            scratch.with_storage(|| equation.add_source(ctx, point_sources[1], coordinate, 1.0))?;
+            scratch.with_storage(|| equation.add_source(ctx, point, coordinate, -2.0))?;
             scratch.with_storage(|| ctx.push_vec(&mut equations, equation, "creo section coordinate equations"))?;
         }
     }
@@ -840,11 +676,11 @@ pub(in crate::decode) fn resolved_section_coordinates(
                 0.0,
             )?, "creo section coordinate equations"))?;
         let mut equation = SectionCoordinateEquation::default();
-        equation.add_source(ctx, first, fixed_coordinate, 1.0)?;
-        equation.add_source(ctx, second, fixed_coordinate, 1.0)?;
+        scratch.with_storage(|| equation.add_source(ctx, first, fixed_coordinate, 1.0))?;
+        scratch.with_storage(|| equation.add_source(ctx, second, fixed_coordinate, 1.0))?;
         match axis {
             SectionSymmetryAxis::Point(point_id) => {
-                equation.add_point(ctx, point_id, fixed_coordinate, -2.0)?;
+                scratch.with_storage(|| equation.add_point(ctx, point_id, fixed_coordinate, -2.0))?;
             }
             SectionSymmetryAxis::Value(value) => equation.rhs += 2.0 * value,
         }
@@ -856,9 +692,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
     )? {
         for coordinate in SectionAxis::ALL {
             let mut equation = SectionCoordinateEquation::default();
-            equation.add_source(ctx, first, coordinate, 1.0)?;
-            equation.add_source(ctx, second, coordinate, 1.0)?;
-            equation.add_point(ctx, center, coordinate, -2.0)?;
+            scratch.with_storage(|| equation.add_source(ctx, first, coordinate, 1.0))?;
+            scratch.with_storage(|| equation.add_source(ctx, second, coordinate, 1.0))?;
+            scratch.with_storage(|| equation.add_point(ctx, center, coordinate, -2.0))?;
             scratch.with_storage(|| ctx.push_vec(&mut equations, equation, "creo section coordinate equations"))?;
         }
     }

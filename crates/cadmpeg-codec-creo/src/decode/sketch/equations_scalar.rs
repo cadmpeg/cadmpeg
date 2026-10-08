@@ -714,33 +714,16 @@ pub(super) fn section_relation_radius_scalar_values(
         {
             continue;
         }
-        let candidate = (|| {
-            let vectors = relation.operand_vectors?;
-            let [Some(radius), Some(0), Some(0), Some(0)] = vectors[0] else {
-                return None;
-            };
-            if vectors[1] != [Some(0); 4] || vectors[2] != [Some(15), Some(0), Some(0), Some(0)] {
-                return None;
-            }
-            let dimension = dimensions
-                .rows
-                .get(usize::try_from(relation.dimension_id).ok()?)?;
-            if !matches!(dimension.dimension_type, 1..=5) {
-                return None;
-            }
-            let value = dimension
-                .value
-                .resolved()
-                .filter(|value| value.is_finite() && *value > 0.0)?;
-            let value = if dimension.dimension_type == 4 {
-                value / 2.0
-            } else {
-                value
-            };
-            PositiveLength::new(value).map(|value| ((VariableType::Radius, radius), value.get()))
-        })();
-        if let Some(value) = candidate {
-            ctx.push_vec(&mut values, value, "creo section relation radius values")?;
+        let Some(vectors) = relation.operand_vectors else { continue; };
+        let [Some(radius), Some(0), Some(0), Some(0)] = vectors[0] else { continue; };
+        if vectors[1] != [Some(0); 4] || vectors[2] != [Some(15), Some(0), Some(0), Some(0)] { continue; }
+        let Some(ordinal) = usize::try_from(relation.dimension_id).ok() else { continue; };
+        let Some(dimension) = dimensions.rows.get(ordinal) else { continue; };
+        if !matches!(dimension.dimension_type, 1..=5) { continue; }
+        let Some(value) = dimension.value.resolved().filter(|value| value.is_finite() && *value > 0.0) else { continue; };
+        let value = if dimension.dimension_type == 4 { value / 2.0 } else { value };
+        if let Some(value) = PositiveLength::new(value) {
+            ctx.push_vec(&mut values, ((VariableType::Radius, radius), value.get()), "creo section relation radius values")?;
         }
     }
     Ok(values)
@@ -928,12 +911,10 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
         {
             continue;
         }
+        let Some(rhs) = FiniteReal::new(2.0 * value) else { continue; };
         let mut equation = SectionCoordinateEquation::default();
         equation.add_point(ctx, constraint.first.0, constraint.first.1, 1.0)?;
         equation.add_point(ctx, constraint.second.0, constraint.second.1, 1.0)?;
-        let Some(rhs) = FiniteReal::new(2.0 * value) else {
-            continue;
-        };
         equation.rhs = rhs.get();
         ctx.reserve_vec(equations, 1, "creo auxiliary coordinate equations")?;
         equations.push(equation);
@@ -1303,7 +1284,7 @@ fn scalar_equality_components(
     Ok(components)
 }
 
-/// Stored scalar samples in source order, with extrema for scaled agreement.
+/// The first source sample and extrema for scaled agreement.
 struct ScalarSamples {
     first: f64,
     minimum: f64,
@@ -1497,6 +1478,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
     ambiguous_point_ids: &BTreeSet<u32>,
     scalar_values: Option<&BTreeMap<SectionScalarVariable, Option<f64>>>,
 ) -> Result<Vec<SectionRadialConstraint>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo radial constraint source scratch")?;
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -1504,12 +1486,12 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
     else {
         return Ok(Vec::new());
     };
-    let Some(equations) = crate::feature::definitions::equation_table(
+    let Some(equations) = scratch.with_storage(|| crate::feature::definitions::equation_table(
         ctx,
         &definition.body,
         0,
         definition.body.len(),
-    )?
+    ))?
     else {
         return Ok(Vec::new());
     };
@@ -1519,7 +1501,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
     if declared_count != equations.rows.len() + 1 {
         return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    let scalar_equality_values = scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
     for equation in ctx.admit_iter(&equations.rows, "creo section source equation rows")?
         .filter(|equation| equation.function_id == 0 && equation.arguments.len() == 6) {
@@ -1663,12 +1645,12 @@ pub(in crate::decode) fn resolved_section_scalar_values(
     {
         scratch.with_storage(|| merge_scalar_value_candidate(ctx, &mut values, *variable, *value))?;
     }
-    let function_six_values = section_equation_function_six_distance_values(
+    let function_six_values = scratch.with_storage(|| section_equation_function_six_distance_values(
         ctx,
         definition,
         &coordinates,
         &ambiguous_point_ids,
-    )?;
+    ))?;
     for &(variable, value) in
         ctx.admit_iter(&function_six_values, "creo resolved function six distances")?
     {
