@@ -82,13 +82,21 @@ use crate::decode::records::{
     }
 
     macro_rules! collection_limit_test {
-        ($name:ident, $project:expr, $limit:expr, $operation:literal) => {
+        ($name:ident, $project:expr, $operation:literal) => {
             #[test]
             fn $name() {
                 let scan = scan();
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = $limit;
+                policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some($operation), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          ($project)(&trial_ctx, &scan).map(|_| ())
+      });
+
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root is admitted");
                 let Err(error) = ($project)(&ctx, &scan) else { panic!("native curve projection exceeds the collection limit") };
@@ -102,43 +110,36 @@ use crate::decode::records::{
     collection_limit_test!(
         curve_parameter_count_nodes_refuse_limit,
         |ctx, scan| curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom"),
-        0,
         "creo native curve parameter count nodes"
     );
     collection_limit_test!(
         curve_parameter_records_refuse_limit,
         |ctx, scan| curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom"),
-        1,
         "creo native curve parameter records"
     );
     collection_limit_test!(
         cross_section_curve_count_nodes_refuse_limit,
         cross_section_curve_row_records,
-        0,
         "creo native cross section curve count nodes"
     );
     collection_limit_test!(
         cross_section_curve_records_refuse_limit,
         cross_section_curve_row_records,
-        1,
         "creo native cross section curve records"
     );
     collection_limit_test!(
         curve_topology_count_nodes_refuse_limit,
         |ctx, scan| curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom"),
-        0,
         "creo native curve topology count nodes"
     );
     collection_limit_test!(
         curve_topology_records_refuse_limit,
         |ctx, scan| curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom"),
-        1,
         "creo native curve topology records"
     );
     collection_limit_test!(
         tabulated_cylinder_replay_records_refuse_limit,
         tabulated_cylinder_curve_replay_records,
-        0,
         "creo native tabulated cylinder replay records"
     );
 

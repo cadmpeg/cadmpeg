@@ -39,7 +39,15 @@ use crate::decode::records::feature_choice_field_records;
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some("creo native feature choice field records"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          feature_choice_field_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = feature_choice_field_records(&ctx, &scan) else {
@@ -58,8 +66,15 @@ use crate::decode::records::feature_choice_field_records;
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:feature:choice_field#0".len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+      ResourceDimension::RetainedBytes, Some("creo native feature choice field record id"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_retained_bytes = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          feature_choice_field_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = feature_choice_field_records(&ctx, &scan) else {

@@ -16,11 +16,19 @@ use crate::decode::records::feature_entity_table_records;
         scan
     }
 
-    fn collection_error(limit: u64, operation: &'static str) {
+    fn collection_error(operation: &'static str) {
         let scan = scan_with_table();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some(operation), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          feature_entity_table_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
         let Err(error) = feature_entity_table_records(&ctx, &scan) else {
@@ -36,27 +44,27 @@ use crate::decode::records::feature_entity_table_records;
 
     #[test]
     fn entity_table_record_entry_ids_refuse_collection_limit() {
-        collection_error(0, "creo feature entity table record entry ids");
+        collection_error("creo feature entity table record entry ids");
     }
 
     #[test]
     fn entity_table_record_entries_refuse_collection_limit() {
-        collection_error(1, "creo feature entity table record entries");
+        collection_error("creo feature entity table record entries");
     }
 
     #[test]
     fn entity_table_record_surface_ids_refuse_collection_limit() {
-        collection_error(2, "creo feature entity table record surface ids");
+        collection_error("creo feature entity table record surface ids");
     }
 
     #[test]
     fn entity_table_record_non_surface_ids_refuse_collection_limit() {
-        collection_error(5, "creo feature entity table record non surface ids");
+        collection_error("creo feature entity table record non surface ids");
     }
 
     #[test]
     fn entity_table_record_outer_rows_refuse_collection_limit() {
-        collection_error(6, "creo feature entity table records");
+        collection_error("creo feature entity table records");
     }
 
     #[test]

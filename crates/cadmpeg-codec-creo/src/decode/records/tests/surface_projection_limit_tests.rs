@@ -69,7 +69,15 @@ use crate::decode::records::{surface_contour_records, surface_prototype_records,
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some("creo native surface row records"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          surface_row_records(&trial_ctx, &scan, &scan.surfaces.rows, "visibgeom").map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = surface_row_records(&ctx, &scan, &scan.surfaces.rows, "visibgeom") else {
@@ -88,7 +96,15 @@ use crate::decode::records::{surface_contour_records, surface_prototype_records,
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some("creo native surface contour records"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          surface_contour_records(&trial_ctx, &scan, &scan.surfaces.contours, "visibgeom").map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = surface_contour_records(&ctx, &scan, &scan.surfaces.contours, "visibgeom")
@@ -108,7 +124,15 @@ use crate::decode::records::{surface_contour_records, surface_prototype_records,
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some("creo native surface prototype parameters"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          surface_prototype_records(&trial_ctx, &scan, &scan.surfaces.prototype_records, "visibgeom").map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) =
@@ -129,7 +153,15 @@ use crate::decode::records::{surface_contour_records, surface_prototype_records,
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 8;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some("creo native surface prototype records"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          surface_prototype_records(&trial_ctx, &scan, &scan.surfaces.prototype_records, "visibgeom").map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) =
@@ -151,9 +183,15 @@ use crate::decode::records::{surface_contour_records, surface_prototype_records,
         scan.surfaces.prototype_records[0].family = SurfacePrototypeFamily::Other("unknown".into());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            "creo:visibgeom:surface_prototype#11".len() + "other:unknown".len() - 1,
-        );
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+      ResourceDimension::RetainedBytes, Some("creo native surface prototype family"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_retained_bytes = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          surface_prototype_records(&trial_ctx, &scan, &scan.surfaces.prototype_records, "visibgeom").map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) =

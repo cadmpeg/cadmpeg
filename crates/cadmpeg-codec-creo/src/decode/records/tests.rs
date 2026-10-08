@@ -31,10 +31,9 @@ use crate::decode::records::{
 
     #[test]
     fn native_expanded_section_id_refuses_retained_limit() {
-        let id_len =
-            cadmpeg_core::decode::u64_from_index("creo:container:expanded_section#Body:0".len());
-        let error = expanded_records_with_limits(id_len - 1, 1)
-            .expect_err("expanded-section ID needs full retained length");
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native expanded section IDs"), |cap| expanded_records_with_limits(cap, u64::MAX));
+        let error = expanded_records_with_limits(cap, u64::MAX).expect_err("expanded-section ID needs full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -44,10 +43,9 @@ use crate::decode::records::{
 
     #[test]
     fn native_expanded_section_name_refuses_retained_limit() {
-        let id_len =
-            cadmpeg_core::decode::u64_from_index("creo:container:expanded_section#Body:0".len());
-        let error = expanded_records_with_limits(id_len + 3, 1)
-            .expect_err("section name needs four retained bytes");
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native expanded section names"), |cap| expanded_records_with_limits(cap, u64::MAX));
+        let error = expanded_records_with_limits(cap, u64::MAX).expect_err("section name needs four retained bytes");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -57,10 +55,9 @@ use crate::decode::records::{
 
     #[test]
     fn native_expanded_section_hash_refuses_retained_limit() {
-        let id_len =
-            cadmpeg_core::decode::u64_from_index("creo:container:expanded_section#Body:0".len());
-        let error = expanded_records_with_limits(id_len + 4 + 63, 1)
-            .expect_err("SHA-256 hex needs 64 retained bytes");
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native expanded section hashes"), |cap| expanded_records_with_limits(cap, u64::MAX));
+        let error = expanded_records_with_limits(cap, u64::MAX).expect_err("SHA-256 hex needs 64 retained bytes");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -70,15 +67,15 @@ use crate::decode::records::{
 
     #[test]
     fn native_expanded_section_row_refuses_collection_limit() {
-        let error = expanded_records_with_limits(u64::MAX, 0)
-            .expect_err("one expanded section needs one output row");
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native expanded section records"), |cap| expanded_records_with_limits(u64::MAX, cap));
+        let error = expanded_records_with_limits(u64::MAX, cap).expect_err("one expanded section needs one output row");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo native expanded section records")
         );
         let records =
-            expanded_records_with_limits(u64::MAX, 1).expect("the expanded section is admitted");
+            expanded_records_with_limits(u64::MAX, u64::MAX).expect("the expanded section is admitted");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].id, "creo:container:expanded_section#Body:0");
         assert_eq!(records[0].name, "Body");
@@ -166,12 +163,13 @@ use crate::decode::records::{
 
     #[test]
     fn native_reference_line_id_refuses_retained_limit() {
-        let limit =
-            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:line_record#0".len()) - 1;
-        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native reference line IDs"), |cap| reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
             reference_line_records(ctx, scan).map(|records| records.len())
-        })
-        .expect_err("line ID needs its full retained length");
+        }));
+        let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
+            reference_line_records(ctx, scan).map(|records| records.len())
+        }).expect_err("line ID needs its full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -181,17 +179,19 @@ use crate::decode::records::{
 
     #[test]
     fn native_reference_line_row_refuses_collection_limit() {
-        let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native reference line records"), |cap| reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
             reference_line_records(ctx, scan).map(|records| records.len())
-        })
-        .expect_err("one line record needs an output row");
+        }));
+        let error = reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
+            reference_line_records(ctx, scan).map(|records| records.len())
+        }).expect_err("one line record needs an output row");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo native reference line records")
         );
         assert_eq!(
-            reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+            reference_records_with_limits(u64::MAX, u64::MAX, |ctx, scan| {
                 reference_line_records(ctx, scan).map(|records| records.len())
             })
             .expect("one line record"),
@@ -201,12 +201,13 @@ use crate::decode::records::{
 
     #[test]
     fn native_reference_circle_id_refuses_retained_limit() {
-        let limit =
-            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:arc_z_record#0".len()) - 1;
-        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native reference circle IDs"), |cap| reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
             reference_circle_records(ctx, scan).map(|records| records.len())
-        })
-        .expect_err("circle ID needs its full retained length");
+        }));
+        let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
+            reference_circle_records(ctx, scan).map(|records| records.len())
+        }).expect_err("circle ID needs its full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -216,17 +217,19 @@ use crate::decode::records::{
 
     #[test]
     fn native_reference_circle_row_refuses_collection_limit() {
-        let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native reference circle records"), |cap| reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
             reference_circle_records(ctx, scan).map(|records| records.len())
-        })
-        .expect_err("one circle record needs an output row");
+        }));
+        let error = reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
+            reference_circle_records(ctx, scan).map(|records| records.len())
+        }).expect_err("one circle record needs an output row");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo native reference circle records")
         );
         assert_eq!(
-            reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+            reference_records_with_limits(u64::MAX, u64::MAX, |ctx, scan| {
                 reference_circle_records(ctx, scan).map(|records| records.len())
             })
             .expect("one circle record"),
@@ -236,12 +239,13 @@ use crate::decode::records::{
 
     #[test]
     fn native_reference_conic_id_refuses_retained_limit() {
-        let limit =
-            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:conic_record#0".len()) - 1;
-        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native reference conic IDs"), |cap| reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
             reference_conic_records(ctx, scan).map(|records| records.len())
-        })
-        .expect_err("conic ID needs its full retained length");
+        }));
+        let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
+            reference_conic_records(ctx, scan).map(|records| records.len())
+        }).expect_err("conic ID needs its full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -251,17 +255,19 @@ use crate::decode::records::{
 
     #[test]
     fn native_reference_conic_row_refuses_collection_limit() {
-        let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native reference conic records"), |cap| reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
             reference_conic_records(ctx, scan).map(|records| records.len())
-        })
-        .expect_err("one conic record needs an output row");
+        }));
+        let error = reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
+            reference_conic_records(ctx, scan).map(|records| records.len())
+        }).expect_err("one conic record needs an output row");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo native reference conic records")
         );
         assert_eq!(
-            reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+            reference_records_with_limits(u64::MAX, u64::MAX, |ctx, scan| {
                 reference_conic_records(ctx, scan).map(|records| records.len())
             })
             .expect("one conic record"),
@@ -271,12 +277,13 @@ use crate::decode::records::{
 
     #[test]
     fn native_reference_ellipse_id_refuses_retained_limit() {
-        let limit =
-            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:ellipse_carrier#0".len()) - 1;
-        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native reference ellipse IDs"), |cap| reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
             reference_ellipse_records(ctx, scan).map(|records| records.len())
-        })
-        .expect_err("ellipse ID needs its full retained length");
+        }));
+        let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
+            reference_ellipse_records(ctx, scan).map(|records| records.len())
+        }).expect_err("ellipse ID needs its full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -286,14 +293,13 @@ use crate::decode::records::{
 
     #[test]
     fn native_reference_ellipse_source_id_refuses_retained_limit() {
-        let limit =
-            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:ellipse_carrier#0".len())
-                + cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:conic_record#0".len())
-                - 1;
-        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native reference ellipse source IDs"), |cap| reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
             reference_ellipse_records(ctx, scan).map(|records| records.len())
-        })
-        .expect_err("source conic ID needs its full retained length");
+        }));
+        let error = reference_records_with_limits(cap, u64::MAX, |ctx, scan| {
+            reference_ellipse_records(ctx, scan).map(|records| records.len())
+        }).expect_err("source conic ID needs its full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -303,17 +309,19 @@ use crate::decode::records::{
 
     #[test]
     fn native_reference_ellipse_row_refuses_collection_limit() {
-        let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native reference ellipse records"), |cap| reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
             reference_ellipse_records(ctx, scan).map(|records| records.len())
-        })
-        .expect_err("one ellipse record needs an output row");
+        }));
+        let error = reference_records_with_limits(u64::MAX, cap, |ctx, scan| {
+            reference_ellipse_records(ctx, scan).map(|records| records.len())
+        }).expect_err("one ellipse record needs an output row");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo native reference ellipse records")
         );
         assert_eq!(
-            reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+            reference_records_with_limits(u64::MAX, u64::MAX, |ctx, scan| {
                 reference_ellipse_records(ctx, scan).map(|records| records.len())
             })
             .expect("one ellipse record"),
@@ -402,8 +410,8 @@ use crate::decode::records::{
 
     #[test]
     fn native_feature_current_offset_refuses_node_limit() {
-        let error = operation_state_records_with_limits(u64::MAX, 0)
-            .expect_err("one current offset needs a BTreeMap node");
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native feature current-offset nodes"), |cap| operation_state_records_with_limits(u64::MAX, cap));
+        let error = operation_state_records_with_limits(u64::MAX, cap).expect_err("one current offset needs a BTreeMap node");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
@@ -413,8 +421,8 @@ use crate::decode::records::{
 
     #[test]
     fn native_feature_state_ordinal_refuses_node_limit() {
-        let error = operation_state_records_with_limits(u64::MAX, 1)
-            .expect_err("one state ordinal needs a BTreeMap node");
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native feature ordinal nodes"), |cap| operation_state_records_with_limits(u64::MAX, cap));
+        let error = operation_state_records_with_limits(u64::MAX, cap).expect_err("one state ordinal needs a BTreeMap node");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
@@ -428,9 +436,9 @@ use crate::decode::records::{
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo native feature state name"),
-                |cap| operation_state_records_with_limits(cap, 3),
+                |cap| operation_state_records_with_limits(cap, u64::MAX),
             ),
-            3,
+            u64::MAX,
         )
         .expect_err("one invalid name needs four replacement bytes");
         assert!(
@@ -446,9 +454,9 @@ use crate::decode::records::{
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo native feature state prefix"),
-                |cap| operation_state_records_with_limits(cap, 3),
+                |cap| operation_state_records_with_limits(cap, u64::MAX),
             ),
-            3,
+            u64::MAX,
         )
         .expect_err("the source prefix needs another retained byte");
         assert!(
@@ -464,9 +472,9 @@ use crate::decode::records::{
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo native feature state IDs"),
-                |cap| operation_state_records_with_limits(cap, 3),
+                |cap| operation_state_records_with_limits(cap, u64::MAX),
             ),
-            3,
+            u64::MAX,
         )
         .expect_err("the state ID needs its full retained length");
         assert!(
@@ -478,14 +486,14 @@ use crate::decode::records::{
 
     #[test]
     fn native_feature_state_row_refuses_collection_limit() {
-        let error = operation_state_records_with_limits(u64::MAX, 2)
-            .expect_err("one native state needs an output Vec row");
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native feature state records"), |cap| operation_state_records_with_limits(u64::MAX, cap));
+        let error = operation_state_records_with_limits(u64::MAX, cap).expect_err("one native state needs an output Vec row");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo native feature state records")
         );
-        let records = operation_state_records_with_limits(u64::MAX, 3)
+        let records = operation_state_records_with_limits(u64::MAX, u64::MAX)
             .expect("the service-profile state is admitted");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0]["id"], "creo:mdlstatus:feature_state#40:0");
@@ -502,9 +510,9 @@ use crate::decode::records::{
 
     #[test]
     fn native_feature_reference_id_refuses_retained_limit() {
-        let id_len = cadmpeg_core::decode::u64_from_index("creo:mdlrefinfo:feature_name#0".len());
-        let error = reference_name_records_with_limits(id_len - 1, 1)
-            .expect_err("native reference ID needs its full retained length");
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native feature reference IDs"), |cap| reference_name_records_with_limits(cap, u64::MAX));
+        let error = reference_name_records_with_limits(cap, u64::MAX).expect_err("native reference ID needs its full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -514,9 +522,9 @@ use crate::decode::records::{
 
     #[test]
     fn native_feature_reference_text_refuses_replacement_limit() {
-        let id_len = cadmpeg_core::decode::u64_from_index("creo:mdlrefinfo:feature_name#0".len());
-        let error = reference_name_records_with_limits(id_len + 3, 1)
-            .expect_err("invalid UTF-8 needs four retained bytes");
+
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native feature reference text"), |cap| reference_name_records_with_limits(cap, u64::MAX));
+        let error = reference_name_records_with_limits(cap, u64::MAX).expect_err("invalid UTF-8 needs four retained bytes");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -526,8 +534,8 @@ use crate::decode::records::{
 
     #[test]
     fn native_feature_reference_bytes_refuse_retained_limit() {
-        let id_len = cadmpeg_core::decode::u64_from_index("creo:mdlrefinfo:feature_name#0".len());
-        let error = reference_name_records_with_limits(id_len + 4 + 1, 1)
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo native feature reference bytes"), |cap| reference_name_records_with_limits(cap, u64::MAX));
+        let error = reference_name_records_with_limits(cap, u64::MAX)
             .expect_err("source bytes need their full retained length");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -538,15 +546,15 @@ use crate::decode::records::{
 
     #[test]
     fn native_feature_reference_row_refuses_collection_limit() {
-        let error = reference_name_records_with_limits(u64::MAX, 0)
-            .expect_err("one native record needs one collection item");
+        let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo native feature reference records"), |cap| reference_name_records_with_limits(u64::MAX, cap));
+        let error = reference_name_records_with_limits(u64::MAX, cap).expect_err("one native record needs one collection item");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo native feature reference records")
         );
         let records =
-            reference_name_records_with_limits(u64::MAX, 1).expect("one native record is admitted");
+            reference_name_records_with_limits(u64::MAX, u64::MAX).expect("one native record is admitted");
         assert_eq!(records[0].name, "A\u{fffd}");
         assert_eq!(records[0].name_bytes, b"A\xff");
     }

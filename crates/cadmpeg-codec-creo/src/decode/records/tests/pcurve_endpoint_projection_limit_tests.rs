@@ -14,7 +14,15 @@ use crate::decode::records::pcurve_endpoint_records;
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some("creo native pcurve endpoint records"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          pcurve_endpoint_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = pcurve_endpoint_records(&ctx, &scan) else {
@@ -42,7 +50,15 @@ use crate::decode::records::pcurve_endpoint_records;
             });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some("creo native pcurve endpoint records"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          pcurve_endpoint_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = pcurve_endpoint_records(&ctx, &scan) else {

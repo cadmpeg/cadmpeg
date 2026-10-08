@@ -49,7 +49,15 @@ use crate::decode::records::sketch_records;
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+      ResourceDimension::RetainedBytes, Some("creo sketch record id"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_retained_bytes = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          sketch_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = sketch_records(&ctx, &scan) else {
@@ -68,8 +76,15 @@ use crate::decode::records::sketch_records;
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#7".len());
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+      ResourceDimension::RetainedBytes, Some("creo sketch source section"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_retained_bytes = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          sketch_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = sketch_records(&ctx, &scan) else {
@@ -88,7 +103,15 @@ use crate::decode::records::sketch_records;
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some("creo sketch records"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          sketch_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = sketch_records(&ctx, &scan) else {
@@ -117,7 +140,15 @@ use crate::decode::records::sketch_records;
         });
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
+        policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some("creo native sketch saved entities"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          sketch_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = sketch_records(&ctx, &scan) else {

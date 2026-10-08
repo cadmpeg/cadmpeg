@@ -67,7 +67,15 @@ use crate::decode::records::curve_expression_records;
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+      ResourceDimension::RetainedBytes, Some("creo curve expression record id"), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_retained_bytes = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          curve_expression_records(&trial_ctx, &scan).map(|_| ())
+      });
+
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = curve_expression_records(&ctx, &scan) else {
@@ -84,17 +92,25 @@ use crate::decode::records::curve_expression_records;
     #[test]
     fn curve_expression_nested_rows_refuse_collection_limit() {
         let scan = scan();
-        for (limit, operation) in [
-            (0, "creo native curve expression lines"),
-            (1, "creo native curve expression assignments"),
-            (2, "creo native curve expression equations"),
-            (3, "creo native curve expression block assignments"),
-            (4, "creo native curve expression solve blocks"),
-            (5, "creo native curve expression records"),
+        for operation in [
+            "creo native curve expression lines",
+            "creo native curve expression assignments",
+            "creo native curve expression equations",
+            "creo native curve expression block assignments",
+            "creo native curve expression solve blocks",
+            "creo native curve expression records",
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
+            policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+      ResourceDimension::CollectionItems, Some(operation), |cap| {
+          let trial_arena = DecodeArena::new();
+          let mut trial_policy = DecodePolicy::service();
+          trial_policy.limits.max_collection_items = cap;
+          let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+          curve_expression_records(&trial_ctx, &scan).map(|_| ())
+      });
+
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                 .expect("empty root is admitted");
             let Err(error) = curve_expression_records(&ctx, &scan) else {
