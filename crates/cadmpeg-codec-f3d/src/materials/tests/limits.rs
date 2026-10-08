@@ -761,28 +761,11 @@ fn definition_catalog_string_range_refuses_work_after_valid_input() {
 }
 
 #[test]
-fn generic_connection_range_refuses_work_after_valid_input() {
+fn generic_connection_range_reads_valid_input() {
     let mut record = vec![0; 113];
     record[102] = 1;
     record[104..108].copy_from_slice(&1_u32.to_le_bytes());
     record[108..112].copy_from_slice(&1_u32.to_le_bytes());
     record[112] = b'x';
-    crate::test_support::with_decode_context(|ctx| {
-        assert_eq!(
-            super::super::generic_connection_delta(ctx, &record, 0)
-                .expect("valid GenericSchema connections"),
-            Some(10)
-        );
-    });
-
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D GenericSchema connections",
-        0,
-        |ctx| super::super::generic_connection_delta(ctx, &record, 0).map(|_| ()),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "scan F3D GenericSchema connections")
-    );
+    assert_eq!(super::super::generic_connection_delta(&record, 0), Some(10));
 }

@@ -393,18 +393,27 @@ fn patch_instance_colors(
         };
         if let Some(color) = edit.color {
             let relative = if let Some(decoded_record) = decoded_record {
-                let property_id = appearance_base_color_property_id(ctx, decoded_record)?
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "Protein appearance {guid} has no schema-selected color carrier"
+                let property_id = appearance_base_color_property_id(
+                    decoded_record.schema.as_str(),
+                    || {
+                        Ok::<_, CodecError>(matches!(
+                            decoded_record
+                                .properties
+                                .get("common_Tint_toggle")
+                                .and_then(|property| property.value()),
+                            Some(cadmpeg_protein::property::PropertyValue::Boolean(true))
                         ))
-                    })?;
-                let property = ctx
-                    .get_btree_map(
-                        &decoded_record.properties,
-                        property_id,
-                        "find F3D schema color carrier",
-                    )?
+                    },
+                    || Ok(decoded_record.properties.contains_key("surface_albedo")),
+                )?
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "Protein appearance {guid} has no schema-selected color carrier"
+                    ))
+                })?;
+                let property = decoded_record
+                    .properties
+                    .get(property_id)
                     .filter(|property| {
                         matches!(
                             property.value(),
@@ -422,7 +431,7 @@ fn patch_instance_colors(
                     "GenericSchema" => {
                         position
                             + 112
-                            + generic_connection_delta(ctx, record, position)?.ok_or_else(|| {
+                            + generic_connection_delta(record, position).ok_or_else(|| {
                                 CodecError::Malformed(
                                     "Protein GenericSchema connection list is malformed".into(),
                                 )
@@ -483,7 +492,7 @@ fn patch_instance_colors(
                     ("GenericSchema", "reflectivity_at_0deg") => {
                         position
                             + 175
-                            + generic_connection_delta(ctx, record, position)?.ok_or_else(|| {
+                            + generic_connection_delta(record, position).ok_or_else(|| {
                                 CodecError::Malformed(
                                     "Protein GenericSchema connection list is malformed".into(),
                                 )
@@ -492,7 +501,7 @@ fn patch_instance_colors(
                     ("GenericSchema", "refraction_index") => {
                         position
                             + 201
-                            + generic_connection_delta(ctx, record, position)?.ok_or_else(|| {
+                            + generic_connection_delta(record, position).ok_or_else(|| {
                                 CodecError::Malformed(
                                     "Protein GenericSchema connection list is malformed".into(),
                                 )
@@ -1279,30 +1288,43 @@ fn appearance_base_color(
     ctx: &DecodeContext<'_>,
     record: &cadmpeg_protein::DecodedRecord,
 ) -> Result<Option<Color>, CodecError> {
-    let Some(property_id) = appearance_base_color_property_id(ctx, record)? else {
+    let Some(property_id) = appearance_base_color_property_id(
+        record.schema.as_str(),
+        || {
+            Ok::<_, CodecError>(matches!(
+                ctx.get_btree_map(
+                    &record.properties,
+                    "common_Tint_toggle",
+                    "find F3D common tint toggle",
+                )?
+                .and_then(|property| property.value()),
+                Some(cadmpeg_protein::property::PropertyValue::Boolean(true))
+            ))
+        },
+        || {
+            ctx.contains_key_btree_map(
+                &record.properties,
+                "surface_albedo",
+                "check F3D common surface albedo",
+            )
+        },
+    )?
+    else {
         return Ok(None);
     };
     color_property(ctx, record, property_id)
 }
 
 /// Select the serialized color carrier that represents the neutral base color.
-fn appearance_base_color_property_id(
-    ctx: &DecodeContext<'_>,
-    record: &cadmpeg_protein::DecodedRecord,
-) -> Result<Option<&'static str>, CodecError> {
-    if matches!(
-        ctx.get_btree_map(
-            &record.properties,
-            "common_Tint_toggle",
-            "find F3D common tint toggle",
-        )?
-        .and_then(|property| property.value()),
-        Some(cadmpeg_protein::property::PropertyValue::Boolean(true))
-    ) {
+fn appearance_base_color_property_id<E>(
+    schema: &str,
+    tint_enabled: impl FnOnce() -> Result<bool, E>,
+    has_surface_albedo: impl FnOnce() -> Result<bool, E>,
+) -> Result<Option<&'static str>, E> {
+    if tint_enabled()? {
         return Ok(Some("common_Tint_color"));
     }
-
-    let id = match record.schema.as_str() {
+    Ok(Some(match schema {
         "GenericSchema" => "generic_diffuse",
         "MetalSchema" => "metal_color",
         "MetallicPaintSchema" => "metallicpaint_base_color",
@@ -1313,17 +1335,9 @@ fn appearance_base_color_property_id(
         "PrismTransparentSchema" => "transparent_color",
         // `PrismCommonSchema` supplies the common fallback used by derived
         // families that do not define one primary constant-colour member.
-        _ if ctx.contains_key_btree_map(
-            &record.properties,
-            "surface_albedo",
-            "check F3D common surface albedo",
-        )? =>
-        {
-            "surface_albedo"
-        }
+        _ if has_surface_albedo()? => "surface_albedo",
         _ => return Ok(None),
-    };
-    Ok(Some(id))
+    }))
 }
 
 fn color_property(
@@ -2910,7 +2924,7 @@ fn decode_fixed_record(
     };
     let color = match schema.as_str() {
         "GenericSchema" => {
-            let Some(delta) = generic_connection_delta(ctx, record, position)? else {
+            let Some(delta) = generic_connection_delta(record, position) else {
                 return Ok(None);
             };
             fixed_rgba(record, position + 112 + delta)
@@ -2925,7 +2939,7 @@ fn decode_fixed_record(
     };
     let mut properties = BTreeMap::new();
     if schema == "GenericSchema" {
-        let Some(delta) = generic_connection_delta(ctx, record, position)? else {
+        let Some(delta) = generic_connection_delta(record, position) else {
             return Ok(None);
         };
         fixed_tagged_scalar(
@@ -3028,42 +3042,27 @@ fn fixed_rgba(bytes: &[u8], offset: usize) -> Option<Color> {
     decoded_color(values)
 }
 
-fn generic_connection_delta(
-    ctx: &DecodeContext<'_>,
-    record: &[u8],
-    value_block: usize,
-) -> Result<Option<usize>, CodecError> {
-    let Some(slot) = value_block.checked_add(102) else {
-        return Ok(None);
-    };
+/// Measure the `GenericSchema` connection block at `value_block`. The block holds
+/// at most eight length-prefixed connections, so the walk is bounded.
+fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> {
+    let slot = value_block.checked_add(102)?;
     match record.get(slot) {
-        Some(0) => Ok(Some(0)),
+        Some(0) => Some(0),
         Some(1) if slot.checked_add(6).is_some_and(|end| end <= record.len()) => {
-            let Some(count) = View::u32_le_at(record, slot + 2).map(index_from_u32) else {
-                return Ok(None);
-            };
+            let count = View::u32_le_at(record, slot + 2).map(index_from_u32)?;
             if count > 8 {
-                return Ok(None);
+                return None;
             }
             let mut position = slot + 6;
-            for _ in ctx.admit_iter(&(0..count), "scan F3D GenericSchema connections")? {
-                let Some(length) = View::u32_le_at(record, position).map(index_from_u32) else {
-                    return Ok(None);
-                };
-                let Some(start) = position.checked_add(4) else {
-                    return Ok(None);
-                };
-                let Some(end) = start.checked_add(length) else {
-                    return Ok(None);
-                };
-                if record.get(start..end).is_none() {
-                    return Ok(None);
-                }
+            for _ in 0..count {
+                let length = View::u32_le_at(record, position).map(index_from_u32)?;
+                let end = position.checked_add(4)?.checked_add(length)?;
+                record.get(position..end)?;
                 position = end;
             }
-            Ok(position.checked_sub(slot + 1))
+            position.checked_sub(slot + 1)
         }
-        _ => Ok(None),
+        _ => None,
     }
 }
 
