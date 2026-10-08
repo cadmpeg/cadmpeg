@@ -347,6 +347,7 @@ fn array_elements<'ctx, 'a>(
     let ObjectPayload::Array {
         dimensions,
         elements,
+        ..
     } = &array.payload
     else {
         return Ok(None);
@@ -946,6 +947,7 @@ mod tests {
                     ObjectPayload::Array {
                         dimensions: vec![1],
                         elements: vec![item.to_string()],
+                        complete: true,
                     },
                     3,
                 ),
@@ -963,6 +965,7 @@ mod tests {
                     ObjectPayload::Array {
                         dimensions: vec![1],
                         elements: vec![instance.to_string()],
+                        complete: true,
                     },
                     5,
                 ),
@@ -981,6 +984,7 @@ mod tests {
                     ObjectPayload::Array {
                         dimensions: vec![1],
                         elements: vec![value.to_string()],
+                        complete: true,
                     },
                     8,
                 ),

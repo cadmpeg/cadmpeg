@@ -266,6 +266,8 @@ pub(crate) enum ObjectPayload {
         dimensions: Vec<u32>,
         /// Direct child object identities in source order.
         elements: Vec<String>,
+        /// Completeness derived from the admitted dimensions and elements.
+        complete: bool,
     },
     /// A type-0 payload outside the defined object forms.
     Opaque {
@@ -274,27 +276,36 @@ pub(crate) enum ObjectPayload {
     },
 }
 
+fn object_array_is_complete(
+    ctx: &DecodeContext<'_>,
+    dimensions: &[u32],
+    elements: &[String],
+) -> Result<bool, CodecError> {
+    let mut count = 1u64;
+    let mut dimensions = dimensions.iter();
+    while let Some(dimension) =
+        ctx.next_charged(&mut dimensions, "creo object array extent traversal")?
+    {
+        let Some(product) = count.checked_mul(u64::from(*dimension)) else {
+            return Ok(false);
+        };
+        count = product;
+    }
+    Ok(usize::try_from(count).ok() == Some(elements.len()))
+}
+
 impl ObjectPayload {
     /// Whether an array has exactly its declared extent product of elements.
     pub(crate) fn is_complete(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         let Self::Array {
             dimensions,
             elements,
+            ..
         } = self
         else {
             return Ok(false);
         };
-        let mut count = 1u64;
-        let mut dimensions = dimensions.iter();
-        while let Some(dimension) =
-            ctx.next_charged(&mut dimensions, "creo object array extent traversal")?
-        {
-            let Some(product) = count.checked_mul(u64::from(*dimension)) else {
-                return Ok(false);
-            };
-            count = product;
-        }
-        Ok(usize::try_from(count).ok() == Some(elements.len()))
+        object_array_is_complete(ctx, dimensions, elements)
     }
 }
 
@@ -322,19 +333,11 @@ impl Serialize for ObjectPayload {
             Self::Array {
                 dimensions,
                 elements,
+                complete,
             } => {
                 wire.serialize_field("dimensions", dimensions)?;
                 wire.serialize_field("elements", elements)?;
-                wire.serialize_field(
-                    "complete",
-                    &dimensions
-                        .iter()
-                        .try_fold(1u64, |count, dimension| {
-                            count.checked_mul(u64::from(*dimension))
-                        })
-                        .and_then(|count| usize::try_from(count).ok())
-                        .is_some_and(|count| count == elements.len()),
-                )?;
+                wire.serialize_field("complete", complete)?;
             }
             Self::Opaque { bytes } => wire.serialize_field("bytes", bytes)?,
             _ => {}
@@ -401,8 +404,13 @@ pub(crate) enum StringPayload {
         dimensions: Vec<u32>,
         /// Direct source rows, retaining unsupported continuation evidence.
         values: Vec<Result<StringValue, Continuation>>,
-        /// Continuation rows attached to the array header.
+        /// Header continuation retained for the test-only completeness traversal.
+        #[cfg(test)]
         continuation: Option<Continuation>,
+        /// Completeness derived while the source rows were admitted.
+        complete: bool,
+        /// Source indices of supported values, in source order.
+        accepted_value_indices: Vec<usize>,
     },
 }
 
@@ -423,42 +431,51 @@ impl Serialize for StringPayload {
             Self::Array {
                 dimensions,
                 values,
-                continuation,
+                complete,
+                accepted_value_indices,
+                ..
             } => {
                 wire.serialize_field("form", "array")?;
                 wire.serialize_field("dimensions", dimensions)?;
-                wire.serialize_field("values", &StringValues(values))?;
                 wire.serialize_field(
-                    "complete",
-                    &(continuation.is_none()
-                        && dimensions
-                            .first()
-                            .and_then(|dimension| usize::try_from(*dimension).ok())
-                            .is_some_and(|count| count == values.len())
-                        && values.iter().all(Result::is_ok)),
+                    "values",
+                    &StringValues {
+                        values,
+                        accepted_indices: accepted_value_indices,
+                    },
                 )?;
+                wire.serialize_field("complete", complete)?;
             }
         }
         wire.end()
     }
 }
 
-/// Borrowed supported values; each value is emitted without a projection vector.
-struct StringValues<'a>(&'a [Result<StringValue, Continuation>]);
+/// Supported values selected by their admitted source indices.
+struct StringValues<'a> {
+    values: &'a [Result<StringValue, Continuation>],
+    accepted_indices: &'a [usize],
+}
 
 impl Serialize for StringValues<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.0.iter().filter_map(|value| value.as_ref().ok()))
+        serializer.collect_seq(self.accepted_indices.iter().filter_map(|index| {
+            self.values
+                .get(*index)
+                .and_then(|value| value.as_ref().ok())
+        }))
     }
 }
 
 impl StringPayload {
     /// Whether every declared string row has a supported, complete value.
+    #[cfg(test)]
     fn is_complete(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         let Self::Array {
             dimensions,
             values,
             continuation,
+            ..
         } = self
         else {
             return Ok(false);
@@ -476,6 +493,7 @@ impl StringPayload {
     }
 
     /// Number of logical string elements represented by this payload.
+    #[cfg(test)]
     pub(crate) fn element_count(&self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
         Ok(match self {
             Self::Scalar { .. } => 1,
@@ -487,6 +505,7 @@ impl StringPayload {
     }
 
     /// Count elements whose character encoding remains uninterpreted.
+    #[cfg(test)]
     pub(crate) fn undecoded_encoding_count(
         &self,
         ctx: &DecodeContext<'_>,
@@ -1517,11 +1536,13 @@ fn object_records(
                         "creo legacy object array element IDs",
                     )?);
                 }
+                let complete = object_array_is_complete(ctx, &dimensions, &elements)?;
+                incomplete_arrays += usize::from(!complete);
                 let payload = ObjectPayload::Array {
                     dimensions,
                     elements,
+                    complete,
                 };
-                incomplete_arrays += usize::from(!payload.is_complete(ctx)?);
                 payload
             } else {
                 unresolved += 1;
@@ -1738,21 +1759,40 @@ fn string_records(
                     children.len(),
                     "creo legacy string array values",
                 )?;
+                let mut accepted_value_indices = Vec::new();
+                let mut all_supported = true;
                 for child in ctx.admit_iter(children, "creo legacy string child traversal")? {
                     if let Some(continuation) = &child.continuation {
+                        all_supported = false;
                         unresolved += 1;
                         values.push(Err(continuation.clone()));
                     } else {
-                        values.push(Ok(string_value(ctx, &data[child.payload.clone()])?));
+                        let value = string_value(ctx, &data[child.payload.clone()])?;
+                        ctx.reserve_vec(
+                            &mut accepted_value_indices,
+                            1,
+                            "creo legacy string array serializer indices",
+                        )?;
+                        accepted_value_indices.push(values.len());
+                        values.push(Ok(value));
                     }
                 }
+                let complete = value.continuation.is_none()
+                    && dimensions
+                        .first()
+                        .and_then(|dimension| usize::try_from(*dimension).ok())
+                        .is_some_and(|count| count == values.len())
+                    && all_supported;
                 unresolved += usize::from(value.continuation.is_some());
                 let payload = StringPayload::Array {
                     dimensions,
                     values,
+                    #[cfg(test)]
                     continuation: value.continuation.clone(),
+                    complete,
+                    accepted_value_indices,
                 };
-                incomplete_arrays += usize::from(!payload.is_complete(ctx)?);
+                incomplete_arrays += usize::from(!complete);
                 payload
             } else {
                 if value.continuation.is_some() {
