@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::edge_geometry::{collect_bezier_point_parameters, standard_limit_curve_point_parameter};
 use super::*;
 
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
