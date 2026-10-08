@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::curve::test_support::{
+    expression_lines, external_symbol, named_external_symbol, solve_phase_inputs,
+    with_expression_policy,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
 
 const ONE_COMMENT: &[u8] = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
     \xe0\x0aexpression\0\xf8\x01/*x*/\0";
@@ -20,27 +23,6 @@ fn parse(
     let (ctx, _) =
         DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root input is admitted");
     super::super::expression_records_with_model_name(&ctx, payload, None)
-}
-
-fn with_expression_policy<T>(
-    policy: DecodePolicy,
-    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test input is admitted");
-    run(&ctx)
-}
-
-fn expression_lines(source: &[&str]) -> Vec<super::super::CurveExpressionLine> {
-    source
-        .iter()
-        .enumerate()
-        .map(|(offset, text)| super::super::CurveExpressionLine {
-            text: (*text).to_owned(),
-            offset,
-        })
-        .collect()
 }
 
 fn resource_error<T>(result: Result<T, CodecError>) -> CodecError {
@@ -282,7 +264,7 @@ fn solve_line_index_nodes_refuse_before_insert() {
         &[],
         ResourceDimension::CollectionItems,
         "creo solve line index nodes",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve line index nodes")
@@ -296,7 +278,7 @@ fn pending_solve_statements_refuse_before_growth() {
         &[],
         ResourceDimension::CollectionItems,
         "creo pending solve statements",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo pending solve statements")
@@ -310,7 +292,7 @@ fn solve_equations_refuse_before_growth() {
         &[],
         ResourceDimension::CollectionItems,
         "creo solve equations",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve equations")
@@ -322,7 +304,7 @@ fn solve_blocks_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
     assert_eq!(
         with_expression_policy(DecodePolicy::service(), |ctx| {
-            crate::curve::tests::compile_solve_program(ctx, &lines)
+            crate::curve::test_support::compile_solve_program(ctx, &lines)
         })
         .expect("service profile")
         .blocks
@@ -333,7 +315,7 @@ fn solve_blocks_refuse_before_growth() {
         &[],
         ResourceDimension::CollectionItems,
         "creo solve blocks",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve blocks")
@@ -347,7 +329,7 @@ fn solve_assignments_refuse_before_growth() {
         &[],
         ResourceDimension::CollectionItems,
         "creo solve assignments",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve assignments")
@@ -361,13 +343,13 @@ fn executable_solve_line_nodes_refuse_before_insert() {
         &[],
         ResourceDimension::CollectionItems,
         "creo executable solve line index nodes",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo executable solve line index nodes")
     );
     let program = with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::compile_solve_program(ctx, &lines)
+        crate::curve::test_support::compile_solve_program(ctx, &lines)
     })
     .expect("service solve program");
     assert_eq!(
@@ -386,7 +368,7 @@ fn solve_equation_left_refuses_retained_limit() {
         &[],
         ResourceDimension::RetainedBytes,
         "creo solve equation left",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -400,7 +382,7 @@ fn solve_equation_right_refuses_retained_limit() {
         &[],
         ResourceDimension::RetainedBytes,
         "creo solve equation right",
-        |ctx| crate::curve::tests::compile_solve_program(ctx, &lines),
+        |ctx| crate::curve::test_support::compile_solve_program(ctx, &lines),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -415,7 +397,7 @@ fn conditional_expression_assignments_refuse_before_growth() {
         ResourceDimension::CollectionItems,
         "creo conditional expression assignments",
         |ctx| {
-            crate::curve::tests::evaluate_program_details(
+            crate::curve::test_support::evaluate_program_details(
                 ctx,
                 &lines,
                 None,
@@ -432,7 +414,7 @@ fn conditional_expression_assignments_refuse_before_growth() {
 fn parsed_expression_assignment_slots_refuse_before_allocation() {
     let lines = expression_lines(&["a=1"]);
     let evaluation = with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::evaluate_program_details(
+        crate::curve::test_support::evaluate_program_details(
             ctx,
             &lines,
             None,
@@ -447,7 +429,7 @@ fn parsed_expression_assignment_slots_refuse_before_allocation() {
         ResourceDimension::CollectionItems,
         "creo parsed expression assignment slots",
         |ctx| {
-            crate::curve::tests::evaluate_program_details(
+            crate::curve::test_support::evaluate_program_details(
                 ctx,
                 &lines,
                 None,
@@ -468,30 +450,15 @@ fn evaluation_limit_reaches(
 ) {
     let lines = expression_lines(source);
     with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::evaluate_program_details(ctx, &lines, None, external_symbols)
+        crate::curve::test_support::evaluate_program_details(ctx, &lines, None, external_symbols)
     })
     .expect("service profile evaluates expression");
 
     let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-        crate::curve::tests::evaluate_program_details(ctx, &lines, None, external_symbols)
+        crate::curve::test_support::evaluate_program_details(ctx, &lines, None, external_symbols)
     });
     assert!(matches!(error, CodecError::ResourceLimit(refusal)
         if refusal.dimension == dimension && refusal.operation == operation));
-}
-
-fn external_symbol(
-    value: Option<super::super::CurveExpressionValue>,
-) -> super::super::ExternalRelationSymbols {
-    named_external_symbol("external", value)
-}
-
-fn named_external_symbol(
-    name: &str,
-    value: Option<super::super::CurveExpressionValue>,
-) -> super::super::ExternalRelationSymbols {
-    super::super::ExternalRelationSymbols {
-        values: BTreeMap::from([(name.to_owned(), value)]),
-    }
 }
 
 macro_rules! evaluation_collection_test {
@@ -529,106 +496,6 @@ macro_rules! evaluation_materialized_test {
                 ResourceDimension::MaterializedBytes,
                 $operation,
             );
-        }
-    };
-}
-
-fn solve_phase_inputs(
-    source: &[&str],
-    external_symbols: &super::super::ExternalRelationSymbols,
-) -> (
-    super::super::CurveExpressionSolveBlock,
-    BTreeMap<String, super::super::CurveExpressionValue>,
-    super::super::CurveExpressionEvaluation,
-) {
-    let lines = expression_lines(source);
-    let evaluation = with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::evaluate_program_details(ctx, &lines, None, external_symbols)
-    })
-    .expect("service profile evaluates the original expression");
-    let block = with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::compile_solve_program(ctx, &lines)
-    })
-    .expect("solve program")
-    .blocks
-    .pop()
-    .expect("one solve block");
-    let preceding: Vec<_> = lines
-        .iter()
-        .take_while(|line| line.offset < block.offset)
-        .cloned()
-        .collect();
-    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::evaluate_program_details(ctx, &preceding, None, external_symbols)
-    })
-    .expect("preceding assignments");
-    let mut values = BTreeMap::new();
-    for (name, value) in &external_symbols.values {
-        if let Some(value) = value {
-            values.insert(name.clone(), value.clone());
-        }
-    }
-    for assignment in preceding.assignments {
-        if let (Some((name, _)), Some(value)) =
-            (assignment.scalar_target(), assignment.value.as_ref())
-        {
-            values.insert(name.to_ascii_lowercase(), value.clone());
-        }
-    }
-    (block, values, evaluation)
-}
-
-fn affine_materialized_limit_reaches(
-    source: &[&str],
-    external_symbols: &super::super::ExternalRelationSymbols,
-    operation: &'static str,
-) {
-    let (block, values, _) = solve_phase_inputs(source, external_symbols);
-    let known: Vec<_> = block
-        .unknowns
-        .iter()
-        .map(|unknown| {
-            values
-                .get(&unknown.name.to_ascii_lowercase())
-                .and_then(super::super::quantity_parts_ref)
-                .map(|(_, dimension)| dimension)
-        })
-        .collect();
-    let dimensions = with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::solve::infer_solve_variable_dimensions(
-            ctx,
-            &block,
-            &values,
-            &known,
-            super::super::RelationEvaluationContext::default(),
-        )
-    })
-    .expect("dimension inference")
-    .expect("valid dimensions");
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::MaterializedBytes,
-        operation,
-        |ctx| {
-            crate::curve::solve::solve_affine_expression_block(
-                ctx,
-                &block,
-                &values,
-                &dimensions,
-                super::super::RelationEvaluationContext::default(),
-            )
-        },
-    );
-    assert!(
-        matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == operation)
-    );
-}
-
-macro_rules! affine_materialized_test {
-    ($name:ident, $source:expr, $external:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            affine_materialized_limit_reaches($source, &$external, $operation);
         }
     };
 }
@@ -781,11 +648,11 @@ fn existing_solve_symbol_names_refuse() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
     let external = super::super::ExternalRelationSymbols::default();
     with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::evaluate_program_details(ctx, &lines, None, &external)
+        crate::curve::test_support::evaluate_program_details(ctx, &lines, None, &external)
     })
     .expect("service evaluates the original expression");
     let program = with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::compile_solve_program(ctx, &lines)
+        crate::curve::test_support::compile_solve_program(ctx, &lines)
     })
     .expect("accepted solve program");
     let parsed = vec![None; lines.len()];
@@ -924,7 +791,7 @@ affine_helix_collection_test!(affine_value_nodes_refuse, "creo affine value node
 fn solve_storage_limit_reaches(source: &[&str], operation: &'static str) {
     let lines = expression_lines(source);
     with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::evaluate_program_details(
+        crate::curve::test_support::evaluate_program_details(
             ctx,
             &lines,
             None,
@@ -937,7 +804,7 @@ fn solve_storage_limit_reaches(source: &[&str], operation: &'static str) {
         ResourceDimension::CollectionItems,
         operation,
         |ctx| {
-            crate::curve::tests::evaluate_program_details(
+            crate::curve::test_support::evaluate_program_details(
                 ctx,
                 &lines,
                 None,
@@ -1014,30 +881,6 @@ solve_storage_test!(
     &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
     "creo nonlinear solved values"
 );
-affine_materialized_test!(
-    affine_variable_names_refuse,
-    &["SOLVE", "x=1", "FOR x"],
-    super::super::ExternalRelationSymbols::default(),
-    "creo affine variable names"
-);
-affine_materialized_test!(
-    affine_known_value_names_refuse,
-    &["y=2", "SOLVE", "x+y=3", "FOR x"],
-    super::super::ExternalRelationSymbols::default(),
-    "creo affine known value names"
-);
-affine_materialized_test!(
-    affine_coefficient_names_refuse,
-    &["SOLVE", "x=1", "FOR x"],
-    super::super::ExternalRelationSymbols::default(),
-    "creo affine coefficient names"
-);
-affine_materialized_test!(
-    affine_unknown_value_names_refuse,
-    &["SOLVE", "x=1", "FOR x"],
-    super::super::ExternalRelationSymbols::default(),
-    "creo affine unknown value names"
-);
 solve_storage_test!(
     nonlinear_known_value_nodes_refuse,
     &["y=3", "x=2", "SOLVE", "x*x*x=8", "FOR x"],
@@ -1073,100 +916,6 @@ solve_storage_test!(
     &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
     "creo nonlinear Jacobian rows"
 );
-fn nonlinear_materialized_limit_reaches(
-    source: &[&str],
-    external_symbols: &super::super::ExternalRelationSymbols,
-    operation: &'static str,
-) {
-    let lines = expression_lines(source);
-    with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::evaluate_program_details(ctx, &lines, None, external_symbols)
-    })
-    .expect("service profile solves the original expression");
-    let block = with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::compile_solve_program(ctx, &lines)
-    })
-    .expect("solve program")
-    .blocks
-    .pop()
-    .expect("one solve block");
-    let preceding: Vec<_> = lines
-        .iter()
-        .take_while(|line| line.offset < block.offset)
-        .cloned()
-        .collect();
-    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| {
-        crate::curve::tests::evaluate_program_details(ctx, &preceding, None, external_symbols)
-    })
-    .expect("preceding assignments");
-    let mut values = std::collections::BTreeMap::new();
-    for assignment in preceding.assignments {
-        if let (Some((name, _)), Some(value)) =
-            (assignment.scalar_target(), assignment.value.as_ref())
-        {
-            values.insert(name.to_ascii_lowercase(), value.clone());
-        }
-    }
-    let point: Vec<_> = block
-        .unknowns
-        .iter()
-        .map(|unknown| {
-            values
-                .get(&unknown.name.to_ascii_lowercase())
-                .and_then(super::super::quantity_parts_ref)
-                .expect("initial numeric value")
-                .0
-        })
-        .collect();
-    let dimensions = vec![super::super::RelationDimension::default(); point.len()];
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::MaterializedBytes,
-        operation,
-        |ctx| {
-            super::super::solve::evaluate_nonlinear_residuals(
-                ctx,
-                &block,
-                &values,
-                &dimensions,
-                &point,
-                super::super::RelationEvaluationContext::default(),
-            )
-        },
-    );
-    assert!(
-        matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == operation)
-    );
-}
-
-macro_rules! nonlinear_materialized_test {
-    ($name:ident, $source:expr, $external:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            nonlinear_materialized_limit_reaches($source, &$external, $operation);
-        }
-    };
-}
-
-nonlinear_materialized_test!(
-    nonlinear_known_value_names_refuse,
-    &["y=3", "x=2", "SOLVE", "x*x*x=8", "FOR x"],
-    super::super::ExternalRelationSymbols::default(),
-    "creo nonlinear known value names"
-);
-nonlinear_materialized_test!(
-    nonlinear_unknown_value_names_refuse,
-    &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
-    super::super::ExternalRelationSymbols::default(),
-    "creo nonlinear unknown value names"
-);
-nonlinear_materialized_test!(
-    nonlinear_known_string_values_refuse,
-    &["y=\"text\"", "x=2", "SOLVE", "x*x*x=8", "FOR x"],
-    super::super::ExternalRelationSymbols::default(),
-    "creo nonlinear known string values"
-);
-
 #[test]
 fn solve_unknowns_refuse_before_vector_growth() {
     let service = with_expression_policy(DecodePolicy::service(), |ctx| {

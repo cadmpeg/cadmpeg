@@ -8,7 +8,7 @@ use crate::curve::evaluate_creo_numeric_relation_function;
 use crate::curve::expression_records;
 use crate::curve::reevaluate_expression_records;
 use crate::curve::relation_round;
-use crate::curve::tests::evaluate_expression_program;
+use crate::curve::test_support::evaluate_expression_program;
 use crate::curve::CreoMathFunction;
 use crate::curve::CurveExpressionActivation;
 use crate::curve::CurveExpressionLine;
@@ -72,9 +72,12 @@ fn relation_parse_limit_error_with_context<V: ExpressionValue + std::fmt::Debug>
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        return crate::curve::parse_relation_expression::<V>(&ctx, expression, values, context).expect_err("first recursive step must refuse");
+        return crate::curve::parse_relation_expression::<V>(&ctx, expression, values, context)
+            .expect_err("first recursive step must refuse");
     }
-    crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| crate::curve::parse_relation_expression::<V>(ctx, expression, values, context))
+    crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        crate::curve::parse_relation_expression::<V>(ctx, expression, values, context)
+    })
 }
 
 #[test]
@@ -166,7 +169,8 @@ fn relation_model_name_refuses_retained_copy() {
             model_name: Some("widget"),
             ..RelationEvaluationContext::default()
         },
-        ResourceDimension::RetainedBytes, "creo relation model name value",
+        ResourceDimension::RetainedBytes,
+        "creo relation model name value",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -178,7 +182,8 @@ fn relation_model_type_refuses_retained_copy() {
     let error = relation_parse_limit_error(
         "rel_model_type()",
         &BTreeMap::<String, CurveExpressionValue>::new(),
-        ResourceDimension::RetainedBytes, "creo relation model type value",
+        ResourceDimension::RetainedBytes,
+        "creo relation model type value",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -287,7 +292,12 @@ fn relation_referenced_string_refuses_retained_clone() {
         "driver".to_owned(),
         CurveExpressionValue::String("abc".to_owned()),
     )]);
-    let error = relation_parse_limit_error("driver", &values, ResourceDimension::RetainedBytes, "creo relation referenced string value");
+    let error = relation_parse_limit_error(
+        "driver",
+        &values,
+        ResourceDimension::RetainedBytes,
+        "creo relation referenced string value",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo relation referenced string value"));
@@ -298,7 +308,8 @@ fn relation_string_concatenation_refuses_retained_growth() {
     let error = relation_parse_limit_error(
         "'a'+'b'",
         &BTreeMap::<String, CurveExpressionValue>::new(),
-        ResourceDimension::RetainedBytes, "creo relation string concatenation",
+        ResourceDimension::RetainedBytes,
+        "creo relation string concatenation",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -339,8 +350,12 @@ fn distinct_affine_probe_values() -> BTreeMap<String, SimultaneousAffineValue> {
 
 #[test]
 fn relation_affine_sum_refuses_new_coefficient_node() {
-    let error =
-        relation_parse_limit_error("driver+other", &distinct_affine_probe_values(), ResourceDimension::CollectionItems, "creo affine combined coefficient nodes");
+    let error = relation_parse_limit_error(
+        "driver+other",
+        &distinct_affine_probe_values(),
+        ResourceDimension::CollectionItems,
+        "creo affine combined coefficient nodes",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo affine combined coefficient nodes"));
@@ -348,8 +363,12 @@ fn relation_affine_sum_refuses_new_coefficient_node() {
 
 #[test]
 fn relation_affine_difference_refuses_new_coefficient_node() {
-    let error =
-        relation_parse_limit_error("driver-other", &distinct_affine_probe_values(), ResourceDimension::CollectionItems, "creo affine combined coefficient nodes");
+    let error = relation_parse_limit_error(
+        "driver-other",
+        &distinct_affine_probe_values(),
+        ResourceDimension::CollectionItems,
+        "creo affine combined coefficient nodes",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo affine combined coefficient nodes"));
@@ -380,7 +399,8 @@ fn relation_affine_function_refuses_selected_value_clone() {
     let error = relation_parse_limit_error(
         "if(1,driver,other)",
         &distinct_affine_probe_values(),
-        ResourceDimension::CollectionItems, "creo relation affine clone coefficient nodes",
+        ResourceDimension::CollectionItems,
+        "creo relation affine clone coefficient nodes",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -394,7 +414,12 @@ fn dimension_probe_variable(name: &str) -> DimensionProbeValue {
 
 #[test]
 fn relation_affine_reference_refuses_coefficient_node() {
-    let error = relation_parse_limit_error("driver", &affine_probe_values(), ResourceDimension::CollectionItems, "creo relation affine clone coefficient nodes");
+    let error = relation_parse_limit_error(
+        "driver",
+        &affine_probe_values(),
+        ResourceDimension::CollectionItems,
+        "creo relation affine clone coefficient nodes",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo relation affine clone coefficient nodes"));
@@ -402,7 +427,12 @@ fn relation_affine_reference_refuses_coefficient_node() {
 
 #[test]
 fn relation_affine_reference_refuses_coefficient_name() {
-    let error = relation_parse_limit_error("driver", &affine_probe_values(), ResourceDimension::RetainedBytes, "creo relation affine clone coefficient names");
+    let error = relation_parse_limit_error(
+        "driver",
+        &affine_probe_values(),
+        ResourceDimension::RetainedBytes,
+        "creo relation affine clone coefficient names",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo relation affine clone coefficient names"));
@@ -411,7 +441,12 @@ fn relation_affine_reference_refuses_coefficient_name() {
 #[test]
 fn relation_dimension_reference_refuses_variable_node() {
     let values = BTreeMap::from([("driver".to_owned(), dimension_probe_variable("x"))]);
-    let error = relation_parse_limit_error("driver", &values, ResourceDimension::CollectionItems, "creo relation dimension clone variable nodes");
+    let error = relation_parse_limit_error(
+        "driver",
+        &values,
+        ResourceDimension::CollectionItems,
+        "creo relation dimension clone variable nodes",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo relation dimension clone variable nodes"));
@@ -420,7 +455,12 @@ fn relation_dimension_reference_refuses_variable_node() {
 #[test]
 fn relation_dimension_reference_refuses_variable_name() {
     let values = BTreeMap::from([("driver".to_owned(), dimension_probe_variable("x"))]);
-    let error = relation_parse_limit_error("driver", &values, ResourceDimension::RetainedBytes, "creo relation dimension clone variable names");
+    let error = relation_parse_limit_error(
+        "driver",
+        &values,
+        ResourceDimension::RetainedBytes,
+        "creo relation dimension clone variable names",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo relation dimension clone variable names"));
@@ -432,7 +472,12 @@ fn relation_dimension_reference_refuses_text_clone() {
         "driver".to_owned(),
         DimensionProbeValue::text(Some("abc".to_owned())),
     )]);
-    let error = relation_parse_limit_error("driver", &values, ResourceDimension::RetainedBytes, "creo relation dimension clone text");
+    let error = relation_parse_limit_error(
+        "driver",
+        &values,
+        ResourceDimension::RetainedBytes,
+        "creo relation dimension clone text",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo relation dimension clone text"));
@@ -451,7 +496,12 @@ fn relation_dimension_reference_refuses_constraint_vector() {
             }],
         },
     )]);
-    let error = relation_parse_limit_error("driver", &values, ResourceDimension::CollectionItems, "creo relation dimension clone constraints");
+    let error = relation_parse_limit_error(
+        "driver",
+        &values,
+        ResourceDimension::CollectionItems,
+        "creo relation dimension clone constraints",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo relation dimension clone constraints"));
@@ -462,7 +512,8 @@ fn relation_literal_text_refuses_retained_copy() {
     let error = relation_parse_limit_error(
         "'abc'",
         &BTreeMap::<String, CurveExpressionValue>::new(),
-        ResourceDimension::RetainedBytes, "creo relation literal text",
+        ResourceDimension::RetainedBytes,
+        "creo relation literal text",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -500,7 +551,8 @@ fn relation_function_refuses_argument_vector() {
     let error = relation_parse_limit_error(
         "sin(1)",
         &BTreeMap::<String, CurveExpressionValue>::new(),
-        ResourceDimension::CollectionItems, "creo relation function arguments",
+        ResourceDimension::CollectionItems,
+        "creo relation function arguments",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -512,7 +564,8 @@ fn relation_function_refuses_recursive_step() {
     let error = relation_parse_limit_error(
         "sin(1)",
         &BTreeMap::<String, CurveExpressionValue>::new(),
-        ResourceDimension::RecursionDepth, "creo relation function depth",
+        ResourceDimension::RecursionDepth,
+        "creo relation function depth",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RecursionDepth
@@ -524,7 +577,8 @@ fn relation_group_refuses_recursive_step() {
     let error = relation_parse_limit_error(
         "(1)",
         &BTreeMap::<String, CurveExpressionValue>::new(),
-        ResourceDimension::RecursionDepth, "creo relation group depth",
+        ResourceDimension::RecursionDepth,
+        "creo relation group depth",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RecursionDepth
@@ -536,7 +590,8 @@ fn relation_exponent_refuses_recursive_step() {
     let error = relation_parse_limit_error(
         "2^3",
         &BTreeMap::<String, CurveExpressionValue>::new(),
-        ResourceDimension::RecursionDepth, "creo relation exponent depth",
+        ResourceDimension::RecursionDepth,
+        "creo relation exponent depth",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RecursionDepth
@@ -1693,13 +1748,23 @@ fn prohibited_construct_error(
     operation: &'static str,
 ) -> CodecError {
     crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-        curve_equation_prohibited_constructs(ctx, &[CurveExpressionLine { text: text.to_owned(), offset: 0 }])
+        curve_equation_prohibited_constructs(
+            ctx,
+            &[CurveExpressionLine {
+                text: text.to_owned(),
+                offset: 0,
+            }],
+        )
     })
 }
 
 #[test]
 fn prohibited_relation_keyword_refuses_node() {
-    let error = prohibited_construct_error("IF a", ResourceDimension::CollectionItems, "creo prohibited construct nodes");
+    let error = prohibited_construct_error(
+        "IF a",
+        ResourceDimension::CollectionItems,
+        "creo prohibited construct nodes",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo prohibited construct nodes"));
@@ -1707,7 +1772,11 @@ fn prohibited_relation_keyword_refuses_node() {
 
 #[test]
 fn prohibited_function_refuses_node() {
-    let error = prohibited_construct_error("r=AbS(1)", ResourceDimension::CollectionItems, "creo prohibited construct nodes");
+    let error = prohibited_construct_error(
+        "r=AbS(1)",
+        ResourceDimension::CollectionItems,
+        "creo prohibited construct nodes",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo prohibited construct nodes"));
@@ -1715,7 +1784,11 @@ fn prohibited_function_refuses_node() {
 
 #[test]
 fn prohibited_function_refuses_retained_name() {
-    let error = prohibited_construct_error("r=AbS(1)", ResourceDimension::RetainedBytes, "creo prohibited construct names");
+    let error = prohibited_construct_error(
+        "r=AbS(1)",
+        ResourceDimension::RetainedBytes,
+        "creo prohibited construct names",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo prohibited construct names"));
@@ -1723,7 +1796,11 @@ fn prohibited_function_refuses_retained_name() {
 
 #[test]
 fn prohibited_relation_keyword_refuses_output_vector() {
-    let error = prohibited_construct_error("IF a", ResourceDimension::CollectionItems, "creo prohibited construct records");
+    let error = prohibited_construct_error(
+        "IF a",
+        ResourceDimension::CollectionItems,
+        "creo prohibited construct records",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo prohibited construct records"));
