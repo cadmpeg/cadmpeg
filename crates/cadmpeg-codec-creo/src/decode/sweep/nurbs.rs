@@ -1457,7 +1457,7 @@ mod tests {
         let limit = crate::test_support::allocation_limit_at(
             ResourceDimension::CollectionItems,
             Some("creo sketch NURBS lift knots"),
-            &run,
+            run,
         );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
@@ -1480,7 +1480,7 @@ mod tests {
         let limit = crate::test_support::allocation_limit_at(
             ResourceDimension::CollectionItems,
             Some("creo sketch NURBS lift poles"),
-            &run,
+            run,
         );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
@@ -1512,7 +1512,7 @@ mod tests {
         let limit = crate::test_support::allocation_limit_at(
             ResourceDimension::CollectionItems,
             Some("creo sketch NURBS pcurve knots"),
-            &run,
+            run,
         );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
@@ -1550,7 +1550,7 @@ mod tests {
         let limit = crate::test_support::allocation_limit_at(
             ResourceDimension::CollectionItems,
             Some("creo sketch NURBS pcurve poles"),
-            &run,
+            run,
         );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
@@ -1607,7 +1607,7 @@ mod tests {
         let limit = crate::test_support::allocation_limit_at(
             ResourceDimension::CollectionItems,
             Some(operation),
-            &run,
+            run,
         );
         run(limit).expect_err("interpolation allocation exceeds the collection limit")
     }
@@ -1626,7 +1626,7 @@ mod tests {
         let limit = crate::test_support::allocation_limit_at(
             ResourceDimension::CollectionItems,
             Some("IR NURBS admitted poles"),
-            &run,
+            run,
         );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
@@ -1705,7 +1705,7 @@ mod tests {
         let limit = crate::test_support::allocation_limit_at(
             ResourceDimension::CollectionItems,
             Some("creo interpolation curve knots"),
-            &run,
+            run,
         );
         let error = run(limit).expect_err("named collection boundary");
         assert!(matches!(
@@ -2020,7 +2020,7 @@ mod tests {
         let limit = crate::test_support::allocation_limit_at(
             ResourceDimension::CollectionItems,
             Some("creo saved spline sketch knots"),
-            &run,
+            run,
         );
         let error = run(limit).expect_err("named collection boundary");
         assert!(matches!(
@@ -2046,7 +2046,7 @@ mod tests {
         let limit = crate::test_support::allocation_limit_at(
             ResourceDimension::CollectionItems,
             Some("creo saved spline sketch controls"),
-            &run,
+            run,
         );
         let error = run(limit).expect_err("named collection boundary");
         assert!(matches!(

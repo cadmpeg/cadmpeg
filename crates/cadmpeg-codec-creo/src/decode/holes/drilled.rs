@@ -429,10 +429,10 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
             match [pair.first, pair.second] {
                 [None, None] => rowless += 1,
                 [Some(crate::surface::SurfaceKind::Cone), Some(crate::surface::SurfaceKind::Cone)] => {
-                    cones += 1
+                    cones += 1;
                 }
                 [Some(crate::surface::SurfaceKind::Cylinder), Some(crate::surface::SurfaceKind::Cylinder)] => {
-                    cylinders += 1
+                    cylinders += 1;
                 }
                 _ => {}
             }

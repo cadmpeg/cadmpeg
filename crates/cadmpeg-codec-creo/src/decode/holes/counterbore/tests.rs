@@ -17,15 +17,15 @@ fn service_boundary_circle(
     radius: f64,
 ) -> Option<(u32, Point3, [f64; 3])> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        super::counterbore_source_boundary_circle(
+        super::counterbore_source_boundary_circles(
             ctx,
             scan,
             ir,
             source_carriers,
             feature_id,
-            cylinder_ids,
-            radius,
+            [(cylinder_ids, radius)],
         )
+        .map(|[boundary]| boundary)
     })
     .expect("service boundary circle admitted")
 }
@@ -129,7 +129,7 @@ fn counterbore_source_limit_error(operation: &'static str) -> cadmpeg_core::Code
     let limit = crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         Some(operation),
-        &run,
+        run,
     );
     run(limit).expect_err("named collection boundary")
 }
@@ -230,7 +230,7 @@ fn counterbore_dimension_limit_error(operation: &'static str) -> cadmpeg_core::C
     let limit = crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         Some(operation),
-        &run,
+        run,
     );
     run(limit).expect_err("named collection boundary")
 }
@@ -924,5 +924,44 @@ fn counterbore_surface_index_borrows_geometry() {
     )
     .expect("unique surface");
     let geometry = indexed.values().next().expect("one surface");
-    assert!(std::ptr::eq(*geometry, &ir.model.surfaces[0].geometry));
+    assert!(std::ptr::eq(
+        *geometry,
+        &raw const ir.model.surfaces[0].geometry
+    ));
+}
+
+#[test]
+fn boundary_queries_share_curve_index() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let scan = boundary_scan();
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.curves.push(boundary_circle());
+    let sources = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let query = (&[2][..], 1.0);
+    let one = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo boundary curve index scan",
+        |ctx| super::counterbore_source_boundary_circles(ctx, &scan, &ir, &sources, 42, [query]),
+    );
+    let four = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo boundary curve index scan",
+        |ctx| super::counterbore_source_boundary_circles(ctx, &scan, &ir, &sources, 42, [query; 4]),
+    );
+    let (CodecError::ResourceLimit(one), CodecError::ResourceLimit(four)) = (one, four) else {
+        panic!("curve index boundaries are resource refusals");
+    };
+    assert_eq!(one, four);
+    let boundaries = crate::decode::with_test_decode_ctx(|ctx| {
+        super::counterbore_source_boundary_circles(ctx, &scan, &ir, &sources, 42, [query; 4])
+    })
+    .expect("service boundary queries admitted");
+    assert_eq!(
+        boundaries,
+        [Some((1, Point3::new(0.0, 0.0, 0.0), [0.0, 0.0, 1.0])); 4]
+    );
 }

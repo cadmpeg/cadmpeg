@@ -291,6 +291,8 @@ pub(in super::super) fn circular_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    type PcurveBuild =
+        Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError>;
     const MAX_CIRCULAR_PCURVE_SEGMENTS: u32 = 100_000;
     let span = end_angle - start_angle;
     let count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
@@ -397,8 +399,6 @@ pub(in super::super) fn circular_pcurve(
         pole_count,
         "creo circular pcurve weighted poles",
     )?;
-    type PcurveBuild =
-        Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError>;
     let build = || -> Result<PcurveBuild, cadmpeg_core::CodecError> {
         use cadmpeg_ir::geometry::nurbs::KnotVector;
         use cadmpeg_ir::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
