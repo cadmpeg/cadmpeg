@@ -323,9 +323,11 @@ mod tests {
         // One copied row, three boundary copies/blends, two final points and
         // two reversed rows use eight units.
         policy.limits.max_work_units = 8;
-        policy.limits.max_materialized_bytes = 192;
+        // One copied row and two output polygons of two rows each need
+        // five collection items and 5 * 4 * 8 = 160 materialized bytes.
+        policy.limits.max_materialized_bytes = 160;
         policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 6;
+        policy.limits.max_collection_items = 5;
         policy.limits.max_recursion_depth = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -336,13 +338,13 @@ mod tests {
         assert_eq!(&*left, &[[0.0, 0.0, 0.0, 1.0], [0.5, 0.0, 0.0, 1.0]]);
         assert_eq!(&*right, &[[0.5, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]]);
         let spare = ctx
-            .reserve_scoped_limit(64, "test split working rows released")
+            .reserve_scoped_limit(32, "test split working rows released")
             .expect("only two output polygons remain");
         drop(spare);
         drop(left);
         drop(right);
         let reuse = ctx
-            .reserve_scoped_limit(192, "test split polygons released")
+            .reserve_scoped_limit(160, "test split polygons released")
             .expect("all bytes reusable");
         drop(reuse);
         ctx.finish_session()

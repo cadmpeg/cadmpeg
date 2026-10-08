@@ -264,14 +264,19 @@ impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
         source: S,
         operation: &'static str,
     ) -> Result<Self::Iter<S>, Self::Error> {
-        let (decode, standard) = if let Some(ctx) = self.context() {
-            if matches!(self, Self::WorkSlice(_)) {
-                if let Ok(bound) = source.visit_bound() {
-                    EvaluationAdmission::work(*self, bound, operation)?;
-                }
-            }
+        let bound = source.visit_bound();
+        // Core admission refuses overflowing source bounds before iteration.
+        let context = match self {
+            Self::Decode(ctx) => Some(*ctx),
+            _ if bound.is_err() => self.context(),
+            _ => None,
+        };
+        let (decode, standard) = if let Some(ctx) = context {
             (Some(ctx.admit_iter(source, operation)?), None)
         } else {
+            if let Ok(bound) = bound {
+                EvaluationAdmission::work(*self, bound, operation)?;
+            }
             (None, Some(source.source_iter()))
         };
         Ok(decode
@@ -319,6 +324,123 @@ mod tests {
         DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
     };
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn index_iteration_charges_decode_and_session_slice_work_once() {
+        let source = [11, 13, 17];
+        // The source has three visits and needs no decode storage.
+        for sliced in [false, true] {
+            for cap in 0..=3 {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let parent = ctx.work_budget(3);
+                let iterate =
+                    |admission: EvaluationAdmission<'_, '_>| -> Result<(), EvaluationFailure<()>> {
+                        let values = crate::index::IndexQuery::admit_iter(
+                            &admission,
+                            &source,
+                            "test index source visits",
+                        )
+                        .map_err(EvaluationFailure::ResourceLimit)?;
+                        assert!(values.copied().eq(source));
+                        Ok(())
+                    };
+                let admission = EvaluationAdmission::Decode(&ctx);
+                let result = if sliced {
+                    admission.within_work_slice(&parent, iterate)
+                } else {
+                    iterate(admission)
+                };
+                if sliced {
+                    assert_eq!(parent.consumed(), 3);
+                }
+                let original = if cap < 3 {
+                    let EvaluationFailure::ResourceLimit(original) = result.unwrap_err() else {
+                        panic!("source visit refusal");
+                    };
+                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(
+                        (original.limit, original.used, original.additional),
+                        (cap, 0, 3)
+                    );
+                    assert_eq!(
+                        original.operation,
+                        if sliced {
+                            "work_budget"
+                        } else {
+                            "test index source visits"
+                        }
+                    );
+                    original
+                } else {
+                    assert_eq!(result, Ok(()));
+                    let original = ctx
+                        .charge_work_limit(1, "test next source visit")
+                        .unwrap_err();
+                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(
+                        (original.limit, original.used, original.additional),
+                        (3, 3, 1)
+                    );
+                    original
+                };
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn index_iteration_preserves_session_refusals_for_overflowing_visit_bounds() {
+        for sliced in [false, true] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let parent = ctx.work_budget(3);
+            // The inclusive range has u64::MAX + 1 visits; core saturates the
+            // refused request to u64::MAX without advancing its source.
+            let iterate =
+                |admission: EvaluationAdmission<'_, '_>| -> Result<(), EvaluationFailure<()>> {
+                    crate::index::IndexQuery::admit_iter(
+                        &admission,
+                        0_u64..=u64::MAX,
+                        "test overflowing index source",
+                    )
+                    .map(|_| ())
+                    .map_err(EvaluationFailure::ResourceLimit)
+                };
+            let admission = EvaluationAdmission::Decode(&ctx);
+            let result = if sliced {
+                admission.within_work_slice(&parent, iterate)
+            } else {
+                iterate(admission)
+            };
+            let EvaluationFailure::ResourceLimit(original) = result.unwrap_err() else {
+                panic!("source bound overflow must preserve its refusal");
+            };
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(
+                original.reason,
+                cadmpeg_core::decode::ResourceFailure::BudgetExceeded
+            );
+            assert_eq!(
+                (original.limit, original.used, original.additional),
+                (u64::MAX, 0, u64::MAX)
+            );
+            assert_eq!(original.operation, "test overflowing index source");
+            assert_eq!(parent.consumed(), 0);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+            );
+        }
+    }
 
     #[test]
     fn model_text_comparison_consumes_its_local_slice_and_global_work_once() {
