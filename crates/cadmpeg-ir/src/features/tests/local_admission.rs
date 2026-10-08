@@ -294,8 +294,7 @@ fn selection_reference_constructors_admit_text_before_validation() {
         result.map(|result| result.map(|_| ()))
     }
     for owner in 0..12 {
-        let construct = |ctx: &DecodeContext<'_>| {
-            let text = "  face  ".to_owned();
+        let construct = |ctx: &DecodeContext<'_>, text: String| {
             let reference = || "local".to_owned().try_into().unwrap();
             match owner {
                 0 => finish(SelectionReference::new(text, ctx)),
@@ -346,45 +345,56 @@ fn selection_reference_constructors_admit_text_before_validation() {
                 _ => unreachable!(),
             }
         };
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits,
-            "selection reference complete",
-            |cap| {
+        let mut short_need = None;
+        for text in ["  face  ".to_owned(), format!("  f{}", " ".repeat(4096))] {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                "selection reference complete",
+                |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_collection_items = 0;
+                    policy.limits.max_recursion_depth = 0;
+                    let arena = DecodeArena::new();
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    construct(&ctx, text.clone())?.unwrap();
+                    ctx.charge_work(1, "selection reference complete")
+                },
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(complete) = error else {
+                panic!("completion boundary");
+            };
+            let need = complete.used;
+            if let Some(short_need) = short_need {
+                assert_eq!(
+                    need, short_need,
+                    "validation stops at the first nonblank character"
+                );
+            } else {
+                short_need = Some(need);
+            }
+            for allowance in 0..=need.max(8) {
                 let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
+                policy.limits.max_work_units = allowance;
                 policy.limits.max_materialized_bytes = 0;
                 policy.limits.max_retained_bytes = 0;
                 policy.limits.max_collection_items = 0;
                 policy.limits.max_recursion_depth = 0;
                 let arena = DecodeArena::new();
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                construct(&ctx)?.unwrap();
-                ctx.charge_work(1, "selection reference complete")
-            },
-        );
-        let cadmpeg_core::CodecError::ResourceLimit(complete) = error else {
-            panic!("completion boundary");
-        };
-        let need = complete.used;
-        for allowance in 0..=8 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowance;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_recursion_depth = 0;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = construct(&ctx);
-            if allowance < need {
-                let limit = result.unwrap_err();
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert!(
-                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
-                );
-            } else {
-                result.unwrap().unwrap();
-                ctx.finish_session().unwrap();
+                let result = construct(&ctx, text.clone());
+                if allowance < need {
+                    let limit = result.unwrap_err();
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    assert!(
+                        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+                    );
+                } else {
+                    result.unwrap().unwrap();
+                    ctx.finish_session().unwrap();
+                }
             }
         }
     }

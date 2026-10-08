@@ -131,6 +131,7 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
 
 #[test]
 fn decoded_source_content_admits_identity_comparison_before_append() {
+    use crate::features::FeatureCollectionError;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let reference = FeatureSourceContent::Parameter(
@@ -158,4 +159,49 @@ fn decoded_source_content_admits_identity_comparison_before_append() {
             result
         },
     );
+    let mut short_need = None;
+    for identity in ["test:test:parameter#x", "test:test:parameter#long-identity"] {
+        let reference = FeatureSourceContent::Parameter(ParameterId::mint(identity).unwrap());
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "source content comparison complete",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut content = FeatureContent::try_from(vec![reference.clone()]).unwrap();
+                let before = content.clone();
+                match content.push(reference.clone(), &ctx, "source content comparison") {
+                    Err(FeatureCollectionError::Invalid(message)) => {
+                        assert_eq!(
+                            message,
+                            "source_content repeats a parameter or child-feature reference"
+                        );
+                    }
+                    Err(error) => {
+                        let error = CodecError::from(error);
+                        assert_eq!(content, before);
+                        assert!(matches!((&error, ctx.finish_session()),
+                            (CodecError::ResourceLimit(limit), Err(CodecError::ResourceLimit(sticky))) if *limit == sticky));
+                        return Err(error);
+                    }
+                    Ok(()) => panic!("duplicate reference must refuse"),
+                }
+                assert_eq!(content, before);
+                ctx.charge_work(1, "source content comparison complete")
+            },
+        );
+        let CodecError::ResourceLimit(complete) = error else {
+            panic!("completion boundary");
+        };
+        // One member visit plus the equal-length identity byte comparison.
+        let need = complete.used;
+        assert_eq!(need, 1 + u64::try_from(identity.len()).unwrap());
+        if let Some(short_need) = short_need {
+            assert!(need > short_need);
+        } else {
+            short_need = Some(need);
+        }
+    }
 }

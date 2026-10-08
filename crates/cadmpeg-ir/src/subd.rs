@@ -172,6 +172,10 @@ impl SubdCage {
                 })
             })
         })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(vertices.len()),
+            "edit SubD vertices",
+        )?;
         if let Err(error) = edit(&mut vertices) {
             return Ok(Err(error));
         }
