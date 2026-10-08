@@ -436,7 +436,10 @@ fn real_lexeme_rejects_binary64_overflow() {
             .expect_err("overflow cannot enter a real token");
         assert!(error.message.contains("finite binary64 range"));
         crate::test_support::with_service_context(source, |_, ctx| {
-            assert!(matches!(error.into_codec_error(ctx), CodecError::Malformed(_)));
+            assert!(matches!(
+                error.into_codec_error(ctx),
+                CodecError::Malformed(_)
+            ));
         });
     }
 }

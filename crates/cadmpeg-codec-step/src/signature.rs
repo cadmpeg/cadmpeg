@@ -135,38 +135,68 @@ struct Ber<'a> {
 
 impl<'a> Ber<'a> {
     fn new(value: BerValue<'a>) -> Self {
-        Self { input: value.input, origin: value.offset, at: 0 }
+        Self {
+            input: value.input,
+            origin: value.offset,
+            at: 0,
+        }
     }
 
     fn remaining(&self) -> Result<usize, &'static str> {
-        self.input.len().checked_sub(self.at).ok_or("BER cursor exceeds input")
+        self.input
+            .len()
+            .checked_sub(self.at)
+            .ok_or("BER cursor exceeds input")
     }
 
-    fn take(&mut self, ctx: &DecodeContext<'_>, extents: &mut BerExtents<'_>) -> Result<(u8, BerValue<'a>), CmsError> {
+    fn take(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        extents: &mut BerExtents<'_>,
+    ) -> Result<(u8, BerValue<'a>), CmsError> {
         let _depth = ctx.enter_nested("STEP BER nesting")?;
         let tag = self.take_tag_octet()?;
         let first_length = *self.input.get(self.at).ok_or("missing BER length")?;
         self.at += 1;
         if first_length == 0x80 {
             if tag & 0x20 == 0 {
-                return Err(CmsError::Invalid("indefinite length on primitive CMS value"));
+                return Err(CmsError::Invalid(
+                    "indefinite length on primitive CMS value",
+                ));
             }
             let value_start = self.at;
             let offset = self.origin + value_start;
-            let value_end = if let Some(end) = ctx.get_btree_map(&extents.ends, &offset, "STEP BER extent lookup")? {
+            let value_end = if let Some(end) =
+                ctx.get_btree_map(&extents.ends, &offset, "STEP BER extent lookup")?
+            {
                 *end - self.origin
             } else {
                 let end = self.indefinite_end(ctx, extents, value_start)?;
                 extents.storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut extents.ends, offset, self.origin + end, "STEP BER extent entries")
+                    ctx.insert_btree_map(
+                        &mut extents.ends,
+                        offset,
+                        self.origin + end,
+                        "STEP BER extent entries",
+                    )
                 })?;
                 end
             };
-            if !self.input.get(value_end..).is_some_and(|bytes| bytes.starts_with(&[0, 0])) {
+            if !self
+                .input
+                .get(value_end..)
+                .is_some_and(|bytes| bytes.starts_with(&[0, 0]))
+            {
                 return Err(CmsError::Invalid("unterminated BER indefinite value"));
             }
             self.at = value_end + 2;
-            return Ok((tag, BerValue { input: &self.input[value_start..value_end], offset }));
+            return Ok((
+                tag,
+                BerValue {
+                    input: &self.input[value_start..value_end],
+                    offset,
+                },
+            ));
         }
         let length = if first_length & 0x80 == 0 {
             usize::from(first_length)
@@ -180,7 +210,10 @@ impl<'a> Ber<'a> {
             self.at = end;
             // The length uses at most one machine word of octets.
             bytes.iter().try_fold(0usize, |value, byte| {
-                value.checked_shl(8).and_then(|value| value.checked_add(usize::from(*byte))).ok_or("BER length overflow")
+                value
+                    .checked_shl(8)
+                    .and_then(|value| value.checked_add(usize::from(*byte)))
+                    .ok_or("BER length overflow")
             })?
         };
         let end = self.at.checked_add(length).ok_or("BER value overflow")?;
@@ -199,28 +232,54 @@ impl<'a> Ber<'a> {
                 let byte = *self.input.get(self.at).ok_or("truncated BER tag")?;
                 self.at += 1;
                 octets += 1;
-                if octets > std::mem::size_of::<usize>() * 8 { return Err("BER tag is too long"); }
-                if byte & 0x80 == 0 { break; }
+                if octets > std::mem::size_of::<usize>() * 8 {
+                    return Err("BER tag is too long");
+                }
+                if byte & 0x80 == 0 {
+                    break;
+                }
             }
         }
         Ok(tag)
     }
 
-    fn indefinite_end(&self, ctx: &DecodeContext<'_>, extents: &mut BerExtents<'_>, start: usize) -> Result<usize, CmsError> {
-        let mut contents = Self { input: self.input, origin: self.origin, at: start };
+    fn indefinite_end(
+        &self,
+        ctx: &DecodeContext<'_>,
+        extents: &mut BerExtents<'_>,
+        start: usize,
+    ) -> Result<usize, CmsError> {
+        let mut contents = Self {
+            input: self.input,
+            origin: self.origin,
+            at: start,
+        };
         loop {
             ctx.charge_work(1, "STEP signature cursor traversal")?;
-            if contents.input.get(contents.at..).is_some_and(|remaining| remaining.starts_with(&[0, 0])) {
+            if contents
+                .input
+                .get(contents.at..)
+                .is_some_and(|remaining| remaining.starts_with(&[0, 0]))
+            {
                 return Ok(contents.at);
             }
-            if contents.at >= contents.input.len() { return Err(CmsError::Invalid("unterminated BER indefinite value")); }
+            if contents.at >= contents.input.len() {
+                return Err(CmsError::Invalid("unterminated BER indefinite value"));
+            }
             contents.take(ctx, extents)?;
         }
     }
 
-    fn take_tag(&mut self, ctx: &DecodeContext<'_>, extents: &mut BerExtents<'_>, expected: u8) -> Result<BerValue<'a>, CmsError> {
+    fn take_tag(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        extents: &mut BerExtents<'_>,
+        expected: u8,
+    ) -> Result<BerValue<'a>, CmsError> {
         let (tag, value) = self.take(ctx, extents)?;
-        (tag == expected).then_some(value).ok_or(CmsError::Invalid("unexpected BER tag"))
+        (tag == expected)
+            .then_some(value)
+            .ok_or(CmsError::Invalid("unexpected BER tag"))
     }
 }
 
@@ -237,7 +296,11 @@ fn validate_integer(value: BerValue<'_>) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn validate_algorithm_identifier(ctx: &DecodeContext<'_>, extents: &mut BerExtents<'_>, value: BerValue<'_>) -> Result<(), CmsError> {
+fn validate_algorithm_identifier(
+    ctx: &DecodeContext<'_>,
+    extents: &mut BerExtents<'_>,
+    value: BerValue<'_>,
+) -> Result<(), CmsError> {
     let mut algorithm = Ber::new(value);
     if algorithm.take_tag(ctx, extents, 0x06)?.input.is_empty() {
         return Err(CmsError::Invalid("empty CMS algorithm OID"));
@@ -254,7 +317,12 @@ fn validate_algorithm_identifier(ctx: &DecodeContext<'_>, extents: &mut BerExten
     Ok(())
 }
 
-fn validate_octet_string(ctx: &DecodeContext<'_>, extents: &mut BerExtents<'_>, tag: u8, value: BerValue<'_>) -> Result<(), CmsError> {
+fn validate_octet_string(
+    ctx: &DecodeContext<'_>,
+    extents: &mut BerExtents<'_>,
+    tag: u8,
+    value: BerValue<'_>,
+) -> Result<(), CmsError> {
     let _depth = ctx.enter_nested("STEP CMS octet string nesting")?;
     match tag {
         0x04 => Ok(()),
@@ -292,7 +360,11 @@ fn validate_subject_key_identifier(
     }
 }
 
-fn validate_digest_algorithms(ctx: &DecodeContext<'_>, extents: &mut BerExtents<'_>, value: BerValue<'_>) -> Result<(), CmsError> {
+fn validate_digest_algorithms(
+    ctx: &DecodeContext<'_>,
+    extents: &mut BerExtents<'_>,
+    value: BerValue<'_>,
+) -> Result<(), CmsError> {
     let mut algorithms = Ber::new(value);
     if algorithms.remaining()? == 0 {
         return Err(CmsError::Invalid("CMS SignedData has no digest algorithm"));
@@ -328,7 +400,11 @@ fn validate_signer_identifier(
     }
 }
 
-fn validate_signer_info(ctx: &DecodeContext<'_>, extents: &mut BerExtents<'_>, value: BerValue<'_>) -> Result<(), CmsError> {
+fn validate_signer_info(
+    ctx: &DecodeContext<'_>,
+    extents: &mut BerExtents<'_>,
+    value: BerValue<'_>,
+) -> Result<(), CmsError> {
     let mut signer = Ber::new(value);
     validate_integer(signer.take_tag(ctx, extents, 0x02)?)?;
     let (signer_identifier_tag, signer_identifier) = signer.take(ctx, extents)?;
@@ -348,7 +424,11 @@ fn validate_signer_info(ctx: &DecodeContext<'_>, extents: &mut BerExtents<'_>, v
     require_empty(&signer).map_err(CmsError::from)
 }
 
-fn validate_signer_infos(ctx: &DecodeContext<'_>, extents: &mut BerExtents<'_>, value: BerValue<'_>) -> Result<(), CmsError> {
+fn validate_signer_infos(
+    ctx: &DecodeContext<'_>,
+    extents: &mut BerExtents<'_>,
+    value: BerValue<'_>,
+) -> Result<(), CmsError> {
     let mut signers = Ber::new(value);
     if signers.remaining()? == 0 {
         return Err(CmsError::Invalid("CMS SignedData has no signer"));

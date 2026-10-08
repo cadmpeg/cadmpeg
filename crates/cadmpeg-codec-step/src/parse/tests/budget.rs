@@ -82,10 +82,7 @@ fn header_string_refusal_reaches_parse_caller() {
                     && refusal.operation == "step_string_text"
         )
     });
-    assert!(
-        refused,
-        "header text must refuse through parse_retained"
-    );
+    assert!(refused, "header text must refuse through parse_retained");
 }
 
 #[test]
@@ -1246,7 +1243,9 @@ fn reference_uri_fragment_split_preserves_refusal() {
             })()
             .map_err(|error| match error {
                 ResolveError::Resource(error) => error,
-                _ => panic!("valid reference must preserve the resource refusal"),
+                ResolveError::Syntax(_) => {
+                    panic!("valid reference must preserve the resource refusal")
+                }
             });
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
@@ -1281,7 +1280,9 @@ fn resolved_uri_fragment_containment_preserves_refusal() {
             })()
             .map_err(|error| match error {
                 ResolveError::Resource(error) => error,
-                _ => panic!("valid reference must preserve the resource refusal"),
+                ResolveError::Syntax(_) => {
+                    panic!("valid reference must preserve the resource refusal")
+                }
             });
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));

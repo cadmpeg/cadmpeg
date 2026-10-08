@@ -170,9 +170,8 @@ fn inspect_parsed_exchange(
     diagnostics: &[parse::ParseDiagnostic],
 ) -> Result<InspectedExchange, CodecError> {
     let mut analysis_storage = ctx.reserve_scoped(0, "STEP inspection analysis storage")?;
-    let analyzed = analysis_storage.with_storage(|| {
-        reader::analyze_exchange(bytes, exchange, diagnostics, ctx)
-    });
+    let analyzed = analysis_storage
+        .with_storage(|| reader::analyze_exchange(bytes, exchange, diagnostics, ctx));
     let reader::AnalyzedExchange {
         decoded,
         matched,
@@ -250,10 +249,7 @@ fn inspect_parsed_exchange(
         )?;
     }
     for (index, section) in ctx
-        .admit_iter(
-            &(exchange.data())[..],
-            "STEP inspect parsed exchange traversal",
-        )?
+        .admit_iter(exchange.data(), "STEP inspect parsed exchange traversal")?
         .enumerate()
     {
         let mut counts_storage = ctx.reserve_scoped(0, "STEP inspect unknown count storage")?;
@@ -368,7 +364,7 @@ fn inspect_parsed_exchange(
     }
     for (index, signature) in ctx
         .admit_iter(
-            &(exchange.signatures())[..],
+            exchange.signatures(),
             "STEP inspect parsed exchange traversal",
         )?
         .enumerate()
@@ -394,14 +390,15 @@ fn inspect_parsed_exchange(
             "step_inspect_entries",
         )?;
     }
-    let (schema, _schema_storage) = ctx.with_scoped_storage("STEP inspect schema text storage", || {
-        let identifiers = exchange.joined_schema_identifiers(ctx)?;
-        if identifiers.is_empty() {
-            ctx.copy_retained_text("unspecified", "STEP inspect unspecified schema text")
-        } else {
-            Ok(identifiers)
-        }
-    })?;
+    let (schema, _schema_storage) =
+        ctx.with_scoped_storage("STEP inspect schema text storage", || {
+            let identifiers = exchange.joined_schema_identifiers(ctx)?;
+            if identifiers.is_empty() {
+                ctx.copy_retained_text("unspecified", "STEP inspect unspecified schema text")
+            } else {
+                Ok(identifiers)
+            }
+        })?;
     let dialect = matched.dialect();
     let mut notes = Vec::new();
     ctx.push_vec(
@@ -494,9 +491,11 @@ fn inspect_zip(
     if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
-    let mut parsed = parse::parse_with_context(root_bytes, ctx, "STEP inspect parsed graph storage")?;
+    let mut parsed =
+        parse::parse_with_context(root_bytes, ctx, "STEP inspect parsed graph storage")?;
     let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange);
-    let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut parsed.exchange, &parsed.diagnostics)?;
+    let mut inspected =
+        inspect_parsed_exchange(root_bytes, ctx, &mut parsed.exchange, &parsed.diagnostics)?;
     let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
     let logical_entries = ctx.join_display_retained(
@@ -590,7 +589,8 @@ fn decode_zip(
     let archive = &opened.archive;
     let root_view = opened.view;
     let root_data_offset = opened.data_start;
-    let parsed = parse::parse_with_context(root_view.window(), ctx, "STEP ZIP parsed graph storage")?;
+    let parsed =
+        parse::parse_with_context(root_view.window(), ctx, "STEP ZIP parsed graph storage")?;
     let resource_notes = archive::root_reference_notes(ctx, archive, &parsed.exchange)?;
     let entry_count = archive.entries().len();
     let mut decoded = reader::decode_exchange(
@@ -637,7 +637,7 @@ pub(crate) fn is_part26_hdf5(bytes: &[u8]) -> bool {
 
 pub(crate) fn is_part28_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     let bytes = &bytes[..bytes.len().min(4096)];
-    let Some((name, attributes)) = xml_root_start_tag(ctx, bytes)? else {
+    let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(ctx, bytes)? else {
         return Ok(false);
     };
     let local_name = ctx
@@ -674,10 +674,15 @@ fn ascii_starts_with(value: &[u8], prefix: &[u8]) -> bool {
             .all(|(value, prefix)| value.eq_ignore_ascii_case(prefix))
 }
 
+struct XmlRootTag<'a> {
+    name: &'a [u8],
+    attributes: &'a [u8],
+}
+
 fn xml_root_start_tag<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
-) -> Result<Option<(&'a [u8], &'a [u8])>, CodecError> {
+) -> Result<Option<XmlRootTag<'a>>, CodecError> {
     let mut cursor = if bytes.starts_with(b"\xef\xbb\xbf") {
         3
     } else {
@@ -757,10 +762,10 @@ fn xml_root_start_tag<'a>(
     if name_end == cursor + 1 {
         return Ok(None);
     }
-    Ok(Some((
-        &bytes[cursor + 1..name_end],
-        &bytes[name_end..tag_end],
-    )))
+    Ok(Some(XmlRootTag {
+        name: &bytes[cursor + 1..name_end],
+        attributes: &bytes[name_end..tag_end],
+    }))
 }
 
 fn find_xml_tag_end(
@@ -860,7 +865,7 @@ pub(crate) fn is_ap242_bo_model_xml(
     bytes: &[u8],
 ) -> Result<bool, CodecError> {
     let bytes = &bytes[..bytes.len().min(4096)];
-    let Some((name, attributes)) = xml_root_start_tag(ctx, bytes)? else {
+    let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(ctx, bytes)? else {
         return Ok(false);
     };
     let local_name = ctx
@@ -886,6 +891,7 @@ const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
     use std::io::Cursor;
 
     use cadmpeg_core::decode::{
@@ -899,7 +905,10 @@ mod tests {
     #[test]
     fn scoped_parse_errors_retain_only_the_escaping_text() {
         for (source, operation) in [
-            (format!("ISO-10303-21;{};", "A".repeat(8192)).into_bytes(), "STEP parse error"),
+            (
+                format!("ISO-10303-21;{};", "A".repeat(8192)).into_bytes(),
+                "STEP parse error",
+            ),
             (b"ISO-10303-21;#0".to_vec(), "STEP lexical error"),
         ] {
             let mut policy = DecodePolicy::service();
@@ -907,12 +916,17 @@ mod tests {
             for inspect in [false, true] {
                 crate::test_support::with_policy_context(&source, &policy, |source, ctx| {
                     let result = if inspect {
-                        super::inspect_exchange(&StepCodec::default(), ctx,
-                            cadmpeg_core::decode::View::over_retained(source)).map(|_| ())
+                        super::inspect_exchange(
+                            &StepCodec::default(),
+                            ctx,
+                            cadmpeg_core::decode::View::over_retained(source),
+                        )
+                        .map(|_| ())
                     } else {
                         use cadmpeg_ir::codec::CodecBackend;
-                        StepCodec::default().decode_impl(ctx,
-                            cadmpeg_core::decode::View::over_retained(source)).map(|_| ())
+                        StepCodec::default()
+                            .decode_impl(ctx, cadmpeg_core::decode::View::over_retained(source))
+                            .map(|_| ())
                     };
                     assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
                         if refusal.dimension == ResourceDimension::RetainedBytes
@@ -926,24 +940,39 @@ mod tests {
     fn zip_scoped_parse_errors_retain_only_the_escaping_text() {
         use std::io::Write;
         for (root, operation) in [
-            (format!("ISO-10303-21;{};", "A".repeat(8192)).into_bytes(), "STEP parse error"),
+            (
+                format!("ISO-10303-21;{};", "A".repeat(8192)).into_bytes(),
+                "STEP parse error",
+            ),
             (b"ISO-10303-21;#0".to_vec(), "STEP lexical error"),
         ] {
             let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-            writer.start_file("ISO-10303.p21", zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Stored)).expect("ZIP root");
+            writer
+                .start_file(
+                    "ISO-10303.p21",
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Stored),
+                )
+                .expect("ZIP root");
             writer.write_all(&root).expect("root content");
             let source = writer.finish().expect("ZIP envelope").into_inner();
             for inspect in [false, true] {
-                cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, operation, |cap| {
-                    let mut policy = DecodePolicy::service();
-                    policy.limits.max_retained_bytes = cap;
-                    crate::test_support::with_policy_context(&source, &policy, |source, ctx| {
-                        let view = cadmpeg_core::decode::View::over_retained(source);
-                        if inspect { super::inspect_zip(ctx, view).map(|_| ()) }
-                        else { super::decode_zip(ctx, view).map(|_| ()) }
-                    })
-                });
+                cadmpeg_test_support::refusal::resource_limit_at(
+                    ResourceDimension::RetainedBytes,
+                    operation,
+                    |cap| {
+                        let mut policy = DecodePolicy::service();
+                        policy.limits.max_retained_bytes = cap;
+                        crate::test_support::with_policy_context(&source, &policy, |source, ctx| {
+                            let view = cadmpeg_core::decode::View::over_retained(source);
+                            if inspect {
+                                super::inspect_zip(ctx, view).map(|_| ())
+                            } else {
+                                super::decode_zip(ctx, view).map(|_| ())
+                            }
+                        })
+                    },
+                );
             }
         }
     }
@@ -964,10 +993,15 @@ mod tests {
     }
 
     fn point_source(count: usize) -> Vec<u8> {
-        let mut records = (1..=count).map(|id| format!("#{id}=CARTESIAN_POINT('',(1.,2.,3.));"))
-            .collect::<String>();
-        let members = (1..=count).map(|id| format!("#{id}")).collect::<Vec<_>>().join(",");
-        records.push_str(&format!("#{}=GEOMETRIC_SET('',({members}));", count + 1));
+        let mut records = (1..=count).fold(String::new(), |mut records, id| {
+            write!(records, "#{id}=CARTESIAN_POINT('',(1.,2.,3.));").expect("point fixture text");
+            records
+        });
+        let members = (1..=count)
+            .map(|id| format!("#{id}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        write!(records, "#{}=GEOMETRIC_SET('',({members}));", count + 1).expect("set fixture text");
         format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;").into_bytes()
     }
 
@@ -975,18 +1009,33 @@ mod tests {
     fn bare_decode_does_not_retain_the_discarded_parse_graph() {
         use cadmpeg_ir::codec::CodecBackend;
         let source = point_source(128);
-        let retained = |scoped| crate::test_support::with_service_context(&source, |source, ctx| {
-            let decoded = if scoped {
-                StepCodec::default().decode_impl(ctx, cadmpeg_core::decode::View::over_retained(source))
-            } else {
-                let (exchange, diagnostics) = crate::parse::parse_retained(source, ctx).expect("unscoped control graph");
-                crate::reader::decode_exchange(source, exchange, &diagnostics, ctx, crate::reader::Packaging::Bare)
-            }.expect("valid points decode");
-            assert_eq!(decoded.ir.model.points.len(), 128);
-            let CodecError::ResourceLimit(refusal) = ctx.charge_retained(u64::MAX, "test retained storage")
-                .expect_err("storage probe refuses") else { panic!("retained refusal required"); };
-            refusal.used
-        });
+        let retained = |scoped| {
+            crate::test_support::with_service_context(&source, |source, ctx| {
+                let decoded = if scoped {
+                    StepCodec::default()
+                        .decode_impl(ctx, cadmpeg_core::decode::View::over_retained(source))
+                } else {
+                    let (exchange, diagnostics) =
+                        crate::parse::parse_retained(source, ctx).expect("unscoped control graph");
+                    crate::reader::decode_exchange(
+                        source,
+                        exchange,
+                        &diagnostics,
+                        ctx,
+                        crate::reader::Packaging::Bare,
+                    )
+                }
+                .expect("valid points decode");
+                assert_eq!(decoded.ir.model.points.len(), 128);
+                let CodecError::ResourceLimit(refusal) = ctx
+                    .charge_retained(u64::MAX, "test retained storage")
+                    .expect_err("storage probe refuses")
+                else {
+                    panic!("retained refusal required");
+                };
+                refusal.used
+            })
+        };
         assert!(retained(true) < retained(false));
     }
 
@@ -996,9 +1045,17 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 16_384;
         crate::test_support::with_policy_context(&source, &policy, |source, ctx| {
-            let inspected = super::inspect_exchange(&StepCodec::default(), ctx,
-                cadmpeg_core::decode::View::over_retained(source)).expect("summary fits without the discarded point graph");
-            let data = inspected.entries.iter().find(|entry| entry.name == "DATA[0]").expect("DATA entry");
+            let inspected = super::inspect_exchange(
+                &StepCodec::default(),
+                ctx,
+                cadmpeg_core::decode::View::over_retained(source),
+            )
+            .expect("summary fits without the discarded point graph");
+            let data = inspected
+                .entries
+                .iter()
+                .find(|entry| entry.name == "DATA[0]")
+                .expect("DATA entry");
             // The section contains 1024 points and their geometric-set carrier.
             assert_eq!(data.attributes["entity_count"], "1025");
         });
@@ -1007,15 +1064,26 @@ mod tests {
     #[test]
     fn inspection_surviving_dialect_and_losses_preserve_retained_refusal() {
         let source = include_bytes!("../tests/fixtures/noncanonical_solid_angle.p21");
-        for operation in ["STEP inspection retained dialect", "STEP inspection retained loss"] {
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, operation, |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_retained_bytes = cap;
-                crate::test_support::with_policy_context(source, &policy, |source, ctx| {
-                    super::inspect_exchange(&StepCodec::default(), ctx,
-                        cadmpeg_core::decode::View::over_retained(source)).map(|_| ())
-                })
-            });
+        for operation in [
+            "STEP inspection retained dialect",
+            "STEP inspection retained loss",
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes,
+                operation,
+                |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_retained_bytes = cap;
+                    crate::test_support::with_policy_context(source, &policy, |source, ctx| {
+                        super::inspect_exchange(
+                            &StepCodec::default(),
+                            ctx,
+                            cadmpeg_core::decode::View::over_retained(source),
+                        )
+                        .map(|_| ())
+                    })
+                },
+            );
         }
     }
 
@@ -1023,9 +1091,16 @@ mod tests {
     fn inspection_schema_note_keeps_all_declared_identifiers_in_order() {
         let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','CUSTOM_SCHEMA'));ENDSEC;DATA('main',('AP242'));ENDSEC;END-ISO-10303-21;";
         crate::test_support::with_service_context(source, |source, ctx| {
-            let inspected = super::inspect_exchange(&StepCodec::default(), ctx,
-                cadmpeg_core::decode::View::over_retained(source)).expect("named section and multiple schemas");
-            assert!(inspected.notes.iter().any(|note| note.starts_with("schema AP242,CUSTOM_SCHEMA; dialect ")));
+            let inspected = super::inspect_exchange(
+                &StepCodec::default(),
+                ctx,
+                cadmpeg_core::decode::View::over_retained(source),
+            )
+            .expect("named section and multiple schemas");
+            assert!(inspected
+                .notes
+                .iter()
+                .any(|note| note.starts_with("schema AP242,CUSTOM_SCHEMA; dialect ")));
         });
     }
 

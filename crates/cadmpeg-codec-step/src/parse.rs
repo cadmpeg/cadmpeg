@@ -486,9 +486,14 @@ impl Exchange {
         let mut failed = false;
         Ok(std::iter::from_fn(move || {
             let _live_storage = &storage;
-            if failed || ids.as_slice().is_empty() { return None; }
-            let result = ctx.next_charged(&mut ids, "STEP indexed entity identifier traversal")
-                .and_then(|id| id.ok_or_else(|| CodecError::malformed("entity union ended before its bound")));
+            if failed || ids.as_slice().is_empty() {
+                return None;
+            }
+            let result = ctx
+                .next_charged(&mut ids, "STEP indexed entity identifier traversal")
+                .and_then(|id| {
+                    id.ok_or_else(|| CodecError::malformed("entity union ended before its bound"))
+                });
             failed = result.is_err();
             Some(result)
         }))
@@ -498,19 +503,28 @@ impl Exchange {
         &'a self,
         ctx: &'a DecodeContext<'_>,
         name: &str,
-    ) -> Result<impl Iterator<Item = Result<(u64, &'a RawRecord), CodecError>> + 'a, CodecError> {
+    ) -> Result<impl Iterator<Item = Result<(u64, &'a RawRecord), CodecError>> + 'a, CodecError>
+    {
         let ids = ctx
             .get_btree_map(self.entity_ids(), name, "STEP entity name lookup")?
             .map_or(&[][..], Vec::as_slice);
         let mut ids = ids.iter();
         let mut failed = false;
         Ok(std::iter::from_fn(move || {
-            if failed || ids.as_slice().is_empty() { return None; }
-            let result = ctx.next_charged(&mut ids, "STEP indexed entity identifier traversal")
+            if failed || ids.as_slice().is_empty() {
+                return None;
+            }
+            let result = ctx
+                .next_charged(&mut ids, "STEP indexed entity identifier traversal")
                 .and_then(|id| {
-                    let id = id.ok_or_else(|| CodecError::malformed("entity name index ended before its bound"))?;
-                    let record = ctx.get_btree_map(&self.records, id, "STEP indexed entity record lookup")?
-                        .ok_or_else(|| CodecError::malformed("entity name index names no record"))?;
+                    let id = id.ok_or_else(|| {
+                        CodecError::malformed("entity name index ended before its bound")
+                    })?;
+                    let record = ctx
+                        .get_btree_map(&self.records, id, "STEP indexed entity record lookup")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("entity name index names no record")
+                        })?;
                     Ok((*id, record))
                 });
             failed = result.is_err();
@@ -542,12 +556,20 @@ impl Exchange {
         let mut failed = false;
         Ok(std::iter::from_fn(move || {
             let _live_storage = &storage;
-            if failed || ids.as_slice().is_empty() { return None; }
-            let result = ctx.next_charged(&mut ids, "STEP indexed entity identifier traversal")
+            if failed || ids.as_slice().is_empty() {
+                return None;
+            }
+            let result = ctx
+                .next_charged(&mut ids, "STEP indexed entity identifier traversal")
                 .and_then(|id| {
-                    let id = id.ok_or_else(|| CodecError::malformed("entity union ended before its bound"))?;
-                    let record = ctx.get_btree_map(&self.records, &id, "STEP indexed entity record lookup")?
-                        .ok_or_else(|| CodecError::malformed("entity name index names no record"))?;
+                    let id = id.ok_or_else(|| {
+                        CodecError::malformed("entity union ended before its bound")
+                    })?;
+                    let record = ctx
+                        .get_btree_map(&self.records, &id, "STEP indexed entity record lookup")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("entity name index names no record")
+                        })?;
                     Ok((id, record))
                 });
             failed = result.is_err();
@@ -1196,23 +1218,38 @@ impl Parser<'_, '_, '_> {
             let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget)
                 .map_err(|error| error.into_parse_error(0))?;
             let mut resolving_anchors = anchors.iter_mut();
-            while let Some(anchor) = self.budget.next_charged(&mut resolving_anchors, "STEP anchor resolution traversal")? {
+            while let Some(anchor) = self
+                .budget
+                .next_charged(&mut resolving_anchors, "STEP anchor resolution traversal")?
+            {
                 anchor.value = resolver
                     .resolve_root(&anchor.value)
                     .map_err(|error| error.into_parse_error(0))?;
                 let mut tags = anchor.tags.iter_mut();
-                while let Some(tag) = self.budget.next_charged(&mut tags, "STEP anchor tag resolution traversal")? {
+                while let Some(tag) = self
+                    .budget
+                    .next_charged(&mut tags, "STEP anchor tag resolution traversal")?
+                {
                     tag.value = resolver
                         .resolve_root(&tag.value)
                         .map_err(|error| error.into_parse_error(0))?;
                 }
             }
             let mut resolving_records = records.iter_mut();
-            while let Some((_, record)) = self.budget.next_charged(&mut resolving_records, "STEP mutable record traversal")? {
+            while let Some((_, record)) = self
+                .budget
+                .next_charged(&mut resolving_records, "STEP mutable record traversal")?
+            {
                 let mut partials = record.partials.iter_mut();
-                while let Some(partial) = self.budget.next_charged(&mut partials, "STEP mutable partial traversal")? {
+                while let Some(partial) = self
+                    .budget
+                    .next_charged(&mut partials, "STEP mutable partial traversal")?
+                {
                     let mut parameters = partial.parameters.iter_mut();
-                    while let Some(value) = self.budget.next_charged(&mut parameters, "STEP mutable parameter traversal")? {
+                    while let Some(value) = self
+                        .budget
+                        .next_charged(&mut parameters, "STEP mutable parameter traversal")?
+                    {
                         *value = resolver
                             .resolve_root(value)
                             .map_err(|error| error.into_parse_error(record.span.start))?;
@@ -1295,7 +1332,10 @@ impl Parser<'_, '_, '_> {
         let mut refs = Vec::new();
         let mut value_refs = Vec::new();
         let mut validating_anchors = anchors.iter();
-        while let Some(anchor) = self.budget.next_charged(&mut validating_anchors, "STEP exchange traversal")? {
+        while let Some(anchor) = self
+            .budget
+            .next_charged(&mut validating_anchors, "STEP exchange traversal")?
+        {
             refs.clear();
             value_refs.clear();
             reference_storage.with_storage(|| {
@@ -1332,7 +1372,10 @@ impl Parser<'_, '_, '_> {
                 return self.err("unresolved value instance reference in anchor binding");
             }
             let mut tags = anchor.tags.iter();
-            while let Some(tag) = self.budget.next_charged(&mut tags, "STEP exchange traversal")? {
+            while let Some(tag) = self
+                .budget
+                .next_charged(&mut tags, "STEP exchange traversal")?
+            {
                 refs.clear();
                 value_refs.clear();
                 reference_storage.with_storage(|| {
@@ -1371,7 +1414,10 @@ impl Parser<'_, '_, '_> {
             }
         }
         let mut validating_records = records.values();
-        while let Some(record) = self.budget.next_charged(&mut validating_records, "STEP exchange map traversal")? {
+        while let Some(record) = self
+            .budget
+            .next_charged(&mut validating_records, "STEP exchange map traversal")?
+        {
             refs.clear();
             value_refs.clear();
             for partial in self
@@ -1956,7 +2002,10 @@ fn validate_header(
         budget.reserve_scoped(0, "STEP schema identifier uniqueness storage")?;
     let mut normalized_identifiers = BTreeSet::new();
     let mut identifiers = identifiers.iter();
-    while let Some(value) = budget.next_charged(&mut identifiers, "STEP schema identifier validation traversal")? {
+    while let Some(value) = budget.next_charged(
+        &mut identifiers,
+        "STEP schema identifier validation traversal",
+    )? {
         let Value::String(bytes) = value else {
             return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
@@ -2058,7 +2107,9 @@ fn validate_header_sections(
     let mut language_sections = BTreeSet::new();
     let mut context_sections = BTreeSet::new();
     let mut optional = header.get(3..).unwrap_or_default().iter();
-    while let Some(record) = budget.next_charged(&mut optional, "STEP validate header sections traversal")? {
+    while let Some(record) =
+        budget.next_charged(&mut optional, "STEP validate header sections traversal")?
+    {
         if record.name.starts_with('!') {
             user_defined = true;
             continue;
@@ -2217,7 +2268,9 @@ fn admit_file_population(
         Value::List(sections) if !sections.is_empty() => {
             let mut names = BTreeSet::new();
             let mut sections = sections.iter();
-            while let Some(section) = budget.next_charged(&mut sections, "STEP file population section traversal")? {
+            while let Some(section) =
+                budget.next_charged(&mut sections, "STEP file population section traversal")?
+            {
                 let Some(section) = decoded_string(section, implementation_level, budget)? else {
                     return invalid("FILE_POPULATION has invalid parameters");
                 };
@@ -2603,11 +2656,15 @@ fn validate_header_data_references(
     data_section_names: &BTreeSet<String>,
 ) -> Result<(), ValidationError> {
     let mut references = references.iter();
-    while let Some(reference) = budget.next_charged(&mut references, "STEP header DATA reference traversal")? {
+    while let Some(reference) =
+        budget.next_charged(&mut references, "STEP header DATA reference traversal")?
+    {
         match reference {
             HeaderDataReferences::FilePopulation(sections) => {
                 let mut sections = sections.iter();
-                while let Some(section) = budget.next_charged(&mut sections, "STEP FILE_POPULATION section traversal")? {
+                while let Some(section) =
+                    budget.next_charged(&mut sections, "STEP FILE_POPULATION section traversal")?
+                {
                     if !budget.contains_btree_set(
                         data_section_names,
                         section,
@@ -2949,7 +3006,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     .collection_vec(values.len(), "step_anchor_list_items")
                     .map_err(ResolveError::Resource)?;
                 let mut values = values.iter();
-                while let Some(value) = self.budget.next_charged(&mut values, "STEP resolve value traversal")? {
+                while let Some(value) = self
+                    .budget
+                    .next_charged(&mut values, "STEP resolve value traversal")?
+                {
                     let remaining = budget
                         .checked_sub(expanded_nodes)
                         .ok_or_else(|| self.node_limit_error())?;
@@ -3352,7 +3412,9 @@ fn references(
     )?;
     while !pending.is_empty() {
         budget.charge_work(1, "STEP value worklist traversal")?;
-        let Some(value) = pending.pop() else { break; };
+        let Some(value) = pending.pop() else {
+            break;
+        };
         match value {
             Value::Reference(id) => {
                 budget.push_vec(entity_out, *id, "step_parse_reference_ids")?;
@@ -3405,7 +3467,7 @@ fn contains_class3_occurrence(
         Value::Typed(_, value) => {
             budget.charge_work(1, "STEP typed class-3 occurrence traversal")?;
             contains_class3_occurrence(budget, value)
-        },
+        }
         _ => Ok(false),
     }
 }
@@ -3422,7 +3484,7 @@ fn contains_resource_value(budget: &DecodeContext<'_>, value: &Value) -> Result<
         Value::Typed(_, value) => {
             budget.charge_work(1, "STEP typed resource value traversal")?;
             contains_resource_value(budget, value)
-        },
+        }
         _ => Ok(false),
     }
 }
