@@ -325,8 +325,9 @@ fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
     let payload = a8_class21_test_payload();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two knots use forty-six items before the retained multiplicity vector.
-    policy.limits.max_collection_items = 46;
+    // Two distinct knots, two raw knots, twelve scalar-lane slots, six
+    // projected jet slots, and two six-control nets use 34 items.
+    policy.limits.max_collection_items = 34;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("fixture fits the input limit");
     let error = parse_a8_class21_pcurve(&ctx, 7, &payload)
@@ -1978,3 +1979,34 @@ fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
 }
 
 mod topology_walk;
+
+#[test]
+fn a8_class21_rejected_tail_does_not_retain_output_lanes() {
+    let mut payload = a8_class21_test_payload();
+    let offset = payload.len() - 36 + 10;
+    payload[offset..offset + 8].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    crate::test_support::with_retained_limit(0, |ctx| {
+        for _ in 0..32 {
+            assert!(parse_a8_class21_pcurve(ctx, 7, &payload)?.is_none());
+        }
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("late rejected outputs retain no bytes");
+}
+
+#[test]
+fn a8_class21_jet_projections_refuse_before_traversal() {
+    let payload = a8_class21_test_payload();
+    for operation in [
+        "catia_b5_point_jet_projection",
+        "catia_b5_first_jet_projection",
+        "catia_b5_second_jet_projection",
+    ] {
+        let refusal = crate::test_support::with_work_refusal(operation, |ctx| {
+            parse_a8_class21_pcurve(ctx, 7, &payload)
+        });
+        assert!(
+            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation)
+        );
+    }
+}

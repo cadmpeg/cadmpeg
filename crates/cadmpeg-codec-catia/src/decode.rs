@@ -1225,9 +1225,7 @@ fn finish_decode(
                     classified_lead12_relation_program_context_entity_count += 1;
                 }
                 if match context.class_name() {
-                    Some(name) => {
-                        ctx.equal_bytes(name.as_bytes(), b"paramout", "catia_census_context_class")?
-                    }
+                    Some(name) => name == "paramout",
                     None => false,
                 } {
                     lead12_relation_program_paramout_context_entity_count += 1;
@@ -3436,11 +3434,7 @@ fn modeling_graph_scope(
     }
     let mut remaining = graphs.iter();
     let is_part = |graph: &&CatiaObjectGraph| match &graph.outer_container {
-        Some(container) => ctx.equal_bytes(
-            container.class_name.as_bytes(),
-            b"CATPrtCont",
-            "catia_modeling_scope_class",
-        ),
+        Some(container) => Ok(container.class_name == "CATPrtCont"),
         None => Ok(false),
     };
     let first = ctx.find_by(&mut remaining, is_part, "catia_modeling_scope_search")?;

@@ -349,7 +349,11 @@ fn insert_appearance(
     let index = appearances.len();
     ctx.charge_entities(1, "admit CATIA appearance")?;
     id_storage.commit()?;
-    let schema = ctx.copy_retained_text("CATIA V5 display color", "catia_appearance_schema")?;
+    let schema = {
+        let mut text = ctx.retained_string(22, "catia_appearance_schema")?;
+        text.push_str("CATIA V5 display color");
+        text
+    };
     ctx.push_vec(
         appearances,
         Appearance {
@@ -445,8 +449,11 @@ fn insert_binding_record(
     ctx.charge_entities(1, "admit CATIA appearance binding")?;
     let retained_appearance =
         appearance.try_clone_for_decode(ctx, "catia_appearance_binding_asset_id")?;
-    let object_type =
-        ctx.copy_retained_text("CATIA V5 display property", "catia_appearance_object_type")?;
+    let object_type = {
+        let mut text = ctx.retained_string(25, "catia_appearance_object_type")?;
+        text.push_str("CATIA V5 display property");
+        text
+    };
     ctx.push_vec(
         bindings,
         AppearanceBinding {
