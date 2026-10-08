@@ -74,3 +74,23 @@ fn e5_boundary_pcurve_equality_charges_nurbs_lanes() {
         if limit.operation == "catia_e5_pcurve_geometry_compare")
     );
 }
+
+#[test]
+fn e5_duplicate_body_face_does_not_admit_the_face_suffix() {
+    let topology = crate::families::e5::graph::E5Topology {
+        bodies: Vec::new(),
+        faces: Vec::new(),
+        edges: BTreeMap::new(),
+        pcurves: BTreeMap::new(),
+        bounds: BTreeMap::new(),
+        curve_supports: BTreeMap::new(),
+        vertex_refs: Vec::new(),
+    };
+    let mut faces = vec![1, 1];
+    faces.extend(2..10_002);
+    assert!(crate::test_support::with_work_limit(512, |ctx| {
+        e5_ownership_plan(ctx, &topology, &[(None, faces)])
+    })
+    .expect("the second face rejects ownership")
+    .is_none());
+}

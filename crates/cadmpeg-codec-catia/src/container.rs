@@ -338,18 +338,21 @@ fn last_save_version_in_segments(
     data: &[u8],
     segments: &[FinjplSegment],
 ) -> Result<Option<LastSaveVersion>, CodecError> {
-    let mut selected: Option<LastSaveVersion> = None;
+    let mut selected: Option<(LastSaveVersion, ScopedReservation<'_>)> = None;
     let mut segments = segments.iter();
     while let Some(segment) = ctx.next_charged(&mut segments, "catia_last_save_segment_scan")? {
         if segment.type_word != 0x0101_0003 {
             continue;
         }
-        let Some(version) = parse_last_save_version(ctx, &data[segment.range.clone()])? else {
+        let mut version_storage = ctx.reserve_scoped(0, "catia_last_save_version_storage")?;
+        let Some(version) = version_storage
+            .with_storage(|| parse_last_save_version(ctx, &data[segment.range.clone()]))?
+        else {
             continue;
         };
         match &selected {
-            None => selected = Some(version),
-            Some(existing) => {
+            None => selected = Some((version, version_storage)),
+            Some((existing, _)) => {
                 let same = (
                     existing.version,
                     existing.release,
@@ -371,7 +374,13 @@ fn last_save_version_in_segments(
             }
         }
     }
-    Ok(selected)
+    match selected {
+        Some((version, storage)) => {
+            storage.commit()?;
+            Ok(Some(version))
+        }
+        None => Ok(None),
+    }
 }
 
 /// Enumerate exact `CATStorageProperty` external-document references from
@@ -934,6 +943,7 @@ pub(crate) fn consolidated_record_sources(
         for descriptor in
             ctx.admit_iter(&directory.descriptors, "catia_record_source_descriptors")?
         {
+            let mut source_storage = ctx.reserve_scoped(0, "catia_record_source_extents")?;
             let mut source = Vec::new();
             for extent in ctx.admit_iter(&descriptor.extents, "catia_record_source_extent_scan")? {
                 let Some(start) = directory.inner.checked_add(index_from_u32(extent.phys_off))
@@ -947,7 +957,12 @@ pub(crate) fn consolidated_record_sources(
                 // source. The scanner reads every byte of an extent it accepts,
                 // so it never receives a shortened one.
                 if let Some(extent) = SourceExtent::within(&scan.data, start, end) {
-                    ctx.push_vec(&mut source, extent, "catia_record_source_extents")?;
+                    ctx.push_scoped_vec(
+                        &mut source_storage,
+                        &mut source,
+                        extent,
+                        "catia_record_source_extents",
+                    )?;
                 }
             }
             if source.is_empty() {
@@ -965,6 +980,7 @@ pub(crate) fn consolidated_record_sources(
             if seen_storage
                 .with_storage(|| ctx.insert_hash_set(&mut seen, key, "catia_record_source_keys"))?
             {
+                source_storage.commit()?;
                 ctx.push_vec(sources, source, "catia_record_sources")?;
             }
         }
@@ -1254,7 +1270,10 @@ fn parse_directory_region(
             .checked_mul(extent::LEN)
             .and_then(|extent_bytes| o.checked_add(4)?.checked_add(extent_bytes));
         if k != 0 && extents_end.is_some_and(|end| end <= dirbuf.len()) {
-            if let Some((extents, cum)) = parse_extents(ctx, dirbuf, o, k, physical_base, file_len)?
+            let mut candidate_storage =
+                ctx.reserve_scoped(0, "catia_directory_extent_candidate")?;
+            if let Some((extents, cum)) = candidate_storage
+                .with_storage(|| parse_extents(ctx, dirbuf, o, k, physical_base, file_len))?
             {
                 if cum > 0 && o >= stream_desc::EXTENT_COUNT {
                     let ds = o - stream_desc::EXTENT_COUNT;
@@ -1263,6 +1282,7 @@ fn parse_directory_region(
                             .unwrap_or(0);
                     if index_from_u32(logical_length) == cum {
                         let name = descriptor_name(ctx, dirbuf, ds)?;
+                        candidate_storage.commit()?;
                         ctx.push_vec(
                             &mut descriptors,
                             Descriptor {
@@ -1474,7 +1494,6 @@ fn descriptor_name(
         && (0x20..0x7f).contains(&header_name[name_len])
         && header_name[name_len + 1] == 0
     {
-        ctx.charge_work(1, "catia_container_iteration")?;
         name_len += 2;
     }
     if name_len < 6
@@ -1846,14 +1865,18 @@ fn brep_stream(
     data: &[u8],
     dir: &InnerDir,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(mut out) = main_data_stream(ctx, data, dir)? else {
+    let Some(main) = unique_largest_descriptor(ctx, &dir.descriptors, "MainDataStream")? else {
         return Ok(None);
     };
     let Some(surf) = unique_largest_descriptor(ctx, &dir.descriptors, "SurfacicReps")? else {
         return Ok(None);
     };
+    let (mut out, mut output_storage) = reconstruct_logical_stream(ctx, data, main, dir.inner)?;
     let (surface, _storage) = reconstruct_logical_stream(ctx, data, surf, dir.inner)?;
-    ctx.extend_retained_bytes(&mut out, &surface, "catia_brep_surface_bytes")?;
+    output_storage.with_storage(|| {
+        ctx.extend_retained_bytes(&mut out, &surface, "catia_brep_surface_bytes")
+    })?;
+    output_storage.commit()?;
     Ok(Some(out))
 }
 

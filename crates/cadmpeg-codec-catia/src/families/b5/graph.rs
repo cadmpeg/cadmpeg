@@ -1212,7 +1212,7 @@ fn same_surface_entries(
         ctx.get_btree_map(surfaces, &left, operation)?,
         ctx.get_btree_map(surfaces, &right, operation)?,
     ) {
-        (Some(left), Some(right)) => ctx.equal(left, right, operation),
+        (Some(left), Some(right)) => equal_b5_surfaces(ctx, left, right, operation),
         (None, None) => Ok(true),
         _ => Ok(false),
     }
@@ -1919,7 +1919,8 @@ fn parse_from_records_with_class21(
         return Ok(None);
     }
     let vertex_points = crate::families::consolidated::records::object_stream_vertices(ctx, bytes)?;
-    let geometric_edge_vertices = bind_edge_vertices(ctx, &loops, &geometry, &vertex_points)?;
+    let geometric_edge_vertices =
+        scratch.with_storage(|| bind_edge_vertices(ctx, &loops, &geometry, &vertex_points))?;
     let mut vertex_incidence_links = BTreeMap::new();
     for record in ctx
         .admit_iter(records, "catia_b5_vertex_incidence_record_scan")?
@@ -1936,20 +1937,24 @@ fn parse_from_records_with_class21(
     }
     let mut native_edge_vertices = BTreeMap::new();
     for (&object_id, edge) in ctx.admit_iter(&edges, "catia_b5_native_edge_vertex_scan")? {
-        ctx.insert_btree_map(
-            &mut native_edge_vertices,
-            object_id,
-            edge.vertices,
-            "catia_b5_native_edge_vertices",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut native_edge_vertices,
+                object_id,
+                edge.vertices,
+                "catia_b5_native_edge_vertices",
+            )
+        })?;
     }
-    let native_vertex_coordinates = incidence_vertex_coordinates(
-        ctx,
-        &native_edge_vertices,
-        &vertex_incidence_links,
-        by_id,
-        &geometry,
-    )?;
+    let native_vertex_coordinates = scratch.with_storage(|| {
+        incidence_vertex_coordinates(
+            ctx,
+            &native_edge_vertices,
+            &vertex_incidence_links,
+            by_id,
+            &geometry,
+        )
+    })?;
     let bound_vertices = bind_native_vertices(
         ctx,
         &loops,
@@ -1962,10 +1967,11 @@ fn parse_from_records_with_class21(
     let edge_vertices = bound_vertices.edges;
     let logical_vertices = bound_vertices.vertices;
     let vertex_tolerances = bound_vertices.tolerances;
-    let referenced_loops = retain_referenced_loops(ctx, &faces, &mut loops)?;
+    let referenced_loops =
+        scratch.with_storage(|| retain_referenced_loops(ctx, &faces, &mut loops))?;
     let mut complete = faces.len() == source_face_count;
     if complete {
-        let owner_counts = face_loop_owner_counts(ctx, &faces)?;
+        let owner_counts = scratch.with_storage(|| face_loop_owner_counts(ctx, &faces))?;
         complete = ctx.all_by(
             &owner_counts,
             |(_, count)| Ok(*count == 1),
@@ -2069,7 +2075,7 @@ fn merge_surface_candidate(
         Some(existing) if unresolved_surface_candidate(existing) => true,
         Some(existing) => {
             if !unresolved_surface_candidate(&candidate)
-                && !ctx.equal(existing, &candidate, OPERATION)?
+                && !equal_b5_surfaces(ctx, existing, &candidate, OPERATION)?
             {
                 ctx.remove_btree_map(surfaces, &object_id, OPERATION)?;
                 conflict_storage.with_storage(|| {
@@ -2106,7 +2112,7 @@ fn merge_surface_from(
     let (replace, changed) = match ctx.get_btree_map(surfaces, &object_id, OPERATION)? {
         None => (true, true),
         Some(existing) => {
-            let equal = ctx.equal(existing, candidate, OPERATION)?;
+            let equal = equal_b5_surfaces(ctx, existing, candidate, OPERATION)?;
             if unresolved_surface_candidate(existing) {
                 (!equal, !equal)
             } else if unresolved_surface_candidate(candidate) || equal {
@@ -2132,6 +2138,29 @@ fn unresolved_surface_candidate(surface: &B5Surface) -> bool {
         surface,
         B5Surface::Unknown { .. } | B5Surface::UnresolvedNurbs { .. }
     )
+}
+
+/// Analytic carriers have fixed fields; payload carriers compare owned lanes.
+fn equal_b5_surfaces(
+    ctx: &DecodeContext<'_>,
+    left: &B5Surface,
+    right: &B5Surface,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if std::mem::discriminant(left) != std::mem::discriminant(right) {
+        return Ok(false);
+    }
+    if matches!(
+        left,
+        B5Surface::UnresolvedNurbs { .. }
+            | B5Surface::Unknown { .. }
+            | B5Surface::Nurbs(_)
+            | B5Surface::RollingBall { .. }
+    ) {
+        ctx.equal(left, right, operation)
+    } else {
+        Ok(left == right)
+    }
 }
 
 fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surface, CodecError> {
@@ -2365,9 +2394,6 @@ fn parse_a8_class21_pcurve(
         if position.checked_add(minimum_known_bytes)? > payload.len() {
             return None;
         }
-        let Some(scalar_width) = NonZeroUsize::new(8) else {
-            return None;
-        };
         let read_values = |position: &mut usize, values: &mut Vec<FiniteReal>| {
             let Some(end) = (*position).checked_add(scalar_bytes) else {
                 return Some(Err(ctx.refuse_codec_limit(
@@ -2377,11 +2403,14 @@ fn parse_a8_class21_pcurve(
                 )));
             };
             let lane = payload.get(*position..end)?;
-            let mut chunks = match ctx.admit_iter(lane, "catia_b5_a8_class21_scalar_lane_bytes") {
-                Ok(admitted) => admitted.chunks(scalar_width),
-                Err(error) => return Some(Err(error.into())),
-            };
-            for chunk in &mut chunks {
+            let mut chunks = lane.chunks_exact(8);
+            loop {
+                let chunk =
+                    match ctx.next_charged(&mut chunks, "catia_b5_a8_class21_scalar_lane_bytes") {
+                        Ok(Some(chunk)) => chunk,
+                        Ok(None) => break,
+                        Err(error) => return Some(Err(error.into())),
+                    };
                 if let Err(error) =
                     ctx.push_vec(values, f64_le(chunk, 0)?, "catia B5 pcurve distinct knots")
                 {
@@ -2426,12 +2455,16 @@ fn parse_a8_class21_pcurve(
             Err(error) => return Some(Err(error)),
         }
         let mut multiplicities_valid = true;
-        let multiplicity_indices =
-            match ctx.admit_iter(&(0..knot_count), "catia_b5_a8_class21_multiplicity_scan") {
-                Ok(indices) => indices,
+        let mut multiplicity_indices = 0..knot_count;
+        loop {
+            let index = match ctx.next_charged(
+                &mut multiplicity_indices,
+                "catia_b5_a8_class21_multiplicity_scan",
+            ) {
+                Ok(Some(index)) => index,
+                Ok(None) => break,
                 Err(error) => return Some(Err(error.into())),
             };
-        for index in multiplicity_indices {
             let multiplicity = wire::tokens::compact_uint(payload, &mut position)?;
             multiplicities_valid &= multiplicity
                 == if index == 0 || index + 1 == knot_count {
@@ -2450,11 +2483,14 @@ fn parse_a8_class21_pcurve(
                 )));
             };
             let lane = payload.get(*position..end)?;
-            let mut chunks = match ctx.admit_iter(lane, "catia_b5_a8_class21_scalar_lane_bytes") {
-                Ok(admitted) => admitted.chunks(scalar_width),
-                Err(error) => return Some(Err(error.into())),
-            };
-            for chunk in &mut chunks {
+            let mut chunks = lane.chunks_exact(8);
+            loop {
+                let chunk =
+                    match ctx.next_charged(&mut chunks, "catia_b5_a8_class21_scalar_lane_bytes") {
+                        Ok(Some(chunk)) => chunk,
+                        Ok(None) => break,
+                        Err(error) => return Some(Err(error.into())),
+                    };
                 values.push(f64_le(chunk, 0)?.get());
             }
             *position = end;
@@ -2541,7 +2577,11 @@ fn parse_a8_class21_pcurve(
         ) {
             return Some(Err(error));
         }
-        points.extend(u.into_iter().zip(v).map(|(u, v)| [u, v]));
+        let admitted = match ctx.admit_iter(u, "catia_b5_pcurve_point_jet_pair_scan") {
+            Ok(admitted) => admitted,
+            Err(error) => return Some(Err(error.into())),
+        };
+        points.extend(admitted.zip(v).map(|(u, v)| [u, v]));
         let mut first = Vec::new();
         if let Err(error) = ctx.reserve_scoped_vec(
             &mut scratch,
@@ -2551,7 +2591,11 @@ fn parse_a8_class21_pcurve(
         ) {
             return Some(Err(error));
         }
-        first.extend(du.into_iter().zip(dv).map(|(u, v)| [u, v]));
+        let admitted = match ctx.admit_iter(du, "catia_b5_pcurve_first_jet_pair_scan") {
+            Ok(admitted) => admitted,
+            Err(error) => return Some(Err(error.into())),
+        };
+        first.extend(admitted.zip(dv).map(|(u, v)| [u, v]));
         let mut second = Vec::new();
         if let Err(error) = ctx.reserve_scoped_vec(
             &mut scratch,
@@ -2561,7 +2605,11 @@ fn parse_a8_class21_pcurve(
         ) {
             return Some(Err(error));
         }
-        second.extend(ddu.into_iter().zip(ddv).map(|(u, v)| [u, v]));
+        let admitted = match ctx.admit_iter(ddu, "catia_b5_pcurve_second_jet_pair_scan") {
+            Ok(admitted) => admitted,
+            Err(error) => return Some(Err(error.into())),
+        };
+        second.extend(admitted.zip(ddv).map(|(u, v)| [u, v]));
         let (_, control_points) = match crate::nurbs::quintic_jet_bspline(
             ctx,
             degree,
@@ -2978,7 +3026,7 @@ fn merge_targeted_surface(
     match ctx.get_mut_hash_map(candidates, &object_id, OPERATION)? {
         Some(stored) => {
             let differs = match stored.as_ref() {
-                Some(existing) => !ctx.equal(existing, &surface, OPERATION)?,
+                Some(existing) => !equal_b5_surfaces(ctx, existing, &surface, OPERATION)?,
                 None => false,
             };
             if differs {
@@ -3044,7 +3092,9 @@ fn resolve_targeted_surface_inner(
             .get_hash_map(resolved, &object_id, OPERATION)?
             .and_then(Option::as_ref);
         match (rolling_surface, resolved_surface) {
-            (Some(left), Some(right)) if !ctx.equal(left, right, OPERATION)? => return Ok(None),
+            (Some(left), Some(right)) if !equal_b5_surfaces(ctx, left, right, OPERATION)? => {
+                return Ok(None)
+            }
             (Some(surface), _) | (_, Some(surface)) => return copy_surface(ctx, surface).map(Some),
             (None, None) => {}
         }
@@ -3206,8 +3256,9 @@ fn incidence_vertex_coordinates(
             let mut first = None;
             let mut valid = true;
             let tolerance_squared = POINT_TOLERANCE * POINT_TOLERANCE;
-            'incidences: for &incidence_record in
-                ctx.admit_iter(&incidence_records, "catia_b5_incidence_record_scan")?
+            let mut steps = incidence_records.iter();
+            'incidences: while let Some(&incidence_record) =
+                ctx.next_charged(&mut steps, "catia_b5_incidence_record_scan")?
             {
                 let Some(incidence) =
                     ctx.get_btree_map(geometry.parameter_incidences, &incidence_record, OPERATION)?
@@ -3219,7 +3270,10 @@ fn incidence_vertex_coordinates(
                     valid = false;
                     break;
                 }
-                for lane in ctx.admit_iter(&incidence.lanes, "catia_b5_incidence_lane_scan")? {
+                let mut steps = incidence.lanes.iter();
+                while let Some(lane) =
+                    ctx.next_charged(&mut steps, "catia_b5_incidence_lane_scan")?
+                {
                     let Some(point) =
                         lift_parameter_incidence(ctx, lane.curve, lane.parameter, geometry)?
                     else {
@@ -3339,10 +3393,13 @@ fn parameter_incidence(
     };
     let count = usize::from(count);
     let mut position = 1;
-    let Some(references) = ctx.collect_options(
-        (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
-        "catia_b5_parameter_incidence_references",
-    )?
+    let mut reference_storage = ctx.reserve_scoped(0, "catia_b5_parameter_incidence_references")?;
+    let Some(references) = reference_storage.with_storage(|| {
+        ctx.collect_options(
+            (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
+            "catia_b5_parameter_incidence_references",
+        )
+    })?
     else {
         return Ok(None);
     };
@@ -3357,7 +3414,10 @@ fn parameter_incidence(
     }
     position += 1;
     let mut lanes = Vec::new();
-    for curve in references {
+    let mut references = references.into_iter();
+    while let Some(curve) =
+        ctx.next_charged(&mut references, "catia_b5_parameter_incidence_lane_scan")?
+    {
         let Some(parameter) = f64_le(&record.payload, position) else {
             return Ok(None);
         };
@@ -3481,67 +3541,86 @@ pub(super) fn evaluate_pcurve(
     pcurve: &B5Pcurve,
     parameter: f64,
 ) -> Result<Option<[f64; 2]>, CodecError> {
-    let Some(knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
-        return Ok(None);
-    };
-    let knots = ctx.collect_vec(
-        knots.into_iter().map(FiniteReal::get),
-        "catia_b5_evaluation_knots",
-    )?;
-    let control_points = ctx.collect_vec(
-        pcurve
-            .control_points
-            .iter()
-            .map(|point| Point2::new(point[0], point[1])),
-        "catia_b5_evaluation_points",
-    )?;
-    let weights = pcurve
-        .weights
-        .as_ref()
-        .map(|weights| {
-            ctx.collect_vec(
-                weights.iter().copied().map(PositiveReal::get),
-                "catia_b5_evaluation_weights",
-            )
-        })
-        .transpose()?;
-    let point = cadmpeg_ir::eval::finite_or_refusal(nurbs_pcurve_uv(
-        ctx,
-        pcurve.degree,
-        &knots,
-        &control_points,
-        weights.as_deref(),
-        parameter,
-    ))?
-    .map(Point2::from);
-    Ok(point.map(|point| [point.u, point.v]))
+    let mut storage = ctx.reserve_scoped(0, "catia_b5_evaluation_scratch")?;
+    storage.with_storage(|| {
+        let Some(knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
+            return Ok(None);
+        };
+        let knots = ctx.collect_vec(
+            knots.into_iter().map(FiniteReal::get),
+            "catia_b5_evaluation_knots",
+        )?;
+        let control_points = ctx.collect_vec(
+            pcurve
+                .control_points
+                .iter()
+                .map(|point| Point2::new(point[0], point[1])),
+            "catia_b5_evaluation_points",
+        )?;
+        let weights = pcurve
+            .weights
+            .as_ref()
+            .map(|weights| {
+                ctx.collect_vec(
+                    weights.iter().copied().map(PositiveReal::get),
+                    "catia_b5_evaluation_weights",
+                )
+            })
+            .transpose()?;
+        let point = cadmpeg_ir::eval::finite_or_refusal(nurbs_pcurve_uv(
+            ctx,
+            pcurve.degree,
+            &knots,
+            &control_points,
+            weights.as_deref(),
+            parameter,
+        ))?
+        .map(Point2::from);
+        Ok(point.map(|point| [point.u, point.v]))
+    })
+}
+
+fn pcurve_knot_count(
+    ctx: &DecodeContext<'_>,
+    pcurve: &B5Pcurve,
+    operation: &'static str,
+) -> Result<Option<usize>, CodecError> {
+    let mut count = 0usize;
+    let mut pairs = pcurve.distinct_knots.iter().zip(&pcurve.multiplicities);
+    while let Some((_, multiplicity)) = ctx.next_charged(&mut pairs, operation)? {
+        let Some(next) = usize::try_from(*multiplicity)
+            .ok()
+            .and_then(|value| count.checked_add(value))
+        else {
+            return Ok(None);
+        };
+        count = next;
+    }
+    Ok(Some(count))
 }
 
 fn pcurve_knots(
     ctx: &DecodeContext<'_>,
     pcurve: &B5Pcurve,
 ) -> Result<Option<Vec<FiniteReal>>, CodecError> {
-    let Some(count) = ctx
-        .admit_iter(&pcurve.distinct_knots, "catia_b5_pcurve_knot_count")?
-        .zip(ctx.admit_iter(&pcurve.multiplicities, "catia_b5_pcurve_multiplicity_count")?)
-        .try_fold(0usize, |count, (_, multiplicity)| {
-            usize::try_from(*multiplicity)
-                .ok()
-                .and_then(|multiplicity| count.checked_add(multiplicity))
-        })
-    else {
+    let Some(count) = pcurve_knot_count(ctx, pcurve, "catia_b5_pcurve_knot_count")? else {
         return Ok(None);
     };
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, count, "catia_b5_expanded_pcurve_knots")?;
+    ctx.reserve_capacity(&mut knots, count, "catia_b5_expanded_pcurve_knots")?;
+    let paired = pcurve.distinct_knots.len().min(pcurve.multiplicities.len());
     for (&knot, &multiplicity) in ctx
-        .admit_iter(&pcurve.distinct_knots, "catia_b5_pcurve_knot_emit")?
-        .zip(ctx.admit_iter(&pcurve.multiplicities, "catia_b5_pcurve_multiplicity_emit")?)
+        .admit_iter(
+            &pcurve.distinct_knots[..paired],
+            "catia_b5_pcurve_knot_emit",
+        )?
+        .zip(&pcurve.multiplicities)
     {
         let Some(multiplicity) = usize::try_from(multiplicity).ok() else {
             return Ok(None);
         };
-        knots.extend(std::iter::repeat_with(|| knot).take(multiplicity));
+        let next = knots.len() + multiplicity;
+        ctx.resize_vec(&mut knots, next, knot, "catia_b5_expanded_pcurve_knots")?;
     }
     Ok(Some(knots))
 }
@@ -3558,7 +3637,10 @@ pub(super) fn pcurve_nurbs_knots(
     match pcurve.parameterization {
         B5PcurveParameterization::Native => {}
         B5PcurveParameterization::Translated { native_origin } => {
-            for knot in ctx.admit_iter(&mut knots, "catia_b5_translated_pcurve_knots")? {
+            let mut steps = knots.iter_mut();
+            while let Some(knot) =
+                ctx.next_charged(&mut steps, "catia_b5_translated_pcurve_knots")?
+            {
                 let Some(value) = FiniteReal::new(knot.get() - native_origin.get()) else {
                     return Ok(None);
                 };
@@ -3576,16 +3658,7 @@ pub(super) fn pcurve_parameter_domain(
     let Some(degree) = usize::try_from(pcurve.degree).ok() else {
         return Ok(None);
     };
-    let total = ctx
-        .admit_iter(&pcurve.distinct_knots, "catia_b5_pcurve_domain_knot_count")?
-        .zip(ctx.admit_iter(
-            &pcurve.multiplicities,
-            "catia_b5_pcurve_domain_multiplicity_count",
-        )?)
-        .try_fold(0usize, |count, (_, multiplicity)| {
-            count.checked_add(usize::try_from(*multiplicity).ok()?)
-        });
-    let Some(total) = total else {
+    let Some(total) = pcurve_knot_count(ctx, pcurve, "catia_b5_pcurve_domain_knot_count")? else {
         return Ok(None);
     };
     let Some(last) = degree
@@ -3597,12 +3670,9 @@ pub(super) fn pcurve_parameter_domain(
     let mut first_knot = None;
     let mut last_knot = None;
     let mut index = 0usize;
-    for (&knot, &multiplicity) in ctx
-        .admit_iter(&pcurve.distinct_knots, "catia_b5_pcurve_domain_knot_bounds")?
-        .zip(ctx.admit_iter(
-            &pcurve.multiplicities,
-            "catia_b5_pcurve_domain_multiplicity_bounds",
-        )?)
+    let mut pairs = pcurve.distinct_knots.iter().zip(&pcurve.multiplicities);
+    while let Some((&knot, &multiplicity)) =
+        ctx.next_charged(&mut pairs, "catia_b5_pcurve_domain_knot_bounds")?
     {
         let Some(next) = usize::try_from(multiplicity)
             .ok()
@@ -5228,7 +5298,10 @@ fn contextual_offset_extrusion_bounds(
         return Ok(None);
     };
     let mut resolved = None;
-    for construction in ctx.admit_iter(constructions, "catia_b5_contextual_offset_scan")? {
+    let mut steps = constructions.iter();
+    while let Some(construction) =
+        ctx.next_charged(&mut steps, "catia_b5_contextual_offset_scan")?
+    {
         let Some(source_extrusion) =
             ctx.get_btree_map(extrusion_surfaces, &construction.source_surface, OPERATION)?
         else {
@@ -6376,7 +6449,8 @@ fn rational_arc_pcurve(
     let (Some(span_total), true) = (f64_from_index(span_count), span_count > 0) else {
         return Ok(None);
     };
-    for span in ctx.admit_iter(&(0..span_count), "catia_b5_rational_arc_span_generation")? {
+    let mut steps = 0..span_count;
+    while let Some(span) = ctx.next_charged(&mut steps, "catia_b5_rational_arc_span_generation")? {
         let (Some(span_start), Some(span_end)) = (f64_from_index(span), f64_from_index(span + 1))
         else {
             return Ok(None);
@@ -6634,13 +6708,19 @@ fn parse_line_pcurve(
     else {
         return Ok(None);
     };
+    let mut distinct_knots = ctx.vector_storage(2, "catia_b5_line_pcurve_knots")?;
+    distinct_knots.extend([start, end]);
+    let mut multiplicities = ctx.vector_storage(2, "catia_b5_line_pcurve_multiplicities")?;
+    multiplicities.extend([2, 2]);
+    let mut control_points = ctx.vector_storage(2, "catia_b5_line_pcurve_points")?;
+    control_points.extend([start_point, end_point]);
     Ok(Some(B5Pcurve {
         object_id: record.object_id,
         surface,
         degree: 1,
-        distinct_knots: ctx.collect_vec([start, end], "catia_b5_line_pcurve_knots")?,
-        multiplicities: ctx.collect_vec([2, 2], "catia_b5_line_pcurve_multiplicities")?,
-        control_points: ctx.collect_vec([start_point, end_point], "catia_b5_line_pcurve_points")?,
+        distinct_knots,
+        multiplicities,
+        control_points,
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,

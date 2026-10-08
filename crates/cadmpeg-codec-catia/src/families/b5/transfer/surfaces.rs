@@ -419,7 +419,8 @@ pub(super) fn rational_arc(
     )?;
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, knot_count, "catia_b5_revolution_arc_knots")?;
-    for span in ctx.admit_iter(0..span_count, "catia_b5_revolution_arc_spans")? {
+    let mut steps = 0..span_count;
+    while let Some(span) = ctx.next_charged(&mut steps, "catia_b5_revolution_arc_spans")? {
         let fraction0 = match f64_from_index(span) {
             Some(value) => value,
             None => return Ok(None),
@@ -539,7 +540,8 @@ pub(super) fn revolve_nurbs(
         angular_count + 3,
         "catia b5 revolution angular knots",
     )?;
-    for span in ctx.admit_iter(0..span_count, "catia_b5_revolution_arc_spans")? {
+    let mut steps = 0..span_count;
+    while let Some(span) = ctx.next_charged(&mut steps, "catia_b5_revolution_arc_spans")? {
         let (Some(span_start), Some(span_end), Some(spans)) = (
             f64_from_index(span),
             f64_from_index(span + 1),
@@ -572,7 +574,8 @@ pub(super) fn revolve_nurbs(
     let poles = profile.pole_rows();
     let mut point_rows = ctx.collection_vec(poles.count(), "catia b5 revolution point rows")?;
     let mut weight_rows = ctx.collection_vec(poles.count(), "catia b5 revolution weight rows")?;
-    for index in ctx.admit_iter(0..poles.count(), "catia_b5_revolution_profile_pole_scan")? {
+    let mut steps = 0..poles.count();
+    while let Some(index) = ctx.next_charged(&mut steps, "catia_b5_revolution_profile_pole_scan")? {
         let (Some(profile_point), profile_weight) = (
             poles.point_at(index),
             match poles {

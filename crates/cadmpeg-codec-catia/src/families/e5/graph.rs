@@ -758,7 +758,7 @@ fn body_rosters_cover_faces(
     }
     let mut named = HashSet::new();
     let mut roster_len = 0usize;
-    let mut steps = (bodies).into_iter();
+    let mut steps = bodies.iter();
     while let Some(body) = ctx.next_charged(&mut steps, "catia_e5_body_roster_scan")? {
         let mut steps = body.faces.iter();
         while let Some(face) = ctx.next_charged(&mut steps, "catia_e5_body_face_roster_scan")? {
@@ -2124,7 +2124,7 @@ fn parse_loop(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<Raw
     let mut position = 1;
     let mut pcurves = Vec::new();
     let mut edges = Vec::new();
-    let mut steps = (0..member_count / 2).into_iter();
+    let mut steps = 0..member_count / 2;
     while let Some(_) = ctx.next_charged(&mut steps, "catia_e5_loop_member_scan")? {
         let Some(pcurve) = wire::tokens::object_ref(record.payload, &mut position, false) else {
             return Ok(None);
