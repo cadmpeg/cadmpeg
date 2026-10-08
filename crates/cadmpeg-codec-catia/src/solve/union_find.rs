@@ -6,51 +6,52 @@ use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 /// A disjoint-set forest with path compression on `find`.
+///
+/// The parent array is solver scratch: it lives in scoped storage that is
+/// released when the forest is dropped.
 #[derive(Debug)]
 pub(crate) struct UnionFind<'storage> {
     parents: Vec<usize>,
-    /// Live parent storage for a temporary search snapshot.
-    _storage: Option<ScopedReservation<'storage>>,
+    /// Live parent storage; test forests built without a context hold none.
+    storage: Option<ScopedReservation<'storage>>,
 }
 
-impl UnionFind<'_> {
+impl<'storage> UnionFind<'storage> {
+    /// Creates `length` singleton sets, admitting one step per parent slot.
     pub(crate) fn charged(
-        ctx: &DecodeContext<'_>,
+        ctx: &'storage DecodeContext<'_>,
         length: usize,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let mut parents = ctx.alloc_filled(length, 0usize, operation)?;
-        for node in ctx.admit_iter(&(0..length), operation)? {
-            parents[node] = node;
-        }
+        let mut storage = ctx.reserve_scoped(0, operation)?;
+        let parents = storage.with_storage(|| ctx.collect_indexed_vec(length, operation, Ok))?;
         Ok(Self {
             parents,
-            _storage: None,
+            storage: Some(storage),
         })
     }
+}
 
+impl UnionFind<'_> {
     /// Creates `length` singleton sets, one per node `0..length`.
     #[cfg(test)]
     pub(crate) fn new(length: usize) -> Self {
         Self {
             parents: (0..length).collect(),
-            _storage: None,
+            storage: None,
         }
     }
 
+    /// Copies the forest into its own scoped storage.
     pub(crate) fn clone_charged<'storage>(
         &self,
         ctx: &'storage DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<UnionFind<'storage>, CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(self.parents.len()),
-            operation,
-        )?;
         let (parents, storage) = ctx.copy_temporary_slice(&self.parents, operation)?;
         Ok(UnionFind {
             parents,
-            _storage: Some(storage),
+            storage: Some(storage),
         })
     }
 
@@ -67,13 +68,17 @@ impl UnionFind<'_> {
         index
     }
 
+    /// Appends a new singleton node in the forest's storage and returns its index.
     pub(crate) fn push_charged(
         &mut self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<usize, CodecError> {
         let index = self.parents.len();
-        ctx.push_vec(&mut self.parents, index, operation)?;
+        match &mut self.storage {
+            Some(storage) => ctx.push_scoped_vec(storage, &mut self.parents, index, operation)?,
+            None => ctx.push_vec(&mut self.parents, index, operation)?,
+        }
         Ok(index)
     }
 
@@ -85,7 +90,7 @@ impl UnionFind<'_> {
     ) -> Result<usize, CodecError> {
         let root = self.root(ctx, node)?;
         while node != root {
-            ctx.charge_work(2, "catia_union_compression")?;
+            ctx.charge_work(1, "catia_union_compression")?;
             let slot = self
                 .parents
                 .get_mut(node)
@@ -126,7 +131,6 @@ impl UnionFind<'_> {
         let left = self.find(ctx, left)?;
         let right = self.find(ctx, right)?;
         if left != right {
-            ctx.charge_work(1, "catia_union_link")?;
             *self
                 .parents
                 .get_mut(right)
@@ -141,7 +145,7 @@ impl Clone for UnionFind<'_> {
     fn clone(&self) -> Self {
         Self {
             parents: self.parents.clone(),
-            _storage: None,
+            storage: None,
         }
     }
 }
@@ -154,22 +158,42 @@ mod tests {
     fn union_parent_initialization_admits_each_slot_once() {
         use cadmpeg_core::CodecError;
 
-        // Two slots are filled, then two parent indices are assigned.
-        let admitted = crate::test_support::with_work_limit(4, |ctx| {
-            UnionFind::charged(ctx, 2, "catia_union_initialization_test")
-        })
-        .expect("the exact initialization work fits");
-        assert_eq!(admitted.parents, [0, 1]);
-        crate::test_support::with_work_limit(3, |ctx| {
+        // Each parent slot is written once with its own index.
+        crate::test_support::with_work_limit(2, |ctx| {
+            let admitted = UnionFind::charged(ctx, 2, "catia_union_initialization_test")
+                .expect("the exact initialization work fits");
+            assert_eq!(admitted.parents, [0, 1]);
+        });
+        crate::test_support::with_work_limit(1, |ctx| {
             let Err(CodecError::ResourceLimit(limit)) =
                 UnionFind::charged(ctx, 2, "catia_union_initialization_test")
             else {
                 panic!("parent traversal must refuse")
             };
             assert_eq!(limit.operation, "catia_union_initialization_test");
-            assert_eq!(limit.used, 2);
-            assert_eq!(limit.additional, 2);
+            assert_eq!(limit.used, 1);
+            assert_eq!(limit.additional, 1);
             assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
+
+    #[test]
+    fn union_parents_and_nodes_are_scoped_scratch() {
+        let parent_bytes = u64::try_from(std::mem::size_of::<usize>()).expect("parent bytes");
+        crate::test_support::with_retained_limit(0, |ctx| {
+            let mut union =
+                UnionFind::charged(ctx, 2, "catia_union_scratch").expect("scoped parents");
+            assert_eq!(
+                union
+                    .push_charged(ctx, "catia_union_scratch")
+                    .expect("scoped node"),
+                2
+            );
+        });
+        crate::test_support::with_materialized_limit(2 * parent_bytes, |ctx| {
+            for _ in 0..64 {
+                drop(UnionFind::charged(ctx, 2, "catia_union_scratch").expect("released parents"));
+            }
         });
     }
 

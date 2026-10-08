@@ -777,7 +777,7 @@ fn deferred_boundary_closure_refuses_matching_collection_limits() {
             Err(error) => panic!("unexpected refusal: {error}"),
         }
     }
-    for operation in ["catia_deferred_close_match", "catia_deferred_close_visit"] {
+    for operation in ["catia_deferred_match", "catia_deferred_visit"] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
 }
@@ -1289,7 +1289,7 @@ fn compact_boundary_viability_refuses_labeled_edge_point_limit() {
         }
     }
     assert!(refused.contains("catia labeled edge points"));
-    assert!(refused.contains("catia_compact_boundary_complete_pairs"));
+    assert!(refused.contains("catia compact viable selected pairs"));
 }
 
 #[test]
@@ -1297,7 +1297,7 @@ fn component_face_viability_refuses_edge_point_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let faces = HashSet::from([0]);
+    let faces = [0];
     let assignment = [Some([0, 1]), Some([1, 2]), Some([2, 0])];
     let choices = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
     let face_edges = vec![vec![0, 1, 2]];

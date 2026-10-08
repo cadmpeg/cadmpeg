@@ -25,9 +25,10 @@ fn relation_choice_sort_refuses_assignment_bytes() {
         edge_identity_evidence: &[],
         coordinate_gauge: None,
     };
-    let result = crate::test_support::with_work_limit(20_000, |ctx| {
-        map_endpoint_relation_state(ctx, &state, gauge, &[])
-    });
+    let result =
+        crate::test_support::with_work_refusal("catia_relation_mapped_choices_sort", |ctx| {
+            map_endpoint_relation_state(ctx, &state, gauge, &[])
+        });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "catia_relation_mapped_choices_sort"));
@@ -97,6 +98,7 @@ fn coordinate_gauge_refuses_unsearched_eight_point_class() {
             &candidates,
             &[false],
         )
+        .map(|(gauge, _storage)| gauge)
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_gauge_permutation_limit"));
@@ -104,53 +106,51 @@ fn coordinate_gauge_refuses_unsearched_eight_point_class() {
 
 #[test]
 fn coordinate_permutation_search_refuses_caller_work_before_enumeration() {
-    let result = crate::test_support::with_work_limit(0, |ctx| {
-        super::enumerate_coordinate_permutations(
-            ctx,
-            &[0, 1],
-            0,
-            &mut vec![],
-            &mut [false; 2],
-            &mut vec![],
-        )
+    let result = crate::test_support::with_work_refusal("catia_gauge_permutation_search", |ctx| {
+        super::enumerate_coordinate_permutations(ctx, &[0, 1], 2)
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "catia_gauge_permutation_search"));
-    let mut output = vec![];
-    crate::test_support::with_service_context(|ctx| {
-        super::enumerate_coordinate_permutations(
-            ctx,
-            &[0, 1],
-            0,
-            &mut vec![],
-            &mut [false; 2],
-            &mut output,
-        )
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::enumerate_coordinate_permutations(ctx, &[0, 1], 2)
+        })
+        .expect("two permutations fit service work"),
+        vec![vec![0, 1], vec![1, 0]],
+    );
+    let output = crate::test_support::with_service_context(|ctx| {
+        super::enumerate_coordinate_permutations(ctx, &[0, 2, 5], 6)
     })
-    .expect("two permutations fit service work");
-    assert_eq!(output, vec![vec![0, 1], vec![1, 0]]);
+    .expect("six permutations fit service work");
+    assert_eq!(
+        output,
+        vec![
+            vec![0, 2, 5],
+            vec![0, 5, 2],
+            vec![2, 0, 5],
+            vec![2, 5, 0],
+            vec![5, 0, 2],
+            vec![5, 2, 0],
+        ]
+    );
 }
 
 #[test]
 fn gauge_signature_lookup_refuses_repeated_long_equal_keys() {
     let signatures = vec![vec![0usize; 128]; 2];
-    let result = crate::test_support::with_work_refusal("catia_gauge_signature_compare", |ctx| {
-        super::intern_gauge_signatures(ctx, signatures.clone(), |key| {
-            std::mem::size_of_val(key.as_slice())
-        })
+    let result = crate::test_support::with_work_refusal("catia_gauge_signature_keys", |ctx| {
+        super::intern_gauge_signatures(ctx, signatures.clone())
     });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "catia_gauge_signature_compare"));
+            && limit.operation == "catia_gauge_signature_keys"));
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            super::intern_gauge_signatures(ctx, signatures, |key| {
-                std::mem::size_of_val(key.as_slice())
-            })
+            super::intern_gauge_signatures(ctx, signatures)
         })
         .expect("service comparison work"),
-        vec![0, 0]
+        (vec![0, 0], 1)
     );
 }
 
@@ -193,11 +193,12 @@ fn coordinate_gauge_membership_scans_refuse_before_search() {
             &[vec![[0, 1]]],
             &[false],
         )
+        .map(|(gauge, _storage)| gauge)
     });
     for operation in [
         "catia_gauge_group_point_scan",
         "catia_gauge_affected_edge_scan",
-        "catia_gauge_affected_point_scan",
+        "catia_gauge_original_rows",
     ] {
         assert!(
             operations.contains(operation),
@@ -253,11 +254,11 @@ fn coordinate_refinement_and_automorphism_comparisons_refuse_key_bytes() {
                 &[vec![[0, 1]]],
                 &[evidence],
             )
+            .map(|(gauge, _storage)| gauge)
         });
         for operation in [
-            "catia_gauge_refinement_compare",
+            "catia_gauge_refinement_rounds",
             "catia_gauge_automorphism_rows_compare",
-            "catia_gauge_permutation_dedup_compare",
         ] {
             assert!(
                 operations.contains(operation),
@@ -346,7 +347,9 @@ fn coordinate_topology_candidate_comparison_refuses_before_selection() {
         coordinate_gauge: Some(&coordinate),
     };
     let operations = observed_work_refusals(|ctx| {
-        super::canonicalize_mesh_coordinate_gauges(ctx, topology.clone(), gauge)
+        let storage = ctx.reserve_scoped(0, "test topology storage")?;
+        super::canonicalize_mesh_coordinate_gauges(ctx, topology.clone(), storage, gauge)
+            .map(|value| value.map(|(topology, _storage)| topology))
     });
     assert!(operations.contains("catia_gauge_coordinate_topology_compare"));
 }
@@ -383,7 +386,6 @@ fn candidate_equivalence_refuses_each_variable_length_comparison() {
     for operation in [
         "catia_gauge_candidate_point_compare",
         "catia_gauge_candidate_topology_compare",
-        "catia_gauge_candidate_assignment_compare",
     ] {
         assert!(
             operations.contains(operation),
@@ -394,4 +396,118 @@ fn candidate_equivalence_refuses_each_variable_length_comparison() {
         super::mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, None)
     })
     .expect("service comparison work"));
+}
+
+#[test]
+fn gauge_factorial_refuses_only_after_the_visited_factors() {
+    let error =
+        crate::test_support::with_work_limit(2, |ctx| super::bounded_factorial(ctx, 10_000, 3))
+            .expect_err("factors two and three exceed the permutation cap");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_gauge_permutation_limit"
+            && limit.used == 3 && limit.additional == 3));
+}
+
+#[test]
+fn empty_coordinate_gauge_does_no_refinement_work() {
+    crate::test_support::with_work_limit(0, |ctx| {
+        let (gauge, _storage) = super::build_mesh_coordinate_gauge(ctx, 0, &[], &[], &[], &[], &[])
+            .expect("empty gauge has no visited input");
+        assert!(gauge.components.is_empty());
+    });
+}
+
+#[test]
+fn coordinate_gauge_storage_is_scoped_and_released_between_calls() {
+    let rows = [
+        EdgeRow::new(1, vec![0, 1], EdgeBoundaryLayout::CompleteBoundaryRun).expect("nonempty row"),
+    ];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let (gauge, _storage) = super::build_mesh_coordinate_gauge(
+            ctx,
+            2,
+            &rows,
+            &[[0, 1]],
+            &[MeshEdgeGeometry::Line],
+            &[vec![[0, 1]]],
+            &[false],
+        )?;
+        assert_eq!(gauge.components, vec![vec![vec![0, 1], vec![1, 0]]]);
+        Ok::<_, CodecError>(())
+    };
+    crate::test_support::with_retained_limit(0, run).expect("gauge is solver scratch");
+    crate::test_support::with_materialized_limit(32_768, |ctx| {
+        for _ in 0..128 {
+            run(ctx).expect("only one gauge and its scratch are live");
+        }
+    });
+}
+
+#[test]
+fn gauge_equivalence_keeps_no_retained_drafts() {
+    let topology = comparison_topology();
+    let candidate = (topology, vec![0, 1]);
+    crate::test_support::with_retained_limit(0, |ctx| {
+        assert!(
+            super::mesh_candidates_equivalent_with_context(ctx, &candidate, &candidate, None)
+                .expect("boolean comparison uses scoped drafts")
+        );
+    });
+}
+
+#[test]
+fn gauge_coedge_queries_stop_before_unvisited_faces() {
+    let topology = comparison_topology();
+    crate::test_support::with_work_limit(3, |ctx| {
+        let mut visits = 0;
+        assert!(
+            !super::visit_coedges(ctx, &topology, "test coedge visit", |_, _, _, _| {
+                visits += 1;
+                Ok(false)
+            })
+            .expect("one face, one boundary, one coedge")
+        );
+        assert_eq!(visits, 1);
+    });
+    crate::test_support::with_work_limit(3, |ctx| {
+        let mut topology = topology.clone();
+        assert!(
+            !super::rewrite_coedges(ctx, &mut topology, "test coedge rewrite", |_| false)
+                .expect("one face, one boundary, one coedge")
+        );
+    });
+}
+
+#[test]
+fn least_rotation_refuses_an_overflowing_bound_before_key_visits() {
+    crate::test_support::with_service_context(|ctx| {
+        let visited = std::cell::Cell::new(false);
+        let CodecError::ResourceLimit(limit) = super::least_rotation(
+            ctx,
+            usize::MAX,
+            |_| {
+                visited.set(true);
+                0_usize
+            },
+            "test least rotation bound",
+        )
+        .expect_err("three times the cycle length exceeds the index range") else {
+            panic!("resource refusal");
+        };
+        assert_eq!(
+            limit.dimension,
+            ResourceDimension::Codec("test least rotation bound")
+        );
+        assert_eq!(limit.operation, "test least rotation bound");
+        assert_eq!(
+            limit.used,
+            cadmpeg_core::decode::u64_from_index(usize::MAX / 3)
+        );
+        assert_eq!(
+            limit.additional,
+            cadmpeg_core::decode::u64_from_index(usize::MAX - usize::MAX / 3)
+        );
+        assert!(!visited.get());
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
 }

@@ -1726,3 +1726,49 @@ fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
 }
 
 mod endpoint_ports;
+
+#[test]
+fn unchanged_implicit_face_pruning_retains_no_trial_pairs() {
+    catia_test_context!(service_ctx);
+    let original = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+        &service_ctx,
+        &original,
+        3,
+        &[[10, 11], [12, 13], [14, 15]],
+    )
+    .expect("service resource budget")
+    .expect("initial quotient");
+    let coordinate_domains = quotient
+        .prepare_coordinate_root_domains(&service_ctx, 3, &original, None)
+        .expect("service resource budget")
+        .expect("coordinate domains");
+    let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![(0..3)
+                .map(|edge| MeshBoundaryEdgeCandidate {
+                    edge,
+                    start: edge,
+                    end: (edge + 1) % 3,
+                    reversed: None,
+                })
+                .collect()],
+        },
+    ])];
+    crate::test_support::with_retained_limit(0, |ctx| {
+        let mut choices = original.clone();
+        let budget = WorkBudget::new(10_000);
+        assert!(
+            crate::solve::incidence::prune_implicit_ordered_face_endpoint_support(
+                ctx,
+                &domains,
+                &mut choices,
+                &coordinate_domains,
+                &budget,
+            )
+            .expect("unchanged trial rows stay temporary")
+        );
+        assert_eq!(choices, original);
+        assert!(!budget.exhausted());
+    });
+}
