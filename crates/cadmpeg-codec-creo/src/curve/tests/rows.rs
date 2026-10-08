@@ -26,13 +26,17 @@ use crate::curve::CurvePrototype;
 use crate::curve::CurvePrototypeTopology;
 use crate::curve::CurveTopologyRow;
 use crate::curve::DepdbCurveSuffix;
+use crate::curve::DimensionForm;
+use crate::curve::DimensionRational;
 use crate::curve::Fc02ShortPcurveEndpoints;
 use crate::curve::Fc05Circle;
 use crate::curve::Fc05CylinderCapPair;
+use crate::curve::RelationDimension;
+use crate::curve::SimultaneousAffineValue;
 use crate::curve::TopologySuffixCandidate;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 fn expression_helix(record: &crate::curve::CurveExpressionRecord) -> Option<CurveExpressionHelix> {
@@ -473,6 +477,130 @@ fn decodes_canonical_and_positional_two_chart_sample_rows() {
     assert_eq!(decoded[0].samples[2], [[-1.0, 0.0], [1.0, 0.0]]);
     assert_eq!(decoded[1].curve_id, 8);
     assert_eq!(decoded[1].samples, decoded[0].samples);
+}
+
+const REMOVAL_TREE_ENTRIES: usize = 11;
+const CANCELLING_VARIABLE: &str = "v05";
+
+fn affine_removal_coefficients() -> BTreeMap<String, f64> {
+    (0..REMOVAL_TREE_ENTRIES)
+        .map(|index| (format!("v{index:02}"), 1.0))
+        .collect()
+}
+
+fn dimension_removal_variables() -> BTreeMap<String, DimensionRational> {
+    (0..REMOVAL_TREE_ENTRIES)
+        .map(|index| (format!("v{index:02}"), DimensionRational::one()))
+        .collect()
+}
+
+#[test]
+fn affine_coefficient_removal_refuses_at_admitted_boundary() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo affine combined coefficient removal work",
+        |ctx| {
+            SimultaneousAffineValue {
+                dimension: RelationDimension::default(),
+                constant: 0.0,
+                coefficients: affine_removal_coefficients(),
+            }
+            .combine_admitted(
+                SimultaneousAffineValue {
+                    dimension: RelationDimension::default(),
+                    constant: 0.0,
+                    coefficients: BTreeMap::from([(CANCELLING_VARIABLE.to_owned(), 1.0)]),
+                },
+                true,
+                ctx,
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo affine combined coefficient removal work"));
+
+    let result = crate::decode::with_test_decode_ctx(|ctx| {
+        SimultaneousAffineValue {
+            dimension: RelationDimension::default(),
+            constant: 0.0,
+            coefficients: affine_removal_coefficients(),
+        }
+        .combine_admitted(
+            SimultaneousAffineValue {
+                dimension: RelationDimension::default(),
+                constant: 0.0,
+                coefficients: BTreeMap::from([(CANCELLING_VARIABLE.to_owned(), 1.0)]),
+            },
+            true,
+            ctx,
+        )
+    })
+    .expect("service profile admits affine cancellation")
+    .expect("matching dimensions combine");
+    let mut expected_coefficients = affine_removal_coefficients();
+    expected_coefficients.remove(CANCELLING_VARIABLE);
+    assert_eq!(result.coefficients, expected_coefficients);
+    assert_eq!(result.constant, 0.0);
+}
+
+#[test]
+fn dimension_variable_removal_refuses_at_admitted_boundary() {
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo dimension difference variable removal work",
+        |ctx| {
+            DimensionForm {
+                constant: DimensionRational::default(),
+                variables: dimension_removal_variables(),
+            }
+            .combine_admitted(
+                ctx,
+                DimensionForm {
+                    constant: DimensionRational::default(),
+                    variables: BTreeMap::from([(
+                        CANCELLING_VARIABLE.to_owned(),
+                        DimensionRational::one(),
+                    )]),
+                },
+                true,
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo dimension difference variable removal work"));
+
+    let result = crate::decode::with_test_decode_ctx(|ctx| {
+        DimensionForm {
+            constant: DimensionRational::default(),
+            variables: dimension_removal_variables(),
+        }
+        .combine_admitted(
+            ctx,
+            DimensionForm {
+                constant: DimensionRational::default(),
+                variables: BTreeMap::from([(
+                    CANCELLING_VARIABLE.to_owned(),
+                    DimensionRational::one(),
+                )]),
+            },
+            true,
+        )
+    })
+    .expect("service profile admits dimension cancellation")
+    .expect("rational difference is representable");
+    let mut expected_variables = dimension_removal_variables();
+    expected_variables.remove(CANCELLING_VARIABLE);
+    assert_eq!(
+        result,
+        DimensionForm {
+            constant: DimensionRational::default(),
+            variables: expected_variables,
+        }
+    );
 }
 
 #[test]
