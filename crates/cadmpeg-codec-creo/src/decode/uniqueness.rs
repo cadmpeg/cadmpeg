@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unique-owner lookups for feature definitions, transforms, profiles, and datum planes.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::document::CadIr;
@@ -40,10 +40,9 @@ pub(super) fn unique_owned_feature_definition<'a>(
     definitions: &'a [crate::feature::definitions::FeatureDefinition],
     feature_id: u32,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureDefinition>, CodecError> {
-    ctx.charge_work(u64_from_index(definitions.len()), "creo unique owner scan")?;
-    Ok(exactly_one(definitions.iter().filter(|definition| {
-        definition.identity.owner_feature_id() == Some(feature_id)
-    })))
+    exactly_one_by(ctx, definitions, |definition| {
+        Ok(definition.identity.owner_feature_id() == Some(feature_id))
+    }, "creo unique owner scan")
 }
 
 pub(super) fn unique_feature_section_transform<'a>(
@@ -52,18 +51,15 @@ pub(super) fn unique_feature_section_transform<'a>(
     definition_id: u32,
     section_offset: usize,
 ) -> Result<Option<&'a crate::placement::FeatureSectionTransform>, CodecError> {
-    ctx.charge_work(u64_from_index(transforms.len()), "creo unique owner scan")?;
-    let Some(transform) = exactly_one(transforms.iter().filter(|transform| {
-        transform.definition_id == definition_id && transform.offset == section_offset
-    })) else {
+    let Some(transform) = exactly_one_by(ctx, transforms, |transform| {
+        Ok(transform.definition_id == definition_id && transform.offset == section_offset)
+    }, "creo unique owner scan")? else {
         return Ok(None);
     };
     if let Some(feature_id) = transform.feature_id {
-        let feature_matches = ctx
-            .admit_iter(transforms, "creo unique transform owner scan")?
-            .filter(|candidate| candidate.feature_id == Some(feature_id))
-            .count();
-        if feature_matches != 1 {
+        if exactly_one_by(ctx, transforms,
+            |candidate| Ok(candidate.feature_id == Some(feature_id)),
+            "creo unique transform owner scan")?.is_none() {
             return Ok(None);
         }
     }
@@ -75,14 +71,10 @@ pub(super) fn unique_feature_definition_for_transform<'a>(
     definitions: &'a [crate::feature::definitions::FeatureDefinition],
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureDefinition>, CodecError> {
-    ctx.charge_work(u64_from_index(definitions.len()), "creo unique owner scan")?;
-    Ok(exactly_one(definitions.iter().filter(|definition| {
-        definition.identity.id() == transform.definition_id
-            && definition
-                .section_3d
-                .as_ref()
-                .is_some_and(|section| section.offset == transform.offset)
-    })))
+    exactly_one_by(ctx, definitions, |definition| {
+        Ok(definition.identity.id() == transform.definition_id
+            && definition.section_3d.as_ref().is_some_and(|section| section.offset == transform.offset))
+    }, "creo unique owner scan")
 }
 
 pub(super) fn unique_feature_profile_definition<'a>(
@@ -91,20 +83,16 @@ pub(super) fn unique_feature_profile_definition<'a>(
     transforms: &'a [crate::placement::FeatureSectionTransform],
     feature_id: u32,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureDefinition>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(transforms.len()),
-        "creo unique profile transform scan",
-    )?;
-    let mut feature_transforms = transforms
-        .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id));
-    match (feature_transforms.next(), feature_transforms.next()) {
-        (Some(transform), None) => {
-            unique_feature_definition_for_transform(ctx, definitions, transform)
-        }
-        (None, None) => unique_owned_feature_definition(ctx, definitions, feature_id),
-        _ => Ok(None),
+    let matches = |transform: &crate::placement::FeatureSectionTransform| {
+        Ok(transform.feature_id == Some(feature_id))
+    };
+    let Some(index) = ctx.position_by(transforms, matches, "creo unique profile transform scan")? else {
+        return unique_owned_feature_definition(ctx, definitions, feature_id);
+    };
+    if ctx.any_by(&transforms[index + 1..], matches, "creo unique profile transform scan")? {
+        return Ok(None);
     }
+    unique_feature_definition_for_transform(ctx, definitions, &transforms[index])
 }
 
 pub(super) fn unique_feature_profile_ref(
@@ -134,14 +122,30 @@ pub(super) fn unique_feature_datum_plane<'a>(
     datums: &'a [crate::datum::DatumPlaneRecord],
     feature_id: u32,
 ) -> Result<Option<&'a crate::datum::DatumPlaneRecord>, CodecError> {
-    ctx.charge_work(u64_from_index(datums.len()), "creo unique owner scan")?;
-    Ok(exactly_one(
-        datums.iter().filter(|datum| datum.feature_id == feature_id),
-    ))
+    exactly_one_by(ctx, datums, |datum| Ok(datum.feature_id == feature_id), "creo unique owner scan")
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unique_query_stops_at_second_match_and_preserves_refusals() {
+        let values = [7, 7, 99];
+        let found = crate::test_support::assert_work_boundaries(&["test unique query"], |ctx| {
+            super::exactly_one_by(ctx, &values, |value| {
+                assert_ne!(*value, 99, "second match ends the search");
+                Ok(*value == 7)
+            }, "test unique query").map(|value| value.copied())
+        });
+        assert_eq!(found, None);
+        for values in [&[][..], &[1, 7, 2][..], &[1, 2][..]] {
+            let found = crate::decode::with_test_decode_ctx(|ctx| {
+                super::exactly_one_by(ctx, values, |value| Ok(*value == 7), "test unique query")
+                    .map(|value| value.copied())
+            }).expect("query admitted");
+            assert_eq!(found, values.contains(&7).then_some(7));
+        }
+    }
+
     #[test]
     fn datum_unique_owner_scan_refuses_work_before_query() {
         let datum = crate::datum::DatumPlaneRecord::new(
