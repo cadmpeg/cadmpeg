@@ -1905,3 +1905,34 @@ fn inline_relation_membership_admits_each_identity_once() {
     let pairwise = u64::try_from(refs.len() * identity_bytes).unwrap();
     assert!(limit.used + limit.additional < pairwise / 2, "{limit:?}");
 }
+
+
+#[test]
+fn native_identity_vectors_drop_before_lane_validation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let service = cadmpeg_test_support::service_decode_context();
+    namespace.set_arena(&service, "feature_histories", &[serde_json::json!({
+        "id": "sldprt:test:history#root", "properties": {}, "content": [], "configurations": [], "features": []
+    })]).unwrap();
+    namespace.set_arena(&service, "feature_input_lanes", &[serde_json::json!({
+        "id": "sldprt:test:lane#root", "native_payload": ""
+    })]).unwrap();
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "validate SLDPRT expected primary lanes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            crate::native::SldprtNative::load_charged(&ctx, &namespace).map_err(cadmpeg_core::CodecError::from)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("lane validation boundary"); };
+    // The history and lane identity sets and the lane-payload map remain live.
+    let identity_set = 4 * std::mem::size_of::<&str>() + 15 + 4 + 16;
+    let payload_map = 4 * std::mem::size_of::<(&str, &[u8])>() + 15 + 4 + 16;
+    assert_eq!(limit.used, u64::try_from(2 * identity_set + payload_map).unwrap());
+    assert_eq!(limit.additional, u64::try_from(4 * std::mem::size_of::<crate::records::FeatureInputLane>()).unwrap());
+}

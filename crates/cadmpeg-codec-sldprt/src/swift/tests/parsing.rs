@@ -752,3 +752,67 @@ fn swift_provenance_index_preserves_overlapping_source_prefixes() {
         );
     }
 }
+
+
+#[test]
+fn swift_class_suffix_search_visits_only_the_suffix() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(".GdtCylinder".len()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let class = format!("{}.GdtCylinder", "長namespace".repeat(1024));
+    assert_eq!(crate::swift::short_class(&ctx, &class).unwrap(), "GdtCylinder");
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_object_prefix_validation_does_not_precharge_unused_pairs() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let references: Vec<_> = (0..128).map(|index| Reference {
+        id: format!("F{index}"),
+        class: "First".into(),
+    }).collect();
+    let mismatched = Entity { class: "Other".into(), ..Entity::default() };
+    let arena = DecodeArena::new();
+    let run = |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        ObjectSection::new(&ctx, references.clone(), vec![mismatched.clone()])
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "scan SWIFT object pairs", run,
+    );
+    let CodecError::ResourceLimit(limit) = error else { panic!("pair boundary"); };
+    assert_eq!(limit.additional, 1);
+    // One pair step, the comma-search bytes and end probe, and both comparison operands.
+    let search = u64::try_from("First".len()).unwrap() + 1;
+    let comparison = u64::try_from("First".len() + "Other".len()).unwrap();
+    assert!(run(limit.used + 1 + search + comparison).unwrap().is_none());
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = limit.used + 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(ObjectSection::new(&ctx, references, Vec::new()).unwrap().is_some());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_reference_class_search_stops_at_the_comma() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let reference = Reference { id: "F0".into(), class: format!("First,{}", "unused".repeat(1024)) };
+    let entity = Entity { class: "First".into(), ..Entity::default() };
+    let arena = DecodeArena::new();
+    let run = |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        ObjectSection::new(&ctx, vec![reference.clone()], vec![entity.clone()])
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "bind SWIFT reference classes", run);
+    let CodecError::ResourceLimit(limit) = error else { panic!("class search boundary"); };
+    // The prefix bytes, both comparison operands, and the final pair probe.
+    let search = u64::try_from("First,".len()).unwrap();
+    let comparison = u64::try_from(2 * "First".len()).unwrap();
+    assert!(run(limit.used + search + comparison + 1).unwrap().is_some());
+}

@@ -267,3 +267,36 @@ fn swift_reachability_explores_shared_descendants_once() {
     drop((visited, storage));
     ctx.finish_session().unwrap();
 }
+
+
+#[test]
+fn swift_direct_reachability_defers_subfeature_validation() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let mut feature = entity("GdtCompoundHole");
+    feature.features.references.push(reference("target", "GdtCylinder"));
+    let mut collection = entity("GdtAppliedFeatureCollection");
+    for index in 0..128 {
+        let mut applied = entity("GdtAppliedFeature");
+        applied.features.references.push(reference(&format!("child-{index}"), "GdtCylinder"));
+        collection.related.push(RelatedObject {
+            name: format!("child-{index}"),
+            class: applied.class.clone(),
+            entity: applied,
+        });
+    }
+    feature.related.push(RelatedObject {
+        name: "SubFeatures".into(),
+        class: collection.class.clone(),
+        entity: collection,
+    });
+    let index = BTreeMap::from([("root", &feature)]);
+    {
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "validate SWIFT direct subfeatures", None);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert!(crate::swift::feature_reaches(&ctx, "root", "target", &index, &mut BTreeSet::new(), 0).unwrap());
+        ctx.finish_session().unwrap();
+    }
+    assert_work_refusal_at("validate SWIFT direct subfeatures", |ctx| {
+        crate::swift::feature_reaches(ctx, "root", "absent", &index, &mut BTreeSet::new(), 0).map(drop)
+    });
+}

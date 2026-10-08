@@ -620,3 +620,30 @@ fn out_of_range_partition_body_identity_is_not_retained() {
     drop(workspace);
     ctx.finish_session().unwrap();
 }
+
+
+#[test]
+fn duplicate_configuration_body_keys_release_lookup_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let body = BodyId::mint("test:model:entity#body:repeated").unwrap();
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "append SLDPRT partition configuration",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let bodies = (0..2).map(|_| configuration_body(&ctx, &body)).collect();
+            ctx.with_scoped_storage("configuration output test workspace", || {
+                assign_configuration_bodies(&ctx, &mut CadIr::empty(), vec![(5, bodies)])
+            }).map(drop)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("configuration output boundary"); };
+    // Only the partition map, its output vector and its first identity remain live.
+    let map_node = 11 * (std::mem::size_of::<u32>() + std::mem::size_of::<Vec<BodyId>>())
+        + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<Vec<BodyId>>();
+    let output_vector = 4 * std::mem::size_of::<BodyId>();
+    assert_eq!(limit.used, u64::try_from(map_node + output_vector + body.as_str().len()).unwrap());
+}

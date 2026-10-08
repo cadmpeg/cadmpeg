@@ -222,7 +222,7 @@ fn admit_member(
     }
     if ctx.any_by(
         refs,
-        |member| ctx.equal(member.as_str(), id, OPERATION),
+        |member| ctx.equal(member.as_str(), id, "compare SLDPRT relation scalar identity"),
         OPERATION,
     )? {
         return Err(cadmpeg_core::CodecError::malformed(REPEATED_MEMBER));
@@ -413,13 +413,13 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "check SLDPRT relation scalar identity",
+            "compare SLDPRT relation scalar identity",
             |cap| {
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                let mut members = RelationScalars::from_refs(vec!["s".into()], None, None).unwrap();
+                let mut members = RelationScalars::from_refs(vec!["prior".into(), "s".into()], None, None).unwrap();
                 let before = members.clone();
                 let result = members.push(&ctx, "other");
                 assert_eq!(members, before);
