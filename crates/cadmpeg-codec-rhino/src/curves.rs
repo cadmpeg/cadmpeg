@@ -1066,6 +1066,14 @@ fn elevate_to_degree(
     if degree > target || curve.periodic() {
         return Err(error(offset, "polycurve segment knot vector is invalid"));
     }
+    let source_knots = curve.knots();
+    let domain = [
+        source_knots[degree],
+        source_knots[source_knots.len() - degree - 1],
+    ];
+    if domain[0] >= domain[1] {
+        return Err(error(offset, "polycurve segment has no nonempty span"));
+    }
     let pole_count = curve.pole_rows().count();
     let source_weight_at = |index: usize| curve.pole_rows().weight_at(index).unwrap_or(1.0);
     let rational = ctx.any_by(
@@ -1108,11 +1116,6 @@ fn elevate_to_degree(
         None
     };
 
-    let source_knots = curve.knots();
-    let domain = [
-        source_knots[degree],
-        source_knots[source_knots.len() - degree - 1],
-    ];
     let mut elevated_knots = ctx.alloc_filled(
         target
             .checked_add(1)
@@ -1167,8 +1170,14 @@ fn elevate_to_degree(
         .ok_or_else(|| error(offset, "polycurve segment has no nonempty span"))?;
     let mut b = a + 1;
     let mut start = domain[0];
-    let mut current = scratch
-        .with_storage(|| ctx.copy_slice(&points[a - degree..=a], "Rhino polycurve Bezier span"))?;
+    let span_start = a
+        .checked_sub(degree)
+        .ok_or_else(|| error(offset, "polycurve segment has no nonempty span"))?;
+    let span = points
+        .get(span_start..=a)
+        .ok_or_else(|| error(offset, "polycurve segment has no nonempty span"))?;
+    let mut current =
+        scratch.with_storage(|| ctx.copy_slice(span, "Rhino polycurve Bezier span"))?;
     let mut next =
         scratch.with_storage(|| ctx.collection_vec(degree + 1, "Rhino next Bezier span"))?;
     let mut alphas = scratch
@@ -2326,6 +2335,8 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 
 #[cfg(test)]
 mod tests {
+    mod degenerate;
+
     #[test]
     fn degree_elevation_preserves_nonuniform_rational_spans_and_unclamped_ends() {
         let curve = NurbsCurve::from_lanes(
