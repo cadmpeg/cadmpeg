@@ -2,9 +2,9 @@
 //! Spline carrier parsing and admission.
 
     use super::{
-        expanded_knots, scan_arrays, scan_curve_carriers, scan_surface_carriers, unique_knots,
-        unique_surface_knot_span, Arrays,
+        expanded_knots, scan_arrays, scan_curve_carriers, scan_surface_carriers, Arrays,
     };
+    use super::patch::{unique_knots, unique_surface_knot_span};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
@@ -869,7 +869,7 @@
     fn a_pole_whose_weighted_coordinate_overflows_declines_the_patch() {
         let point = FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0e300, 0.0, 0.0)).unwrap();
         assert_eq!(
-            super::homogeneous_poles(
+            super::patch::homogeneous_poles(
                 &cadmpeg_test_support::service_decode_context(),
                 &NurbsPoles3::Rational {
                     points: vec![cadmpeg_ir::geometry::nurbs::WeightedPole3 {
@@ -883,7 +883,7 @@
             None
         );
         assert_eq!(
-            super::homogeneous_poles(
+            super::patch::homogeneous_poles(
                 &cadmpeg_test_support::service_decode_context(),
                 &NurbsPoles3::Rational {
                     points: vec![cadmpeg_ir::geometry::nurbs::WeightedPole3 {

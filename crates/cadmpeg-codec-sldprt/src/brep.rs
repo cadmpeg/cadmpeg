@@ -17,7 +17,7 @@
 //! remains available.
 
 use self::index::scan_carriers;
-use self::spline::patch_nurbs_curve;
+use self::spline::patch::patch_nurbs_curve;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::features::FinitePoint3;

@@ -26,7 +26,7 @@ fn retained_nurbs_curve_patch_preserves_descriptor_refusal() {
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
             let mut patched = bytes.clone();
-            let result = super::patch_nurbs_curve(&ctx, &mut patched, 0, old, old, 0.001);
+            let result = super::patch::patch_nurbs_curve(&ctx, &mut patched, 0, old, old, 0.001);
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
@@ -55,7 +55,7 @@ fn retained_surface_refusal(operation: &'static str) {
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
             let mut patched = bytes.clone();
-            let result = super::patch_nurbs_surface(&ctx, &mut patched, 0, old, old, 0.001);
+            let result = super::patch::patch_nurbs_surface(&ctx, &mut patched, 0, old, old, 0.001);
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }

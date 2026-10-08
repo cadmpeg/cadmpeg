@@ -8,7 +8,7 @@ use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsPoles3, WeightedPole3};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::NonZeroReal;
 
-use super::super::{append_homogeneous_pole, homogeneous_grid_poles, homogeneous_poles};
+use super::super::patch::{append_homogeneous_pole, homogeneous_grid_poles, homogeneous_poles};
 
 fn point(x: f64) -> FinitePoint3 {
     FinitePoint3::new(Point3::new(x, 2.0, 3.0)).unwrap()

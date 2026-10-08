@@ -450,7 +450,7 @@ fn patch_surfaces(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(new)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(old)),
             ) => {
-                if crate::brep::spline::patch_nurbs_surface(
+                if crate::brep::spline::patch::patch_nurbs_surface(
                     ctx,
                     payload,
                     raw_annotation_offset(annotations, &surface.id)?,
@@ -514,7 +514,7 @@ fn patch_curves(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(new)),
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(old)),
             ) => {
-                if crate::brep::spline::patch_nurbs_curve(
+                if crate::brep::spline::patch::patch_nurbs_curve(
                     ctx,
                     payload,
                     raw_annotation_offset(annotations, &curve.id)?,
