@@ -1796,9 +1796,11 @@ fn classify_rdk_material_payload(
     if xml.last() == Some(&0) {
         return Ok(RdkMaterialPayload::CallbackOwned);
     }
-    let xml = ctx.validate_utf8(xml, "validate Rhino RDK XML UTF-8")?.map_err(|_| {
-        FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
-    })?;
+    let xml = ctx
+        .validate_utf8(xml, "validate Rhino RDK XML UTF-8")?
+        .map_err(|_| {
+            FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
+        })?;
     let admitted_document = ctx
         .parse_xml(xml, "Rhino legacy RDK XML tree")
         .or_else(|error| {
@@ -5146,14 +5148,14 @@ fn admit_group_member(
     source_order: usize,
 ) -> Result<(), CodecError> {
     workspace.with_storage(|| {
-    let members =
-        ctx.entry_hash_map(group_members, group, "Rhino group member keys")
+        let members = ctx
+            .entry_hash_map(group_members, group, "Rhino group member keys")
             .map(std::collections::hash_map::Entry::or_default)?;
-    let link = ctx.format_retained(
-        format_args!("rhino:object:record#{source_order:06}"),
-        "Rhino group member link",
-    )?;
-    ctx.push_vec(members, link, "Rhino group member links")
+        let link = ctx.format_retained(
+            format_args!("rhino:object:record#{source_order:06}"),
+            "Rhino group member link",
+        )?;
+        ctx.push_vec(members, link, "Rhino group member links")
     })
 }
 
@@ -5218,9 +5220,12 @@ pub(crate) fn install(
                 if let Some(range) =
                     optional_malformed(class_data(ctx, scan.data, record, scan.archive, GROUP))?
                 {
-                    match group_staging.with_storage(|| parse_group(ctx, scan.data, range, record.range.start)) {
+                    match group_staging
+                        .with_storage(|| parse_group(ctx, scan.data, range, record.range.start))
+                    {
                         Ok(group) => {
-                            group_staging.with_storage(|| ctx.reserve_vec(&mut groups, 1, "Rhino groups"))?;
+                            group_staging
+                                .with_storage(|| ctx.reserve_vec(&mut groups, 1, "Rhino groups"))?;
                             groups.push(group);
                             parsed = true;
                         }
@@ -5945,7 +5950,8 @@ pub(crate) fn install(
     }
     drop(group_index_counts);
     drop(group_index_workspace);
-    let disambiguated_group_count = group_staging.with_storage(|| disambiguate_group_ids(ctx, &mut groups))?;
+    let disambiguated_group_count =
+        group_staging.with_storage(|| disambiguate_group_ids(ctx, &mut groups))?;
     if disambiguated_group_count != 0 {
         push_presentation_loss(ctx, &mut losses, RhinoLossCode::DuplicateRecordResolved, format_args!(
             "{disambiguated_group_count} group source identities were disambiguated by source offset"
