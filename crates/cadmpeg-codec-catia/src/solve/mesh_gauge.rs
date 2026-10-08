@@ -3091,7 +3091,7 @@ fn mesh_coordinate_gauge_propagates_collection_refusals() {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::CollectionItems,
             operation,
-            |cap| crate::test_support::with_collection_limit(cap, &run),
+            |cap| crate::test_support::with_collection_limit(cap, run),
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
