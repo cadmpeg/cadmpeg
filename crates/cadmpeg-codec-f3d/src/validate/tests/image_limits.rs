@@ -401,7 +401,9 @@ fn decal_unnamed_projected_asset_skips_name_comparison() {
         DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
         FeatureOperation,
     };
-    crate::test_support::with_decode_context(|decode| {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let face = ir.model.faces[0].id.clone();
         let asset = cadmpeg_ir::assets::Asset::try_new(
@@ -481,5 +483,17 @@ fn decal_unnamed_projected_asset_skips_name_comparison() {
             "Fusion Decal image has an invalid frame or Design object join"
         );
         assert!(decode.resource_refusal().is_none());
+        let error = decode
+            .equal(
+                "positive control",
+                "positive control",
+                "compare F3D Decal asset name",
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "compare F3D Decal asset name")
+        );
     });
 }

@@ -374,7 +374,9 @@ limit_case!(
 
 #[test]
 fn dimension_recipe_absent_companion_member_skips_text_comparison() {
-    crate::test_support::with_decode_context(|decode| {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
         native
@@ -418,5 +420,50 @@ fn dimension_recipe_absent_companion_member_skips_text_comparison() {
             "Fusion Design dimension recipe has an invalid indexed-record owner"
         );
         assert!(decode.resource_refusal().is_none());
+        let error = decode
+            .equal(
+                "positive control",
+                "positive control",
+                "compare F3D dimension companion recipe order",
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "compare F3D dimension companion recipe order")
+        );
+    });
+}
+
+#[test]
+fn empty_dimension_presentations_skip_sketch_scope_index() {
+    use crate::records::sketch_placement::{DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement};
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let native = crate::native::F3dNative {
+            design_sketch_placements: vec![DesignSketchPlacement {
+                id: "f3d:test:sketch-placement#1".into(),
+                scope_record_index: Some(2),
+                entity_id: crate::records::identity::DesignEntityId::from_parts("sketch", 1),
+                visibility: None,
+                class_tag: "256".to_owned().try_into().unwrap(),
+                record_index: 1,
+                paired_class_tag: "257".to_owned().try_into().unwrap(),
+                frame: DesignSketchFrame::new(10, DesignSketchFrameForm::ScopeCompact).unwrap(),
+            }], ..Default::default()
+        };
+        let ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "index F3D dimension presentation sketch scopes", None,
+        );
+        let mut findings = Vec::new();
+        super::super::validate_dimension_presentation_frames(&ctx, &mut findings).unwrap();
+        assert!(findings.is_empty());
+        assert!(decode.resource_refusal().is_none());
+        assert!(decode.admit_iter(&native.design_sketch_placements,
+            "index F3D dimension presentation sketch scopes").is_err());
     });
 }
