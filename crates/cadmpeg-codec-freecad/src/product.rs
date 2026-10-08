@@ -32,14 +32,20 @@ pub(crate) fn transfer(
     properties: &[PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<ProductNodeRecord>, CodecError> {
-    let (by_owner, _storage) = ctx.collect_scoped_btree_groups(
+    let owner_index = ctx.collect_scoped_btree_groups(
         properties
             .iter()
             .map(|property| (property.owner.as_str(), property)),
         "fcstd product owner index",
     )?;
+    let _storage = owner_index.1;
+    let by_owner = owner_index.0;
     let mut output = Vec::new();
-    for object in ctx.admit_iter(objects, "fcstd product object records")? {
+    let mut object_visits = objects.iter();
+    while object_visits.len() != 0 {
+        let Some(object) = ctx.next_charged(&mut object_visits, "fcstd product object records")? else {
+            break;
+        };
         let Some(kind) = product_kind(&object.type_name) else {
             continue;
         };
@@ -177,10 +183,15 @@ fn linked_object_names(
     links: &[Option<crate::native::LinkTarget>],
 ) -> Result<Vec<String>, CodecError> {
     let mut names = Vec::new();
-    for link in ctx
-        .admit_iter(links, "fcstd product linked objects")?
-        .flatten()
-    {
+    ctx.charge_work(0, "fcstd product linked objects")?;
+    let mut link_visits = links.iter();
+    while link_visits.len() != 0 {
+        let Some(link) = ctx.next_charged(&mut link_visits, "fcstd product linked objects")? else {
+            break;
+        };
+        let Some(link) = link else {
+            continue;
+        };
         if let Some(name) = link.object() {
             ctx.push_vec(
                 &mut names,
@@ -196,8 +207,13 @@ fn nonempty_subelements(
     ctx: &DecodeContext<'_>,
     values: &[String],
 ) -> Result<Vec<String>, CodecError> {
+    ctx.charge_work(0, "fcstd product subelements")?;
     let mut subelements = Vec::new();
-    for value in ctx.admit_iter(values, "fcstd product subelements")? {
+    let mut value_visits = values.iter();
+    while value_visits.len() != 0 {
+        let Some(value) = ctx.next_charged(&mut value_visits, "fcstd product subelements")? else {
+            break;
+        };
         if !value.is_empty() {
             ctx.push_vec(
                 &mut subelements,
@@ -213,8 +229,13 @@ fn product_record_index<'a>(
     ctx: &DecodeContext<'_>,
     records: &'a [ProductNodeRecord],
 ) -> Result<HashMap<&'a str, &'a ProductNodeRecord>, CodecError> {
+    ctx.charge_work(0, "fcstd product record index")?;
     let mut index = HashMap::new();
-    for record in ctx.admit_iter(records, "fcstd product record index")? {
+    let mut record_visits = records.iter();
+    while record_visits.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product record index")? else {
+            break;
+        };
         if ctx
             .insert_hash_map(
                 &mut index,
@@ -256,7 +277,11 @@ pub(crate) fn transfer_neutral(
     let record_by_object = storage.with_storage(|| product_record_index(ctx, records))?;
     let mut component_objects = Vec::new();
     let mut occurrence_objects = HashSet::new();
-    for record in ctx.admit_iter(records, "fcstd product component records")? {
+    let mut record_visits = records.iter();
+    while record_visits.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product component records")? else {
+            break;
+        };
         if matches!(record.node, ProductNode::Occurrence(_)) {
             storage.with_storage(|| {
                 ctx.insert_hash_set(
@@ -272,8 +297,16 @@ pub(crate) fn transfer_neutral(
             component_objects.push(record.object.as_str());
         }
     }
-    for record in ctx.admit_iter(records, "fcstd product component records")? {
-        for member in ctx.admit_iter(record.members(), "fcstd product component members")? {
+    let mut record_visits = records.iter();
+    while record_visits.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product component records")? else {
+            break;
+        };
+        let mut member_visits = record.members().iter();
+        while member_visits.len() != 0 {
+            let Some(member) = ctx.next_charged(&mut member_visits, "fcstd product component members")? else {
+                break;
+            };
             if ctx.contains_hash_set(
                 &occurrence_objects,
                 member.as_str(),
@@ -310,14 +343,22 @@ pub(crate) fn transfer_neutral(
                 }
             }
         }
-        for name in ctx.admit_iter(record.element_objects(), "fcstd product element objects")? {
+        let mut element_visits = record.element_objects().iter();
+        while element_visits.len() != 0 {
+            let Some(name) = ctx.next_charged(&mut element_visits, "fcstd product element objects")? else {
+                break;
+            };
             storage.with_storage(|| {
                 ctx.reserve_vec(&mut component_objects, 1, "fcstd product component names")
             })?;
             component_objects.push(name);
         }
     }
-    for joint in ctx.admit_iter(joints, "fcstd product joint records")? {
+    let mut joint_visits = joints.iter();
+    while joint_visits.len() != 0 {
+        let Some(joint) = ctx.next_charged(&mut joint_visits, "fcstd product joint records")? else {
+            break;
+        };
         for reference in joint.references() {
             if reference.document().is_none() {
                 if let Some(name) = reference.object() {
@@ -347,14 +388,20 @@ pub(crate) fn transfer_neutral(
         return Ok((Vec::new(), Vec::new()));
     }
 
-    let (properties_by_owner, _owner_storage) = ctx.collect_scoped_btree_groups(
+    let owner_index = ctx.collect_scoped_btree_groups(
         properties
             .iter()
             .map(|property| (property.owner.as_str(), property)),
         "fcstd product neutral owner index",
     )?;
+    let _owner_storage = owner_index.1;
+    let properties_by_owner = owner_index.0;
     let mut placements_by_object = BTreeMap::new();
-    for (&owner, owned) in ctx.admit_iter(&properties_by_owner, "fcstd product placement owners")? {
+    let mut owner_visits = properties_by_owner.iter();
+    while owner_visits.len() != 0 {
+        let Some((&owner, owned)) = ctx.next_charged(&mut owner_visits, "fcstd product placement owners")? else {
+            break;
+        };
         if let Some((_, Some(placement))) = selected_placement(ctx, owned)? {
             storage.with_storage(|| {
                 ctx.insert_btree_map(
@@ -386,11 +433,19 @@ pub(crate) fn transfer_neutral(
         .map_err(CodecError::malformed)
     };
     let mut parent_by_object = HashMap::<&str, &str>::new();
-    for record in ctx
-        .admit_iter(records, "fcstd product projection records")?
-        .filter(|record| !matches!(record.node, ProductNode::Occurrence(_)))
-    {
-        for member in ctx.admit_iter(record.members(), "fcstd product parent members")? {
+    let mut record_visits = records.iter();
+    while record_visits.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product projection records")? else {
+            break;
+        };
+        if matches!(record.node, ProductNode::Occurrence(_)) {
+            continue;
+        }
+        let mut member_visits = record.members().iter();
+        while member_visits.len() != 0 {
+            let Some(member) = ctx.next_charged(&mut member_visits, "fcstd product parent members")? else {
+                break;
+            };
             let member = member.as_str();
             match ctx.get_hash_map(&parent_by_object, member, "fcstd product parent lookup")? {
                 None => {
@@ -421,10 +476,14 @@ pub(crate) fn transfer_neutral(
     }
 
     let mut occurrences = Vec::new();
-    for record in ctx
-        .admit_iter(records, "fcstd product projection records")?
-        .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
-    {
+    let mut record_visits = records.iter();
+    while record_visits.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut record_visits, "fcstd product projection records")? else {
+            break;
+        };
+        if !matches!(record.node, ProductNode::Occurrence(_)) {
+            continue;
+        }
         let count = occurrence_count(ctx, record)?.get();
         let parent = ctx
             .get_hash_map(
@@ -443,7 +502,11 @@ pub(crate) fn transfer_neutral(
                 &mut Vec::new(),
             )
         })?;
-        for index in ctx.admit_iter(0..count, "fcstd product occurrence elements")? {
+        let mut element_visits = 0..count;
+        while element_visits.len() != 0 {
+            let Some(index) = ctx.next_charged(&mut element_visits, "fcstd product occurrence elements")? else {
+                break;
+            };
             let element = count > 1;
             let element_transform = record.element_transforms().get(index).copied();
             let local_transform = record
@@ -568,7 +631,11 @@ pub(crate) fn transfer_neutral(
 
     let mut object_by_id = HashMap::new();
     if !component_objects.is_empty() {
-        for object in ctx.admit_iter(objects, "fcstd product source objects")? {
+        let mut object_visits = objects.iter();
+        while object_visits.len() != 0 {
+            let Some(object) = ctx.next_charged(&mut object_visits, "fcstd product source objects")? else {
+                break;
+            };
             storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut object_by_id,
@@ -584,7 +651,11 @@ pub(crate) fn transfer_neutral(
     if !component_objects.is_empty() && !bodies.is_empty() {
         let mut body_lookup_storage = ctx.reserve_scoped(0, "fcstd product body owner lookups")?;
         let mut property_owner = HashMap::new();
-        for property in ctx.admit_iter(properties, "fcstd product source properties")? {
+        let mut property_visits = properties.iter();
+        while property_visits.len() != 0 {
+            let Some(property) = ctx.next_charged(&mut property_visits, "fcstd product source properties")? else {
+                break;
+            };
             body_lookup_storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut property_owner,
@@ -595,7 +666,11 @@ pub(crate) fn transfer_neutral(
             })?;
         }
         let mut body_owners = BTreeMap::new();
-        for payload in ctx.admit_iter(payloads, "fcstd product shape payloads")? {
+        let mut payload_visits = payloads.iter();
+        while payload_visits.len() != 0 {
+            let Some(payload) = ctx.next_charged(&mut payload_visits, "fcstd product shape payloads")? else {
+                break;
+            };
             if let Some(owner) = ctx.get_hash_map(
                 &property_owner,
                 payload.property.as_str(),
@@ -613,7 +688,11 @@ pub(crate) fn transfer_neutral(
                 })?;
             }
         }
-        for body in ctx.admit_iter(bodies, "fcstd product source bodies")? {
+        let mut body_visits = bodies.iter();
+        while body_visits.len() != 0 {
+            let Some(body) = ctx.next_charged(&mut body_visits, "fcstd product source bodies")? else {
+                break;
+            };
             // The child label is one encoded segment after the payload key.
             let Some(separator) = ctx.rposition_by(
                 body.id.as_str().as_bytes(),
@@ -641,7 +720,11 @@ pub(crate) fn transfer_neutral(
     }
     let mut definitions =
         ctx.collection_vec(component_objects.len(), "fcstd product definitions")?;
-    for &object in ctx.admit_iter(&component_objects, "fcstd product definition objects")? {
+    let mut definition_visits = component_objects.iter();
+    while definition_visits.len() != 0 {
+        let Some(&object) = ctx.next_charged(&mut definition_visits, "fcstd product definition objects")? else {
+            break;
+        };
         let record = ctx
             .get_hash_map(&record_by_object, object, "fcstd product record lookup")?
             .copied();
@@ -692,7 +775,11 @@ pub(crate) fn transfer_neutral(
             object,
             "fcstd product definition body lookup",
         )? {
-            for body in ctx.admit_iter(owned_bodies, "fcstd product definition body records")? {
+            let mut body_visits = owned_bodies.iter();
+            while body_visits.len() != 0 {
+                let Some(body) = ctx.next_charged(&mut body_visits, "fcstd product definition body records")? else {
+                    break;
+                };
                 ctx.push_vec(
                     &mut definition_bodies,
                     body.id
@@ -718,7 +805,11 @@ pub(crate) fn transfer_neutral(
         });
     }
 
-    for object in ctx.admit_iter(&component_objects, "fcstd product container objects")? {
+    let mut container_visits = component_objects.iter();
+    while container_visits.len() != 0 {
+        let Some(object) = ctx.next_charged(&mut container_visits, "fcstd product container objects")? else {
+            break;
+        };
         let record = ctx
             .get_hash_map(&record_by_object, *object, "fcstd product record lookup")?
             .copied();
@@ -762,7 +853,11 @@ pub(crate) fn transfer_neutral(
         });
     }
     let mut next_ordinal = HashMap::<Option<&str>, u32>::new();
-    for occurrence in ctx.admit_iter(&mut occurrences, "fcstd product ordinal occurrences")? {
+    let mut ordinal_visits = occurrences.iter_mut();
+    while ordinal_visits.len() != 0 {
+        let Some(occurrence) = ctx.next_charged(&mut ordinal_visits, "fcstd product ordinal occurrences")? else {
+            break;
+        };
         let parent = match &occurrence.parent {
             OccurrenceParent::Root {} => None,
             OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str()),
@@ -1570,14 +1665,20 @@ pub(crate) fn product_cycle_nodes<'a>(
     ctx: &DecodeContext<'_>,
     records: &'a [ProductNodeRecord],
 ) -> Result<BTreeSet<&'a str>, CodecError> {
-    let (nodes, _node_storage) = ctx.collect_scoped_btree_map(
+    let node_index = ctx.collect_scoped_btree_map(
         records.iter().map(|node| (node.object.as_str(), node)),
         "fcstd product cycle index",
     )?;
+    let _node_storage = node_index.1;
+    let nodes = node_index.0;
     let mut storage = ctx.reserve_scoped(0, "fcstd product cycle workspace")?;
     let mut forward = BTreeMap::new();
     let mut reverse = BTreeMap::<&str, Vec<&str>>::new();
-    for (&source, _) in ctx.admit_iter(&nodes, "fcstd product reverse nodes")? {
+    let mut node_visits = nodes.iter();
+    while node_visits.len() != 0 {
+        let Some((&source, _)) = ctx.next_charged(&mut node_visits, "fcstd product reverse nodes")? else {
+            break;
+        };
         storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut reverse,
@@ -1587,13 +1688,24 @@ pub(crate) fn product_cycle_nodes<'a>(
             )
         })?;
     }
-    for (&source, node) in ctx.admit_iter(&nodes, "fcstd product cycle nodes")? {
+    let mut node_visits = nodes.iter();
+    while node_visits.len() != 0 {
+        let Some((&source, node)) = ctx.next_charged(&mut node_visits, "fcstd product cycle nodes")? else {
+            break;
+        };
         let mut targets = Vec::new();
-        for target in ctx
-            .admit_iter(node.members(), "fcstd product cycle members")?
-            .map(String::as_str)
-            .chain(node.prototype().filter(|_| node.external_document().is_none()))
-        {
+        let mut member_visits = node.members().iter();
+        let mut prototype = node.prototype().filter(|_| node.external_document().is_none());
+        while member_visits.len() != 0 || prototype.is_some() {
+            let target = if member_visits.len() != 0 {
+                ctx.next_charged(&mut member_visits, "fcstd product cycle members")?
+                    .map(String::as_str)
+            } else {
+                prototype.take()
+            };
+            let Some(target) = target else {
+                break;
+            };
             if ctx.contains_key_btree_map(&nodes, target, "fcstd product cycle target lookup")? {
                 storage.with_storage(|| {
                     ctx.push_vec(&mut targets, target, "fcstd product cycle targets")
@@ -1614,7 +1726,11 @@ pub(crate) fn product_cycle_nodes<'a>(
 
     let mut visited = HashSet::new();
     let mut finish = Vec::new();
-    for (&root, _) in ctx.admit_iter(&nodes, "fcstd product forward roots")? {
+    let mut root_visits = nodes.iter();
+    while root_visits.len() != 0 {
+        let Some((&root, _)) = ctx.next_charged(&mut root_visits, "fcstd product forward roots")? else {
+            break;
+        };
         if ctx.contains_hash_set(&visited, root, "fcstd product visited lookup")? {
             continue;
         }
@@ -1623,10 +1739,13 @@ pub(crate) fn product_cycle_nodes<'a>(
         traversal_storage.with_storage(|| {
             ctx.push_vec(&mut stack, (root, false), "fcstd product forward stack")
         })?;
-        while let Some((current, exiting)) = ctx.next_charged(
-            &mut std::iter::from_fn(|| stack.pop()),
-            "fcstd product forward traversal",
-        )? {
+        while !stack.is_empty() {
+            let Some((current, exiting)) = ctx.next_charged(
+                &mut std::iter::from_fn(|| stack.pop()),
+                "fcstd product forward traversal",
+            )? else {
+                break;
+            };
             if exiting {
                 storage.with_storage(|| {
                     ctx.push_vec(&mut finish, current, "fcstd product finish order")
@@ -1644,10 +1763,11 @@ pub(crate) fn product_cycle_nodes<'a>(
             if let Some(targets) =
                 ctx.get_btree_map(&forward, current, "fcstd product forward lookup")?
             {
-                for &target in ctx
-                    .admit_iter(targets, "fcstd product forward edges")?
-                    .rev()
-                {
+                let mut target_visits = targets.iter().rev();
+                while target_visits.len() != 0 {
+                    let Some(&target) = ctx.next_charged(&mut target_visits, "fcstd product forward edges")? else {
+                        break;
+                    };
                     traversal_storage.with_storage(|| {
                         ctx.push_vec(&mut stack, (target, false), "fcstd product forward stack")
                     })?;
@@ -1658,7 +1778,11 @@ pub(crate) fn product_cycle_nodes<'a>(
 
     let mut assigned = HashSet::new();
     let mut cyclic = BTreeSet::new();
-    for root in ctx.admit_iter(finish, "fcstd product reverse roots")?.rev() {
+    let mut root_visits = finish.into_iter().rev();
+    while root_visits.len() != 0 {
+        let Some(root) = ctx.next_charged(&mut root_visits, "fcstd product reverse roots")? else {
+            break;
+        };
         if !storage.with_storage(|| {
             ctx.insert_hash_set(&mut assigned, root, "fcstd product assigned nodes")
         })? {
@@ -1669,17 +1793,24 @@ pub(crate) fn product_cycle_nodes<'a>(
         let mut stack = Vec::new();
         component_storage
             .with_storage(|| ctx.push_vec(&mut stack, root, "fcstd product reverse stack"))?;
-        while let Some(current) = ctx.next_charged(
-            &mut std::iter::from_fn(|| stack.pop()),
-            "fcstd product reverse traversal",
-        )? {
+        while !stack.is_empty() {
+            let Some(current) = ctx.next_charged(
+                &mut std::iter::from_fn(|| stack.pop()),
+                "fcstd product reverse traversal",
+            )? else {
+                break;
+            };
             component_storage.with_storage(|| {
                 ctx.push_vec(&mut component, current, "fcstd product component nodes")
             })?;
             if let Some(sources) =
                 ctx.get_btree_map(&reverse, current, "fcstd product reverse lookup")?
             {
-                for &source in ctx.admit_iter(sources, "fcstd product reverse edges")? {
+                let mut source_visits = sources.iter();
+                while source_visits.len() != 0 {
+                    let Some(&source) = ctx.next_charged(&mut source_visits, "fcstd product reverse edges")? else {
+                        break;
+                    };
                     if storage.with_storage(|| {
                         ctx.insert_hash_set(&mut assigned, source, "fcstd product assigned nodes")
                     })? {
@@ -1703,7 +1834,11 @@ pub(crate) fn product_cycle_nodes<'a>(
             false
         };
         if component.len() > 1 || self_cycle {
-            for member in ctx.admit_iter(&component, "fcstd product cyclic component")? {
+            let mut component_visits = component.iter();
+            while component_visits.len() != 0 {
+                let Some(member) = ctx.next_charged(&mut component_visits, "fcstd product cyclic component")? else {
+                    break;
+                };
                 ctx.insert_btree_set(&mut cyclic, *member, "fcstd product cyclic nodes")?;
             }
         }

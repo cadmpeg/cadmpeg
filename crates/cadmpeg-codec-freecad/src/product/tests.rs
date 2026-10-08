@@ -18,6 +18,7 @@ mod body_owner_tests;
 mod graph_diagnostic_tests;
 mod property_diagnostic_tests;
 mod resource_admission_tests;
+mod source_visits;
 
 #[test]
 fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
