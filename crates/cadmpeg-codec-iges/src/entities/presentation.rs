@@ -14,6 +14,7 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy)]
@@ -68,23 +69,26 @@ fn push_presentation_loss(
 fn text_font_definition_pointer_valid(
     value: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> bool {
-    value
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let Some(sequence) = value
         .checked_neg()
         .and_then(|value| u32::try_from(value).ok())
-        .is_some_and(|sequence| {
-            sequence % 2 == 1
-                && entries
-                    .get(&sequence)
-                    .is_some_and(|entry| entry.entity_type == 310 && entry.form == 0)
-        })
+        .filter(|sequence| sequence % 2 == 1)
+    else {
+        return Ok(false);
+    };
+    Ok(ctx
+        .get_btree_map(entries, &sequence, "iges presentation font pointer lookup")?
+        .is_some_and(|entry| entry.entity_type == 310 && entry.form == 0))
 }
 
 pub(super) fn general_note_font_valid_for_global_table(
     value: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let standard = match global_table {
         GlobalTable::V4_0 => {
             matches!(
@@ -103,7 +107,11 @@ pub(super) fn general_note_font_valid_for_global_table(
             )
         }
     };
-    standard || text_font_definition_pointer_valid(value, entries)
+    if standard {
+        Ok(true)
+    } else {
+        text_font_definition_pointer_valid(value, entries, ctx)
+    }
 }
 
 pub(super) fn new_general_note_font_valid(value: i64) -> bool {
@@ -113,9 +121,13 @@ pub(super) fn new_general_note_font_valid(value: i64) -> bool {
 pub(super) fn new_general_note_charset_valid(
     value: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
-) -> bool {
-    matches!(value, 1 | 1001 | 1002 | 1003 | 2001 | 3001)
-        || text_font_definition_pointer_valid(value, entries)
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    if matches!(value, 1 | 1001 | 1002 | 1003 | 2001 | 3001) {
+        Ok(true)
+    } else {
+        text_font_definition_pointer_valid(value, entries, ctx)
+    }
 }
 
 fn line_font_definition_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
@@ -155,7 +167,7 @@ fn directory_line_weight_is_semantic(entry: &DirectoryEntry, global_table: Globa
 
 fn appearance(
     ir: &mut CadIr,
-    id: AppearanceId,
+    id: Cow<'_, AppearanceId>,
     name: Option<&[u8]>,
     color: Color,
     ctx: &DecodeContext<'_>,
@@ -191,6 +203,10 @@ fn appearance(
             "iges neutral appearance slots",
         )?;
         ctx.charge_entities(1, "iges_geometry_presentation")?;
+        let id = match id {
+            Cow::Borrowed(id) => id.try_clone_for_decode(ctx, "iges appearance ID copy")?,
+            Cow::Owned(id) => id,
+        };
         ir.model.appearances.push(Appearance {
             id,
             name,
@@ -230,15 +246,22 @@ fn text_font_definition(
     let supersedes = match record.value(3) {
         None | Some(TokenValue::Omitted) => None,
         Some(TokenValue::Integer(value)) if *value >= 0 => None,
-        Some(TokenValue::Integer(value)) => value
-            .checked_neg()
-            .and_then(|value| u32::try_from(value).ok())
-            .filter(|sequence| sequence % 2 == 1)
-            .filter(|sequence| {
-                entries
-                    .get(sequence)
-                    .is_some_and(|target| target.entity_type == 310 && target.form == 0)
-            }),
+        Some(TokenValue::Integer(value)) => {
+            let Some(sequence) = value
+                .checked_neg()
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|sequence| sequence % 2 == 1)
+            else {
+                return Ok(None);
+            };
+            ctx.get_btree_map(
+                entries,
+                &sequence,
+                "iges presentation font pointer lookup",
+            )?
+            .filter(|target| target.entity_type == 310 && target.form == 0)
+            .map(|_| sequence)
+        }
         Some(TokenValue::Real(_) | TokenValue::String(_)) => return Ok(None),
     };
     if record.integer(3).is_some_and(|value| value < 0) && supersedes.is_none() {
@@ -318,8 +341,12 @@ pub(super) fn project(
         .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        if let Some(font) = records
-            .get(&entry.sequence)
+        let record = ctx.get_btree_map(
+            records,
+            &entry.sequence,
+            "iges presentation Parameter Data lookup",
+        )?;
+        if let Some(font) = record
             .copied()
             .map(|record| text_font_definition(entry, record, entries, global.global_table(), ctx))
             .transpose()?
@@ -343,14 +370,17 @@ pub(super) fn project(
     {
         let mut cycle_storage = ctx.reserve_scoped(0, "iges font cycle scratch")?;
         let mut active = BTreeSet::new();
-        let mut chain = std::iter::successors(Some(entry.sequence), |sequence| {
-            text_fonts.get(sequence).and_then(|font| font.supersedes)
-        });
+        let mut next_sequence = Some(entry.sequence);
         let cyclic = loop {
-            let Some(sequence) = ctx.next_charged(&mut chain, "iges font cycle traversal")? else {
+            let mut current = next_sequence.into_iter();
+            let Some(sequence) = ctx.next_charged(&mut current, "iges font cycle traversal")? else {
                 break false;
             };
-            if let Some(cyclic) = cyclic_fonts.get(&sequence) {
+            if let Some(cyclic) = ctx.get_btree_map(
+                &cyclic_fonts,
+                &sequence,
+                "iges font cycle result lookup",
+            )? {
                 break *cyclic;
             }
             if !cycle_storage.with_storage(|| {
@@ -358,6 +388,13 @@ pub(super) fn project(
             })? {
                 break true;
             }
+            next_sequence = ctx
+                .get_btree_map(
+                    &text_fonts,
+                    &sequence,
+                    "iges text font chain lookup",
+                )?
+                .and_then(|font| font.supersedes);
         };
         for sequence in ctx.admit_iter(active, "iges font cycle result traversal")? {
             scratch.with_storage(|| {
@@ -369,10 +406,21 @@ pub(super) fn project(
                 )
             })?;
         }
-        let target_valid = text_fonts.get(&entry.sequence).is_some_and(|font| {
-            font.supersedes
-                .is_none_or(|target| text_fonts.contains_key(&target))
-        });
+        let target_valid = match ctx.get_btree_map(
+            &text_fonts,
+            &entry.sequence,
+            "iges text font target lookup",
+        )? {
+            Some(font) => match font.supersedes {
+                Some(target) => ctx.contains_key_btree_map(
+                    &text_fonts,
+                    &target,
+                    "iges text font target lookup",
+                )?,
+                None => true,
+            },
+            None => false,
+        };
         if target_valid && !cyclic {
             ctx.insert_btree_set(
                 &mut decoded,
@@ -388,15 +436,30 @@ pub(super) fn project(
         .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges presentation Parameter Data lookup",
+            )?
+            .copied()
+        else {
             push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
         let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
-        let font_valid = font.is_some_and(|font| {
-            general_note_font_valid_for_global_table(font, entries, global.global_table())
-        });
+        let font_valid = match font {
+            Some(font) => {
+                general_note_font_valid_for_global_table(
+                    font,
+                    entries,
+                    global.global_table(),
+                    ctx,
+                )?
+            }
+            None => false,
+        };
         let directory_valid = text_template_directory_valid(entry, global.global_table());
         let fields_valid = parameter_end <= 11
             && (1..=2).all(|index| {
@@ -427,7 +490,14 @@ pub(super) fn project(
         .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 406 && entry.form == 1)
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges presentation Parameter Data lookup",
+            )?
+            .copied()
+        else {
             push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
@@ -473,7 +543,14 @@ pub(super) fn project(
         .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges presentation Parameter Data lookup",
+            )?
+            .copied()
+        else {
             push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
@@ -491,12 +568,16 @@ pub(super) fn project(
                 .integer(2)
                 .and_then(|value| u32::try_from(value).ok());
             matches!(record.integer(1), Some(0 | 1))
-                && template.is_some_and(|sequence| {
-                    sequence % 2 == 1
-                        && entries
-                            .get(&sequence)
-                            .is_some_and(|target| target.entity_type == 308 && target.form == 0)
-                })
+                && match template {
+                    Some(sequence) if sequence % 2 == 1 => ctx
+                        .get_btree_map(
+                            entries,
+                            &sequence,
+                            "iges presentation line font template lookup",
+                        )?
+                        .is_some_and(|target| target.entity_type == 308 && target.form == 0),
+                    _ => false,
+                }
                 && record
                     .number(3)
                     .is_some_and(|value| value.is_finite() && value > 0.0)
@@ -558,7 +639,14 @@ pub(super) fn project(
         .admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = ctx
+            .get_btree_map(
+                records,
+                &entry.sequence,
+                "iges presentation Parameter Data lookup",
+            )?
+            .copied()
+        else {
             push_presentation_loss(ctx, &mut losses, entry, "Parameter Data record is missing")?;
             continue;
         };
@@ -629,12 +717,13 @@ pub(super) fn project(
                 "iges presentation defined colors",
             )
         })?;
+        let appearance_id = crate::ids::appearance_color_admitted(
+            &crate::ids::Stem::directory(entry.sequence),
+            ctx,
+        )?;
         appearance(
             ir,
-            crate::ids::appearance_color_admitted(
-                &crate::ids::Stem::directory(entry.sequence),
-                ctx,
-            )?,
+            Cow::Owned(appearance_id),
             name,
             color,
             ctx,
@@ -647,22 +736,38 @@ pub(super) fn project(
         )?;
     }
 
-    let resolve_color = |value: i64| -> Option<Color> {
-        match value.cmp(&0) {
+    let resolve_color = |value: i64| -> Result<Option<Color>, CodecError> {
+        Ok(match value.cmp(&0) {
             std::cmp::Ordering::Greater => standard_color(value),
             std::cmp::Ordering::Less => {
-                let sequence = u32::try_from(value.checked_neg()?).ok()?;
-                let entry = entries.get(&sequence)?;
+                let Some(sequence) = value
+                    .checked_neg()
+                    .and_then(|value| u32::try_from(value).ok())
+                else {
+                    return Ok(None);
+                };
+                let Some(entry) = ctx.get_btree_map(
+                    entries,
+                    &sequence,
+                    "iges presentation color definition lookup",
+                )? else {
+                    return Ok(None);
+                };
                 if entry.entity_type != 314 || entry.form != 0 {
-                    return None;
+                    return Ok(None);
                 }
-                defined.get(&sequence).copied()
+                ctx.get_btree_map(
+                    &defined,
+                    &sequence,
+                    "iges presentation defined color lookup",
+                )?
+                .copied()
             }
             std::cmp::Ordering::Equal => None,
-        }
+        })
     };
     let resolve = |value: i64| -> Result<Option<(AppearanceId, Color)>, CodecError> {
-        let Some(color) = resolve_color(value) else {
+        let Some(color) = resolve_color(value)? else {
             return Ok(None);
         };
         let id = if value > 0 {
@@ -685,7 +790,7 @@ pub(super) fn project(
             entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
         })
     {
-        if resolve_color(entry.color).is_none() {
+        if resolve_color(entry.color)?.is_none() {
             push_presentation_loss(
                 ctx,
                 &mut losses,
@@ -699,12 +804,20 @@ pub(super) fn project(
         .filter(|entry| entry.level < 0)
     {
         let sequence = entry.level.unsigned_abs();
-        if u32::try_from(sequence).ok().is_none_or(|sequence| {
-            !decoded.contains(&sequence)
-                || entries
-                    .get(&sequence)
-                    .is_none_or(|target| target.entity_type != 406 || target.form != 1)
-        }) {
+        let target_valid = match u32::try_from(sequence) {
+            Ok(sequence) => {
+                ctx.contains_btree_set(&decoded, &sequence, "iges presentation decoded lookup")?
+                    && ctx
+                        .get_btree_map(
+                            entries,
+                            &sequence,
+                            "iges presentation definition level target lookup",
+                        )?
+                        .is_some_and(|target| target.entity_type == 406 && target.form == 1)
+            }
+            Err(_) => false,
+        };
+        if !target_valid {
             push_presentation_loss(
                 ctx,
                 &mut losses,
@@ -732,18 +845,32 @@ pub(super) fn project(
 
     for curve in ctx.admit_iter(&mut ir.model.curves, "iges curve display traversal")? {
         if let Some(source) = &mut curve.source_object {
-            source.color = sequences
-                .curve(&curve.id, ctx)?
-                .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| resolve_color(entry.color));
+            source.color = match sequences.curve(&curve.id, ctx)? {
+                Some(sequence) => match ctx.get_btree_map(
+                    entries,
+                    &sequence,
+                    "iges presentation source color entry lookup",
+                )? {
+                    Some(entry) => resolve_color(entry.color)?,
+                    None => None,
+                },
+                None => None,
+            };
         }
     }
     for surface in ctx.admit_iter(&mut ir.model.surfaces, "iges surface display traversal")? {
         if let Some(source) = &mut surface.source_object {
-            source.color = sequences
-                .surface(&surface.id, ctx)?
-                .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| resolve_color(entry.color));
+            source.color = match sequences.surface(&surface.id, ctx)? {
+                Some(sequence) => match ctx.get_btree_map(
+                    entries,
+                    &sequence,
+                    "iges presentation source color entry lookup",
+                )? {
+                    Some(entry) => resolve_color(entry.color)?,
+                    None => None,
+                },
+                None => None,
+            };
         }
     }
 
@@ -752,10 +879,14 @@ pub(super) fn project(
         let Some(sequence) = sequences.body(&body.id, ctx)? else {
             continue;
         };
-        let Some((sequence, color_number, visible)) = (|| {
-            let entry = entries.get(&sequence)?;
-            Some((sequence, entry.color, entry.status.is_visible()))
-        })() else {
+        let Some((sequence, color_number, visible)) = ctx
+            .get_btree_map(
+                entries,
+                &sequence,
+                "iges presentation body directory lookup",
+            )?
+            .map(|entry| (sequence, entry.color, entry.status.is_visible()))
+        else {
             continue;
         };
         let Some((appearance_id, color)) = resolve(color_number)? else {
@@ -769,7 +900,7 @@ pub(super) fn project(
         body.visible = Some(visible);
         appearance(
             ir,
-            appearance_id.try_clone_for_decode(ctx, "iges appearance ID copy")?,
+            Cow::Borrowed(&appearance_id),
             None,
             color,
             ctx,
@@ -800,16 +931,25 @@ pub(super) fn project(
     let mut body_names = BTreeMap::<u32, Option<&str>>::new();
     for body in ctx.admit_iter(&mut ir.model.bodies, "iges body name traversal")? {
         if body.visible.is_none() {
-            body.visible = sequences
-                .body(&body.id, ctx)?
-                .and_then(|sequence| entries.get(&sequence))
-                .map(|entry| entry.status.is_visible());
+            body.visible = match sequences.body(&body.id, ctx)? {
+                Some(sequence) => ctx
+                    .get_btree_map(
+                        entries,
+                        &sequence,
+                        "iges presentation body visibility lookup",
+                    )?
+                    .map(|entry| entry.status.is_visible()),
+                None => None,
+            };
         }
         let Some(sequence) = sequences.body(&body.id, ctx)? else {
             continue;
         };
-        let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
-            trailing_pointer_analysis.get(&sequence)
+        let Some(TrailingPointerAnalysis::Unambiguous(groups)) = ctx.get_btree_map(
+            trailing_pointer_analysis,
+            &sequence,
+            "iges presentation body property analysis lookup",
+        )?
         else {
             continue;
         };
@@ -819,13 +959,21 @@ pub(super) fn project(
         while let Some(pointer) =
             ctx.next_charged(&mut properties, "iges body property traversal")?
         {
-            if entries
-                .get(pointer)
-                .is_none_or(|entry| entry.entity_type != 406 || entry.form != 15)
-            {
+            let Some(entry) = ctx.get_btree_map(
+                entries,
+                pointer,
+                "iges body property Directory lookup",
+            )? else {
+                continue;
+            };
+            if entry.entity_type != 406 || entry.form != 15 {
                 continue;
             }
-            let Some(record) = records.get(pointer) else {
+            let Some(record) = ctx.get_btree_map(
+                records,
+                pointer,
+                "iges body property Parameter Data lookup",
+            )? else {
                 continue;
             };
             if record.integer(1) != Some(1) {
@@ -834,7 +982,11 @@ pub(super) fn project(
             let Some(name) = record.string(2).filter(|name| !name.is_empty()) else {
                 continue;
             };
-            let name = if let Some(name) = body_names.get(pointer) {
+            let name = if let Some(name) = ctx.get_btree_map(
+                &body_names,
+                pointer,
+                "iges body property name cache lookup",
+            )? {
                 *name
             } else {
                 let name = if ctx.all_by(
@@ -884,7 +1036,11 @@ pub(super) fn project(
             }
         }
         if conflicting {
-            if let Some(entry) = entries.get(&sequence) {
+            if let Some(entry) = ctx.get_btree_map(
+                entries,
+                &sequence,
+                "iges body name owner lookup",
+            )? {
                 push_attributed_loss(
                     ctx,
                     &mut losses,
@@ -908,10 +1064,14 @@ pub(super) fn project(
         let Some(sequence) = sequences.face(&face.id, ctx)? else {
             continue;
         };
-        let Some((sequence, color_number)) = (|| {
-            let entry = entries.get(&sequence)?;
-            Some((sequence, entry.color))
-        })() else {
+        let Some((sequence, color_number)) = ctx
+            .get_btree_map(
+                entries,
+                &sequence,
+                "iges presentation face directory lookup",
+            )?
+            .map(|entry| (sequence, entry.color))
+        else {
             continue;
         };
         let Some((appearance_id, color)) = resolve(color_number)? else {
@@ -924,7 +1084,7 @@ pub(super) fn project(
         face.color = Some(color);
         appearance(
             ir,
-            appearance_id.try_clone_for_decode(ctx, "iges appearance ID copy")?,
+            Cow::Borrowed(&appearance_id),
             None,
             color,
             ctx,
