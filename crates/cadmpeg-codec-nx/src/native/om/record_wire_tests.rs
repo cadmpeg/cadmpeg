@@ -137,3 +137,32 @@ fn store_header_native_limit_refuses_before_clone() {
         serde_json::from_str::<serde_json::Value>(wire).unwrap(),
     );
 }
+
+#[test]
+fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
+    for (value, raw) in [
+        (0, vec![0]),
+        (0, vec![0x80, 0]),
+        (0, vec![0x90, 0, 0]),
+        (6466, vec![0x90, 0x19, 0x42]),
+    ] {
+        let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+            "object_id":value, "raw_object_id":raw, "source_offset":12});
+        let record: super::DataBlockReference = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    }
+    for (value, raw) in [
+        (1, vec![0]),
+        (0, vec![0xff]),
+        (0, vec![0xf0, 0]),
+        (0, vec![0x90, 0]),
+        (0, vec![0, 0]),
+    ] {
+        let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
+            "object_id":value, "raw_object_id":raw, "source_offset":12});
+        assert!(serde_json::from_value::<super::DataBlockReference>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("object_id/raw_object_id"));
+    }
+}
