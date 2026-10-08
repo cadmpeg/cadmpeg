@@ -448,8 +448,14 @@ pub(in crate::decode) fn resolved_section_radii(
         let mut pending = std::collections::VecDeque::new();
         component_storage
             .with_storage(|| ctx.push_back(&mut pending, seed, "creo pending radius nodes"))?;
-        while let Some(radius_id) = pending.pop_front() {
-            ctx.charge_work(1, "creo radius graph visits")?;
+        while !pending.is_empty() {
+            let Some(radius_id) = ctx
+                .next_charged(&mut pending.iter(), "creo radius graph visits")?
+                .copied()
+            else {
+                break;
+            };
+            pending.pop_front();
             if let Some(neighbors) =
                 ctx.get_btree_map(&adjacency, &radius_id, "creo radius adjacency lookup")?
             {
