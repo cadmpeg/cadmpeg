@@ -749,7 +749,9 @@ pub(super) fn project(
 
     for index in ctx.admit_iter(0..ir.model.bodies.len(), "iges body display traversal")? {
         let body = &ir.model.bodies[index];
-        let Some(sequence) = sequences.body(&body.id, ctx)? else { continue; };
+        let Some(sequence) = sequences.body(&body.id, ctx)? else {
+            continue;
+        };
         let Some((sequence, color_number, visible)) = (|| {
             let entry = entries.get(&sequence)?;
             Some((sequence, entry.color, entry.status.is_visible()))
@@ -903,7 +905,9 @@ pub(super) fn project(
 
     for index in ctx.admit_iter(0..ir.model.faces.len(), "iges face display traversal")? {
         let face = &ir.model.faces[index];
-        let Some(sequence) = sequences.face(&face.id, ctx)? else { continue; };
+        let Some(sequence) = sequences.face(&face.id, ctx)? else {
+            continue;
+        };
         let Some((sequence, color_number)) = (|| {
             let entry = entries.get(&sequence)?;
             Some((sequence, entry.color))

@@ -319,7 +319,10 @@ fn resolve_pcurve_uses<'a>(
     ctx: &'a DecodeContext<'_>,
     (model_index, composite): (
         &mut Option<cadmpeg_ir::index::DecodeModelIndex<'a, 'a>>,
-        (&mut Option<super::composite::CompositeIndex>, &mut ScopedReservation<'_>),
+        (
+            &mut Option<super::composite::CompositeIndex>,
+            &mut ScopedReservation<'_>,
+        ),
     ),
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
@@ -337,11 +340,16 @@ fn resolve_pcurve_uses<'a>(
     let index = model_index.as_ref();
     let (composite_index, composite_storage) = composite;
     if composite_index.is_none() {
-        *composite_index = Some(composite_storage.with_storage(|| super::composite::CompositeIndex::from_ir(source, ctx))?);
+        *composite_index = Some(
+            composite_storage
+                .with_storage(|| super::composite::CompositeIndex::from_ir(source, ctx))?,
+        );
     } else if let Some(index) = composite_index.as_mut() {
         composite_storage.with_storage(|| index.refresh_topology(source, ctx))?;
     }
-    let composite_index = composite_index.as_ref().ok_or_else(|| CodecError::malformed("IGES B-rep composite index is absent"))?;
+    let composite_index = composite_index
+        .as_ref()
+        .ok_or_else(|| CodecError::malformed("IGES B-rep composite index is absent"))?;
     let point_on_surface = |u, v| {
         let evaluation = if let Some(index) = index {
             cadmpeg_ir::eval::model_surface_point_by_id(
@@ -1358,7 +1366,10 @@ pub(super) fn project(
                                     tolerance,
                                 },
                                 ctx,
-                                (&mut model_index, (&mut composite_index, &mut composite_storage)),
+                                (
+                                    &mut model_index,
+                                    (&mut composite_index, &mut composite_storage),
+                                ),
                             ) {
                                 Ok(resolved) => resolved,
                                 Err(error) => {
@@ -1470,7 +1481,10 @@ pub(super) fn project(
                                 tolerance,
                             },
                             ctx,
-                            (&mut model_index, (&mut composite_index, &mut composite_storage)),
+                            (
+                                &mut model_index,
+                                (&mut composite_index, &mut composite_storage),
+                            ),
                         ) {
                             Ok(resolved) => resolved,
                             Err(error) => {

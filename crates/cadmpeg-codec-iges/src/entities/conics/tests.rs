@@ -15,12 +15,28 @@ use crate::test_support::test_owned::{
 use crate::IgesCodec;
 
 fn assert_conic_refusal(bytes: &[u8], operation: &str, retained: bool) {
-    let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+    let dimension = if retained {
+        ResourceDimension::RetainedBytes
+    } else {
+        ResourceDimension::CollectionItems
+    };
     cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
-        if retained { policy.limits.max_retained_bytes = cap; } else { policy.limits.max_collection_items = cap; }
-        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map(|_| ()).map_err(|error| match error {
+        if retained {
+            policy.limits.max_retained_bytes = cap;
+        } else {
+            policy.limits.max_collection_items = cap;
+        }
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .map(|_| ())
+            .map_err(|error| match error {
                 DecodeFailure::Codec(error) => error,
                 other => panic!("unexpected decode failure: {other:?}"),
             })

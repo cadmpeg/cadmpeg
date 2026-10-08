@@ -17,33 +17,43 @@ fn analytic_arc_conversion_refuses_each_decode_lane() {
         ("iges parabolic arc knots", true),
         ("iges parabolic arc poles", true),
     ] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-        let result = if parabola {
-            parabolic_arc_nurbs(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                PositiveLength::new(1.0).expect("test setup"),
-                [0.0, 1.0],
-                &ctx,
-            )
-        } else {
-            elliptical_arc_nurbs(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                PositiveLength::new(2.0).expect("test setup"),
-                PositiveLength::new(1.0).expect("test setup"),
-                [0.0, std::f64::consts::FRAC_PI_2],
-                &ctx,
-            )
-        };
-        result.map_err(|error| match error { CurveConversionError::Resource(error) => error, other => panic!("unexpected conversion refusal: {other:?}") })
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
+                let result = if parabola {
+                    parabolic_arc_nurbs(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        PositiveLength::new(1.0).expect("test setup"),
+                        [0.0, 1.0],
+                        &ctx,
+                    )
+                } else {
+                    elliptical_arc_nurbs(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        PositiveLength::new(2.0).expect("test setup"),
+                        PositiveLength::new(1.0).expect("test setup"),
+                        [0.0, std::f64::consts::FRAC_PI_2],
+                        &ctx,
+                    )
+                };
+                result.map_err(|error| match error {
+                    CurveConversionError::Resource(error) => error,
+                    other @ CurveConversionError::Carrier(_) => {
+                        panic!("unexpected conversion refusal: {other:?}")
+                    }
+                })
+            },
+        );
     }
 }
 
