@@ -396,16 +396,16 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                 selected_surface = Some(surface);
             }
         }
-        let Some(cylinder_surface) = selected_surface.filter(|_| !ambiguous_surface).and_then(
-            |surface| match source_carriers.surface_geometry(surface) {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
-                    Some(*cylinder)
-                }
-                _ => None,
-            },
-        ) else {
+        let geometry = selected_surface
+            .filter(|_| !ambiguous_surface)
+            .map(|surface| source_carriers.surface_geometry(surface))
+            .transpose()?;
+        let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) =
+            geometry
+        else {
             continue;
         };
+        let cylinder_surface = *cylinder_surface;
         let id = crate::identity::compose_checked::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
@@ -593,18 +593,19 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut rows = BTreeMap::new();
-    let unique_rows =
+    let (unique_rows, _unique_rows_storage) =
         crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
     for row in ctx.admit_iter(&unique_rows, "creo split outline unique surface rows")? {
         ctx.insert_btree_map(&mut rows, row.id, row, "creo split cylinder row nodes")?;
     }
     let local_planes = placed_planes(ctx, scan)?;
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
-    let unique_topologies = crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.curves.topology_rows,
-        |row| row.id,
-    )?;
+    let (unique_topologies, _unique_topologies_storage) =
+        crate::identity::uniquely_identified_rows_checked(
+            ctx,
+            &scan.curves.topology_rows,
+            |row| row.id,
+        )?;
     for edge in ctx.admit_iter(&unique_topologies, "creo split outline unique topologies")? {
         if edge.type_byte != 0 {
             continue;
@@ -1205,7 +1206,7 @@ pub(in super::super) fn transfer_positional_cylinders(
     }
     let local_planes = placed_planes(ctx, scan)?;
     let mut unique_rows = BTreeMap::new();
-    let unique_surface_rows =
+    let (unique_surface_rows, _unique_surface_rows_storage) =
         crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
     for row in ctx.admit_iter(&unique_surface_rows, "creo positional unique surface rows")? {
         ctx.insert_btree_map(
@@ -1216,11 +1217,12 @@ pub(in super::super) fn transfer_positional_cylinders(
         )?;
     }
     let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
-    let unique_topologies = crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.curves.topology_rows,
-        |row| row.id,
-    )?;
+    let (unique_topologies, _unique_topologies_storage) =
+        crate::identity::uniquely_identified_rows_checked(
+            ctx,
+            &scan.curves.topology_rows,
+            |row| row.id,
+        )?;
     for edge in ctx.admit_iter(&unique_topologies, "creo positional unique topologies")? {
         let [Some(left), Some(right)] = edge.faces else {
             continue;

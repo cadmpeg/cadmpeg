@@ -246,7 +246,7 @@ where
     T: Serialize,
     F: FnMut(&mut AnnotationBuilder, &T) -> Result<(), CodecError>,
 {
-    for record in records {
+    for record in ctx.admit_iter(records, "creo native annotation traversal")? {
         annotate_each(annotations, record)?;
     }
     store_arena(ctx, ir, key, records)

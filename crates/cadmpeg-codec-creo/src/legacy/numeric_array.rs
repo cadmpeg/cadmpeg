@@ -25,26 +25,26 @@ impl<T> NumericArray<T> {
         dimensions: Vec<u32>,
         runs: Vec<NumericRun<T>>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(dimensions.len()),
-            "creo numeric array extent validation",
-        )?;
-        let expected = dimensions.iter().try_fold(1usize, |count, dimension| {
-            count.checked_mul(index_from_u32(*dimension))
-        });
-        let Some(expected) = expected else {
-            return Ok(None);
-        };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(runs.len()),
-            "creo numeric array run validation",
-        )?;
-        let actual = runs.iter().try_fold(0usize, |count, run| {
-            count.checked_add(index_from_u32(run.count))
-        });
-        let Some(actual) = actual else {
-            return Ok(None);
-        };
+        let mut expected = 1usize;
+        let mut extents = dimensions.iter();
+        while let Some(dimension) =
+            ctx.next_charged(&mut extents, "creo numeric array extent validation")?
+        {
+            let Some(product) = expected.checked_mul(index_from_u32(*dimension)) else {
+                return Ok(None);
+            };
+            expected = product;
+        }
+        let mut actual = 0usize;
+        let mut source_runs = runs.iter();
+        while let Some(run) =
+            ctx.next_charged(&mut source_runs, "creo numeric array run validation")?
+        {
+            let Some(total) = actual.checked_add(index_from_u32(run.count)) else {
+                return Ok(None);
+            };
+            actual = total;
+        }
         Ok((expected == actual).then_some(Self {
             dimensions,
             runs,

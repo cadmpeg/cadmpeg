@@ -171,7 +171,7 @@ fn map_two_chart_endpoint_sets(
             points[face_index] = match cadmpeg_ir::eval::decode::outer_refusal(
                 cadmpeg_ir::eval::decode::surface_point(
                     ctx,
-                    source_carriers.surface_geometry(surface),
+                    source_carriers.surface_geometry(surface)?,
                     sample[face_index][0],
                     sample[face_index][1],
                 ),
@@ -354,11 +354,12 @@ impl PcurvePathActivity {
             }
         }
         let mut topology_faces = BTreeMap::new();
-        let topology_rows = crate::identity::uniquely_identified_rows_checked(
-            ctx,
-            &scan.curves.topology_rows,
-            |row| row.id,
-        )?;
+        let (topology_rows, _topology_rows_storage) =
+            crate::identity::uniquely_identified_rows_checked(
+                ctx,
+                &scan.curves.topology_rows,
+                |row| row.id,
+            )?;
         for row in ctx.admit_iter(&topology_rows, "creo pcurve topology face rows")? {
             ctx.insert_btree_map(
                 &mut topology_faces,
@@ -550,7 +551,7 @@ fn pcurve_path_carrier_status(
     };
     pcurve_plane_carrier_status(
         ctx,
-        source_carriers.surface_geometry(surface),
+        source_carriers.surface_geometry(surface)?,
         face_carrier,
         other_carrier,
         endpoints,
@@ -592,7 +593,7 @@ fn pcurve_endpoint_carrier_status(
         let Some(point) = cadmpeg_ir::eval::finite_or_refusal(
             cadmpeg_ir::eval::decode::outer_refusal(cadmpeg_ir::eval::decode::surface_point(
                 ctx,
-                source_carriers.surface_geometry(surface),
+                source_carriers.surface_geometry(surface)?,
                 uv[0],
                 uv[1],
             ))?,
@@ -806,7 +807,7 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         let Some(surface) = unique_model_surface_mut(&mut ir.model.surfaces, *face_id) else {
             continue;
         };
-        let source_geometry = source_carriers.surface_geometry(surface);
+        let source_geometry = source_carriers.surface_geometry(surface)?;
         let Some(mirrored) = mirrored_support_apex_cone(source_geometry) else {
             continue;
         };
@@ -877,7 +878,7 @@ fn map_pcurve_paths(
             let point = match cadmpeg_ir::eval::decode::outer_refusal(
                 cadmpeg_ir::eval::decode::surface_point(
                     ctx,
-                    source_carriers.surface_geometry(surface),
+                    source_carriers.surface_geometry(surface)?,
                     uv[0],
                     uv[1],
                 ),
@@ -1683,7 +1684,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
                 return Ok(());
             };
-            let geometry = source_carriers.surface_geometry(surface);
+            let geometry = source_carriers.surface_geometry(surface)?;
             // A path whose endpoint evaluates to a non-finite point is
             // evaluable; only an endpoint with no value is not.
             let mut evaluable = true;
@@ -2248,6 +2249,7 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
     for face_id in faces {
         let Some(surface) = unique_model_surface(surfaces, face_id)
             .map(|surface| source_carriers.surface_geometry(surface))
+            .transpose()?
         else {
             continue;
         };

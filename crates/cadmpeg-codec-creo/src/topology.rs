@@ -605,7 +605,8 @@ pub(crate) fn face_components(
 ) -> Result<Vec<FaceComponent>, CodecError> {
     let count = cadmpeg_core::decode::u64_from_index(rows.len());
     let lookup_work = 256 * (u64::from(u64::BITS - count.leading_zeros()) + 2);
-    let rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let (rows, _rows_storage) =
+        crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
     for row in &rows {
@@ -721,7 +722,8 @@ pub(crate) fn build(
     ctx: &DecodeContext<'_>,
     rows: &[CurveTopologyRow],
 ) -> Result<(Vec<HalfEdge>, Vec<Loop>), CodecError> {
-    let rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let (rows, _rows_storage) =
+        crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut face_sides: BTreeMap<Option<NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
     for row in &rows {
         for side in [Side::Zero, Side::One] {

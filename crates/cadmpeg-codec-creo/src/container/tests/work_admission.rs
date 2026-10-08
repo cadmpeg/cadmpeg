@@ -25,8 +25,23 @@ fn geometry_census_charges_each_namespace_pass() {
     let region = [0; 64];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Search admits the 64-byte haystack and the nine-byte namespace marker.
-    policy.limits.max_work_units = 64 + cadmpeg_core::decode::u64_from_index(b"srf_array".len());
+    let boundary = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo geometry census search",
+        |ctx| {
+            read_array_count(ctx, &region, b"srf_array")?;
+            read_array_count(ctx, &region, b"crv_array")
+        },
+    );
+    let CodecError::ResourceLimit(boundary) = boundary else {
+        panic!("resource boundary");
+    };
+    policy.limits.max_work_units = boundary
+        .used
+        .checked_add(boundary.additional)
+        .expect("work need")
+        - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         read_array_count(&ctx, &region, b"srf_array").expect("first scan"),
@@ -100,123 +115,6 @@ fn legacy_toc_count_prefix_refuses_work() {
 }
 
 #[test]
-fn feature_identity_family_prefix_refuses_work() {
-    let row = crate::feature::rows::FeatureRow {
-        feature_id: 87,
-        root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
-        stream_offset: 0,
-        body: vec![0; 2].try_into().expect("row body"),
-        body_offset: 0,
-        offset: 0,
-    };
-    let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 87,
-        name_bytes: b"Datum Plane id 87".to_vec(),
-        own_reference_id: 10,
-        reference_type: 1,
-        offset: 0,
-    };
-    let structural = std::collections::BTreeSet::new();
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo feature identity family prefix",
-        |ctx| {
-            super::super::feature_row_has_model_identity(
-                ctx,
-                &row,
-                &structural,
-                &[],
-                std::slice::from_ref(&reference),
-            )
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo feature identity family prefix")
-    );
-}
-
-#[test]
-fn feature_identity_ordinal_prefix_refuses_work() {
-    let row = crate::feature::rows::FeatureRow {
-        feature_id: 87,
-        root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
-        stream_offset: 0,
-        body: vec![0; 2].try_into().expect("row body"),
-        body_offset: 0,
-        offset: 0,
-    };
-    let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 87,
-        name_bytes: b"Datum Plane id 87".to_vec(),
-        own_reference_id: 10,
-        reference_type: 1,
-        offset: 0,
-    };
-    let structural = std::collections::BTreeSet::new();
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo feature identity ordinal prefix",
-        |ctx| {
-            super::super::feature_row_has_model_identity(
-                ctx,
-                &row,
-                &structural,
-                &[],
-                std::slice::from_ref(&reference),
-            )
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo feature identity ordinal prefix")
-    );
-}
-
-#[test]
-fn feature_identity_datum_prefix_refuses_work() {
-    let row = crate::feature::rows::FeatureRow {
-        feature_id: 87,
-        root_schema_class: Some(crate::feature::schema::SchemaClass::DatumPlane),
-        stream_offset: 0,
-        body: vec![0; 2].try_into().expect("row body"),
-        body_offset: 0,
-        offset: 0,
-    };
-    let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 87,
-        name_bytes: b"DTM87".to_vec(),
-        own_reference_id: 10,
-        reference_type: 1,
-        offset: 0,
-    };
-    let structural = std::collections::BTreeSet::new();
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo feature identity datum prefix",
-        |ctx| {
-            super::super::feature_row_has_model_identity(
-                ctx,
-                &row,
-                &structural,
-                &[],
-                std::slice::from_ref(&reference),
-            )
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo feature identity datum prefix")
-    );
-}
-
-#[test]
 fn loop_array_section_deduplication_refuses_work() {
     let data = b"loop_array\0";
     let sections =
@@ -253,7 +151,7 @@ fn appended_topology_row_deduplication_refuses_work() {
             super::super::append_topology_rows(
                 ctx,
                 &mut rows,
-                std::iter::empty(),
+                ctx.admit_iter([], "creo topology row append traversal")?,
                 "creo test topology aggregation",
             )
         },
@@ -322,4 +220,118 @@ fn cmnm_forbidden_name_search_charges_only_visited_bytes() {
     let last = refusal(b"#- CMNM 003ab\0");
     // Both routes have identical setup; the later match visits two more bytes.
     assert_eq!(last.used, first.used + 2);
+}
+
+#[test]
+fn skipped_sections_still_require_traversal_work() {
+    let bytes = b"#Other\n";
+    let sections =
+        [Section::scan_for_test("Other".into(), 0, bytes.len(), None, bytes).expect("section")];
+    let selected =
+        crate::test_support::assert_work_boundaries(&["creo section traversal"], |ctx| {
+            super::super::nonvisible_geometry_sections(ctx, &sections)
+        });
+    assert!(selected.is_empty());
+}
+
+#[test]
+fn native_model_name_search_stops_before_unvisited_sections() {
+    let bytes = b"model_name\0part\0";
+    let first =
+        Section::scan_for_test("Other".into(), 0, bytes.len(), None, bytes).expect("section");
+    let mut sections = vec![first.clone()];
+    let boundary = |sections: &[super::super::ScannedSection<'_>]| {
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo native model-name section selection",
+            |ctx| super::super::native_model_name(ctx, sections),
+        );
+        let CodecError::ResourceLimit(resource) = error else {
+            panic!("work refusal")
+        };
+        resource
+    };
+    let one = boundary(&sections);
+    sections.extend(std::iter::repeat_n(first, 64));
+    assert_eq!(one, boundary(&sections));
+    let name =
+        crate::decode::with_test_decode_ctx(|ctx| super::super::native_model_name(ctx, &sections))
+            .expect("search");
+    assert_eq!(name, Some(("part".into(), 11)));
+}
+
+#[test]
+fn legacy_witness_merges_admit_each_source_before_copying() {
+    let source_topology = [crate::curve::CurveTopologyRow {
+        id: 7,
+        type_byte: 0x13,
+        feature_id: 1,
+        directions: [0; 2],
+        faces: [None; 2],
+        next_edges: [0; 2],
+        offset: 7,
+    }];
+    let source_pcurves = [crate::curve::PcurveEndpoints {
+        curve_id: 7,
+        faces: [None; 2],
+        face_0_endpoints: [[0.0; 2]; 2],
+        face_1_endpoints: [[0.0; 2]; 2],
+        offset: 7,
+    }];
+    let (topology, pcurves) = crate::test_support::assert_work_boundaries(
+        &[
+            "creo topology row append traversal",
+            "creo legacy pcurve append traversal",
+        ],
+        |ctx| {
+            let mut topology = Vec::new();
+            let mut pcurves = Vec::new();
+            super::super::append_legacy_curve_witnesses(
+                ctx,
+                &mut topology,
+                &mut pcurves,
+                &source_topology,
+                &source_pcurves,
+            )?;
+            Ok((topology, pcurves))
+        },
+    );
+    assert_eq!(topology, source_topology);
+    assert_eq!(pcurves, source_pcurves);
+}
+
+#[test]
+fn primitive_scalar_merge_admits_the_decoded_rows() {
+    let bytes = b"\xe0\x06p1\0\xf8\x01\0";
+    let section = super::super::ExpandedSection {
+        name: "SolidPrimdata".into(),
+        source_offset: 0,
+        compressed_length: bytes.len(),
+        data: bytes.to_vec(),
+    };
+    let scan = crate::test_support::assert_work_boundaries(
+        &["creo primitive scalar append traversal"],
+        |ctx| super::super::scan_primitives(ctx, std::slice::from_ref(&section)),
+    );
+    assert_eq!(scan.scalar_arrays.len(), 1);
+}
+
+#[test]
+fn completed_feature_ids_retain_only_the_ordered_output() {
+    let refusal = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::RetainedBytes,
+        "creo ordered feature ids",
+        |ctx| super::super::complete_feature_ids(ctx, std::collections::BTreeSet::new(), [4]),
+    );
+    let CodecError::ResourceLimit(resource) = refusal else {
+        panic!("ordered output refusal");
+    };
+    assert_eq!(resource.used, 0, "scratch nodes use no retained bytes");
+    let ids = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::complete_feature_ids(ctx, std::collections::BTreeSet::new(), [4])
+    })
+    .expect("one final feature ID");
+    assert_eq!(ids, [4]);
 }

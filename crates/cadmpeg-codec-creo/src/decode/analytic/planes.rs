@@ -544,7 +544,7 @@ pub(in crate::decode) fn reconciled_model_plane(
     let second = model_surfaces.next();
     let model_plane = match (first, second) {
         (None, None) => None,
-        (Some(surface), None) => match source_carriers.surface_geometry(surface) {
+        (Some(surface), None) => match source_carriers.surface_geometry(surface)? {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin().get();
                 let normal = plane_surface.frame().axis().as_raw();
@@ -1373,7 +1373,7 @@ fn native_positional_cylinder_carriers(
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, CarrierEquation>, cadmpeg_core::CodecError> {
     let mut carriers = BTreeMap::new();
-    let unique_rows =
+    let (unique_rows, _unique_rows_storage) =
         crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
     for row in ctx.admit_iter(&unique_rows, "creo native positional cylinder rows")? {
         if row.kind != crate::surface::SurfaceKind::Cylinder {
@@ -1829,16 +1829,17 @@ fn round_edge_envelopes_for_plane(
     plane_id: u32,
 ) -> Result<Vec<crate::surface::Type24RoundEdgeEnvelope>, cadmpeg_core::CodecError> {
     let mut rows = BTreeMap::new();
-    let unique_rows =
+    let (unique_rows, _unique_rows_storage) =
         crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
     for row in ctx.admit_iter(&unique_rows, "creo round-edge unique surface rows")? {
         ctx.insert_btree_map(&mut rows, row.id, row, "creo round-edge surface row nodes")?;
     }
-    let unique_topologies = crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.curves.topology_rows,
-        |row| row.id,
-    )?;
+    let (unique_topologies, _unique_topologies_storage) =
+        crate::identity::uniquely_identified_rows_checked(
+            ctx,
+            &scan.curves.topology_rows,
+            |row| row.id,
+        )?;
     let mut envelopes = Vec::new();
     for topology in ctx.admit_iter(
         &unique_topologies,

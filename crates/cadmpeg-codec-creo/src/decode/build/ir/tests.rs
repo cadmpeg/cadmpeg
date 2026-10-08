@@ -890,7 +890,9 @@ fn datum_plane_origin_is_in_millimeters_at_ir_admission() {
     assert_eq!(plane.origin().get(), Point3::new(25.4, 0.0, 0.0));
     let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(source_plane),
-    ) = source_carriers.surface_geometry(surface)
+    ) = source_carriers
+        .surface_geometry(surface)
+        .expect("source carrier lookup")
     else {
         panic!("source datum plane changed family");
     };
@@ -955,8 +957,9 @@ fn reference_line_origin_is_in_millimeters_at_ir_admission() {
         panic!("reference line changed family");
     };
     assert_eq!(line.origin().get(), Point3::new(25.4, 0.0, 0.0));
-    let CurveGeometry::Solved(SolvedCurveGeometry::Line(source_line)) =
-        carriers.curve_geometry(curve)
+    let CurveGeometry::Solved(SolvedCurveGeometry::Line(source_line)) = carriers
+        .curve_geometry(curve)
+        .expect("source carrier lookup")
     else {
         panic!("source reference line changed family");
     };
@@ -1038,8 +1041,9 @@ fn reference_circle_radius_is_in_millimeters_at_ir_admission() {
     };
     assert_eq!(circle.center().get(), Point3::new(25.4, 0.0, 0.0));
     assert_eq!(circle.radius().get(), 50.8);
-    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(source_circle)) =
-        carriers.curve_geometry(curve)
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(source_circle)) = carriers
+        .curve_geometry(curve)
+        .expect("source carrier lookup")
     else {
         panic!("source reference circle changed family");
     };
@@ -1083,8 +1087,9 @@ fn reference_ellipse_radii_are_in_millimeters_at_ir_admission() {
     assert_eq!(ellipse.center().get(), Point3::new(25.4, 0.0, 0.0));
     assert_eq!(ellipse.major_radius().get(), 50.8);
     assert_eq!(ellipse.minor_radius().get(), 25.4);
-    let CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(source_ellipse)) =
-        carriers.curve_geometry(curve)
+    let CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(source_ellipse)) = carriers
+        .curve_geometry(curve)
+        .expect("source carrier lookup")
     else {
         panic!("source reference ellipse changed family");
     };
