@@ -40,10 +40,10 @@ use crate::native::ufrx::{
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordConversionError, DatabaseIssueRecord,
-    DatabaseRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
+    AssemblyPlacementRecordConversionError, DatabaseIssueRecord, DatabaseRecord, PropertyRecord,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
+    RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord, StorageBandRecord,
+    StructuralIssueRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -762,9 +762,10 @@ fn decode_container<'a>(
     )?;
     if geometry_transferred {
         let mut product_definitions = ir.model.product_definitions.iter_mut();
-        while let Some(product) =
-            ctx.next_charged(&mut product_definitions, "visit Inventor product definitions")?
-        {
+        while let Some(product) = ctx.next_charged(
+            &mut product_definitions,
+            "visit Inventor product definitions",
+        )? {
             product.bodies = ctx.collect_indexed_vec(
                 body_ids.len(),
                 "collect Inventor product body ids",
@@ -1162,9 +1163,10 @@ fn decode_container<'a>(
     let mut source_fidelity = SourceFidelity::default();
     let mut annotations = AnnotationBuilder::new();
     let mut kernel_annotation_records = kernel_annotations.iter();
-    while let Some(record) =
-        ctx.next_charged(&mut kernel_annotation_records, "visit Inventor kernel annotations")?
-    {
+    while let Some(record) = ctx.next_charged(
+        &mut kernel_annotation_records,
+        "visit Inventor kernel annotations",
+    )? {
         admit_kernel_annotation(ctx, &mut annotations, record)?;
     }
     source_fidelity.annotations = annotations.build();
@@ -1646,7 +1648,7 @@ fn project_preview_asset(
     ordinal: usize,
     native_id: &str,
     bytes: &[u8],
-    media_type: &str,
+    media_type: PreviewMediaType,
 ) -> Result<Asset, CodecError> {
     let next_entities = admitted_entities.checked_add(1).ok_or_else(|| {
         ctx.refuse_codec_limit("Inventor preview entity count", u64::MAX - 1, u64::MAX)
@@ -1705,10 +1707,11 @@ fn project_preview_asset(
         return Err(CodecError::Malformed("asset data must not be empty".into()));
     }
     let native_ref = ctx.copy_retained_text(native_id, "retain Inventor preview source id")?;
-    let mut name =
-        ctx.retained_string("document preview".len(), "retain Inventor preview name")?;
+    let mut name = ctx.retained_string("document preview".len(), "retain Inventor preview name")?;
     name.push_str("document preview");
-    let media_type = ctx.copy_retained_text(media_type, "retain Inventor preview media type")?;
+    let media_text = media_type.as_str();
+    let mut media_type = ctx.retained_string(media_text.len(), "retain Inventor preview media type")?;
+    media_type.push_str(media_text);
     let data = ctx.copy_retained(bytes, "retain Inventor preview asset")?;
     let asset = Asset::try_new(
         ctx,
@@ -1730,10 +1733,7 @@ fn project_protein_state(
 ) -> Result<ProteinRecord, CodecError> {
     ctx.charge_entities(1, "admit Inventor native structural records")?;
     let id_text = "inventor:protein:state#root";
-    let mut id = ctx.retained_string(
-        id_text.len(),
-        "retain Inventor Protein state id",
-    )?;
+    let mut id = ctx.retained_string(id_text.len(), "retain Inventor Protein state id")?;
     id.push_str(id_text);
     Ok(match state {
         ProteinState::Absent => ProteinRecord::Absent { id },
@@ -1968,9 +1968,10 @@ fn project_ufrx_state(
             }
             let mut embedded = Vec::new();
             let mut embedded_references_source = document.embedded_references.iter().enumerate();
-            while let Some((ordinal, reference)) = ctx
-                .next_charged(&mut embedded_references_source, "visit Inventor decode items")?
-            {
+            while let Some((ordinal, reference)) = ctx.next_charged(
+                &mut embedded_references_source,
+                "visit Inventor decode items",
+            )? {
                 if let Some(record) =
                     project_ufrx_embedded_reference(ctx, ordinal, reference, issues)?
                 {
@@ -2603,10 +2604,8 @@ impl MetadataProjection {
             ("part_number", &self.part_number),
         ] {
             if let Some(value) = value {
-                let mut key = ctx.retained_string(
-                    name.len(),
-                    "retain Inventor metadata attribute key",
-                )?;
+                let mut key =
+                    ctx.retained_string(name.len(), "retain Inventor metadata attribute key")?;
                 key.push_str(name);
                 ctx.insert_btree_map(
                     attributes,
@@ -2905,7 +2904,29 @@ fn is_preview(fmtid: &[u8; 16], property_id: u32, name: Option<PropertyName<'_>>
         )
 }
 
-fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static str)> {
+/// Supported preview encodings with fixed media type text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreviewMediaType {
+    Png,
+    Jpeg,
+    Gif,
+    Bmp,
+    Tiff,
+}
+
+impl PreviewMediaType {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Png => "image/png",
+            Self::Jpeg => "image/jpeg",
+            Self::Gif => "image/gif",
+            Self::Bmp => "image/bmp",
+            Self::Tiff => "image/tiff",
+        }
+    }
+}
+
+fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], PreviewMediaType)> {
     let bytes = match value {
         PropertyValue::Binary { value: view, .. } => view.window(),
         PropertyValue::Clipboard { format, data, .. } if *format == u32::MAX => {
@@ -2929,21 +2950,21 @@ fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static
             {
                 return None;
             }
-            return Some((png, "image/png"));
+            return Some((png, PreviewMediaType::Png));
         }
         PropertyValue::Clipboard { .. } => return None,
         _ => return None,
     };
     let media_type = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        "image/png"
+        PreviewMediaType::Png
     } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
-        "image/jpeg"
+        PreviewMediaType::Jpeg
     } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        "image/gif"
+        PreviewMediaType::Gif
     } else if bytes.starts_with(b"BM") {
-        "image/bmp"
+        PreviewMediaType::Bmp
     } else if bytes.starts_with(b"II*\0") || bytes.starts_with(b"MM\0*") {
-        "image/tiff"
+        PreviewMediaType::Tiff
     } else {
         return None;
     };

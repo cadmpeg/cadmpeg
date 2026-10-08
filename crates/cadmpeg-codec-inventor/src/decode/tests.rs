@@ -117,12 +117,9 @@ fn fixed_width_hexadecimal_conversion_admits_storage_without_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = retained_hex(
-        &ctx,
-        &[0xaf],
-        "retain Inventor test hexadecimal output",
-    )
-    .expect_err("one retained byte is below the two-byte output")
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) =
+        retained_hex(&ctx, &[0xaf], "retain Inventor test hexadecimal output")
+            .expect_err("one retained byte is below the two-byte output")
     else {
         panic!("hex output storage must refuse before writing");
     };
@@ -291,7 +288,7 @@ fn inventor_clipboard_preview_requires_matching_png_dimensions() {
         data: root,
     };
     assert_eq!(
-        preview_bytes(&value).map(|(_, media)| media),
+        preview_bytes(&value).map(|(_, media)| media.as_str()),
         Some("image/png")
     );
 
