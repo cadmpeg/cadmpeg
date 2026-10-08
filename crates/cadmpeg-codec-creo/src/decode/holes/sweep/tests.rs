@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod fixed_caps;
+mod fixed_plane;
 
 #[test]
 fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {

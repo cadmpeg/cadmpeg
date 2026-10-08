@@ -489,11 +489,11 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
     else {
         return Ok(None);
     };
-    let Some((extent, direction)) = extrusion_extent_and_direction(
+    let Some((extent, direction)) = single_plane_extrusion_extent_and_direction(
         ctx,
         transform.origin(),
         transform.normal(),
-        [(plane.1, plane.2)],
+        (plane.1, plane.2),
     )?
     else {
         return Ok(None);
@@ -646,15 +646,9 @@ pub(in crate::decode) fn extrusion_span(
     direction: [f64; 3],
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
 ) -> Result<Option<ExtrusionSpan>, CodecError> {
-    let direction_length = direction
-        .iter()
-        .map(|value| value * value)
-        .sum::<f64>()
-        .sqrt();
-    if direction_length <= f64::EPSILON {
+    let Some(direction) = normalized_span_direction(direction) else {
         return Ok(None);
-    }
-    let direction = direction.map(|value| value / direction_length);
+    };
     let mut smallest_positive: Option<f64> = None;
     let mut largest_positive: Option<f64> = None;
     let mut smallest_negative: Option<f64> = None;
@@ -663,28 +657,9 @@ pub(in crate::decode) fn extrusion_span(
     while let Some((origin, normal)) =
         ctx.next_charged(&mut planes, "creo extrusion plane span scan")?
     {
-        let normal_length = normal.iter().map(|value| value * value).sum::<f64>().sqrt();
-        if normal_length <= f64::EPSILON {
+        let Some(offset) = projected_plane_offset(profile_origin, direction, origin, normal) else {
             continue;
-        }
-        let parallel = normal
-            .iter()
-            .zip(direction)
-            .map(|(left, right)| left * right)
-            .sum::<f64>()
-            .abs();
-        if (parallel / normal_length - 1.0).abs() > EPS_AXIS_ALIGNMENT {
-            continue;
-        }
-        let offset = origin
-            .iter()
-            .zip(profile_origin)
-            .zip(direction)
-            .map(|((coordinate, base), axis)| (coordinate - base) * axis)
-            .sum::<f64>();
-        if offset.abs() <= EPS_OFFSET_NONZERO {
-            continue;
-        }
+        };
         let scale = offset.abs().max(1.0);
         let duplicate = [
             smallest_positive,
@@ -725,48 +700,109 @@ pub(in crate::decode) fn extrusion_extent_and_direction(
     let Some(span) = extrusion_span(ctx, profile_origin, direction, planes)? else {
         return Ok(None);
     };
-    let Some(direction) = normalize(direction) else {
+    Ok(extrusion_extent_from_span(span, direction))
+}
+
+fn normalized_span_direction(direction: [f64; 3]) -> Option<[f64; 3]> {
+    let direction_length = direction
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    if direction_length <= f64::EPSILON {
+        return None;
+    }
+    Some(direction.map(|value| value / direction_length))
+}
+
+fn projected_plane_offset(
+    profile_origin: [f64; 3],
+    direction: [f64; 3],
+    origin: [f64; 3],
+    normal: [f64; 3],
+) -> Option<f64> {
+    let normal_length = normal.iter().map(|value| value * value).sum::<f64>().sqrt();
+    if normal_length <= f64::EPSILON {
+        return None;
+    }
+    let parallel = normal
+        .iter()
+        .zip(direction)
+        .map(|(left, right)| left * right)
+        .sum::<f64>()
+        .abs();
+    if (parallel / normal_length - 1.0).abs() > EPS_AXIS_ALIGNMENT {
+        return None;
+    }
+    let offset = origin
+        .iter()
+        .zip(profile_origin)
+        .zip(direction)
+        .map(|((coordinate, base), axis)| (coordinate - base) * axis)
+        .sum::<f64>();
+    if offset.abs() <= EPS_OFFSET_NONZERO {
+        return None;
+    }
+    Some(offset)
+}
+
+fn single_plane_extrusion_extent_and_direction(
+    ctx: &DecodeContext<'_>,
+    profile_origin: [f64; 3],
+    direction: [f64; 3],
+    plane: ([f64; 3], [f64; 3]),
+) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
+    let Some(axis) = normalized_span_direction(direction) else {
         return Ok(None);
     };
+    let Some(offset) = projected_plane_offset(profile_origin, axis, plane.0, plane.1) else {
+        return Ok(None);
+    };
+    let span = if offset < 0.0 {
+        ExtrusionSpan::new(offset, 0.0)
+    } else if offset > 0.0 {
+        ExtrusionSpan::new(0.0, offset)
+    } else {
+        None
+    };
+    Ok(span.and_then(|span| extrusion_extent_from_span(span, direction)))
+}
+
+fn extrusion_extent_from_span(
+    span: ExtrusionSpan,
+    direction: [f64; 3],
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let direction = normalize(direction)?;
     if span.lower() == 0.0 || span.upper() == 0.0 {
         let signed_length = if span.upper() == 0.0 {
             span.lower()
         } else {
             span.upper()
         };
-        return Ok(Some((
+        return Some((
             ExtrudeExtent::OneSided {
-                side: match blind_extrude_side(signed_length.abs()) {
-                    Some(side) => side,
-                    None => return Ok(None),
-                },
+                side: blind_extrude_side(signed_length.abs())?,
             },
             direction.map(|value| value * signed_length.signum()),
-        )));
+        ));
     }
     let first = span.upper();
     let second = -span.lower();
     let scale = first.max(second).max(1.0);
     let extent = if (first - second).abs() <= EPS_EXTENT_AGREEMENT * scale {
         ExtrudeExtent::Symmetric {
-            side: match blind_extrude_side(first + second) {
-                Some(side) => side,
-                None => return Ok(None),
-            },
+            side: blind_extrude_side(first + second)?,
         }
     } else {
         ExtrudeExtent::TwoSided {
-            first: match blind_extrude_side(first) {
-                Some(side) => side,
-                None => return Ok(None),
-            },
-            second: match blind_extrude_side(second) {
-                Some(side) => side,
-                None => return Ok(None),
-            },
+            first: blind_extrude_side(first)?,
+            second: blind_extrude_side(second)?,
         }
     };
-    Ok(Some((extent, direction)))
+    Some((extent, direction))
 }
 
 pub(in crate::decode) fn blind_extrude_side(length: f64) -> Option<ExtrudeSide> {
