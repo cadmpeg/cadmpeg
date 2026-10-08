@@ -520,7 +520,8 @@ fn referenced_target_ids(
             }
         }
     }
-    for (_, record) in exchange.entities(ctx, "DRAWING_SHEET_REVISION_USAGE")? {
+    for indexed_entity in exchange.entities(ctx, "DRAWING_SHEET_REVISION_USAGE")? {
+        let (_, record) = indexed_entity?;
         let parameters = source_parameters(ctx, record, "DRAWING_SHEET_REVISION_USAGE")?;
         for value in [parameters.get(0), parameters.get(1)].into_iter().flatten() {
             collect_reference_ids(value, &mut ids, ctx)?;
@@ -882,7 +883,8 @@ fn add_sheet_revision_usages(
     ),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for (usage_id, record) in exchange.entities(ctx, "DRAWING_SHEET_REVISION_USAGE")? {
+    for indexed_entity in exchange.entities(ctx, "DRAWING_SHEET_REVISION_USAGE")? {
+        let (usage_id, record) = indexed_entity?;
         let parameters = source_parameters(ctx, record, "DRAWING_SHEET_REVISION_USAGE")?;
         let Some(sheet_id) = parameters.first().and_then(ValueExt::reference) else {
             continue;

@@ -105,7 +105,7 @@ impl AdmittedSchemaIdentifier {
         let Some((_, Some(object_identifier))) = split_schema_identifier(ctx, self.text())? else {
             return Ok(None);
         };
-        let mut components = schema_oid_components(ctx, object_identifier)?;
+        let mut components = schema_oid_components(ctx, object_identifier);
         let Some(first) = components.next().transpose()? else {
             return Ok(None);
         };
@@ -161,9 +161,12 @@ fn schema_identifier_form<'a>(
     let identifier = ctx.trim_text(identifier, "STEP schema identifier trim")?;
     if identifier.is_empty()
         || ctx
-            .admit_iter(identifier, "STEP schema identifier characters")?
-            .count()
-            > 1024
+            .position_by(
+                identifier.chars().enumerate(),
+                |(index, _)| Ok(index == 1024),
+                "STEP schema identifier characters",
+            )?
+            .is_some()
     {
         return Ok(SchemaIdentifierForm::Invalid);
     }
@@ -257,7 +260,7 @@ fn schema_object_identifier_form<'a>(
     ctx: &'a DecodeContext<'_>,
     value: &'a str,
 ) -> Result<ObjectIdentifierForm<'a>, CodecError> {
-    let mut components = schema_oid_components(ctx, value)?;
+    let mut components = schema_oid_components(ctx, value);
     let Some(first) = components.next().transpose()? else {
         return Ok(ObjectIdentifierForm::Invalid);
     };
@@ -287,36 +290,37 @@ fn schema_object_identifier_form<'a>(
     )
 }
 
-/// Splits Unicode whitespace after admitting the character traversal.
+/// Splits Unicode whitespace while charging each visited character.
 fn schema_oid_components<'a>(
     ctx: &'a DecodeContext<'a>,
     value: &'a str,
-) -> Result<impl Iterator<Item = Result<&'a str, CodecError>> + 'a, CodecError> {
-    Ok(ctx
-        .admit_iter(value, "STEP schema OID characters")?
-        .chain(std::iter::once(' '))
-        .scan((0_usize, None), move |(offset, start), character| {
-            let end = *offset;
-            let Some(next) = end.checked_add(character.len_utf8()) else {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "STEP schema OID byte offset",
-                    u64::MAX,
-                    u64::MAX,
-                )));
-            };
-            *offset = next;
+) -> impl Iterator<Item = Result<&'a str, CodecError>> + 'a {
+    let mut at = 0;
+    let mut failed = false;
+    std::iter::from_fn(move || {
+        if failed {
+            return None;
+        }
+        let mut start = None;
+        while at < value.len() {
+            if let Err(error) = ctx.charge_work(1, "STEP schema OID characters") {
+                failed = true;
+                return Some(Err(error));
+            }
+            let end = at;
+            // The next scalar spans at most four bytes of a validated string.
+            let character = value[at..].chars().next()?;
+            at += character.len_utf8();
             if character.is_whitespace() {
-                Some(Ok(start.take().map(|start| &value[start..end])))
+                if let Some(start) = start {
+                    return Some(Ok(&value[start..end]));
+                }
             } else {
                 start.get_or_insert(end);
-                Some(Ok(None))
             }
-        })
-        .filter_map(|component| match component {
-            Ok(Some(component)) => Some(Ok(component)),
-            Ok(None) => None,
-            Err(error) => Some(Err(error)),
-        }))
+        }
+        start.map(|start| Ok(&value[start..at]))
+    })
 }
 
 /// The admission form of one object identifier component.
@@ -418,26 +422,27 @@ fn valid_schema_oid_number(ctx: &DecodeContext<'_>, value: &str) -> Result<bool,
 }
 
 fn valid_schema_oid_name(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
-    let mut bytes = ctx
-        .admit_iter(value.as_bytes(), "STEP schema OID name bytes")?
-        .copied();
-    let Some(first) = bytes.next() else {
-        return Ok(false);
-    };
-    if !first.is_ascii_lowercase() {
-        return Ok(false);
-    }
     let mut previous_hyphen = false;
-    for byte in bytes {
-        if byte.is_ascii_alphabetic() || byte.is_ascii_digit() {
-            previous_hyphen = false;
-        } else if byte == b'-' && !previous_hyphen {
-            previous_hyphen = true;
-        } else {
-            return Ok(false);
-        }
-    }
-    Ok(!value.ends_with('-'))
+    Ok(!value.is_empty()
+        && ctx.all_by(
+            value.as_bytes().iter().enumerate(),
+            |(index, byte)| {
+                if index == 0 {
+                    return Ok(byte.is_ascii_lowercase());
+                }
+                if byte.is_ascii_alphabetic() || byte.is_ascii_digit() {
+                    previous_hyphen = false;
+                    Ok(true)
+                } else if *byte == b'-' && !previous_hyphen {
+                    previous_hyphen = true;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            },
+            "STEP schema OID name bytes",
+        )?
+        && !value.ends_with('-'))
 }
 
 /// The number of the root component, when the component text gives one.

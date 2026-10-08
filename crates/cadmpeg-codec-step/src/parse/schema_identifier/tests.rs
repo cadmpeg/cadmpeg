@@ -250,7 +250,6 @@ fn schema_oid_words_preserve_unicode_whitespace_and_byte_slices() {
     ] {
         let expected: Vec<_> = value.split_whitespace().collect();
         let actual: Vec<_> = super::schema_oid_components(&ctx, value)
-            .expect("word traversal fits service policy")
             .collect::<Result<Vec<_>, _>>()
             .expect("byte offsets fit the input");
         assert_eq!(actual, expected, "{value:?}");

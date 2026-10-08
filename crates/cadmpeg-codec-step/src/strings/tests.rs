@@ -320,6 +320,9 @@ fn decoded_string_text_refuses_retained_limit_before_output_allocation() {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "step_string_text"
     ));
+    // Syntax validation has its own context: the output refusal above is sticky.
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits the same policy");
     let malformed = crate::strings::decode_with_context(
         b"\\X\\GG",
         crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
@@ -523,4 +526,46 @@ fn decoded_wide_scalar_character_preserves_refusal() {
             result
         },
     );
+}
+
+#[test]
+fn decoded_string_cursor_and_terminator_search_preserve_refusal() {
+    for (input, operation) in [
+        (b"AB".as_slice(), "STEP string cursor traversal"),
+        (b"AB".as_slice(), "STEP direct string cursor traversal"),
+        (b"AB".as_slice(), "STEP direct string UTF-8 validation"),
+        (
+            b"\\X2\\00410042\\X0\\".as_slice(),
+            "STEP wide escape terminator search",
+        ),
+        (
+            b"\\X2\\00410042\\X0\\".as_slice(),
+            "STEP wide escape cursor traversal",
+        ),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                crate::test_support::with_policy_context(input, &policy, |input, ctx| {
+                    match super::decode_with_context(
+                        input,
+                        crate::parse::implementation_level::ImplementationLevel::Edition3Class2,
+                        ctx,
+                    ) {
+                        Ok(_) => Ok(()),
+                        Err(super::StringDecodeFailure::Resource(error)) => {
+                            if let cadmpeg_core::CodecError::ResourceLimit(refusal) = &error {
+                                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                            }
+                            Err(error)
+                        }
+                        other => panic!("valid string must not fail syntax: {other:?}"),
+                    }
+                })
+            },
+        );
+    }
 }

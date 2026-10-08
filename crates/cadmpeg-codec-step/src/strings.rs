@@ -53,6 +53,20 @@ pub(crate) fn decode_with_context(
     Ok(output)
 }
 
+/// Validate the string and count its emitted characters without copying text.
+pub(crate) fn decoded_char_count(
+    ctx: &DecodeContext<'_>,
+    input: &[u8],
+    level: ImplementationLevel,
+) -> Result<usize, StringDecodeFailure> {
+    let mut count = 0;
+    decode_chars(ctx, input, level, |_| {
+        count += 1;
+        Ok(())
+    })?;
+    Ok(count)
+}
+
 fn decoded_len(
     ctx: &DecodeContext<'_>,
     input: &[u8],
@@ -61,9 +75,7 @@ fn decoded_len(
     // One source byte expands to at most two UTF-8 bytes, so this sum fits usize.
     let mut len = 0usize;
     decode_chars(ctx, input, level, |character| {
-        len = len
-            .checked_add(character.len_utf8())
-            .ok_or_else(|| ctx.refuse_codec_limit("STEP decoded string byte count", 0, u64::MAX))?;
+        len += character.len_utf8();
         Ok(())
     })?;
     Ok(len)
@@ -78,6 +90,7 @@ fn decode_chars(
     let mut at = 0;
     let mut page = b'A';
     while at < input.len() {
+        ctx.charge_work(1, "STEP string cursor traversal")?;
         match input[at] {
             b'\'' if input.get(at + 1) == Some(&b'\'') => {
                 emit('\'')?;
@@ -132,14 +145,17 @@ fn decode_chars(
             _ => {
                 let start = at;
                 while at < input.len() && !matches!(input[at], b'\'' | b'\\') {
+                    ctx.charge_work(1, "STEP direct string cursor traversal")?;
                     at += 1;
                 }
                 let direct = &input[start..at];
                 if level.is_edition3() {
-                    let text = std::str::from_utf8(direct).map_err(|error| StringError {
-                        offset: start + error.valid_up_to(),
-                        message: "invalid UTF-8 direct string bytes".into(),
-                    })?;
+                    let text = ctx
+                        .validate_utf8(direct, "STEP direct string UTF-8 validation")?
+                        .map_err(|error| StringError {
+                            offset: start + error.valid_up_to(),
+                            message: "invalid UTF-8 direct string bytes".into(),
+                        })?;
                     for character in ctx
                         .admit_iter(text, "STEP decode chars traversal")
                         .map_err(cadmpeg_core::CodecError::from)?
@@ -181,24 +197,36 @@ fn decode_page_byte(
             _ => char::from(byte),
         });
     }
-    let label = format!("iso-8859-{part}");
-    let encoding =
-        encoding_rs::Encoding::for_label(label.as_bytes()).ok_or_else(|| StringError {
-            offset,
-            message: format!("ISO 8859 part {part} is unavailable"),
-        })?;
-    let bytes = [byte];
-    let (decoded, had_errors) = encoding.decode_without_bom_handling(&bytes);
-    if had_errors {
+    let encoding = match part {
+        2 => encoding_rs::ISO_8859_2,
+        3 => encoding_rs::ISO_8859_3,
+        4 => encoding_rs::ISO_8859_4,
+        5 => encoding_rs::ISO_8859_5,
+        6 => encoding_rs::ISO_8859_6,
+        7 => encoding_rs::ISO_8859_7,
+        8 => encoding_rs::ISO_8859_8,
+        _ => {
+            return Err(StringError {
+                offset,
+                message: format!("ISO 8859 part {part} is unavailable"),
+            }
+            .into())
+        }
+    };
+    let mut decoder = encoding.new_decoder_without_bom_handling();
+    let mut units = [0_u16; 1];
+    let (result, _, written) =
+        decoder.decode_to_utf16_without_replacement(&[byte], &mut units, true);
+    if matches!(result, encoding_rs::DecoderResult::Malformed(..)) {
         return error(
             ctx,
             offset,
             "S escape is undefined in the selected ISO 8859 part",
         );
     }
-    decoded
-        .chars()
-        .next()
+    // Each selected single-byte page maps one byte to one BMP scalar.
+    char::from_u32(u32::from(units[0]))
+        .filter(|_| written != 0)
         .ok_or_else(|| StringError {
             offset,
             message: "S escape decoded to no character".into(),
@@ -244,9 +272,11 @@ fn decode_wide(
     width: usize,
     emit: &mut impl FnMut(char) -> Result<(), StringDecodeFailure>,
 ) -> Result<usize, StringDecodeFailure> {
-    let Some(relative_end) = input[start..]
-        .windows(4)
-        .position(|bytes| bytes == b"\\X0\\")
+    let Some(relative_end) = ctx.position_by(
+        input[start..].windows(4),
+        |bytes| Ok(bytes == b"\\X0\\"),
+        "STEP wide escape terminator search",
+    )?
     else {
         return error(ctx, start, "unterminated wide escape");
     };
@@ -255,7 +285,9 @@ fn decode_wide(
         return error(ctx, start, "wide escape has incomplete code unit");
     }
     let mut high_surrogate = None;
-    for offset in (start..end).step_by(width) {
+    let mut offset = start;
+    while offset < end {
+        ctx.charge_work(1, "STEP wide escape cursor traversal")?;
         let raw = std::str::from_utf8(&input[offset..offset + width])
             .ok()
             .and_then(|hex| u32::from_str_radix(hex, 16).ok())
@@ -301,6 +333,7 @@ fn decode_wide(
             })?;
             emit(character)?;
         }
+        offset += width;
     }
     if high_surrogate.is_some() {
         return error(ctx, start, "wide escape contains an isolated surrogate");
