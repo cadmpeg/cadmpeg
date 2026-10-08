@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -366,26 +366,18 @@ pub(super) fn design_constraint_transfer_coverage(
     native_kind_prefix: &str,
 ) -> Result<DesignConstraintTransferCoverage, CodecError> {
     let mut coverage = DesignConstraintTransferCoverage::default();
-    for constraint in constraints
-        .iter()
-        .filter(|constraint| constraint.id.as_str().contains(id_marker))
-    {
+    for constraint in ctx.admit_iter(constraints, "creo constraint coverage traversal")? {
+        if !ctx.contains_text(constraint.id.as_str(), id_marker, "creo constraint identity marker")? {
+            continue;
+        }
         coverage.transferred += 1;
-        let native_kind_text = match constraint.definition.kind() {
-            SketchConstraintDefinitionInput::Native { native_kind, .. }
-                if native_kind.as_str().starts_with(native_kind_prefix) =>
-            {
-                Some(native_kind.as_str())
-            }
-            _ => None,
-        };
-        let native_kind_suffix = match native_kind_text {
-            Some(kind) => ctx.strip_prefix(
-                kind,
+        let native_kind_suffix = match constraint.definition.kind() {
+            SketchConstraintDefinitionInput::Native { native_kind, .. } => ctx.strip_prefix(
+                native_kind.as_str(),
                 native_kind_prefix,
                 "creo native constraint kind prefix",
             )?,
-            None => None,
+            _ => None,
         };
         let native_kind = match native_kind_suffix {
             Some(kind) => ctx
@@ -393,7 +385,7 @@ pub(super) fn design_constraint_transfer_coverage(
                 .ok(),
             None => None,
         };
-        if native_kind_text.is_some() {
+        if native_kind_suffix.is_some() {
             coverage.native += 1;
         }
         if let Some(native_kind) = native_kind {
@@ -414,7 +406,7 @@ pub(super) fn design_constraint_transfer_coverage(
         }
         if constraint.active == Some(true) {
             coverage.active += 1;
-            if native_kind_text.is_some() {
+            if native_kind_suffix.is_some() {
                 coverage.active_native += 1;
             }
         }
@@ -460,60 +452,30 @@ pub(super) fn curve_transfer_coverage(
     rows: &[crate::curve::CurveTopologyRow],
     curves: &[Curve],
 ) -> Result<CurveTransferCoverage, CodecError> {
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let mut scratch = ctx.reserve_scoped(0, "creo curve coverage lookup storage")?;
+    let unique_rows = scratch.with_storage(|| {
+        crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)
+    })?;
     let mut transferred_ids = BTreeSet::new();
-    for curve in curves.iter().filter(|curve| {
-        !matches!(
-            curve.geometry,
-            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-        )
-    }) {
-        let Some(source) = curve
-            .source_object
-            .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
-        else {
-            continue;
-        };
-        let Some(digits) = ctx.strip_prefix(
-            source.object_id.as_str(),
-            "VisibGeom:",
-            "creo coverage identity prefix",
-        )?
-        else {
-            continue;
-        };
-        let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
-            continue;
-        };
-        ctx.insert_btree_set(&mut transferred_ids, id, "creo transferred curve ID nodes")?;
-    }
     let mut unknown_ids = BTreeSet::new();
-    for curve in curves.iter().filter(|curve| {
-        matches!(
-            curve.geometry,
-            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-        )
-    }) {
-        let Some(source) = curve
-            .source_object
-            .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
-        else {
+    for curve in ctx.admit_iter(curves, "creo curve coverage traversal")? {
+        let Some(source) = curve.source_object.as_ref()
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo) else {
             continue;
         };
-        let Some(digits) = ctx.strip_prefix(
-            source.object_id.as_str(),
-            "VisibGeom:",
-            "creo coverage identity prefix",
-        )?
-        else {
+        let Some(digits) = ctx.strip_prefix(source.object_id.as_str(), "VisibGeom:", "creo coverage identity prefix")? else {
             continue;
         };
         let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
             continue;
         };
-        ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown curve ID nodes")?;
+        scratch.with_storage(|| {
+            if matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })) {
+                ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown curve ID nodes")
+            } else {
+                ctx.insert_btree_set(&mut transferred_ids, id, "creo transferred curve ID nodes")
+            }
+        })?;
     }
     let mut coverage = CurveTransferCoverage::default();
     coverage.record_ambiguous_rows(
@@ -521,12 +483,12 @@ pub(super) fn curve_transfer_coverage(
             .checked_sub(unique_rows.len())
             .ok_or_else(|| CodecError::malformed("unique row count exceeds source row count"))?,
     );
-    for row in unique_rows {
+    for row in ctx.admit_iter(unique_rows, "creo unique coverage row traversal")? {
         coverage.record_source_row(ctx, row.type_byte)?;
-        if transferred_ids.contains(&row.id) {
+        if ctx.contains_btree_set(&transferred_ids, &row.id, "creo transferred curve ID lookup")? {
             coverage.record_transferred_row(ctx, row.type_byte)?;
         }
-        if unknown_ids.contains(&row.id) {
+        if ctx.contains_btree_set(&unknown_ids, &row.id, "creo unknown coverage ID lookup")? {
             coverage.record_retained_unknown_row(ctx, row.type_byte)?;
         }
     }
@@ -539,92 +501,56 @@ pub(super) fn surface_transfer_coverage(
     surfaces: &[Surface],
     procedural_surfaces: &[ProceduralSurface],
 ) -> Result<SurfaceTransferCoverage, CodecError> {
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let mut scratch = ctx.reserve_scoped(0, "creo surface coverage lookup storage")?;
+    let unique_rows = scratch.with_storage(|| {
+        crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)
+    })?;
     let mut extrusion_constructions = BTreeSet::new();
-    for id in procedural_surfaces
-        .iter()
-        .filter(|procedural| {
-            matches!(
-                procedural.definition(),
-                ProceduralSurfaceDefinition::Extrusion(_)
-            )
-        })
-        .map(|procedural| &procedural.id)
-    {
-        ctx.insert_btree_set(
-            &mut extrusion_constructions,
-            id,
-            "creo extrusion construction nodes",
-        )?;
+    for procedural in ctx.admit_iter(procedural_surfaces, "creo procedural surface coverage traversal")? {
+        if matches!(procedural.definition(), ProceduralSurfaceDefinition::Extrusion(_)) {
+            scratch.with_storage(|| ctx.insert_btree_set(
+                &mut extrusion_constructions, &procedural.id, "creo extrusion construction nodes",
+            ))?;
+        }
     }
     let mut extrusion_surfaces = BTreeSet::new();
-    for id in surfaces
-        .iter()
-        .filter(|surface| {
-            surface
-                .geometry
-                .procedural_construction()
-                .is_some_and(|id| extrusion_constructions.contains(id))
-        })
-        .map(|surface| &surface.id)
-    {
-        ctx.insert_btree_set(&mut extrusion_surfaces, id, "creo extrusion surface nodes")?;
+    for surface in ctx.admit_iter(surfaces, "creo extrusion surface coverage traversal")? {
+        let extrusion = match surface.geometry.procedural_construction() {
+            Some(construction) => ctx.contains_btree_set(&extrusion_constructions, construction, "creo extrusion construction lookup")?,
+            None => false,
+        };
+        if extrusion {
+            scratch.with_storage(|| ctx.insert_btree_set(&mut extrusion_surfaces, &surface.id, "creo extrusion surface nodes"))?;
+        }
     }
-    let mut transferred = Vec::new();
-    for surface in surfaces {
-        let Some(source) = surface
-            .source_object
-            .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
-        else {
+    let mut transferred = HashMap::<u32, [bool; 7]>::new();
+    let mut unknown_ids = BTreeSet::new();
+    for surface in ctx.admit_iter(surfaces, "creo surface coverage traversal")? {
+        let Some(source) = surface.source_object.as_ref()
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo) else {
             continue;
         };
-        let Some(digits) = ctx.strip_prefix(
-            source.object_id.as_str(),
-            "VisibGeom:",
-            "creo coverage identity prefix",
-        )?
-        else {
+        let Some(digits) = ctx.strip_prefix(source.object_id.as_str(), "VisibGeom:", "creo coverage identity prefix")? else {
             continue;
         };
         let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
             continue;
         };
+        if matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })) {
+            scratch.with_storage(|| ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown surface ID nodes"))?;
+        }
         let Some(kind) = surface_kind_for_geometry(&surface.geometry) else {
             continue;
         };
-        let extra = extrusion_surfaces.contains(&surface.id).then_some(
-            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
-        );
-        ctx.reserve_vec(&mut transferred, 1, "creo transferred surface rows")?;
-        transferred.push((id, [Some(kind), extra]));
-    }
-    let mut unknown_ids = BTreeSet::new();
-    for surface in surfaces.iter().filter(|surface| {
-        matches!(
-            surface.geometry,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-        )
-    }) {
-        let Some(source) = surface
-            .source_object
-            .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
-        else {
-            continue;
-        };
-        let Some(digits) = ctx.strip_prefix(
-            source.object_id.as_str(),
-            "VisibGeom:",
-            "creo coverage identity prefix",
-        )?
-        else {
-            continue;
-        };
-        let Ok(id) = ctx.parse_text::<u32>(digits, "creo scalar text parsing")? else {
-            continue;
-        };
-        ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown surface ID nodes")?;
+        let extrusion = ctx.contains_btree_set(&extrusion_surfaces, &surface.id, "creo extrusion surface lookup")?;
+        scratch.with_storage(|| {
+            let kinds = ctx.entry_hash_map(&mut transferred, id, "creo transferred surface rows")?.or_insert([false; 7]);
+            kinds[surface_family_index(kind)] = true;
+            if extrusion {
+                kinds[surface_family_index(crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear))] = true;
+            }
+            Ok::<_, CodecError>(())
+        })?;
     }
     let mut coverage = SurfaceTransferCoverage::default();
     coverage.record_ambiguous_rows(
@@ -632,18 +558,12 @@ pub(super) fn surface_transfer_coverage(
             .checked_sub(unique_rows.len())
             .ok_or_else(|| CodecError::malformed("unique row count exceeds source row count"))?,
     );
-    for row in unique_rows {
+    for row in ctx.admit_iter(unique_rows, "creo unique coverage row traversal")? {
         coverage.record_source_row(row.kind);
-        if transferred.iter().any(|(id, kinds)| {
-            *id == row.id
-                && kinds
-                    .iter()
-                    .flatten()
-                    .any(|kind| kind.same_family(row.kind))
-        }) {
+        if transferred.get(&row.id).is_some_and(|kinds| kinds[surface_family_index(row.kind)]) {
             coverage.record_transferred_row(row.kind);
         }
-        if unknown_ids.contains(&row.id) {
+        if ctx.contains_btree_set(&unknown_ids, &row.id, "creo unknown coverage ID lookup")? {
             coverage.record_retained_unknown_row(row.kind);
         }
     }
