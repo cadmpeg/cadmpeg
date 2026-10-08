@@ -339,18 +339,22 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         };
         assert_eq!(
             agreed_feature_affected_ids(
+                ctx,
                 &[affected(&[7, 8], 60), affected(&[7, 8], 70)],
                 6,
                 crate::feature::rows::AffectedIdKind::Edges,
-            ),
+            )
+            .expect("affected ID agreement admission"),
             Some(&[7, 8][..])
         );
         assert_eq!(
             agreed_feature_affected_ids(
+                ctx,
                 &[affected(&[7, 8], 60), affected(&[8, 7], 70)],
                 6,
                 crate::feature::rows::AffectedIdKind::Edges,
-            ),
+            )
+            .expect("affected ID agreement admission"),
             None
         );
         let replay = |geometry_ids: &[u32], edge_ids: &[u32], offset| {

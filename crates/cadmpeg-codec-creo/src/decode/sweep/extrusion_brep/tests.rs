@@ -840,12 +840,12 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
             offset: 0,
             end_offset: 0,
         };
-        table.entries = vec![
+        table.entries.replace(vec![
             cap(29, 204),
             cap(30, 203),
             table.entries[0].clone(),
             materialized,
-        ];
+        ]);
         table.mark_surface_ids([29, 30, 32]);
         scan.features.entity_tables.push(table);
         scan.surfaces

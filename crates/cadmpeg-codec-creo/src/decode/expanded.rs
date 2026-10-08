@@ -169,7 +169,7 @@ fn visit_feature_surface_replays(
     for table in &scan.features.entity_tables {
         let owner_feature_id = table.feature_id;
         let visible_count = ctx
-            .admit_iter(&table.entries, "creo surface replay entry scan")?
+            .admit_iter(table.entries.as_slice(), "creo surface replay entry scan")?
             .take_while(|entry| entry.class_id() == 254)
             .count();
         if visible_count == 0 {

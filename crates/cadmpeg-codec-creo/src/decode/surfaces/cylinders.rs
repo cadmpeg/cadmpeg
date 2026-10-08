@@ -218,10 +218,11 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         "creo constrained slot round feature IDs",
     )? {
         let named = agreed_feature_affected_ids(
+            ctx,
             &scan.features.affected_ids,
             *feature_id,
             crate::feature::rows::AffectedIdKind::Geometry,
-        );
+        )?;
         let named_present = has_feature_affected_ids(
             ctx,
             &scan.features.affected_ids,
@@ -1435,7 +1436,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                 .admit_iter(&scan.features.entity_tables, "creo reference cylinder entity tables")?
                 .filter(|table| table.feature_id == row.feature_id)
             {
-                for entry in ctx.admit_iter(&table.entries, "creo reference cylinder entity entries")? {
+                for entry in ctx.admit_iter(table.entries.as_slice(), "creo reference cylinder entity entries")? {
                     ctx.insert_btree_set(
                         &mut entity_ids,
                         entry.entity_id,

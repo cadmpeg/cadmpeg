@@ -8,6 +8,7 @@
 
 pub(crate) mod definitions;
 pub(crate) mod entity;
+pub(crate) mod entity_rows;
 mod helpers;
 pub(crate) mod operations;
 pub(crate) mod order_rows;

@@ -34,10 +34,11 @@ pub(in super::super) fn feature_edge_selection(
     feature_id: u32,
 ) -> Result<Option<EdgeSelection>, CodecError> {
     let (ids, native) = if let Some(ids) = agreed_feature_affected_ids(
+        ctx,
         &scan.features.affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Edges,
-    ) {
+    )? {
         if ids.is_empty() {
             let native =
                 edge_selection_native(ctx, "creo:allfeatur:edgs_affected", feature_id, ids)?;
@@ -339,10 +340,11 @@ pub(in super::super) fn agreed_feature_geometry_ids<'a>(
     feature_id: u32,
 ) -> Result<Option<&'a [u32]>, CodecError> {
     let named = agreed_feature_affected_ids(
+        ctx,
         affected_ids,
         feature_id,
         crate::feature::rows::AffectedIdKind::Geometry,
-    );
+    )?;
     if named.is_some() {
         return Ok(named);
     }

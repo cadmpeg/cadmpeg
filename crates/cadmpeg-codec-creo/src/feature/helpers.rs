@@ -25,14 +25,22 @@ pub(super) fn decode_exact_scalars(
         return Ok(None);
     }
     let mut values = Vec::new();
-    ctx.reserve_vec(&mut values, slot_count, "creo feature scalar values")?;
+    let mut storage = ctx.reserve_scoped(0, "creo feature scalar values")?;
     let mut cursor = psb::Cursor::new(payload);
-    for _ in 0..slot_count {
+    let mut slots = 0..slot_count;
+    while ctx
+        .next_charged(&mut slots, "creo exact scalar scan")?
+        .is_some()
+    {
         let Some(value) = cursor.take_with(|data, pos| scalar::decode_in_lane(data, pos, cache))
         else {
             return Ok(None);
         };
-        values.push(value);
+        storage.with_storage(|| ctx.push_vec(&mut values, value, "creo feature scalar values"))?;
     }
-    Ok((cursor.pos() == payload.len()).then_some(values))
+    if cursor.pos() != payload.len() {
+        return Ok(None);
+    }
+    storage.commit()?;
+    Ok(Some(values))
 }
