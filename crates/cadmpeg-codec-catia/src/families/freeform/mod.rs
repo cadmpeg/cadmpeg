@@ -360,7 +360,7 @@ pub(super) fn try_decode_freeform_surfaces(
         ));
         let object_selection = crate::families::b5::graph::select_object_stream_population(
             ctx,
-            &logical_streams,
+            &logical_streams.streams,
             Some(&selection_budget),
         );
         let object_selection = match object_selection {
