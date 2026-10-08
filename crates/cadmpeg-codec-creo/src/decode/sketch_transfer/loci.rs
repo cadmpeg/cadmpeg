@@ -1503,7 +1503,17 @@ mod tests {
             entity_id: 7,
             sense: 0,
         };
-        let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:7".len());
+        let need = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    let refusal = std::cell::Cell::new(None);
+                    let result = section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item)?;
+                    match refusal.into_inner() { Some(error) => Err(error), None => Ok(result) }
+                },
+            );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = need - 1;
@@ -1659,7 +1669,15 @@ mod tests {
         let sketch = SketchId::mint("creo:model:sketch#917").expect("valid test fixture");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:12".len());
+        let need = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, None, |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    section_point_locus(&ctx, &definition, &sketch, 7)
+                },
+            );
         policy.limits.max_retained_bytes = need - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = section_point_locus(&ctx, &definition, &sketch, 7)

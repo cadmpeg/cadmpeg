@@ -645,8 +645,9 @@ pub(in super::super) fn transfer_sketches(
             if segment.vertical_horizontal.is_none() {
                 continue;
             }
-            let suffix =
-                section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)?;
+            let mut suffix_storage = ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+            let suffix = suffix_storage.with_storage(||
+                section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment))?;
             let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                 continue;
             };
@@ -675,17 +676,18 @@ pub(in super::super) fn transfer_sketches(
                     _ => None,
                 })
             {
-                let suffix = if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo transferred segment identity membership")? {
+                let mut suffix_storage = ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+                let suffix = suffix_storage.with_storage(|| if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo transferred segment identity membership")? {
                     ctx.format_retained(
                         format_args!("{}", segment.external_id),
                         "creo verhor entity suffix",
-                    )?
+                    )
                 } else {
                     ctx.format_retained(
                         format_args!("centered_line:offset:{}", segment.offset),
                         "creo verhor entity suffix",
-                    )?
-                };
+                    )
+                })?;
                 let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                     continue;
                 };
@@ -721,17 +723,18 @@ pub(in super::super) fn transfer_sketches(
                 let Some(verhor) = segment.vertical_horizontal else {
                     continue;
                 };
-                let suffix = if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo transferred segment identity membership")? {
+                let mut suffix_storage = ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+                let suffix = suffix_storage.with_storage(|| if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo transferred segment identity membership")? {
                     ctx.format_retained(
                         format_args!("{}", segment.external_id),
                         "creo verhor entity suffix",
-                    )?
+                    )
                 } else {
                     ctx.format_retained(
                         format_args!("bounded_curve:offset:{}", segment.offset),
                         "creo verhor entity suffix",
-                    )?
-                };
+                    )
+                })?;
                 let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                     continue;
                 };
@@ -767,17 +770,18 @@ pub(in super::super) fn transfer_sketches(
                 let Some(verhor) = segment.vertical_horizontal else {
                     continue;
                 };
-                let suffix = if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo transferred segment identity membership")? {
+                let mut suffix_storage = ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+                let suffix = suffix_storage.with_storage(|| if ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo transferred segment identity membership")? {
                     ctx.format_retained(
                         format_args!("{}", segment.external_id),
                         "creo verhor entity suffix",
-                    )?
+                    )
                 } else {
                     ctx.format_retained(
                         format_args!("reference_line:offset:{}", segment.offset),
                         "creo verhor entity suffix",
-                    )?
-                };
+                    )
+                })?;
                 let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                     continue;
                 };
@@ -810,11 +814,12 @@ pub(in super::super) fn transfer_sketches(
                 let Some(verhor) = segment.vertical_horizontal else {
                     continue;
                 };
-                let suffix = opaque_section_segment_identity_suffix_admitted(
+                let mut suffix_storage = ctx.reserve_scoped(0, "creo orientation suffix storage")?;
+                let suffix = suffix_storage.with_storage(|| opaque_section_segment_identity_suffix_admitted(
                     ctx,
                     &unique_segment_ids,
                     segment,
-                )?;
+                ))?;
                 let Some(entity) = sketch_entity_id_admitted(ctx, &sketch_id, &suffix)? else {
                     continue;
                 };

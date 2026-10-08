@@ -2884,95 +2884,33 @@ mod tests {
     #[test]
     fn equation_constraint_refuses_each_retained_identity_and_output_row() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let definition = || SketchConstraintDefinitionInput::ScalarEquality {
-            first: 10,
-            second: 11,
-        };
+        let definition = || SketchConstraintDefinitionInput::ScalarEquality { first: 10, second: 11 };
         let id = "creo:featdefs:sketch_constraint#5:equation:1";
-        let native_ref = "creo:featdefs:sketch#5";
-        let mut total = 0u64;
-        for (text, operation) in [
-            (id, "creo sketch constraint identity"),
-            (sketch.as_str(), "creo equation sketch identity"),
-            (native_ref, "creo sketch native reference"),
-        ] {
-            total += cadmpeg_core::decode::u64_from_index(text.len());
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                Some(operation),
-                |cap| {
-                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-                    let mut trial_policy = policy;
-                    trial_policy.limits.max_retained_bytes = cap;
-                    let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                        &[],
-                        &trial_arena,
-                        &trial_policy,
-                    )
-                    .expect("root");
-                    super::equation_constraint(&trial_ctx, &sketch, 1, definition(), true, 7)
-                },
-            );
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let error = super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)
-                .expect_err("one retained identity exceeds cap");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::RetainedBytes
-                    && resource.operation == operation),
-                "{error}"
-            );
-        }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let source = [std::cell::Cell::new(Some(super::equation_constraint(
-            &ctx,
-            &sketch,
-            1,
-            definition(),
-            true,
-            7,
-        )))];
-        let error = super::collect_constraint_candidates(
-            &ctx,
-            &source,
-            "creo scalar equality constraints",
-            |constraint| constraint.take().expect("fixture constraint consumed once"),
-        )
-        .expect_err("one output row exceeds zero items");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo scalar equality constraints")
+        let _constraint = crate::test_support::assert_refusal_order(
+            ResourceDimension::RetainedBytes,
+            &["creo sketch constraint identity", "creo equation sketch identity", "creo sketch native reference"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)
+            },
         );
-        policy.limits.max_collection_items = 1;
-        policy.limits.max_retained_bytes = total
-            + cadmpeg_core::decode::u64_from_index(
-                4 * std::mem::size_of::<(cadmpeg_ir::sketches::SketchConstraint, usize)>(),
-            );
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let source = [std::cell::Cell::new(Some(super::equation_constraint(
-            &ctx,
-            &sketch,
-            1,
-            definition(),
-            true,
-            7,
-        )))];
-        let rows = super::collect_constraint_candidates(
-            &ctx,
-            &source,
-            "creo scalar equality constraints",
-            |constraint| constraint.take().expect("fixture constraint consumed once"),
-        )
-        .expect("exact caps admit one equation");
+        let rows = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo scalar equality constraints"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let source = [std::cell::Cell::new(Some(super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)))];
+                super::collect_constraint_candidates(&ctx, &source, "creo scalar equality constraints",
+                    |constraint| constraint.take().expect("fixture constraint consumed once"))
+            },
+        );
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0.id.as_str(), id);
         assert_eq!(rows[0].1, 7);
@@ -2982,62 +2920,29 @@ mod tests {
     fn native_verhor_refuses_each_nested_text_and_collection() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let entity =
-            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
-        let fields = [
-            ("creo:segtab:verhor", "creo verhor native kind"),
-            ("verhor", "creo verhor property key"),
-            ("2", "creo verhor property value"),
-            ("segtab_ptr", "creo verhor operand kind"),
-            ("ext_id", "creo verhor operand field"),
-            ("creo:featdefs:sketch#5", "creo sketch native reference"),
-        ];
-        let mut total = 0u64;
-        for (field_index, (field, operation)) in fields.into_iter().enumerate() {
-            if field_index == 3 {
-                total += cadmpeg_core::decode::u64_from_index(
-                    11 * std::mem::size_of::<(String, String)>()
-                        + 16 * std::mem::size_of::<usize>()
-                        + 2 * std::mem::align_of::<(String, String)>()
-                        + 4 * std::mem::size_of::<SketchEntityId>(),
-                );
-            }
-            total += cadmpeg_core::decode::u64_from_index(field.len());
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = total - 1;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            assert!(
-                matches!(super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2),
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::RetainedBytes
-                        && refusal.operation == operation)
-            );
-        }
-        for (limit, operation) in [
-            (0, "creo verhor property nodes"),
-            (1, "creo verhor entity references"),
-            (2, "creo verhor operands"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            assert!(
-                matches!(super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2),
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::CollectionItems
-                        && refusal.operation == operation)
-            );
-        }
-        let arena = DecodeArena::new();
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-        let admitted =
-            super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2)
-                .expect("service verhor admission");
+        let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
+        let _definition = crate::test_support::assert_refusal_order(
+            ResourceDimension::RetainedBytes,
+            &["creo verhor native kind", "creo verhor property key", "creo verhor property value", "creo verhor operand kind", "creo verhor operand field", "creo sketch native reference"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2)
+            },
+        );
+        let admitted = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo verhor property nodes", "creo verhor entity references", "creo verhor operands"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2)
+            },
+        );
         let SketchConstraintDefinitionInput::Native {
             native_properties,
             entities,
@@ -3056,71 +2961,29 @@ mod tests {
     fn native_segment_radius_refuses_each_nested_text_and_collection() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let entity =
-            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
-        let fields = [
-            ("creo:segtab:radius", "creo radius native kind"),
-            ("dimension_ordinal", "creo radius property key"),
-            ("2", "creo radius property value"),
-            ("segtab_ptr", "creo radius operand kind"),
-            ("ext_id", "creo radius operand field"),
-            ("creo:featdefs:sketch#5", "creo sketch native reference"),
-            ("dimension_ordinal", "creo radius operand kind"),
-            ("radius", "creo radius operand field"),
-            ("creo:featdefs:sketch#5", "creo sketch native reference"),
-        ];
-        let mut total = 0u64;
-        for (field_index, (field, operation)) in fields.into_iter().enumerate() {
-            if field_index == 3 {
-                total += cadmpeg_core::decode::u64_from_index(
-                    11 * std::mem::size_of::<(String, String)>()
-                        + 16 * std::mem::size_of::<usize>()
-                        + 2 * std::mem::align_of::<(String, String)>()
-                        + 4 * std::mem::size_of::<SketchEntityId>(),
-                );
-            }
-            total += cadmpeg_core::decode::u64_from_index(field.len());
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = total - 1;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            assert!(
-                matches!(super::native_section_segment_radius_definition(&ctx, &sketch, entity.clone(), 42, "radius", 2),
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::RetainedBytes
-                        && refusal.operation == operation)
-            );
-        }
-        for (limit, operation) in [
-            (0, "creo radius property nodes"),
-            (1, "creo radius entity references"),
-            (3, "creo radius operands"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            assert!(
-                matches!(super::native_section_segment_radius_definition(&ctx, &sketch, entity.clone(), 42, "radius", 2),
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::CollectionItems
-                        && refusal.operation == operation)
-            );
-        }
-        let arena = DecodeArena::new();
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-        let admitted = super::native_section_segment_radius_definition(
-            &ctx,
-            &sketch,
-            entity.clone(),
-            42,
-            "radius",
-            2,
-        )
-        .expect("service radius admission");
+        let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
+        let _definition = crate::test_support::assert_refusal_order(
+            ResourceDimension::RetainedBytes,
+            &["creo radius native kind", "creo radius property key", "creo radius property value", "creo radius operand kind", "creo radius operand field", "creo sketch native reference", "creo radius operand kind", "creo radius operand field", "creo sketch native reference"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::native_section_segment_radius_definition(&ctx, &sketch, entity.clone(), 42, "radius", 2)
+            },
+        );
+        let admitted = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo radius property nodes", "creo radius entity references", "creo radius operands"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::native_section_segment_radius_definition(&ctx, &sketch, entity.clone(), 42, "radius", 2)
+            },
+        );
         let SketchConstraintDefinitionInput::Native {
             native_properties,
             entities,
@@ -3214,85 +3077,67 @@ mod tests {
     #[test]
     fn native_relation_property_refuses_value_key_and_tree_node() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        let mut properties = std::collections::BTreeMap::new();
-        for (limit, operation) in [
-            (0, "creo native relation property value"),
-            (
-                cadmpeg_core::decode::u64_from_index("7".len())
-                    + cadmpeg_core::decode::u64_from_index("dimension_id".len())
-                    - 1,
-                "creo native relation property key",
-            ),
-        ] {
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            assert!(
-                matches!(insert_relation_property(&ctx, &mut properties, "dimension_id", 7),
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::RetainedBytes && refusal.operation == operation)
-            );
-            assert!(properties.is_empty());
-        }
-        policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(
-            matches!(insert_relation_property(&ctx, &mut properties, "dimension_id", 7),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo native relation property nodes")
+        let _properties = crate::test_support::assert_refusal_order(
+            ResourceDimension::RetainedBytes,
+            &["creo native relation property value", "creo native relation property key"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let mut properties = std::collections::BTreeMap::new();
+                let result = insert_relation_property(&ctx, &mut properties, "dimension_id", 7);
+                if result.is_err() { assert!(properties.is_empty()); }
+                result.map(|()| properties)
+            },
         );
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        insert_relation_property(&ctx, &mut properties, "dimension_id", 7)
-            .expect("exact cap admits node");
+        let properties = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo native relation property nodes"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let mut properties = std::collections::BTreeMap::new();
+                let result = insert_relation_property(&ctx, &mut properties, "dimension_id", 7);
+                if result.is_err() { assert!(properties.is_empty()); }
+                result.map(|()| properties)
+            },
+        );
         assert_eq!(properties["dimension_id"], "7");
     }
 
     #[test]
     fn native_relation_operand_refuses_kind_reference_and_vector_slot() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
         let native_ref = "creo:featdefs:sketch#5";
-        for (limit, operation) in [
-            (
-                cadmpeg_core::decode::u64_from_index("relat_ptr".len()) - 1,
-                "creo native relation operand kind",
-            ),
-            (
-                cadmpeg_core::decode::u64_from_index("relat_ptr".len())
-                    + cadmpeg_core::decode::u64_from_index(native_ref.len())
-                    - 1,
-                "creo native relation operand reference",
-            ),
-        ] {
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            assert!(
-                matches!(push_relation_operand(&ctx, &mut Vec::new(), native_ref, "relat_ptr", None, 7),
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::RetainedBytes && refusal.operation == operation)
-            );
-        }
-        policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert!(
-            matches!(push_relation_operand(&ctx, &mut Vec::new(), native_ref, "relat_ptr", None, 7),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo native relation operands")
+        let _operands = crate::test_support::assert_refusal_order(
+            ResourceDimension::RetainedBytes,
+            &["creo native relation operand kind", "creo native relation operand reference"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let mut operands = Vec::new();
+                push_relation_operand(&ctx, &mut operands, native_ref, "relat_ptr", None, 7)?;
+                Ok(operands)
+            },
         );
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let mut operands = Vec::new();
-        push_relation_operand(&ctx, &mut operands, native_ref, "relat_ptr", None, 7)
-            .expect("exact cap admits operand");
+        let operands = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo native relation operands"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let mut operands = Vec::new();
+                push_relation_operand(&ctx, &mut operands, native_ref, "relat_ptr", None, 7)?;
+                Ok(operands)
+            },
+        );
         assert_eq!(operands[0].object_index, Some(7));
         assert_eq!(operands[0].native_ref.as_deref(), Some(native_ref));
     }
@@ -3300,109 +3145,63 @@ mod tests {
     #[test]
     fn native_equation_properties_refuse_node_key_and_value() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let mut properties = std::collections::BTreeMap::new();
-        let error = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
-            .expect_err("one property exceeds zero nodes");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo native equation property nodes")
+        let _properties = crate::test_support::assert_refusal_order(
+            ResourceDimension::RetainedBytes,
+            &["creo native equation property keys", "creo native equation property values"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let mut properties = std::collections::BTreeMap::new();
+                let result = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7);
+                if result.is_err() { assert!(properties.is_empty()); }
+                result.map(|()| properties)
+            },
         );
-        assert!(properties.is_empty());
-        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("equation_id".len()) - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
-            .expect_err("property key exceeds retained cap");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native equation property keys")
+        let properties = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo native equation property nodes"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let mut properties = std::collections::BTreeMap::new();
+                let result = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7);
+                if result.is_err() { assert!(properties.is_empty()); }
+                result.map(|()| properties)
+            },
         );
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("equation_id".len());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let error = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
-            .expect_err("property value exceeds remaining retained cap");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo native equation property values")
-        );
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-        insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
-            .expect("service property");
         assert_eq!(properties.get("equation_id").map(String::as_str), Some("7"));
     }
 
     #[test]
     fn native_equation_operands_refuse_each_nested_boundary() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let arena = DecodeArena::new();
         let arguments = [None, Some(2), Some(3)];
-        for cap in 0..3 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let error = native_equation_data(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
-                .expect_err("next operand exceeds collection cap");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == "creo native equation operands")
-            );
-        }
-        for (_cap, operation) in [
-            (0, "creo equation operand kind"),
-            (
-                cadmpeg_core::decode::u64_from_index("eqtn_arr".len()),
-                "creo equation operand field",
-            ),
-            (
-                cadmpeg_core::decode::u64_from_index("eqtn_arr".len() + "equation_id".len()),
-                "creo equation operand reference",
-            ),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                Some(operation),
-                |cap| {
-                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-                    let mut trial_policy = policy;
-                    trial_policy.limits.max_retained_bytes = cap;
-                    let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                        &[],
-                        &trial_arena,
-                        &trial_policy,
-                    )
-                    .expect("root");
-                    native_equation_data(&trial_ctx, 1, &arguments, "creo:featdefs:sketch#40")
-                },
-            );
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let error = native_equation_data(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
-                .expect_err("next operand string exceeds retained cap");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::RetainedBytes
-                    && resource.operation == operation)
-            );
-        }
-        let service = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-        let operands = native_equation_data(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
-            .expect("service operands");
+        let _operands = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo native equation operands", "creo native equation operands", "creo native equation operands"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                native_equation_data(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
+            },
+        );
+        let operands = crate::test_support::assert_refusal_order(
+            ResourceDimension::RetainedBytes,
+            &["creo equation operand kind", "creo equation operand field", "creo equation operand reference"],
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                native_equation_data(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
+            },
+        );
         assert_eq!(operands.argument_slots, "0:null,1:2,2:3");
         assert_eq!(operands.null_argument_ordinals.as_deref(), Some("0"));
         let operands = operands.operands;

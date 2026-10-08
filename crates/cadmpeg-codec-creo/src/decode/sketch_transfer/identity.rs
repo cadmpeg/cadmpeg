@@ -674,7 +674,15 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("offset:9".len()) - 1;
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo section entity suffix"), |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    super::section_segment_identity_suffix_admitted(&ctx, &std::collections::BTreeSet::new(), &segment)
+                },
+            );
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root");
         assert!(
@@ -703,7 +711,15 @@ mod tests {
         let expected = format!("opaque:offset:{}", segment.offset);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo opaque entity suffix"), |cap| {
+                    let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                    let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                    trial_policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                    super::opaque_section_segment_identity_suffix_admitted(&ctx, &std::collections::BTreeSet::new(), &segment)
+                },
+            );
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root");
         assert!(
