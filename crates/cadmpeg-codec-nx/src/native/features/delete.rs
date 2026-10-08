@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native DELETE reference fields and construction payloads.
 
-use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
+use super::payload_content::{
+    copy_block_ids, shared_block_store, FeaturePayloadBlock, FeaturePayloadContent,
+};
 use super::{
     charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
-    visit_feature_history_operation_records,
+    FeatureHistory,
 };
 use crate::container::Container;
 use crate::om::delete_references::DeleteReferences;
@@ -12,7 +14,6 @@ use crate::om::reference_index::PayloadIndexToken;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fmt::Write;
 
 /// Exact counted nullable reference field carried by a `DELETE` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -165,59 +166,50 @@ impl TryFrom<DeleteReferenceFieldWire> for FeatureDeleteReferenceField {
 /// their non-null slots without assigning a target object family.
 pub(in crate::native) fn feature_delete_reference_fields(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = history.container().indexed_om_sections(ctx)?;
     let mut fields = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let projected =
-                (|| -> Result<Option<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
-                    let Some(field) = DeleteReferences::read(record.payload_view()) else {
-                        return Ok(None);
-                    };
-                    let Some(references) = field.resolve(entry_offset, |token| {
-                        charged_unique_offset_data_block(ctx, &indexed, token.value())
-                    })?
-                    else {
-                        return Ok(None);
-                    };
-                    let id = format_feature_history_id(
-                        ctx,
-                        "delete-reference-field",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?;
-                    let operation_label = format_feature_history_id(
-                        ctx,
-                        "operation-label",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?;
-                    ctx.reserve_vec(&mut fields, 1, "NX DELETE reference fields")?;
-                    Ok(Some(FeatureDeleteReferenceField {
-                        id,
-                        operation_label,
-                        references,
-                    }))
-                })();
-            match projected {
-                Ok(Some(field)) => fields.push(field),
-                Ok(None) => {}
-                Err(error) => failure = Some(error),
-            }
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
+            let Some(field) = DeleteReferences::read(record.payload_view()) else {
+                continue;
+            };
+            let Some(references) = field.resolve(entry_offset, |token| {
+                charged_unique_offset_data_block(ctx, &indexed, token.value())
+            })?
+            else {
+                continue;
+            };
+            let id = format_feature_history_id(
+                ctx,
+                "delete-reference-field",
+                section_key,
+                operation_ordinal,
+                None,
+            )?;
+            let operation_label = format_feature_history_id(
+                ctx,
+                "operation-label",
+                section_key,
+                operation_ordinal,
+                None,
+            )?;
+            ctx.reserve_vec(&mut fields, 1, "NX DELETE reference fields")?;
+            let field = FeatureDeleteReferenceField {
+                id,
+                operation_label,
+                references,
+            };
+            fields.push(field);
+        }
     }
     Ok(fields)
 }
@@ -231,7 +223,7 @@ pub(in crate::native) fn feature_delete_construction_payloads(
 ) -> Result<Vec<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut output = Vec::new();
-    for field in fields {
+    for field in ctx.admit_iter(fields, "scan NX DELETE reference fields")? {
         let Some(payload) = delete_construction_payload_from_field(ctx, field, &blocks)? else {
             continue;
         };
@@ -247,52 +239,17 @@ fn delete_construction_payload_from_field(
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
     let slots = field.references.slots();
-    if slots.iter().any(|reference| {
-        reference
-            .as_ref()
-            .and_then(|(_, block)| block.as_ref())
-            .is_none()
-    }) {
-        return Ok(None);
-    }
-
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(slots.len()),
+    let Some((data_blocks, _source_reservation)) = copy_block_ids(
+        ctx,
+        slots
+            .iter()
+            .map(|reference| reference.as_ref().and_then(|(_, block)| block.as_deref())),
         "NX DELETE source block references",
-    )?;
-    let mut source_reservation = ctx.reserve_scoped(0, "NX DELETE source block references")?;
-    let mut data_blocks = Vec::new();
-    source_reservation.with_storage(|| {
-        ctx.reserve_capacity(
-            &mut data_blocks,
-            slots.len(),
-            "allocate NX DELETE source block references",
-        )
-    })?;
-    for reference in slots {
-        let Some((_, Some(block))) = reference else {
-            return Ok(None);
-        };
-        let mut id = String::new();
-        ctx.try_reserve_retained_text(
-            &mut id,
-            block.len(),
-            "allocate NX DELETE source block reference",
-        )?;
-        id.push_str(block);
-        data_blocks.push(id);
-    }
-    let Some(store) = data_blocks
-        .first()
-        .and_then(|id| id.rsplit_once(":block#").map(|(store, _)| store))
+    )?
     else {
         return Ok(None);
     };
-    if data_blocks.iter().any(|block| {
-        block
-            .rsplit_once(":block#")
-            .is_none_or(|(prefix, _)| prefix != store)
-    }) {
+    if shared_block_store(ctx, &data_blocks, "validate NX DELETE source block owners")?.is_none() {
         return Ok(None);
     }
     let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
@@ -304,14 +261,10 @@ fn delete_construction_payload_from_field(
     else {
         return Ok(None);
     };
-    let prefix = "nx:feature-history:delete-construction-payload#";
-    let id_len = prefix
-        .len()
-        .checked_add(operation_key.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX DELETE construction identity", 0, 1))?;
-    let mut id = ctx.retained_string(id_len, "NX DELETE construction identity")?;
-    write!(&mut id, "{prefix}{operation_key}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX DELETE construction identity", 0, 1))?;
+    let id = ctx.format_retained(
+        format_args!("nx:feature-history:delete-construction-payload#{operation_key}"),
+        "NX DELETE construction identity",
+    )?;
     Ok(Some(FeatureDeleteConstructionPayload {
         id,
         operation_label: ctx

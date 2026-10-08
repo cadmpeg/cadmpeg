@@ -2,7 +2,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::dimension_frames::companion_owned_interval;
+use crate::design::decode::dimension_frames::CompanionIntervals;
 use crate::design::decode::parameters::bind_parameter_companion_payloads;
 use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
 use crate::design::test_support::parameter_record;
@@ -45,11 +45,13 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &loft_scope,
             &[],
-        ),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
@@ -355,11 +357,13 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
-        ),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -375,11 +379,13 @@ pub(super) fn fixed_kind_path_operations(
     sweep_scope.id = "stream:sweep-scope".into();
     {
         let value = exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sweep_scope,
             &[],
-        );
+        )
+        .unwrap();
         sweep_scope
             .try_edit(|draft| {
                 draft.payload =
@@ -668,11 +674,13 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &pipe_scope,
             &[],
-        ),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -762,11 +770,13 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &owner_pipe_owners,
-        ),
+        )
+        .unwrap(),
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
@@ -793,11 +803,13 @@ pub(super) fn fixed_kind_path_operations(
         crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     assert_eq!(
         exact_path_feature_construction(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &owner_pipe_scope,
             &wrong_owner_class,
-        ),
+        )
+        .unwrap(),
         None
     );
 
@@ -870,11 +882,13 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
         assert_eq!(
             exact_path_feature_construction(
+                &cadmpeg_test_support::service_decode_context(),
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 &legacy_scope,
                 &[],
-            ),
+            )
+            .unwrap(),
             Some(DesignPathFeatureConstruction::Pipe(
                 crate::records::feature::path_features::DesignPipeConstruction {
                     operation: DesignExtrudeOperation::NewBody,
@@ -929,17 +943,12 @@ pub(super) fn fixed_kind_path_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        companion_owned_interval(
-            &cadmpeg_test_support::service_decode_context(),
-            &companion,
-            std::iter::empty(),
-            &[],
-            &[scope.clone()],
-            &[],
-            100,
-        )
-        .unwrap(),
+        CompanionIntervals::new(&ctx, &[], &[], &[scope.clone()], &[])
+            .unwrap()
+            .interval(&ctx, "f3d:native", &companion, 100)
+            .unwrap(),
         Some((58, 58))
     );
     scope
@@ -954,16 +963,10 @@ pub(super) fn fixed_kind_path_operations(
         })
         .unwrap();
     assert_eq!(
-        companion_owned_interval(
-            &cadmpeg_test_support::service_decode_context(),
-            &companion,
-            std::iter::empty(),
-            &[],
-            &[scope.clone()],
-            &[],
-            100,
-        )
-        .unwrap(),
+        CompanionIntervals::new(&ctx, &[], &[], &[scope.clone()], &[])
+            .unwrap()
+            .interval(&ctx, "f3d:native", &companion, 100)
+            .unwrap(),
         Some((58, 80))
     );
     scope
@@ -984,16 +987,10 @@ pub(super) fn fixed_kind_path_operations(
         byte_offset: 70,
     };
     assert_eq!(
-        companion_owned_interval(
-            &cadmpeg_test_support::service_decode_context(),
-            &companion,
-            std::iter::empty(),
-            &[],
-            &[scope.clone()],
-            &[foreign_header],
-            100,
-        )
-        .unwrap(),
+        CompanionIntervals::new(&ctx, &[], &[], &[scope.clone()], &[foreign_header])
+            .unwrap()
+            .interval(&ctx, "f3d:native", &companion, 100)
+            .unwrap(),
         Some((58, 70))
     );
 
@@ -1012,16 +1009,10 @@ pub(super) fn fixed_kind_path_operations(
     .expect("located parameter");
     parameter.id = "f3d:native:design-parameter#65".into();
     assert_eq!(
-        companion_owned_interval(
-            &cadmpeg_test_support::service_decode_context(),
-            &companion,
-            std::iter::once(&parameter),
-            &[],
-            &[],
-            &[],
-            100,
-        )
-        .unwrap(),
+        CompanionIntervals::new(&ctx, std::slice::from_ref(&parameter), &[], &[], &[])
+            .unwrap()
+            .interval(&ctx, "f3d:native", &companion, 100)
+            .unwrap(),
         Some((58, 65))
     );
     let recipe = ConstructionRecipe {
