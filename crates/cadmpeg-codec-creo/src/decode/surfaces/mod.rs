@@ -631,6 +631,106 @@ impl Fc05CapPairFrame {
         axis[self.axis_index.index()] = self.axis_sign.scale();
         axis
     }
+
+    fn from_outlines(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        pair: &crate::curve::Fc05CylinderCapPair,
+        outlines: &native_ids::UniqueRows<'_, '_, crate::surface::OutlinePlane>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if pair.cap_edges.len() < 2 {
+            return Ok(None);
+        }
+        let mut placed_caps = pair.cap_edges.iter();
+        let Some(first) =
+            ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
+        else {
+            return Ok(None);
+        };
+        let Some(first_cap) = outlines.unique(first.cap_plane_id) else {
+            return Ok(None);
+        };
+        let first_ordinate = first.cap_ordinate_row_frame;
+        let Some(last) =
+            ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
+        else {
+            return Ok(None);
+        };
+        let Some(mut last_cap) = outlines.unique(last.cap_plane_id) else {
+            return Ok(None);
+        };
+        let mut last_ordinate = last.cap_ordinate_row_frame;
+        let Some(axis_index) = Axis::ALL
+            .into_iter()
+            .find(|axis| first_cap.normal()[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)
+        else {
+            return Ok(None);
+        };
+        if last_cap.normal != first_cap.normal {
+            return Ok(None);
+        }
+        let offsets = |plane: &crate::surface::OutlinePlane, ordinate: f64| {
+            let origin = first_cap.origin[axis_index.index()];
+            let current = plane.origin[axis_index.index()];
+            [
+                (current - ordinate - (origin - first_ordinate)).abs(),
+                (current + ordinate - (origin + first_ordinate)).abs(),
+            ]
+        };
+        let mut disagreement = offsets(last_cap, last_ordinate);
+        while let Some(edge) =
+            ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
+        {
+            let Some(plane) = outlines.unique(edge.cap_plane_id) else {
+                return Ok(None);
+            };
+            if plane.normal != first_cap.normal {
+                return Ok(None);
+            }
+            last_cap = plane;
+            last_ordinate = edge.cap_ordinate_row_frame;
+            let current = offsets(plane, last_ordinate);
+            disagreement = std::array::from_fn(|index| disagreement[index].max(current[index]));
+        }
+        let row_span = last_ordinate - first_ordinate;
+        let model_span = last_cap.origin[axis_index.index()] - first_cap.origin[axis_index.index()];
+        let span_scale = row_span.abs().max(model_span.abs()).max(1.0);
+        if !row_span.is_finite()
+            || !model_span.is_finite()
+            || row_span.abs() <= EPS_FC05_CAP_FRAME
+            || (row_span.abs() - model_span.abs()).abs() > EPS_FC05_CAP_FRAME * span_scale
+        {
+            return Ok(None);
+        }
+        let axis_sign = if (model_span / row_span).is_sign_negative() {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
+        let axis_origin = first_cap.origin[axis_index.index()] - axis_sign.scale() * first_ordinate;
+        let disagreement = match axis_sign {
+            Sign::Positive => disagreement[0],
+            Sign::Negative => disagreement[1],
+        };
+        if disagreement > EPS_FC05_CAP_FRAME {
+            // A cap pair whose row-frame and model-space spans do not agree does
+            // not establish a unit parameter-axis transform. Retain the circles
+            // for their independent carrier evidence, but do not invent a chart.
+            return Ok(None);
+        }
+        let (origin, _, ref_direction) = fc05_model_frame(
+            axis_index,
+            axis_origin,
+            pair.center_row_frame,
+            pair.reference_direction_row_frame,
+            axis_sign,
+        );
+        Ok(Some(Fc05CapPairFrame {
+            origin,
+            ref_direction,
+            axis_index,
+            axis_sign,
+        }))
+    }
 }
 
 /// Resolve one cap-pair cylinder in model space from its two placed cap planes.
@@ -652,94 +752,7 @@ pub(super) fn fc05_cap_pair_model_frame(
         |plane| Some(plane.surface_id),
         "creo cap pair outline index",
     )?;
-    let mut placed_caps = pair.cap_edges.iter();
-    let Some(first) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
-    else {
-        return Ok(None);
-    };
-    let Some(first_cap) = outlines.unique(first.cap_plane_id) else {
-        return Ok(None);
-    };
-    let first_ordinate = first.cap_ordinate_row_frame;
-    let Some(last) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
-    else {
-        return Ok(None);
-    };
-    let Some(mut last_cap) = outlines.unique(last.cap_plane_id) else {
-        return Ok(None);
-    };
-    let mut last_ordinate = last.cap_ordinate_row_frame;
-    let Some(axis_index) = Axis::ALL
-        .into_iter()
-        .find(|axis| first_cap.normal()[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)
-    else {
-        return Ok(None);
-    };
-    if last_cap.normal != first_cap.normal {
-        return Ok(None);
-    }
-    let offsets = |plane: &crate::surface::OutlinePlane, ordinate: f64| {
-        let origin = first_cap.origin[axis_index.index()];
-        let current = plane.origin[axis_index.index()];
-        [
-            (current - ordinate - (origin - first_ordinate)).abs(),
-            (current + ordinate - (origin + first_ordinate)).abs(),
-        ]
-    };
-    let mut disagreement = offsets(last_cap, last_ordinate);
-    while let Some(edge) =
-        ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")?
-    {
-        let Some(plane) = outlines.unique(edge.cap_plane_id) else {
-            return Ok(None);
-        };
-        if plane.normal != first_cap.normal {
-            return Ok(None);
-        }
-        last_cap = plane;
-        last_ordinate = edge.cap_ordinate_row_frame;
-        let current = offsets(plane, last_ordinate);
-        disagreement = std::array::from_fn(|index| disagreement[index].max(current[index]));
-    }
-    let row_span = last_ordinate - first_ordinate;
-    let model_span = last_cap.origin[axis_index.index()] - first_cap.origin[axis_index.index()];
-    let span_scale = row_span.abs().max(model_span.abs()).max(1.0);
-    if !row_span.is_finite()
-        || !model_span.is_finite()
-        || row_span.abs() <= EPS_FC05_CAP_FRAME
-        || (row_span.abs() - model_span.abs()).abs() > EPS_FC05_CAP_FRAME * span_scale
-    {
-        return Ok(None);
-    }
-    let axis_sign = if (model_span / row_span).is_sign_negative() {
-        Sign::Negative
-    } else {
-        Sign::Positive
-    };
-    let axis_origin = first_cap.origin[axis_index.index()] - axis_sign.scale() * first_ordinate;
-    let disagreement = match axis_sign {
-        Sign::Positive => disagreement[0],
-        Sign::Negative => disagreement[1],
-    };
-    if disagreement > EPS_FC05_CAP_FRAME {
-        // A cap pair whose row-frame and model-space spans do not agree does
-        // not establish a unit parameter-axis transform. Retain the circles
-        // for their independent carrier evidence, but do not invent a chart.
-        return Ok(None);
-    }
-    let (origin, _, ref_direction) = fc05_model_frame(
-        axis_index,
-        axis_origin,
-        pair.center_row_frame,
-        pair.reference_direction_row_frame,
-        axis_sign,
-    );
-    Ok(Some(Fc05CapPairFrame {
-        origin,
-        ref_direction,
-        axis_index,
-        axis_sign,
-    }))
+    Fc05CapPairFrame::from_outlines(ctx, pair, &outlines)
 }
 
 pub(super) fn transfer_fc05_cap_circles(
@@ -766,6 +779,9 @@ pub(super) fn transfer_fc05_cap_circles(
         |plane| Some(plane.surface_id),
         "creo cap circle outline index",
     )?;
+    let mut pair_storage = ctx.reserve_scoped(0, "creo cap circle pair workspace")?;
+    let mut first_pairs = None;
+    let mut pair_frames = std::collections::HashMap::new();
     for circle in ctx.admit_iter(
         &scan.curves.fc05_circles,
         "creo transfer fc05 cap circles fc05 circles traversal",
@@ -797,13 +813,38 @@ pub(super) fn transfer_fc05_cap_circles(
             continue;
         };
         let [first, second] = circle.center_row_frame;
-        let pair_frame = match ctx.find_by(
-            &scan.curves.fc05_cylinder_cap_pairs,
-            |pair| Ok(pair.surface_id == cylinder_id),
-            "creo circle cap pair search",
-        )? {
-            Some(pair) => fc05_cap_pair_model_frame(ctx, scan, pair)?,
-            None => None,
+        if first_pairs.is_none() {
+            let mut pairs = std::collections::HashMap::new();
+            for pair in ctx.admit_iter(
+                &scan.curves.fc05_cylinder_cap_pairs,
+                "creo circle cap pair index traversal",
+            )? {
+                pair_storage.with_storage(|| {
+                    ctx.entry_hash_map(&mut pairs, pair.surface_id, "creo circle cap pair index")?
+                        .or_insert(pair);
+                    Ok::<_, cadmpeg_core::CodecError>(())
+                })?;
+            }
+            first_pairs = Some(pairs);
+        }
+        let pair_frame = if let Some(frame) = pair_frames.get(&cylinder_id) {
+            *frame
+        } else if let Some(pair) = first_pairs
+            .as_ref()
+            .and_then(|pairs| pairs.get(&cylinder_id))
+        {
+            let frame = Fc05CapPairFrame::from_outlines(ctx, pair, &outlines)?;
+            pair_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut pair_frames,
+                    cylinder_id,
+                    frame,
+                    "creo circle cap pair frames",
+                )
+            })?;
+            frame
+        } else {
+            None
         };
         let (reference, circle_axis_sign) = match circle.angle_parameter {
             crate::curve::Fc05AngleParameterRelation::Inconsistent => (

@@ -175,3 +175,77 @@ fn fc05_axis_cylinder_source_object_refuses_retained_limit() {
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo FC05 axis cylinder source object ID"));
 }
+
+#[test]
+fn fc05_cap_transfer_uses_first_duplicate_pair_for_shared_circles() {
+    let mut scan = one_fc05_cap_scan();
+    scan.planes.outlines.push(crate::surface::OutlinePlane {
+        surface_id: 3,
+        origin: [0.0, 2.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: 3,
+    });
+    let pair = crate::curve::Fc05CylinderCapPair {
+        surface_id: 2,
+        cap_edges: vec![
+            crate::curve::Fc05CapEdge {
+                curve_id: 7,
+                cap_plane_id: 1,
+                cap_ordinate_row_frame: 0.0,
+            },
+            crate::curve::Fc05CapEdge {
+                curve_id: 8,
+                cap_plane_id: 3,
+                cap_ordinate_row_frame: 2.0,
+            },
+        ],
+        center_row_frame: [0.0, 0.0],
+        radius_mm: 1.0,
+        reference_direction_row_frame: [1.0, 0.0],
+        parameter_sense: crate::curve::ParameterSense::Increasing,
+        cap_ordinates_row_frame: vec![0.0, 2.0],
+        offset: 4,
+    };
+    let mut reversed = pair.clone();
+    reversed.cap_edges[0].cap_plane_id = 3;
+    reversed.cap_edges[1].cap_plane_id = 1;
+    scan.curves.fc05_cylinder_cap_pairs.extend([pair, reversed]);
+    let mut circle = scan.curves.fc05_circles[0].clone();
+    circle.curve_id = 8;
+    scan.curves.fc05_circles.push(circle);
+    let mut row = scan.curves.topology_rows[0].clone();
+    row.id = 8;
+    scan.curves.topology_rows.push(row);
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo circle cap pair index traversal",
+            "creo cap pair placed edge traversal",
+        ],
+        |ctx| {
+            let mut ir = CadIr::empty();
+            transfer_fc05_cap_circles(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )?;
+            assert_eq!(ir.model.curves.len(), 2);
+            for curve in &ir.model.curves {
+                let cadmpeg_ir::geometry::CurveGeometry::Solved(
+                    cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(circle),
+                ) = &curve.geometry
+                else {
+                    panic!("circle carrier");
+                };
+                assert_eq!(
+                    *circle.frame().axis().as_raw(),
+                    cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+                );
+            }
+            assert_eq!(ir.model.surfaces.len(), 1);
+            Ok(())
+        },
+    );
+}
