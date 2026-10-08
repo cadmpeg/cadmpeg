@@ -1350,16 +1350,18 @@ fn procedural_indexes_keep_presence_and_reject_ambiguous_owners() {
     ));
     crate::test_support::with_service_context(&[], |ctx| {
         let mut indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
-        assert!(indexes.procedural_surfaces.contains(&construction));
-        assert_eq!(indexes.construction_owners.get(&construction), Some(&None));
+        indexes.ensure_procedural(ctx, &ir).unwrap();
+        assert!(indexes.procedural.as_ref().unwrap().procedural_surfaces.contains(&construction));
+        assert_eq!(indexes.procedural.as_ref().unwrap().construction_owners.get(&construction), Some(&None));
         assert_eq!(ir.model.procedural_surface_owner(&construction), None);
         indexes.index_surface(ctx, &first, 9).unwrap();
         assert_eq!(indexes.surfaces.get(&first), Some(&0));
 
         ir.model.surfaces.pop();
-        let indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
+        let mut indexes = super::GeometryIndexes::new(ctx, &ir).unwrap();
+        indexes.ensure_procedural(ctx, &ir).unwrap();
         assert_eq!(
-            indexes.construction_owners.get(&construction),
+            indexes.procedural.as_ref().unwrap().construction_owners.get(&construction),
             Some(&Some(0))
         );
         assert_eq!(

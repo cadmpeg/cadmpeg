@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted native element-map nodes and persistent-name bindings.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -242,6 +242,7 @@ impl ElementMapNodes {
         ctx: &DecodeContext<'_>,
         map_id: u64,
         groups: BTreeMap<String, Vec<Vec<ElementMappedName>>>,
+        group_storage: ScopedReservation<'_>,
     ) -> Result<Self, CodecError> {
         let mut root_groups = ctx.collection_vec(groups.len(), "FreeCAD legacy root map groups")?;
         for (indexed_name, names) in ctx.admit_iter(groups, "FreeCAD legacy root map group scan")? {
@@ -251,6 +252,7 @@ impl ElementMapNodes {
                 names,
             });
         }
+        drop(group_storage);
         let mut nodes = ctx.collection_vec(1, "FreeCAD legacy root map node")?;
         nodes.push(ElementMapNode {
             map_id,
