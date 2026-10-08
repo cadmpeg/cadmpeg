@@ -430,7 +430,12 @@ fn data_block_control_form_route_refuses_collection_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control route fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
         .expect("cached control section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_forms(ctx, &container)
@@ -479,7 +484,12 @@ fn data_block_control_form_route_refuses_work_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control route fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
         .expect("cached control section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_forms(ctx, &container)
@@ -596,7 +606,12 @@ fn data_block_control_reference_route_refuses_work_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control route fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
         .expect("cached control section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_references(ctx, &container)
@@ -658,7 +673,12 @@ fn data_block_control_value_route_refuses_collection_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control route fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
         .expect("cached control section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_values(ctx, &container)
@@ -706,7 +726,12 @@ fn data_block_control_value_route_refuses_scoped_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control route fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
         .expect("cached control section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_values(ctx, &container)
@@ -735,7 +760,12 @@ fn data_block_control_value_route_refuses_work_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control route fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
         .expect("cached control section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_values(ctx, &container)
@@ -1014,7 +1044,12 @@ fn data_block_control_index_value_route_refuses_collection_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control route fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
         .expect("cached control section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_index_values(ctx, &container)
@@ -1055,7 +1090,12 @@ fn data_block_control_index_value_route_refuses_scoped_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control route fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
         .expect("cached control section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_index_values(ctx, &container)
@@ -1086,7 +1126,12 @@ fn data_block_control_index_value_route_refuses_work_limit() {
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("control route fixture");
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+    crate::test_support::with_decode_context(|ctx| {
+        let (sections, storage) = container.indexed_om_sections(ctx)?;
+        drop(sections);
+        drop(storage);
+        Ok::<(), cadmpeg_core::CodecError>(())
+    })
         .expect("cached control section");
     let values = crate::test_support::with_decode_context(|ctx| {
         super::data_block_control_index_values(ctx, &container)
