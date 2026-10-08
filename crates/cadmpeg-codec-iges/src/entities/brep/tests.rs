@@ -213,7 +213,7 @@ fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
     for (bytes, operation) in [
         (explicit_vertex_loop_file(), "iges B-rep vertex-list nodes"),
         (
-            explicit_vertex_loop_file(),
+            explicit_tetrahedron_solid_file(),
             "iges B-rep definition reservations",
         ),
         (

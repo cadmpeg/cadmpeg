@@ -612,14 +612,7 @@ pub(super) fn project<'ctx>(
                 "iges B-rep edge-list nodes",
             )
         })?;
-        definition_storage.with_storage(|| {
-            ctx.reserve_vec(
-                &mut definition_reservations,
-                1,
-                "iges B-rep definition reservations",
-            )
-        })?;
-        definition_reservations.push(record_storage);
+        definition_storage.absorb(&mut record_storage)?;
     }
 
     for entry in ctx
@@ -768,14 +761,7 @@ pub(super) fn project<'ctx>(
         definition_storage.with_storage(|| {
             ctx.insert_btree_map(&mut loops, entry.sequence, uses, "iges B-rep loop nodes")
         })?;
-        definition_storage.with_storage(|| {
-            ctx.reserve_vec(
-                &mut definition_reservations,
-                1,
-                "iges B-rep definition reservations",
-            )
-        })?;
-        definition_reservations.push(record_storage);
+        definition_storage.absorb(&mut record_storage)?;
     }
 
     for entry in ctx
@@ -902,14 +888,7 @@ pub(super) fn project<'ctx>(
             )
         })?;
         if count > 1 {
-            definition_storage.with_storage(|| {
-                ctx.reserve_vec(
-                    &mut definition_reservations,
-                    1,
-                    "iges B-rep definition reservations",
-                )
-            })?;
-            definition_reservations.push(record_storage);
+            definition_storage.absorb(&mut record_storage)?;
         }
     }
 
@@ -992,14 +971,7 @@ pub(super) fn project<'ctx>(
                 "iges B-rep shell nodes",
             )
         })?;
-        definition_storage.with_storage(|| {
-            ctx.reserve_vec(
-                &mut definition_reservations,
-                1,
-                "iges B-rep definition reservations",
-            )
-        })?;
-        definition_reservations.push(record_storage);
+        definition_storage.absorb(&mut record_storage)?;
     }
 
     let mut body_definitions = Vec::new();
