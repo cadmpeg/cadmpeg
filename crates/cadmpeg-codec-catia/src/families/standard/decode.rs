@@ -11272,7 +11272,7 @@ impl<'a, 'ctx> StandardCirclePairConstraint<'a, 'ctx> {
             };
             let center = center.get();
             let radius = radius.get();
-            for &face in ctx.admit_iter(&support.faces, "catia_standard_circle_constraint_faces")? {
+            for &face in &support.faces {
                 let key = (
                     center.x.to_bits(),
                     center.y.to_bits(),
@@ -11385,10 +11385,7 @@ impl<'a, 'ctx> StandardCirclePairConstraint<'a, 'ctx> {
             else {
                 continue;
             };
-            for &face in self
-                .ctx
-                .admit_iter(&support.faces, "catia_standard_circle_range_faces")?
-            {
+            for &face in &support.faces {
                 let key = (
                     center.x.to_bits(),
                     center.y.to_bits(),
@@ -11452,28 +11449,25 @@ impl StandardLinePairConstraint {
         endpoint_options: &[Vec<[usize; 2]>],
     ) -> Result<Self, CodecError> {
         let points = ctx.collect_vec(
-            ctx.admit_iter(points, "catia_standard_line_constraint_point_source")?
-                .map(|point| point.position().get()),
+            points.iter().map(|point| point.position().get()),
             "catia_standard_line_constraint_points",
         )?;
         let edge_roles = ctx.collect_vec(
-            ctx.admit_iter(supports, "catia_standard_line_constraint_support_source")?
-                .enumerate()
-                .map(|(edge, support)| {
-                    if !matches!(
-                        support.geometry,
-                        crate::families::standard::records::StandardCurveGeometry::Line
-                    ) {
-                        EdgeLineRole::NotLine
-                    } else if endpoint_options
-                        .get(edge)
-                        .is_some_and(|options| options.len() > 1)
-                    {
-                        EdgeLineRole::Flexible
-                    } else {
-                        EdgeLineRole::Fixed
-                    }
-                }),
+            supports.iter().enumerate().map(|(edge, support)| {
+                if !matches!(
+                    support.geometry,
+                    crate::families::standard::records::StandardCurveGeometry::Line
+                ) {
+                    EdgeLineRole::NotLine
+                } else if endpoint_options
+                    .get(edge)
+                    .is_some_and(|options| options.len() > 1)
+                {
+                    EdgeLineRole::Flexible
+                } else {
+                    EdgeLineRole::Fixed
+                }
+            }),
             "catia_standard_line_constraint_roles",
         )?;
         // Edges are visited in ascending order, so a repeated face of one edge
@@ -11487,7 +11481,7 @@ impl StandardLinePairConstraint {
             if edge_roles[edge] != EdgeLineRole::Flexible {
                 continue;
             }
-            for &face in ctx.admit_iter(&support.faces, "catia_standard_line_constraint_faces")? {
+            for &face in &support.faces {
                 let edges = ctx
                     .entry_btree_map(
                         &mut edges_by_face,
@@ -11547,30 +11541,120 @@ impl StandardLinePairConstraint {
         }
         let mut faces = self.edges_by_face.values();
         while let Some(edges) = ctx.next_charged(&mut faces, "catia_standard_line_face_lists")? {
-            let mut left_edges = edges.iter().enumerate();
-            while let Some((left_position, &left_edge)) =
-                ctx.next_charged(&mut left_edges, "catia_standard_line_left_edges")?
-            {
-                let Some(left_pair) = pairs.pairs()[left_edge] else {
-                    continue;
-                };
-                let Some(left) = standard_line_segment(&self.points, left_pair) else {
-                    continue;
-                };
-                let mut right_edges = edges[left_position + 1..].iter();
-                while let Some(&right_edge) =
-                    ctx.next_charged(&mut right_edges, "catia_standard_line_right_edges")?
+            let mut storage = ctx.reserve_scoped(0, "catia_standard_line_segment_index")?;
+            let simple = storage.with_storage(|| -> Result<bool, CodecError> {
+                let mut by_segment = HashMap::<[[u64; 3]; 2], usize>::new();
+                let mut segments = Vec::<(StandardLineSegment, usize, usize)>::new();
+                let mut entries = Vec::new();
+                for (ordinal, &edge) in ctx
+                    .admit_iter(edges, "catia_standard_line_left_edges")?
+                    .enumerate()
                 {
-                    let Some(right_pair) = pairs.pairs()[right_edge] else {
+                    let Some(pair) = pairs.pairs()[edge] else {
                         continue;
                     };
-                    let Some(right) = standard_line_segment(&self.points, right_pair) else {
+                    let Some(segment) = standard_line_segment(&self.points, pair) else {
                         continue;
                     };
-                    if !standard_line_segments_are_simple(left, right) {
+                    let key = [segment.start, segment.end].map(|point| {
+                        [point.x, point.y, point.z].map(|value| {
+                            if value == 0.0 {
+                                0
+                            } else {
+                                value.to_bits()
+                            }
+                        })
+                    });
+                    if let Some(&group) =
+                        ctx.get_hash_map(&by_segment, &key, "catia_standard_line_segment_index")?
+                    {
+                        if !standard_line_segments_are_simple(segments[group].0, segment) {
+                            return Ok(false);
+                        }
+                        segments[group].2 = ordinal;
+                    } else {
+                        let group = segments.len();
+                        ctx.insert_hash_map(
+                            &mut by_segment,
+                            key,
+                            group,
+                            "catia_standard_line_segment_index",
+                        )?;
+                        ctx.push_vec(
+                            &mut segments,
+                            (segment, ordinal, ordinal),
+                            "catia_standard_line_segment_index",
+                        )?;
+                        let start = [segment.start.x, segment.start.y, segment.start.z];
+                        let end = [segment.end.x, segment.end.y, segment.end.z];
+                        let length = segment.end.vector_from(segment.start).norm();
+                        let scale = start
+                            .into_iter()
+                            .chain(end)
+                            .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+                        // Include floating-point projection error as well as the
+                        // geometric tolerance. Unbounded arithmetic keeps every
+                        // candidate for the exact predicate.
+                        let margin = LINE_SEGMENT_GEOMETRY_TOLERANCE + 64.0 * f64::EPSILON * scale;
+                        let bounds = if length.is_finite() && margin.is_finite() {
+                            std::array::from_fn(|axis| {
+                                [
+                                    start[axis].min(end[axis]) - margin,
+                                    start[axis].max(end[axis]) + margin,
+                                ]
+                            })
+                        } else {
+                            [[f64::NEG_INFINITY, f64::INFINITY]; 3]
+                        };
+                        ctx.push_vec(
+                            &mut entries,
+                            BoundsEntry {
+                                bounds,
+                                item: group,
+                            },
+                            "catia_standard_line_segment_index",
+                        )?;
+                    }
+                }
+                let tree =
+                    BoundsIndex::new(ctx, &mut entries, "catia_standard_line_segment_index")?;
+                // Save each group's bounds before the tree's in-place ordering.
+                let mut bounds = ctx.alloc_filled(
+                    segments.len(),
+                    [[0.0; 2]; 3],
+                    "catia_standard_line_segment_index",
+                )?;
+                for entry in ctx.admit_iter(&entries, "catia_standard_line_segment_index")? {
+                    bounds[entry.item] = entry.bounds;
+                }
+                for (group, &(left, first, last)) in ctx
+                    .admit_iter(&segments, "catia_standard_line_left_edges")?
+                    .enumerate()
+                {
+                    if ctx.any_by(
+                        tree.overlapping(bounds[group]),
+                        |node| {
+                            let Some(other) = node.item.filter(|&other| other > group) else {
+                                return Ok(false);
+                            };
+                            if !bounds_overlap(bounds[group], node.bounds) {
+                                return Ok(false);
+                            }
+                            let (right, right_first, right_last) = segments[other];
+                            Ok((first < right_last
+                                && !standard_line_segments_are_simple(left, right))
+                                || (right_first < last
+                                    && !standard_line_segments_are_simple(right, left)))
+                        },
+                        "catia_standard_line_right_edges",
+                    )? {
                         return Ok(false);
                     }
                 }
+                Ok(true)
+            })?;
+            if !simple {
+                return Ok(false);
             }
         }
         Ok(true)
