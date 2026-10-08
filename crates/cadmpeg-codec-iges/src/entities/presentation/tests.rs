@@ -33,13 +33,16 @@ use super::{
 #[test]
 fn presentation_names_refuse_retained_limit_before_copy() {
     for operation in ["iges color definition name", "iges body property name"] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = retained_utf8(&ctx, b"COLOR", operation).unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                retained_utf8(&ctx, b"COLOR", operation)
+            },
         );
     }
 
@@ -56,59 +59,49 @@ fn presentation_names_refuse_retained_limit_before_copy() {
 }
 
 fn assert_presentation_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
 }
 
 fn assert_presentation_retained_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
 }
 
 #[test]
@@ -152,8 +145,6 @@ fn presentation_loss_records_refuse_slot_and_message_limits() {
 fn presentation_indexes_and_definition_levels_refuse_collection_limits() {
     let fonts = text_font_definition_file();
     for operation in [
-        "iges presentation parameter index",
-        "iges presentation directory index",
         "iges presentation font index",
         "iges presentation decoded sequences",
     ] {
@@ -1203,40 +1194,35 @@ fn decode_keeps_unattached_name_property_in_native_records() {
 
 #[test]
 fn presentation_name_utf8_refusal_is_not_an_absent_name() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let arena = DecodeArena::new();
-    let ctx = DecodeContext::new(&arena, &policy, false);
-    let error = retained_utf8(&ctx, b"COLOR", "iges color definition name").unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-        && limit.operation == "iges color definition name"));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges color definition name",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let ctx = DecodeContext::new(&arena, &policy, false);
+            retained_utf8(&ctx, b"COLOR", "iges color definition name")
+        },
+    );
 }
 
 fn assert_work_refusal<T>(
     input: &[u8],
     operation: &str,
-    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
 ) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy).unwrap();
-        match run(&ctx) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            Err(error) => panic!("unexpected error before {operation}: {error}"),
-            Ok(_) => panic!("operation {operation} was not admitted"),
-        }
-    }
-    panic!("operation {operation} was not reached");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy).unwrap();
+            run(&ctx)
+        },
+    );
 }
 
 #[test]
@@ -1295,6 +1281,290 @@ fn body_property_utf8_refusal_reaches_the_decode_result() {
 
     let bytes = owned_test_file(&entities);
     assert_work_refusal(&bytes, "iges body property name validation", |ctx| {
-        crate::reader::decode(&bytes, &bytes, crate::representation::Representation::FixedAscii, ctx)
+        crate::reader::decode(
+            &bytes,
+            &bytes,
+            crate::representation::Representation::FixedAscii,
+            ctx,
+        )
     });
+}
+
+#[test]
+fn cyclic_font_chains_are_classified_once_per_font() {
+    const MAX_WORK_PER_FONT: u64 = 4_096;
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    let count = 2_000_u32;
+    let directory: Vec<_> = (0..count)
+        .map(|index| {
+            let mut entry = crate::test_support::directory_target(1 + index * 2, 310);
+            entry.status = crate::directory::SourceStatus::from_codes([0, 0, 2, 0]);
+            entry
+        })
+        .collect();
+    let records: Vec<_> = (0..count)
+        .map(|index| {
+            let next = 1 + ((index + 1) % count) * 2;
+            let values = [
+                TokenValue::Integer(310),
+                TokenValue::Integer(1),
+                TokenValue::String(b"FONT".to_vec()),
+                TokenValue::Integer(-i64::from(next)),
+                TokenValue::Integer(10),
+                TokenValue::Integer(1),
+                TokenValue::Integer(65),
+                TokenValue::Integer(8),
+                TokenValue::Integer(0),
+                TokenValue::Integer(0),
+            ];
+            ParameterRecord::from_test_tokens(
+                1 + index * 2,
+                1..2,
+                Vec::new(),
+                values.len(),
+                values
+                    .into_iter()
+                    .map(|value| Token { value, span: 0..0 })
+                    .collect(),
+                Vec::new(),
+            )
+        })
+        .collect();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = records
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The three integer-key indexes, chain steps and final loss formatting
+    // fit this envelope, including the core tree-node movement charges.
+    policy.limits.max_work_units = u64::from(count) * MAX_WORK_PER_FONT;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let bytes = owned_test_file(&[]);
+    let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
+    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context(&ctx).unwrap().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let outcome = super::project(
+        &mut ir,
+        &directory,
+        (&entries, &records),
+        &BTreeMap::new(),
+        &global,
+        &ctx,
+        &super::super::geometry::SourceSequences::default(),
+    )
+    .unwrap();
+    assert!(outcome.decoded.is_empty());
+    assert_eq!(outcome.losses.len(), usize::try_from(count).unwrap());
+    assert!(outcome
+        .losses
+        .iter()
+        .all(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn invalid_color_definition_does_not_copy_its_name() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00010200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "iges color definition name",
+        None,
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+}
+
+#[test]
+fn presentation_traversal_refusals_reach_decode() {
+    let bytes = text_font_definition_file();
+    for operation in [
+        "iges presentation directory traversal",
+        "iges text font character traversal",
+        "iges text font motion traversal",
+        "iges font cycle traversal",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                IgesCodec
+                    .decode(
+                        &mut Cursor::new(&bytes),
+                        &DecodeOptions {
+                            policy,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .map_err(|failure| match failure {
+                        DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
+    }
+}
+
+#[test]
+fn invalid_definition_levels_stop_before_the_remaining_count() {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    let mut entry = crate::test_support::directory_target(1, 406);
+    entry.form = 1;
+    let count = 20_000;
+    let mut values = vec![
+        TokenValue::Integer(406),
+        TokenValue::Integer(i64::try_from(count).unwrap()),
+        TokenValue::Integer(-1),
+    ];
+    values.resize(2 + count, TokenValue::Integer(0));
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect(),
+        Vec::new(),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 10_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let bytes = owned_test_file(&[]);
+    let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
+    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context(&ctx).unwrap().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let outcome = super::project(
+        &mut ir,
+        std::slice::from_ref(&entry),
+        (
+            &BTreeMap::from([(1, &entry)]),
+            &BTreeMap::from([(1, &record)]),
+        ),
+        &BTreeMap::new(),
+        &global,
+        &ctx,
+        &super::super::geometry::SourceSequences::default(),
+    )
+    .unwrap();
+    assert!(outcome.decoded.is_empty());
+    assert_eq!(outcome.losses.len(), 1);
+    assert_eq!(
+        outcome.losses[0].code,
+        IgesLossCode::DisplayDataNotProjected.kind()
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn repeated_body_name_properties_do_not_rescan_shared_text() {
+    let name = "N".repeat(5_000);
+    let count = 2_000;
+    let pointers = (0..count)
+        .map(|index| if index % 2 == 0 { "3" } else { "5" })
+        .collect::<Vec<_>>()
+        .join(",");
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "OWNER".into(),
+            status: "00000000",
+            parameters: format!("116,0,0,0,0,0,{count},{pointers};"),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME1".into(),
+            status: "00000200",
+            parameters: format!("406,1,{}H{name};", name.len()),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME2".into(),
+            status: "00000200",
+            parameters: format!("406,1,{}H{name};", name.len()),
+        },
+    ]);
+    let (directory, global, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
+        let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
+        let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+        let (directory, quarantined) =
+            crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+        assert!(quarantined.is_empty());
+        let assembly =
+            crate::parameter::assemble_with_context(&scan, &directory, &[], &global, ctx).unwrap();
+        assert!(assembly.quarantined.is_empty());
+        assert!(matches!(
+            assembly.trailing_pointer_analysis.get(&1),
+            Some(crate::parameter::TrailingPointerAnalysis::Unambiguous(_))
+        ));
+        (directory, global, assembly)
+    });
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let records = assembly
+        .records
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The text records and raw pointer pass fit; a text scan per pointer does not.
+    policy.limits.max_work_units = 1_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let global = global.length_context(&ctx).unwrap().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let id = cadmpeg_ir::ids::BodyId::mint("iges:model:body#D1").unwrap();
+    let mut sequences = super::super::geometry::SourceSequences::default();
+    sequences
+        .record_body(&id, 1, &crate::ids::Stem::directory(1_u32), &ctx)
+        .unwrap();
+    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        id,
+        kind: cadmpeg_ir::topology::BodyKind::Wire,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    let outcome = super::project(
+        &mut ir,
+        &directory,
+        (&entries, &records),
+        &assembly.trailing_pointer_analysis,
+        &global,
+        &ctx,
+        &sequences,
+    )
+    .unwrap();
+    assert!(outcome.losses.is_empty());
+    assert_eq!(ir.model.bodies[0].name.as_deref(), Some(name.as_str()));
+    ctx.finish_session().unwrap();
 }

@@ -2991,11 +2991,15 @@ pub(crate) fn project_geometry(
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses, ctx)?;
 
-    super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
-        &mut decoded,
-        &mut losses,
+    super::brep::project(
+        ir,
+        directory,
+        (&entries, &records),
+        global,
         ctx,
-    )?;
+        &mut sequences,
+    )?
+    .merge_into(&mut decoded, &mut losses, ctx)?;
 
     super::csg::project(ir, directory, &entries, &records, global, ctx)?.merge_into(
         &mut decoded,
@@ -3017,7 +3021,7 @@ pub(crate) fn project_geometry(
     super::presentation::project(
         ir,
         directory,
-        parameters,
+        (&entries, &records),
         trailing_pointer_analysis,
         global,
         ctx,
@@ -3028,14 +3032,14 @@ pub(crate) fn project_geometry(
     super::drawing::project(
         ir,
         directory,
-        parameters,
+        (&entries, &records),
         trailing_pointer_analysis,
         global,
         ctx,
     )?
     .merge_into(&mut decoded, &mut losses, ctx)?;
 
-    super::annotation::project(ir, directory, parameters, global, ctx)?.merge_into(
+    super::annotation::project(ir, directory, (&entries, &records), global, ctx)?.merge_into(
         &mut decoded,
         &mut losses,
         ctx,
