@@ -2015,7 +2015,7 @@ pub(crate) fn native_object_graph(
     ctx: &DecodeContext<'_>,
     index_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     graph: &object_graph::ObjectGraph,
-    entity_records: Vec<entity_table::EntityRecord>,
+    entity_records: &[entity_table::EntityRecord],
     finjpl_segment: Option<String>,
     outer_container: Option<CatiaOuterContainerBinding>,
 ) -> Result<(CatiaObjectGraph, Vec<CatiaEntityRecord>, GraphRecordIndex), CodecError> {
@@ -2109,9 +2109,9 @@ pub(crate) fn native_object_graph(
             continue;
         };
         let reference_signature = entity.reference_signature(ctx)?;
-        let body = match entity.body {
+        let body = match &entity.body {
             entity_table::EntityBody::Inline(bytes) => CatiaEntityRecordBody::Inline(
-                ctx.copy_slice(&bytes, "catia_native_entity_inline_body")?,
+                ctx.copy_slice(bytes, "catia_native_entity_inline_body")?,
             ),
             entity_table::EntityBody::Nested {
                 prefix,
@@ -2121,13 +2121,13 @@ pub(crate) fn native_object_graph(
                 ..
             } => CatiaEntityRecordBody::Nested {
                 definition_prefix: ctx
-                    .copy_slice(&prefix, "catia_native_entity_definition_prefix")?,
+                    .copy_slice(prefix, "catia_native_entity_definition_prefix")?,
                 definition_suffix: ctx
-                    .copy_slice(&suffix, "catia_native_entity_definition_suffix")?,
+                    .copy_slice(suffix, "catia_native_entity_definition_suffix")?,
                 value_payload: ctx
-                    .copy_slice(&value_payload, "catia_native_entity_value_payload")?,
+                    .copy_slice(value_payload, "catia_native_entity_value_payload")?,
                 record_suffix: ctx
-                    .copy_slice(&record_suffix, "catia_native_entity_record_suffix")?,
+                    .copy_slice(record_suffix, "catia_native_entity_record_suffix")?,
             },
         };
         let row = CatiaEntityRecord {
