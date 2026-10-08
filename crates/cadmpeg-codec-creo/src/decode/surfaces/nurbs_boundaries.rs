@@ -848,7 +848,15 @@ impl CubicRoots {
     }
 
     fn sort_and_dedup(&mut self) {
-        self.values[..self.len].sort_by(f64::total_cmp);
+        for index in 1..self.len {
+            let value = self.values[index];
+            let mut insertion = index;
+            while insertion > 0 && self.values[insertion - 1].total_cmp(&value).is_gt() {
+                self.values[insertion] = self.values[insertion - 1];
+                insertion -= 1;
+            }
+            self.values[insertion] = value;
+        }
         let mut unique = 0;
         let values = self.values;
         for (index, value) in values[..self.len].iter().enumerate() {
@@ -1922,6 +1930,18 @@ mod tests {
         assert!(run(u64::MAX)
             .expect("service work budget admits the shared generator")
             .is_some());
+    }
+
+    #[test]
+    fn cubic_root_order_and_dedup_preserve_smallest_candidates() {
+        let mut roots = super::CubicRoots::new();
+        let near_half = 0.5 + 0.5 * super::EPS_CUBIC_PARAM;
+        for value in [1.0, 0.75, near_half, -0.0, 0.25, 0.5, 0.0] {
+            roots.push(value);
+        }
+        roots.sort_and_dedup();
+        assert_eq!(roots.as_slice(), [0.0, 0.25, 0.5, 0.75, 1.0]);
+        assert_eq!(roots[0].to_bits(), (-0.0_f64).to_bits());
     }
 
     #[test]
