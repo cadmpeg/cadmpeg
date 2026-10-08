@@ -65,7 +65,7 @@ fn edge_recipe_intersection_storage_is_scoped_and_released() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     // Two borrowed slices use a four-slot vector. No topology is copied.
-    policy.limits.max_materialized_bytes = 4 * std::mem::size_of::<&[i64]>() as u64;
+    policy.limits.max_materialized_bytes = 4 * u64::try_from(std::mem::size_of::<&[i64]>()).unwrap();
     crate::test_support::with_decode_policy(&policy, |ctx| {
         for _ in 0..2 {
             assert_eq!(super::super::super::resolved_edge_candidate_intersection(ctx, &[], [&[17, 18][..], &[17, 19][..]]).unwrap(), Some(17));
@@ -125,7 +125,7 @@ fn edge_recipe_triplet_intersection_admits_overlap_and_corroboration() {
 fn edge_recipe_rejected_assignment_candidates_release_scratch() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 4 * std::mem::size_of::<i64>() as u64;
+    policy.limits.max_materialized_bytes = 4 * u64::try_from(std::mem::size_of::<i64>()).unwrap();
     crate::test_support::with_decode_policy(&policy, |ctx| {
         for _ in 0..2 {
             assert_eq!(super::super::super::edge_assignment_candidates(&[selector(vec![17])], [&[18][..]], ctx).unwrap(), None);

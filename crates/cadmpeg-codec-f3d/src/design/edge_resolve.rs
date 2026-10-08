@@ -1093,7 +1093,7 @@ fn resolved_edge_group_with_transition_chain(
     let lost_selection = || unmatched_selection(Some(previous_state_id));
     let mut exact_slots = Some(Vec::new());
     for operand in &matched_operands {
-        let Some(slot) = resolved_edge_operand(operand) else {
+        let Some(slot) = resolved_edge_operand(operand, ctx)? else {
             exact_slots = None;
             break;
         };
@@ -1123,10 +1123,10 @@ fn resolved_edge_group_with_transition_chain(
         if slots.is_none() {
             slots = context_only_edge_group_candidates(
                 matched_operands.iter().map(|operand| {
-                    (
-                        resolved_edge_operand(operand),
+                    Ok((
+                        resolved_edge_operand(operand, ctx)?,
                         operand.changed_boundary_edge_slots.as_slice(),
-                    )
+                    ))
                 }),
                 ctx,
             )?;
@@ -1182,7 +1182,7 @@ fn resolved_edge_group_with_transition_chain(
         }
         let mut combined_edges = Vec::new();
         for (index, operand) in matched_operands.iter().enumerate() {
-            let recipe = resolved_edge_operand(operand);
+            let recipe = resolved_edge_operand(operand, ctx)?;
             let identity = identity_matches
                 .as_ref()
                 .and_then(|identities| identities[index].resolved_edge_slot);
@@ -1370,7 +1370,7 @@ fn transition_chain_is_supported_by_recipe(
     }
     let mut all_recipe_edges = Vec::new();
     for operand in operands {
-        let resolved = resolved_edge_operand(operand);
+        let resolved = resolved_edge_operand(operand, ctx)?;
         if let Some(edge) = resolved {
             if operand.deleted_boundary_edge_slots.contains(&edge) && !chain.contains(&edge) {
                 return Ok(false);
@@ -1555,22 +1555,34 @@ fn partial_historical_edge_selection<'a>(
 }
 
 fn context_only_edge_group_candidates<'a>(
-    members: impl IntoIterator<Item = (Option<i64>, &'a [i64])>,
+    members: impl IntoIterator<Item = Result<(Option<i64>, &'a [i64]), CodecError>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "hold F3D context-only edge candidates")?;
     let mut edges = Vec::new();
-    for (resolved, changed_candidates) in members {
+    let mut members = members.into_iter();
+    while let Some(member) = ctx.next_charged(&mut members, "scan F3D context-only edge members")? {
+        let (resolved, changed_candidates) = member?;
         match resolved {
             Some(edge) => {
-                if !edges.contains(&edge) {
-                    ctx.push_vec(&mut edges, edge, "f3d context-only edge candidate")?;
+                if !ctx.contains(&edges, &edge, "find F3D context-only edge candidate")? {
+                    ctx.push_scoped_vec(
+                        &mut storage,
+                        &mut edges,
+                        edge,
+                        "f3d context-only edge candidate",
+                    )?;
                 }
             }
             None if changed_candidates.is_empty() => {}
             None => return Ok(None),
         }
     }
-    Ok((!edges.is_empty()).then_some(edges))
+    if edges.is_empty() {
+        return Ok(None);
+    }
+    storage.commit()?;
+    Ok(Some(edges))
 }
 
 fn unique_edge_group_assignment(
@@ -1582,7 +1594,7 @@ fn unique_edge_group_assignment(
     }
     let mut candidate_sets = Vec::new();
     for operand in operands {
-        let candidates = if let Some(edge) = resolved_edge_operand(operand) {
+        let candidates = if let Some(edge) = resolved_edge_operand(operand, ctx)? {
             Some(EdgeAssignmentCandidates::Edges(vec![edge]))
         } else {
             edge_group_assignment_candidates(
@@ -1771,41 +1783,38 @@ pub(super) fn radius_edge_group_candidates(
     radius: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
+    ctx.charge_work(0, "resolve F3D radius edge group")?;
     if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
         return Ok(None);
     }
     let tolerance = EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9 * (1.0 + radius.abs());
+    let mut storage = ctx.reserve_scoped(0, "hold F3D radius edge candidates")?;
     let mut chain = Vec::new();
-    for operand in operands {
-        if let Some(edge) = resolved_edge_operand(operand) {
-            ctx.push_vec(&mut chain, edge, "f3d radius recipe edge")?;
+    let mut complete = true;
+    for operand in ctx.admit_iter(operands, "scan F3D radius edge operands")? {
+        let resolved = resolved_edge_operand(operand, ctx)?;
+        if let Some(edge) = resolved {
+            ctx.push_scoped_vec(&mut storage, &mut chain, edge, "f3d radius recipe edge")?;
         }
-        for edge in operand
-            .treatment_radius_candidates
-            .iter()
-            .filter(|candidate| (candidate.radius.get() - radius).abs() <= tolerance)
-            .map(|candidate| candidate.edge_slot)
-        {
-            ctx.push_vec(&mut chain, edge, "f3d radius candidate edge")?;
+        let mut has_radius_candidate = false;
+        for candidate in ctx.admit_iter(&operand.treatment_radius_candidates, "scan F3D treatment radius candidates")? {
+            if (candidate.radius.get() - radius).abs() <= tolerance {
+                has_radius_candidate = true;
+                ctx.push_scoped_vec(&mut storage, &mut chain, candidate.edge_slot, "f3d radius candidate edge")?;
+            }
+        }
+        if resolved.is_none() && !has_radius_candidate && !operand.changed_boundary_edge_slots.is_empty() {
+            complete = false;
         }
     }
-    ctx.sort_unstable_by(&mut chain, |value| value, Ord::cmp, "f3d radius edge sort")?;
-    chain.dedup();
-    if chain.is_empty() {
+    if chain.len() > 1 {
+        ctx.sort_unstable_by(&mut chain, |value| value, Ord::cmp, "f3d radius edge sort")?;
+        ctx.dedup_vec(&mut chain, "deduplicate F3D radius edge candidates")?;
+    }
+    if chain.is_empty() || !complete {
         return Ok(None);
     }
-    for operand in operands {
-        let has_radius_candidate = operand
-            .treatment_radius_candidates
-            .iter()
-            .any(|candidate| (candidate.radius.get() - radius).abs() <= tolerance);
-        if resolved_edge_operand(operand).is_none()
-            && !has_radius_candidate
-            && !operand.changed_boundary_edge_slots.is_empty()
-        {
-            return Ok(None);
-        }
-    }
+    storage.commit()?;
     Ok(Some(chain))
 }
 
@@ -2070,7 +2079,7 @@ fn scope_partition_edge_group_candidates<'a>(
                 &mut members,
                 EdgeGroupMember {
                     identity: operand.record_index(),
-                    resolved_edge: resolved_edge_operand(operand),
+                    resolved_edge: resolved_edge_operand(operand, ctx)?,
                     deleted_boundary_edges: &operand.deleted_boundary_edge_slots,
                 },
                 "f3d edge partition member",
@@ -2473,29 +2482,39 @@ fn changed_boundary_count_edge_group_candidates<'a>(
     Ok((member_count > 0 && candidates.len() == member_count).then_some(candidates))
 }
 
-pub(super) fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
+pub(super) fn resolved_edge_operand(
+    operand: &DesignEdgeOperand,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<i64>, CodecError> {
+    ctx.charge_work(0, "resolve F3D edge operand")?;
     if !operand.recipe_program.is_empty() && operand.recipe_structure.is_none() {
-        return None;
+        return Ok(None);
     }
-    operand
-        .resolved_edge_slot
-        .or_else(|| primary_terminal_reference_shared_edge(operand))
+    match operand.resolved_edge_slot {
+        Some(edge) => Ok(Some(edge)),
+        None => primary_terminal_reference_shared_edge(operand, ctx),
+    }
 }
 
 /// Resolve the selected edge of a zero-payload terminal recipe from the two
 /// support-face references in its primary side.
-fn primary_terminal_reference_shared_edge(operand: &DesignEdgeOperand) -> Option<i64> {
+fn primary_terminal_reference_shared_edge(
+    operand: &DesignEdgeOperand,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<i64>, CodecError> {
     if !operand.recipe_reference_contexts.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let structure = operand.recipe_structure.as_ref()?;
+    let Some(structure) = operand.recipe_structure.as_ref() else {
+        return Ok(None);
+    };
     if structure.root != 2
         || structure.sides.len() != 2
         || structure.sides.iter().any(|side| {
             side.scalars.len() != 2 || side.payload_prefix != [0] || !side.entries.is_empty()
         })
     {
-        return None;
+        return Ok(None);
     }
 
     let primary = &structure.sides[0];
@@ -2504,30 +2523,43 @@ fn primary_terminal_reference_shared_edge(operand: &DesignEdgeOperand) -> Option
         .filter(|value| *value != 0)
         .map(|value| usize::try_from(value).ok()?.checked_sub(1));
     let (Some(first_ordinal), Some(second_ordinal)) =
-        (reference_ordinals.next()?, reference_ordinals.next()?)
+        (reference_ordinals.next().flatten(), reference_ordinals.next().flatten())
     else {
-        return None;
+        return Ok(None);
     };
     if reference_ordinals.next().is_some() {
-        return None;
+        return Ok(None);
     }
     if first_ordinal == second_ordinal {
-        return None;
+        return Ok(None);
     }
-    let first = operand.terminal_reference_edge_slots.get(first_ordinal)?;
-    let second = operand.terminal_reference_edge_slots.get(second_ordinal)?;
+    let (Some(first), Some(second)) = (
+        operand.terminal_reference_edge_slots.get(first_ordinal),
+        operand.terminal_reference_edge_slots.get(second_ordinal),
+    ) else {
+        return Ok(None);
+    };
     if first.is_empty() || second.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let mut candidate = None;
-    for edge in first.iter().copied().filter(|edge| second.contains(edge)) {
-        if candidate.is_some_and(|selected| selected != edge) {
-            return None;
+    let mut edges = first.iter();
+    while let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D terminal reference edges")? {
+        if candidate == Some(edge) {
+            continue;
         }
-        candidate = Some(edge);
+        if ctx.contains(second, &edge, "find F3D terminal shared reference edge")? {
+            if candidate.is_some() {
+                return Ok(None);
+            }
+            candidate = Some(edge);
+        }
     }
-    candidate.filter(|edge| operand.terminal_boundary_edge_slots.contains(edge))
+    match candidate {
+        Some(edge) if ctx.contains(&operand.terminal_boundary_edge_slots, &edge, "find F3D terminal boundary edge")? => Ok(Some(edge)),
+        _ => Ok(None),
+    }
 }
 
 pub(super) fn edge_operand_reference_edge_sets(

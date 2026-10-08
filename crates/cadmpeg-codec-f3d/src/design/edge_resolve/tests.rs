@@ -35,6 +35,7 @@ use cadmpeg_ir::ids::EdgeId;
 
 mod boundary_candidate_allocation;
 mod context_only_allocation;
+mod terminal_admission;
 mod contextual_deleted_allocation;
 mod edge_flange_allocation;
 mod fixed_fillet_allocation;
@@ -809,7 +810,7 @@ fn unstructured_local_support_face_references_do_not_resolve_an_edge() {
     operand.preceding_boundary_edge_slots =
         vec![63, 106, 109, 139, 142, 164, 168, 180, 183, 195, 197, 210];
 
-    assert_eq!(resolved_edge_operand(&operand), None);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), None);
 }
 
 #[test]
@@ -839,14 +840,14 @@ fn primary_terminal_support_references_resolve_one_shared_edge() {
     ];
     operand.terminal_boundary_edge_slots = vec![25, 35, 38, 39, 55, 57, 62, 69, 83];
 
-    assert_eq!(resolved_edge_operand(&operand), Some(25));
+    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), Some(25));
 
     operand.terminal_reference_edge_slots[0].push(69);
-    assert_eq!(resolved_edge_operand(&operand), None);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), None);
 
     operand.terminal_reference_edge_slots[0].pop();
     operand.recipe_structure.as_mut().unwrap().sides[0] = side(0, [2, 0]);
-    assert_eq!(resolved_edge_operand(&operand), None);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), None);
 
     operand.recipe_structure.as_mut().unwrap().sides[0] = side(0, [2, 1]);
     operand.recipe_reference_contexts = vec![serde_json::from_value(serde_json::json!({
@@ -858,7 +859,7 @@ fn primary_terminal_support_references_resolve_one_shared_edge() {
         "changed_shared_edge_slots": []
     }))
     .expect("historical edge recipe reference context")];
-    assert_eq!(resolved_edge_operand(&operand), None);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), None);
 }
 
 #[test]
@@ -1707,7 +1708,7 @@ fn edge_group_ignores_members_without_changed_edge_candidates() {
                     (Some(17), &[17, 18][..]),
                     (Some(17), &[17][..]),
                     (None, &[][..]),
-                ],
+                ].into_iter().map(Ok),
                 decode_ctx,
             )
         })
@@ -1717,7 +1718,7 @@ fn edge_group_ignores_members_without_changed_edge_candidates() {
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::context_only_edge_group_candidates(
-                [(Some(17), &[17][..]), (None, &[18][..])],
+                [(Some(17), &[17][..]), (None, &[18][..])].into_iter().map(Ok),
                 decode_ctx,
             )
         })
@@ -1727,7 +1728,7 @@ fn edge_group_ignores_members_without_changed_edge_candidates() {
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::context_only_edge_group_candidates(
-                [(None, &[][..])],
+                [(None, &[][..])].into_iter().map(Ok),
                 decode_ctx,
             )
         })
