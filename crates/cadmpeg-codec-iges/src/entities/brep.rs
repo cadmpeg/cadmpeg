@@ -749,6 +749,8 @@ pub(super) fn project<'ctx>(
             index += 5 + pcurve_count * 2;
         }
         if uses.len() != count {
+            drop(uses);
+            drop(record_storage);
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
