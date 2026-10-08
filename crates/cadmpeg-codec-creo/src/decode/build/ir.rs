@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::VertexSelection;
@@ -41,20 +41,21 @@ use super::passthrough::{emit_legacy_arenas, preserve_passthrough_sections};
 use crate::decode::analytic::planes::placed_plane_surfaces;
 use crate::decode::source_carriers::SourceUnitCarriers;
 
-pub(in super::super) struct BuiltIr {
+pub(in super::super) struct BuiltIr<'ctx> {
     pub(in super::super) ir: CadIr,
     pub(in super::super) annotations: cadmpeg_ir::Annotations,
     pub(in super::super) unknowns: Vec<UnknownRecord>,
     pub(in super::super) coverage: cadmpeg_ir::report::decode::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
+    pub(in super::super) brep_diagnostic_storage: Option<ScopedReservation<'ctx>>,
     pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
-pub(in super::super) fn build_container_ir(
-    ctx: &DecodeContext<'_>,
+pub(in super::super) fn build_container_ir<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
-) -> Result<BuiltIr, CodecError> {
+) -> Result<BuiltIr<'ctx>, CodecError> {
     let (meta, coverage) = source_meta(ctx, scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
@@ -67,6 +68,7 @@ pub(in super::super) fn build_container_ir(
         unknowns,
         coverage,
         brep_diagnostics: BrepTransferDiagnostics::default(),
+        brep_diagnostic_storage: None,
         transfer_losses: Vec::new(),
     })
 }
@@ -902,11 +904,11 @@ fn transfer_placed_plane_surfaces_into_ir(
 }
 
 /// Build source metadata, preserved geometry records, and transferred entities.
-pub(in super::super) fn build_ir(
-    ctx: &DecodeContext<'_>,
+pub(in super::super) fn build_ir<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
-) -> Result<BuiltIr, CodecError> {
+) -> Result<BuiltIr<'ctx>, CodecError> {
     let (meta, mut coverage) = source_meta(ctx, scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
@@ -931,7 +933,7 @@ pub(in super::super) fn build_ir(
         &mut annotations,
         &mut source_carriers,
     )?;
-    let (brep_diagnostics, _brep_diagnostic_storage) = transfer_and_record_scanned_geometry(
+    let (brep_diagnostics, brep_diagnostic_storage) = transfer_and_record_scanned_geometry(
         ctx,
         scan,
         &mut ir,
@@ -967,6 +969,7 @@ pub(in super::super) fn build_ir(
         unknowns,
         coverage,
         brep_diagnostics,
+        brep_diagnostic_storage: Some(brep_diagnostic_storage),
         transfer_losses,
     })
 }

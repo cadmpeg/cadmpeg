@@ -69,6 +69,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             annotations,
             unknowns,
             coverage,
+            brep_diagnostic_storage,
             brep_diagnostics,
             transfer_losses,
         } = if ctx.container_only() {
@@ -85,6 +86,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             &brep_diagnostics,
             ctx.container_only(),
         )?;
+        drop(brep_diagnostics);
+        drop(brep_diagnostic_storage);
         ctx.extend_vec(
             &mut body.losses,
             transfer_losses,
