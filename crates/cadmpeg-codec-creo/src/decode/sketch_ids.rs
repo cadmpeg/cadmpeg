@@ -31,13 +31,10 @@ pub(super) fn feature_definition_has_sketch_design(
     {
         return Ok(true);
     }
-    Ok(crate::feature::definitions::equation_table(
-        ctx,
-        &definition.body,
-        0,
-        definition.body.len(),
-    )?
-    .is_some())
+    let mut storage = ctx.reserve_scoped(0, "creo sketch design equation scratch")?;
+    Ok(storage.with_storage(|| crate::feature::definitions::equation_table(
+        ctx, &definition.body, 0, definition.body.len(),
+    ))?.is_some())
 }
 
 pub(super) fn sketch_table_headers(
@@ -64,12 +61,10 @@ pub(super) fn sketch_table_headers(
             table.offset,
         )?;
     }
-    if let Some(table) = crate::feature::definitions::equation_table(
-        ctx,
-        &definition.body,
-        0,
-        definition.body.len(),
-    )? {
+    let mut equation_storage = ctx.reserve_scoped(0, "creo sketch header equation scratch")?;
+    if let Some(table) = equation_storage.with_storage(|| crate::feature::definitions::equation_table(
+        ctx, &definition.body, 0, definition.body.len(),
+    ))? {
         push(
             CreoSketchTableKind::Equations {
                 declared_count: table.declared_count,
@@ -194,12 +189,8 @@ pub(super) fn sketch_table_headers(
             table.offset,
         )?;
     }
-    ctx.stable_sort_by(
-        headers.as_mut_slice(),
-        |value| &value.offset,
-        Ord::cmp,
-        "creo sketch table headers headers ordering",
-    )?;
+    // Each optional table contributes at most one of eleven header kinds.
+    headers.sort_by_key(|header| header.offset);
     Ok(headers)
 }
 
