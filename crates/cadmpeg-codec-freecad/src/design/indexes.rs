@@ -100,10 +100,14 @@ impl<'ctx, 'arena, 'data> BodyPredecessors<'ctx, 'arena, 'data> {
         self.ctx
             .with_scoped_storage("fcstd body predecessor storage", || {
                 let mut predecessors = BTreeMap::new();
-                for object in self
-                    .ctx
-                    .admit_iter(self.objects, "fcstd body predecessor objects")?
-                {
+                let mut objects = self.objects.iter();
+                while objects.len() > 0 {
+                    let Some(object) = self
+                        .ctx
+                        .next_charged(&mut objects, "fcstd body predecessor objects")?
+                    else {
+                        break;
+                    };
                     let Some(owned) = self.ctx.get_btree_map(
                         self.properties_by_owner,
                         object.id().as_str(),
@@ -116,16 +120,22 @@ impl<'ctx, 'arena, 'data> BodyPredecessors<'ctx, 'arena, 'data> {
                         continue;
                     };
                     let mut previous = None;
-                    let (mut seen, mut seen_storage) = self.ctx.with_scoped_storage(
+                    let (mut seen_storage, mut seen);
+                    (seen, seen_storage) = self.ctx.with_scoped_storage(
                         "fcstd body predecessor seen storage",
                         || Ok::<_, CodecError>(BTreeSet::new()),
                     )?;
-                    for link in self
-                        .ctx
-                        .admit_iter(members.links(), "fcstd body predecessor members")?
-                    {
-                        let Some(member) =
-                            link.as_ref().and_then(crate::native::LinkTarget::object)
+                    let mut links = members.links().iter();
+                    while links.len() > 0 {
+                        let Some(link) = self
+                            .ctx
+                            .next_charged(&mut links, "fcstd body predecessor members")?
+                        else {
+                            break;
+                        };
+                        let Some(member) = link
+                            .as_ref()
+                            .and_then(crate::native::LinkTarget::object)
                         else {
                             continue;
                         };

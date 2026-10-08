@@ -23,7 +23,10 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
     let wrapper = ctx.xml_root_element(xml, "FreeCAD spreadsheet property root")?;
     let mut found = None;
     let mut nodes = xml.descendants();
-    while let Some(node) = ctx.next_charged(&mut nodes, "FreeCAD spreadsheet values")? {
+    while nodes.len() > 0 {
+        let Some(node) = ctx.next_charged(&mut nodes, "FreeCAD spreadsheet values")? else {
+            break;
+        };
         if !ctx.xml_has_tag_name(node, tag, "FreeCAD spreadsheet value tag")? {
             continue;
         }
@@ -383,7 +386,8 @@ fn spreadsheet_dimensions(
                 )
             })?;
         let index = if element == "Column" {
-            let (address, _address_storage) =
+            let (_address_storage, address);
+            (address, _address_storage) =
                 ctx.format_scoped(format_args!("{name}1"), "fcstd spreadsheet column address")?;
             let (_, column) = cell_address(ctx, &address)?.ok_or_else(|| {
                 malformed_design(
@@ -450,8 +454,10 @@ fn merged_range(
     let start = ctx
         .xml_attribute(cell, "address", "FreeCAD design XML attribute")?
         .ok_or_else(|| malformed_design(ctx, format_args!("spreadsheet cell has no address")))?;
-    let (end, _end_storage) =
-        ctx.with_scoped_storage("fcstd spreadsheet range endpoint", || {
+    let (_end_storage, end);
+    (end, _end_storage) = ctx.with_scoped_storage(
+        "fcstd spreadsheet range endpoint",
+        || {
             offset_cell_address(
                 ctx,
                 start,
@@ -462,7 +468,8 @@ fn merged_range(
                     CodecError::Malformed("spreadsheet cell span is out of range".into())
                 })?,
             )
-        })?;
+        },
+    )?;
     let end = end.ok_or_else(|| {
         malformed_design(ctx, format_args!("spreadsheet cell span is out of range"))
     })?;
@@ -516,7 +523,10 @@ fn cell_address(ctx: &DecodeContext<'_>, address: &str) -> Result<Option<(u32, u
     )?);
     let mut column = 0_u32;
     let mut bytes = address[..split].bytes();
-    while let Some(byte) = ctx.next_charged(&mut bytes, "fcstd spreadsheet column address")? {
+    while bytes.len() > 0 {
+        let Some(byte) = ctx.next_charged(&mut bytes, "fcstd spreadsheet column address")? else {
+            break;
+        };
         if !byte.is_ascii_uppercase() {
             return Ok(None);
         }

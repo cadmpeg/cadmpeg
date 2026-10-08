@@ -882,7 +882,7 @@ fn single_parameter_and_sweep_skip_rotation_and_profile_deduplication() {
         |ctx| {
             let mut parameters = vec![single_parameter()];
             let original = parameters[0].id.clone();
-            super::super::order_parameters_by_dependencies(ctx, &mut parameters).map(drop)?;
+            super::super::ordering::order_parameters_by_dependencies(ctx, &mut parameters).map(drop)?;
             assert_eq!(parameters.len(), 1);
             assert_eq!(parameters[0].id, original);
             Ok(())
@@ -909,7 +909,7 @@ fn single_parameter_and_sweep_skip_rotation_and_profile_deduplication() {
 fn prior_work_refusal_remains_sticky_on_parameter_and_sweep_routes() {
     assert_sticky_refusal(|ctx| {
         let mut parameters = vec![single_parameter()];
-        super::super::order_parameters_by_dependencies(ctx, &mut parameters).map(drop)
+        super::super::ordering::order_parameters_by_dependencies(ctx, &mut parameters).map(drop)
     });
     assert_sticky_refusal(|ctx| one_profile_sweep(ctx).map(drop));
 }

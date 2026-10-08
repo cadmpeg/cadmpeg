@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design-history unit tests over synthesized `FCStd` archives.
 
+mod actual_visits;
 mod admission_paths;
 pub(crate) mod booleans_patterns;
 pub(crate) mod construction;
@@ -1442,7 +1443,7 @@ fn design_ordered_objects_refuse_at_caller_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::feature_ordinals(
+    assert!(matches!(super::ordering::feature_ordinals(
         &ctx, &[object], &std::collections::BTreeMap::default(), &std::collections::HashMap::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "fcstd design ordered objects"));
