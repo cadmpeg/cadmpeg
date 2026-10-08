@@ -199,7 +199,7 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
         point([-7.5, 0.0, 0.0]),
     ];
     let (normal, u_axis, uv_scale) = crate::test_support::with_service_context(|ctx| {
-        super::super::solve_e5_plane_frame(
+        super::super::plane_frame_for_surface(
             ctx,
             100,
             point([0.0, 0.0, 0.0]),
@@ -271,7 +271,7 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
     for scale in [1.0, 2.0] {
         let points = sites.map(|[u, v]| point([u * scale, v * scale, 0.0]));
         let result = crate::test_support::with_service_context(|ctx| {
-            super::super::solve_e5_plane_frame(
+            super::super::plane_frame_for_surface(
                 ctx,
                 100,
                 point([0.0; 3]),
@@ -439,7 +439,14 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
     let mut refused = std::collections::HashSet::new();
     for cap in 0..128 {
         match crate::test_support::with_collection_limit(cap, |ctx| {
-            super::super::solve_e5_plane_frame(ctx, 100, point([0.0; 3]), &topology, &points, None)
+            super::super::plane_frame_for_surface(
+                ctx,
+                100,
+                point([0.0; 3]),
+                &topology,
+                &points,
+                None,
+            )
         }) {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
                 refused.insert(limit.operation);
@@ -450,7 +457,6 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
         }
     }
     for operation in [
-        "catia_e5_plane_point_refs",
         "catia_e5_plane_segments",
         "catia_e5_plane_orientations",
         "catia_e5_plane_seed_pairs",
@@ -461,18 +467,18 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
-    assert!(
-        crate::test_support::with_service_context(|ctx| super::super::solve_e5_plane_frame(
+    assert!(crate::test_support::with_service_context(
+        |ctx| super::super::plane_frame_for_surface(
             ctx,
             100,
             point([0.0; 3]),
             &topology,
             &points,
             None
-        ))
-        .expect("service resource budget")
-        .is_some()
-    );
+        )
+    )
+    .expect("service resource budget")
+    .is_some());
 }
 
 #[test]

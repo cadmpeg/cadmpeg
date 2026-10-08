@@ -1439,16 +1439,8 @@ pub(super) fn build_standard_edge_curve(
         &geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ) {
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.origin",)?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.direction",)?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.origin")?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.direction")?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -1456,26 +1448,10 @@ pub(super) fn build_standard_edge_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
         )
     ) {
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.center",)?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.axis",)?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.ref_direction",)?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.radius",)?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.center")?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.axis")?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.ref_direction")?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.radius")?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -1483,31 +1459,11 @@ pub(super) fn build_standard_edge_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)),
         )
     ) {
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.center",)?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.axis",)?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.major_direction",)?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.major_radius",)?;
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.minor_radius",)?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.center")?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.axis")?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.major_direction")?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.major_radius")?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.minor_radius")?;
     } else if matches!(
         (&support.geometry, &geometry),
         (
@@ -1515,11 +1471,7 @@ pub(super) fn build_standard_edge_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)),
         )
     ) {
-        crate::resource::derived_annotation(
-            ctx,
-            annotations,
-            &id,
-            "geometry.axis",)?;
+        crate::resource::derived_annotation(ctx, annotations, &id, "geometry.axis")?;
     }
     let geometry_is_unknown = matches!(
         &geometry,
@@ -1621,16 +1573,13 @@ pub(super) fn build_standard_edge_curve(
                     "standard_surface_intersection",
                     Exactness::Derived,
                 )?;
+                crate::resource::derived_annotation(ctx, annotations, &procedural_id, "curve")?;
                 crate::resource::derived_annotation(
                     ctx,
                     annotations,
                     &procedural_id,
-                    "curve",)?;
-                crate::resource::derived_annotation(
-                    ctx,
-                    annotations,
-                    &procedural_id,
-                    "definition",)?;
+                    "definition",
+                )?;
                 let Ok(context) = IntcurveSupportContext::try_new(
                     sides,
                     ordered_range(curve_parameter_range),
@@ -2289,7 +2238,8 @@ pub(super) fn attach_standard_circles(
             admission.context(),
             annotations,
             &id,
-            "geometry.axis",)?;
+            "geometry.axis",
+        )?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
             id,
@@ -2537,12 +2487,14 @@ pub(super) fn attach_standard_lines(
             admission.context(),
             annotations,
             &id,
-            "geometry.origin",)?;
+            "geometry.origin",
+        )?;
         crate::resource::derived_annotation(
             admission.context(),
             annotations,
             &id,
-            "geometry.direction",)?;
+            "geometry.direction",
+        )?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
             id,

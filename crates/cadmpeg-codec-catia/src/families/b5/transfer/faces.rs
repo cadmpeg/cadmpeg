@@ -263,7 +263,8 @@ pub(super) fn orient_loop_members(
             return Ok(None);
         };
         let members = ctx.collect_vec(
-            ctx.admit_iter(&senses, "catia_b5_oriented_loop_senses")?
+            senses
+                .iter()
                 .copied()
                 .zip(&loop_.members)
                 .map(|(reversed, member)| (reversed, member.controls[2] == -1))
@@ -296,19 +297,92 @@ fn b5_plane_point(
     )
 }
 
+/// Emitted surfaces and pcurves indexed once by identity for the face pass.
+struct EmittedGeometry<'a> {
+    surfaces: &'a [cadmpeg_ir::geometry::Surface],
+    surface_index: HashMap<&'a str, usize>,
+    pcurves: &'a [cadmpeg_ir::geometry::pcurve::Pcurve],
+    pcurve_index: HashMap<&'a str, usize>,
+}
+
+impl<'a> EmittedGeometry<'a> {
+    /// Indexes the emitted layers; the caller holds the indexes as scratch.
+    fn new(
+        ctx: &DecodeContext<'_>,
+        surfaces: &'a [cadmpeg_ir::geometry::Surface],
+        pcurves: &'a [cadmpeg_ir::geometry::pcurve::Pcurve],
+    ) -> Result<Self, CodecError> {
+        let mut surface_index = HashMap::new();
+        for (index, surface) in ctx
+            .admit_iter(surfaces, "catia_b5_emitted_surface_index")?
+            .enumerate()
+        {
+            ctx.insert_hash_map(
+                &mut surface_index,
+                surface.id.as_str(),
+                index,
+                "catia_b5_emitted_surface_index",
+            )?;
+        }
+        let mut pcurve_index = HashMap::new();
+        for (index, pcurve) in ctx
+            .admit_iter(pcurves, "catia_b5_emitted_pcurve_index")?
+            .enumerate()
+        {
+            ctx.insert_hash_map(
+                &mut pcurve_index,
+                pcurve.id.as_str(),
+                index,
+                "catia_b5_emitted_pcurve_index",
+            )?;
+        }
+        Ok(Self {
+            surfaces,
+            surface_index,
+            pcurves,
+            pcurve_index,
+        })
+    }
+
+    fn surface(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &SurfaceId,
+    ) -> Result<Option<&'a cadmpeg_ir::geometry::Surface>, CodecError> {
+        Ok(ctx
+            .get_hash_map(
+                &self.surface_index,
+                id.as_str(),
+                "catia_b5_emitted_surface_lookup",
+            )?
+            .and_then(|&index| self.surfaces.get(index)))
+    }
+
+    fn pcurve(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: &cadmpeg_ir::ids::PcurveId,
+    ) -> Result<Option<&'a cadmpeg_ir::geometry::pcurve::Pcurve>, CodecError> {
+        Ok(ctx
+            .get_hash_map(
+                &self.pcurve_index,
+                id.as_str(),
+                "catia_b5_emitted_pcurve_lookup",
+            )?
+            .and_then(|&index| self.pcurves.get(index)))
+    }
+}
+
 fn b5_planar_loop_points(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
+    emitted: &EmittedGeometry<'_>,
     graph: &B5Graph,
     loop_id: u32,
     loop_orientation: &OrientedLoop,
     surface_id: &SurfaceId,
     pcurve_uses: &PcurveUses,
 ) -> Result<Option<Vec<Point3>>, cadmpeg_core::CodecError> {
-    let Some(surface) = ctx
-        .admit_iter(&ir.model.surfaces, "catia_b5_planar_surface_lookup")?
-        .find(|surface| surface.id == *surface_id)
-    else {
+    let Some(surface) = emitted.surface(ctx, surface_id)? else {
         return Ok(None);
     };
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
@@ -317,7 +391,8 @@ fn b5_planar_loop_points(
     let origin = plane_surface.origin().get();
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
-    let Some(loop_) = graph.loops.get(&loop_id) else {
+    let Some(loop_) = ctx.get_btree_map(&graph.loops, &loop_id, "catia_b5_planar_loop_lookup")?
+    else {
         return Ok(None);
     };
     let mut points = Vec::new();
@@ -328,23 +403,25 @@ fn b5_planar_loop_points(
     )?;
     for member in loop_orientation.member_order(ctx)? {
         let edge = loop_.members[member].edge;
-        let Some(mut endpoints) = graph.vertices.edge_points(edge) else {
+        let Some(mut endpoints) = graph.vertices.edge_points(ctx, edge)? else {
             return Ok(None);
         };
         if loop_orientation.members[member].reversed {
             endpoints.swap(0, 1);
         }
         let [start, end] = endpoints.map(|point| Point3::new(point[0], point[1], point[2]));
-        let Some((pcurve_id, parameter_range)) = pcurve_uses.get(&(loop_id, member)) else {
+        let Some((pcurve_id, parameter_range)) = ctx.get_hash_map(
+            pcurve_uses,
+            &(loop_id, member),
+            "catia_b5_planar_pcurve_use",
+        )?
+        else {
             return Ok(None);
         };
         if parameter_range[0] == parameter_range[1] {
             return Ok(None);
         }
-        let Some(pcurve) = ctx
-            .admit_iter(&ir.model.pcurves, "catia_b5_planar_pcurve_lookup")?
-            .find(|pcurve| pcurve.id == *pcurve_id)
-        else {
+        let Some(pcurve) = emitted.pcurve(ctx, pcurve_id)? else {
             return Ok(None);
         };
         let PcurveGeometry::Line(line_pcurve) = &pcurve.geometry else {
@@ -374,7 +451,7 @@ fn b5_planar_loop_points(
 /// rows the graph states for this face.
 fn b5_face_loops(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &CadIr,
+    emitted: &EmittedGeometry<'_>,
     graph: &B5Graph,
     face: &super::super::graph::B5Face,
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
@@ -408,7 +485,9 @@ fn b5_face_loops(
             Vec::new(),
         ));
     }
-    let Some(surface_id) = surface_ids.get(&face.surface) else {
+    let Some(surface_id) =
+        ctx.get_btree_map(surface_ids, &face.surface, "catia_b5_face_surface_lookup")?
+    else {
         return unspecified();
     };
     let mut rows = Vec::new();
@@ -416,12 +495,14 @@ fn b5_face_loops(
         .admit_iter(&face.loops, "catia_b5_face_loop_pairs")?
         .zip(ctx.admit_iter(&ids, "catia_b5_face_loop_ids")?)
     {
-        let Some(orientation) = loop_orientation.get(loop_id) else {
+        let Some(orientation) =
+            ctx.get_btree_map(loop_orientation, loop_id, "catia_b5_face_loop_orientation")?
+        else {
             return unspecified();
         };
         let Some(points) = b5_planar_loop_points(
             ctx,
-            ir,
+            emitted,
             graph,
             *loop_id,
             orientation,
@@ -434,10 +515,7 @@ fn b5_face_loops(
         let id = id.try_clone_for_decode(ctx, "catia_b5_planar_loop_id_copy")?;
         ctx.push_vec(&mut rows, (id, points), "catia_b5_planar_loop_rows")?;
     }
-    let Some(surface) = ctx
-        .admit_iter(&ir.model.surfaces, "catia_b5_classified_surface_lookup")?
-        .find(|surface| surface.id == *surface_id)
-    else {
+    let Some(surface) = emitted.surface(ctx, surface_id)? else {
         return unspecified();
     };
     crate::boundary_roles::classify_planar_boundaries(ctx, &surface.geometry, &rows)
@@ -529,7 +607,8 @@ pub(super) fn emit_faces(
             admission.context(),
             annotations,
             body_id.as_str(),
-            field,)?;
+            field,
+        )?;
     }
     let mut body_regions = Vec::new();
     for id in admission
@@ -558,8 +637,16 @@ pub(super) fn emit_faces(
         .context()
         .admit_iter(&components, "catia_b5_region_component_scan")?
     {
-        let region_id = region_ids[component_index]
-            .try_clone_for_decode(admission.context(), "catia_b5_region_ref_id")?;
+        let Some(region_id) = admission.context().get_btree_map(
+            &region_ids,
+            component_index,
+            "catia_b5_region_id_lookup",
+        )?
+        else {
+            return Ok(false);
+        };
+        let region_id =
+            region_id.try_clone_for_decode(admission.context(), "catia_b5_region_ref_id")?;
         let shell_id = crate::resource::compose_index_id(
             admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "shell"),
@@ -580,7 +667,8 @@ pub(super) fn emit_faces(
                 admission.context(),
                 annotations,
                 region_id.as_str(),
-                field,)?;
+                field,
+            )?;
         }
         let region_record_id =
             region_id.try_clone_for_decode(admission.context(), "catia_b5_region_record_id")?;
@@ -613,7 +701,8 @@ pub(super) fn emit_faces(
                 admission.context(),
                 annotations,
                 shell_id.as_str(),
-                field,)?;
+                field,
+            )?;
         }
         let mut shell_faces = Vec::new();
         for face in admission
@@ -648,6 +737,12 @@ pub(super) fn emit_faces(
         );
     }
 
+    // The face loops and the radial groups are scratch built from layers the
+    // earlier passes emitted.
+    let ctx = admission.ctx;
+    let mut scratch = ctx.reserve_scoped(0, "catia_b5_face_pass_scratch")?;
+    let emitted_geometry = scratch
+        .with_storage(|| EmittedGeometry::new(ctx, &ir.model.surfaces, &ir.model.pcurves))?;
     let mut coedges_by_edge = BTreeMap::<u32, Vec<usize>>::new();
     for (face_index, face) in admission
         .context()
@@ -674,7 +769,7 @@ pub(super) fn emit_faces(
         )?;
         let face_loops = b5_face_loops(
             admission.context(),
-            ir,
+            &emitted_geometry,
             graph,
             face,
             loop_orientation,
@@ -694,13 +789,22 @@ pub(super) fn emit_faces(
                 admission.context(),
                 annotations,
                 face_id.as_str(),
-                field,)?;
+                field,
+            )?;
         }
         let face_record_id =
             face_id.try_clone_for_decode(admission.context(), "catia_b5_face_record_id")?;
         let face_shell_id =
             shell_id.try_clone_for_decode(admission.context(), "catia_b5_face_shell_ref")?;
-        let face_surface_id = surface_ids[&face.surface]
+        let Some(face_surface_id) = admission.context().get_btree_map(
+            surface_ids,
+            &face.surface,
+            "catia_b5_face_surface_lookup",
+        )?
+        else {
+            return Ok(false);
+        };
+        let face_surface_id = face_surface_id
             .try_clone_for_decode(admission.context(), "catia_b5_face_surface_ref")?;
         let face_loop_copy = copy_face_loops(admission.context(), &face_loops)?;
         admission.reserve_entity(&mut ir.model.faces, "catia_b5_emit_faces")?;
@@ -718,8 +822,20 @@ pub(super) fn emit_faces(
             .context()
             .admit_iter(&face.loops, "catia_b5_emit_face_loop_scan")?
         {
-            let loop_ = &graph.loops[loop_id_value];
-            let orientation = &loop_orientation[loop_id_value];
+            let (Some(loop_), Some(orientation)) = (
+                admission.context().get_btree_map(
+                    &graph.loops,
+                    loop_id_value,
+                    "catia_b5_emitted_loop_lookup",
+                )?,
+                admission.context().get_btree_map(
+                    loop_orientation,
+                    loop_id_value,
+                    "catia_b5_emitted_loop_lookup",
+                )?,
+            ) else {
+                return Ok(false);
+            };
             let loop_id = crate::resource::compose_index_id(
                 admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "loop"),
@@ -763,7 +879,14 @@ pub(super) fn emit_faces(
             let mut vertex_uses = Vec::new();
             for member in orientation.member_order(admission.context())? {
                 let edge = loop_.members[member].edge;
-                let endpoints = graph.vertices.edges()[&edge];
+                let Some(&endpoints) = admission.context().get_btree_map(
+                    graph.vertices.edges(),
+                    &edge,
+                    "catia_b5_loop_vertex_lookup",
+                )?
+                else {
+                    return Ok(false);
+                };
                 let endpoint = endpoints[1 - usize::from(orientation.members[member].reversed)]
                     .combined_index(graph.vertices.raw_points().len());
                 let vertex = VertexId::mint(admission.context().format_retained(
@@ -796,14 +919,16 @@ pub(super) fn emit_faces(
                     admission.context(),
                     annotations,
                     loop_id.as_str(),
-                    field,)?;
+                    field,
+                )?;
             }
             if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified {
                 crate::resource::derived_annotation(
                     admission.context(),
                     annotations,
                     loop_id.as_str(),
-                    "boundary_role",)?;
+                    "boundary_role",
+                )?;
             }
             let Ok(ring) =
                 cadmpeg_ir::topology::LoopRing::new(admission.context(), coedge_ids, vertex_uses)
@@ -839,25 +964,39 @@ pub(super) fn emit_faces(
                         admission.context(),
                         annotations,
                         id.as_str(),
-                        field,)?;
+                        field,
+                    )?;
                 }
                 let arena_index = ir.model.coedges.len();
-                admission.context().push_btree_group(
-                    &mut coedges_by_edge,
-                    edge,
-                    arena_index,
-                    "catia_b5_coedges_by_edge",
-                    "catia_b5_coedge_radial_occurrences",
-                )?;
+                scratch.with_storage(|| {
+                    ctx.push_btree_group(
+                        &mut coedges_by_edge,
+                        edge,
+                        arena_index,
+                        "catia_b5_coedges_by_edge",
+                        "catia_b5_coedge_radial_occurrences",
+                    )
+                })?;
                 let coedge_record_id =
                     id.try_clone_for_decode(admission.context(), "catia_b5_coedge_record_id")?;
                 let owner_loop_id = loop_id
                     .try_clone_for_decode(admission.context(), "catia_b5_coedge_owner_loop_id")?;
-                let edge_ref_id = edge_id_map[&edge]
+                let Some(edge_ref_id) = admission.context().get_hash_map(
+                    edge_id_map,
+                    &edge,
+                    "catia_b5_coedge_edge_lookup",
+                )?
+                else {
+                    return Ok(false);
+                };
+                let edge_ref_id = edge_ref_id
                     .try_clone_for_decode(admission.context(), "catia_b5_coedge_edge_id")?;
                 let mut coedge_pcurves = Vec::new();
-                if let Some((pcurve, parameter_range)) = pcurve_uses.get(&(loop_.object_id, member))
-                {
+                if let Some((pcurve, parameter_range)) = admission.context().get_hash_map(
+                    pcurve_uses,
+                    &(loop_.object_id, member),
+                    "catia_b5_coedge_pcurve_use",
+                )? {
                     let directed = if orientation.members[member].pcurve_reversed {
                         match cadmpeg_ir::geometry::DirectedParameterRange::new([
                             parameter_range[1].get(),
@@ -931,7 +1070,7 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use super::super::super::graph::{B5Face, B5Graph, B5Loop, B5LoopMember, B5LoopMetadata};
-    use super::{b5_face_loops, OrientedLoop, OrientedLoopMember};
+    use super::{b5_face_loops, EmittedGeometry, OrientedLoop, OrientedLoopMember};
 
     #[test]
     fn planar_line_pcurve_faces_derive_roles_from_containment() {
@@ -1097,7 +1236,8 @@ mod tests {
         assert_eq!(
             crate::test_support::with_service_context(|ctx| b5_face_loops(
                 ctx,
-                &ir,
+                &EmittedGeometry::new(ctx, &ir.model.surfaces, &ir.model.pcurves)
+                    .expect("service context indexes emitted geometry"),
                 &graph,
                 &graph.faces[0],
                 &orientations,
