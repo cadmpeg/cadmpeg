@@ -590,17 +590,16 @@ fn resolve_indexed_operand_marker<'a>(
                 |entity| {
                     Ok(entity.object_index() == Some(u32::from(address))
                         && !excluded(entity.id())?
-                        && linked_coordinate_line_endpoints(
-                            ctx,
-                            entity,
-                            OperandCandidates::id_index(
+                        && linked_coordinate_line_endpoints(ctx, entity, |id, operation| {
+                            let by_id = OperandCandidates::id_index(
                                 ctx,
                                 entities,
                                 &mut candidates.by_id,
                                 &mut candidates.storage,
                                 false,
-                            )?,
-                        )?
+                            )?;
+                            Ok(ctx.get_hash_map(by_id, id, operation)?.copied())
+                        })?
                         .is_some())
                 },
                 "select unique indexed SLDPRT line handle",
@@ -655,17 +654,16 @@ fn resolve_indexed_operand_marker<'a>(
                     |entity| {
                         Ok(entity.local_id() == Some(u32::from(address))
                             && !excluded(entity.id())?
-                            && linked_coordinate_line_endpoints(
-                                ctx,
-                                entity,
-                                OperandCandidates::id_index(
+                            && linked_coordinate_line_endpoints(ctx, entity, |id, operation| {
+                                let by_id = OperandCandidates::id_index(
                                     ctx,
                                     entities,
                                     &mut candidates.by_id,
                                     &mut candidates.storage,
                                     false,
-                                )?,
-                            )?
+                                )?;
+                                Ok(ctx.get_hash_map(by_id, id, operation)?.copied())
+                            })?
                             .is_some())
                     },
                     "select unique local SLDPRT line handle",
@@ -919,7 +917,7 @@ fn operand_accepts_link_indirection(kind: FeatureInputOperandKind) -> bool {
 pub(super) fn linked_coordinate_line_endpoints<'a>(
     ctx: &DecodeContext<'_>,
     marker: &SketchInputEntity,
-    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+    mut lookup: impl FnMut(&str, &'static str) -> Result<Option<&'a SketchInputEntity>, CodecError>,
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     let mut links = [None, None];
     for link in ctx.admit_iter(marker.links(), "resolve SLDPRT linked line endpoints")? {
@@ -939,23 +937,17 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     let [Some(first_link), Some(second_link)] = links else {
         return Ok(None);
     };
-    let Some(first) = ctx
-        .get_hash_map(
-            markers_by_id,
-            first_link.entity_ref.as_str(),
-            "resolve SLDPRT first linked line endpoint",
-        )?
-        .copied()
+    let Some(first) = lookup(
+        first_link.entity_ref.as_str(),
+        "resolve SLDPRT first linked line endpoint",
+    )?
     else {
         return Ok(None);
     };
-    let Some(second) = ctx
-        .get_hash_map(
-            markers_by_id,
-            second_link.entity_ref.as_str(),
-            "resolve SLDPRT second linked line endpoint",
-        )?
-        .copied()
+    let Some(second) = lookup(
+        second_link.entity_ref.as_str(),
+        "resolve SLDPRT second linked line endpoint",
+    )?
     else {
         return Ok(None);
     };

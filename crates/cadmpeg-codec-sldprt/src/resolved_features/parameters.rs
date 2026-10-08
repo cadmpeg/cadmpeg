@@ -8,26 +8,13 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScalarUnit {
     Native,
     Length,
     Angle,
-}
-
-fn scalar_owned_by_feature(
-    ctx: &DecodeContext<'_>,
-    scalar: &FeatureInputScalar,
-    feature: &str,
-    start: u64,
-    end: Option<u64>,
-) -> Result<bool, CodecError> {
-    if let Some(owner) = scalar.feature_ref.as_deref() {
-        return ctx.equal(owner, feature, "compare SLDPRT scalar owner");
-    }
-    Ok(scalar.offset > start && end.is_none_or(|end| scalar.offset < end))
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
@@ -565,10 +552,10 @@ pub(crate) fn sync_changed_feature_scalars(
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ParameterValue;
 
+    const OPERATION: &str = "synchronize SLDPRT changed scalars";
     if changed.is_empty() {
         return Ok(());
     }
-    const OPERATION: &str = "synchronize SLDPRT changed scalars";
     for lane in ctx.admit_iter(lanes, OPERATION)? {
         let mut lane_storage = ctx.reserve_scoped(0, OPERATION)?;
         let object_names = ObjectNames::new(ctx, lane)?;
@@ -594,7 +581,7 @@ pub(crate) fn sync_changed_feature_scalars(
             Ord::cmp,
             "sldprt feature name starts sort",
         )?;
-        let mut scalars_by_name = None;
+        let mut scalars_by_owner_name = None;
         let mut updates = Vec::<(usize, f64)>::new();
         for (index, &(start, feature)) in ctx.admit_iter(&starts, OPERATION)?.enumerate() {
             let end = starts.get(index + 1).map(|(offset, _)| *offset);
@@ -608,52 +595,94 @@ pub(crate) fn sync_changed_feature_scalars(
                 if !ctx.contains_hash_set(changed, &key, OPERATION)? {
                     continue;
                 }
-                let scalars_by_name = match &mut scalars_by_name {
-                    Some(index) => index,
-                    slot @ None => {
-                        let (names_by_id, _names_storage) =
-                            ctx.with_scoped_storage(OPERATION, || {
-                                ctx.collect_hash_map(
-                                    lane.names
-                                        .iter()
-                                        .map(|name| (name.id.as_str(), name.value.as_str())),
-                                    OPERATION,
-                                )
+                let ((scalar_index, sorted_unowned), index_storage) =
+                    match &mut scalars_by_owner_name {
+                        Some(indexed) => indexed,
+                        slot @ None => {
+                            let indexed = ctx.with_scoped_storage(OPERATION, || {
+                                let (names_by_id, _names_storage) =
+                                    ctx.with_scoped_storage(OPERATION, || {
+                                        ctx.collect_hash_map(
+                                            lane.names.iter().map(|name| {
+                                                (name.id.as_str(), name.value.as_str())
+                                            }),
+                                            OPERATION,
+                                        )
+                                    })?;
+                                let mut index = BTreeMap::new();
+                                for (scalar_index, scalar) in
+                                    ctx.admit_iter(&lane.scalars, OPERATION)?.enumerate()
+                                {
+                                    let Some(value) = ctx.get_hash_map(
+                                        &names_by_id,
+                                        scalar.name.as_str(),
+                                        OPERATION,
+                                    )?
+                                    else {
+                                        continue;
+                                    };
+                                    ctx.push_btree_group(
+                                        &mut index,
+                                        (scalar.feature_ref.as_deref(), *value),
+                                        scalar_index,
+                                        OPERATION,
+                                        OPERATION,
+                                    )?;
+                                }
+                                Ok::<_, CodecError>((index, BTreeSet::new()))
                             })?;
-                        let mut index = HashMap::new();
-                        for (scalar_index, scalar) in
-                            ctx.admit_iter(&lane.scalars, OPERATION)?.enumerate()
-                        {
-                            let Some(value) =
-                                ctx.get_hash_map(&names_by_id, scalar.name.as_str(), OPERATION)?
-                            else {
-                                continue;
-                            };
-                            lane_storage.with_storage(|| {
-                                ctx.push_hash_group(
-                                    &mut index,
-                                    *value,
-                                    scalar_index,
-                                    OPERATION,
-                                    OPERATION,
-                                )
-                            })?;
+                            slot.insert(indexed)
                         }
-                        slot.insert(index)
-                    }
-                };
+                    };
                 let mut driving = None;
                 let mut native = None;
                 let mut driving_count = 0usize;
                 let mut native_count = 0usize;
-                let matching = ctx
-                    .get_hash_map(scalars_by_name, name.as_str(), OPERATION)?
-                    .map_or(&[][..], Vec::as_slice);
-                for &scalar_index in ctx.admit_iter(matching, OPERATION)? {
-                    let scalar = &lane.scalars[scalar_index];
-                    if !scalar_owned_by_feature(ctx, scalar, &feature.id, start, end)? {
-                        continue;
+                if !ctx.contains_btree_set(sorted_unowned, name.as_str(), OPERATION)? {
+                    if let Some(unowned) =
+                        ctx.get_mut_btree_map(scalar_index, &(None, name.as_str()), OPERATION)?
+                    {
+                        if unowned.len() > 1 {
+                            ctx.stable_sort_by_key(
+                                unowned,
+                                |index| lane.scalars[*index].offset,
+                                Ord::cmp,
+                                "sort SLDPRT unowned scalar updates",
+                            )?;
+                            index_storage.with_storage(|| {
+                                ctx.insert_btree_set(sorted_unowned, name.as_str(), OPERATION)
+                            })?;
+                        }
                     }
+                }
+                let owned = ctx
+                    .get_btree_map(
+                        scalar_index,
+                        &(Some(feature.id.as_str()), name.as_str()),
+                        OPERATION,
+                    )?
+                    .map_or(&[][..], Vec::as_slice);
+                let unowned = ctx
+                    .get_btree_map(scalar_index, &(None, name.as_str()), OPERATION)?
+                    .map_or(&[][..], Vec::as_slice);
+                let first = ctx.partition_point(
+                    unowned,
+                    |index| Ok(lane.scalars[*index].offset <= start),
+                    OPERATION,
+                )?;
+                let last = match end {
+                    Some(end) => ctx.partition_point(
+                        unowned,
+                        |index| Ok(lane.scalars[*index].offset < end),
+                        OPERATION,
+                    )?,
+                    None => unowned.len(),
+                };
+                for &scalar_index in ctx
+                    .admit_iter(owned, OPERATION)?
+                    .chain(ctx.admit_iter(unowned.get(first..last).unwrap_or_default(), OPERATION)?)
+                {
+                    let scalar = &lane.scalars[scalar_index];
                     match scalar.role {
                         FeatureInputScalarRole::Driving => {
                             driving = Some(scalar_index);
@@ -663,7 +692,7 @@ pub(crate) fn sync_changed_feature_scalars(
                             native = Some(scalar_index);
                             native_count += 1;
                         }
-                        _ => {}
+                        FeatureInputScalarRole::Display => {}
                     }
                 }
                 let scalar_index = match (driving_count, native_count) {
@@ -690,6 +719,7 @@ pub(crate) fn sync_changed_feature_scalars(
                 })?;
             }
         }
+        drop(scalars_by_owner_name);
         for (scalar_index, value) in ctx.admit_iter(updates, OPERATION)? {
             let scalar = &mut lane.scalars[scalar_index];
             let offset = usize::try_from(scalar.offset).map_err(|_| {

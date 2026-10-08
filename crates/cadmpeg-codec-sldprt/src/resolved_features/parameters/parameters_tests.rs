@@ -465,3 +465,75 @@ fn scalar_synchronization_uses_scoped_workspace() {
     assert_eq!(lane.scalars[0].value.get(), 8.0);
     assert_eq!(&lane.native_payload[20..28], &8.0f64.to_le_bytes());
 }
+
+#[test]
+fn scalar_synchronization_keeps_named_owners_and_strict_offset_ranges() {
+    let (mut histories, mut lane) = parameter_limit_fixture();
+    let parameter = cadmpeg_core::nonblank_literal!("D1");
+    histories[0].features[0]
+        .parameters
+        .insert(parameter.clone(), "8.0".into());
+    for (ordinal, id, name, value) in [
+        (1, "second", "Second", "9.0"),
+        (2, "third", "Third", "10.0"),
+    ] {
+        let mut feature = histories[0].features[0].clone();
+        feature.id = id.into();
+        feature.ordinal = ordinal;
+        feature.name = name.into();
+        feature.parameters.insert(parameter.clone(), value.into());
+        histories[0].features.push(feature);
+        let mut feature_name = lane.names[0].clone();
+        feature_name.id = format!("{id}-name");
+        feature_name.ordinal = ordinal + 1;
+        feature_name.offset = u64::from(ordinal) * 100;
+        feature_name.value = name.into();
+        lane.names.push(feature_name);
+    }
+    let original = lane.scalars[0].clone();
+    lane.scalars = [
+        (120, None, FeatureInputScalarRole::Native),
+        (220, None, FeatureInputScalarRole::Driving),
+        (40, None, FeatureInputScalarRole::Driving),
+        (100, None, FeatureInputScalarRole::Driving),
+        (20, Some("second"), FeatureInputScalarRole::Driving),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(ordinal, (offset, owner, role))| {
+        let mut scalar = original.clone();
+        scalar.id = format!("scalar-{ordinal}");
+        scalar.ordinal = u32::try_from(ordinal).unwrap();
+        scalar.offset = offset;
+        scalar.feature_ref = owner.map(str::to_owned);
+        scalar.role = role;
+        scalar
+    })
+    .collect();
+    lane.native_payload.resize(228, 0);
+    let input = lane.clone();
+    let changed = ["feature", "second", "third"]
+        .into_iter()
+        .map(|id| (id.to_owned(), parameter.clone()))
+        .collect::<HashSet<_>>();
+    sync_changed_feature_scalars(
+        &cadmpeg_test_support::service_decode_context(),
+        &histories,
+        std::slice::from_mut(&mut lane),
+        &changed,
+    )
+    .unwrap();
+    for (index, expected) in [0.5, 10.0, 8.0, 0.5, 9.0].into_iter().enumerate() {
+        assert_eq!(lane.scalars[index].value.get(), expected);
+    }
+    for (offset, expected) in [(220, 10.0_f64), (40, 8.0), (20, 9.0)] {
+        assert_eq!(
+            &lane.native_payload[offset..offset + 8],
+            &expected.to_le_bytes()
+        );
+    }
+    assert_eq!(&lane.native_payload[100..108], &[0; 8]);
+    crate::test_support::work_refusal_at("sort SLDPRT unowned scalar updates", |ctx| {
+        sync_changed_feature_scalars(ctx, &histories, &mut [input.clone()], &changed)
+    });
+}
