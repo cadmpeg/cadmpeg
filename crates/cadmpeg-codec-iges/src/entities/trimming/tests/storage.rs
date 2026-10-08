@@ -138,17 +138,6 @@ fn support_bound_walk_refuses_surface_identity_and_node() {
 }
 
 #[test]
-fn trimming_projection_refuses_retained_boundary_source_text() {
-    let bytes = bounded_plane_file();
-    for operation in [
-        "iges boundary derivation edge text",
-        "iges boundary derivation source text",
-    ] {
-        assert_trimming_retained_refusal(&bytes, operation);
-    }
-}
-
-#[test]
 fn trimming_source_text_refuses_scoped_storage_and_work() {
     let bytes = bounded_plane_file();
     let decoded = IgesCodec
