@@ -75,3 +75,20 @@ fn definition_searches_refuse_at_actual_visited_steps() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].items[0].entity_id, 6);
 }
+
+#[test]
+fn invalid_elided_segment_count_has_no_output_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let payload = b"\xf8\x00\xf7\x42type\0\x63dir\0\xf8\x03\x00\x00\x00\
+        pointid\0\xf8\x02\x01\x02cntrid\0\x03arcorient\0\x00\
+        verhor\0\x00radius\0\x04radius2\0\xf6ext_id\0\x0f\xf2\xf7\x42\xe2";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root");
+    assert!(super::segment_table_body(
+        &ctx, payload, 0, 0, payload.len(), super::PrototypeRow::Elided,
+    ).expect("invalid count needs no output storage").is_none());
+    assert!(ctx.resource_refusal().is_none());
+}

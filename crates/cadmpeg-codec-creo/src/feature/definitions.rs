@@ -3683,12 +3683,6 @@ fn segment_table_body(
             region_end = region_end.min(offset);
         }
     }
-    let mut rows = Vec::new();
-    if let Some(row) = named_row.and_then(typed_segment_row) {
-        ctx.reserve_vec(&mut rows, 1, "creo segment rows")?;
-        rows.push(row);
-    }
-    let first_row = cursor;
     // The declared count of an elided-prototype table counts the prototype row
     // that the body does not carry. A declared count below that one row states
     // a body-row count the table cannot hold, and refuses the table.
@@ -3704,6 +3698,12 @@ fn segment_table_body(
     let Ok(row_limit) = usize::try_from(declared_body_rows) else {
         return Ok(None);
     };
+    let mut rows = Vec::new();
+    if let Some(row) = named_row.and_then(typed_segment_row) {
+        ctx.reserve_vec(&mut rows, 1, "creo segment rows")?;
+        rows.push(row);
+    }
+    let first_row = cursor;
     while cursor < region_end && rows.len() < row_limit {
         ctx.next_charged(&mut (cursor..=payload.len()), "creo segment table body cursor traversal")?;
         let row_start = cursor;
@@ -6058,12 +6058,12 @@ fn saved_line_block(
     mut cursor: usize,
     segment_end: usize,
     cache: &scalar::ScalarCache,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    entities: &mut Vec<FeatureSavedEntity>,
+) -> Result<(), CodecError> {
     if payload.get(cursor) == Some(&0xf1) {
         cursor = ctx.position_by(&payload[cursor..segment_end], |byte| Ok(*byte == 0xe3), "creo saved line prototype close")?
             .map_or(segment_end, |relative| cursor + relative + 1);
     }
-    let mut entities = Vec::new();
     while cursor < segment_end {
         ctx.next_charged(&mut (cursor..=payload.len()), "creo saved line block cursor traversal")?;
         if payload.get(cursor) == Some(&0xe3) {
@@ -6245,7 +6245,7 @@ fn saved_line_block(
         storage.commit()?;
         let body =
             ctx.copy_retained(&payload[record_offset..record_end], "creo saved line body")?;
-        ctx.reserve_vec(&mut entities, 1, "creo saved line block entities")?;
+        ctx.reserve_vec(entities, 1, "creo saved line block entities")?;
         entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
             entity_id,
             references,
@@ -6258,7 +6258,7 @@ fn saved_line_block(
             offset: record_offset,
         }));
     }
-    Ok(entities)
+    Ok(())
 }
 
 fn saved_line_entities(
@@ -6267,9 +6267,9 @@ fn saved_line_entities(
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    entities: &mut Vec<FeatureSavedEntity>,
+) -> Result<(), CodecError> {
     let label = b"\xe0\x00entity(line)\0";
-    let mut entities = Vec::new();
     let mut search = start;
     while let Some(label_offset) = ctx.find_bytes_in(
         payload,
@@ -6295,12 +6295,10 @@ fn saved_line_entities(
                 body_end = body_end.min(offset);
             }
         }
-        let block = saved_line_block(ctx, payload, body_start, body_end, cache)?;
-        ctx.reserve_vec(&mut entities, block.len(), "creo saved line entities")?;
-        entities.extend(ctx.admit_iter(block, "creo saved entity extension")?);
+        saved_line_block(ctx, payload, body_start, body_end, cache, entities)?;
         search = body_end;
     }
-    Ok(entities)
+    Ok(())
 }
 
 fn saved_named_scalars<const N: usize>(
@@ -6417,10 +6415,11 @@ fn saved_positional_generated_entities(
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    entities: &mut Vec<FeatureSavedEntity>,
+) -> Result<(), CodecError> {
     const HEADER_WINDOW: usize = 24;
     let (Some(order_table), Some(segments)) = (order_table, segments) else {
-        return Ok(Vec::new());
+        return Ok(());
     };
     let mut generated_storage = ctx.reserve_scoped(0, "Creo saved generated lookup storage")?;
     let mut starts = Vec::new();
@@ -6451,7 +6450,6 @@ fn saved_positional_generated_entities(
             starts.push(row_start);
         }
     }
-    let mut entities = Vec::new();
     for (index, row_start) in ctx.admit_iter(&starts, "creo saved generated row traversal")?.copied().enumerate() {
         // Every row start follows an 0xe3 separator, so it has a preceding byte.
         let row_end = starts
@@ -6557,7 +6555,7 @@ fn saved_positional_generated_entities(
                         &payload[row_start..body_end],
                         "creo saved generated line body",
                     )?;
-                    ctx.reserve_vec(&mut entities, 1, "creo saved generated entities")?;
+                    ctx.reserve_vec(entities, 1, "creo saved generated entities")?;
                     entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
                         entity_id,
                         references: Vec::new(),
@@ -6574,7 +6572,7 @@ fn saved_positional_generated_entities(
                     &payload[row_start..body_end],
                     "creo saved generated arc body",
                 )?;
-                ctx.reserve_vec(&mut entities, 1, "creo saved generated entities")?;
+                ctx.reserve_vec(entities, 1, "creo saved generated entities")?;
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center: [values[0], values[1], values[2]],
@@ -6591,7 +6589,7 @@ fn saved_positional_generated_entities(
             FeatureSegmentKind::Point(_) => {}
         }
     }
-    Ok(entities)
+    Ok(())
 }
 
 fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
@@ -6609,8 +6607,8 @@ fn saved_circular_entities(
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
-    let mut entities = Vec::new();
+    entities: &mut Vec<FeatureSavedEntity>,
+) -> Result<(), CodecError> {
     for (kind, label) in [
         ("arc", b"\xe0\x00entity(arc)\0".as_slice()),
         ("circle", b"\xe0\x00entity(circle)\0".as_slice()),
@@ -6644,7 +6642,8 @@ fn saved_circular_entities(
             let radius = saved_named_scalars::<1>(ctx, payload, b"radius", body_start, body_end, cache)?
                 .unwrap_or([None])[0];
             if kind == "arc" {
-                let positional = saved_positional_generated_entities(
+                let first_positional = entities.len();
+                saved_positional_generated_entities(
                     ctx,
                     payload,
                     body_start,
@@ -6652,8 +6651,9 @@ fn saved_circular_entities(
                     cache,
                     order_table,
                     segments,
+                    entities,
                 )?;
-                let named_body_end = positional.first().map(saved_entity_offset).map_or(body_end, |row_start| saved_positional_body_end(payload, row_start));
+                let named_body_end = entities.get(first_positional).map(saved_entity_offset).map_or(body_end, |row_start| saved_positional_body_end(payload, row_start));
                 let first = saved_named_scalars::<3>(ctx, payload, b"end1", body_start, body_end, cache)?
                     .unwrap_or([None; 3]);
                 let second =
@@ -6667,8 +6667,7 @@ fn saved_circular_entities(
                         .unwrap_or([None])[0];
                 let body =
                     ctx.copy_retained(&payload[body_start..named_body_end], "creo saved arc body")?;
-                ctx.reserve_vec(&mut entities, 1, "creo saved circular entities")?;
-                entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
+                ctx.insert_vec(entities, first_positional, FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center,
                     radius,
@@ -6676,17 +6675,11 @@ fn saved_circular_entities(
                     parameters: [start_parameter, end_parameter],
                     body,
                     offset: entity_offset,
-                }));
-                ctx.reserve_vec(
-                    &mut entities,
-                    positional.len(),
-                    "creo saved circular entities",
-                )?;
-                entities.extend(ctx.admit_iter(positional, "creo saved entity extension")?);
+                }), "creo saved circular entities")?;
             } else {
                 let body =
                     ctx.copy_retained(&payload[body_start..body_end], "creo saved circle body")?;
-                ctx.reserve_vec(&mut entities, 1, "creo saved circular entities")?;
+                ctx.reserve_vec(entities, 1, "creo saved circular entities")?;
                 entities.push(FeatureSavedEntity::Circle(FeatureSavedCircle {
                     entity_id,
                     center,
@@ -6698,7 +6691,7 @@ fn saved_circular_entities(
             search = body_end;
         }
     }
-    Ok(entities)
+    Ok(())
 }
 
 fn saved_conic_entities(
@@ -6707,10 +6700,10 @@ fn saved_conic_entities(
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    entities: &mut Vec<FeatureSavedEntity>,
+) -> Result<(), CodecError> {
     let label = b"\xe0\x00entity(conic)\0";
     let local_system_label = b"\xe0\x02local_sys\0";
-    let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = ctx.find_bytes_in(
         payload,
@@ -6770,7 +6763,7 @@ fn saved_conic_entities(
                 .map(|(frame, _)| frame)
             });
         let body = ctx.copy_retained(&payload[body_start..body_end], "creo saved conic body")?;
-        ctx.reserve_vec(&mut entities, 1, "creo saved conic entities")?;
+        ctx.reserve_vec(entities, 1, "creo saved conic entities")?;
         entities.push(FeatureSavedEntity::Conic(FeatureSavedConic {
             entity_id,
             endpoints: [first, second],
@@ -6782,7 +6775,7 @@ fn saved_conic_entities(
         }));
         search = body_end;
     }
-    Ok(entities)
+    Ok(())
 }
 
 fn saved_dummy_entities(
@@ -6790,9 +6783,9 @@ fn saved_dummy_entities(
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    entities: &mut Vec<FeatureSavedEntity>,
+) -> Result<(), CodecError> {
     let label = b"\xe0\x00entity(dummy_ent)\0";
-    let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = ctx.find_bytes_in(
         payload,
@@ -6812,7 +6805,7 @@ fn saved_dummy_entities(
             )?
             .unwrap_or(end);
         let body = ctx.copy_retained(&payload[body_start..body_end], "creo saved dummy body")?;
-        ctx.reserve_vec(&mut entities, 1, "creo saved dummy entities")?;
+        ctx.reserve_vec(entities, 1, "creo saved dummy entities")?;
         entities.push(FeatureSavedEntity::Dummy(FeatureSavedDummy {
             entity_id: named_compact_int(ctx, payload, b"\xe0\x01id\0", body_start, body_end)?,
             body,
@@ -6820,7 +6813,7 @@ fn saved_dummy_entities(
         }));
         search = body_end;
     }
-    Ok(entities)
+    Ok(())
 }
 
 /// Interpolation points a saved-spline body of `remaining` bytes can state.
@@ -6842,13 +6835,13 @@ fn saved_spline_entities(
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    entities: &mut Vec<FeatureSavedEntity>,
+) -> Result<(), CodecError> {
     const LABEL: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0";
     const POINTS_LABEL: &[u8] = b"\xe0\x02i_pnts\0";
     const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
     const TANGENTS_LABEL: &[u8] = b"\xe0\x02end_tangts\0";
     const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
-    let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = ctx.find_bytes_in(
         payload,
@@ -6966,7 +6959,7 @@ fn saved_spline_entities(
             }
             None => None,
         };
-        ctx.reserve_vec(&mut entities, 1, "creo saved spline entities")?;
+        ctx.reserve_vec(entities, 1, "creo saved spline entities")?;
         entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
             entity_id: named_compact_int(ctx, payload, b"\xe0\x01id\0", body_start, entity_id_end)?,
             declared_point_count,
@@ -6978,7 +6971,7 @@ fn saved_spline_entities(
         }));
         search = body_start;
     }
-    Ok(entities)
+    Ok(())
 }
 
 fn saved_spline_parameters(
@@ -7108,20 +7101,12 @@ fn saved_section(
             )?
             .unwrap_or(end),
     };
-    let mut entities = saved_line_entities(ctx, payload, table, table_end, cache)?;
-    let circular =
-        saved_circular_entities(ctx, payload, table, table_end, cache, order_table, segments)?;
-    ctx.reserve_vec(&mut entities, circular.len(), "creo saved section entities")?;
-    entities.extend(ctx.admit_iter(circular, "creo saved entity extension")?);
-    let conic = saved_conic_entities(ctx, payload, table, end, cache)?;
-    ctx.reserve_vec(&mut entities, conic.len(), "creo saved section entities")?;
-    entities.extend(ctx.admit_iter(conic, "creo saved entity extension")?);
-    let dummy = saved_dummy_entities(ctx, payload, table, table_end)?;
-    ctx.reserve_vec(&mut entities, dummy.len(), "creo saved section entities")?;
-    entities.extend(ctx.admit_iter(dummy, "creo saved entity extension")?);
-    let spline = saved_spline_entities(ctx, payload, start, end, cache)?;
-    ctx.reserve_vec(&mut entities, spline.len(), "creo saved section entities")?;
-    entities.extend(ctx.admit_iter(spline, "creo saved entity extension")?);
+    let mut entities = Vec::new();
+    saved_line_entities(ctx, payload, table, table_end, cache, &mut entities)?;
+    saved_circular_entities(ctx, payload, table, table_end, cache, order_table, segments, &mut entities)?;
+    saved_conic_entities(ctx, payload, table, end, cache, &mut entities)?;
+    saved_dummy_entities(ctx, payload, table, table_end, &mut entities)?;
+    saved_spline_entities(ctx, payload, start, end, cache, &mut entities)?;
     ctx.stable_sort_by_key(
         entities.as_mut_slice(),
         saved_entity_offset,
@@ -7143,22 +7128,9 @@ fn positional_saved_section(
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
 ) -> Result<Option<FeatureSavedSection>, CodecError> {
-    let mut entities = saved_positional_generated_entities(
-        ctx,
-        payload,
-        start,
-        end,
-        cache,
-        order_table,
-        segments,
-    )?;
-    let conic = saved_conic_entities(ctx, payload, start, end, cache)?;
-    ctx.reserve_vec(
-        &mut entities,
-        conic.len(),
-        "creo positional saved section entities",
-    )?;
-    entities.extend(ctx.admit_iter(conic, "creo saved entity extension")?);
+    let mut entities = Vec::new();
+    saved_positional_generated_entities(ctx, payload, start, end, cache, order_table, segments, &mut entities)?;
+    saved_conic_entities(ctx, payload, start, end, cache, &mut entities)?;
     ctx.stable_sort_by_key(
         entities.as_mut_slice(),
         saved_entity_offset,
