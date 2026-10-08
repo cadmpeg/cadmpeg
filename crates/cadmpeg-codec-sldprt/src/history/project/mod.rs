@@ -22,9 +22,7 @@ use std::fmt::{self, Write};
 use crate::history::classify::{
     is_custom_property, is_offset_plane, is_semantic_note, HistoryIndex,
 };
-use crate::history::literals::{
-    admit_literal, named_literal, parse_point3_mm, parse_vector3, valid_plane_frame,
-};
+use crate::history::literals::{named_literal, parse_point3_mm, parse_vector3, valid_plane_frame};
 use crate::records::FeatureSource;
 
 /// The value of `$read`, or `Ok(None)` from the enclosing function when it is absent.
@@ -37,6 +35,8 @@ macro_rules! require {
     };
 }
 
+#[cfg(test)]
+mod budget_tests;
 #[cfg(test)]
 mod content_tests;
 #[cfg(test)]
@@ -367,27 +367,28 @@ fn project_history<'c>(
         let is_metadata = index.is_metadata(ctx, feature)?;
         ctx.push_scoped_vec(&mut scratch, &mut metadata, is_metadata, OPERATION)?;
     }
-    let source_bindings = unique_source_bindings(ctx, history, &metadata)?;
+    let source_bindings =
+        scratch.with_storage(|| unique_source_bindings(ctx, history, &metadata))?;
     let mut source_keys = Vec::new();
-    let mut native_by_source = HashMap::new();
     for (source, binding) in ctx.admit_iter(&source_bindings, OPERATION)? {
         let Some(position) = *binding else {
             continue;
         };
         scratch.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut native_by_source,
-                source_lookup_key(ctx, *source)?,
-                history.features[position].id.as_str(),
-                OPERATION,
-            )?;
             let key = source_lookup_key(ctx, *source)?;
             ctx.push_vec(&mut source_keys, (key, position), OPERATION)
         })?;
     }
+    let mut native_by_source = HashMap::new();
     let mut by_source: NeutralByKey<'_, '_> = HashMap::new();
     for (key, position) in ctx.admit_iter(&source_keys, OPERATION)? {
         scratch.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut native_by_source,
+                key.as_str(),
+                history.features[*position].id.as_str(),
+                OPERATION,
+            )?;
             ctx.insert_hash_map(
                 &mut by_source,
                 key.as_str(),
@@ -397,7 +398,7 @@ fn project_history<'c>(
         })?;
     }
     let mut by_native = HashMap::new();
-    let mut features_by_source = BTreeMap::new();
+    let source_features = self::solid::SourceFeatures::new(ctx, &history.features)?;
     for ((feature, neutral), is_metadata) in ctx
         .admit_iter(&history.features, OPERATION)?
         .zip(&neutral_ids)
@@ -407,9 +408,6 @@ fn project_history<'c>(
             ctx.insert_hash_map(&mut by_source, feature.id.as_str(), neutral, OPERATION)?;
             if !*is_metadata {
                 ctx.insert_hash_map(&mut by_native, feature.id.as_str(), neutral, OPERATION)?;
-            }
-            if let Some(source) = feature.source_id {
-                ctx.insert_btree_map(&mut features_by_source, source, feature, OPERATION)?;
             }
             Ok::<_, CodecError>(())
         })?;
@@ -485,7 +483,7 @@ fn project_history<'c>(
                     feature,
                     &by_source,
                     &native_by_source,
-                    &features_by_source,
+                    &source_features,
                     &records,
                     &index,
                 )?,
@@ -615,6 +613,13 @@ pub(crate) fn project_semantic_notes(
 /// A plane frame: origin, normal and in-plane axis.
 type PlaneFrame = (Point3, Vector3, Vector3);
 
+/// A principal or explicit datum plane usable as a base frame.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BasePlaneKind {
+    Principal,
+    Datum,
+}
+
 /// What one projected feature contributes to offset-plane binding, read once.
 #[derive(Clone, Copy, Default)]
 struct PlaneFacts {
@@ -622,8 +627,7 @@ struct PlaneFacts {
     /// The frame a reference to this feature is checked against: the principal
     /// or datum plane frame, or an offset plane's stored frame.
     frame: Option<PlaneFrame>,
-    is_principal: bool,
-    is_base_plane: bool,
+    base: Option<BasePlaneKind>,
     /// An offset plane's stored result frame.
     stored: Option<PlaneFrame>,
     /// An offset plane's serialized reference-face frame.
@@ -736,13 +740,17 @@ fn offset_frame_matches(reference: PlaneFrame, result: PlaneFrame, distance: Len
         .is_some_and(|signed| same_scalar(signed.abs(), distance.get().abs()))
 }
 
-/// Read the plane facts of every feature, and resolve each offset plane's
-/// feature reference to a position.
+/// Plane facts and reference positions aligned with feature order.
+struct PlaneIndex {
+    facts: Vec<PlaneFacts>,
+    references: Vec<Option<usize>>,
+}
+
 fn plane_facts(
     ctx: &DecodeContext<'_>,
     scratch: &mut ScopedReservation<'_>,
     features: &[cadmpeg_ir::features::Feature],
-) -> Result<(Vec<PlaneFacts>, Vec<Option<usize>>), CodecError> {
+) -> Result<PlaneIndex, CodecError> {
     const OPERATION: &str = "index SLDPRT offset plane ordinals";
     let read_frame = |properties, origin, normal, u_axis| -> Result<_, CodecError> {
         let origin = named_literal(ctx, properties, origin, OPERATION)?.and_then(parse_point3_mm);
@@ -753,6 +761,7 @@ fn plane_facts(
             .zip(u_axis)
             .map(|((origin, normal), u_axis)| (origin, normal, u_axis)))
     };
+    let mut index_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut positions = HashMap::new();
     let mut histories = HashMap::new();
     let mut facts = Vec::new();
@@ -761,7 +770,7 @@ fn plane_facts(
             Some(native) => match ctx.rsplit_once(native, ":", OPERATION)? {
                 Some((history, _)) => {
                     let next = histories.len();
-                    Some(scratch.with_storage(|| {
+                    Some(index_storage.with_storage(|| {
                         ctx.entry_hash_map(&mut histories, history, OPERATION)
                             .map(|entry| *entry.or_insert(next))
                     })?)
@@ -770,7 +779,7 @@ fn plane_facts(
             },
             None => None,
         };
-        scratch.with_storage(|| {
+        index_storage.with_storage(|| {
             ctx.insert_hash_map(&mut positions, feature.id.as_str(), position, OPERATION)
         })?;
         let mut fact = PlaneFacts {
@@ -781,8 +790,7 @@ fn plane_facts(
         match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
                 fact.frame = Some(principal_frame(*plane));
-                fact.is_principal = true;
-                fact.is_base_plane = true;
+                fact.base = Some(BasePlaneKind::Principal);
             }
             FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
                 fact.frame = Some((
@@ -790,7 +798,7 @@ fn plane_facts(
                     frame.normal().get(),
                     frame.u_axis().get(),
                 ));
-                fact.is_base_plane = true;
+                fact.base = Some(BasePlaneKind::Datum);
             }
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. }) => {
                 let properties = &feature.source_properties;
@@ -827,7 +835,7 @@ fn plane_facts(
         };
         ctx.push_scoped_vec(scratch, &mut references, reference, OPERATION)?;
     }
-    Ok((facts, references))
+    Ok(PlaneIndex { facts, references })
 }
 
 /// The end of each feature's chain of zero-distance offset references: the
@@ -858,10 +866,11 @@ fn zero_offset_roots(
             }
             if let Some(at) = path_index[current] {
                 // Each feature on the cycle reaches itself first.
-                for node in path.drain(at..) {
+                for &node in ctx.admit_iter(&path[at..], OPERATION)? {
                     roots[node] = Some(node);
                     path_index[node] = None;
                 }
+                ctx.truncate_vec(&mut path, at, OPERATION)?;
                 break current;
             }
             path_index[current] = Some(path.len());
@@ -871,10 +880,11 @@ fn zero_offset_roots(
                 None => break current,
             }
         };
-        for node in path.drain(..) {
+        for &node in ctx.admit_iter(&path, OPERATION)? {
             roots[node] = Some(root);
             path_index[node] = None;
         }
+        ctx.clear_vec(&mut path, OPERATION)?;
     }
     let mut resolved = Vec::new();
     for (node, root) in ctx.admit_iter(roots, OPERATION)?.enumerate() {
@@ -913,7 +923,10 @@ pub(super) fn bind_offset_plane_references(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "bind SLDPRT offset plane references";
     let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
-    let (facts, mut references) = plane_facts(ctx, &mut scratch, features)?;
+    let PlaneIndex {
+        facts,
+        mut references,
+    } = plane_facts(ctx, &mut scratch, features)?;
     // A zero-distance offset with an explicit feature reference is a geometric
     // alias. Collapse only that provenance chain; independent coincident
     // planes remain distinct candidates and stay ambiguous.
@@ -953,10 +966,10 @@ pub(super) fn bind_offset_plane_references(
                     .map(|(reference, result)| offset_frame_matches(reference, result, *distance));
                 let explicit_principal_identity_without_face_fallback = own
                     .explicit_native_reference
-                    && reference.is_principal
+                    && reference.base == Some(BasePlaneKind::Principal)
                     && !own.has_face_fallback;
                 let explicit_frame_identity = own.explicit_native_reference
-                    && reference.is_base_plane
+                    && reference.base.is_some()
                     && reference
                         .frame
                         .zip(own.stored)
@@ -975,7 +988,7 @@ pub(super) fn bind_offset_plane_references(
             }
         };
         if invalid {
-            let reference_id = copy_projected_feature_id(ctx, reference_id)?;
+            remove_dependency(ctx, &mut feature.dependencies, reference_id, OPERATION)?;
             feature.evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                     reference,
@@ -986,7 +999,6 @@ pub(super) fn bind_offset_plane_references(
                 }
             });
             references[position] = None;
-            remove_dependency(ctx, &mut feature.dependencies, &reference_id, OPERATION)?;
         } else if !ctx.contains(feature.dependencies.as_slice(), reference_id, OPERATION)? {
             let reference_id = copy_projected_feature_id(ctx, reference_id)?;
             feature.dependencies.insert(ctx, reference_id, OPERATION)?;
@@ -994,13 +1006,44 @@ pub(super) fn bind_offset_plane_references(
     }
     let mut frames = Vec::new();
     for fact in ctx.admit_iter(&facts, OPERATION)? {
-        let frame = if fact.is_base_plane { fact.frame } else { None };
+        let frame = if fact.base.is_some() {
+            fact.frame
+        } else {
+            None
+        };
         ctx.push_scoped_vec(&mut scratch, &mut frames, frame, OPERATION)?;
+    }
+
+    let mut offset_positions = Vec::new();
+    let mut candidates_by_history = BTreeMap::<usize, Vec<usize>>::new();
+    for (position, (feature, fact)) in ctx
+        .admit_iter(&*features, OPERATION)?
+        .zip(&facts)
+        .enumerate()
+    {
+        let offset = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
+        );
+        if offset {
+            ctx.push_scoped_vec(&mut scratch, &mut offset_positions, position, OPERATION)?;
+        }
+        if fact.base.is_some() || offset {
+            if let Some(history) = fact.history {
+                scratch.with_storage(|| {
+                    let candidates = ctx
+                        .entry_btree_map(&mut candidates_by_history, history, OPERATION)?
+                        .or_default();
+                    ctx.push_vec(candidates, position, OPERATION)
+                })?;
+            }
+        }
     }
 
     loop {
         let mut changed = false;
-        for (position, feature) in ctx.admit_iter(&*features, OPERATION)?.enumerate() {
+        for &position in ctx.admit_iter(&offset_positions, OPERATION)? {
+            let feature = &features[position];
             let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature { .. }),
                 distance,
@@ -1029,8 +1072,10 @@ pub(super) fn bind_offset_plane_references(
             changed = true;
         }
 
+        let mut binding_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut bindings = Vec::new();
-        for (position, feature) in ctx.admit_iter(&*features, OPERATION)?.enumerate() {
+        for &position in ctx.admit_iter(&offset_positions, OPERATION)? {
+            let feature = &features[position];
             let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference,
                 distance,
@@ -1059,16 +1104,24 @@ pub(super) fn bind_offset_plane_references(
                 .map(|(origin, normal, u_axis)| (origin.get(), normal, u_axis));
             // The one zero-offset root every matching earlier plane reaches.
             let mut found: Option<(usize, f64)> = None;
+            let Some(candidates) =
+                ctx.get_btree_map(&candidates_by_history, &history, OPERATION)?
+            else {
+                continue;
+            };
             let ambiguous = ctx.any_by(
-                facts.iter().zip(&frames).zip(&roots),
-                |((candidate, frame), root)| {
+                candidates,
+                |&candidate_position| {
+                    let candidate = &facts[candidate_position];
+                    let frame = frames[candidate_position];
+                    let root = roots[candidate_position];
                     if !(candidate.ordinal < own.ordinal
-                        || (serialized.is_some() && candidate.is_principal))
-                        || candidate.history != Some(history)
+                        || (serialized.is_some()
+                            && candidate.base == Some(BasePlaneKind::Principal)))
                     {
                         return Ok(false);
                     }
-                    let Some(frame) = *frame else {
+                    let Some(frame) = frame else {
                         return Ok(false);
                     };
                     if serialized.is_some_and(|serialized| !plane_frames_match(serialized, frame)) {
@@ -1082,10 +1135,10 @@ pub(super) fn bind_offset_plane_references(
                     let candidate_distance = distance.get().abs().copysign(signed_distance);
                     Ok(match found {
                         None => {
-                            found = Some((*root, candidate_distance));
+                            found = Some((root, candidate_distance));
                             false
                         }
-                        Some((known, _)) => known != *root,
+                        Some((known, _)) => known != root,
                     })
                 },
                 OPERATION,
@@ -1093,7 +1146,12 @@ pub(super) fn bind_offset_plane_references(
             let (Some(binding), false) = (found, ambiguous) else {
                 continue;
             };
-            scratch.with_storage(|| ctx.push_vec(&mut bindings, (position, binding), OPERATION))?;
+            ctx.push_scoped_vec(
+                &mut binding_storage,
+                &mut bindings,
+                (position, binding),
+                OPERATION,
+            )?;
         }
         for (position, (root, distance)) in ctx.admit_iter(bindings, OPERATION)? {
             let Some(distance) = Length::new(distance) else {
@@ -1384,14 +1442,6 @@ fn unique_source_bindings(
     Ok(sources)
 }
 
-/// Visit the native references a reference property lists: tokens separated
-/// by commas, semicolons or whitespace. The caller admits the value's extent.
-fn reference_tokens(value: &str) -> impl Iterator<Item = &str> {
-    value
-        .split(|character: char| character == ',' || character == ';' || character.is_whitespace())
-        .filter(|reference| !reference.is_empty())
-}
-
 pub(crate) fn incomplete_history_reference_features(
     ctx: &DecodeContext<'_>,
     histories: &[FeatureHistory],
@@ -1451,15 +1501,40 @@ pub(crate) fn incomplete_history_reference_features(
                 let Some(value) = ctx.get_btree_map(&feature.properties, *name, OPERATION)? else {
                     continue;
                 };
-                admit_literal(ctx, value, OPERATION)?;
-                for reference in reference_tokens(value) {
-                    ctx.charge_work(1, OPERATION)?;
+                let mut characters = value.char_indices();
+                let mut start = 0;
+                let mut finished = false;
+                while !finished {
+                    let delimiter = ctx.find_map(
+                        &mut characters,
+                        |(offset, character)| {
+                            Ok(
+                                (character == ',' || character == ';' || character.is_whitespace())
+                                    .then_some((offset, character.len_utf8())),
+                            )
+                        },
+                        OPERATION,
+                    )?;
+                    let (end, width) = delimiter.unwrap_or((value.len(), 0));
+                    finished = delimiter.is_none();
+                    let reference = &value[start..end];
+                    start = end + width;
+                    if reference.is_empty() {
+                        continue;
+                    }
                     // A reference resolves to one other record holding its source.
-                    let resolved = match FeatureSource::try_from(reference) {
-                        Ok(reference) => {
+                    let parsed_source = if reference == "-1" {
+                        Some(FeatureSource::Reserved)
+                    } else {
+                        ctx.parse_text::<u32>(reference, "parse SLDPRT feature dependency source")?
+                            .ok()
+                            .and_then(FeatureSource::from_value)
+                    };
+                    let resolved = match parsed_source {
+                        Some(reference) => {
                             matches!(source_binding(&reference)?, Some(Some(bound)) if bound != position)
                         }
-                        Err(_) => false,
+                        None => false,
                     };
                     if !resolved {
                         unresolved_dependency = true;
@@ -1487,10 +1562,16 @@ pub(crate) fn incomplete_history_reference_features(
 /// The feature's parameter names in projection order: the dimension children
 /// naming a parameter, in content order, then the remaining parameters in key
 /// order, each once. The order and the position of each name are scratch.
+struct ParameterOrder<'f, 'c> {
+    names: Vec<&'f str>,
+    positions: HashMap<&'f str, usize>,
+    storage: ScopedReservation<'c>,
+}
+
 fn parameter_order<'f, 'c>(
     ctx: &'c DecodeContext<'_>,
     feature: &'f Feature,
-) -> Result<(Vec<&'f str>, HashMap<&'f str, usize>, ScopedReservation<'c>), CodecError> {
+) -> Result<ParameterOrder<'f, 'c>, CodecError> {
     const OPERATION: &str = "order SLDPRT feature parameters";
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut order = Vec::new();
@@ -1520,7 +1601,11 @@ fn parameter_order<'f, 'c>(
             ctx.push_vec(&mut order, name, OPERATION)
         })?;
     }
-    Ok((order, positions, storage))
+    Ok(ParameterOrder {
+        names: order,
+        positions,
+        storage,
+    })
 }
 
 fn project_feature_content(
@@ -1532,7 +1617,11 @@ fn project_feature_content(
     if feature.text.is_some() {
         return Ok(cadmpeg_ir::features::FeatureContent::default());
     }
-    let (order, positions, mut storage) = parameter_order(ctx, feature)?;
+    let ParameterOrder {
+        names: order,
+        positions,
+        mut storage,
+    } = parameter_order(ctx, feature)?;
     let mut projected_parameters =
         storage.with_storage(|| ctx.alloc_filled(order.len(), false, OPERATION))?;
     let mut result = cadmpeg_ir::features::FeatureContent::default();
@@ -1576,9 +1665,27 @@ fn project_feature_dependencies(
         let Some(value) = ctx.get_btree_map(&feature.properties, *property, OPERATION)? else {
             continue;
         };
-        admit_literal(ctx, value, OPERATION)?;
-        for reference in reference_tokens(value) {
-            ctx.charge_work(1, OPERATION)?;
+        let mut characters = value.char_indices();
+        let mut start = 0;
+        let mut finished = false;
+        while !finished {
+            let delimiter = ctx.find_map(
+                &mut characters,
+                |(offset, character)| {
+                    Ok(
+                        (character == ',' || character == ';' || character.is_whitespace())
+                            .then_some((offset, character.len_utf8())),
+                    )
+                },
+                OPERATION,
+            )?;
+            let (end, width) = delimiter.unwrap_or((value.len(), 0));
+            finished = delimiter.is_none();
+            let reference = &value[start..end];
+            start = end + width;
+            if reference.is_empty() {
+                continue;
+            }
             let Some(&dependency) = ctx.get_hash_map(by_source, reference, OPERATION)? else {
                 continue;
             };
@@ -1652,13 +1759,13 @@ pub(crate) fn project_configurations_charged(
     }
     Ok(projected)
 }
-/// Project every native feature dimension into the neutral parameter arena.
+/// Project one native feature's neutral operation definition.
 fn project_definition(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_source: &NeutralByKey<'_, '_>,
-    native_by_source: &HashMap<String, &str>,
-    features_by_source: &BTreeMap<FeatureSource, &Feature>,
+    native_by_source: &HashMap<&str, &str>,
+    source_features: &self::solid::SourceFeatures<'_, '_>,
     records: &self::solid::RecordsById<'_>,
     index: &HistoryIndex<'_, '_>,
 ) -> Result<FeatureDefinition, CodecError> {
@@ -1680,11 +1787,6 @@ fn project_definition(
         }));
     }
     let class = classify(feature);
-    let projected_pattern = if class == Some(FeatureClass::Pattern) {
-        Some(project_pattern(ctx, feature, by_source, native_by_source)?)
-    } else {
-        None
-    };
     if class == Some(FeatureClass::CosmeticThread) {
         return project_cosmetic_thread(ctx, feature);
     }
@@ -1783,7 +1885,7 @@ fn project_definition(
             .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     Ok(if class == Some(FeatureClass::Extrude) {
-        project_extrude(ctx, feature, native_by_source, features_by_source)?
+        project_extrude(ctx, feature, native_by_source, source_features)?
             .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Fillet) {
         project_fillet(ctx, feature)?
@@ -1830,12 +1932,12 @@ fn project_definition(
     } else if class == Some(FeatureClass::Scale) {
         project_scale(ctx, feature)?
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(ctx, feature, features_by_source, records)?
+        project_hole(ctx, feature, &source_features.records, records)?
             .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(ctx, feature, native_by_source)?
     } else if class == Some(FeatureClass::Pattern) {
-        projected_pattern.map_or_else(|| native_definition(ctx, feature), Ok)?
+        project_pattern(ctx, feature, by_source, native_by_source)?
     } else if class == Some(FeatureClass::Sweep) {
         project_sweep(ctx, feature, native_by_source)?
             .map_or_else(|| native_definition(ctx, feature), Ok)?
@@ -1855,11 +1957,11 @@ pub(super) fn projected_parameter_names(
     feature: &Feature,
 ) -> Result<Vec<String>, CodecError> {
     const OPERATION: &str = "collect SLDPRT parameter names";
-    let (order, _positions, _storage) = parameter_order(ctx, feature)?;
+    let order = parameter_order(ctx, feature)?;
     let mut names = Vec::new();
-    ctx.reserve_vec(&mut names, order.len(), OPERATION)?;
-    for name in ctx.admit_iter(&order, OPERATION)? {
-        names.push(ctx.copy_retained_text(name, OPERATION)?);
+    for name in ctx.admit_iter(&order.names, OPERATION)? {
+        let name = ctx.copy_retained_text(name, OPERATION)?;
+        ctx.push_vec(&mut names, name, OPERATION)?;
     }
     Ok(names)
 }

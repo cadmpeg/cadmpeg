@@ -3,7 +3,7 @@
 
 use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
@@ -28,6 +28,60 @@ use crate::history::literals::{
 /// Records of one history by identity, `None` where an identity repeats.
 pub(super) type RecordsById<'a> = HashMap<&'a str, Option<&'a Feature>>;
 
+/// Source records and non-origin sketches in source-key order. Repeated source
+/// keys select the last record in history order.
+pub(super) struct SourceFeatures<'f, 'c> {
+    pub(super) records: BTreeMap<crate::records::FeatureSource, &'f Feature>,
+    profiles: Vec<(crate::records::FeatureSource, &'f Feature)>,
+    _storage: ScopedReservation<'c>,
+}
+
+impl<'f, 'c> SourceFeatures<'f, 'c> {
+    pub(super) fn new(
+        ctx: &'c DecodeContext<'_>,
+        features: &'f [Feature],
+    ) -> Result<Self, CodecError> {
+        const OPERATION: &str = "index SLDPRT source profiles";
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut records = BTreeMap::new();
+        for feature in ctx.admit_iter(features, OPERATION)? {
+            if let Some(source) = feature.source_id {
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(&mut records, source, feature, OPERATION)
+                })?;
+            }
+        }
+        let mut profiles = Vec::new();
+        for (&source, &feature) in ctx.admit_iter(&records, OPERATION)? {
+            if classify(feature) == Some(FeatureClass::Sketch)
+                && feature.input_class.as_deref() != Some("moOriginProfileFeature_c")
+            {
+                ctx.push_scoped_vec(&mut storage, &mut profiles, (source, feature), OPERATION)?;
+            }
+        }
+        Ok(Self {
+            records,
+            profiles,
+            _storage: storage,
+        })
+    }
+
+    fn preceding_profile(
+        &self,
+        ctx: &DecodeContext<'_>,
+        source: crate::records::FeatureSource,
+    ) -> Result<Option<&'f str>, CodecError> {
+        let end = ctx.partition_point(
+            &self.profiles,
+            |(key, _)| Ok(*key < source),
+            "find SLDPRT preceding source profile",
+        )?;
+        Ok(end
+            .checked_sub(1)
+            .map(|index| self.profiles[index].1.id.as_str()))
+    }
+}
+
 /// A length from its literal, in millimetres or as a bare dimension value.
 fn positive_length(value: &str) -> Option<PositiveLength> {
     parse_positive_length_mm(value).or_else(|| parse_positive_dimension_length_mm(value))
@@ -36,8 +90,8 @@ fn positive_length(value: &str) -> Option<PositiveLength> {
 pub(super) fn project_extrude(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
-    features_by_source: &BTreeMap<crate::records::FeatureSource, &Feature>,
+    native_by_source: &HashMap<&str, &str>,
+    source_features: &SourceFeatures<'_, '_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     const OPERATION: &str = "scan SLDPRT extrusion dimensions";
     // The one dimension name the content lists, however often it repeats.
@@ -82,24 +136,17 @@ pub(super) fn project_extrude(
     let implicit_modern_blind =
         feature.input_class.as_deref() == Some("moExtrusion_c") && source_depth.is_some();
     let history_profile = match feature.source_id {
-        // The nearest earlier profile sketch, searched back from the
-        // extrusion's own source.
-        Some(source) if history_profile_extrusion => ctx
-            .find_by(
-                features_by_source.range(..source).rev(),
-                |(_, candidate)| {
-                    Ok(classify(candidate) == Some(FeatureClass::Sketch)
-                        && candidate.input_class.as_deref() != Some("moOriginProfileFeature_c"))
-                },
-                "scan SLDPRT extrusion source profiles",
-            )?
-            .map(|(_, profile)| profile.id.as_str()),
+        Some(source) if history_profile_extrusion => {
+            source_features.preceding_profile(ctx, source)?
+        }
         _ => None,
     };
     let op = match property_value(ctx, feature, "Operation")?.and_then(parse_boolean_op) {
         Some(op) => op,
         None => {
-            admit_literal(ctx, &feature.kind, "classify SLDPRT extrusion operation")?;
+            if feature.input_class.as_deref() != Some("moCut_c") {
+                admit_literal(ctx, &feature.kind, "classify SLDPRT extrusion operation")?;
+            }
             extrude_feature_op(feature)
                 .or_else(|| {
                     (legacy_history_extrusion && history_profile.is_some())
@@ -109,8 +156,15 @@ pub(super) fn project_extrude(
         }
     };
     let sole_length = || -> Result<_, CodecError> {
-        let mut values = feature.parameters.values();
-        let Some(sole) = values.next().filter(|_| values.next().is_none()) else {
+        if feature.parameters.len() != 1 {
+            return Ok(None);
+        }
+        let Some((_, sole)) = ctx.find_by(
+            &feature.parameters,
+            |_| Ok(true),
+            "read SLDPRT sole extrusion dimension",
+        )?
+        else {
             return Ok(None);
         };
         admit_literal(ctx, sole, "read SLDPRT feature literal")?;
@@ -143,6 +197,24 @@ pub(super) fn project_extrude(
         }
         None => None,
     };
+    let direction = match property_literal(ctx, feature, "Direction")? {
+        Some(value) => {
+            let Some(vector) =
+                parse_vector3(value).and_then(cadmpeg_ir::features::FeatureDirection3::new)
+            else {
+                return Ok(None);
+            };
+            cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector,
+                source: None,
+            }
+        }
+        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+    };
+    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
+    {
+        return Ok(None);
+    }
     let one_sided = |termination| ExtrudeExtent::OneSided {
         side: ExtrudeSide { termination, draft },
     };
@@ -162,10 +234,11 @@ pub(super) fn project_extrude(
         }
         None | Some("Blind") => blind(match length("Depth")? {
             Some(length) => Some(length),
-            None => match legacy_history_extrusion {
-                true => legacy_length()?,
-                false => None,
-            }
+            None => (if legacy_history_extrusion {
+                legacy_length()?
+            } else {
+                None
+            })
             .map_or_else(sole_length, |length| Ok(Some(length)))?,
         }),
         Some("Symmetric") => {
@@ -246,24 +319,6 @@ pub(super) fn project_extrude(
         }
         Some(_) => one_sided(LinearTermination::Unresolved {}),
     };
-    let direction = match property_literal(ctx, feature, "Direction")? {
-        Some(value) => {
-            let Some(vector) =
-                parse_vector3(value).and_then(cadmpeg_ir::features::FeatureDirection3::new)
-            else {
-                return Ok(None);
-            };
-            cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector,
-                source: None,
-            }
-        }
-        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-    };
-    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
-    {
-        return Ok(None);
-    }
     let native_profile = |source: &str| -> Result<ProfileRef, CodecError> {
         let native = ctx
             .get_hash_map(native_by_source, source, "look up SLDPRT hash key")?
@@ -281,16 +336,38 @@ pub(super) fn project_extrude(
     let profile = if let Some(source) = property_value(ctx, feature, "Profile")? {
         native_profile(source)?
     } else if let Some(children) = property_value(ctx, feature, "DissectableChildren")? {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(children.len()),
-            "scan SLDPRT extrusion child profiles",
+        const CHILDREN: &str = "scan SLDPRT extrusion child profiles";
+        let first = ctx.find_map(
+            children.char_indices(),
+            |(offset, character)| {
+                Ok((character != ',' && !character.is_whitespace()).then_some(offset))
+            },
+            CHILDREN,
         )?;
-        let mut profiles = children
-            .split(',')
-            .map(str::trim)
-            .filter(|source| !source.is_empty());
-        match profiles.next().filter(|_| profiles.next().is_none()) {
-            Some(profile) => native_profile(profile)?,
+        match first {
+            Some(start) => {
+                let rest = &children[start..];
+                let end = ctx.find_map(
+                    rest.char_indices(),
+                    |(offset, character)| Ok((character == ',').then_some(offset)),
+                    CHILDREN,
+                )?;
+                let multiple = match end {
+                    Some(end) => ctx.any_by(
+                        rest[end + 1..].chars(),
+                        |character| Ok(character != ',' && !character.is_whitespace()),
+                        CHILDREN,
+                    )?,
+                    None => false,
+                };
+                if multiple {
+                    unresolved_profile()?
+                } else {
+                    let profile =
+                        ctx.trim_end_text(&rest[..end.unwrap_or(rest.len())], CHILDREN)?;
+                    native_profile(profile)?
+                }
+            }
             None => unresolved_profile()?,
         }
     } else if let Some(profile) = history_profile {
@@ -493,28 +570,20 @@ fn hole_shape_and_profile<'f>(
     Ok(Some((shape, profile)))
 }
 
-/// The major diameter of a threaded hole. A dissection child named by record
-/// identity is found by a charged search of `history_features`.
+/// The major diameter of a threaded hole. Dissection child identities resolve
+/// through the history's unique record index.
 pub(crate) fn threaded_hole_major_diameter(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
     features_by_source: &BTreeMap<crate::records::FeatureSource, &Feature>,
-    history_features: &[Feature],
+    records: &RecordsById<'_>,
 ) -> Result<Option<f64>, CodecError> {
     const OPERATION: &str = "find SLDPRT hole profile record";
     if classify(feature) != Some(FeatureClass::Hole) {
         return Ok(None);
     }
     let Some((shape, _)) = hole_shape_and_profile(ctx, feature, features_by_source, |id| {
-        let matches = |candidate: &Feature| ctx.equal(candidate.id.as_str(), id, OPERATION);
-        let Some(first) = ctx.position_by(history_features, matches, OPERATION)? else {
-            return Ok(None);
-        };
-        let rest = &history_features[first + 1..];
-        Ok(match ctx.position_by(rest, matches, OPERATION)? {
-            Some(_) => None,
-            None => Some(&history_features[first]),
-        })
+        Ok(ctx.get_hash_map(records, id, OPERATION)?.copied().flatten())
     })?
     else {
         return Ok(None);
@@ -552,23 +621,37 @@ fn hole_profile_construction<'f>(
     let Some(children) = property_value(ctx, feature, "DissectableChildren")? else {
         return Ok(None);
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(children.len()),
-        OPERATION,
-    )?;
     let mut sole = None;
     let mut multiple = false;
     let mut complete = None;
-    for source in children
-        .split(',')
-        .map(str::trim)
-        .filter(|source| !source.is_empty())
-    {
-        let by_source = match crate::records::FeatureSource::try_from(source) {
-            Ok(source) => ctx
+    let mut characters = children.char_indices();
+    let mut start = 0;
+    let mut finished = false;
+    while !finished {
+        let delimiter = ctx.find_map(
+            &mut characters,
+            |(offset, character)| Ok((character == ',').then_some(offset)),
+            OPERATION,
+        )?;
+        let end = delimiter.unwrap_or(children.len());
+        finished = delimiter.is_none();
+        let source = ctx.trim_text(&children[start..end], OPERATION)?;
+        start = end + usize::from(!finished);
+        if source.is_empty() {
+            continue;
+        }
+        let parsed_source = if source == "-1" {
+            Some(crate::records::FeatureSource::Reserved)
+        } else {
+            ctx.parse_text::<u32>(source, "parse SLDPRT hole child source")?
+                .ok()
+                .and_then(crate::records::FeatureSource::from_value)
+        };
+        let by_source = match parsed_source {
+            Some(source) => ctx
                 .get_btree_map(features_by_source, &source, "look up SLDPRT feature source")?
                 .copied(),
-            Err(_) => None,
+            None => None,
         };
         let profile = match by_source {
             Some(profile) => profile,
@@ -628,26 +711,7 @@ pub(super) fn hole_sketch_construction(
         |content| Ok(matches!(content, FeatureContent::Dimension(_))),
         "scan SLDPRT hole_sketch_construction values",
     )?;
-    let expressions = ctx
-        .admit_iter(&profile.parameters, "scan SLDPRT hole sketch parameters")?
-        .map(|(_, value)| Ok::<_, CodecError>(value))
-        .filter(|_| !has_source_dimensions)
-        .chain(
-            ctx.admit_iter(&profile.content, "scan SLDPRT hole sketch dimensions")?
-                .map(|content| {
-                    Ok::<_, CodecError>(match content {
-                        FeatureContent::Dimension(name) => ctx.get_btree_map(
-                            &(profile.parameters),
-                            name.as_str(),
-                            "look up SLDPRT ordered key",
-                        )?,
-                        FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-                    })
-                })
-                .filter_map(Result::transpose),
-        );
-    for expression in expressions {
-        let expression = expression?;
+    let mut read_dimension = |expression: &str| -> Result<bool, CodecError> {
         admit_literal(ctx, expression, "parse SLDPRT hole sketch dimension")?;
         let dimension = if strip_diameter_modifier(expression).is_some() {
             parse_dimension_display_length(expression)
@@ -660,11 +724,40 @@ pub(super) fn hole_sketch_construction(
         };
         if let Some(dimension) = dimension {
             let Some(slot) = dimensions.get_mut(dimension_count) else {
-                return Ok(None);
+                return Ok(true);
             };
             *slot = dimension;
             dimension_count += 1;
         }
+        Ok(false)
+    };
+    let too_many = if has_source_dimensions {
+        ctx.any_by(
+            &profile.content,
+            |content| {
+                let FeatureContent::Dimension(name) = content else {
+                    return Ok(false);
+                };
+                match ctx.get_btree_map(
+                    &profile.parameters,
+                    name.as_str(),
+                    "look up SLDPRT ordered key",
+                )? {
+                    Some(value) => read_dimension(value),
+                    None => Ok(false),
+                }
+            },
+            "scan SLDPRT hole sketch dimensions",
+        )?
+    } else {
+        ctx.any_by(
+            &profile.parameters,
+            |(_, value)| read_dimension(value),
+            "scan SLDPRT hole sketch parameters",
+        )?
+    };
+    if too_many {
+        return Ok(None);
     }
     let dimensions = &dimensions[..dimension_count];
     let mut diameters = [initial_length; MAX_DIAMETERS];
@@ -888,4 +981,64 @@ pub(crate) fn is_hole_profile_construction(
     feature: &Feature,
 ) -> Result<bool, CodecError> {
     Ok(hole_sketch_construction(ctx, feature)?.is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SourceFeatures;
+    use crate::history::tests::feature;
+    use crate::records::{Feature, FeatureSource};
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    fn sketch(id: &str, source: &str) -> Feature {
+        let mut record = feature(id, Some(source), 0);
+        record.kind = "Sketch".into();
+        record.xml_tag = "Sketch".into();
+        record
+    }
+
+    #[test]
+    fn source_profile_index_preserves_key_order_and_last_duplicate() {
+        let mut origin = sketch("origin", "18");
+        origin.input_class = Some("moOriginProfileFeature_c".into());
+        let features = [
+            sketch("later", "19"),
+            sketch("overwritten", "10"),
+            origin,
+            sketch("first", "9"),
+            feature("last-duplicate-is-not-a-sketch", Some("10"), 0),
+        ];
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let index = SourceFeatures::new(&ctx, &features).unwrap();
+        for (source, expected) in [("9", None), ("19", Some("first")), ("20", Some("later"))] {
+            assert_eq!(
+                index
+                    .preceding_profile(&ctx, FeatureSource::try_from(source).unwrap())
+                    .unwrap(),
+                expected
+            );
+        }
+        assert_eq!(
+            index
+                .records
+                .get(&FeatureSource::try_from("10").unwrap())
+                .unwrap()
+                .id,
+            "last-duplicate-is-not-a-sketch"
+        );
+    }
+
+    #[test]
+    fn source_profile_index_refuses_before_search() {
+        let features = [sketch("first", "9"), sketch("second", "19")];
+        let error =
+            crate::test_support::work_refusal_at("find SLDPRT preceding source profile", |ctx| {
+                let index = SourceFeatures::new(ctx, &features)?;
+                index.preceding_profile(ctx, FeatureSource::try_from("20").unwrap())
+            });
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+        );
+    }
 }
