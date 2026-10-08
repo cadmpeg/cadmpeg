@@ -397,6 +397,9 @@ struct PhysicalParse<'a, 'ctx> {
     global_loss_storage: Option<ScopedReservation<'ctx>>,
     _global_storage: ScopedReservation<'ctx>,
     _directory_storage: ScopedReservation<'ctx>,
+    _parameter_storage: ScopedReservation<'ctx>,
+    _parameter_analysis_storage: ScopedReservation<'ctx>,
+    _parameter_quarantine_storage: ScopedReservation<'ctx>,
     _reference_storage: ScopedReservation<'ctx>,
     _scan_storage: ScopedReservation<'ctx>,
 }
@@ -423,11 +426,17 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         if mode == ParseMode::Decode {
             entities::geometry::enforce_transform_depth(&directory, ctx)?;
         }
+        let parameter_storage;
+        let parameter_analysis_storage;
+        let parameter_quarantine_storage;
         let parameter::ParameterAssembly {
             records: parameters,
             trailing_pointer_analysis,
             quarantined: quarantined_parameters,
             recoveries: parameter_recoveries,
+            records_storage,
+            analysis_storage,
+            quarantine_storage,
         } = parameter::assemble_with_context(
             &scan,
             &directory,
@@ -435,6 +444,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &global,
             ctx,
         )?;
+        parameter_storage = records_storage;
+        parameter_analysis_storage = analysis_storage;
+        parameter_quarantine_storage = quarantine_storage;
         let (mut conditional_losses, conditional_loss_storage) = global.conditional_double_precision_losses(
             parameter::uses_double_precision(&parameters, ctx)?,
             ctx,
@@ -464,6 +476,9 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             global_loss_storage: Some(global_loss_storage),
             _global_storage: global_storage,
             _directory_storage: directory_storage,
+            _parameter_storage: parameter_storage,
+            _parameter_analysis_storage: parameter_analysis_storage,
+            _parameter_quarantine_storage: parameter_quarantine_storage,
             _reference_storage: reference_storage,
             _scan_storage: scan_storage,
         })

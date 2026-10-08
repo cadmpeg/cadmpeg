@@ -651,8 +651,11 @@ fn analyze_trailing_pointer_groups_from_end(
     let mut scratch = ctx.reserve_scoped(0, "iges pointer group analysis")?;
     let mut candidates = scratch.with_storage(|| match primary_end {
         Some(start) => {
-            let prefix = non_integer_prefix(record, ctx)?;
+            let mut prefix_storage = ctx.reserve_scoped(0, "iges noninteger token prefix")?;
+            let prefix = prefix_storage.with_storage(|| non_integer_prefix(record, ctx))?;
             let candidate = pointer_group_candidate_with_prefix(record, start, &prefix, true);
+            drop(prefix);
+            drop(prefix_storage);
             let mut candidates =
                 ctx.collection_vec(usize::from(candidate.is_some()), "iges pointer candidates")?;
             candidates.extend(candidate);
@@ -666,7 +669,8 @@ fn analyze_trailing_pointer_groups_from_end(
             .len()
             .checked_add(1)
             .ok_or_else(|| refuse_local_limit("iges pointer class prefixes", u64::MAX, 1))?;
-        let mut prefix = scratch
+        let mut prefix_storage = ctx.reserve_scoped(0, "iges pointer class prefixes")?;
+        let mut prefix = prefix_storage
             .with_storage(|| ctx.collection_vec(prefix_count, "iges pointer class prefixes"))?;
         let mut invalid = [0_usize; 2];
         prefix.push(invalid);
@@ -729,10 +733,19 @@ fn analyze_trailing_pointer_groups_from_end(
             valid: 0,
         });
     };
-    match groups_for_candidate_with_context(record, directory, *candidate, ctx)? {
+    let candidate = *candidate;
+    drop(candidates);
+    drop(scratch);
+    let mut group_storage = ctx.reserve_scoped(0, "iges trailing pointer source groups")?;
+    match group_storage.with_storage(||
+        groups_for_candidate_with_context(record, directory, candidate, ctx)
+    )? {
         Some(groups) => match groups.fully_valid_with_context(ctx)? {
             Some(resolved) => Ok(TrailingPointerAnalysis::Unambiguous(resolved)),
-            None => Ok(TrailingPointerAnalysis::SingleInvalid(groups)),
+            None => {
+                group_storage.commit()?;
+                Ok(TrailingPointerAnalysis::SingleInvalid(groups))
+            }
         },
         None => Ok(TrailingPointerAnalysis::Ambiguous {
             candidates: 1,
@@ -2687,7 +2700,8 @@ fn structural_pointer_group_candidates_with_context(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PointerGroupCandidate>, CodecError> {
-    let non_integer_prefix = non_integer_prefix(record, ctx)?;
+    let mut prefix_storage = ctx.reserve_scoped(0, "iges noninteger token prefix")?;
+    let non_integer_prefix = prefix_storage.with_storage(|| non_integer_prefix(record, ctx))?;
     let mut candidates = Vec::new();
     let mut candidate_starts = 1..record.tokens.len();
     while let Some(association_count_index) =
@@ -2986,6 +3000,12 @@ enum TokenizeFailure {
     Refusal(CodecError),
 }
 
+impl From<CodecError> for TokenizeFailure {
+    fn from(error: CodecError) -> Self {
+        Self::Refusal(error)
+    }
+}
+
 fn layout_hollerith(
     bytes: &[u8],
     start: usize,
@@ -3125,11 +3145,14 @@ pub(crate) fn layout_parameter_cards(
 }
 
 /// Both parse results of the Parameter Data section.
-pub(crate) struct ParameterAssembly {
+pub(crate) struct ParameterAssembly<'ctx> {
     pub(crate) records: Vec<ParameterRecord>,
     pub(crate) trailing_pointer_analysis: BTreeMap<u32, TrailingPointerAnalysis>,
     pub(crate) quarantined: Vec<QuarantinedParameterRecord>,
     pub(crate) recoveries: FramingRecoveries,
+    pub(crate) records_storage: ScopedReservation<'ctx>,
+    pub(crate) analysis_storage: ScopedReservation<'ctx>,
+    pub(crate) quarantine_storage: ScopedReservation<'ctx>,
 }
 
 fn back_pointer(line: &PhysicalLine<'_>) -> Option<u32> {
@@ -3590,7 +3613,11 @@ fn tokenize_macro(
     record_delimiter: u8,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    let data = macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter, ctx)
+    let mut macro_storage = ctx.reserve_scoped(0, "iges macro tokenization spans")
+        .map_err(TokenizeFailure::Refusal)?;
+    let data = macro_storage.with_storage(||
+        macro_parameter_data_with_context(bytes, parameter_delimiter, record_delimiter, ctx)
+    )
         .map_err(|error| match error {
             MacroDataError::Defect(defect, offset) => TokenizeFailure::Defect(defect, offset),
             MacroDataError::Refusal(error) => TokenizeFailure::Refusal(error),
@@ -4058,8 +4085,10 @@ fn overlapping_ranges(
     declared: &BTreeMap<u32, Range<u32>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u32>, CodecError> {
-    let (mut ordered, _ordered_storage) =
+    let ordered_storage;
+    let (mut ordered, result_storage) =
         ctx.temporary_vec(declared.len(), "iges declared parameter ranges")?;
+    ordered_storage = result_storage;
     ordered.extend(
         ctx.admit_iter(declared, "iges declared parameter ranges")?
             .map(|(sequence, range)| (range.start, range.end, *sequence)),
@@ -4092,19 +4121,22 @@ fn overlapping_ranges(
             highest_owner = Some(sequence);
         }
     }
+    drop(ordered_ranges);
+    drop(ordered_storage);
     Ok(overlapping)
 }
 
-struct OwnedParameterBytes {
+struct OwnedParameterBytes<'ctx> {
     bytes: Vec<u8>,
     card_boundaries: Vec<usize>,
+    boundary_storage: ScopedReservation<'ctx>,
 }
 
-fn owned_bytes(
+fn owned_bytes<'ctx>(
     cards: &[u32],
     lines: &ParameterCards<'_, '_>,
-    ctx: &DecodeContext<'_>,
-) -> Result<OwnedParameterBytes, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<OwnedParameterBytes<'ctx>, CodecError> {
     let mut byte_count = 0_usize;
     let mut card_count = 0_usize;
     let mut source_cards = cards.iter();
@@ -4119,7 +4151,10 @@ fn owned_bytes(
     }
     let mut bytes = ctx.vector_storage(byte_count, "iges owned parameter bytes")?;
 
-    let mut card_boundaries = ctx.collection_vec(card_count, "iges parameter card boundaries")?;
+    let mut boundary_storage = ctx.reserve_scoped(0, "iges parameter card boundaries")?;
+    let mut card_boundaries = boundary_storage.with_storage(||
+        ctx.collection_vec(card_count, "iges parameter card boundaries")
+    )?;
     for line in ctx
         .admit_iter(cards, "iges owned parameter bytes")?
         .filter_map(|sequence| lines.line(*sequence))
@@ -4130,6 +4165,7 @@ fn owned_bytes(
     Ok(OwnedParameterBytes {
         bytes,
         card_boundaries,
+        boundary_storage,
     })
 }
 
@@ -4261,23 +4297,31 @@ struct Ownership<'a> {
     quarantine: Option<ParameterDefect>,
 }
 
+/// Resolved ownership and its live vector storage.
+struct ResolvedOwnership<'a, 'ctx> {
+    records: Vec<Ownership<'a>>,
+    _storage: ScopedReservation<'ctx>,
+}
+
 /// Resolve which Parameter Data cards each Directory Entry owns.
 ///
 /// The declared range applies first, then the back-pointer census, and a
 /// conflict between the two statements quarantines both entities.
-fn resolve_ownership<'a>(
+fn resolve_ownership<'a, 'ctx>(
     directory: &'a [DirectoryEntry],
     lines: &ParameterCards<'_, '_>,
     recoveries: &mut FramingRecoveries,
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<Ownership<'a>>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<ResolvedOwnership<'a, 'ctx>, CodecError> {
+    let mut output_storage = ctx.reserve_scoped(0, "iges resolved parameter ownership")?;
+    let mut phase_storage = ctx.reserve_scoped(0, "iges parameter ownership indexes")?;
     let mut typed = BTreeSet::new();
     let mut candidates = Vec::new();
     let mut owner_candidates = directory.iter();
     while let Some(entry) = ctx.next_charged(&mut owner_candidates, "iges parameter owner candidates")? {
-        ctx.insert_btree_set(&mut typed, entry.sequence, "iges typed parameter owners")?;
+        phase_storage.with_storage(|| ctx.insert_btree_set(&mut typed, entry.sequence, "iges typed parameter owners"))?;
         if !(entry.entity_type == 0 && entry.parameter_line_count == 0) {
-            ctx.reserve_vec(&mut candidates, 1, "iges parameter owner candidates")?;
+            phase_storage.with_storage(|| ctx.reserve_vec(&mut candidates, 1, "iges parameter owner candidates"))?;
             candidates.push(entry);
         }
     }
@@ -4288,13 +4332,13 @@ fn resolve_ownership<'a>(
         let sequence = card.sequence;
         let pointer = &lines.back_pointers[index];
         if let Some(owner) = pointer {
-            ctx.push_btree_group(
+            phase_storage.with_storage(|| ctx.push_btree_group(
                 &mut named_by,
                 *owner,
                 sequence,
                 "iges named parameter owners",
                 "iges named parameter owner cards",
-            )?;
+            ))?;
         }
     }
     let mut declared = BTreeMap::<u32, Range<u32>>::new();
@@ -4303,24 +4347,24 @@ fn resolve_ownership<'a>(
     while let Some(entry) = ctx.next_charged(&mut declared_candidates, "iges declared parameter owners")? {
         match declared_range(entry, &census) {
             DeclaredRange::Usable(range) => {
-                ctx.insert_btree_map(
+                phase_storage.with_storage(|| ctx.insert_btree_map(
                     &mut declared,
                     entry.sequence,
                     range,
                     "iges declared parameter owners",
-                )?;
+                ))?;
             }
             DeclaredRange::CardMissing => {
-                ctx.insert_btree_set(
+                phase_storage.with_storage(|| ctx.insert_btree_set(
                     &mut card_missing,
                     entry.sequence,
                     "iges missing parameter cards",
-                )?;
+                ))?;
             }
             DeclaredRange::Unusable => {}
         }
     }
-    let mut conflicted = overlapping_ranges(&declared, ctx)?;
+    let mut conflicted = phase_storage.with_storage(|| overlapping_ranges(&declared, ctx))?;
     let mut claimed = BTreeMap::new();
     // Ranges that do not conflict are disjoint and lie in the census, so these
     // claims visit each card at most once.
@@ -4331,12 +4375,12 @@ fn resolve_ownership<'a>(
         }
         let mut claimed_cards = range.clone();
         while let Some(card) = ctx.next_charged(&mut claimed_cards, "iges claimed parameter cards")? {
-            ctx.insert_btree_map(
+            phase_storage.with_storage(|| ctx.insert_btree_map(
                 &mut claimed,
                 card,
                 *sequence,
                 "iges claimed parameter cards",
-            )?;
+            ))?;
         }
     }
     let mut claimed_owners = claimed.iter();
@@ -4344,12 +4388,12 @@ fn resolve_ownership<'a>(
         match lines.back_pointer(*card) {
             Some(pointer) if pointer == *owner => {}
             Some(pointer) if pointer % 2 == 1 && ctx.contains_btree_set(&typed, &pointer, "iges typed parameter owner lookup")? => {
-                ctx.insert_btree_set(&mut conflicted, *owner, "iges conflicting parameter owners")?;
-                ctx.insert_btree_set(
+                phase_storage.with_storage(|| ctx.insert_btree_set(&mut conflicted, *owner, "iges conflicting parameter owners"))?;
+                phase_storage.with_storage(|| ctx.insert_btree_set(
                     &mut conflicted,
                     pointer,
                     "iges conflicting parameter owners",
-                )?;
+                ))?;
             }
             _ => {}
         }
@@ -4386,11 +4430,11 @@ fn resolve_ownership<'a>(
             contiguous_run(cards.map_or(&[][..], Vec::as_slice), ctx)
         };
         if ctx.contains_btree_set(&conflicted, &entry.sequence, "iges conflicting parameter owner lookup")? {
-            let cards = match range {
-                Some(range) => range_to_cards(range, ctx)?,
-                None => run()?,
-            };
-            ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")?;
+            let cards = output_storage.with_storage(|| match range {
+                Some(range) => range_to_cards(range, ctx),
+                None => run(),
+            })?;
+            output_storage.with_storage(|| ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership"))?;
             resolved.push(Ownership {
                 entry,
                 cards,
@@ -4399,8 +4443,8 @@ fn resolve_ownership<'a>(
             continue;
         }
         if let Some(range) = range {
-            let cards = range_to_cards(range, ctx)?;
-            ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")?;
+            let cards = output_storage.with_storage(|| range_to_cards(range, ctx))?;
+            output_storage.with_storage(|| ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership"))?;
             resolved.push(Ownership {
                 entry,
                 cards,
@@ -4408,7 +4452,7 @@ fn resolve_ownership<'a>(
             });
             continue;
         }
-        let run = run()?;
+        let run = output_storage.with_storage(run)?;
         if let Some(first) = run.first().copied() {
             recoveries.record(
                 ctx,
@@ -4423,7 +4467,7 @@ fn resolve_ownership<'a>(
                 ),
                 format_args!("the back-pointer census run of {} card(s)", run.len()),
             )?;
-            ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")?;
+            output_storage.with_storage(|| ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership"))?;
             resolved.push(Ownership {
                 entry,
                 cards: run,
@@ -4438,14 +4482,14 @@ fn resolve_ownership<'a>(
         } else {
             ParameterDefect::NoOwnedCards
         };
-        ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership")?;
+        output_storage.with_storage(|| ctx.reserve_vec(&mut resolved, 1, "iges resolved parameter ownership"))?;
         resolved.push(Ownership {
             entry,
             cards: Vec::new(),
             quarantine: Some(defect),
         });
     }
-    Ok(resolved)
+    Ok(ResolvedOwnership { records: resolved, _storage: output_storage })
 }
 
 fn range_to_cards(range: Range<u32>, ctx: &DecodeContext<'_>) -> Result<Vec<u32>, CodecError> {
@@ -4454,46 +4498,51 @@ fn range_to_cards(range: Range<u32>, ctx: &DecodeContext<'_>) -> Result<Vec<u32>
     Ok(cards)
 }
 
-pub(crate) fn assemble_with_context(
+pub(crate) fn assemble_with_context<'ctx>(
     scan: &CardScan,
     directory: &[DirectoryEntry],
     quarantined_directory: &[QuarantinedDirectoryRecord],
     global: &ResolvedGlobal,
-    ctx: &DecodeContext<'_>,
-) -> Result<ParameterAssembly, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<ParameterAssembly<'ctx>, CodecError> {
     let global_table = global.global_table();
-    // The card view and the indexes below are dropped with this assembly.
-    let mut scratch = ctx.reserve_scoped(0, "iges parameter assembly indexes")?;
+    // The card view is needed through the final unclaimed-card pass.
+    let mut line_storage = ctx.reserve_scoped(0, "iges parameter back-pointer storage")?;
     let lines =
-        scratch.with_storage(|| ParameterCards::new(scan.section(Section::Parameter), ctx))?;
+        line_storage.with_storage(|| ParameterCards::new(scan.section(Section::Parameter), ctx))?;
+    let mut index_storage = ctx.reserve_scoped(0, "iges parameter directory index")?;
     let mut entries = BTreeMap::new();
     let mut source_entries = directory.iter();
     while let Some(entry) = ctx.next_charged(&mut source_entries, "iges parameter directory entries")? {
         if entry.entity_type == 0 && entry.parameter_line_count == 0 {
             continue;
         }
-        ctx.insert_btree_map(
+        index_storage.with_storage(|| ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
             "iges parameter directory entries",
-        )?;
+        ))?;
     }
     let mut recoveries = FramingRecoveries::default();
     let ownership = resolve_ownership(directory, &lines, &mut recoveries, ctx)?;
+    let mut records_storage = ctx.reserve_scoped(0, "iges parameter source records")?;
     let mut records = Vec::new();
+    let mut analysis_storage = ctx.reserve_scoped(0, "iges parameter source pointer analysis")?;
     let mut trailing_pointer_analysis = BTreeMap::new();
+    let mut quarantine_storage = ctx.reserve_scoped(0, "iges parameter source quarantine")?;
     let mut quarantined = Vec::new();
-    let mut owned_records = ownership.iter();
+    let mut owned_records = ownership.records.iter();
     while let Some(owned) = ctx.next_charged(&mut owned_records, "iges parameter records")? {
         let entry = owned.entry;
         if let Some(defect) = owned.quarantine {
-            ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records")?;
-            quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None, ctx)?);
+            quarantine_storage.with_storage(|| ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records"))?;
+            quarantined.push(quarantine_storage.with_storage(|| quarantine(entry, &owned.cards, &lines, defect, None, ctx))?);
             continue;
         }
-        let owned_bytes = owned_bytes(&owned.cards, &lines, ctx)?;
-        let tokenized = if entry.entity_type == 306 {
+        let mut record_storage = ctx.reserve_scoped(0, "iges parameter source record")?;
+        let mut owned_bytes = record_storage.with_storage(|| owned_bytes(&owned.cards, &lines, ctx))?;
+        let tokenized = record_storage.with_storage(|| if entry.entity_type == 306 {
             tokenize_macro(
                 &owned_bytes.bytes,
                 global.parameter_delimiter,
@@ -4511,34 +4560,43 @@ pub(crate) fn assemble_with_context(
                 global.numeric_limits(),
                 ctx,
             )
-        };
+        });
+        drop(std::mem::take(&mut owned_bytes.card_boundaries));
+        drop(owned_bytes.boundary_storage);
         let (tokens, record_end, double_precision_reals) = match tokenized {
             Ok(value) => value,
             Err(TokenizeFailure::Refusal(error)) => return Err(error),
             Err(TokenizeFailure::Defect(defect, offset)) => {
-                ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records")?;
-                quarantined.push(quarantine(
+                drop(owned_bytes.bytes);
+                drop(record_storage);
+                quarantine_storage.with_storage(|| ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records"))?;
+                quarantined.push(quarantine_storage.with_storage(|| quarantine(
                     entry,
                     &owned.cards,
                     &lines,
                     defect,
                     Some(offset),
                     ctx,
-                )?);
+                ))?);
                 continue;
             }
         };
         if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
         {
-            ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records")?;
-            quarantined.push(quarantine(
+            let failing_offset = tokens.first().map(|token| token.span.start);
+            drop(tokens);
+            drop(double_precision_reals);
+            drop(owned_bytes.bytes);
+            drop(record_storage);
+            quarantine_storage.with_storage(|| ctx.reserve_vec(&mut quarantined, 1, "iges quarantined parameter records"))?;
+            quarantined.push(quarantine_storage.with_storage(|| quarantine(
                 entry,
                 &owned.cards,
                 &lines,
                 ParameterDefect::EntityTypeTokenMismatch,
-                tokens.first().map(|token| token.span.start),
+                failing_offset,
                 ctx,
-            )?);
+            ))?);
             continue;
         }
         let line_start = owned.cards.first().copied().unwrap_or_default();
@@ -4552,46 +4610,50 @@ pub(crate) fn assemble_with_context(
         let record = ParameterRecord {
             directory_sequence: entry.sequence,
             line_range: line_start..line_end,
-            comment: ctx.copy_retained(
+            comment: record_storage.with_storage(|| ctx.copy_retained(
                 owned_bytes.bytes.get(record_end..).unwrap_or_default(),
                 "iges parameter comment",
-            )?,
+            ))?,
             bytes: owned_bytes.bytes,
             tokens,
             parameter_end,
             double_precision_reals,
         };
-        ctx.reserve_vec(&mut records, 1, "iges parameter records")?;
+        records_storage.with_storage(|| ctx.reserve_vec(&mut records, 1, "iges parameter records"))?;
+        records_storage.with_storage(|| record_storage.commit())?;
         records.push(record);
     }
     {
+        let mut record_index_storage = ctx.reserve_scoped(0, "iges parameter record index")?;
         let mut record_by_directory = BTreeMap::new();
         let mut indexed_records = records.iter();
         while let Some(record) = ctx.next_charged(&mut indexed_records, "iges parameter record index")? {
-            ctx.insert_btree_map(
+            record_index_storage.with_storage(|| ctx.insert_btree_map(
                 &mut record_by_directory,
                 record.directory_sequence,
                 record,
                 "iges parameter record index",
-            )?;
+            ))?;
         }
         let mut analyzed_records = records.iter();
         while let Some(record) = ctx.next_charged(&mut analyzed_records, "iges trailing parameter pointers")? {
-            let analysis = analyze_trailing_pointer_groups_with_records_for_global_table(
+            let analysis = analysis_storage.with_storage(|| analyze_trailing_pointer_groups_with_records_for_global_table(
                 record,
                 &entries,
                 &record_by_directory,
                 global_table,
                 ctx,
-            )?;
-            ctx.insert_btree_map(
+            ))?;
+            analysis_storage.with_storage(|| ctx.insert_btree_map(
                 &mut trailing_pointer_analysis,
                 record.directory_sequence,
                 analysis,
                 "iges trailing parameter pointers",
-            )?;
+            ))?;
         }
     }
+    drop(entries);
+    drop(index_storage);
     let mut finalized_records = records.iter_mut();
     while let Some(record) = ctx.next_charged(&mut finalized_records, "iges parameter record ends")? {
         record.parameter_end = ctx.get_btree_map(
@@ -4605,17 +4667,19 @@ pub(crate) fn assemble_with_context(
             })
             .map_or(record.tokens.len(), |groups| groups.token_start);
     }
+    let mut accounting_storage = ctx.reserve_scoped(0, "iges parameter card accounting")?;
     let mut accounted = BTreeSet::new();
-    let mut accounted_owners = ownership.iter();
+    let mut accounted_owners = ownership.records.iter();
     while let Some(owned) = ctx.next_charged(&mut accounted_owners, "iges accounted parameter cards")? {
         let mut owned_cards = owned.cards.iter();
         while let Some(sequence) = ctx.next_charged(&mut owned_cards, "iges accounted parameter cards")? {
-            scratch.with_storage(|| {
+            accounting_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut accounted, *sequence, "iges accounted parameter cards")
             })?;
         }
     }
-    let quarantined_sequences = scratch.with_storage(|| {
+    drop(ownership);
+    let quarantined_sequences = accounting_storage.with_storage(|| {
         ctx.collect_btree_set(
             quarantined_directory.iter().map(|record| record.sequence),
             "iges quarantined directory sequences",
@@ -4652,6 +4716,9 @@ pub(crate) fn assemble_with_context(
         trailing_pointer_analysis,
         quarantined,
         recoveries,
+        records_storage,
+        analysis_storage,
+        quarantine_storage,
     })
 }
 

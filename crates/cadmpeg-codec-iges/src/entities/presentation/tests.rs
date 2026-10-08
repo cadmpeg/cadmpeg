@@ -1608,7 +1608,12 @@ fn repeated_body_name_properties_do_not_rescan_shared_text() {
             parameters: format!("406,1,{}H{name};", name.len()),
         },
     ]);
-    let (directory, global, assembly) = crate::test_support::with_service_context(&bytes, |ctx| {
+    let setup_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(
+        &bytes, &setup_arena, &DecodePolicy::service(),
+    ).unwrap();
+    let (directory, global, assembly) = {
+        let ctx = &setup_ctx;
         let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
         let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
         let (directory, quarantined) =
@@ -1622,7 +1627,7 @@ fn repeated_body_name_properties_do_not_rescan_shared_text() {
             Some(crate::parameter::TrailingPointerAnalysis::Unambiguous(_))
         ));
         (directory, global, assembly)
-    });
+    };
     let entries = directory
         .iter()
         .map(|entry| (entry.sequence, entry))
