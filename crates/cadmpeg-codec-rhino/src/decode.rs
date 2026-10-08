@@ -338,17 +338,7 @@ fn snapshot_instance_statuses<'a>(
 > {
     const BYTES: &str = "Rhino instance status snapshot bytes";
     ctx.with_scoped_storage(BYTES, || {
-        ctx.charge_collection_items(
-            u64_from_index(statuses.len()),
-            "Rhino instance status snapshot",
-        )?;
-        let mut copy = ctx.vector_storage(statuses.len(), BYTES)?;
-        ctx.charge_work(
-            u64_from_index(std::mem::size_of_val(statuses)),
-            "copy Rhino instance statuses",
-        )?;
-        copy.extend_from_slice(statuses);
-        Ok(copy)
+        ctx.copy_slice(statuses, "Rhino instance status snapshot")
     })
 }
 
@@ -2777,12 +2767,11 @@ impl<'a> DecodeContext<'a> {
         });
         let result = (|| {
             let mut links = Vec::new();
-            for &member_id in self
-                .expand
-                .ctx()
-                .admit_iter(definition_members, "Rhino instance definition members")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            let mut members = definition_members.iter();
+            while let Some(&member_id) = self.expand.ctx().next_charged(
+                &mut members,
+                "Rhino instance definition members",
+            )? {
                 self.expansion_budget.member(self.expand.ctx())?;
                 self.expand
                     .ctx()
@@ -7833,6 +7822,7 @@ fn c2_curve_to_nurbs_join(
     curve: crate::curves::DecodedCurve,
     offset: usize,
 ) -> Result<crate::curves::NurbsJoin, crate::curves::GeometryError> {
+    let _nested = ctx.enter_nested("Rhino C2 join nesting")?;
     match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
@@ -7851,15 +7841,15 @@ fn c2_curve_to_nurbs_join(
             end_parameter,
             ..
         } => {
-            let mut segments = ctx
-                .collection_vec(children.len(), "Rhino C2 joined segments")
+            let (mut segments, _segment_storage) = ctx
+                .temporary_vec(children.len(), "Rhino C2 joined segments")
                 .map_err(crate::curves::GeometryError::from)?;
             let mut warnings = Diagnostics::new();
-            let mut children = ctx
-                .admit_iter(children, "Rhino C2 joined segment traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .peekable();
-            while let Some((start, child)) = children.next() {
+            let mut children = children.into_iter().peekable();
+            while let Some((start, child)) = ctx.next_charged(
+                &mut children,
+                "Rhino C2 joined segment traversal",
+            )? {
                 let end = children.peek().map_or(end_parameter, |(start, _)| *start);
                 let target = [start, end];
                 if target[0] >= target[1] {
@@ -8484,12 +8474,14 @@ fn transform_decoded_curve(
     curve: &mut crate::curves::DecodedCurve,
     transform: Transform,
 ) -> Result<(), ReferenceFailure> {
+    let _nested = ctx.enter_nested("Rhino curve placement nesting")?;
     match curve {
         crate::curves::DecodedCurve::Compound { children, .. } => {
-            for (_, child) in ctx
-                .admit_iter(children, "Rhino curve placement traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            let mut children = children.iter_mut();
+            while let Some((_, child)) = ctx.next_charged(
+                &mut children,
+                "Rhino curve placement traversal",
+            )? {
                 transform_decoded_curve(ctx, child, transform)?;
             }
             Ok(())

@@ -77,19 +77,28 @@ fn instance_status_snapshot_refuses_collection_limit() {
 
 #[test]
 fn instance_status_snapshot_bytes_refuse_materialized_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let bytes = std::mem::size_of::<Option<GeometryOutcome>>();
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(bytes - 1);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is admitted");
-    let refusal = snapshot_instance_statuses(&ctx, &[Some(GeometryOutcome::Decoded)])
-        .expect_err("one status exceeds the temporary-byte limit");
-    // Scoped byte admission uses the byte operation before collection admission.
+    use cadmpeg_core::decode::ResourceDimension;
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "Rhino instance status snapshot",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = snapshot_instance_statuses(&ctx, &[Some(GeometryOutcome::Decoded)]);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result.map(|(statuses, _storage)| statuses)
+        },
+    );
+    // copy_slice admits one status slot and its size under its own operation.
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
-            if limit.operation == "Rhino instance status snapshot bytes"
+            if limit.operation == "Rhino instance status snapshot"
+                && limit.dimension == ResourceDimension::MaterializedBytes
     ));
 }
 
@@ -135,5 +144,21 @@ fn instance_snapshots_admit_work_and_hold_scoped_storage() {
         .reserve_scoped(4096, "instance snapshots released")
         .unwrap();
     drop(all_storage);
+    ctx.finish_session().unwrap();
+}
+
+
+#[test]
+fn instance_status_snapshot_charges_one_visit_per_status() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // copy_slice visits two status elements; status width does not add work.
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let statuses = [Some(GeometryOutcome::Decoded), Some(GeometryOutcome::Failed)];
+    let copied = snapshot_instance_statuses(&ctx, &statuses).expect("two visits fit");
+    assert_eq!(copied.0, statuses);
+    drop(copied);
     ctx.finish_session().unwrap();
 }
