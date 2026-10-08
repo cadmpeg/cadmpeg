@@ -35,15 +35,22 @@ pub(in crate::decode) fn stepped_hole_form(
     let mut candidates = 0;
     let mut tables = tables.iter();
     while let Some(table) = ctx.next_charged(&mut tables, "creo hole recipe table scan")? {
-        if table.feature_id != feature_id || table.table_class_id != 29 { continue; }
-        let (generated, _generated_storage) = ctx.with_scoped_storage("creo hole replay scratch", || paired_hole_replay_surfaces_by_source(ctx, feature_id, table, rows))?;
+        if table.feature_id != feature_id || table.table_class_id != 29 {
+            continue;
+        }
+        let (generated, _generated_storage) = ctx
+            .with_scoped_storage("creo hole replay scratch", || {
+                paired_hole_replay_surfaces_by_source(ctx, feature_id, table, rows)
+            })?;
         let paired = match generated {
             Some(generated) => paired_hole_replay_is_counterbore(ctx, &generated)?,
             None => false,
         };
         if paired || split_patch_table_is_counterbore(ctx, feature_id, table, rows)? {
             candidates += 1;
-            if candidates > 1 { return Ok(None); }
+            if candidates > 1 {
+                return Ok(None);
+            }
         }
     }
     Ok((candidates == 1).then_some(HoleForm::Counterbore))
@@ -69,8 +76,14 @@ fn paired_hole_replay_is_counterbore(
                 ctx.refuse_codec_limit("creo paired-hole source count", u64::MAX, u64::MAX)
             })?;
         }
-        if matches!(entries, [Some(crate::surface::SurfaceKind::Plane), None] | [None, Some(crate::surface::SurfaceKind::Plane)]) {
-            planar_support_sources = planar_support_sources.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("creo paired-hole source count", u64::MAX, u64::MAX))?;
+        if matches!(
+            entries,
+            [Some(crate::surface::SurfaceKind::Plane), None]
+                | [None, Some(crate::surface::SurfaceKind::Plane)]
+        ) {
+            planar_support_sources = planar_support_sources.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo paired-hole source count", u64::MAX, u64::MAX)
+            })?;
         }
         has_cone |= matches!(pair.first, Some(crate::surface::SurfaceKind::Cone))
             || matches!(pair.second, Some(crate::surface::SurfaceKind::Cone));
@@ -90,7 +103,13 @@ fn split_patch_table_is_counterbore(
     let mut entries = table.entries.iter();
     while let Some(entry) = ctx.next_charged(&mut entries, "creo split-patch surface scan")? {
         let surface_id = entry.entity_id;
-        if !ctx.contains_btree_set(table.unique_surface_ids(), &surface_id, "creo hole table surface membership")? { continue; }
+        if !ctx.contains_btree_set(
+            table.unique_surface_ids(),
+            &surface_id,
+            "creo hole table surface membership",
+        )? {
+            continue;
+        }
         let Some(row) = crate::surface::unique_surface_row(rows, surface_id)
             .filter(|row| row.feature_id == feature_id)
         else {
@@ -104,16 +123,24 @@ fn split_patch_table_is_counterbore(
     if surface_count != 5 || unique_surface_count != 5 || cylinder_count != 4 || plane_count != 1 {
         return Ok(false);
     }
-    let is_rowless = |entry: &crate::feature::entity::FeatureEntityTableEntry| -> Result<bool, CodecError> {
-        Ok(!ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo hole table surface membership")?)
-    };
-    if !ctx.any_by(table.entries.windows(2), |entries| {
-        Ok(
-        entries[0].class_id() == 204
-            && entries[1].class_id() == 203
-            && is_rowless(&entries[0])?
-            && is_rowless(&entries[1])?)
-    }, "creo split-patch rowless cap search")? {
+    let is_rowless =
+        |entry: &crate::feature::entity::FeatureEntityTableEntry| -> Result<bool, CodecError> {
+            Ok(!ctx.contains_btree_set(
+                table.unique_surface_ids(),
+                &entry.entity_id,
+                "creo hole table surface membership",
+            )?)
+        };
+    if !ctx.any_by(
+        table.entries.windows(2),
+        |entries| {
+            Ok(entries[0].class_id() == 204
+                && entries[1].class_id() == 203
+                && is_rowless(&entries[0])?
+                && is_rowless(&entries[1])?)
+        },
+        "creo split-patch rowless cap search",
+    )? {
         return Ok(false);
     }
 
@@ -125,8 +152,14 @@ fn split_patch_table_is_counterbore(
     let mut rowless_counts_by_source = BTreeMap::<u32, usize>::new();
     let mut entries = table.entries.iter();
     while let Some(entry) = ctx.next_charged(&mut entries, "creo split-patch entry scan")? {
-        if entry.class_id() != 200 { continue; }
-        let materialized = ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo hole table surface membership")?;
+        if entry.class_id() != 200 {
+            continue;
+        }
+        let materialized = ctx.contains_btree_set(
+            table.unique_surface_ids(),
+            &entry.entity_id,
+            "creo hole table surface membership",
+        )?;
         let rowless = !materialized;
         let Some(source_id) = entry.source_entity_id() else {
             continue;
@@ -135,11 +168,13 @@ fn split_patch_table_is_counterbore(
             return Ok(false);
         }
         if rowless {
-            match scratch.with_storage(|| ctx.entry_btree_map(
-                &mut rowless_counts_by_source,
-                source_id,
-                "creo split-patch rowless source nodes",
-            ))? {
+            match scratch.with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut rowless_counts_by_source,
+                    source_id,
+                    "creo split-patch rowless source nodes",
+                )
+            })? {
                 std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(1);
@@ -152,28 +187,42 @@ fn split_patch_table_is_counterbore(
         else {
             return Ok(false);
         };
-        if ctx.contains_btree_set(&materialized_surface_ids, &entry.entity_id, "creo split-patch duplicate surface lookup")? {
+        if ctx.contains_btree_set(
+            &materialized_surface_ids,
+            &entry.entity_id,
+            "creo split-patch duplicate surface lookup",
+        )? {
             return Ok(false);
         }
-        scratch.with_storage(|| ctx.insert_btree_set(
-            &mut materialized_surface_ids,
-            entry.entity_id,
-            "creo split-patch materialized surface ID nodes",
-        ))?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut materialized_surface_ids,
+                entry.entity_id,
+                "creo split-patch materialized surface ID nodes",
+            )
+        })?;
         if row.kind == crate::surface::SurfaceKind::Cylinder {
-            let group = scratch.with_storage(|| ctx.entry_btree_map(
-                &mut cylinder_ids_by_source,
-                source_id,
-                "creo split-patch cylinder source nodes",
-            ))?.or_default();
+            let group = scratch
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut cylinder_ids_by_source,
+                        source_id,
+                        "creo split-patch cylinder source nodes",
+                    )
+                })?
+                .or_default();
             scratch.with_storage(|| ctx.reserve_vec(group, 1, "creo split-patch cylinder IDs"))?;
             group.push(entry.entity_id);
         } else if row.kind == crate::surface::SurfaceKind::Plane {
-            let group = scratch.with_storage(|| ctx.entry_btree_map(
-                &mut plane_ids_by_source,
-                source_id,
-                "creo split-patch plane source nodes",
-            ))?.or_default();
+            let group = scratch
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut plane_ids_by_source,
+                        source_id,
+                        "creo split-patch plane source nodes",
+                    )
+                })?
+                .or_default();
             scratch.with_storage(|| ctx.reserve_vec(group, 1, "creo split-patch plane IDs"))?;
             group.push(entry.entity_id);
         }
@@ -182,11 +231,24 @@ fn split_patch_table_is_counterbore(
     if materialized_surface_ids.len() != surface_ids.len() {
         return Ok(false);
     }
-    if plane_ids_by_source.len() != 1 { return Ok(false); }
-    let Some((plane_source, plane_ids)) = plane_ids_by_source.iter().next() else { return Ok(false); };
-    Ok(cylinder_ids_by_source.len() == 2 && plane_ids.len() == 1
-        && !ctx.contains_key_btree_map(&cylinder_ids_by_source, plane_source, "creo split-patch plane source lookup")?
-        && ctx.get_btree_map(&rowless_counts_by_source, plane_source, "creo split-patch rowless source lookup")? == Some(&1)
+    if plane_ids_by_source.len() != 1 {
+        return Ok(false);
+    }
+    let Some((plane_source, plane_ids)) = plane_ids_by_source.iter().next() else {
+        return Ok(false);
+    };
+    Ok(cylinder_ids_by_source.len() == 2
+        && plane_ids.len() == 1
+        && !ctx.contains_key_btree_map(
+            &cylinder_ids_by_source,
+            plane_source,
+            "creo split-patch plane source lookup",
+        )?
+        && ctx.get_btree_map(
+            &rowless_counts_by_source,
+            plane_source,
+            "creo split-patch rowless source lookup",
+        )? == Some(&1)
         && cylinder_ids_by_source.values().all(|ids| ids.len() == 2))
 }
 
@@ -212,7 +274,9 @@ fn paired_hole_replay_surfaces_by_source(
     let mut indices = 0..table.entries.len();
     while let Some(mut index) = ctx.next_charged(&mut indices, "creo paired-hole entry scan")? {
         let class_204 = &table.entries[index];
-        if class_204.class_id() == 200 { return Ok(None); }
+        if class_204.class_id() == 200 {
+            return Ok(None);
+        }
         let Some(class_203) = table.entries.get(index + 1) else {
             break;
         };
@@ -229,7 +293,10 @@ fn paired_hole_replay_surfaces_by_source(
         while let Some(next) = ctx.next_charged(&mut indices, "creo paired-hole entry scan")? {
             index = next;
             let entry = &table.entries[index];
-            if entry.class_id() != 200 { indices = index..table.entries.len(); break; }
+            if entry.class_id() != 200 {
+                indices = index..table.entries.len();
+                break;
+            }
             let Some(kind) = entry_kind(entry)? else {
                 return Ok(None);
             };
@@ -241,15 +308,21 @@ fn paired_hole_replay_surfaces_by_source(
                     source_zero_count += 1;
                 }
                 Some(source_id) => {
-                    if ctx.contains_key_btree_map(&run, &source_id, "creo paired-hole duplicate source lookup")? {
+                    if ctx.contains_key_btree_map(
+                        &run,
+                        &source_id,
+                        "creo paired-hole duplicate source lookup",
+                    )? {
                         return Ok(None);
                     }
-                    run_storage.with_storage(|| ctx.insert_btree_map(
-                        &mut run,
-                        source_id,
-                        kind,
-                        "creo paired-hole run source nodes",
-                    ))?;
+                    run_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut run,
+                            source_id,
+                            kind,
+                            "creo paired-hole run source nodes",
+                        )
+                    })?;
                 }
                 None if kind.is_some() => return Ok(None),
                 None => {}
@@ -258,22 +331,42 @@ fn paired_hole_replay_surfaces_by_source(
         run_storage.with_storage(|| ctx.reserve_vec(&mut runs, 1, "creo paired-hole runs"))?;
         runs.push(run);
     }
-    if source_zero_count > 1 { return Ok(None); }
+    if source_zero_count > 1 {
+        return Ok(None);
+    }
     let mut materialized = [None, None];
     let mut count = 0;
     let mut run_rows = runs.iter();
-    while let Some(run) = ctx.next_charged(&mut run_rows, "creo paired-hole materialized run scan")? {
-        if !ctx.any_by(run, |(_, kind)| Ok(kind.is_some()), "creo paired-hole materialized source search")? { continue; }
-        if count == materialized.len() { return Ok(None); }
+    while let Some(run) =
+        ctx.next_charged(&mut run_rows, "creo paired-hole materialized run scan")?
+    {
+        if !ctx.any_by(
+            run,
+            |(_, kind)| Ok(kind.is_some()),
+            "creo paired-hole materialized source search",
+        )? {
+            continue;
+        }
+        if count == materialized.len() {
+            return Ok(None);
+        }
         materialized[count] = Some(run);
         count += 1;
     }
-    let [Some(first), Some(second)] = materialized else { return Ok(None); };
-    if first.len() != second.len() { return Ok(None); }
+    let [Some(first), Some(second)] = materialized else {
+        return Ok(None);
+    };
+    if first.len() != second.len() {
+        return Ok(None);
+    }
     let mut paired_by_source = BTreeMap::new();
     let mut sources = first.iter();
-    while let Some((source_id, first_kind)) = ctx.next_charged(&mut sources, "creo paired-hole result source scan")? {
-        let Some(second_kind) = ctx.get_btree_map(second, source_id, "creo paired-hole second source lookup")? else {
+    while let Some((source_id, first_kind)) =
+        ctx.next_charged(&mut sources, "creo paired-hole result source scan")?
+    {
+        let Some(second_kind) =
+            ctx.get_btree_map(second, source_id, "creo paired-hole second source lookup")?
+        else {
             return Ok(None);
         };
         ctx.insert_btree_map(
@@ -319,10 +412,14 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
     let mut candidate = None;
     let mut tables = tables.iter();
     while let Some(table) = ctx.next_charged(&mut tables, "creo hole recipe table scan")? {
-        if table.feature_id != feature_id || table.table_class_id != 29 { continue; }
-        let (generated_by_source, _generated_storage) = ctx.with_scoped_storage("creo hole replay scratch", || paired_hole_replay_surfaces_by_source(ctx, feature_id, table, rows))?;
-        let Some(generated_by_source) = generated_by_source
-        else {
+        if table.feature_id != feature_id || table.table_class_id != 29 {
+            continue;
+        }
+        let (generated_by_source, _generated_storage) = ctx
+            .with_scoped_storage("creo hole replay scratch", || {
+                paired_hole_replay_surfaces_by_source(ctx, feature_id, table, rows)
+            })?;
+        let Some(generated_by_source) = generated_by_source else {
             continue;
         };
         let mut rowless = 0;
@@ -331,9 +428,13 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
         for (_, pair) in ctx.admit_iter(&generated_by_source, "creo drilled paired source count")? {
             match [pair.first, pair.second] {
                 [None, None] => rowless += 1,
-                [Some(crate::surface::SurfaceKind::Cone), Some(crate::surface::SurfaceKind::Cone)] => cones += 1,
-                [Some(crate::surface::SurfaceKind::Cylinder), Some(crate::surface::SurfaceKind::Cylinder)] => cylinders += 1,
-                _ => {},
+                [Some(crate::surface::SurfaceKind::Cone), Some(crate::surface::SurfaceKind::Cone)] => {
+                    cones += 1
+                }
+                [Some(crate::surface::SurfaceKind::Cylinder), Some(crate::surface::SurfaceKind::Cylinder)] => {
+                    cylinders += 1
+                }
+                _ => {}
             }
         }
         let dimension_family = match rowless {
@@ -341,9 +442,7 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
             3 => SimpleDrilledDimensionFamily::ExternalId4Depth,
             _ => continue,
         };
-        if cones == 1 && cylinders == 1
-            && generated_by_source.len() == rowless + 2
-        {
+        if cones == 1 && cylinders == 1 && generated_by_source.len() == rowless + 2 {
             if candidate.is_some() {
                 return Ok(None);
             }
@@ -374,15 +473,32 @@ fn simple_drilled_hole_corner_envelopes(
 ) -> Result<Option<[[[f64; 3]; 2]; 2]>, CodecError> {
     let feature_id = table.feature_id;
     let resolve = |row: &crate::surface::SurfaceRow| -> Result<Option<[[f64; 3]; 2]>, CodecError> {
-            Ok(unique_surface_parameter_record(ctx, scan, row)?
-                .and_then(crate::surface::SurfaceParameterRecord::type24_terminal_corner_envelope))
-        };
+        Ok(unique_surface_parameter_record(ctx, scan, row)?
+            .and_then(crate::surface::SurfaceParameterRecord::type24_terminal_corner_envelope))
+    };
     let mut entries = table.entries.iter();
-    let mut next = || ctx.find_map(&mut entries, |entry| {
-        if !ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo hole table surface membership")? { return Ok(None); }
-        let Some(row) = scan.surfaces.rows.unique(entry.entity_id).filter(|row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder) else { return Ok(None); };
-        resolve(row).map(Some)
-    }, "creo drilled surface envelope search");
+    let mut next = || {
+        ctx.find_map(
+            &mut entries,
+            |entry| {
+                if !ctx.contains_btree_set(
+                    table.unique_surface_ids(),
+                    &entry.entity_id,
+                    "creo hole table surface membership",
+                )? {
+                    return Ok(None);
+                }
+                let Some(row) = scan.surfaces.rows.unique(entry.entity_id).filter(|row| {
+                    row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Cylinder
+                }) else {
+                    return Ok(None);
+                };
+                resolve(row).map(Some)
+            },
+            "creo drilled surface envelope search",
+        )
+    };
     let Some(first) = next()? else {
         return Ok(None);
     };
@@ -410,40 +526,56 @@ fn simple_drilled_hole_cone_terminal_points(
 ) -> Result<Option<[[f64; 3]; 2]>, CodecError> {
     let feature_id = table.feature_id;
     let resolve = |row: &crate::surface::SurfaceRow| -> Result<Option<[f64; 3]>, CodecError> {
-            let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
-                return Ok(None);
-            };
-            if record.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose
-                || record.scalar_tokens.len() != 7
-            {
-                return Ok(None);
-            }
-            let Some(x) = record.scalar_tokens[4]
-                .value
-                .filter(|value| value.is_finite())
-            else {
-                return Ok(None);
-            };
-            let Some(y) = record.scalar_tokens[5]
-                .value
-                .filter(|value| value.is_finite())
-            else {
-                return Ok(None);
-            };
-            let Some(z) = record.scalar_tokens[6]
-                .value
-                .filter(|value| value.is_finite())
-            else {
-                return Ok(None);
-            };
-            Ok(Some([x, y, z]))
+        let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
+            return Ok(None);
         };
+        if record.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose
+            || record.scalar_tokens.len() != 7
+        {
+            return Ok(None);
+        }
+        let Some(x) = record.scalar_tokens[4]
+            .value
+            .filter(|value| value.is_finite())
+        else {
+            return Ok(None);
+        };
+        let Some(y) = record.scalar_tokens[5]
+            .value
+            .filter(|value| value.is_finite())
+        else {
+            return Ok(None);
+        };
+        let Some(z) = record.scalar_tokens[6]
+            .value
+            .filter(|value| value.is_finite())
+        else {
+            return Ok(None);
+        };
+        Ok(Some([x, y, z]))
+    };
     let mut entries = table.entries.iter();
-    let mut next = || ctx.find_map(&mut entries, |entry| {
-        if !ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo hole table surface membership")? { return Ok(None); }
-        let Some(row) = scan.surfaces.rows.unique(entry.entity_id).filter(|row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cone) else { return Ok(None); };
-        resolve(row).map(Some)
-    }, "creo drilled surface envelope search");
+    let mut next = || {
+        ctx.find_map(
+            &mut entries,
+            |entry| {
+                if !ctx.contains_btree_set(
+                    table.unique_surface_ids(),
+                    &entry.entity_id,
+                    "creo hole table surface membership",
+                )? {
+                    return Ok(None);
+                }
+                let Some(row) = scan.surfaces.rows.unique(entry.entity_id).filter(|row| {
+                    row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cone
+                }) else {
+                    return Ok(None);
+                };
+                resolve(row).map(Some)
+            },
+            "creo drilled surface envelope search",
+        )
+    };
     let Some(first) = next()? else {
         return Ok(None);
     };
@@ -497,16 +629,39 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
     let mut cylinder_ids = BTreeSet::new();
     for entry in ctx.admit_iter(&table.entries, "creo drilled cylinder source scan")? {
         let surface_id = entry.entity_id;
-        if !ctx.contains_btree_set(table.unique_surface_ids(), &surface_id, "creo hole table surface membership")?
-            || !scan.surfaces.rows.unique(surface_id).is_some_and(|row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder) { continue; }
-        cylinder_id_storage.with_storage(|| ctx.insert_btree_set(&mut cylinder_ids, surface_id, "creo drilled cylinder ID nodes"))?;
+        if !ctx.contains_btree_set(
+            table.unique_surface_ids(),
+            &surface_id,
+            "creo hole table surface membership",
+        )? || !scan.surfaces.rows.unique(surface_id).is_some_and(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+        }) {
+            continue;
+        }
+        cylinder_id_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut cylinder_ids,
+                surface_id,
+                "creo drilled cylinder ID nodes",
+            )
+        })?;
     }
-    let (frame_records, _frame_storage) = ctx.with_scoped_storage("creo drilled frame scratch", || unique_available_positional_cylinder_frame_records(ctx, &cylinder_ids, &scan.surfaces.parameters))?;
-    let Some(frame_records) = frame_records
-    else {
+    let (frame_records, _frame_storage) =
+        ctx.with_scoped_storage("creo drilled frame scratch", || {
+            unique_available_positional_cylinder_frame_records(
+                ctx,
+                &cylinder_ids,
+                &scan.surfaces.parameters,
+            )
+        })?;
+    let Some(frame_records) = frame_records else {
         return Ok(None);
     };
-    simple_drilled_axis_placement_from_frames(ctx, frame_records.iter().map(|(_, frame)| frame), diameter)
+    simple_drilled_axis_placement_from_frames(
+        ctx,
+        frame_records.iter().map(|(_, frame)| frame),
+        diameter,
+    )
 }
 
 pub(in crate::decode) fn simple_drilled_axis_placement_from_frames<'a, I>(
@@ -514,29 +669,83 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames<'a, I>(
     frames: I,
     diameter: f64,
 ) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError>
-where I: IntoIterator<Item = &'a crate::surface::PositionalCylinderFrame>, I::IntoIter: Clone,
+where
+    I: IntoIterator<Item = &'a crate::surface::PositionalCylinderFrame>,
+    I::IntoIter: Clone,
 {
     let mut frames = frames.into_iter();
-    let Some(first) = ctx.next_charged(&mut frames, "creo drilled axis frame scan")? else { return Ok(None); };
+    let Some(first) = ctx.next_charged(&mut frames, "creo drilled axis frame scan")? else {
+        return Ok(None);
+    };
     let axis = unit_length(*first.frame().orthonormal_frame().axis());
-    let mut coordinate_scale = first.frame().origin().into_iter().map(f64::abs).fold(1.0, f64::max);
+    let mut coordinate_scale = first
+        .frame()
+        .origin()
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0, f64::max);
     let mut coordinates = frames.clone();
-    while let Some(frame) = ctx.next_charged(&mut coordinates, "creo drilled axis coordinate scan")? {
-        for coordinate in frame.frame().origin() { coordinate_scale = coordinate_scale.max(coordinate.abs()); }
+    while let Some(frame) =
+        ctx.next_charged(&mut coordinates, "creo drilled axis coordinate scan")?
+    {
+        for coordinate in frame.frame().origin() {
+            coordinate_scale = coordinate_scale.max(coordinate.abs());
+        }
     }
-    if !diameter.is_finite() || diameter <= 0.0 { return Ok(None); }
+    if !diameter.is_finite() || diameter <= 0.0 {
+        return Ok(None);
+    }
     let radius = 0.5 * diameter;
     let agrees = |frame: &crate::surface::PositionalCylinderFrame| {
         let candidate_axis = unit_length(*frame.frame().orthonormal_frame().axis());
         let radius_scale = frame.radius().get().max(radius.abs()).max(1.0);
-        if (frame.radius().get() - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale { return false; }
-        if axis.into_iter().zip(candidate_axis).map(|(left, right)| left * right).sum::<f64>().abs() < 1.0 - EPS_AXIS_ALIGNMENT { return false; }
-        let delta = std::array::from_fn::<_, 3, _>(|index| frame.frame().origin()[index] - first.frame().origin()[index]);
-        let axial_delta = delta.into_iter().zip(axis).map(|(component, axis)| component * axis).sum::<f64>();
-        delta.into_iter().zip(axis).map(|(component, axis)| component - axial_delta * axis).map(|component| component * component).sum::<f64>().sqrt() <= EPS_COORDINATE_AGREEMENT * coordinate_scale
+        if (frame.radius().get() - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale {
+            return false;
+        }
+        if axis
+            .into_iter()
+            .zip(candidate_axis)
+            .map(|(left, right)| left * right)
+            .sum::<f64>()
+            .abs()
+            < 1.0 - EPS_AXIS_ALIGNMENT
+        {
+            return false;
+        }
+        let delta = std::array::from_fn::<_, 3, _>(|index| {
+            frame.frame().origin()[index] - first.frame().origin()[index]
+        });
+        let axial_delta = delta
+            .into_iter()
+            .zip(axis)
+            .map(|(component, axis)| component * axis)
+            .sum::<f64>();
+        delta
+            .into_iter()
+            .zip(axis)
+            .map(|(component, axis)| component - axial_delta * axis)
+            .map(|component| component * component)
+            .sum::<f64>()
+            .sqrt()
+            <= EPS_COORDINATE_AGREEMENT * coordinate_scale
     };
-    if !agrees(first) || !ctx.all_by(frames, |frame| Ok(agrees(frame)), "creo drilled axis frame agreement")? { return Ok(None); }
-    Ok(cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(axis)).map(|axis| cadmpeg_ir::features::holes::HolePlacement::Axis { origin: first.frame().finite_origin(), axis }))
+    if !agrees(first)
+        || !ctx.all_by(
+            frames,
+            |frame| Ok(agrees(frame)),
+            "creo drilled axis frame agreement",
+        )?
+    {
+        return Ok(None);
+    }
+    Ok(
+        cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(axis)).map(|axis| {
+            cadmpeg_ir::features::holes::HolePlacement::Axis {
+                origin: first.frame().finite_origin(),
+                axis,
+            }
+        }),
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -853,10 +1062,11 @@ pub(in crate::decode) fn simple_drilled_hole_dimensions(
 ) -> Result<Option<(f64, f64, f64)>, CodecError> {
     simple_drilled_hole_dimension_values(
         ctx,
-        scan.features
-            .definitions
-            .iter()
-            .map(|definition| (definition.identity.id() == 911).then_some(definition.dimensions.as_ref()).flatten()),
+        scan.features.definitions.iter().map(|definition| {
+            (definition.identity.id() == 911)
+                .then_some(definition.dimensions.as_ref())
+                .flatten()
+        }),
         observed_envelope_spans,
         family,
     )
@@ -870,12 +1080,20 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
 ) -> Result<Option<(f64, f64, f64)>, CodecError> {
     let depth_external_id = family.depth_external_id();
     let mut first: Option<(f64, f64, f64)> = None;
-    while let Some(table) = ctx.next_charged(&mut tables, "creo drilled dimension definition scan")? {
-        let Some(table) = table else { continue; };
-        if !feature_dimension_table_complete(table) || table.rows.len() != 3 { continue; }
+    while let Some(table) =
+        ctx.next_charged(&mut tables, "creo drilled dimension definition scan")?
+    {
+        let Some(table) = table else {
+            continue;
+        };
+        if !feature_dimension_table_complete(table) || table.rows.len() != 3 {
+            continue;
+        }
         let mut signature_matches = true;
         for (external_id, dimension_type) in [(0, 2), (1, 10), (depth_external_id, 2)] {
-            if table.rows.iter()
+            if table
+                .rows
+                .iter()
                 .filter(|row| {
                     row.external_id == external_id && row.dimension_type == dimension_type
                 })
@@ -895,14 +1113,28 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
             }))?;
             row.value.resolved().filter(|value| value.is_finite())
         };
-        let Some(bore_radius) = value(0, 2) else { return Ok(None); };
-        let Some(signed_depth) = value(depth_external_id, 2) else { return Ok(None); };
+        let Some(bore_radius) = value(0, 2) else {
+            return Ok(None);
+        };
+        let Some(signed_depth) = value(depth_external_id, 2) else {
+            return Ok(None);
+        };
         let bore_diameter = 2.0 * bore_radius;
-        if !bore_diameter.is_finite() || bore_diameter <= 0.0 || signed_depth == 0.0 { return Ok(None); }
+        if !bore_diameter.is_finite() || bore_diameter <= 0.0 || signed_depth == 0.0 {
+            return Ok(None);
+        }
         let blind_depth = signed_depth.abs();
-        if observed_envelope_spans.is_some_and(|spans| !dimension_pair_matches_envelope_spans(bore_diameter, blind_depth, spans)) { continue; }
-        let Some(drill_point_angle) = value(1, 10) else { return Ok(None); };
-        if drill_point_angle <= 0.0 || drill_point_angle >= std::f64::consts::PI { return Ok(None); }
+        if observed_envelope_spans.is_some_and(|spans| {
+            !dimension_pair_matches_envelope_spans(bore_diameter, blind_depth, spans)
+        }) {
+            continue;
+        }
+        let Some(drill_point_angle) = value(1, 10) else {
+            return Ok(None);
+        };
+        if drill_point_angle <= 0.0 || drill_point_angle >= std::f64::consts::PI {
+            return Ok(None);
+        }
         let candidate = (bore_diameter, drill_point_angle, blind_depth);
         if let Some(first_value) = first {
             let agrees = [candidate.0, candidate.1, candidate.2]
@@ -1009,14 +1241,23 @@ mod resource_tests {
     }
 
     fn axis_placement_limit_error(operation: &'static str) -> CodecError {
-        let limit = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some(operation), axis_placement_with_limit);
+        let limit = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some(operation),
+            axis_placement_with_limit,
+        );
         axis_placement_with_limit(limit).expect_err("next collection exceeds limit")
     }
 
     #[test]
     fn drilled_axis_placement_preserves_service_carrier() {
         assert!(matches!(
-            axis_placement_with_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, axis_placement_with_limit)).expect("service resources"),
+            axis_placement_with_limit(crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                None,
+                axis_placement_with_limit
+            ))
+            .expect("service resources"),
             Some(cadmpeg_ir::features::holes::HolePlacement::Axis { .. })
         ));
     }
@@ -1038,6 +1279,4 @@ mod resource_tests {
                 && resource.operation == "creo available positional cylinder frames")
         );
     }
-
-
 }

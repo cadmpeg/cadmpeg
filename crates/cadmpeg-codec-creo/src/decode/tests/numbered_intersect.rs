@@ -105,7 +105,8 @@ fn service_feature_outline_planes(
     feature_id: u32,
 ) -> Option<Vec<crate::decode::sweep::planes::FeatureOutlinePlane>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        crate::decode::sweep::planes::feature_outline_planes(ctx, scan, feature_id).map(|result| result.map(|(planes, _plane_storage)| planes))
+        crate::decode::sweep::planes::feature_outline_planes(ctx, scan, feature_id)
+            .map(|result| result.map(|(planes, _plane_storage)| planes))
     })
     .expect("service resources")
 }
@@ -419,7 +420,10 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
             917
         )
         .and_then(|planes| {
-            crate::decode::with_test_decode_ctx(|ctx| extrusion_extent_and_direction(ctx, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)).expect("service resources")
+            crate::decode::with_test_decode_ctx(|ctx| {
+                extrusion_extent_and_direction(ctx, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
+            })
+            .expect("service resources")
         }),
         Some((
             ExtrudeExtent::OneSided {

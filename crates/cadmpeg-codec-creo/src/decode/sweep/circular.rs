@@ -90,9 +90,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    let mut body_id_index = None;
-    let mut body_id_storage = ctx.reserve_scoped(0, "creo model body identity index scratch")?;
-    for transform in ctx.admit_iter(&scan.features.section_transforms, "creo sweep transform scan")? {
+    for transform in ctx.admit_iter(
+        &scan.features.section_transforms,
+        "creo sweep transform scan",
+    )? {
         if unique_feature_section_transform(
             ctx,
             &scan.features.section_transforms,
@@ -137,11 +138,18 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             continue;
         };
         let body_id: BodyId = circular_identity(ctx, feature_id, "body")?;
-        if body_id_index.is_none() {
-            body_id_index = Some(body_id_storage.with_storage(|| ctx.collect_string_set(ir.model.bodies.iter().map(|body| body.id.as_str()), "creo model body identity index"))?);
-        }
-        let Some(indexed_body_ids) = &mut body_id_index else { continue; };
-        if ctx.contains_hash_set(indexed_body_ids, body_id.as_str(), "creo model identity comparison")? {
+        // The unique first material feature reaches this lookup at most once.
+        if ctx.any_by(
+            &ir.model.bodies,
+            |body| {
+                ctx.equal(
+                    body.id.as_str(),
+                    body_id.as_str(),
+                    "creo model identity comparison",
+                )
+            },
+            "creo model identity scan",
+        )? {
             continue;
         }
         let region_id: RegionId = circular_identity(ctx, feature_id, "region")?;
@@ -157,15 +165,17 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 format_args!("extrusion feature {feature_id} cap"),
                 "creo circular cap record",
             )?;
-            let cap = cap_geometry_storage.with_storage(|| circular_pcurve(
-                ctx,
-                section_center,
-                radius,
-                0.0,
-                std::f64::consts::TAU,
-                &cap_record,
-                &mut refusal,
-            ))?;
+            let cap = cap_geometry_storage.with_storage(|| {
+                circular_pcurve(
+                    ctx,
+                    section_center,
+                    radius,
+                    0.0,
+                    std::f64::consts::TAU,
+                    &cap_record,
+                    &mut refusal,
+                )
+            })?;
             let records = refusal.take_records_checked()?;
             match cap {
                 Some(cap) if records.is_empty() => cap,
@@ -202,7 +212,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let side_surface: SurfaceId = circular_identity(ctx, feature_id, "surface:side")?;
         let sides = [("bottom", span.lower()), ("top", span.upper())];
         let mut face_ids = Vec::new();
-        let (mut cap_coedges, mut cap_coedge_storage) = ctx.temporary_vec(0, "creo circular cap coedge IDs")?;
+        let (mut cap_coedges, mut cap_coedge_storage) =
+            ctx.temporary_vec(0, "creo circular cap coedge IDs")?;
         let mut side_coedges = Vec::new();
         for (side_index, (side, offset)) in sides.into_iter().enumerate() {
             let cap_surface: SurfaceId =
@@ -416,7 +427,12 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             )?;
             ctx.reserve_vec(&mut face_ids, 1, "creo circular shell face IDs")?;
             face_ids.push(cap_face);
-            ctx.reserve_scoped_vec(&mut cap_coedge_storage, &mut cap_coedges, 1, "creo circular cap coedge IDs")?;
+            ctx.reserve_scoped_vec(
+                &mut cap_coedge_storage,
+                &mut cap_coedges,
+                1,
+                "creo circular cap coedge IDs",
+            )?;
             cap_coedges.push(cap_coedge);
             ctx.reserve_vec(&mut side_coedges, 1, "creo circular side coedge rows")?;
             side_coedges.push((side_coedge, edge_id, side_pcurve));
@@ -548,7 +564,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             shells: circular_item(ctx, shell_id, "creo circular region shells")?,
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
-        body_id_storage.with_storage(|| ctx.insert_string_set(indexed_body_ids, body_id.as_str(), "creo model body identity index"))?;
         source_carriers.admit_body(
             ctx,
             ir,
@@ -576,10 +591,38 @@ fn resolved_circular_extrusion_profile(
     feature_id: u32,
     sketch_id: &SketchId,
 ) -> Result<Option<([f64; 2], f64)>, cadmpeg_core::CodecError> {
-    if let Some(sketch) = exactly_one_by(ctx, &ir.model.sketches, |sketch| ctx.equal(sketch.id.as_str(), sketch_id.as_str(), "creo circular profile sketch identity"), "creo circular profile sketch scan")? {
+    if let Some(sketch) = exactly_one_by(
+        ctx,
+        &ir.model.sketches,
+        |sketch| {
+            ctx.equal(
+                sketch.id.as_str(),
+                sketch_id.as_str(),
+                "creo circular profile sketch identity",
+            )
+        },
+        "creo circular profile sketch scan",
+    )? {
         if let [profile] = sketch.profiles.as_slice() {
             if let [entity_use] = profile.as_slice() {
-                if let Some(SketchGeometryDefinition::Circle { center, radius }) = exactly_one_by(ctx, &ir.model.sketch_entities, |entity| Ok(ctx.equal(entity.id().as_str(), entity_use.entity.as_str(), "creo circular profile entity identity")? && ctx.equal(entity.sketch.as_str(), sketch_id.as_str(), "creo circular profile sketch identity")?), "creo circular profile entity scan")?.map(|entity| source_carriers.sketch_geometry(entity).definition()) {
+                if let Some(SketchGeometryDefinition::Circle { center, radius }) = exactly_one_by(
+                    ctx,
+                    &ir.model.sketch_entities,
+                    |entity| {
+                        Ok(ctx.equal(
+                            entity.id().as_str(),
+                            entity_use.entity.as_str(),
+                            "creo circular profile entity identity",
+                        )? && ctx.equal(
+                            entity.sketch.as_str(),
+                            sketch_id.as_str(),
+                            "creo circular profile sketch identity",
+                        )?)
+                    },
+                    "creo circular profile entity scan",
+                )?
+                .map(|entity| source_carriers.sketch_geometry(entity).definition())
+                {
                     return Ok(Some(([center.u, center.v], radius.get())));
                 }
             }
@@ -639,13 +682,19 @@ mod tests {
     fn circular_extrusion_identity_refuses_below_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo circular extrusion identity"), |limit| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::circular_identity::<BodyId>(&ctx, 7, "body")
-    });
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo circular extrusion identity"),
+            |limit| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .expect("root");
+                super::circular_identity::<BodyId>(&ctx, 7, "body")
+            },
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let error =
             super::circular_identity::<BodyId>(&ctx, 7, "body").expect_err("identity refused");
@@ -680,13 +729,20 @@ mod tests {
         )
         .expect("service resources")
         .expect("cap pcurve");
-    crate::test_support::assert_refusal_order(cadmpeg_core::decode::ResourceDimension::CollectionItems, &["creo circular cap pcurve knot copy", "creo circular cap pcurve pole copy"], |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::copy_circular_pcurve(&ctx, &geometry)
-    });
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            &[
+                "creo circular cap pcurve knot copy",
+                "creo circular cap pcurve pole copy",
+            ],
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                super::copy_circular_pcurve(&ctx, &geometry)
+            },
+        );
         assert_eq!(
             super::copy_circular_pcurve(&ctx, &geometry).expect("copy"),
             geometry

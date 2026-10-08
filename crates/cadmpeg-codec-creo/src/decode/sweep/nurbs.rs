@@ -17,6 +17,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
+const INTERPOLATION_DEGREE: usize = 3;
 const EPS_TABULATED_ENDPOINT_ROUNDING: f64 = 1e-4;
 const EPS_TABULATED_FRAME_EXACT: f64 = 1.0e-9;
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-12;
@@ -81,96 +82,75 @@ pub(in super::super) fn extruded_geometry_surface(
 }
 
 pub(in super::super) fn bspline_basis(
-    ctx: &DecodeContext<'_>,
     index: usize,
     degree: usize,
     parameter: f64,
     knots: &[f64],
     count: usize,
-) -> Result<Option<f64>, CodecError> {
-    let _depth = ctx.enter_nested("creo interpolation basis depth")?;
-    ctx.charge_work(1, "creo interpolation basis work")?;
-    let Some(end) = index.checked_add(degree).and_then(|end| end.checked_add(1)) else {
-        return Ok(None);
-    };
-    let Some(window) = knots.get(index..=end) else {
-        return Ok(None);
-    };
-    let (Some(&first), Some(&second), Some(&last), Some(&last_knot)) =
-        (window.first(), window.get(1), window.last(), knots.last())
-    else {
-        return Ok(None);
-    };
+) -> Option<f64> {
+    if degree > INTERPOLATION_DEGREE {
+        return None;
+    }
+    let end = index.checked_add(degree)?.checked_add(1)?;
+    let window = knots.get(index..=end)?;
+    let first = *window.first()?;
+    let second = *window.get(1)?;
+    let last = *window.last()?;
+    let last_knot = *knots.last()?;
     if parameter == last_knot {
-        return Ok(Some(f64::from(index.checked_add(1) == Some(count))));
+        return Some(f64::from(index.checked_add(1) == Some(count)));
     }
     if degree == 0 {
-        return Ok(Some(f64::from(first <= parameter && parameter < second)));
+        return Some(f64::from(first <= parameter && parameter < second));
     }
     let left_denominator = window[degree] - first;
     let right_denominator = last - second;
     let left = if left_denominator > 0.0 {
-        let Some(basis) = bspline_basis(ctx, index, degree - 1, parameter, knots, count)? else {
-            return Ok(None);
-        };
+        let basis = bspline_basis(index, degree - 1, parameter, knots, count)?;
         (parameter - first) / left_denominator * basis
     } else {
         0.0
     };
     let right = if right_denominator > 0.0 {
-        let Some(basis) = bspline_basis(ctx, index + 1, degree - 1, parameter, knots, count)?
-        else {
-            return Ok(None);
-        };
+        let basis = bspline_basis(index + 1, degree - 1, parameter, knots, count)?;
         (last - parameter) / right_denominator * basis
     } else {
         0.0
     };
-    Ok(Some(left + right))
+    Some(left + right)
 }
 
 pub(in super::super) fn bspline_basis_derivative(
-    ctx: &DecodeContext<'_>,
     index: usize,
     degree: usize,
     parameter: f64,
     knots: &[f64],
     count: usize,
-) -> Result<Option<f64>, CodecError> {
-    let _depth = ctx.enter_nested("creo interpolation basis depth")?;
-    ctx.charge_work(1, "creo interpolation basis work")?;
-    let Some(end) = index.checked_add(degree).and_then(|end| end.checked_add(1)) else {
-        return Ok(None);
-    };
-    let Some(window) = knots.get(index..=end) else {
-        return Ok(None);
-    };
-    if degree == 0 {
-        return Ok(Some(0.0));
+) -> Option<f64> {
+    if degree > INTERPOLATION_DEGREE {
+        return None;
     }
-    let Ok(degree_value) = u32::try_from(degree).map(f64::from) else {
-        return Ok(None);
-    };
+    let end = index.checked_add(degree)?.checked_add(1)?;
+    let window = knots.get(index..=end)?;
+    if degree == 0 {
+        return Some(0.0);
+    }
+    let degree_value = f64::from(u32::try_from(degree).ok()?);
     let left_denominator = window[degree] - window[0];
     let right_denominator = window[degree + 1] - window[1];
     let left = if left_denominator > 0.0 {
-        let Some(basis) = bspline_basis(ctx, index, degree - 1, parameter, knots, count)? else {
-            return Ok(None);
-        };
+        let basis = bspline_basis(index, degree - 1, parameter, knots, count)?;
         degree_value / left_denominator * basis
     } else {
         0.0
     };
     let right = if right_denominator > 0.0 {
-        let Some(basis) = bspline_basis(ctx, index + 1, degree - 1, parameter, knots, count)?
-        else {
-            return Ok(None);
-        };
+        let basis = bspline_basis(index + 1, degree - 1, parameter, knots, count)?;
         degree_value / right_denominator * basis
     } else {
         0.0
     };
-    Ok(Some(left - right))
+    Some(left - right)
 }
 
 fn solve_vector_system(
@@ -180,16 +160,25 @@ fn solve_vector_system(
 ) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
     const EPS_INTERPOLATION_PIVOT: f64 = 1e-14;
     let count = matrix.len();
-    if values.len() != count || ctx.any_by(&matrix, |row| Ok(row.len() != count), "creo interpolation matrix shape")? {
+    if values.len() != count
+        || ctx.any_by(
+            &matrix,
+            |row| Ok(row.len() != count),
+            "creo interpolation matrix shape",
+        )?
+    {
         return Ok(None);
     }
     let mut columns = 0..count;
     while let Some(column) = ctx.next_charged(&mut columns, "creo interpolation column scan")? {
-        let Some(pivot) = ctx.admit_iter(column..count, "creo interpolation pivot work")?.max_by(|left, right| {
-            matrix[*left][column]
-                .abs()
-                .total_cmp(&matrix[*right][column].abs())
-        }) else {
+        let Some(pivot) = ctx
+            .admit_iter(column..count, "creo interpolation pivot work")?
+            .max_by(|left, right| {
+                matrix[*left][column]
+                    .abs()
+                    .total_cmp(&matrix[*right][column].abs())
+            })
+        else {
             return Ok(None);
         };
         if matrix[pivot][column].abs() <= EPS_INTERPOLATION_PIVOT || matrix[pivot][column].is_nan()
@@ -199,7 +188,10 @@ fn solve_vector_system(
         matrix.swap(column, pivot);
         values.swap(column, pivot);
         let scale = matrix[column][column];
-        for value in ctx.admit_iter(&mut matrix[column][column..], "creo interpolation normalization work")? {
+        for value in ctx.admit_iter(
+            &mut matrix[column][column..],
+            "creo interpolation normalization work",
+        )? {
             *value /= scale;
         }
         values[column] = values[column].map(|value| value / scale);
@@ -212,14 +204,19 @@ fn solve_vector_system(
         let Some((_, after_values)) = pivot_and_after_values.split_first_mut() else {
             return Ok(None);
         };
-        for (row, values) in ctx.admit_iter(before, "creo interpolation elimination row scan")?
+        for (row, values) in ctx
+            .admit_iter(before, "creo interpolation elimination row scan")?
             .chain(ctx.admit_iter(after, "creo interpolation elimination row scan")?)
-            .zip(before_values.iter_mut().chain(after_values.iter_mut())) {
+            .zip(before_values.iter_mut().chain(after_values.iter_mut()))
+        {
             let factor = row[column];
             if factor == 0.0 {
                 continue;
             }
-            for (entry, pivot_entry) in ctx.admit_iter(&mut row[column..], "creo interpolation elimination work")?.zip(&pivot_row[column..]) {
+            for (entry, pivot_entry) in ctx
+                .admit_iter(&mut row[column..], "creo interpolation elimination work")?
+                .zip(&pivot_row[column..])
+            {
                 *entry -= factor * pivot_entry;
             }
             for (value, pivot) in values.iter_mut().zip(pivot_value) {
@@ -234,16 +231,38 @@ fn interpolation_knots(
     ctx: &DecodeContext<'_>,
     parameters: &[f64],
 ) -> Result<Option<Vec<f64>>, CodecError> {
-    const DEGREE: usize = 3;
     let point_count = parameters.len();
     if point_count < 2
-        || !ctx.all_by(parameters.windows(2), |pair| Ok(pair[0].is_finite() && pair[0] < pair[1]), "creo interpolation parameter order")?
+        || !ctx.all_by(
+            parameters.windows(2),
+            |pair| Ok(pair[0].is_finite() && pair[0] < pair[1]),
+            "creo interpolation parameter order",
+        )?
         || !parameters.last().is_some_and(|value| value.is_finite())
-    { return Ok(None); }
-    let mut knots = ctx.alloc_filled(DEGREE + 1, parameters[0], "creo interpolation curve knots")?;
-    ctx.reserve_vec(&mut knots, point_count - 2 + DEGREE + 1, "creo interpolation curve knot tail")?;
-    knots.extend(ctx.admit_iter(&parameters[1..point_count - 1], "creo interpolation knot projection")?.copied());
-    knots.extend(std::iter::repeat_n(parameters[point_count - 1], DEGREE + 1));
+    {
+        return Ok(None);
+    }
+    let mut knots = ctx.alloc_filled(
+        INTERPOLATION_DEGREE + 1,
+        parameters[0],
+        "creo interpolation curve knots",
+    )?;
+    ctx.reserve_vec(
+        &mut knots,
+        point_count - 2 + INTERPOLATION_DEGREE + 1,
+        "creo interpolation curve knot tail",
+    )?;
+    knots.extend(
+        ctx.admit_iter(
+            &parameters[1..point_count - 1],
+            "creo interpolation knot projection",
+        )?
+        .copied(),
+    );
+    knots.extend(std::iter::repeat_n(
+        parameters[point_count - 1],
+        INTERPOLATION_DEGREE + 1,
+    ));
     Ok(Some(knots))
 }
 
@@ -254,19 +273,42 @@ fn interpolation_controls(
     knots: &[f64],
     endpoint_derivatives: [[f64; 3]; 2],
 ) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
-    const DEGREE: usize = 3;
-    if points.len() != parameters.len() || points.len() < 2 { return Ok(None); }
-    let Some(control_count) = points.len().checked_add(2) else { return Ok(None); };
-    let (mut matrix, mut matrix_storage) = ctx.temporary_vec(0, "creo interpolation matrix rows")?;
-    ctx.reserve_scoped_vec(&mut matrix_storage, &mut matrix, control_count, "creo interpolation matrix rows")?;
+    if points.len() != parameters.len() || points.len() < 2 {
+        return Ok(None);
+    }
+    let Some(control_count) = points.len().checked_add(2) else {
+        return Ok(None);
+    };
+    let (mut matrix, mut matrix_storage) =
+        ctx.temporary_vec(0, "creo interpolation matrix rows")?;
+    ctx.reserve_scoped_vec(
+        &mut matrix_storage,
+        &mut matrix,
+        control_count,
+        "creo interpolation matrix rows",
+    )?;
     let mut parameters_rows = parameters.iter();
-    while let Some(parameter) = ctx.next_charged(&mut parameters_rows, "creo interpolation parameter scan")? {
+    while let Some(parameter) =
+        ctx.next_charged(&mut parameters_rows, "creo interpolation parameter scan")?
+    {
         let mut row = Vec::new();
-        ctx.reserve_scoped_vec(&mut matrix_storage, &mut row, control_count, "creo interpolation matrix values")?;
+        ctx.reserve_scoped_vec(
+            &mut matrix_storage,
+            &mut row,
+            control_count,
+            "creo interpolation matrix values",
+        )?;
         let mut coefficients = 0..control_count;
-        while let Some(index) = ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")? {
-            let Some(basis) = bspline_basis(ctx, index, DEGREE, *parameter, knots, control_count)?
-            else {
+        while let Some(index) =
+            ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")?
+        {
+            let Some(basis) = bspline_basis(
+                index,
+                INTERPOLATION_DEGREE,
+                *parameter,
+                knots,
+                control_count,
+            ) else {
                 return Ok(None);
             };
             row.push(basis);
@@ -275,12 +317,23 @@ fn interpolation_controls(
     }
     for parameter in [parameters[0], parameters[parameters.len() - 1]] {
         let mut row = Vec::new();
-        ctx.reserve_scoped_vec(&mut matrix_storage, &mut row, control_count, "creo interpolation matrix values")?;
+        ctx.reserve_scoped_vec(
+            &mut matrix_storage,
+            &mut row,
+            control_count,
+            "creo interpolation matrix values",
+        )?;
         let mut coefficients = 0..control_count;
-        while let Some(index) = ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")? {
-            let Some(basis) =
-                bspline_basis_derivative(ctx, index, DEGREE, parameter, knots, control_count)?
-            else {
+        while let Some(index) =
+            ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")?
+        {
+            let Some(basis) = bspline_basis_derivative(
+                index,
+                INTERPOLATION_DEGREE,
+                parameter,
+                knots,
+                control_count,
+            ) else {
                 return Ok(None);
             };
             row.push(basis);
@@ -293,7 +346,10 @@ fn interpolation_controls(
         control_count,
         "creo interpolation input values",
     )?;
-    values.extend(ctx.admit_iter(points, "creo interpolation input projection")?.copied());
+    values.extend(
+        ctx.admit_iter(points, "creo interpolation input projection")?
+            .copied(),
+    );
     values.extend(endpoint_derivatives);
     solve_vector_system(ctx, matrix, values)
 }
@@ -303,11 +359,17 @@ pub(in super::super) fn saved_spline_nurbs(
     spline: &crate::feature::definitions::FeatureSavedSpline,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    let Some(curve) = saved_spline_curve(ctx, spline)? else { return Ok(None); };
+    let Some(curve) = saved_spline_curve(ctx, spline)? else {
+        return Ok(None);
+    };
     match curve {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
-            refusal.note_checked(ctx, format_args!("{} NURBS record", saved_spline_record(spline)), &error);
+            refusal.note_checked(
+                ctx,
+                format_args!("{} NURBS record", saved_spline_record(spline)),
+                &error,
+            );
             Ok(None)
         }
     }
@@ -338,18 +400,37 @@ fn saved_spline_curve(
     else {
         return Ok(None);
     };
-    if parameters.len() != spline.interpolation_points.len() { return Ok(None); }
-    let Some(knots) = interpolation_knots(ctx, parameters)? else { return Ok(None); };
-    let (control_points, _control_storage) = ctx.with_scoped_storage("creo saved spline interpolation scratch", || interpolation_controls(ctx, &spline.interpolation_points, parameters, &knots, tangents))?;
-    let Some(control_points) = control_points else { return Ok(None); };
-    let (mut converted_controls, mut converted_storage) = ctx.temporary_vec(0, "creo saved spline controls")?;
+    if parameters.len() != spline.interpolation_points.len() {
+        return Ok(None);
+    }
+    let Some(knots) = interpolation_knots(ctx, parameters)? else {
+        return Ok(None);
+    };
+    let (control_points, _control_storage) =
+        ctx.with_scoped_storage("creo saved spline interpolation scratch", || {
+            interpolation_controls(
+                ctx,
+                &spline.interpolation_points,
+                parameters,
+                &knots,
+                tangents,
+            )
+        })?;
+    let Some(control_points) = control_points else {
+        return Ok(None);
+    };
+    let (mut converted_controls, mut converted_storage) =
+        ctx.temporary_vec(0, "creo saved spline controls")?;
     ctx.reserve_scoped_vec(
         &mut converted_storage,
         &mut converted_controls,
         control_points.len(),
         "creo saved spline controls",
     )?;
-    converted_controls.extend(ctx.admit_iter(control_points, "creo saved spline control projection")?.map(Point3::from));
+    converted_controls.extend(
+        ctx.admit_iter(control_points, "creo saved spline control projection")?
+            .map(Point3::from),
+    );
     NurbsCurve::from_lanes(ctx, 3, knots, converted_controls, None, false).map(Some)
 }
 
@@ -366,12 +447,17 @@ fn saved_spline_off_plane_input(
     ctx: &DecodeContext<'_>,
     spline: &crate::feature::definitions::FeatureSavedSpline,
 ) -> Result<Option<(OffPlaneInput, f64)>, CodecError> {
-    if let Some((index, point)) = ctx.find_by(spline.interpolation_points.iter().enumerate(),
-        |(_, point)| Ok(point[2].abs() > EPS_PLANAR_COORDINATE), "creo saved spline off-plane input scan")? {
+    if let Some((index, point)) = ctx.find_by(
+        spline.interpolation_points.iter().enumerate(),
+        |(_, point)| Ok(point[2].abs() > EPS_PLANAR_COORDINATE),
+        "creo saved spline off-plane input scan",
+    )? {
         return Ok(Some((OffPlaneInput::Point(index), point[2])));
     }
     Ok(spline.endpoint_tangents.as_ref().and_then(|tangents| {
-        ["start", "end"].into_iter().zip(tangents.value)
+        ["start", "end"]
+            .into_iter()
+            .zip(tangents.value)
             .find(|(_, tangent)| tangent[2].abs() > EPS_PLANAR_COORDINATE)
             .map(|(end, tangent)| (OffPlaneInput::Tangent(end), tangent[2]))
     }))
@@ -404,12 +490,21 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         );
         return Ok(None);
     }
-    let (curve, _curve_storage) = ctx.with_scoped_storage("creo saved spline sketch source curve", || saved_spline_curve(ctx, spline))?;
-    let Some(curve) = curve else { return Ok(None); };
+    let (curve, _curve_storage) = ctx
+        .with_scoped_storage("creo saved spline sketch source curve", || {
+            saved_spline_curve(ctx, spline)
+        })?;
+    let Some(curve) = curve else {
+        return Ok(None);
+    };
     let nurbs = match curve {
         Ok(curve) => curve,
         Err(error) => {
-            refusal.note_checked(ctx, format_args!("{} NURBS record", saved_spline_record(spline)), &error);
+            refusal.note_checked(
+                ctx,
+                format_args!("{} NURBS record", saved_spline_record(spline)),
+                &error,
+            );
             return Ok(None);
         }
     };
@@ -419,7 +514,11 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     let poles = match nurbs.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             let mut controls = Vec::new();
-            ctx.reserve_vec(&mut controls, points.len(), "creo saved spline sketch controls")?;
+            ctx.reserve_vec(
+                &mut controls,
+                points.len(),
+                "creo saved spline sketch controls",
+            )?;
             for point in ctx.admit_iter(points, "creo NURBS point projection")? {
                 let [x, y, _] = point.coordinates();
                 controls.push(cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y));
@@ -428,7 +527,11 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             let mut paired = Vec::new();
-            ctx.reserve_vec(&mut paired, points.len(), "creo saved spline sketch paired poles")?;
+            ctx.reserve_vec(
+                &mut paired,
+                points.len(),
+                "creo saved spline sketch paired poles",
+            )?;
             for pole in ctx.admit_iter(points, "creo NURBS pole projection")? {
                 let [x, y, _] = pole.point.coordinates();
                 paired.push(cadmpeg_ir::geometry::pcurve::WeightedPole2 {
@@ -478,53 +581,140 @@ pub(in super::super) fn interpolation_spline_surface(
     let Some(v_control_count) = v_sample_count.checked_add(2) else {
         return Ok(None);
     };
-    let Some(u_knots) = interpolation_knots(ctx, u_parameters)? else { return Ok(None); };
-    let Some(v_knots) = interpolation_knots(ctx, v_parameters)? else { return Ok(None); };
+    let Some(u_knots) = interpolation_knots(ctx, u_parameters)? else {
+        return Ok(None);
+    };
+    let Some(v_knots) = interpolation_knots(ctx, v_parameters)? else {
+        return Ok(None);
+    };
     let mut interpolation_storage = ctx.reserve_scoped(0, "creo interpolation surface scratch")?;
-    let mut position_controls = interpolation_storage.with_storage(|| ctx.collect_indexed_vec(
-        u_control_count, "creo interpolation surface position controls", |_| Ok(Vec::<[f64; 3]>::new()),
-    ))?;
-    for row in ctx.admit_iter(&mut position_controls, "creo interpolation position row scan")? {
-        interpolation_storage.with_storage(|| ctx.reserve_vec(row, v_sample_count, "creo interpolation surface position row"))?;
+    let mut position_controls = interpolation_storage.with_storage(|| {
+        ctx.collect_indexed_vec(
+            u_control_count,
+            "creo interpolation surface position controls",
+            |_| Ok(Vec::<[f64; 3]>::new()),
+        )
+    })?;
+    for row in ctx.admit_iter(
+        &mut position_controls,
+        "creo interpolation position row scan",
+    )? {
+        interpolation_storage.with_storage(|| {
+            ctx.reserve_vec(
+                row,
+                v_sample_count,
+                "creo interpolation surface position row",
+            )
+        })?;
     }
     let mut v_samples = 0..v_sample_count;
     while let Some(v) = ctx.next_charged(&mut v_samples, "creo interpolation v sample scan")? {
-        let (mut samples, mut sample_storage) = ctx.temporary_vec(0, "creo interpolation surface position samples")?;
-        ctx.reserve_scoped_vec(&mut sample_storage, &mut samples, u_sample_count, "creo interpolation surface position samples")?;
-        samples.extend(ctx.admit_iter(0..u_sample_count, "creo interpolation sample projection")?.map(|u| points[u * v_sample_count + v]));
-        let (controls, _control_storage) = ctx.with_scoped_storage("creo interpolation fitted control scratch", || interpolation_controls(
-            ctx, &samples, u_parameters, &u_knots, [end_u_derivatives[v], end_u_derivatives[v_sample_count + v]],
-        ))?;
-        let Some(controls) = controls else { return Ok(None); };
-        for (u, control) in ctx.admit_iter(controls, "creo interpolation position control scan")?.enumerate() {
+        let (mut samples, mut sample_storage) =
+            ctx.temporary_vec(0, "creo interpolation surface position samples")?;
+        ctx.reserve_scoped_vec(
+            &mut sample_storage,
+            &mut samples,
+            u_sample_count,
+            "creo interpolation surface position samples",
+        )?;
+        samples.extend(
+            ctx.admit_iter(0..u_sample_count, "creo interpolation sample projection")?
+                .map(|u| points[u * v_sample_count + v]),
+        );
+        let (controls, _control_storage) =
+            ctx.with_scoped_storage("creo interpolation fitted control scratch", || {
+                interpolation_controls(
+                    ctx,
+                    &samples,
+                    u_parameters,
+                    &u_knots,
+                    [end_u_derivatives[v], end_u_derivatives[v_sample_count + v]],
+                )
+            })?;
+        let Some(controls) = controls else {
+            return Ok(None);
+        };
+        for (u, control) in ctx
+            .admit_iter(controls, "creo interpolation position control scan")?
+            .enumerate()
+        {
             position_controls[u].push(control);
         }
     }
     let mut v_derivative_controls = [Vec::new(), Vec::new()];
     for (v_boundary, derivative_controls) in v_derivative_controls.iter_mut().enumerate() {
-        let (mut samples, mut sample_storage) = ctx.temporary_vec(0, "creo interpolation surface derivative samples")?;
-        ctx.reserve_scoped_vec(&mut sample_storage, &mut samples, u_sample_count, "creo interpolation surface derivative samples")?;
-        samples.extend(ctx.admit_iter(0..u_sample_count, "creo interpolation derivative sample projection")?.map(|u| end_v_derivatives[v_boundary * u_sample_count + u]));
-        let controls = interpolation_storage.with_storage(|| interpolation_controls(
-            ctx, &samples, u_parameters, &u_knots, [corner_mixed_derivatives[v_boundary * 2], corner_mixed_derivatives[v_boundary * 2 + 1]],
-        ))?;
-        let Some(controls) = controls else { return Ok(None); };
+        let (mut samples, mut sample_storage) =
+            ctx.temporary_vec(0, "creo interpolation surface derivative samples")?;
+        ctx.reserve_scoped_vec(
+            &mut sample_storage,
+            &mut samples,
+            u_sample_count,
+            "creo interpolation surface derivative samples",
+        )?;
+        samples.extend(
+            ctx.admit_iter(
+                0..u_sample_count,
+                "creo interpolation derivative sample projection",
+            )?
+            .map(|u| end_v_derivatives[v_boundary * u_sample_count + u]),
+        );
+        let controls = interpolation_storage.with_storage(|| {
+            interpolation_controls(
+                ctx,
+                &samples,
+                u_parameters,
+                &u_knots,
+                [
+                    corner_mixed_derivatives[v_boundary * 2],
+                    corner_mixed_derivatives[v_boundary * 2 + 1],
+                ],
+            )
+        })?;
+        let Some(controls) = controls else {
+            return Ok(None);
+        };
         *derivative_controls = controls;
     }
-    let (mut pole_rows, mut pole_storage) = ctx.temporary_vec(0, "creo interpolation surface NURBS pole rows")?;
-    ctx.reserve_scoped_vec(&mut pole_storage, &mut pole_rows, u_control_count, "creo interpolation surface NURBS pole rows")?;
+    let (mut pole_rows, mut pole_storage) =
+        ctx.temporary_vec(0, "creo interpolation surface NURBS pole rows")?;
+    ctx.reserve_scoped_vec(
+        &mut pole_storage,
+        &mut pole_rows,
+        u_control_count,
+        "creo interpolation surface NURBS pole rows",
+    )?;
     let mut u_controls = 0..u_control_count;
     while let Some(u) = ctx.next_charged(&mut u_controls, "creo interpolation u control scan")? {
-        let (controls, _control_storage) = ctx.with_scoped_storage("creo interpolation fitted control scratch", || interpolation_controls(
-            ctx, &position_controls[u], v_parameters, &v_knots, [v_derivative_controls[0][u], v_derivative_controls[1][u]],
-        ))?;
-        let Some(controls) = controls else { return Ok(None); };
+        let (controls, _control_storage) =
+            ctx.with_scoped_storage("creo interpolation fitted control scratch", || {
+                interpolation_controls(
+                    ctx,
+                    &position_controls[u],
+                    v_parameters,
+                    &v_knots,
+                    [v_derivative_controls[0][u], v_derivative_controls[1][u]],
+                )
+            })?;
+        let Some(controls) = controls else {
+            return Ok(None);
+        };
         let mut row = Vec::new();
-        pole_storage.with_storage(|| ctx.reserve_vec(&mut row, controls.len(), "creo interpolation surface NURBS pole values"))?;
-        row.extend(ctx.admit_iter(controls, "creo interpolation pole projection")?.map(Point3::from));
+        pole_storage.with_storage(|| {
+            ctx.reserve_vec(
+                &mut row,
+                controls.len(),
+                "creo interpolation surface NURBS pole values",
+            )
+        })?;
+        row.extend(
+            ctx.admit_iter(controls, "creo interpolation pole projection")?
+                .map(Point3::from),
+        );
         pole_rows.push(row);
     }
-    if u32::try_from(v_control_count).is_err() { return Ok(None); }
+    if u32::try_from(v_control_count).is_err() {
+        return Ok(None);
+    }
     match NurbsSurface::from_lanes(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots, false),
@@ -592,7 +782,9 @@ pub(in super::super) fn extruded_nurbs_surface(
         ctx.reserve_vec(&mut polynomial_rows, count, "creo extruded NURBS pole rows")?;
     }
     let mut source_poles = 0..count;
-    while let Some(index) = ctx.next_charged(&mut source_poles, "creo extruded NURBS source pole scan")? {
+    while let Some(index) =
+        ctx.next_charged(&mut source_poles, "creo extruded NURBS source pole scan")?
+    {
         let Some(point) = directrix.pole_rows().point_at(index) else {
             return Ok(None);
         };
@@ -784,7 +976,10 @@ pub(super) fn sketch_nurbs_pcurve(
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
     use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles, WeightedPole2};
 
-    let (nurbs, _curve_storage) = ctx.with_scoped_storage("creo sketch pcurve lift scratch", || oriented_sketch_nurbs_curve(ctx, geometry, reversed))?;
+    let (nurbs, _curve_storage) = ctx
+        .with_scoped_storage("creo sketch pcurve lift scratch", || {
+            oriented_sketch_nurbs_curve(ctx, geometry, reversed)
+        })?;
     let Some(nurbs) = nurbs else {
         return Ok(None);
     };
@@ -850,7 +1045,10 @@ pub(in super::super) fn extrusion_brep_side_surface(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let (directrix, _directrix_storage) = ctx.with_scoped_storage("creo extrusion directrix scratch", || oriented_sketch_nurbs_curve(ctx, geometry, reversed))?;
+        let (directrix, _directrix_storage) = ctx
+            .with_scoped_storage("creo extrusion directrix scratch", || {
+                oriented_sketch_nurbs_curve(ctx, geometry, reversed)
+            })?;
         let Some(directrix) = directrix else {
             return Ok(None);
         };
@@ -858,11 +1056,17 @@ pub(in super::super) fn extrusion_brep_side_surface(
         let sweep = transform
             .normal()
             .map(|value| value * (span.upper() - span.lower()));
-        let (placed, _placed_storage) = ctx.with_scoped_storage("creo extrusion directrix scratch", || placed_section_nurbs(ctx, transform, &directrix))?;
+        let (placed, _placed_storage) = ctx
+            .with_scoped_storage("creo extrusion directrix scratch", || {
+                placed_section_nurbs(ctx, transform, &directrix)
+            })?;
         let Some(placed) = placed else {
             return Ok(None);
         };
-        let (translated, _translated_storage) = ctx.with_scoped_storage("creo extrusion directrix scratch", || translated_nurbs_curve(ctx, &placed, lower_translation))?;
+        let (translated, _translated_storage) = ctx
+            .with_scoped_storage("creo extrusion directrix scratch", || {
+                translated_nurbs_curve(ctx, &placed, lower_translation)
+            })?;
         let Some(translated) = translated else {
             return Ok(None);
         };
@@ -1181,8 +1385,14 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     else {
         return Ok(None);
     };
-    let (mut controls, mut control_storage) = ctx.temporary_vec(0, "creo tabulated-cylinder directrix controls")?;
-    ctx.reserve_scoped_vec(&mut control_storage, &mut controls, control_points.len(), "creo tabulated-cylinder directrix controls")?;
+    let (mut controls, mut control_storage) =
+        ctx.temporary_vec(0, "creo tabulated-cylinder directrix controls")?;
+    ctx.reserve_scoped_vec(
+        &mut control_storage,
+        &mut controls,
+        control_points.len(),
+        "creo tabulated-cylinder directrix controls",
+    )?;
     controls.extend(control_points);
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, 8, "creo tabulated-cylinder directrix knots")?;
@@ -1242,8 +1452,13 @@ mod tests {
     #[test]
     fn sketch_nurbs_lift_knots_refuse_collection_limit() {
         let geometry = sketch_line_nurbs();
-        let run = |limit| with_collection_limit(limit, |ctx| super::sketch_nurbs_curve(ctx, &geometry));
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo sketch NURBS lift knots"), &run);
+        let run =
+            |limit| with_collection_limit(limit, |ctx| super::sketch_nurbs_curve(ctx, &geometry));
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo sketch NURBS lift knots"),
+            &run,
+        );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -1260,8 +1475,13 @@ mod tests {
     #[test]
     fn sketch_nurbs_lift_poles_refuse_collection_limit() {
         let geometry = sketch_line_nurbs();
-        let run = |limit| with_collection_limit(limit, |ctx| super::sketch_nurbs_curve(ctx, &geometry));
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo sketch NURBS lift poles"), &run);
+        let run =
+            |limit| with_collection_limit(limit, |ctx| super::sketch_nurbs_curve(ctx, &geometry));
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo sketch NURBS lift poles"),
+            &run,
+        );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -1278,16 +1498,22 @@ mod tests {
     #[test]
     fn sketch_nurbs_pcurve_knots_refuse_collection_limit() {
         let geometry = sketch_line_nurbs();
-        let run = |limit| with_collection_limit(limit, |ctx| {
-            super::sketch_nurbs_pcurve(
-                ctx,
-                &geometry,
-                false,
-                &"linear sketch",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        });
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo sketch NURBS pcurve knots"), &run);
+        let run = |limit| {
+            with_collection_limit(limit, |ctx| {
+                super::sketch_nurbs_pcurve(
+                    ctx,
+                    &geometry,
+                    false,
+                    &"linear sketch",
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            })
+        };
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo sketch NURBS pcurve knots"),
+            &run,
+        );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -1310,16 +1536,22 @@ mod tests {
     #[test]
     fn sketch_nurbs_pcurve_poles_refuse_collection_limit() {
         let geometry = sketch_line_nurbs();
-        let run = |limit| with_collection_limit(limit, |ctx| {
-            super::sketch_nurbs_pcurve(
-                ctx,
-                &geometry,
-                false,
-                &"linear sketch",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        });
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo sketch NURBS pcurve poles"), &run);
+        let run = |limit| {
+            with_collection_limit(limit, |ctx| {
+                super::sketch_nurbs_pcurve(
+                    ctx,
+                    &geometry,
+                    false,
+                    &"linear sketch",
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            })
+        };
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo sketch NURBS pcurve poles"),
+            &run,
+        );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
@@ -1362,23 +1594,40 @@ mod tests {
 
     fn interpolation_surface_refusal(operation: &'static str) -> cadmpeg_core::CodecError {
         let grid = interpolation_grid();
-        let run = |limit| with_collection_limit(limit, |ctx| {
-            super::interpolation_spline_surface(ctx, &grid, &"interpolation grid fixture", &mut crate::lane_refusal::LaneRefusals::new())
-        });
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some(operation), &run);
+        let run = |limit| {
+            with_collection_limit(limit, |ctx| {
+                super::interpolation_spline_surface(
+                    ctx,
+                    &grid,
+                    &"interpolation grid fixture",
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            })
+        };
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some(operation),
+            &run,
+        );
         run(limit).expect_err("interpolation allocation exceeds the collection limit")
     }
 
     #[test]
     fn saved_spline_constructor_refuses_typed_pole_storage() {
-        let run = |limit| with_collection_limit(limit, |ctx| {
-            super::saved_spline_nurbs(
-                ctx,
-                &planar_or_offset_spline(0.0),
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        });
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("IR NURBS admitted poles"), &run);
+        let run = |limit| {
+            with_collection_limit(limit, |ctx| {
+                super::saved_spline_nurbs(
+                    ctx,
+                    &planar_or_offset_spline(0.0),
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            })
+        };
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("IR NURBS admitted poles"),
+            &run,
+        );
         let error = run(limit).expect_err("named collection boundary");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -1414,35 +1663,20 @@ mod tests {
     }
 
     #[test]
-    fn interpolation_basis_refuses_work_and_recursive_depth() {
-        for derivative in [false, true] {
-            for (dimension, operation) in [(ResourceDimension::WorkUnits, "creo interpolation basis work"), (ResourceDimension::RecursionDepth, "creo interpolation basis depth")] {
-                let run = |limit| {
-                    let arena = DecodeArena::new();
-                    let mut policy = DecodePolicy::service();
-                    if dimension == ResourceDimension::WorkUnits {
-                        policy.limits.max_work_units = limit;
-                    } else {
-                        policy.limits.max_recursion_depth = limit;
-                    }
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                    if derivative {
-                        super::bspline_basis_derivative(&ctx, 0, 3, 0.5, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], 4)
-                    } else {
-                        super::bspline_basis(&ctx, 0, 3, 0.5, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], 4)
-                    }
-                };
-                let limit = crate::test_support::allocation_limit_at(dimension, Some(operation), &run);
-                assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == operation));
-            }
-        }
-    }
-
-    #[test]
     fn interpolation_dense_solver_refuses_each_work_boundary() {
         crate::test_support::assert_work_boundaries(
-            &["creo interpolation pivot work", "creo interpolation normalization work", "creo interpolation elimination work"],
-            |ctx| super::solve_vector_system(ctx, vec![vec![1.0, 0.0], vec![1.0, 1.0]], vec![[1.0; 3], [2.0; 3]]),
+            &[
+                "creo interpolation pivot work",
+                "creo interpolation normalization work",
+                "creo interpolation elimination work",
+            ],
+            |ctx| {
+                super::solve_vector_system(
+                    ctx,
+                    vec![vec![1.0, 0.0], vec![1.0, 1.0]],
+                    vec![[1.0; 3], [2.0; 3]],
+                )
+            },
         );
         assert_eq!(
             crate::decode::with_test_decode_ctx(|ctx| super::solve_vector_system(
@@ -1457,14 +1691,22 @@ mod tests {
 
     #[test]
     fn interpolation_curve_knots_refuse_collection_limit() {
-        let run = |limit| with_collection_limit(limit, |ctx| {
-            let points = [[0.0; 3], [1.0; 3]];
-            let parameters = [0.0, 1.0];
-            let derivatives = [[0.0; 3]; 2];
-            let Some(knots) = super::interpolation_knots(ctx, &parameters)? else { return Ok(None); };
-            super::interpolation_controls(ctx, &points, &parameters, &knots, derivatives)
-        });
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo interpolation curve knots"), &run);
+        let run = |limit| {
+            with_collection_limit(limit, |ctx| {
+                let points = [[0.0; 3], [1.0; 3]];
+                let parameters = [0.0, 1.0];
+                let derivatives = [[0.0; 3]; 2];
+                let Some(knots) = super::interpolation_knots(ctx, &parameters)? else {
+                    return Ok(None);
+                };
+                super::interpolation_controls(ctx, &points, &parameters, &knots, derivatives)
+            })
+        };
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo interpolation curve knots"),
+            &run,
+        );
         let error = run(limit).expect_err("named collection boundary");
         assert!(matches!(
             error,
@@ -1493,10 +1735,6 @@ mod tests {
                     && limit.operation == "creo interpolation surface position row"
         ));
     }
-
-
-
-
 
     #[test]
     fn interpolation_pole_rows_refuse_at_collection_limit() {
@@ -1605,7 +1843,16 @@ mod tests {
             0,
         )
         .expect("section frame");
-        crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems, &["creo placed section NURBS curve", "creo placed section NURBS curve"], |limit| with_collection_limit(limit, |ctx| placed_section_nurbs(ctx, &transform, &curve)));
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &[
+                "creo placed section NURBS curve",
+                "creo placed section NURBS curve",
+            ],
+            |limit| {
+                with_collection_limit(limit, |ctx| placed_section_nurbs(ctx, &transform, &curve))
+            },
+        );
         assert!(crate::decode::with_test_decode_ctx(|ctx| {
             placed_section_nurbs(ctx, &transform, &curve)
         })
@@ -1625,7 +1872,15 @@ mod tests {
         )
         .expect("fixture constructor admission")
         .expect("finite curve");
-        crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems, &["creo translated NURBS curve", "creo translated NURBS curve"], |limit| with_collection_limit(limit, |ctx| translated_nurbs_curve(ctx, &curve, [0.0, 0.0, 2.0])));
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo translated NURBS curve", "creo translated NURBS curve"],
+            |limit| {
+                with_collection_limit(limit, |ctx| {
+                    translated_nurbs_curve(ctx, &curve, [0.0, 0.0, 2.0])
+                })
+            },
+        );
         assert_eq!(
             crate::decode::with_test_decode_ctx(|ctx| {
                 translated_nurbs_curve(ctx, &curve, [0.0, 0.0, 2.0])
@@ -1637,7 +1892,9 @@ mod tests {
         );
     }
 
-    fn extruded_nurbs_refusal_at_limit(limit: u64) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsSurface>, cadmpeg_core::CodecError> {
+    fn extruded_nurbs_refusal_at_limit(
+        limit: u64,
+    ) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsSurface>, cadmpeg_core::CodecError> {
         let curve = NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
             1,
@@ -1661,7 +1918,14 @@ mod tests {
 
     #[test]
     fn extruded_nurbs_pole_rows_refuse_collection_limit() {
-        assert!(matches!(extruded_nurbs_refusal_at_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extruded NURBS pole rows"), extruded_nurbs_refusal_at_limit)).expect_err("named surface collection boundary"),
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo extruded NURBS pole rows"),
+            extruded_nurbs_refusal_at_limit,
+        );
+        let result =
+            extruded_nurbs_refusal_at_limit(limit).expect_err("named surface collection boundary");
+        assert!(matches!(result,
             cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo extruded NURBS pole rows"));
@@ -1669,19 +1933,40 @@ mod tests {
 
     #[test]
     fn extruded_nurbs_pole_values_refuse_each_row_limit() {
-        crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems, &["creo extruded NURBS pole values", "creo extruded NURBS pole values"], extruded_nurbs_refusal_at_limit);
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &[
+                "creo extruded NURBS pole values",
+                "creo extruded NURBS pole values",
+            ],
+            extruded_nurbs_refusal_at_limit,
+        );
     }
 
     #[test]
     fn extruded_nurbs_u_knots_refuse_collection_limit() {
-        assert!(matches!(extruded_nurbs_refusal_at_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extruded NURBS U knots"), extruded_nurbs_refusal_at_limit)).expect_err("named surface collection boundary"),
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo extruded NURBS U knots"),
+            extruded_nurbs_refusal_at_limit,
+        );
+        let result =
+            extruded_nurbs_refusal_at_limit(limit).expect_err("named surface collection boundary");
+        assert!(matches!(result,
             cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo extruded NURBS U knots"));
     }
     #[test]
     fn extruded_nurbs_v_knots_refuse_collection_limit() {
-        assert!(matches!(extruded_nurbs_refusal_at_limit(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo extruded NURBS V knots"), extruded_nurbs_refusal_at_limit)).expect_err("named surface collection boundary"),
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo extruded NURBS V knots"),
+            extruded_nurbs_refusal_at_limit,
+        );
+        let result =
+            extruded_nurbs_refusal_at_limit(limit).expect_err("named surface collection boundary");
+        assert!(matches!(result,
             cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo extruded NURBS V knots"));
@@ -1723,14 +2008,20 @@ mod tests {
     #[test]
     fn saved_spline_sketch_knots_refuse_at_collection_limit() {
         let spline = planar_or_offset_spline(0.0);
-        let run = |limit| with_collection_limit(limit, |ctx| {
-            super::saved_spline_sketch_geometry(
-                ctx,
-                &spline,
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        });
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo saved spline sketch knots"), &run);
+        let run = |limit| {
+            with_collection_limit(limit, |ctx| {
+                super::saved_spline_sketch_geometry(
+                    ctx,
+                    &spline,
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            })
+        };
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo saved spline sketch knots"),
+            &run,
+        );
         let error = run(limit).expect_err("named collection boundary");
         assert!(matches!(
             error,
@@ -1743,14 +2034,20 @@ mod tests {
     #[test]
     fn saved_spline_sketch_controls_refuse_at_collection_limit() {
         let spline = planar_or_offset_spline(0.0);
-        let run = |limit| with_collection_limit(limit, |ctx| {
-            super::saved_spline_sketch_geometry(
-                ctx,
-                &spline,
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        });
-        let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo saved spline sketch controls"), &run);
+        let run = |limit| {
+            with_collection_limit(limit, |ctx| {
+                super::saved_spline_sketch_geometry(
+                    ctx,
+                    &spline,
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            })
+        };
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo saved spline sketch controls"),
+            &run,
+        );
         let error = run(limit).expect_err("named collection boundary");
         assert!(matches!(
             error,
@@ -1787,15 +2084,26 @@ mod tests {
     fn non_planar_saved_spline_refusal_text_obeys_retained_byte_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo lane refusal text"), |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::default();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-            let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            assert!(super::saved_spline_sketch_geometry(&ctx, &planar_or_offset_spline(2.0), &mut refusal).expect("candidate route").is_none());
-            refusal.take_records_checked()
-        });
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            Some("creo lane refusal text"),
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                    .expect("test decode context");
+                let mut refusal = crate::lane_refusal::LaneRefusals::new();
+                assert!(super::saved_spline_sketch_geometry(
+                    &ctx,
+                    &planar_or_offset_spline(2.0),
+                    &mut refusal
+                )
+                .expect("candidate route")
+                .is_none());
+                refusal.take_records_checked()
+            },
+        );
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -1870,21 +2178,16 @@ mod tests {
     #[test]
     fn malformed_basis_knots_are_rejected() {
         for knots in [&[][..], &[0.0][..]] {
-            assert_eq!(
-                crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis(
-                    ctx, 0, 3, 0.5, knots, 4
-                ))
-                .expect("service basis"),
-                None
-            );
-            assert_eq!(
-                crate::decode::with_test_decode_ctx(|ctx| super::bspline_basis_derivative(
-                    ctx, 0, 3, 0.5, knots, 4
-                ))
-                .expect("service basis"),
-                None
-            );
+            assert_eq!(super::bspline_basis(0, 3, 0.5, knots, 4), None);
+            assert_eq!(super::bspline_basis_derivative(0, 3, 0.5, knots, 4), None);
         }
+    }
+
+    #[test]
+    fn interpolation_basis_rejects_degree_above_cubic() {
+        let knots = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        assert_eq!(super::bspline_basis(0, 4, 0.5, &knots, 5), None);
+        assert_eq!(super::bspline_basis_derivative(0, 4, 0.5, &knots, 5), None);
     }
 
     #[test]

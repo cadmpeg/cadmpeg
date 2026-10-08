@@ -278,11 +278,17 @@ pub(in super::super) fn revolved_brep_surface(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let (directrix, _directrix_storage) = ctx.with_scoped_storage("creo revolved directrix scratch", || oriented_sketch_nurbs_curve(ctx, geometry, reversed))?;
+        let (directrix, _directrix_storage) = ctx
+            .with_scoped_storage("creo revolved directrix scratch", || {
+                oriented_sketch_nurbs_curve(ctx, geometry, reversed)
+            })?;
         let Some(directrix) = directrix else {
             return Ok(None);
         };
-        let (placed_directrix, _placed_storage) = ctx.with_scoped_storage("creo revolved placed directrix scratch", || placed_section_nurbs(ctx, transform, &directrix))?;
+        let (placed_directrix, _placed_storage) = ctx
+            .with_scoped_storage("creo revolved placed directrix scratch", || {
+                placed_section_nurbs(ctx, transform, &directrix)
+            })?;
         let Some(placed_directrix) = placed_directrix else {
             return Ok(None);
         };
@@ -337,11 +343,17 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
         segment.geometry(),
         super::profiles::ProfileGeometry::Nurbs { .. }
     ) {
-        let (sketch, _sketch_storage) = ctx.with_scoped_storage("creo revolution boundary sketch scratch", || segment.geometry().to_sketch(ctx))?;
+        let (sketch, _sketch_storage) = ctx
+            .with_scoped_storage("creo revolution boundary sketch scratch", || {
+                segment.geometry().to_sketch(ctx)
+            })?;
         let Some(sketch) = sketch else {
             return Ok(None);
         };
-        let (nurbs, _nurbs_storage) = ctx.with_scoped_storage("creo revolution boundary curve scratch", || oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed()))?;
+        let (nurbs, _nurbs_storage) = ctx
+            .with_scoped_storage("creo revolution boundary curve scratch", || {
+                oriented_sketch_nurbs_curve(ctx, &sketch, segment.reversed())
+            })?;
         let Some(nurbs) = nurbs else {
             return Ok(None);
         };
@@ -396,9 +408,15 @@ pub(in super::super) fn revolution_face_sense(
     );
     let mut nurbs_parameter = None;
     let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
-        let (geometry, _geometry_storage) = ctx.with_scoped_storage("creo revolution sense sketch scratch", || segment.geometry().to_sketch(ctx))?;
+        let (geometry, _geometry_storage) = ctx
+            .with_scoped_storage("creo revolution sense sketch scratch", || {
+                segment.geometry().to_sketch(ctx)
+            })?;
         let geometry = require_some!(geometry);
-        let (nurbs, _nurbs_storage) = ctx.with_scoped_storage("creo revolution sense curve scratch", || oriented_sketch_nurbs_curve(ctx, &geometry, segment.reversed()))?;
+        let (nurbs, _nurbs_storage) = ctx
+            .with_scoped_storage("creo revolution sense curve scratch", || {
+                oriented_sketch_nurbs_curve(ctx, &geometry, segment.reversed())
+            })?;
         let nurbs = require_some!(nurbs);
         let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(require_some!(
             nurbs_intrinsic_parameter_range(&nurbs)

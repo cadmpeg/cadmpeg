@@ -1152,17 +1152,13 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         let point = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut point, (index, control)| {
-                let basis = crate::decode::with_test_decode_ctx(|ctx| {
-                    bspline_basis(
-                        ctx,
-                        index,
-                        usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
-                        parameter,
-                        nurbs.knots(),
-                        nurbs.control_points().len(),
-                    )
-                })
-                .expect("service basis")
+                let basis = bspline_basis(
+                    index,
+                    usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
+                    parameter,
+                    nurbs.knots(),
+                    nurbs.control_points().len(),
+                )
                 .expect("valid basis");
                 point[0] += basis * control.x;
                 point[1] += basis * control.y;
@@ -1177,17 +1173,13 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         let derivative = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut derivative, (index, control)| {
-                let basis = crate::decode::with_test_decode_ctx(|ctx| {
-                    bspline_basis_derivative(
-                        ctx,
-                        index,
-                        usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
-                        parameter,
-                        nurbs.knots(),
-                        nurbs.control_points().len(),
-                    )
-                })
-                .expect("service basis")
+                let basis = bspline_basis_derivative(
+                    index,
+                    usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
+                    parameter,
+                    nurbs.knots(),
+                    nurbs.control_points().len(),
+                )
                 .expect("valid basis");
                 derivative[0] += basis * control.x;
                 derivative[1] += basis * control.y;

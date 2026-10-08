@@ -35,7 +35,12 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
     };
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&table), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(
+            ctx,
+            107,
+            std::slice::from_ref(&table),
+            &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())
+        ))
         .expect("admitted surface roster"),
         Some(117)
     );
@@ -45,7 +50,12 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
         .entries
         .push(crate::feature::entity::dummy_table_entry(117));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(ctx, 107, std::slice::from_ref(&duplicate), &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())))
+        crate::decode::with_test_decode_ctx(|ctx| super::compact_simple_hole_cylinder_id(
+            ctx,
+            107,
+            std::slice::from_ref(&duplicate),
+            &crate::surface::SurfaceRows::from_rows((std::slice::from_ref(&row)).to_vec())
+        ))
         .expect("admitted surface roster"),
         None
     );
@@ -100,12 +110,27 @@ fn extrusion_span_refuses_offsets_whose_length_overflows() {
         ([0.0, 0.0, f64::MAX], [0.0, 0.0, 1.0]),
         ([0.0, 0.0, -f64::MAX], [0.0, 0.0, 1.0]),
     ];
-    assert!(crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(ctx, [0.0; 3], [0.0, 0.0, 1.0], planes)).expect("service resources").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(
+            ctx,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            planes
+        ))
+        .expect("service resources")
+        .is_none()
+    );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(ctx, [0.0; 3], [0.0, 0.0, 1.0], [
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(
+            ctx,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [
                 ([0.0, 0.0, 2.0], [0.0, 0.0, 1.0]),
                 ([0.0, 0.0, -1.0], [0.0, 0.0, -1.0]),
-            ])).expect("service resources"),
+            ]
+        ))
+        .expect("service resources"),
         Some(super::ExtrusionSpan::new(-1.0, 2.0).expect("valid span fixture"))
     );
 }
@@ -114,11 +139,23 @@ fn extrusion_span_refuses_offsets_whose_length_overflows() {
 fn extrusion_span_keeps_the_first_offset_in_a_near_duplicate_pair() {
     let plane = |z| ([0.0, 0.0, z], [0.0, 0.0, 1.0]);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(ctx, [0.0; 3], [0.0, 0.0, 1.0], [plane(1.0), plane(1.0 + 5.0e-10)])).expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(
+            ctx,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [plane(1.0), plane(1.0 + 5.0e-10)]
+        ))
+        .expect("service resources"),
         super::ExtrusionSpan::new(0.0, 1.0)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(ctx, [0.0; 3], [0.0, 0.0, 1.0], [plane(5.0e-10), plane(-5.0e-10)])).expect("service resources"),
+        crate::decode::with_test_decode_ctx(|ctx| super::extrusion_span(
+            ctx,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [plane(5.0e-10), plane(-5.0e-10)]
+        ))
+        .expect("service resources"),
         super::ExtrusionSpan::new(0.0, 5.0e-10)
     );
 }
@@ -198,8 +235,18 @@ fn simple_hole_cylinder_rows_preserve_source_order() {
     assert!(super::simple_hole_geometry(&service_ctx, &scan, 7)
         .expect("service resources")
         .is_some());
-    let geometry = super::simple_hole_geometry(&service_ctx, &scan, 7).expect("service resources").expect("solved hole");
-    assert_eq!(geometry.cylinder_rows.as_slice().iter().map(|row| row.id).collect::<Vec<_>>(), [13, 14]);
+    let geometry = super::simple_hole_geometry(&service_ctx, &scan, 7)
+        .expect("service resources")
+        .expect("solved hole");
+    assert_eq!(
+        geometry
+            .cylinder_rows
+            .as_slice()
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        [13, 14]
+    );
 }
 
 #[test]
@@ -271,8 +318,18 @@ fn compact_hole_cylinder_rows_preserve_source_order() {
             .expect("service resources")
             .is_some()
     );
-    let geometry = super::compact_simple_hole_geometry(&service_ctx, &scan, 107).expect("service resources").expect("solved hole");
-    assert_eq!(geometry.cylinder_rows.as_slice().iter().map(|row| row.id).collect::<Vec<_>>(), [117]);
+    let geometry = super::compact_simple_hole_geometry(&service_ctx, &scan, 107)
+        .expect("service resources")
+        .expect("solved hole");
+    assert_eq!(
+        geometry
+            .cylinder_rows
+            .as_slice()
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        [117]
+    );
 }
 
 fn circular_sweep_limit_scan(two_cap: bool) -> crate::container::ContainerScan<'static> {
@@ -378,8 +435,18 @@ fn single_cap_circular_cylinder_rows_preserve_source_order() {
             .expect("service resources")
             .is_some()
     );
-    let geometry = super::single_cap_circular_sweep_geometry(&service_ctx, &scan, 40).expect("service resources").expect("solved hole");
-    assert_eq!(geometry.cylinder_rows.as_slice().iter().map(|row| row.id).collect::<Vec<_>>(), [51]);
+    let geometry = super::single_cap_circular_sweep_geometry(&service_ctx, &scan, 40)
+        .expect("service resources")
+        .expect("solved hole");
+    assert_eq!(
+        geometry
+            .cylinder_rows
+            .as_slice()
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        [51]
+    );
 }
 
 #[test]
@@ -393,6 +460,16 @@ fn two_cap_circular_cylinder_rows_preserve_source_order() {
             .expect("service resources")
             .is_some()
     );
-    let geometry = super::two_cap_circular_sweep_geometry(&service_ctx, &scan, 40).expect("service resources").expect("solved hole");
-    assert_eq!(geometry.cylinder_rows.as_slice().iter().map(|row| row.id).collect::<Vec<_>>(), [51]);
+    let geometry = super::two_cap_circular_sweep_geometry(&service_ctx, &scan, 40)
+        .expect("service resources")
+        .expect("solved hole");
+    assert_eq!(
+        geometry
+            .cylinder_rows
+            .as_slice()
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        [51]
+    );
 }

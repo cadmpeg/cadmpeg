@@ -13,7 +13,16 @@ use cadmpeg_ir::AnnotationBuilder;
 #[test]
 fn saved_spline_loss_refuses_text_and_slot_below_limits() {
     let records = ["first".to_owned(), "second".to_owned()];
-    for (dimension, operation) in [(ResourceDimension::RetainedBytes, "creo saved spline loss text"), (ResourceDimension::CollectionItems, "creo saved spline losses")] {
+    for (dimension, operation) in [
+        (
+            ResourceDimension::RetainedBytes,
+            "creo saved spline loss text",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "creo saved spline losses",
+        ),
+    ] {
         let run = |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -23,11 +32,20 @@ fn saved_spline_loss_refuses_text_and_slot_below_limits() {
                 policy.limits.max_collection_items = cap;
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            push_saved_spline_loss(&ctx, &mut Vec::new(), format_args!("Saved section spline at offset 7 cannot form a NURBS curve: {}", JoinedLaneRecords(&records)))
+            push_saved_spline_loss(
+                &ctx,
+                &mut Vec::new(),
+                format_args!(
+                    "Saved section spline at offset 7 cannot form a NURBS curve: {}",
+                    JoinedLaneRecords(&records)
+                ),
+            )
         };
         let cap = crate::test_support::allocation_limit_at(dimension, Some(operation), &run);
         let error = run(cap).expect_err("below-need limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == dimension && resource.operation == operation));
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == dimension && resource.operation == operation)
+        );
     }
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -71,24 +89,34 @@ fn revolved_nurbs_surface_refuses_each_collection_boundary() {
         direction: FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).expect("axis direction"),
         reference: None,
     };
-    crate::test_support::assert_refusal_order(cadmpeg_core::decode::ResourceDimension::CollectionItems, &[
-        "creo revolved NURBS pole rows",
-        "creo revolved NURBS weight rows",
-        "creo revolved NURBS poles",
-        "creo revolved NURBS weights",
-        "creo revolved NURBS u knots",
-        "creo revolved NURBS v knots",
-        "IR NURBS paired grid rows",
-        "IR NURBS paired poles",
-        "IR NURBS admitted grid rows",
-        "IR NURBS admitted poles",
-    ], |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        super::revolved_nurbs_surface(&ctx, &directrix, &axis, &"revolved NURBS fixture", &mut crate::lane_refusal::LaneRefusals::new())
-    });
+    crate::test_support::assert_refusal_order(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[
+            "creo revolved NURBS pole rows",
+            "creo revolved NURBS weight rows",
+            "creo revolved NURBS poles",
+            "creo revolved NURBS weights",
+            "creo revolved NURBS u knots",
+            "creo revolved NURBS v knots",
+            "IR NURBS paired grid rows",
+            "IR NURBS paired poles",
+            "IR NURBS admitted grid rows",
+            "IR NURBS admitted poles",
+        ],
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::revolved_nurbs_surface(
+                &ctx,
+                &directrix,
+                &axis,
+                &"revolved NURBS fixture",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+        },
+    );
     let surface = crate::decode::with_test_decode_ctx(|ctx| {
         super::revolved_nurbs_surface(
             ctx,
