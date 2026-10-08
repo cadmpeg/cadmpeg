@@ -19,7 +19,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::UnitVector3;
-use std::collections::BTreeSet;
 
 /// Tolerance of every placement quantity this module reconstructs by arithmetic.
 const EPS_PLACEMENT_GEOMETRY: f64 = 1.0e-9;
@@ -174,13 +173,15 @@ fn generated_cylinder_section_transform(
     if !points.ambiguous.is_empty() {
         return Ok(None);
     }
-    let mut correspondences = Vec::<([f64; 2], [f64; 3], UnitVector3, usize)>::new();
-    for (_, entry) in entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
-        .filter(|(table, entry)| table.contains_surface_id(entry.entity_id))
-    {
+    let (mut correspondences, mut correspondence_storage) = ctx.temporary_vec::<([f64; 2], [f64; 3], UnitVector3)>(0, "creo cylinder placement correspondence storage")?;
+    let mut coordinate_scale = 1.0f64;
+    let mut first_offset = None::<usize>;
+    let mut parameter_storage = ctx.reserve_scoped(0, "creo cylinder placement parameter index storage")?;
+    let mut parameter_index = None::<std::collections::HashMap<u32, Option<&SurfaceParameterRecord>>>;
+    for table in ctx.admit_iter(entity_tables, "creo cylinder placement table traversal")? {
+        if table.feature_id != feature_id { continue; }
+        for entry in ctx.admit_iter(&table.entries, "creo cylinder placement entry traversal")? {
+        if !ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo cylinder placement surface membership")? { continue; }
         let Some(external_id) = entry.source_entity_id() else {
             continue;
         };
@@ -193,61 +194,55 @@ fn generated_cylinder_section_transform(
         let Some(center_id) = segment.center_id else {
             continue;
         };
-        let Some([Some(u), Some(v)]) = points.points.get(&center_id).copied() else {
+        let Some([Some(u), Some(v)]) = ctx.get_btree_map(&points.points, &center_id, "creo cylinder placement point lookup")?.copied() else {
             continue;
         };
-        let Some(row) = unique_surface_row(sources.surface_rows, entry.entity_id)
+        let Some(row) = sources.surface_rows.unique(entry.entity_id)
             .filter(|row| row.feature_id == feature_id && row.kind == SurfaceKind::Cylinder)
         else {
             continue;
         };
-        let parameters = exactly_one(
-            sources
-                .surface_parameters
-                .iter()
-                .filter(|record| record.surface_id == row.id),
-        );
-        let Some(parameters) = parameters else {
+        if parameter_index.is_none() {
+            let mut parameters = std::collections::HashMap::new();
+            for record in ctx.admit_iter(sources.surface_parameters, "creo cylinder placement parameter index traversal")? {
+                match parameter_storage.with_storage(|| ctx.entry_hash_map(
+                    &mut parameters, record.surface_id, "creo cylinder placement parameter index nodes",
+                ))? {
+                    std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(Some(record)); }
+                    std::collections::hash_map::Entry::Occupied(mut entry) => { entry.insert(None); }
+                }
+            }
+            parameter_index = Some(parameters);
+        }
+        let Some(parameters) = parameter_index.as_ref().and_then(|index| index.get(&row.id)).copied().flatten() else {
             continue;
         };
         let Some(frame) = parameters.positional_cylinder_frame() else {
             continue;
         };
-        ctx.reserve_vec(
-            &mut correspondences,
-            1,
-            "creo cylinder placement correspondences",
-        )?;
+        correspondence_storage.with_storage(|| ctx.reserve_vec(&mut correspondences, 1, "creo cylinder placement correspondences"))?;
+        for value in [u, v].iter().chain(frame.frame().origin().iter()) { coordinate_scale = coordinate_scale.max(value.abs()); }
+        first_offset = Some(first_offset.map_or(parameters.offset, |known| known.min(parameters.offset)));
         correspondences.push((
             [u, v],
             frame.frame().origin(),
             *frame.frame().orthonormal_frame().axis(),
-            parameters.offset,
         ));
     }
-    let result = (|| {
-        let first = correspondences.first()?;
-        let normal = unit_length(first.2);
-        let scale = correspondences
-            .iter()
-            .flat_map(|(local, model, _, _)| local.iter().chain(model))
-            .map(|value| value.abs())
-            .fold(1.0, f64::max);
+        }
+    let Some(first) = correspondences.first() else { return Ok(None); };
+    let normal = unit_length(first.2);
+    let scale = coordinate_scale;
         let close = |left: f64, right: f64| {
             (left - right).abs() <= EPS_PLACEMENT_GEOMETRY * left.abs().max(right.abs()).max(1.0)
         };
-        correspondences
-            .iter()
-            .all(|(_, _, axis, _)| {
-                unit_length(*axis)
-                    .iter()
-                    .zip(normal)
-                    .all(|(left, right)| close(*left, right))
-            })
-            .then_some(())?;
+        if !ctx.all_by(&correspondences, |(_, _, axis)| Ok(unit_length(*axis).iter().zip(normal)
+            .all(|(left, right)| close(*left, right))), "creo cylinder placement axis agreement")? { return Ok(None); }
+
 
         let mut frame = None::<([f64; 3], [f64; 3], [f64; 3])>;
-        for second in correspondences.iter().skip(1) {
+        let mut seconds = correspondences[1..].iter();
+        while let Some(second) = ctx.next_charged(&mut seconds, "creo cylinder placement frame candidates")? {
             let local = [second.0[0] - first.0[0], second.0[1] - first.0[1]];
             let model = std::array::from_fn::<_, 3, _>(|index| second.1[index] - first.1[index]);
             let local_squared = dot([local[0], local[1], 0.0], [local[0], local[1], 0.0]);
@@ -269,7 +264,8 @@ fn generated_cylinder_section_transform(
                 first.1[index] - first.0[0] * u_axis[index] - first.0[1] * v_axis[index]
             });
             let candidate = (origin, u_axis, v_axis);
-            if !correspondences.iter().all(|(local, model, _, _)| {
+            if !ctx.all_by(&correspondences, |(local, model, _)| {
+                Ok(
                 (0..3).all(|index| {
                     close(
                         candidate.0[index]
@@ -277,8 +273,8 @@ fn generated_cylinder_section_transform(
                             + local[1] * candidate.2[index],
                         model[index],
                     )
-                })
-            }) {
+                }))
+            }, "creo cylinder placement candidate agreement")? {
                 continue;
             }
             if let Some(previous) = frame {
@@ -296,27 +292,22 @@ fn generated_cylinder_section_transform(
                     )
                     .all(|(left, right)| close(*left, *right))
                 {
-                    return None;
+                    return Ok(None);
                 }
             } else {
                 frame = Some(candidate);
             }
         }
-        let frame = frame?;
-        let offset = definition.section_3d.as_ref().map_or_else(
-            || correspondences.iter().map(|item| item.3).min(),
-            |section| Some(section.offset),
-        )?;
-        FeatureSectionTransform::new(
+        let Some(frame) = frame else { return Ok(None); };
+        let Some(offset) = definition.section_3d.as_ref().map(|section| section.offset).or(first_offset) else { return Ok(None); };
+        Ok(FeatureSectionTransform::new(
             definition.identity.id(),
             Some(feature_id),
             frame.0,
             frame.1,
             frame.2,
             offset,
-        )
-    })();
-    Ok(result)
+        ))
 }
 
 fn generated_planar_section_transform(
@@ -564,23 +555,16 @@ fn generated_planar_table_shape(
     let [first, second, rest @ ..] = table.entries.as_slice() else {
         return Ok(false);
     };
-    if first.class_id() != 204
-        || second.class_id() != 203
-        || rest.is_empty()
-        || !rest.iter().all(|entry| entry.source_entity_id().is_some())
-    {
+    if first.class_id() != 204 || second.class_id() != 203 || rest.is_empty()
+        || !ctx.all_by(rest, |entry| Ok(entry.source_entity_id().is_some()), "creo generated planar table source validation")? {
         return Ok(false);
     }
-    let mut entry_ids = BTreeSet::new();
-    for entry in &table.entries {
-        if entry_ids.contains(&entry.entity_id) {
-            return Ok(false);
-        }
-        ctx.insert_btree_set(
-            &mut entry_ids,
-            entry.entity_id,
-            "creo generated planar table entry nodes",
-        )?;
+    let mut storage = ctx.reserve_scoped(0, "creo generated planar table identity storage")?;
+    let mut entry_ids = std::collections::HashSet::new();
+    let mut entries = table.entries.iter();
+    while let Some(entry) = ctx.next_charged(&mut entries, "creo generated planar table identity traversal")? {
+        if entry_ids.contains(&entry.entity_id) { return Ok(false); }
+        storage.with_storage(|| ctx.insert_hash_set(&mut entry_ids, entry.entity_id, "creo generated planar table entry nodes"))?;
     }
     Ok(true)
 }
