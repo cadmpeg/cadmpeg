@@ -132,3 +132,31 @@ fn duplicate_outline_blocks_generated_envelope_fallback() {
         Ok::<_, cadmpeg_core::CodecError>(())
     }).expect("generated plane fallback");
 }
+
+#[test]
+fn generated_parent_selection_keeps_equation_across_nonmatching_tail() {
+    let datums = [datum(2, crate::axis::Axis::X, 0.0), datum(4, crate::axis::Axis::Y, 0.0)];
+    let tables = [FeatureGeometryTable { feature_id: 40, kind: FeatureGeometryTableKind::DatumIds(Some(vec![42])), count: 1, entity_class: 87, offset: 20 }];
+    let parents = [
+        FeatureAffectedIds { feature_id: 40, kind: AffectedIdKind::Parents, ids: vec![1, 3], offset: 40 },
+        FeatureAffectedIds { feature_id: 41, kind: AffectedIdKind::Parents, ids: vec![1, 9], offset: 50 },
+    ];
+    let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
+    let sources = PlacementSources {
+        datums: &datums, surface_rows: &rows, model_planes: &[], outline_planes: &[],
+        plane_envelopes: &[], surface_parameters: &[], geometry_tables: &tables, affected_ids: &parents,
+    };
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut lookup = super::super::PlacementLookup::new(ctx, &sources)?;
+        let equation = super::super::generated_datum_plane_equation(ctx, 42, 2, [1.0, 0.0, 0.0], &mut lookup)?;
+        assert_eq!(equation, Some(SignedPlaneEquation { normal: [0.0, 1.0, 0.0], offset: 0.0 }));
+        Ok::<_, cadmpeg_core::CodecError>(())
+    };
+    crate::decode::with_test_decode_ctx(run).expect("generated parent plane");
+    crate::test_support::assert_work_boundaries(&[
+        "creo generated datum table scan", "creo generated datum ID count",
+        "creo placement datum index traversal", "creo generated datum parent selection",
+        "creo generated datum parent membership", "creo generated datum other parent selection",
+        "creo placement feature datum index traversal", "creo generated datum feature datum traversal",
+    ], run);
+}
