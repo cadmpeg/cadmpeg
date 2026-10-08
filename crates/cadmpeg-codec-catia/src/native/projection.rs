@@ -879,7 +879,10 @@ pub(crate) fn preview_views(
 ) -> Result<Vec<CatiaPreviewImage>, cadmpeg_core::CodecError> {
     let mut views = Vec::new();
     for segment in ctx.admit_iter(segments, "catia_native_preview_segment_visits")? {
-        let previews = container::preview_images(ctx, &segment.data)?;
+        let (previews, _storage) = ctx
+            .with_scoped_storage("catia_native_preview_scratch", || {
+                container::preview_images(ctx, &segment.data)
+            })?;
         for preview in ctx.admit_iter(&previews, "catia_native_preview_item_visits")? {
             let Some(byte_offset) = segment
                 .byte_offset
@@ -919,10 +922,11 @@ pub(crate) fn external_reference_views(
 ) -> Result<Vec<CatiaExternalReference>, cadmpeg_core::CodecError> {
     let mut views = Vec::new();
     for segment in ctx.admit_iter(segments, "catia_native_external_reference_segment_visits")? {
-        for reference in ctx.admit_iter(
-            container::external_references(ctx, &segment.data)?,
-            "catia_native_external_reference_visits",
-        )? {
+        let (references, _storage) = ctx
+            .with_scoped_storage("catia_native_external_reference_scratch", || {
+                container::external_references(ctx, &segment.data)
+            })?;
+        for reference in ctx.admit_iter(references, "catia_native_external_reference_visits")? {
             let Some(byte_offset) = segment
                 .byte_offset
                 .checked_add(u64_from_index(reference.offset))
@@ -940,7 +944,10 @@ pub(crate) fn external_reference_views(
                 CatiaExternalReference {
                     id,
                     byte_offset,
-                    target: reference.target,
+                    target: ctx.copy_retained_text(
+                        &reference.target,
+                        "catia_native_external_reference_target",
+                    )?,
                     segment: segment_id,
                 },
                 "catia_native_external_reference_views",
@@ -1191,7 +1198,7 @@ impl CatiaValueBlock {
                 .map(|graph| ctx.copy_retained_text(&graph.id, "catia_value_block_graph_id"))
                 .transpose()?,
             catalog: ctx.copy_retained_text(&catalog.id, "catia_value_block_catalog_id")?,
-            payload: block.payload,
+            payload: ctx.copy_slice(&block.payload, "catia_native_value_block_payload")?,
             schema_selections,
         })
     }
@@ -1245,7 +1252,8 @@ impl CatiaCatalog {
                         parent: ctx.copy_retained_text(&id, "catia_native_catalog_entry_parent")?,
                         ordinal: entry.ordinal,
                         byte_offset: u64_from_index(entry.pos),
-                        value: entry.value,
+                        value: ctx
+                            .copy_retained_text(&entry.value, "catia_native_catalog_entry_value")?,
                     })
                 }),
             "catia_native_catalog_entries",
@@ -1360,7 +1368,9 @@ pub(crate) fn native_object_graph(
         };
         let reference_signature = entity.reference_signature(ctx)?;
         let body = match entity.body {
-            entity_table::EntityBody::Inline(bytes) => CatiaEntityRecordBody::Inline(bytes),
+            entity_table::EntityBody::Inline(bytes) => CatiaEntityRecordBody::Inline(
+                ctx.copy_slice(&bytes, "catia_native_entity_inline_body")?,
+            ),
             entity_table::EntityBody::Nested {
                 prefix,
                 suffix,
@@ -1368,10 +1378,14 @@ pub(crate) fn native_object_graph(
                 record_suffix,
                 ..
             } => CatiaEntityRecordBody::Nested {
-                definition_prefix: prefix,
-                definition_suffix: suffix,
-                value_payload,
-                record_suffix,
+                definition_prefix: ctx
+                    .copy_slice(&prefix, "catia_native_entity_definition_prefix")?,
+                definition_suffix: ctx
+                    .copy_slice(&suffix, "catia_native_entity_definition_suffix")?,
+                value_payload: ctx
+                    .copy_slice(&value_payload, "catia_native_entity_value_payload")?,
+                record_suffix: ctx
+                    .copy_slice(&record_suffix, "catia_native_entity_record_suffix")?,
             },
         };
         let row = CatiaEntityRecord {

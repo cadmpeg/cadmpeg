@@ -97,3 +97,71 @@ fn native_vertex_reference_membership_preserves_order_with_linear_work() {
         matches!(refused, Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_native_vertex_identity_reference_checks")
     );
 }
+
+#[test]
+fn native_relation_index_preserves_signature_order_with_bounded_work() {
+    use super::super::{
+        CatiaEntityReference, CatiaRelationParameterDependency, CatiaRelationTypeInput,
+        CatiaRelationTypeSignature,
+    };
+    let signature = CatiaRelationTypeSignature {
+        inputs: (1..=2048)
+            .map(|index| CatiaRelationTypeInput {
+                parameter: format!("#{index}_"),
+                input_type: "Real".into(),
+            })
+            .collect(),
+        result_type: "Real".into(),
+    };
+    let dependencies: Vec<_> = (1..=2048)
+        .rev()
+        .map(|index| CatiaRelationParameterDependency {
+            source_offset: 0,
+            symbol: format!("#{index}_/12"),
+            candidates: vec![CatiaEntityReference::Resolved {
+                entity_id: index,
+                entity: format!("entity:{index}"),
+                class_name: None,
+            }],
+        })
+        .collect();
+    // Index construction, grouped slots and bounded lookups fit within 1024 units
+    // per input. A full signature scan per dependency exceeds four million steps.
+    let inputs = with_work_limit(2048 * 1024, |ctx| {
+        super::super::resolved_relation_program_inputs(ctx, &signature, &dependencies)
+    })
+    .expect("indexed relation work")
+    .expect("complete inputs");
+    assert_eq!(inputs.len(), signature.inputs.len());
+    for (index, input) in inputs.iter().enumerate() {
+        assert_eq!(input.parameter, signature.inputs[index].parameter);
+        assert_eq!(
+            input.entity.entity_id(),
+            u32::try_from(index + 1).expect("fixture index")
+        );
+    }
+    let mut duplicate = signature;
+    duplicate.inputs.push(duplicate.inputs[0].clone());
+    assert!(with_service_context(|ctx| {
+        super::super::resolved_relation_program_inputs(ctx, &duplicate, &dependencies)
+    })
+    .expect("duplicate index")
+    .is_none());
+}
+
+#[test]
+fn native_signature_stops_at_first_invalid_clause() {
+    let source = format!("(bad,{}) : Real", "#2_ : #In Real,".repeat(2048));
+    with_service_context(|ctx| {
+        assert!(
+            super::super::relation_type_signature_charged(ctx, None, &source)
+                .expect("invalid first clause")
+                .is_none()
+        );
+    });
+    let refusal =
+        crate::test_support::with_work_refusal("catia_native_signature_clause_visits", |ctx| {
+            super::super::relation_type_signature_charged(ctx, None, &source)
+        });
+    assert!(matches!(refusal, Err(CodecError::ResourceLimit(limit)) if limit.additional == 1));
+}
