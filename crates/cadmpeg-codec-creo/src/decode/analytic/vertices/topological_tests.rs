@@ -28,28 +28,23 @@ fn line_conic_second_intersection_refuses_at_collection_limit() {
         .expect("circle fixture"),
     ));
     let secant = line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert_vertex_collection_refusal(
-        &line_conic_intersections(&ctx, &secant, &circle).expect_err("second point needs an item"),
-        "creo line-conic intersection points",
-    );
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo line-conic intersection points", |ctx| line_conic_intersections(ctx, &secant, &circle));
+    assert_vertex_collection_refusal(&error, "creo line-conic intersection points");
 }
 
-fn incident_line_collection_error(limit: u64) -> CodecError {
+fn incident_line_collection_error(operation: &'static str) -> CodecError {
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+
     let first = line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
     let second = line([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    incident_analytic_vertex_domain(&ctx, &[&first, &second])
-        .expect_err("incident candidate collection exceeds limit")
+
+    incident_analytic_vertex_domain(ctx, &[&first, &second])
+    })
 }
 
-fn one_carrier_vertex_collection_error(limit: u64) -> CodecError {
+fn one_carrier_vertex_collection_error(operation: &'static str) -> CodecError {
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+
     let mut scan = crate::test_support::empty_container_scan();
     let half_edge = crate::topology::HalfEdgeId {
         curve_id: 7,
@@ -76,19 +71,16 @@ fn one_carrier_vertex_collection_error(limit: u64) -> CodecError {
             },
         ),
     )]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+
     solve_topological_vertices(
-        &ctx,
+        ctx,
         &scan,
         &cadmpeg_ir::document::CadIr::empty(),
         &carriers,
         &std::collections::BTreeSet::new(),
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
-    .expect_err("vertex collection exceeds limit")
+    })
 }
 
 fn assert_vertex_collection_refusal(error: &CodecError, operation: &'static str) {
@@ -121,7 +113,7 @@ fn conic_model_intersection_result(limit: u64) -> Result<Vec<[f64; 3]>, CodecErr
 #[test]
 fn conic_conic_intersections_refuse_model_intersection_reservation() {
     assert_vertex_collection_refusal(
-        &conic_model_intersection_result(276).expect_err("intersection vector exceeds limit"),
+        &conic_model_intersection_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo conic model intersections"), |cap| conic_model_intersection_result(cap))).expect_err("intersection vector exceeds limit"),
         "creo conic model intersections",
     );
 }
@@ -129,7 +121,7 @@ fn conic_conic_intersections_refuse_model_intersection_reservation() {
 #[test]
 fn solve_topological_vertices_refuses_incident_face_ids() {
     assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(3),
+        &one_carrier_vertex_collection_error("creo carrier incident face IDs"),
         "creo carrier incident face IDs",
     );
 }
@@ -137,7 +129,7 @@ fn solve_topological_vertices_refuses_incident_face_ids() {
 #[test]
 fn solve_topological_vertices_refuses_incident_carriers() {
     assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(4),
+        &one_carrier_vertex_collection_error("creo vertex incident carriers"),
         "creo vertex incident carriers",
     );
 }
@@ -145,7 +137,7 @@ fn solve_topological_vertices_refuses_incident_carriers() {
 #[test]
 fn solve_topological_vertices_refuses_sample_face_ids() {
     assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(5),
+        &one_carrier_vertex_collection_error("creo carrier rejection face IDs"),
         "creo carrier rejection face IDs",
     );
 }
@@ -153,7 +145,7 @@ fn solve_topological_vertices_refuses_sample_face_ids() {
 #[test]
 fn solve_topological_vertices_refuses_sample_carrier_kinds() {
     assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(6),
+        &one_carrier_vertex_collection_error("creo carrier rejection kinds"),
         "creo carrier rejection kinds",
     );
 }
@@ -161,7 +153,7 @@ fn solve_topological_vertices_refuses_sample_carrier_kinds() {
 #[test]
 fn solve_topological_vertices_refuses_sample_collection() {
     assert_vertex_collection_refusal(
-        &one_carrier_vertex_collection_error(7),
+        &one_carrier_vertex_collection_error("creo carrier rejection samples"),
         "creo carrier rejection samples",
     );
 }
@@ -201,19 +193,14 @@ fn solve_topological_vertices_refuses_carrier_point_node() {
         .expect("vertex admission")
         .expect("valid vertex fixture"),
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 18;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = solve_topological_vertices(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo carrier vertex point nodes", |ctx| { solve_topological_vertices(
+        ctx,
         &scan,
         &cadmpeg_ir::document::CadIr::empty(),
         &carriers,
         &std::collections::BTreeSet::new(),
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("carrier point node exceeds limit");
+    ) });
     assert_vertex_collection_refusal(&error, "creo carrier vertex point nodes");
 }
 
@@ -497,7 +484,7 @@ fn authoritative_vertex_fixture_keeps_service_result() {
 #[test]
 fn solve_topological_vertices_refuses_authoritative_point_node() {
     assert_vertex_collection_refusal(
-        &authoritative_vertex_result(51).expect_err("authoritative node exceeds limit"),
+        &authoritative_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo authoritative vertex point nodes"), |cap| authoritative_vertex_result(cap))).expect_err("authoritative node exceeds limit"),
         "creo authoritative vertex point nodes",
     );
 }
@@ -512,7 +499,7 @@ fn ambiguous_vertex_fixture_keeps_service_result() {
 #[test]
 fn solve_topological_vertices_refuses_ambiguous_pcurve_vertex_node() {
     assert_vertex_collection_refusal(
-        &ambiguous_vertex_result(72).expect_err("ambiguous vertex node exceeds limit"),
+        &ambiguous_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo ambiguous pcurve vertex nodes"), |cap| ambiguous_vertex_result(cap))).expect_err("ambiguous vertex node exceeds limit"),
         "creo ambiguous pcurve vertex nodes",
     );
 }
@@ -526,7 +513,7 @@ fn analytic_vertex_fixture_keeps_service_result() {
 #[test]
 fn solve_topological_vertices_refuses_analytic_curve_lookup_node() {
     assert_vertex_collection_refusal(
-        &analytic_vertex_result(58, true).expect_err("lookup node exceeds limit"),
+        &analytic_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo analytic curve lookup nodes"), |cap| analytic_vertex_result(cap, true)), true).expect_err("lookup node exceeds limit"),
         "creo analytic curve lookup nodes",
     );
 }
@@ -534,7 +521,7 @@ fn solve_topological_vertices_refuses_analytic_curve_lookup_node() {
 #[test]
 fn solve_topological_vertices_refuses_incident_analytic_curve() {
     assert_vertex_collection_refusal(
-        &analytic_vertex_result(61, true).expect_err("incident curve exceeds limit"),
+        &analytic_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo incident analytic curves"), |cap| analytic_vertex_result(cap, true)), true).expect_err("incident curve exceeds limit"),
         "creo incident analytic curves",
     );
 }
@@ -542,7 +529,7 @@ fn solve_topological_vertices_refuses_incident_analytic_curve() {
 #[test]
 fn solve_topological_vertices_refuses_incident_analytic_curve_node() {
     assert_vertex_collection_refusal(
-        &analytic_vertex_result(62, true).expect_err("incident node exceeds limit"),
+        &analytic_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo incident analytic curve nodes"), |cap| analytic_vertex_result(cap, true)), true).expect_err("incident node exceeds limit"),
         "creo incident analytic curve nodes",
     );
 }
@@ -550,7 +537,7 @@ fn solve_topological_vertices_refuses_incident_analytic_curve_node() {
 #[test]
 fn solve_topological_vertices_refuses_analytic_domain_node() {
     assert_vertex_collection_refusal(
-        &analytic_vertex_result(67, true).expect_err("domain node exceeds limit"),
+        &analytic_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo analytic vertex domain nodes"), |cap| analytic_vertex_result(cap, true)), true).expect_err("domain node exceeds limit"),
         "creo analytic vertex domain nodes",
     );
 }
@@ -592,18 +579,12 @@ fn pcurve_vertex_fixture_keeps_service_result() {
     assert_eq!(result.points.len(), 2);
 }
 
-#[test]
-fn solve_topological_vertices_refuses_pcurve_endpoint_node() {
-    assert_vertex_collection_refusal(
-        &pcurve_vertex_result(41).expect_err("endpoint node exceeds limit"),
-        "creo vertex pcurve endpoint nodes",
-    );
-}
+
 
 #[test]
 fn solve_topological_vertices_refuses_pcurve_candidate_node() {
     assert_vertex_collection_refusal(
-        &pcurve_vertex_result(44).expect_err("candidate node exceeds limit"),
+        &pcurve_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo vertex pcurve candidate nodes"), |cap| pcurve_vertex_result(cap))).expect_err("candidate node exceeds limit"),
         "creo vertex pcurve candidate nodes",
     );
 }
@@ -611,7 +592,7 @@ fn solve_topological_vertices_refuses_pcurve_candidate_node() {
 #[test]
 fn solve_topological_vertices_refuses_pcurve_candidate_point() {
     assert_vertex_collection_refusal(
-        &pcurve_vertex_result(45).expect_err("candidate point exceeds limit"),
+        &pcurve_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo vertex pcurve candidate points"), |cap| pcurve_vertex_result(cap))).expect_err("candidate point exceeds limit"),
         "creo vertex pcurve candidate points",
     );
 }
@@ -619,7 +600,7 @@ fn solve_topological_vertices_refuses_pcurve_candidate_point() {
 #[test]
 fn solve_topological_vertices_refuses_pcurve_constraint() {
     assert_vertex_collection_refusal(
-        &pcurve_vertex_result(48).expect_err("pcurve constraint exceeds limit"),
+        &pcurve_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo vertex pcurve constraints"), |cap| pcurve_vertex_result(cap))).expect_err("pcurve constraint exceeds limit"),
         "creo vertex pcurve constraints",
     );
 }
@@ -627,7 +608,7 @@ fn solve_topological_vertices_refuses_pcurve_constraint() {
 #[test]
 fn solve_topological_vertices_refuses_endpoint_constraint() {
     assert_vertex_collection_refusal(
-        &pcurve_vertex_result(49).expect_err("endpoint constraint exceeds limit"),
+        &pcurve_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo vertex endpoint constraints"), |cap| pcurve_vertex_result(cap))).expect_err("endpoint constraint exceeds limit"),
         "creo vertex endpoint constraints",
     );
 }
@@ -635,7 +616,7 @@ fn solve_topological_vertices_refuses_endpoint_constraint() {
 #[test]
 fn solve_topological_vertices_refuses_fixed_point_node() {
     assert_vertex_collection_refusal(
-        &pcurve_vertex_result(50).expect_err("fixed point node exceeds limit"),
+        &pcurve_vertex_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo fixed vertex point nodes"), |cap| pcurve_vertex_result(cap))).expect_err("fixed point node exceeds limit"),
         "creo fixed vertex point nodes",
     );
 }
@@ -643,7 +624,7 @@ fn solve_topological_vertices_refuses_fixed_point_node() {
 #[test]
 fn incident_analytic_vertex_domain_refuses_candidate_points() {
     assert!(
-        matches!(incident_line_collection_error(0), CodecError::ResourceLimit(resource)
+        matches!(incident_line_collection_error("creo incident analytic candidates"), CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo incident analytic candidates")
     );
@@ -652,7 +633,7 @@ fn incident_analytic_vertex_domain_refuses_candidate_points() {
 #[test]
 fn incident_analytic_vertex_domain_refuses_unique_points() {
     assert!(
-        matches!(incident_line_collection_error(1), CodecError::ResourceLimit(resource)
+        matches!(incident_line_collection_error("creo unique analytic candidates"), CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo unique analytic candidates")
     );

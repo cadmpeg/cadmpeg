@@ -170,7 +170,7 @@ impl Coefficient {
 /// coefficients before common scaling. This preserves finite roots when the
 /// original coefficients span more than one f64 exponent range.
 pub(super) fn real_roots(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     quadratic: Coefficient,
     linear: Coefficient,
     constant: Coefficient,
@@ -275,12 +275,9 @@ pub(super) fn real_roots(
         roots.values[roots.len] = root;
         roots.len += 1;
     }
-    ctx.stable_sort_by(
-        &mut roots,
-        |value| value,
-        f64::total_cmp,
-        "creo quadratic roots sort",
-    )?;
+    if roots.len == 2 && roots.values[0].total_cmp(&roots.values[1]).is_gt() {
+        roots.values.swap(0, 1);
+    }
     roots.dedup_by(|second, first| *second == *first);
     Ok(roots)
 }

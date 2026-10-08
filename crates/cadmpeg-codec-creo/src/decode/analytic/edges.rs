@@ -83,7 +83,7 @@ pub(in crate::decode) fn exact_line_edge_parameter_range(
 /// in reverse order, within a tolerance relative to the largest coordinate.
 /// Every point is finite, so the tolerance is finite.
 pub(super) fn point_pair_alignments(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mapped: [FinitePoint3; 2],
     target: [FinitePoint3; 2],
 ) -> Result<[bool; 2], cadmpeg_core::CodecError> {
@@ -96,19 +96,7 @@ pub(super) fn point_pair_alignments(
         )
         .sqrt()
     };
-    let mapped_points = ctx.admit_iter(&mapped, "creo mapped edge endpoint coordinates")?;
-    let target_points = ctx.admit_iter(&target, "creo target edge endpoint coordinates")?;
-    let mut scale = 1.0_f64;
-    for point in mapped_points {
-        for coordinate in ctx.admit_iter(point, "creo mapped edge point coordinates")? {
-            scale = scale.max(coordinate.abs());
-        }
-    }
-    for point in target_points {
-        for coordinate in ctx.admit_iter(point, "creo target edge point coordinates")? {
-            scale = scale.max(coordinate.abs());
-        }
-    }
+    let scale = mapped.into_iter().chain(target).flatten().map(f64::abs).fold(1.0, f64::max);
     let tolerance = EPS_AGREE * scale;
     Ok([
         mismatch(mapped[0], target[0]).max(mismatch(mapped[1], target[1])) <= tolerance,
@@ -419,10 +407,8 @@ fn degree_one_nurbs_point_parameter(
     match nurbs.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             let mut previous = None;
-            for (span, second) in ctx
-                .admit_iter(points, "creo degree-one polynomial NURBS spans")?
-                .enumerate()
-            {
+            let mut traversal = (points).iter().enumerate();
+    while let Some((span, second)) = ctx.next_charged(&mut traversal, "creo degree-one polynomial NURBS spans")? {
                 let second = *second;
                 let Some(first) = previous.replace(second) else {
                     continue;
@@ -447,10 +433,8 @@ fn degree_one_nurbs_point_parameter(
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             let mut previous = None;
-            for (span, second) in ctx
-                .admit_iter(points, "creo degree-one rational NURBS spans")?
-                .enumerate()
-            {
+            let mut traversal = (points).iter().enumerate();
+    while let Some((span, second)) = ctx.next_charged(&mut traversal, "creo degree-one rational NURBS spans")? {
                 let Some((first, first_weight)) =
                     previous.replace((second.point, second.weight.get()))
                 else {

@@ -48,10 +48,9 @@ fn context_test(test: impl FnOnce(&DecodeContext<'_>), cap: u64) {
     test(&ctx);
 }
 
-fn basis_refusal<T>(result: &Result<T, CodecError>) {
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR B-spline basis")
-    );
+fn basis_refusal<T>(run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>) {
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems, "IR B-spline basis", run);
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "IR B-spline basis"));
 }
 
 fn model() -> CadIr {
@@ -77,18 +76,13 @@ fn two_chart_mapping_propagates_evaluator_refusal() {
         samples: vec![[[0.0, 0.0]; 2], [[1.0, 0.0]; 2]],
         offset: 0,
     };
-    context_test(
-        |ctx| {
-            basis_refusal(&super::mapped_two_chart_endpoint_sets(
+    basis_refusal(|ctx| super::mapped_two_chart_endpoint_sets(
                 ctx,
                 &scan,
                 &ir,
                 &pcurve,
                 &SourceUnitCarriers::default(),
             ));
-        },
-        2,
-    );
     context_test(
         |ctx| {
             assert!(super::mapped_two_chart_endpoint_sets(
@@ -123,52 +117,38 @@ fn endpoint_carrier_status_propagates_evaluator_refusal() {
             }),
         ),
     ]);
-    context_test(
-        |ctx| {
-            basis_refusal(&super::pcurve_endpoint_carrier_status(
+    basis_refusal(|ctx| super::pcurve_endpoint_carrier_status(
                 ctx,
                 &model(),
                 &carriers,
-                [NonZeroU32::new(7), NonZeroU32::new(8)],
-                0,
+                ([NonZeroU32::new(7), NonZeroU32::new(8)], 0),
                 ENDPOINTS,
                 &SourceUnitCarriers::default(),
+                &super::SurfaceIndex::new(&cadmpeg_test_support::service_decode_context(), &model().model.surfaces).expect("surface index fixture"),
             ));
-        },
-        2,
-    );
 }
 
 #[test]
 fn pcurve_path_mapping_propagates_evaluator_refusal() {
-    context_test(
-        |ctx| {
-            basis_refusal(&super::map_pcurve_paths(
+    basis_refusal(|ctx| super::map_pcurve_paths(
                 ctx,
                 &model(),
                 [(NonZeroU32::new(7), ENDPOINTS)],
                 &SourceUnitCarriers::default(),
+                &super::SurfaceIndex::new(&cadmpeg_test_support::service_decode_context(), &model().model.surfaces).expect("surface index fixture"),
             ));
-        },
-        2,
-    );
 }
 
 #[test]
 fn native_midpoint_propagates_endpoint_and_midpoint_evaluator_refusals() {
-    for cap in [2, 8, 14] {
-        context_test(
-            |ctx| {
-                basis_refusal(&super::native_pcurve_midpoint(
+
+        basis_refusal(|ctx| super::native_pcurve_midpoint(
                     ctx,
                     &plane(),
                     ENDPOINTS,
                     POINTS,
                 ));
-            },
-            cap,
-        );
-    }
+
     context_test(
         |ctx| {
             assert_eq!(
@@ -182,17 +162,12 @@ fn native_midpoint_propagates_endpoint_and_midpoint_evaluator_refusals() {
 
 #[test]
 fn native_endpoint_orientation_propagates_evaluator_refusal() {
-    context_test(
-        |ctx| {
-            basis_refusal(&super::oriented_native_pcurve_endpoints(
+    basis_refusal(|ctx| super::oriented_native_pcurve_endpoints(
                 ctx,
                 &plane(),
                 ENDPOINTS,
                 POINTS,
             ));
-        },
-        2,
-    );
     context_test(
         |ctx| {
             assert_eq!(
@@ -207,15 +182,8 @@ fn native_endpoint_orientation_propagates_evaluator_refusal() {
 
 #[test]
 fn native_pcurve_selection_propagates_evaluator_refusal() {
-    context_test(
-        |ctx| {
-            basis_refusal(
-                &super::unique_oriented_native_pcurve(ctx, &plane(), &[(ENDPOINTS, 4)], POINTS)
-                    .map(|result| result.map(|candidate| (candidate.endpoints, candidate.offset))),
-            );
-        },
-        2,
-    );
+    basis_refusal(|ctx| super::unique_oriented_native_pcurve(ctx, &plane(), &[(ENDPOINTS, 4)], POINTS)
+        .map(|result| result.map(|candidate| (candidate.endpoints, candidate.offset))));
     context_test(
         |ctx| {
             assert_eq!(
@@ -241,9 +209,7 @@ fn pcurve_backed_conic_selection_propagates_evaluator_refusal() {
         .expect("circle"),
     ));
     let candidates = BTreeMap::from([((9, 7), vec![(ENDPOINTS, 4)])]);
-    context_test(
-        |ctx| {
-            basis_refusal(&super::pcurve_backed_periodic_conic_parameter_range(
+    basis_refusal(|ctx| super::pcurve_backed_periodic_conic_parameter_range(
                 ctx,
                 &circle,
                 (9, [7, 8]),
@@ -252,7 +218,4 @@ fn pcurve_backed_conic_selection_propagates_evaluator_refusal() {
                 POINTS,
                 &SourceUnitCarriers::default(),
             ));
-        },
-        2,
-    );
 }

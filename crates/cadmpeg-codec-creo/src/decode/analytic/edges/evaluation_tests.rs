@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
@@ -33,19 +33,16 @@ fn context_test(test: impl FnOnce(&DecodeContext<'_>), cap: u64) {
     test(&ctx);
 }
 
-fn basis_refusal<T>(result: &Result<T, CodecError>) {
-    assert!(matches!(result, Err(CodecError::ResourceLimit(resource))
-        if resource.dimension == ResourceDimension::CollectionItems && resource.operation == "IR B-spline basis"));
+fn basis_refusal<T>(run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>) {
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems, "IR B-spline basis", run);
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "IR B-spline basis"));
 }
 
 #[test]
 fn nonperiodic_endpoint_recovery_propagates_evaluator_refusal() {
-    for cap in [2, 5] {
-        context_test(
-            |ctx| basis_refusal(&super::nonperiodic_nurbs_endpoint_points(ctx, &line(false))),
-            cap,
-        );
-    }
+
+        basis_refusal(|ctx| super::nonperiodic_nurbs_endpoint_points(ctx, &line(false)));
+
     context_test(
         |ctx| {
             assert_eq!(
@@ -59,46 +56,31 @@ fn nonperiodic_endpoint_recovery_propagates_evaluator_refusal() {
 
 #[test]
 fn nonperiodic_range_recovery_propagates_evaluator_refusal() {
-    context_test(
-        |ctx| {
-            basis_refusal(&super::nonperiodic_nurbs_edge_parameter_range(
+    basis_refusal(|ctx| super::nonperiodic_nurbs_edge_parameter_range(
                 ctx,
                 &line(false),
                 [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
             ));
-        },
-        2,
-    );
 }
 
 #[test]
 fn nonperiodic_orientation_propagates_evaluator_refusal() {
-    context_test(
-        |ctx| {
-            basis_refusal(&super::orient_nonperiodic_nurbs_edge_carrier(
+    basis_refusal(|ctx| super::orient_nonperiodic_nurbs_edge_carrier(
                 ctx,
                 &mut line(false),
                 [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
             ));
-        },
-        2,
-    );
 }
 
 #[test]
 fn periodic_range_recovery_propagates_evaluator_refusal() {
-    for cap in [2, 5] {
-        context_test(
-            |ctx| {
-                basis_refusal(&super::full_periodic_nurbs_edge_parameter_range(
+
+        basis_refusal(|ctx| super::full_periodic_nurbs_edge_parameter_range(
                     ctx,
                     &line(true),
                     [0.0, 0.0, 0.0],
                 ));
-            },
-            cap,
-        );
-    }
+
     context_test(
         |ctx| {
             assert_eq!(
@@ -154,40 +136,13 @@ fn degree_one_parameter_search_propagates_evaluator_refusal() {
     );
 }
 
-fn point_pair_alignment_refusal_at(operation: &'static str) -> CodecError {
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        operation,
-        |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let point = |coordinates: [f64; 3]| {
-                cadmpeg_ir::features::FinitePoint3::new(coordinates.into())
-                    .expect("finite point fixture")
-            };
-            super::point_pair_alignments(
-                &ctx,
-                [point([0.0, 0.0, 0.0]), point([1.0, 0.0, 0.0])],
-                [point([0.0, 1.0, 0.0]), point([1.0, 1.0, 0.0])],
-            )
-        },
-    )
-}
-
 #[test]
-fn point_pair_alignment_refuses_mapped_point_coordinates() {
-    let error = point_pair_alignment_refusal_at("creo mapped edge point coordinates");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo mapped edge point coordinates"));
-}
-
-#[test]
-fn point_pair_alignment_refuses_target_point_coordinates() {
-    let error = point_pair_alignment_refusal_at("creo target edge point coordinates");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo target edge point coordinates"));
+fn point_pair_alignment_needs_no_input_sized_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]].map(|point| super::super::vertices::finite_model_point(point).expect("finite fixture"));
+    assert_eq!(super::point_pair_alignments(&ctx, points, points).expect("fixed geometry"), [true, false]);
 }
