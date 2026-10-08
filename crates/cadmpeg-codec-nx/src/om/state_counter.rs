@@ -179,6 +179,7 @@ impl StateCounterMap {
             return Ok(None);
         };
         while cursor < end {
+            ctx.charge_work(1, "NX operation-state counter row reconstruction")?;
             let Some(row) = StateCounter::read(bytes, cursor, base_offset) else {
                 return Ok(None);
             };

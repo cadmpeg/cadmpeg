@@ -24,6 +24,7 @@ pub(super) fn message_bytes(text: &[u8], value: &[u8], count_or_severity: [u8; 2
     bytes
 }
 
+mod budget_admission;
 mod control_lanes;
 mod index_and_lanes;
 mod instances_and_stores;
@@ -56,7 +57,7 @@ fn expression_unit_equality_cost_counts_variant_and_label() {
                 unit.decode_cost(ctx, "NX expression unit equality")
                     .unwrap(),
                 expected
-            )
+            );
         });
         let error = crate::test_support::resource_refusal_at(
             &[],

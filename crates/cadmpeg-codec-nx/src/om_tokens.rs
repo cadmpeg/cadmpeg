@@ -20,9 +20,11 @@ pub(crate) fn unit_for(
     token: &str,
 ) -> Result<Option<ExpressionUnit>, CodecError> {
     if token.is_empty()
-        || !ctx
-            .admit_iter(token, "NX expression unit syntax")?
-            .all(|ch| ch.is_ascii_graphic())
+        || !ctx.all_by(
+            token.bytes(),
+            |byte| Ok(byte.is_ascii_graphic()),
+            "NX expression unit syntax",
+        )?
     {
         return Ok(None);
     }
@@ -30,9 +32,9 @@ pub(crate) fn unit_for(
         "mm" => ExpressionUnit::Millimeter,
         "in" => ExpressionUnit::Inch,
         "degrees" => ExpressionUnit::Degree,
-        token => ExpressionUnit::Native(
-            ctx.format_retained(format_args!("{token}"), "NX native expression unit")?,
-        ),
+        token => {
+            ExpressionUnit::Native(ctx.copy_retained_text(token, "NX native expression unit")?)
+        }
     }))
 }
 

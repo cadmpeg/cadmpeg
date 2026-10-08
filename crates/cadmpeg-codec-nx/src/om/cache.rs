@@ -73,9 +73,10 @@ impl CachedDefinition {
         Ok(Self {
             offset,
             name: ctx.copy_retained_text(name, "NX cached definition name")?,
-            registry_tail: ctx
-                .copy_retained(tail, "NX cached definition tail")?
-                .into_boxed_slice(),
+            registry_tail: ctx.into_boxed_slice(
+                ctx.copy_retained(tail, "NX cached definition tail")?,
+                "NX cached definition tail boxing",
+            )?,
         })
     }
 }
@@ -117,7 +118,9 @@ impl IndexedSectionLayout {
         let store = match &section.store {
             IndexedStore::Fixed { records } => {
                 let mut cached = ctx.collection_vec(records.len(), "NX cached fixed records")?;
-                for record in ctx.admit_iter(records.as_ref(), "NX cached record traversal")? {
+                for record in
+                    ctx.admit_iter(records.as_ref(), "NX cached fixed record traversal")?
+                {
                     let Some(bytes) = CachedRange::new(source, record.offset, record.bytes.len())
                     else {
                         return Ok(None);
@@ -146,7 +149,9 @@ impl IndexedSectionLayout {
                     return Ok(None);
                 };
                 let mut cached = ctx.collection_vec(records.len(), "NX cached offset records")?;
-                for record in ctx.admit_iter(records.as_ref(), "NX cached record traversal")? {
+                for record in
+                    ctx.admit_iter(records.as_ref(), "NX cached offset record traversal")?
+                {
                     let Some(range) = CachedRange::new(source, record.offset, record.bytes.len())
                     else {
                         return Ok(None);
@@ -160,8 +165,10 @@ impl IndexedSectionLayout {
                 }
             }
         };
-        let mut types = ctx.collection_vec(section.types.len(), "NX cached types")?;
-        for definition in ctx.admit_iter(section.types.as_ref(), "NX cached type traversal")? {
+        let mut types = ctx.collection_vec(section.types.len(), "NX cached indexed types")?;
+        for definition in
+            ctx.admit_iter(section.types.as_ref(), "NX cached indexed type traversal")?
+        {
             types.push(CachedDefinition::new(
                 ctx,
                 definition.offset,
@@ -169,8 +176,10 @@ impl IndexedSectionLayout {
                 definition.registry_tail,
             )?);
         }
-        let mut fields = ctx.collection_vec(section.fields.len(), "NX cached fields")?;
-        for definition in ctx.admit_iter(section.fields.as_ref(), "NX cached field traversal")? {
+        let mut fields = ctx.collection_vec(section.fields.len(), "NX cached indexed fields")?;
+        for definition in
+            ctx.admit_iter(section.fields.as_ref(), "NX cached indexed field traversal")?
+        {
             fields.push(CachedDefinition::new(
                 ctx,
                 definition.offset,
@@ -196,7 +205,7 @@ impl IndexedSectionLayout {
             CachedStore::Fixed { records } => {
                 let mut materialized =
                     ctx.collection_vec(records.len(), "NX materialized fixed records")?;
-                for record in ctx.admit_iter(records, "NX materialized record traversal")? {
+                for record in ctx.admit_iter(records, "NX materialized fixed record traversal")? {
                     materialized.push(FixedEntityRecord {
                         object_id: record.object_id,
                         offset: record.bytes.offset(),
@@ -214,7 +223,7 @@ impl IndexedSectionLayout {
             } => {
                 let mut materialized =
                     ctx.collection_vec(records.len(), "NX materialized offset records")?;
-                for record in ctx.admit_iter(records, "NX materialized record traversal")? {
+                for record in ctx.admit_iter(records, "NX materialized offset record traversal")? {
                     materialized.push(EntityRecord {
                         offset: record.offset(),
                         bytes: record.bytes(),
@@ -230,12 +239,12 @@ impl IndexedSectionLayout {
                 }
             }
         };
-        let mut types = ctx.collection_vec(self.types.len(), "NX materialized types")?;
-        for definition in ctx.admit_iter(&self.types, "NX materialized type traversal")? {
+        let mut types = ctx.collection_vec(self.types.len(), "NX materialized indexed types")?;
+        for definition in ctx.admit_iter(&self.types, "NX materialized indexed type traversal")? {
             types.push(definition.type_definition());
         }
-        let mut fields = ctx.collection_vec(self.fields.len(), "NX materialized fields")?;
-        for definition in ctx.admit_iter(&self.fields, "NX materialized field traversal")? {
+        let mut fields = ctx.collection_vec(self.fields.len(), "NX materialized indexed fields")?;
+        for definition in ctx.admit_iter(&self.fields, "NX materialized indexed field traversal")? {
             fields.push(definition.field_definition());
         }
         Ok(IndexedSection {
@@ -277,7 +286,9 @@ impl SectionLayout {
             return Ok(None);
         };
         let mut types = ctx.collection_vec(section.types.len(), "NX cached framed types")?;
-        for definition in ctx.admit_iter(section.types.as_ref(), "NX cached type traversal")? {
+        for definition in
+            ctx.admit_iter(section.types.as_ref(), "NX cached framed type traversal")?
+        {
             types.push(CachedDefinition::new(
                 ctx,
                 definition.offset,
@@ -286,7 +297,9 @@ impl SectionLayout {
             )?);
         }
         let mut fields = ctx.collection_vec(section.fields.len(), "NX cached framed fields")?;
-        for definition in ctx.admit_iter(section.fields.as_ref(), "NX cached field traversal")? {
+        for definition in
+            ctx.admit_iter(section.fields.as_ref(), "NX cached framed field traversal")?
+        {
             fields.push(CachedDefinition::new(
                 ctx,
                 definition.offset,
@@ -315,11 +328,11 @@ impl SectionLayout {
 
     pub(crate) fn materialize(&self, ctx: &DecodeContext<'_>) -> Result<Section<'_>, CodecError> {
         let mut types = ctx.collection_vec(self.types.len(), "NX materialized framed types")?;
-        for definition in ctx.admit_iter(&self.types, "NX materialized type traversal")? {
+        for definition in ctx.admit_iter(&self.types, "NX materialized framed type traversal")? {
             types.push(definition.type_definition());
         }
         let mut fields = ctx.collection_vec(self.fields.len(), "NX materialized framed fields")?;
-        for definition in ctx.admit_iter(&self.fields, "NX materialized field traversal")? {
+        for definition in ctx.admit_iter(&self.fields, "NX materialized framed field traversal")? {
             fields.push(definition.field_definition());
         }
         let mut cached_operation_labels = ctx.collection_vec(

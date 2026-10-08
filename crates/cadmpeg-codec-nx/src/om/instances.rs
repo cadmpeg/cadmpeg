@@ -18,22 +18,40 @@ impl<O> MultiInstanceOutputs<O> {
         rows: Vec<(LocatedCompactIndex<O>, u8)>,
         references: Vec<PayloadObjectReference<FeatureReferenceToken, O>>,
     ) -> Result<Self, &'static str> {
-        match Self::validate(&rows, &references, |rows| {
-            Ok::<_, std::convert::Infallible>(rows.iter())
-        }) {
+        let mut counts = std::collections::BTreeMap::new();
+        match Self::validate(
+            &rows,
+            &references,
+            &mut counts,
+            |rows| Ok::<_, std::convert::Infallible>(rows.next()),
+            |counts, key| {
+                let count = counts.entry(key).or_insert(0);
+                let preceding = *count;
+                *count += 1;
+                Ok::<_, std::convert::Infallible>(preceding)
+            },
+            |counts, expected| {
+                Ok::<_, std::convert::Infallible>(counts.values().all(|count| *count == expected))
+            },
+        ) {
             Ok(validation) => validation?,
             Err(error) => match error {},
-        };
+        }
         Ok(Self {
             selectors: rows.into_iter().map(|(selector, _)| selector).collect(),
             references,
         })
     }
 
-    fn validate<'a, E, I: Iterator<Item = &'a (LocatedCompactIndex<O>, u8)>>(
+    fn validate<'a, E, C>(
         rows: &'a [(LocatedCompactIndex<O>, u8)],
         references: &[PayloadObjectReference<FeatureReferenceToken, O>],
-        mut admit: impl FnMut(&'a [(LocatedCompactIndex<O>, u8)]) -> Result<I, E>,
+        counts: &mut C,
+        mut next: impl FnMut(
+            &mut std::slice::Iter<'a, (LocatedCompactIndex<O>, u8)>,
+        ) -> Result<Option<&'a (LocatedCompactIndex<O>, u8)>, E>,
+        mut preceding: impl FnMut(&mut C, u32) -> Result<usize, E>,
+        complete: impl FnOnce(&C, usize) -> Result<bool, E>,
     ) -> Result<Result<(), &'static str>, E>
     where
         O: 'a,
@@ -46,26 +64,21 @@ impl<O> MultiInstanceOutputs<O> {
                 "trailing_object_indices: must contain 1 through 254 references",
             ));
         }
-        for (position, (selector, ordinal)) in admit(rows)?.enumerate() {
-            let preceding = admit(&rows[..position])?
-                .filter(|(prior, _)| prior.atom.value() == selector.atom.value())
-                .count();
-            if usize::from(*ordinal) != preceding + 2 {
+        let mut rows = rows.iter();
+        while rows.len() > 0 {
+            let Some((selector, ordinal)) = next(&mut rows)? else {
+                break;
+            };
+            if usize::from(*ordinal) != preceding(counts, selector.atom.value())? + 2 {
                 return Ok(Err(
                     "ordinals: each selector must enumerate instances from two",
                 ));
             }
         }
-        for (selector, _) in admit(rows)? {
-            if admit(rows)?
-                .filter(|(other, _)| other.atom.value() == selector.atom.value())
-                .count()
-                != references.len()
-            {
-                return Ok(Err(
-                    "trailing_object_indices: each selector must cover every instance",
-                ));
-            }
+        if !complete(counts, references.len())? {
+            return Ok(Err(
+                "trailing_object_indices: each selector must cover every instance",
+            ));
         }
         Ok(Ok(()))
     }
@@ -78,19 +91,37 @@ impl<O> MultiInstanceOutputs<O> {
     where
         O: Copy,
     {
-        if Self::validate(&rows, &references, |rows| {
-            ctx.admit_iter(rows, "nx instance selector validation")
-        })?
+        let mut counts = std::collections::BTreeMap::new();
+        let mut storage = ctx.reserve_scoped(0, "NX instance occurrence workspace")?;
+        if Self::validate(
+            &rows,
+            &references,
+            &mut counts,
+            |rows| ctx.next_charged(rows, "nx instance selector validation"),
+            |counts, key| {
+                storage.with_storage(|| {
+                    let count = ctx
+                        .entry_btree_map(counts, key, "NX instance occurrence index")?
+                        .or_insert(0);
+                    let preceding = *count;
+                    *count += 1;
+                    Ok::<_, CodecError>(preceding)
+                })
+            },
+            |counts, expected| {
+                ctx.all_by(
+                    counts.values(),
+                    |count| Ok(*count == expected),
+                    "NX instance reference coverage",
+                )
+            },
+        )?
         .is_err()
         {
             return Ok(None);
         }
-        let mut selectors = Vec::new();
-        for (selector, _) in ctx
-            .admit_iter(&rows, "nx instance selector projection")?
-            .copied()
-        {
-            ctx.reserve_vec(&mut selectors, 1, "nx instance selectors")?;
+        let mut selectors = ctx.collection_vec(rows.len(), "nx instance selectors")?;
+        for (selector, _) in ctx.admit_iter(rows, "nx instance selector projection")? {
             selectors.push(selector);
         }
         Ok(Some(Self {

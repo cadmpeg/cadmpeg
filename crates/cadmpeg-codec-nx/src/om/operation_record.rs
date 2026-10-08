@@ -100,24 +100,34 @@ impl<'a> OperationRecord<'a> {
         bytes: &'a [u8],
         label: OperationLabel<'a>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        (|| {
-            let label_start = usize::from(label.header.byte_len());
-            let label_end = label_start.checked_add(label.value.len())?.checked_add(2)?;
-            if bytes.get(label_start) != Some(&0x03)
-                || usize::from(*bytes.get(label_start + 1)?) != label.value.len() + 2
-                || !propagate_resource!(ctx.equal_bytes(
-                    bytes.get(label_start + 2..label_end)?,
-                    label.value.as_bytes(),
-                    "NX operation record label equality"
-                ))
-                || bytes.get(label_end) != Some(&0)
-            {
-                return None;
-            }
-            label.header.offset().checked_add(bytes.len())?;
-            Some(Ok(Self { bytes, label }))
-        })()
-        .transpose()
+        let label_start = usize::from(label.header.byte_len());
+        let Some(label_end) = label_start
+            .checked_add(label.value.len())
+            .and_then(|end| end.checked_add(2))
+        else {
+            return Ok(None);
+        };
+        let Some(declared) = bytes.get(label_start + 1).copied().map(usize::from) else {
+            return Ok(None);
+        };
+        let Some(raw) = bytes.get(label_start + 2..label_end) else {
+            return Ok(None);
+        };
+        if bytes.get(label_start) != Some(&3)
+            || declared != label.value.len() + 2
+            || !ctx.equal_bytes(
+                raw,
+                label.value.as_bytes(),
+                "NX operation record label equality",
+            )?
+            || bytes.get(label_end) != Some(&0)
+        {
+            return Ok(None);
+        }
+        if label.header.offset().checked_add(bytes.len()).is_none() {
+            return Ok(None);
+        }
+        Ok(Some(Self { bytes, label }))
     }
 
     pub(crate) fn label(self) -> OperationLabel<'a> {

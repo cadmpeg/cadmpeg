@@ -42,9 +42,11 @@ impl StateSlotLane {
         if bytes.get(at..prefix_end) != Some(&[0x02, 0x01, 0x11]) {
             return Ok(None);
         }
+        let mut storage = ctx.reserve_scoped(0, "NX state slot candidate storage")?;
         let mut slots = Vec::new();
         let mut cursor = prefix_end;
         while cursor < end {
+            ctx.charge_work(1, "scan NX state slots")?;
             let Some(marker_end) = cursor.checked_add(2) else {
                 return Ok(None);
             };
@@ -56,6 +58,7 @@ impl StateSlotLane {
                 ) else {
                     return Ok(None);
                 };
+                storage.commit()?;
                 return Ok(Some(Self { offset, end, slots }));
             }
             let Some(slot) = OperationStateIndex::read_at(bytes, cursor, base) else {
@@ -65,26 +68,42 @@ impl StateSlotLane {
                 return Ok(None);
             };
             cursor = next;
-            ctx.charge_work(1, "scan NX state slots")?;
-            ctx.reserve_vec(&mut slots, 1, "nx state slots")?;
+            storage.with_storage(|| ctx.reserve_vec(&mut slots, 1, "nx state slots"))?;
             slots.push(slot.token());
         }
         Ok(None)
     }
 
-    pub(super) fn end_at(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
-        if bytes.get(at..at.checked_add(3)?) != Some(&[0x02, 0x01, 0x11]) {
-            return None;
+    pub(super) fn end_at(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        at: usize,
+        end: usize,
+    ) -> Result<Option<usize>, CodecError> {
+        let Some(prefix_end) = at.checked_add(3) else {
+            return Ok(None);
+        };
+        if bytes.get(at..prefix_end) != Some(&[0x02, 0x01, 0x11]) {
+            return Ok(None);
         }
-        let mut cursor = at + 3;
+        let mut cursor = prefix_end;
         while cursor < end {
-            if bytes.get(cursor..cursor.checked_add(2)?) == Some(&[0x02, 0x11]) {
-                return cursor.checked_add(2);
+            ctx.charge_work(1, "NX state slot extent scan")?;
+            let Some(marker_end) = cursor.checked_add(2) else {
+                return Ok(None);
+            };
+            if bytes.get(cursor..marker_end) == Some(&[0x02, 0x11]) {
+                return Ok(Some(marker_end));
             }
-            let slot = OperationStateIndex::read_at(bytes, cursor, 0)?;
-            cursor = cursor.checked_add(slot.raw().len())?;
+            let Some(slot) = OperationStateIndex::read_at(bytes, cursor, 0) else {
+                return Ok(None);
+            };
+            let Some(next) = cursor.checked_add(slot.raw().len()) else {
+                return Ok(None);
+            };
+            cursor = next;
         }
-        None
+        Ok(None)
     }
 }
 
@@ -94,7 +113,7 @@ impl StateSlotLane<u64> {
         slots: StateSlots<Option<StateIndexToken>>,
     ) -> Result<Self, &'static str> {
         let end = match Self::extent(offset, slots.as_slice(), |slots| {
-            Ok::<_, std::convert::Infallible>(slots.iter())
+            Ok::<_, std::convert::Infallible>(slots.next())
         }) {
             Ok(end) => end?,
             Err(error) => match error {},
@@ -102,17 +121,39 @@ impl StateSlotLane<u64> {
         Ok(Self { offset, end, slots })
     }
 
-    fn extent<'a, E, I: Iterator<Item = &'a Option<StateIndexToken>>>(
+    pub(crate) fn from_wire(
+        ctx: &DecodeContext<'_>,
+        offset: u64,
+        slots: StateSlots<Option<StateIndexToken>>,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(Self::extent(offset, slots.as_slice(), |slots| {
+            ctx.next_charged(slots, "NX native state slot width traversal")
+        })?
+        .map(|end| Self { offset, end, slots }))
+    }
+
+    fn extent<'a, E>(
         offset: u64,
         slots: &'a [Option<StateIndexToken>],
-        admit: impl FnOnce(&'a [Option<StateIndexToken>]) -> Result<I, E>,
+        mut next: impl FnMut(
+            &mut std::slice::Iter<'a, Option<StateIndexToken>>,
+        ) -> Result<Option<&'a Option<StateIndexToken>>, E>,
     ) -> Result<Result<u64, &'static str>, E> {
-        let end = admit(slots)?
-            .try_fold(offset, |end, slot| {
-                end.checked_add(u64::from(slot.map_or(1, StateIndexToken::byte_len)))
-            })
-            .and_then(|end| end.checked_add(5));
-        Ok(end.ok_or("source_offset: slot-lane extent overflows"))
+        let mut end = offset;
+        let mut slots = slots.iter();
+        while slots.len() > 0 {
+            let Some(slot) = next(&mut slots)? else {
+                break;
+            };
+            let Some(next) = end.checked_add(u64::from(slot.map_or(1, StateIndexToken::byte_len)))
+            else {
+                return Ok(Err("source_offset: slot-lane extent overflows"));
+            };
+            end = next;
+        }
+        Ok(end
+            .checked_add(5)
+            .ok_or("source_offset: slot-lane extent overflows"))
     }
 }
 
@@ -134,7 +175,10 @@ mod tests {
                 assert_eq!(lane.slots().len(), 4);
                 assert_eq!(lane.offset(), 100);
                 assert_eq!(lane.end_offset(), 112);
-                assert_eq!(StateSlotLane::end_at(&bytes, 0, bytes.len()), Some(12));
+                assert_eq!(
+                    StateSlotLane::end_at(ctx, &bytes, 0, bytes.len()).unwrap(),
+                    Some(12)
+                );
                 let native = StateSlotLane::new(
                     200 + cadmpeg_core::decode::u64_from_index(lane.offset()),
                     lane.clone().into_slots(),

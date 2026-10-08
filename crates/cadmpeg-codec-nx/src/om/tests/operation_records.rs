@@ -262,3 +262,71 @@ fn unlabeled_record_payload_requires_a_complete_bounded_header() {
     assert!(UnlabeledOperationRecord::new(last, &[0; 19]).is_some());
     assert!(UnlabeledOperationRecord::new(last, &[0; 20]).is_none());
 }
+
+#[test]
+fn operation_record_index_preserves_first_duplicate_label_and_physical_ordinals() {
+    let bytes = one_labeled_operation();
+    let labels = operation_labels(bytes, 100);
+    let mut duplicate = labels[0];
+    duplicate.value = "BLOCK";
+    let reordered = [labels[0], duplicate];
+    let records = operation_records_with_labels_and_ordinals(bytes, 100, &reordered);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].0, 0);
+    assert_eq!(records[0].1.label().value, "UNITE");
+    assert!(unlabeled_operation_records_with_ordinals(bytes, 100, &reordered).is_empty());
+}
+
+#[test]
+fn operation_record_index_refusals_name_the_boundary() {
+    use cadmpeg_core::decode::ResourceDimension;
+    for operation in [
+        "NX operation label index insertion",
+        "NX labeled operation header lookup",
+        "NX unlabeled operation header exclusion",
+    ] {
+        let bytes = one_labeled_operation();
+        let labels = operation_labels(bytes, 100);
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                if operation == "NX unlabeled operation header exclusion" {
+                    crate::om::unlabeled_operation_records_with_ordinals(ctx, bytes, 100, &labels)
+                        .map(|records| records.len())
+                } else {
+                    crate::om::operation_records_with_labels_and_ordinals(ctx, bytes, 100, &labels)
+                        .map(|records| records.len())
+                }
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+        );
+    }
+}
+
+#[test]
+fn operation_record_headers_and_index_release_scratch_without_retaining_it() {
+    let bytes = one_labeled_operation();
+    let labels = operation_labels(bytes, 100);
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            assert!(
+                crate::om::unlabeled_operation_records_with_ordinals(ctx, bytes, 100, &labels)
+                    .unwrap()
+                    .is_empty()
+            );
+            assert!(
+                crate::om::operation_records_with_labels_and_ordinals(ctx, bytes, 100, &[])
+                    .unwrap()
+                    .is_empty()
+            );
+        },
+    );
+}

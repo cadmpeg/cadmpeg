@@ -3,15 +3,15 @@
 
 use super::{AbrLane, CountedLane, ABR_TERMINATOR, COUNTED_PREFIX, COUNTED_TERMINATOR};
 use crate::om::compact::{CountedIndexMembers, LocatedCompactIndex, NullableCompactIndex};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 /// Decode fixed-width `ABR` block-reference lanes from contiguous column storage.
 pub(crate) fn abr_lanes(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<AbrLane>, CodecError> {
     let mut lanes = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX ABR lanes")?;
     let mut start = 0;
     while start < bytes.len() {
+        ctx.charge_work(1, "scan NX ABR lanes")?;
         if bytes[start] != 0x11 {
             start += 1;
             continue;
@@ -56,52 +56,55 @@ pub(crate) fn counted_lanes(
     bytes: &[u8],
 ) -> Result<Vec<CountedLane>, CodecError> {
     let decode = |start: usize| -> Result<Option<(CountedLane, usize)>, CodecError> {
-        let Some((anchor, members_start, member_count, end)) = (|| {
-            (bytes.get(start) == Some(&0x01)).then_some(())?;
-            let declared_count = *bytes.get(start + 1)?;
-            (declared_count >= 3).then_some(())?;
-            let anchor = LocatedCompactIndex::read(bytes, start + usize::from(COUNTED_PREFIX))?;
-            let members_start = anchor.offset + anchor.atom.raw().len();
-            let mut at = members_start;
-            for _ in propagate_resource!(ctx
-                .admit_iter(
-                    &(0..usize::from(declared_count) - 2),
-                    "NX counted lanes row validation"
-                )
-                .map_err(CodecError::from))
-            {
-                at += LocatedCompactIndex::read(bytes, at)?.atom.raw().len();
-            }
-            let end = at.checked_add(COUNTED_TERMINATOR.len())?;
-            (bytes.get(at..end) == Some(&COUNTED_TERMINATOR)).then_some(())?;
-            (Some((anchor, members_start, usize::from(declared_count) - 2, end))).map(Ok)
-        })()
-        .transpose()?
+        if bytes.get(start) != Some(&1) {
+            return Ok(None);
+        }
+        let Some(declared_count @ 3..) = bytes.get(start + 1).copied() else {
+            return Ok(None);
+        };
+        let Some(anchor) = LocatedCompactIndex::read(bytes, start + usize::from(COUNTED_PREFIX))
         else {
             return Ok(None);
         };
-        let operation = "NX counted index lane members";
-        let mut members = ctx.collection_vec(member_count, operation)?;
-        let mut at = members_start;
-        for _ in ctx.admit_iter(&(0..member_count), "NX counted lanes range traversal")? {
+        let mut at = anchor.offset + anchor.atom.raw().len();
+        let mut storage = ctx.reserve_scoped(0, "NX counted lane candidate storage")?;
+        let mut members = Vec::new();
+        let mut indices = 0..usize::from(declared_count) - 2;
+        while !indices.is_empty() {
+            ctx.next_charged(&mut indices, "NX counted lanes row validation")?;
             let Some(token) = LocatedCompactIndex::read(bytes, at) else {
                 return Ok(None);
             };
             at += token.atom.raw().len();
-            members.push(token.atom.into());
+            storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut members,
+                    token.atom.into(),
+                    "NX counted index lane members",
+                )
+            })?;
+        }
+        let Some(end) = at.checked_add(COUNTED_TERMINATOR.len()) else {
+            return Ok(None);
+        };
+        if bytes.get(at..end) != Some(&COUNTED_TERMINATOR) {
+            return Ok(None);
         }
         let Ok(members) = CountedIndexMembers::new(members) else {
             return Ok(None);
         };
-        Ok(
+        let Some(lane) =
             CountedLane::<(), usize>::from_wire(ctx, anchor.atom.into(), members, start)?
-                .map(|lane| (lane, end)),
-        )
+        else {
+            return Ok(None);
+        };
+        storage.commit()?;
+        Ok(Some((lane, end)))
     };
     let mut lanes = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX counted index lanes")?;
     let mut start = 0;
     while start + 4 <= bytes.len() {
+        ctx.charge_work(1, "scan NX counted index lanes")?;
         if let Some((lane, end)) = decode(start)? {
             ctx.push_vec(&mut lanes, lane, "NX counted index lanes")?;
             start = end;
