@@ -107,8 +107,20 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         .expect("skamp table")
         .rows_mut()[0]
         .status = 2;
-    assert!(crate::decode::with_test_decode_ctx(|ctx| joined_relation_incidence(ctx, &inactive_incidence, 8)).expect("solver incidence index").is_some());
-    assert!(crate::decode::with_test_decode_ctx(|ctx| relation_incidence(ctx, &inactive_incidence, 8)).expect("solver incidence index").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| joined_relation_incidence(
+            ctx,
+            &inactive_incidence,
+            8
+        ))
+        .expect("solver incidence index")
+        .is_some()
+    );
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| relation_incidence(ctx, &inactive_incidence, 8))
+            .expect("solver incidence index")
+            .is_none()
+    );
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| section_dimension_constraints(
             ctx,
@@ -179,7 +191,11 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         entity_ref: 2,
         offset: 82,
     };
-    assert!(crate::decode::with_test_decode_ctx(|ctx| relation_incidence(ctx, &incomplete_triples, 8)).expect("solver incidence index").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| relation_incidence(ctx, &incomplete_triples, 8))
+            .expect("solver incidence index")
+            .is_none()
+    );
     let mut duplicate_join = incidence_distance.clone();
     let duplicate_relations = duplicate_join.relations.as_mut().expect("relations");
     let duplicate = crate::feature::definitions::FeatureRelationTriple {
@@ -193,7 +209,11 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         .and_then(|table| table.header_mut())
         .expect("triples header")
         .declared_count = 2;
-    assert!(crate::decode::with_test_decode_ctx(|ctx| relation_incidence(ctx, &duplicate_join, 8)).expect("solver incidence index").is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| relation_incidence(ctx, &duplicate_join, 8))
+            .expect("solver incidence index")
+            .is_none()
+    );
     let mut null_join = incidence_distance.clone();
     let null_relations = null_join.relations.as_mut().expect("relations");
     declared_solver_rows(&mut null_relations.triples).push(
@@ -211,7 +231,9 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         .expect("triples header")
         .declared_count = 2;
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| relation_incidence(ctx, &null_join, 8)).expect("solver incidence index").map(|row| row.id),
+        crate::decode::with_test_decode_ctx(|ctx| relation_incidence(ctx, &null_join, 8))
+            .expect("solver incidence index")
+            .map(|row| row.id),
         Some(81)
     );
     incidence_distance

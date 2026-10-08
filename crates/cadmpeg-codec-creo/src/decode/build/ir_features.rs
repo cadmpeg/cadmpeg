@@ -356,7 +356,8 @@ pub(super) fn emit_model_features(
         let schema_class = feature_schema_class(ctx, scan, operation.feature_id)?;
         let definition = schema_class.map_or_else(
             || {
-                current_operation.and_then(|operation| operation.recipe.resolved())
+                current_operation
+                    .and_then(|operation| operation.recipe.resolved())
                     .map(|_| {
                         schema_feature_definition(
                             ctx,

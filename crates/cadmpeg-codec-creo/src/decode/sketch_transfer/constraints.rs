@@ -6,9 +6,7 @@ use crate::feature::segment_rows::SegmentRow;
 
 use crate::decode::sketch::equations_scalar::SectionScalarVariable;
 
-use super::super::feature_history::dimensions::{
-    resolved_feature_dimension_parameter_admitted,
-};
+use super::super::feature_history::dimensions::resolved_feature_dimension_parameter_admitted;
 use super::super::sketch::coordinates::{
     resolved_section_coordinates, saved_section_coordinate_witnesses,
     section_linear_distance_coordinate,
@@ -31,6 +29,7 @@ use super::super::sketch::skamp::{section_segment_rows, unique_decoded_section_s
 use super::super::sketch_ids::{
     sketch_constraint_id_admitted, sketch_entity_id_admitted, sketch_native_ref_admitted,
 };
+use super::solver_links::{EquationIncidences, RelationIncidences};
 use crate::decode::sketch_transfer::identity::{
     opaque_section_segment_identity_suffix_admitted, section_entity_external_ids,
     section_segment_identity_suffix_admitted, unique_section_segment_external_ids,
@@ -48,14 +47,17 @@ use cadmpeg_ir::{
     features::ParameterId,
     scalar::{Angle, Length},
 };
-use super::solver_links::{EquationIncidences, RelationIncidences};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const EPS_POLAR_ZERO: f64 = 1.0e-12;
 
 fn point_pair([first, second]: [u32; 2]) -> [u32; 2] {
-    if first <= second { [first, second] } else { [second, first] }
+    if first <= second {
+        [first, second]
+    } else {
+        [second, first]
+    }
 }
 
 fn collect_constraint_candidates<S, T>(
@@ -228,12 +230,18 @@ pub(in super::super) fn reconcile_constraint_entity_references(
             true
         }
         SketchConstraintDefinitionInput::Coincident { entities }
-        | SketchConstraintDefinitionInput::Distance { entities, .. } => {
-            ctx.all_by(entities, |entity| ctx.contains_btree_set(emitted, entity, "creo constraint emitted entity membership"), "creo constraint entity references")?
-        }
-        SketchConstraintDefinitionInput::CoincidentLoci { loci } => {
-            ctx.all_by(loci.iter(), &locus_emitted, "creo coincident constraint loci")?
-        }
+        | SketchConstraintDefinitionInput::Distance { entities, .. } => ctx.all_by(
+            entities,
+            |entity| {
+                ctx.contains_btree_set(emitted, entity, "creo constraint emitted entity membership")
+            },
+            "creo constraint entity references",
+        )?,
+        SketchConstraintDefinitionInput::CoincidentLoci { loci } => ctx.all_by(
+            loci.iter(),
+            &locus_emitted,
+            "creo coincident constraint loci",
+        )?,
         SketchConstraintDefinitionInput::SameCoordinate { relation } => {
             locus_emitted(relation.first())? && locus_emitted(relation.second())?
         }
@@ -362,9 +370,11 @@ pub(in super::super) fn reconcile_constraint_entity_references(
                 )?
         }
         SketchConstraintDefinitionInput::Group { elements }
-        | SketchConstraintDefinitionInput::Text { elements, .. } => {
-            ctx.all_by(elements.iter(), &locus_emitted, "creo grouped constraint loci")?
-        }
+        | SketchConstraintDefinitionInput::Text { elements, .. } => ctx.all_by(
+            elements.iter(),
+            &locus_emitted,
+            "creo grouped constraint loci",
+        )?,
         SketchConstraintDefinitionInput::Disabled {} => true,
         _ => true,
     })
@@ -477,13 +487,15 @@ pub(in super::super) fn close_sketch_constraint_parameter_references(
             &parameter.id,
             "creo emitted parameter identity membership",
         )? {
-            storage.with_storage(|| ctx.insert_btree_set(
-                &mut emitted,
-                parameter
-                    .id
-                    .try_clone_for_decode(ctx, "creo emitted parameter identity")?,
-                "creo emitted parameter ID nodes",
-            ))?;
+            storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut emitted,
+                    parameter
+                        .id
+                        .try_clone_for_decode(ctx, "creo emitted parameter identity")?,
+                    "creo emitted parameter ID nodes",
+                )
+            })?;
         }
     }
     ctx.retain_mut(
@@ -505,8 +517,11 @@ pub(in super::super) fn joined_relation_incidence<'definition>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &'definition crate::feature::definitions::FeatureDefinition,
     relation_id: u32,
-) -> Result<Option<&'definition crate::feature::definitions::FeatureSkamp>, cadmpeg_core::CodecError> {
-    Ok(RelationIncidences::new(ctx, definition)?.joined(relation_id).map(|(_, incidence)| incidence))
+) -> Result<Option<&'definition crate::feature::definitions::FeatureSkamp>, cadmpeg_core::CodecError>
+{
+    Ok(RelationIncidences::new(ctx, definition)?
+        .joined(relation_id)
+        .map(|(_, incidence)| incidence))
 }
 
 #[cfg(test)]
@@ -514,8 +529,10 @@ pub(in super::super) fn relation_incidence<'definition>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &'definition crate::feature::definitions::FeatureDefinition,
     relation_id: u32,
-) -> Result<Option<&'definition crate::feature::definitions::FeatureSkamp>, cadmpeg_core::CodecError> {
-    Ok(joined_relation_incidence(ctx, definition, relation_id)?.filter(|incidence| section_skamp_active(incidence.status)))
+) -> Result<Option<&'definition crate::feature::definitions::FeatureSkamp>, cadmpeg_core::CodecError>
+{
+    Ok(joined_relation_incidence(ctx, definition, relation_id)?
+        .filter(|incidence| section_skamp_active(incidence.status)))
 }
 
 fn incidence_entities(
@@ -524,7 +541,9 @@ fn incidence_entities(
     incidence: Option<&crate::feature::definitions::FeatureSkamp>,
     operation: &'static str,
 ) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
-    let Some(incidence) = incidence else { return Ok(Vec::new()); };
+    let Some(incidence) = incidence else {
+        return Ok(Vec::new());
+    };
     let mut entities = Vec::new();
     for item in ctx.admit_iter(&incidence.items, operation)? {
         if let Some(entity) = sketch_entity_id_admitted(ctx, sketch, item.entity_id)? {
@@ -541,7 +560,12 @@ pub(in super::super) fn relation_incidence_entities(
     sketch: &SketchId,
     relation_id: u32,
 ) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
-    incidence_entities(ctx, sketch, relation_incidence(ctx, definition, relation_id)?, "creo relation incidence items")
+    incidence_entities(
+        ctx,
+        sketch,
+        relation_incidence(ctx, definition, relation_id)?,
+        "creo relation incidence items",
+    )
 }
 
 #[cfg(test)]
@@ -551,7 +575,12 @@ pub(in super::super) fn joined_relation_incidence_entities(
     sketch: &SketchId,
     relation_id: u32,
 ) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
-    incidence_entities(ctx, sketch, joined_relation_incidence(ctx, definition, relation_id)?, "creo joined relation incidence items")
+    incidence_entities(
+        ctx,
+        sketch,
+        joined_relation_incidence(ctx, definition, relation_id)?,
+        "creo joined relation incidence items",
+    )
 }
 
 fn relation_incidence_loci(
@@ -561,10 +590,19 @@ fn relation_incidence_loci(
     sketch: &SketchId,
     incidence: Option<&crate::feature::definitions::FeatureSkamp>,
 ) -> Result<Option<[SketchLocus; 2]>, cadmpeg_core::CodecError> {
-    let Some(incidence) = incidence.filter(|incidence| section_skamp_active(incidence.status)) else { return Ok(None); };
-    let [first, second] = incidence.items.as_slice() else { return Ok(None); };
-    let Some(first) = section_skamp_locus(ctx, refusal, definition, sketch, first)? else { return Ok(None); };
-    let Some(second) = section_skamp_locus(ctx, refusal, definition, sketch, second)? else { return Ok(None); };
+    let Some(incidence) = incidence.filter(|incidence| section_skamp_active(incidence.status))
+    else {
+        return Ok(None);
+    };
+    let [first, second] = incidence.items.as_slice() else {
+        return Ok(None);
+    };
+    let Some(first) = section_skamp_locus(ctx, refusal, definition, sketch, first)? else {
+        return Ok(None);
+    };
+    let Some(second) = section_skamp_locus(ctx, refusal, definition, sketch, second)? else {
+        return Ok(None);
+    };
     Ok(Some([first, second]))
 }
 
@@ -585,9 +623,19 @@ fn section_angular_entities(
         let Some(external_id) = order_table.external_id(internal_id) else {
             return Ok(None);
         };
-        let is_line = unique_decoded_section_segment(definition, external_id)
-            .is_some_and(|segment| matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_)));
-        Ok((ctx.contains_btree_set(known_entities, &external_id, "creo angular entity membership")? && is_line).then_some(external_id))
+        let is_line =
+            unique_decoded_section_segment(definition, external_id).is_some_and(|segment| {
+                matches!(
+                    segment.kind,
+                    crate::feature::definitions::FeatureSegmentKind::Line(_)
+                )
+            });
+        Ok((ctx.contains_btree_set(
+            known_entities,
+            &external_id,
+            "creo angular entity membership",
+        )? && is_line)
+            .then_some(external_id))
     };
     let first = external_id(first_internal)?;
     let second = external_id(second_internal)?;
@@ -721,7 +769,8 @@ fn section_segment_radius_bindings(
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Vec<SectionSegmentRadiusBinding>, cadmpeg_core::CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "creo constraint scratch storage")?;
-    let unique_segment_ids = scratch_storage.with_storage(|| unique_section_segment_external_ids(ctx, definition))?;
+    let unique_segment_ids =
+        scratch_storage.with_storage(|| unique_section_segment_external_ids(ctx, definition))?;
     let mut bindings = Vec::new();
     let Some(segments) = definition.segments.as_ref() else {
         return Ok(bindings);
@@ -739,7 +788,9 @@ fn section_segment_radius_bindings(
         if segment.radius_ref.is_none() && segment.radius2_ref.is_none() {
             continue;
         }
-        let suffix = storage.with_storage(|| section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment))?;
+        let suffix = storage.with_storage(|| {
+            section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)
+        })?;
         for (field, ordinal) in [
             (SegmentRadiusField::Primary, segment.radius_ref),
             (SegmentRadiusField::Secondary, segment.radius2_ref),
@@ -747,9 +798,13 @@ fn section_segment_radius_bindings(
             let Some(ordinal) = ordinal else {
                 continue;
             };
-            storage.with_storage(|| ctx.reserve_vec(&mut bindings, 1, "creo segment radius bindings"))?;
+            storage.with_storage(|| {
+                ctx.reserve_vec(&mut bindings, 1, "creo segment radius bindings")
+            })?;
             bindings.push(SectionSegmentRadiusBinding {
-                suffix: storage.with_storage(|| ctx.copy_retained_text(&suffix, "creo radius binding suffix copy"))?,
+                suffix: storage.with_storage(|| {
+                    ctx.copy_retained_text(&suffix, "creo radius binding suffix copy")
+                })?,
                 external_id: segment.external_id,
                 field,
                 ordinal,
@@ -765,17 +820,25 @@ fn section_segment_radius_bindings(
             _ => None,
         })
     {
-        let unique_id = ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo radius binding identity membership")?;
+        let unique_id = ctx.contains_btree_set(
+            &unique_segment_ids,
+            &segment.external_id,
+            "creo radius binding identity membership",
+        )?;
         let suffix = if unique_id {
-            storage.with_storage(|| ctx.format_retained(
-                format_args!("{}", segment.external_id),
-                "creo radius circle suffix",
-            ))?
+            storage.with_storage(|| {
+                ctx.format_retained(
+                    format_args!("{}", segment.external_id),
+                    "creo radius circle suffix",
+                )
+            })?
         } else {
-            storage.with_storage(|| ctx.format_retained(
-                format_args!("circle:offset:{}", segment.offset),
-                "creo radius circle suffix",
-            ))?
+            storage.with_storage(|| {
+                ctx.format_retained(
+                    format_args!("circle:offset:{}", segment.offset),
+                    "creo radius circle suffix",
+                )
+            })?
         };
         let typed_circle = if unique_id {
             match (
@@ -791,7 +854,8 @@ fn section_segment_radius_bindings(
         } else {
             None
         };
-        storage.with_storage(|| ctx.reserve_vec(&mut bindings, 1, "creo segment radius bindings"))?;
+        storage
+            .with_storage(|| ctx.reserve_vec(&mut bindings, 1, "creo segment radius bindings"))?;
         bindings.push(SectionSegmentRadiusBinding {
             suffix,
             external_id: segment.external_id,
@@ -811,8 +875,9 @@ fn section_segment_radius_bindings(
         if segment.radius_ref.is_none() && segment.radius2_ref.is_none() {
             continue;
         }
-        let suffix =
-            storage.with_storage(|| opaque_section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment))?;
+        let suffix = storage.with_storage(|| {
+            opaque_section_segment_identity_suffix_admitted(ctx, &unique_segment_ids, segment)
+        })?;
         for (field, ordinal) in [
             (SegmentRadiusField::Primary, segment.radius_ref),
             (SegmentRadiusField::Secondary, segment.radius2_ref),
@@ -820,9 +885,13 @@ fn section_segment_radius_bindings(
             let Some(ordinal) = ordinal else {
                 continue;
             };
-            storage.with_storage(|| ctx.reserve_vec(&mut bindings, 1, "creo segment radius bindings"))?;
+            storage.with_storage(|| {
+                ctx.reserve_vec(&mut bindings, 1, "creo segment radius bindings")
+            })?;
             bindings.push(SectionSegmentRadiusBinding {
-                suffix: storage.with_storage(|| ctx.copy_retained_text(&suffix, "creo radius binding suffix copy"))?,
+                suffix: storage.with_storage(|| {
+                    ctx.copy_retained_text(&suffix, "creo radius binding suffix copy")
+                })?,
                 external_id: segment.external_id,
                 field,
                 ordinal,
@@ -921,17 +990,25 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
     available_parameters: &BTreeSet<ParameterId>,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let mut binding_storage = ctx.reserve_scoped(0, "creo radius binding scratch storage")?;
-    let mut bindings = section_segment_radius_bindings(ctx, definition, sketch, &mut binding_storage)?;
+    let mut bindings =
+        section_segment_radius_bindings(ctx, definition, sketch, &mut binding_storage)?;
     let mut candidate_storage = ctx.reserve_scoped(0, "creo emitted radius candidate storage")?;
     let mut candidates = Vec::new();
     for binding in ctx.admit_iter(&mut bindings, "creo segment radius binding rows")? {
         if let Some(constraint) = section_segment_radius_constraint(ctx, binding, sketch)? {
-            ctx.push_scoped_vec(&mut candidate_storage, &mut candidates, constraint, "creo segment radius constraints")?;
+            ctx.push_scoped_vec(
+                &mut candidate_storage,
+                &mut candidates,
+                constraint,
+                "creo segment radius constraints",
+            )?;
         }
     }
     let mut constraints = Vec::new();
     let mut candidates = candidates.into_iter().zip(bindings);
-    while let Some(((mut constraint, offset), binding)) = ctx.next_charged(&mut candidates, "creo emitted radius binding rows")? {
+    while let Some(((mut constraint, offset), binding)) =
+        ctx.next_charged(&mut candidates, "creo emitted radius binding rows")?
+    {
         let reconciled = match constraint.definition.edit(|kind| {
             reconcile_section_segment_radius_constraint(
                 ctx,
@@ -1006,7 +1083,8 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
     let Some(dimensions) = definition.dimensions.as_ref() else {
         return Ok(Vec::new());
     };
-    let unique_segment_ids = scratch_storage.with_storage(|| unique_section_segment_external_ids(ctx, definition))?;
+    let unique_segment_ids =
+        scratch_storage.with_storage(|| unique_section_segment_external_ids(ctx, definition))?;
     let mut entities_by_radius = BTreeMap::<u32, Vec<u32>>::new();
     for segment in ctx
         .admit_iter(
@@ -1018,17 +1096,29 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             _ => None,
         })
     {
-        if !matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Arc(_))
-            || !ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo radius segment identity membership")? { continue; }
+        if !matches!(
+            segment.kind,
+            crate::feature::definitions::FeatureSegmentKind::Arc(_)
+        ) || !ctx.contains_btree_set(
+            &unique_segment_ids,
+            &segment.external_id,
+            "creo radius segment identity membership",
+        )? {
+            continue;
+        }
         if let Some(radius) = segment.radius_ref {
-            let entities = scratch_storage.with_storage(|| ctx
-                .entry_btree_map(
-                    &mut entities_by_radius,
-                    radius,
-                    "creo equation radius group nodes",
-                ))?
+            let entities = scratch_storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut entities_by_radius,
+                        radius,
+                        "creo equation radius group nodes",
+                    )
+                })?
                 .or_default();
-            scratch_storage.with_storage(|| ctx.reserve_vec(entities, 1, "creo equation radius group entities"))?;
+            scratch_storage.with_storage(|| {
+                ctx.reserve_vec(entities, 1, "creo equation radius group entities")
+            })?;
             entities.push(segment.external_id);
         }
     }
@@ -1039,26 +1129,37 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             _ => None,
         })
     {
-        if !ctx.contains_btree_set(&unique_segment_ids, &segment.external_id, "creo radius segment identity membership")? { continue; }
-        let entities = scratch_storage.with_storage(|| ctx
-            .entry_btree_map(
-                &mut entities_by_radius,
-                segment.radius_ref,
-                "creo equation radius group nodes",
-            ))?
+        if !ctx.contains_btree_set(
+            &unique_segment_ids,
+            &segment.external_id,
+            "creo radius segment identity membership",
+        )? {
+            continue;
+        }
+        let entities = scratch_storage
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut entities_by_radius,
+                    segment.radius_ref,
+                    "creo equation radius group nodes",
+                )
+            })?
             .or_default();
-        scratch_storage.with_storage(|| ctx.reserve_vec(entities, 1, "creo equation radius group entities"))?;
+        scratch_storage
+            .with_storage(|| ctx.reserve_vec(entities, 1, "creo equation radius group entities"))?;
         entities.push(segment.external_id);
     }
 
     let mut constraints = Vec::new();
-    let equations = scratch_storage.with_storage(|| section_equation_radius_dimensions(ctx, definition))?;
+    let equations =
+        scratch_storage.with_storage(|| section_equation_radius_dimensions(ctx, definition))?;
     for equation in ctx.admit_iter(&equations, "creo radius dimension equations")? {
         let Ok(ordinal) = usize::try_from(equation.scalar.1) else {
             continue;
         };
-        let Some((dimension, parameter)) =
-            scratch_storage.with_storage(|| resolved_feature_dimension_parameter_admitted(ctx, sketch, dimensions, ordinal))?
+        let Some((dimension, parameter)) = scratch_storage.with_storage(|| {
+            resolved_feature_dimension_parameter_admitted(ctx, sketch, dimensions, ordinal)
+        })?
         else {
             continue;
         };
@@ -1076,7 +1177,12 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         {
             continue;
         }
-        let Some(entities) = ctx.get_btree_map(&entities_by_radius, &equation.radius, "creo equation radius group lookup")? else {
+        let Some(entities) = ctx.get_btree_map(
+            &entities_by_radius,
+            &equation.radius,
+            "creo equation radius group lookup",
+        )?
+        else {
             continue;
         };
         for &external_id in ctx.admit_iter(entities, "creo radius equation entities")? {
@@ -1137,17 +1243,19 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let equations =
-        scratch_storage.with_storage(|| super::super::sketch::equations_coordinate::section_equation_equal_length_constraint_rows(
+    let equations = scratch_storage.with_storage(|| {
+        super::super::sketch::equations_coordinate::section_equation_equal_length_constraint_rows(
             ctx,
             definition,
             &ambiguous_point_ids,
-        ))?;
+        )
+    })?;
     collect_constraint_candidates(
         ctx,
         &equations,
@@ -1203,7 +1311,8 @@ fn section_equation_radius_dimension_parameters(
     let Some(dimensions) = definition.dimensions.as_ref() else {
         return Ok(dimension_parameters);
     };
-    let equations = scratch_storage.with_storage(|| section_equation_radius_dimensions(ctx, definition))?;
+    let equations =
+        scratch_storage.with_storage(|| section_equation_radius_dimensions(ctx, definition))?;
     for equation in ctx.admit_iter(&equations, "creo equation radius dimensions")? {
         let Some(ordinal) = usize::try_from(equation.scalar.1).ok() else {
             continue;
@@ -1227,15 +1336,25 @@ fn section_equation_radius_dimension_parameters(
         }
         let candidate = (parameter, dimension_value);
         for variable in [equation.radius_variable, equation.scalar] {
-            match ctx.entry_btree_map(&mut dimension_parameters, variable, "creo equation dimension parameter nodes")? {
+            match ctx.entry_btree_map(
+                &mut dimension_parameters,
+                variable,
+                "creo equation dimension parameter nodes",
+            )? {
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     let slot = entry.get_mut();
-                    if !ctx.equal(&slot.as_ref(), &Some(&candidate), "creo equation dimension parameter agreement")? {
+                    if !ctx.equal(
+                        &slot.as_ref(),
+                        &Some(&candidate),
+                        "creo equation dimension parameter agreement",
+                    )? {
                         *slot = None;
                     }
                 }
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    let copied_parameter = candidate.0.try_clone_for_decode(ctx, "creo equation dimension parameter copy")?;
+                    let copied_parameter = candidate
+                        .0
+                        .try_clone_for_decode(ctx, "creo equation dimension parameter copy")?;
                     entry.insert(Some((copied_parameter, candidate.1)));
                 }
             }
@@ -1250,7 +1369,12 @@ fn section_equation_dimension_parameter(
     variable: SectionScalarVariable,
     value: f64,
 ) -> Result<Option<ParameterId>, cadmpeg_core::CodecError> {
-    let Some(Some((parameter, dimension_value))) = ctx.get_btree_map(parameters, &variable, "creo equation dimension parameter lookup")? else {
+    let Some(Some((parameter, dimension_value))) = ctx.get_btree_map(
+        parameters,
+        &variable,
+        "creo equation dimension parameter lookup",
+    )?
+    else {
         return Ok(None);
     };
     if (FiniteReal::new(*dimension_value))
@@ -1272,25 +1396,29 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "creo constraint scratch storage")?;
-    let coordinates = scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
+    let coordinates =
+        scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let dimension_parameters =
-        scratch_storage.with_storage(|| section_equation_radius_dimension_parameters(ctx, definition, sketch))?;
-    let equations = scratch_storage.with_storage(|| section_equation_function_six_distance_rows(
-        ctx,
-        definition,
-        &coordinates,
-        &ambiguous_point_ids,
-    ))?;
+    let dimension_parameters = scratch_storage
+        .with_storage(|| section_equation_radius_dimension_parameters(ctx, definition, sketch))?;
+    let equations = scratch_storage.with_storage(|| {
+        section_equation_function_six_distance_rows(
+            ctx,
+            definition,
+            &coordinates,
+            &ambiguous_point_ids,
+        )
+    })?;
     collect_constraint_candidates(
         ctx,
         &equations,
@@ -1335,23 +1463,27 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "creo constraint scratch storage")?;
-    let coordinates = scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
+    let coordinates =
+        scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let equations = scratch_storage.with_storage(|| section_equation_function_forty_two_midpoint_coordinate_rows(
-        ctx,
-        definition,
-        &coordinates,
-        &ambiguous_point_ids,
-    ))?;
+    let equations = scratch_storage.with_storage(|| {
+        section_equation_function_forty_two_midpoint_coordinate_rows(
+            ctx,
+            definition,
+            &coordinates,
+            &ambiguous_point_ids,
+        )
+    })?;
     collect_constraint_candidates(
         ctx,
         &equations,
@@ -1400,23 +1532,27 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "creo constraint scratch storage")?;
-    let coordinates = scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
+    let coordinates =
+        scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let equations = scratch_storage.with_storage(|| section_equation_function_thirty_one_point_coordinate_rows(
-        ctx,
-        definition,
-        &coordinates,
-        &ambiguous_point_ids,
-    ))?;
+    let equations = scratch_storage.with_storage(|| {
+        section_equation_function_thirty_one_point_coordinate_rows(
+            ctx,
+            definition,
+            &coordinates,
+            &ambiguous_point_ids,
+        )
+    })?;
     collect_constraint_candidates(
         ctx,
         &equations,
@@ -1456,7 +1592,9 @@ pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "creo constraint scratch storage")?;
-    let equations = scratch_storage.with_storage(|| section_equation_function_sixteen_angle_difference_rows(ctx, definition))?;
+    let equations = scratch_storage.with_storage(|| {
+        section_equation_function_sixteen_angle_difference_rows(ctx, definition)
+    })?;
     collect_constraint_candidates(
         ctx,
         &equations,
@@ -1488,7 +1626,8 @@ pub(super) fn section_equation_function_five_scalar_equality_constraints(
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "creo constraint scratch storage")?;
-    let equations = scratch_storage.with_storage(|| section_equation_function_five_scalar_equality_rows(ctx, definition))?;
+    let equations = scratch_storage
+        .with_storage(|| section_equation_function_five_scalar_equality_rows(ctx, definition))?;
     collect_constraint_candidates(
         ctx,
         &equations,
@@ -1515,25 +1654,24 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
     sketch: &SketchId,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "creo constraint scratch storage")?;
-    let coordinates = scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
+    let coordinates =
+        scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let dimension_parameters =
-        scratch_storage.with_storage(|| section_equation_radius_dimension_parameters(ctx, definition, sketch))?;
-    let equations = scratch_storage.with_storage(|| section_equation_radial_constraint_rows(
-        ctx,
-        definition,
-        &coordinates,
-        &ambiguous_point_ids,
-    ))?;
+    let dimension_parameters = scratch_storage
+        .with_storage(|| section_equation_radius_dimension_parameters(ctx, definition, sketch))?;
+    let equations = scratch_storage.with_storage(|| {
+        section_equation_radial_constraint_rows(ctx, definition, &coordinates, &ambiguous_point_ids)
+    })?;
     collect_constraint_candidates(
         ctx,
         &equations,
@@ -1654,14 +1792,27 @@ fn native_equation_data(
     {
         let separator = if slot == 0 { "" } else { "," };
         match argument {
-            Some(argument) => ctx.append_formatted_retained(&mut argument_slots,
-                format_args!("{separator}{slot}:{argument}"), "creo native equation property values")?,
+            Some(argument) => ctx.append_formatted_retained(
+                &mut argument_slots,
+                format_args!("{separator}{slot}:{argument}"),
+                "creo native equation property values",
+            )?,
             None => {
-                ctx.append_formatted_retained(&mut argument_slots,
-                    format_args!("{separator}{slot}:null"), "creo native equation property values")?;
-                let separator = if null_argument_ordinals.is_empty() { "" } else { "," };
-                ctx.append_formatted_retained(&mut null_argument_ordinals,
-                    format_args!("{separator}{slot}"), "creo native equation property values")?;
+                ctx.append_formatted_retained(
+                    &mut argument_slots,
+                    format_args!("{separator}{slot}:null"),
+                    "creo native equation property values",
+                )?;
+                let separator = if null_argument_ordinals.is_empty() {
+                    ""
+                } else {
+                    ","
+                };
+                ctx.append_formatted_retained(
+                    &mut null_argument_ordinals,
+                    format_args!("{separator}{slot}"),
+                    "creo native equation property values",
+                )?;
             }
         }
         let Some(object_index) = *argument else {
@@ -1688,8 +1839,11 @@ fn native_equation_data(
             ),
         });
     }
-    Ok(NativeEquationData { operands, argument_slots,
-        null_argument_ordinals: (!null_argument_ordinals.is_empty()).then_some(null_argument_ordinals),
+    Ok(NativeEquationData {
+        operands,
+        argument_slots,
+        null_argument_ordinals: (!null_argument_ordinals.is_empty())
+            .then_some(null_argument_ordinals),
     })
 }
 
@@ -1700,19 +1854,20 @@ pub(in super::super) fn section_equation_native_constraints(
     typed_offsets: &BTreeSet<usize>,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "creo constraint scratch storage")?;
-    let Some(table) = scratch_storage.with_storage(|| crate::feature::definitions::equation_table(
-        ctx,
-        &definition.body,
-        0,
-        definition.body.len(),
-    ))?
+    let Some(table) = scratch_storage.with_storage(|| {
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())
+    })?
     else {
         return Ok(Vec::new());
     };
     let solver = EquationIncidences::new(ctx, definition)?;
     let mut constraints = Vec::new();
     for equation in ctx.admit_iter(&table.rows, "creo native equation rows")? {
-        if ctx.contains_btree_set(typed_offsets, &equation.offset, "creo typed equation offset membership")? {
+        if ctx.contains_btree_set(
+            typed_offsets,
+            &equation.offset,
+            "creo typed equation offset membership",
+        )? {
             continue;
         }
         let active = !solver.is_disabled(equation.equation_id);
@@ -1739,13 +1894,29 @@ pub(in super::super) fn section_equation_native_constraints(
             table.declared_count,
         )?;
         insert_native_equation_property(ctx, &mut native_properties, "active", active)?;
-        let NativeEquationData { operands, argument_slots, null_argument_ordinals } =
-            native_equation_data(ctx, equation.equation_id, &equation.arguments, &native_ref)?;
+        let NativeEquationData {
+            operands,
+            argument_slots,
+            null_argument_ordinals,
+        } = native_equation_data(ctx, equation.equation_id, &equation.arguments, &native_ref)?;
         let key = ctx.copy_retained_text("argument_slots", "creo native equation property keys")?;
-        ctx.insert_btree_map(&mut native_properties, key, argument_slots, "creo native equation property nodes")?;
+        ctx.insert_btree_map(
+            &mut native_properties,
+            key,
+            argument_slots,
+            "creo native equation property nodes",
+        )?;
         if let Some(ordinals) = null_argument_ordinals {
-            let key = ctx.copy_retained_text("null_argument_ordinals", "creo native equation property keys")?;
-            ctx.insert_btree_map(&mut native_properties, key, ordinals, "creo native equation property nodes")?;
+            let key = ctx.copy_retained_text(
+                "null_argument_ordinals",
+                "creo native equation property keys",
+            )?;
+            ctx.insert_btree_map(
+                &mut native_properties,
+                key,
+                ordinals,
+                "creo native equation property nodes",
+            )?;
         }
         if let Some(count) = equation.explicit_argument_count {
             insert_native_equation_property(
@@ -1822,16 +1993,19 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let rows = scratch_storage.with_storage(|| super::super::sketch::equations_scalar::section_equation_coordinate_equality_rows(
-        ctx,
-        definition,
-        &ambiguous_point_ids,
-    ))?;
+    let rows = scratch_storage.with_storage(|| {
+        super::super::sketch::equations_scalar::section_equation_coordinate_equality_rows(
+            ctx,
+            definition,
+            &ambiguous_point_ids,
+        )
+    })?;
     collect_constraint_candidates(
         ctx,
         &rows,
@@ -1879,31 +2053,49 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let equations =
-        scratch_storage.with_storage(|| section_equation_point_on_line_constraint_rows(ctx, definition, &ambiguous_point_ids))?;
+    let equations = scratch_storage.with_storage(|| {
+        section_equation_point_on_line_constraint_rows(ctx, definition, &ambiguous_point_ids)
+    })?;
     let mut storage = ctx.reserve_scoped(0, "creo point-on-line index storage")?;
     let mut lines_by_points = HashMap::new();
     if !equations.is_empty() {
         if let Some(table) = &definition.segments {
             for row in ctx.admit_iter(table.rows.as_slice(), "creo point-on-line segment rows")? {
                 let (external_id, points) = match row {
-                    SegmentRow::Ordinary(segment) if matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_)) => (segment.external_id, segment.point_ids()),
+                    SegmentRow::Ordinary(segment)
+                        if matches!(
+                            segment.kind,
+                            crate::feature::definitions::FeatureSegmentKind::Line(_)
+                        ) =>
+                    {
+                        (segment.external_id, segment.point_ids())
+                    }
                     SegmentRow::ReferenceLine(segment) => {
-                        let [Some(first), Some(second)] = segment.point_ids else { continue; };
+                        let [Some(first), Some(second)] = segment.point_ids else {
+                            continue;
+                        };
                         (segment.external_id, [first, second])
                     }
                     SegmentRow::CenteredLine(segment) => (segment.external_id, [0, 1]),
                     _ => continue,
                 };
-                if table.rows.get(external_id).is_none() { continue; }
+                if table.rows.get(external_id).is_none() {
+                    continue;
+                }
                 storage.with_storage(|| {
-                    ctx.entry_hash_map(&mut lines_by_points, point_pair(points), "creo point-on-line pair index")?
-                        .and_modify(|unique| *unique = None).or_insert(Some(external_id));
+                    ctx.entry_hash_map(
+                        &mut lines_by_points,
+                        point_pair(points),
+                        "creo point-on-line pair index",
+                    )?
+                    .and_modify(|unique| *unique = None)
+                    .or_insert(Some(external_id));
                     Ok::<_, cadmpeg_core::CodecError>(())
                 })?;
             }
@@ -1917,7 +2109,13 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
             let Some(point) = section_point_locus(ctx, definition, sketch, equation.target)? else {
                 return Ok(None);
             };
-            let Some(line_external_id) = lines_by_points.get(&point_pair([equation.first, equation.second])).copied().flatten() else { return Ok(None); };
+            let Some(line_external_id) = lines_by_points
+                .get(&point_pair([equation.first, equation.second]))
+                .copied()
+                .flatten()
+            else {
+                return Ok(None);
+            };
             let Some(entity) = sketch_entity_id_admitted(ctx, sketch, line_external_id)? else {
                 return Ok(None);
             };
@@ -1947,18 +2145,22 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let coordinates = scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
-    let equations = scratch_storage.with_storage(|| section_equation_function_forty_three_axis_distance_rows(
-        ctx,
-        definition,
-        &coordinates,
-        &ambiguous_point_ids,
-    ))?;
+    let coordinates =
+        scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
+    let equations = scratch_storage.with_storage(|| {
+        section_equation_function_forty_three_axis_distance_rows(
+            ctx,
+            definition,
+            &coordinates,
+            &ambiguous_point_ids,
+        )
+    })?;
     collect_constraint_candidates(
         ctx,
         &equations,
@@ -2029,13 +2231,15 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let equations =
-        scratch_storage.with_storage(|| section_equation_unsigned_coordinate_distance_rows(ctx, definition, &ambiguous_point_ids))?;
+    let equations = scratch_storage.with_storage(|| {
+        section_equation_unsigned_coordinate_distance_rows(ctx, definition, &ambiguous_point_ids)
+    })?;
     collect_constraint_candidates(
         ctx,
         &equations,
@@ -2191,7 +2395,11 @@ fn native_section_dimension_constraint_definition(
         });
     }
     let unique_relation_id = solver.is_unique(relation.relation_id);
-    let joined_relation_incidence_link = if unique_relation_id { solver.joined(relation.relation_id) } else { None };
+    let joined_relation_incidence_link = if unique_relation_id {
+        solver.joined(relation.relation_id)
+    } else {
+        None
+    };
     let joined_incidence = joined_relation_incidence_link.map(|(_, incidence)| incidence);
     let parameter = match definition
         .dimensions
@@ -2205,7 +2413,12 @@ fn native_section_dimension_constraint_definition(
         None => None,
     };
     let entities = if unique_relation_id {
-        incidence_entities(ctx, sketch, joined_incidence, "creo joined relation incidence items")?
+        incidence_entities(
+            ctx,
+            sketch,
+            joined_incidence,
+            "creo joined relation incidence items",
+        )?
     } else {
         Vec::new()
     };
@@ -2301,7 +2514,8 @@ pub(super) fn reconcile_section_dimension_constraint(
     if entity_reconciled && parameter_reconciled {
         return Ok(true);
     }
-    let native_definition = native_section_dimension_constraint_definition(ctx, sketch, relation, solver)?;
+    let native_definition =
+        native_section_dimension_constraint_definition(ctx, sketch, relation, solver)?;
     *constraint_definition = native_definition;
     Ok(
         reconcile_constraint_entity_references(ctx, constraint_definition, emitted)?
@@ -2359,34 +2573,53 @@ pub(super) fn section_dimension_constraints_with_links(
     let Some(relations) = &definition.relations else {
         return Ok(Vec::new());
     };
-    if relations.rows.is_empty() { return Ok(Vec::new()); }
+    if relations.rows.is_empty() {
+        return Ok(Vec::new());
+    }
     let segments = scratch_storage.with_storage(|| section_segment_rows(ctx, definition))?;
 
-    let known_entities = scratch_storage.with_storage(|| section_entity_external_ids(ctx, definition))?;
+    let known_entities =
+        scratch_storage.with_storage(|| section_entity_external_ids(ctx, definition))?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| {
-            scratch_storage.with_storage(|| variables.reconciled_points(ctx))
+            scratch_storage
+                .with_storage(|| variables.reconciled_points(ctx))
                 .map(|points| points.ambiguous)
         })
         .transpose()?
         .unwrap_or_default();
-    let resolved_coordinates = scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
-    let saved_coordinate_witnesses =
-        scratch_storage.with_storage(|| saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids))?;
+    let resolved_coordinates =
+        scratch_storage.with_storage(|| resolved_section_coordinates(ctx, definition))?;
+    let saved_coordinate_witnesses = scratch_storage.with_storage(|| {
+        saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)
+    })?;
     let mut index_storage = ctx.reserve_scoped(0, "creo dimension geometry indexes")?;
     let mut measured_by_points = HashMap::new();
     let mut circles_by_radius = HashMap::new();
     for segment in ctx.admit_iter(&segments, "creo dimension geometry index rows")? {
         index_storage.with_storage(|| {
-            ctx.entry_hash_map(&mut measured_by_points, point_pair(segment.point_ids()), "creo measured point pair index")?
-                .and_modify(|unique| *unique = None).or_insert(Some(segment));
-            if matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Arc(_)) {
+            ctx.entry_hash_map(
+                &mut measured_by_points,
+                point_pair(segment.point_ids()),
+                "creo measured point pair index",
+            )?
+            .and_modify(|unique| *unique = None)
+            .or_insert(Some(segment));
+            if matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Arc(_)
+            ) {
                 if let Some(radius) = segment.radius_ref {
-                    ctx.entry_hash_map(&mut circles_by_radius, radius, "creo circular dimension radius index")?
-                        .and_modify(|unique| *unique = None).or_insert(Some(segment.external_id));
+                    ctx.entry_hash_map(
+                        &mut circles_by_radius,
+                        radius,
+                        "creo circular dimension radius index",
+                    )?
+                    .and_modify(|unique| *unique = None)
+                    .or_insert(Some(segment.external_id));
                 }
             }
             Ok::<_, cadmpeg_core::CodecError>(())
@@ -2394,10 +2627,17 @@ pub(super) fn section_dimension_constraints_with_links(
     }
     if let Some(table) = &definition.segments {
         for row in ctx.admit_iter(table.rows.as_slice(), "creo circular dimension index rows")? {
-            let SegmentRow::Circle(segment) = row else { continue; };
+            let SegmentRow::Circle(segment) = row else {
+                continue;
+            };
             index_storage.with_storage(|| {
-                ctx.entry_hash_map(&mut circles_by_radius, segment.radius_ref, "creo circular dimension radius index")?
-                    .and_modify(|unique| *unique = None).or_insert(Some(segment.external_id));
+                ctx.entry_hash_map(
+                    &mut circles_by_radius,
+                    segment.radius_ref,
+                    "creo circular dimension radius index",
+                )?
+                .and_modify(|unique| *unique = None)
+                .or_insert(Some(segment.external_id));
                 Ok::<_, cadmpeg_core::CodecError>(())
             })?;
         }
@@ -2407,7 +2647,8 @@ pub(super) fn section_dimension_constraints_with_links(
         .admit_iter(&relations.rows, "creo section dimension relation rows")?
         .enumerate()
     {
-        let mut dimension_storage = ctx.reserve_scoped(0, "creo relation dimension scratch storage")?;
+        let mut dimension_storage =
+            ctx.reserve_scoped(0, "creo relation dimension scratch storage")?;
         let mut coordinate_refusal = None;
         let locus_refusal = Cell::new(None);
         let candidate = (|| {
@@ -2420,13 +2661,19 @@ pub(super) fn section_dimension_constraints_with_links(
                 {
                     Some((dimensions, ordinal)) => capture_constraint_refusal(
                         &mut coordinate_refusal,
-                        dimension_storage.with_storage(|| resolved_feature_dimension_parameter_admitted(
-                            ctx, sketch, dimensions, ordinal,
-                        )),
+                        dimension_storage.with_storage(|| {
+                            resolved_feature_dimension_parameter_admitted(
+                                ctx, sketch, dimensions, ordinal,
+                            )
+                        }),
                     )?,
                     None => None,
                 };
-                let joined_incidence_link = if unique_relation_id { solver.joined(relation.relation_id) } else { None };
+                let joined_incidence_link = if unique_relation_id {
+                    solver.joined(relation.relation_id)
+                } else {
+                    None
+                };
                 let joined_incidence = joined_incidence_link.map(|(_, incidence)| incidence);
                 let typed = (|| {
                     unique_relation_id.then_some(())?;
@@ -2488,7 +2735,14 @@ pub(super) fn section_dimension_constraints_with_links(
                             ) && (measured.point_ids() == [first_id, second_id]
                                 || measured.point_ids() == [second_id, first_id])
                                 && measured.vertical_horizontal == Some(expected_coordinate)
-                                && capture_constraint_refusal(&mut coordinate_refusal, ctx.contains_btree_set(&known_entities, &measured.external_id, "creo dimension known entity membership"))?
+                                && capture_constraint_refusal(
+                                    &mut coordinate_refusal,
+                                    ctx.contains_btree_set(
+                                        &known_entities,
+                                        &measured.external_id,
+                                        "creo dimension known entity membership",
+                                    ),
+                                )?
                             {
                                 let entity = capture_constraint_refusal(
                                     &mut coordinate_refusal,
@@ -2530,7 +2784,15 @@ pub(super) fn section_dimension_constraints_with_links(
                             return None;
                         };
                         let external_id = circles_by_radius.get(&radius_id).copied().flatten()?;
-                        capture_constraint_refusal(&mut coordinate_refusal, ctx.contains_btree_set(&known_entities, &external_id, "creo dimension known entity membership"))?.then_some(())?;
+                        capture_constraint_refusal(
+                            &mut coordinate_refusal,
+                            ctx.contains_btree_set(
+                                &known_entities,
+                                &external_id,
+                                "creo dimension known entity membership",
+                            ),
+                        )?
+                        .then_some(())?;
                         return Some(circular_dimension_constraint(
                             capture_constraint_refusal(
                                 &mut coordinate_refusal,
@@ -2561,13 +2823,22 @@ pub(super) fn section_dimension_constraints_with_links(
                                         return None;
                                     }
                                 };
-                                let measured = measured_by_points.get(&point_pair([first_id, second_id])).copied().flatten();
+                                let measured = measured_by_points
+                                    .get(&point_pair([first_id, second_id]))
+                                    .copied()
+                                    .flatten();
                                 if let Some(measured) = measured {
                                     if matches!(
                                         measured.kind,
                                         crate::feature::definitions::FeatureSegmentKind::Line(_)
-                                    ) && capture_constraint_refusal(&mut coordinate_refusal, ctx.contains_btree_set(&known_entities, &measured.external_id, "creo dimension known entity membership"))?
-                                    {
+                                    ) && capture_constraint_refusal(
+                                        &mut coordinate_refusal,
+                                        ctx.contains_btree_set(
+                                            &known_entities,
+                                            &measured.external_id,
+                                            "creo dimension known entity membership",
+                                        ),
+                                    )? {
                                         let entity = capture_constraint_refusal(
                                             &mut coordinate_refusal,
                                             sketch_entity_id_admitted(
@@ -2699,7 +2970,12 @@ pub(super) fn section_dimension_constraints_with_links(
                             return Some(SketchConstraintDefinitionInput::Distance {
                                 entities: capture_constraint_refusal(
                                     &mut coordinate_refusal,
-                                    incidence_entities(ctx, sketch, joined_incidence, "creo joined relation incidence items"),
+                                    incidence_entities(
+                                        ctx,
+                                        sketch,
+                                        joined_incidence,
+                                        "creo joined relation incidence items",
+                                    ),
                                 )?,
                                 parameter,
                             });
@@ -2707,7 +2983,13 @@ pub(super) fn section_dimension_constraints_with_links(
                     }
                     let entities = capture_constraint_refusal(
                         &mut coordinate_refusal,
-                        incidence_entities(ctx, sketch, joined_incidence.filter(|incidence| section_skamp_active(incidence.status)), "creo relation incidence items"),
+                        incidence_entities(
+                            ctx,
+                            sketch,
+                            joined_incidence
+                                .filter(|incidence| section_skamp_active(incidence.status)),
+                            "creo relation incidence items",
+                        ),
                     )?;
                     (!entities.is_empty()).then_some(SketchConstraintDefinitionInput::Distance {
                         entities,
@@ -2865,7 +3147,9 @@ mod tests {
                 super::native_section_dimension_constraint_definition(
                     ctx,
                     &sketch,
-                    &relation, &super::RelationIncidences::new(ctx, &definition)?)
+                    &relation,
+                    &super::RelationIncidences::new(ctx, &definition)?,
+                )
             },
         );
         let SketchConstraintDefinitionInput::Native {
@@ -2885,16 +3169,24 @@ mod tests {
     fn equation_constraint_refuses_each_retained_identity_and_output_row() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let definition = || SketchConstraintDefinitionInput::ScalarEquality { first: 10, second: 11 };
+        let definition = || SketchConstraintDefinitionInput::ScalarEquality {
+            first: 10,
+            second: 11,
+        };
         let id = "creo:featdefs:sketch_constraint#5:equation:1";
         let _constraint = crate::test_support::assert_refusal_order(
             ResourceDimension::RetainedBytes,
-            &["creo sketch constraint identity", "creo equation sketch identity", "creo sketch native reference"],
+            &[
+                "creo sketch constraint identity",
+                "creo equation sketch identity",
+                "creo sketch native reference",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)
             },
         );
@@ -2905,10 +3197,22 @@ mod tests {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                let source = [std::cell::Cell::new(Some(super::equation_constraint(&ctx, &sketch, 1, definition(), true, 7)))];
-                super::collect_constraint_candidates(&ctx, &source, "creo scalar equality constraints",
-                    |constraint| constraint.take().expect("fixture constraint consumed once"))
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let source = [std::cell::Cell::new(Some(super::equation_constraint(
+                    &ctx,
+                    &sketch,
+                    1,
+                    definition(),
+                    true,
+                    7,
+                )))];
+                super::collect_constraint_candidates(
+                    &ctx,
+                    &source,
+                    "creo scalar equality constraints",
+                    |constraint| constraint.take().expect("fixture constraint consumed once"),
+                )
             },
         );
         assert_eq!(rows.len(), 1);
@@ -2920,27 +3224,53 @@ mod tests {
     fn native_verhor_refuses_each_nested_text_and_collection() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
+        let entity =
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
         let _definition = crate::test_support::assert_refusal_order(
             ResourceDimension::RetainedBytes,
-            &["creo verhor native kind", "creo verhor property key", "creo verhor property value", "creo verhor operand kind", "creo verhor operand field", "creo sketch native reference"],
+            &[
+                "creo verhor native kind",
+                "creo verhor property key",
+                "creo verhor property value",
+                "creo verhor operand kind",
+                "creo verhor operand field",
+                "creo sketch native reference",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2)
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::native_section_segment_verhor_definition(
+                    &ctx,
+                    &sketch,
+                    entity.clone(),
+                    42,
+                    2,
+                )
             },
         );
         let admitted = crate::test_support::assert_refusal_order(
             ResourceDimension::CollectionItems,
-            &["creo verhor property nodes", "creo verhor entity references", "creo verhor operands"],
+            &[
+                "creo verhor property nodes",
+                "creo verhor entity references",
+                "creo verhor operands",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2)
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::native_section_segment_verhor_definition(
+                    &ctx,
+                    &sketch,
+                    entity.clone(),
+                    42,
+                    2,
+                )
             },
         );
         let SketchConstraintDefinitionInput::Native {
@@ -2961,27 +3291,58 @@ mod tests {
     fn native_segment_radius_refuses_each_nested_text_and_collection() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
+        let entity =
+            SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID");
         let _definition = crate::test_support::assert_refusal_order(
             ResourceDimension::RetainedBytes,
-            &["creo radius native kind", "creo radius property key", "creo radius property value", "creo radius operand kind", "creo radius operand field", "creo sketch native reference", "creo radius operand kind", "creo radius operand field", "creo sketch native reference"],
+            &[
+                "creo radius native kind",
+                "creo radius property key",
+                "creo radius property value",
+                "creo radius operand kind",
+                "creo radius operand field",
+                "creo sketch native reference",
+                "creo radius operand kind",
+                "creo radius operand field",
+                "creo sketch native reference",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                super::native_section_segment_radius_definition(&ctx, &sketch, entity.clone(), 42, "radius", 2)
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::native_section_segment_radius_definition(
+                    &ctx,
+                    &sketch,
+                    entity.clone(),
+                    42,
+                    "radius",
+                    2,
+                )
             },
         );
         let admitted = crate::test_support::assert_refusal_order(
             ResourceDimension::CollectionItems,
-            &["creo radius property nodes", "creo radius entity references", "creo radius operands"],
+            &[
+                "creo radius property nodes",
+                "creo radius entity references",
+                "creo radius operands",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                super::native_section_segment_radius_definition(&ctx, &sketch, entity.clone(), 42, "radius", 2)
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::native_section_segment_radius_definition(
+                    &ctx,
+                    &sketch,
+                    entity.clone(),
+                    42,
+                    "radius",
+                    2,
+                )
             },
         );
         let SketchConstraintDefinitionInput::Native {
@@ -3047,14 +3408,18 @@ mod tests {
             offset: 0,
         };
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let rows = crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems,
-            &["creo segment radius constraints"], |limit| {
+        let rows = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo segment radius constraints"],
+            |limit| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = limit;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 super::section_segment_radius_constraints(&ctx, &definition, &sketch)
-            });
+            },
+        );
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows[0].0.id.as_str(),
@@ -3063,14 +3428,24 @@ mod tests {
         let emitted = BTreeSet::from([
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42").expect("valid entity ID")
         ]);
-        let rows = crate::test_support::assert_refusal_order(ResourceDimension::CollectionItems,
-            &["creo emitted segment radius constraints"], |limit| {
+        let rows = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo emitted segment radius constraints"],
+            |limit| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = limit;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                super::section_segment_radius_constraints_for_emitted(&ctx, &definition, &sketch, &emitted, &BTreeSet::new())
-            });
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::section_segment_radius_constraints_for_emitted(
+                    &ctx,
+                    &definition,
+                    &sketch,
+                    &emitted,
+                    &BTreeSet::new(),
+                )
+            },
+        );
         assert_eq!(rows.len(), 1);
     }
 
@@ -3079,15 +3454,21 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let _properties = crate::test_support::assert_refusal_order(
             ResourceDimension::RetainedBytes,
-            &["creo native relation property value", "creo native relation property key"],
+            &[
+                "creo native relation property value",
+                "creo native relation property key",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let mut properties = std::collections::BTreeMap::new();
                 let result = insert_relation_property(&ctx, &mut properties, "dimension_id", 7);
-                if result.is_err() { assert!(properties.is_empty()); }
+                if result.is_err() {
+                    assert!(properties.is_empty());
+                }
                 result.map(|()| properties)
             },
         );
@@ -3098,10 +3479,13 @@ mod tests {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let mut properties = std::collections::BTreeMap::new();
                 let result = insert_relation_property(&ctx, &mut properties, "dimension_id", 7);
-                if result.is_err() { assert!(properties.is_empty()); }
+                if result.is_err() {
+                    assert!(properties.is_empty());
+                }
                 result.map(|()| properties)
             },
         );
@@ -3114,12 +3498,16 @@ mod tests {
         let native_ref = "creo:featdefs:sketch#5";
         let _operands = crate::test_support::assert_refusal_order(
             ResourceDimension::RetainedBytes,
-            &["creo native relation operand kind", "creo native relation operand reference"],
+            &[
+                "creo native relation operand kind",
+                "creo native relation operand reference",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let mut operands = Vec::new();
                 push_relation_operand(&ctx, &mut operands, native_ref, "relat_ptr", None, 7)?;
                 Ok(operands)
@@ -3132,7 +3520,8 @@ mod tests {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let mut operands = Vec::new();
                 push_relation_operand(&ctx, &mut operands, native_ref, "relat_ptr", None, 7)?;
                 Ok(operands)
@@ -3147,15 +3536,22 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let _properties = crate::test_support::assert_refusal_order(
             ResourceDimension::RetainedBytes,
-            &["creo native equation property keys", "creo native equation property values"],
+            &[
+                "creo native equation property keys",
+                "creo native equation property values",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let mut properties = std::collections::BTreeMap::new();
-                let result = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7);
-                if result.is_err() { assert!(properties.is_empty()); }
+                let result =
+                    insert_native_equation_property(&ctx, &mut properties, "equation_id", 7);
+                if result.is_err() {
+                    assert!(properties.is_empty());
+                }
                 result.map(|()| properties)
             },
         );
@@ -3166,10 +3562,14 @@ mod tests {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 let mut properties = std::collections::BTreeMap::new();
-                let result = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7);
-                if result.is_err() { assert!(properties.is_empty()); }
+                let result =
+                    insert_native_equation_property(&ctx, &mut properties, "equation_id", 7);
+                if result.is_err() {
+                    assert!(properties.is_empty());
+                }
                 result.map(|()| properties)
             },
         );
@@ -3182,23 +3582,33 @@ mod tests {
         let arguments = [None, Some(2), Some(3)];
         let _operands = crate::test_support::assert_refusal_order(
             ResourceDimension::CollectionItems,
-            &["creo native equation operands", "creo native equation operands", "creo native equation operands"],
+            &[
+                "creo native equation operands",
+                "creo native equation operands",
+                "creo native equation operands",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 native_equation_data(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
             },
         );
         let operands = crate::test_support::assert_refusal_order(
             ResourceDimension::RetainedBytes,
-            &["creo equation operand kind", "creo equation operand field", "creo equation operand reference"],
+            &[
+                "creo equation operand kind",
+                "creo equation operand field",
+                "creo equation operand reference",
+            ],
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 native_equation_data(&ctx, 1, &arguments, "creo:featdefs:sketch#40")
             },
         );
@@ -3247,13 +3657,17 @@ mod tests {
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo emitted parameter ID nodes")
         );
-        let error = crate::test_support::last_refusal_at(&[], ResourceDimension::MaterializedBytes,
-            "creo emitted parameter identity", |ctx| {
-                close_sketch_constraint_parameter_references(ctx, &mut document.clone())
-            });
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::MaterializedBytes,
+            "creo emitted parameter identity",
+            |ctx| close_sketch_constraint_parameter_references(ctx, &mut document.clone()),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::MaterializedBytes
-                && resource.operation == "creo emitted parameter identity"));
+                && resource.operation == "creo emitted parameter identity")
+        );
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
         close_sketch_constraint_parameter_references(&ctx, &mut document)
@@ -3306,22 +3720,39 @@ mod tests {
             offset: 0,
         };
         let sketch = SketchId::mint("creo:model:sketch#1").expect("valid sketch identity");
-        crate::test_support::assert_refusal_order(cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            &["creo segment radius bindings", "creo segment radius constraints"], |limit| {
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            &[
+                "creo segment radius bindings",
+                "creo segment radius constraints",
+            ],
+            |limit| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = limit;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 super::section_segment_radius_constraints(&ctx, &definition, &sketch)
-            });
-        crate::test_support::assert_refusal_order(cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            &["creo emitted segment radius constraints"], |limit| {
+            },
+        );
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            &["creo emitted segment radius constraints"],
+            |limit| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = limit;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                super::section_segment_radius_constraints_for_emitted(&ctx, &definition, &sketch, &BTreeSet::new(), &BTreeSet::new())
-            });
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::section_segment_radius_constraints_for_emitted(
+                    &ctx,
+                    &definition,
+                    &sketch,
+                    &BTreeSet::new(),
+                    &BTreeSet::new(),
+                )
+            },
+        );
         crate::decode::with_test_decode_ctx(|ctx| {
             assert_eq!(
                 super::section_segment_radius_constraints(ctx, &definition, &sketch)
@@ -3561,7 +3992,9 @@ mod tests {
                 &sketch,
                 &relation,
                 &BTreeSet::new(),
-                &BTreeSet::new(), &super::RelationIncidences::new(ctx, &definition)?))
+                &BTreeSet::new(),
+                &super::RelationIncidences::new(ctx, &definition)?
+            ))
             .expect("service dimension fallback admission")
         );
         assert!(matches!(
@@ -3587,7 +4020,9 @@ mod tests {
                 &sketch,
                 &relation,
                 &BTreeSet::from([emitted_entity]),
-                &BTreeSet::new(), &super::RelationIncidences::new(ctx, &definition)?))
+                &BTreeSet::new(),
+                &super::RelationIncidences::new(ctx, &definition)?
+            ))
             .expect("service dimension fallback admission")
         );
         assert!(matches!(
@@ -3642,13 +4077,17 @@ mod tests {
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
         let admitted = crate::test_support::assert_refusal_order(
             ResourceDimension::CollectionItems,
-            &["creo solver relation identity rows", "creo native relation operands",
-              "creo section dimension constraints"],
+            &[
+                "creo solver relation identity rows",
+                "creo native relation operands",
+                "creo section dimension constraints",
+            ],
             |limit| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = limit;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
                 super::section_dimension_constraints(&ctx, &definition, &sketch)
             },
         );

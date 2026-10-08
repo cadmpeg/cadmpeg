@@ -640,7 +640,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
     let mut linear_dimension_candidates = Vec::new();
     if let Some(relation_table) = definition.relations.as_ref() {
         if feature_relation_table_complete(relation_table) {
-            let relation_solver_rows = ctx.admit_iter(&relation_table.rows, "creo section relation rows")?;
+            let relation_solver_rows =
+                ctx.admit_iter(&relation_table.rows, "creo section relation rows")?;
             let relation_solver = RelationIncidences::new(ctx, definition)?;
             for relation in relation_solver_rows {
                 if relation_solver.is_disabled(relation.relation_id) {
