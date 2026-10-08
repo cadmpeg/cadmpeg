@@ -15,7 +15,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The largest sequence address representable by an IGES pointer constant.
 const MAX_POINTER_SEQUENCE: i64 = 9_999_999;
@@ -75,22 +75,22 @@ impl Serialize for Resolution {
 fn classify(
     target_sequence: Option<u32>,
     target: Option<&DirectoryEntry>,
-    accepts: impl FnOnce(&DirectoryEntry) -> Result<bool, CodecError>,
-) -> Result<Resolution, CodecError> {
-    Ok(match (target_sequence, target) {
+    accepts: impl FnOnce(&DirectoryEntry) -> bool,
+) -> Resolution {
+    match (target_sequence, target) {
         (None, _) => Resolution::OutOfRange,
         (Some(sequence), target) if sequence % 2 == 0 => {
             Resolution::EvenSequence(target.map(|entry| entry.sequence))
         }
         (Some(_), None) => Resolution::Dangling,
         (Some(sequence), Some(entry)) => {
-            if accepts(entry)? {
+            if accepts(entry) {
                 Resolution::Resolved(sequence)
             } else {
                 Resolution::WrongType(entry.sequence)
             }
         }
-    })
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -275,7 +275,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             raw_pointer,
             target_sequence,
             expected,
-            |target| Ok(accepts(target)),
+            accepts,
         )
     }
 
@@ -297,7 +297,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             raw_pointer,
             target_sequence,
             expected,
-            |target| Ok(accepts(target)),
+            accepts,
         )
     }
 
@@ -308,7 +308,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         raw_pointer: i64,
         target_sequence: Option<u32>,
         expected: ReferenceExpectation,
-        accepts: impl FnOnce(&DirectoryEntry) -> Result<bool, CodecError>,
+        accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Result<Option<u32>, CodecError> {
         let target = match target_sequence {
             Some(sequence) => {
@@ -316,30 +316,43 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             }
             None => None,
         };
-        let resolution = classify(target_sequence, target, accepts)?;
+        let resolution = classify(target_sequence, target, accepts);
         let mut graph = self.edges.borrow_mut();
-        self.group_storage.borrow_mut().with_storage(|| {
-            self.ctx
-                .admit_btree_entry(&graph, &source, "iges parameter resolver edge groups")
-        })?;
-        let edges = match graph.entry(source) {
-            Entry::Vacant(slot) => slot.insert(Vec::new()),
-            Entry::Occupied(slot) => slot.into_mut(),
-        };
-        self.ctx.reserve_scoped_vec(
-            &mut self.storage.borrow_mut(),
-            edges,
-            1,
-            "iges parameter resolver edges",
-        )?;
-        edges.push(ReferenceEdge {
+        let edge = ReferenceEdge {
             origin: ReferenceOrigin::Parameter {
                 index: parameter_index,
             },
             raw_pointer,
             resolution,
             expected,
-        });
+        };
+        if let Some(edges) = self.ctx.get_mut_btree_map(
+            &mut graph,
+            &source,
+            "iges parameter resolver edge groups",
+        )? {
+            self.ctx.reserve_scoped_vec(
+                &mut self.storage.borrow_mut(),
+                edges,
+                1,
+                "iges parameter resolver edges",
+            )?;
+            edges.push(edge);
+        } else {
+            let mut edges = self
+                .storage
+                .borrow_mut()
+                .with_storage(|| self.ctx.collection_vec(1, "iges parameter resolver edges"))?;
+            edges.push(edge);
+            self.group_storage.borrow_mut().with_storage(|| {
+                self.ctx.insert_btree_map(
+                    &mut graph,
+                    source,
+                    edges,
+                    "iges parameter resolver edge groups",
+                )
+            })?;
+        }
         Ok(match resolution {
             Resolution::Resolved(sequence) => Some(sequence),
             _ => None,
@@ -372,13 +385,8 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             positive_pointer_sequence(raw_pointer),
             expected,
             |target| {
-                Ok(target.entity_type == entity_type
-                    && (forms.is_empty()
-                        || self.ctx.any_by(
-                            forms,
-                            |form| Ok(*form == target.form),
-                            "iges parameter expected form search",
-                        )?))
+                target.entity_type == entity_type
+                    && (forms.is_empty() || forms.contains(&target.form))
             },
         )
     }
@@ -409,13 +417,8 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             negative_pointer_sequence(raw_pointer),
             expected,
             |target| {
-                Ok(target.entity_type == entity_type
-                    && (forms.is_empty()
-                        || self.ctx.any_by(
-                            forms,
-                            |form| Ok(*form == target.form),
-                            "iges parameter expected form search",
-                        )?))
+                target.entity_type == entity_type
+                    && (forms.is_empty() || forms.contains(&target.form))
             },
         )
     }
@@ -474,23 +477,30 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             self.edges.into_inner(),
             "iges parameter resolver graph sources",
         )? {
-            storage.with_storage(|| {
-                self.ctx
-                    .admit_btree_entry(graph, &source, "iges parameter resolver graph groups")
-            })?;
-            match graph.entry(source) {
-                Entry::Vacant(slot) => {
-                    slot.insert(edges);
+            match self.ctx.get_mut_btree_map(
+                graph,
+                &source,
+                "iges parameter resolver graph groups",
+            )? {
+                Some(target) if target.is_empty() => {
+                    *target = edges;
                 }
-                Entry::Occupied(mut slot) if slot.get().is_empty() => {
-                    slot.insert(edges);
-                }
-                Entry::Occupied(mut slot) => {
+                Some(target) => {
                     storage.with_storage(|| {
                         self.ctx.append_vec(
-                            slot.get_mut(),
+                            target,
                             &mut edges,
                             "iges appended parameter reference edges",
+                        )
+                    })?;
+                }
+                None => {
+                    storage.with_storage(|| {
+                        self.ctx.insert_btree_map(
+                            graph,
+                            source,
+                            edges,
+                            "iges parameter resolver graph groups",
                         )
                     })?;
                 }
@@ -643,11 +653,11 @@ fn cyclic_transform_nodes(
     let mut index_storage = ctx.reserve_scoped(0, "IGES transform cycle indices")?;
     let mut next = BTreeMap::new();
     for (source, values) in ctx.admit_iter(edges, "iges transform cycle sources")? {
-        if let Some(target) = ctx.find_map(
-            values,
-            |edge| Ok(edge.resolved_target_sequence_for(ReferenceKind::Transform)),
-            "iges transform successor search",
-        )? {
+        // Directory graphs have at most seven reference kinds per source.
+        if let Some(target) = values
+            .iter()
+            .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Transform))
+        {
             index_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut next,
@@ -667,15 +677,17 @@ fn cyclic_transform_nodes(
         let mut path_storage = ctx.reserve_scoped(0, "IGES transform cycle path")?;
         let mut path = Vec::new();
         let mut active = BTreeMap::<u32, usize>::new();
-        let mut successors =
-            std::iter::successors(Some(start), |current| next.get(current).copied());
-        while let Some(current) =
-            ctx.next_charged(&mut successors, "iges transform reference cycle walk")?
-        {
-            if completed.contains(&current) {
+        let mut successor = Some(start);
+        let mut steps = std::iter::repeat(());
+        while let Some(current) = successor {
+            ctx.next_charged(&mut steps, "iges transform reference cycle walk")?;
+            if ctx.contains_btree_set(&completed, &current, "iges completed transform lookup")? {
                 break;
             }
-            if let Some(position) = active.get(&current).copied() {
+            if let Some(position) = ctx
+                .get_btree_map(&active, &current, "iges active transform lookup")?
+                .copied()
+            {
                 for node in ctx
                     .admit_iter(&path[position..], "iges cyclic transform nodes")?
                     .copied()
@@ -699,6 +711,9 @@ fn cyclic_transform_nodes(
                 "iges transform reference path",
             )?;
             path.push(current);
+            successor = ctx
+                .get_btree_map(&next, &current, "iges transform successor lookup")?
+                .copied();
         }
         for node in ctx.admit_iter(path, "iges completed transform path")? {
             index_storage.with_storage(|| {
@@ -726,8 +741,8 @@ pub(crate) fn build<'ctx>(
                     None => None,
                 };
                 let resolution = classify(candidate.target_sequence, target, |value| {
-                    Ok(accepts(candidate.kind, entry, value))
-                })?;
+                    accepts(candidate.kind, entry, value)
+                });
                 let expected = expected(candidate.kind, entry, ctx)?;
                 ctx.reserve_vec(&mut edges, 1, "iges directory reference edges")?;
                 edges.push(ReferenceEdge {
@@ -749,12 +764,14 @@ pub(crate) fn build<'ctx>(
                 cyclic_transform_nodes(&graph, ctx)
             })?;
         for source in ctx.admit_iter(cyclic, "iges cyclic transform sources")? {
-            let edge = match graph.get_mut(&source) {
-                Some(edges) => ctx.find_by(
-                    edges.iter_mut(),
-                    |edge| Ok(edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform)),
-                    "iges cyclic transform edge",
-                )?,
+            let edge = match ctx.get_mut_btree_map(
+                &mut graph,
+                &source,
+                "iges cyclic transform source lookup",
+            )? {
+                Some(edges) => edges.iter_mut().find(|edge| {
+                    edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform)
+                }),
                 None => None,
             };
             if let Some(edge) = edge {
@@ -772,7 +789,9 @@ pub(crate) fn resolved_structure_sequence(
     source: u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<u32>, CodecError> {
-    let Some(edges) = graph.get(&source) else {
+    let Some(edges) =
+        ctx.get_btree_map(graph, &source, "iges structure reference source lookup")?
+    else {
         return Ok(None);
     };
     ctx.find_map(

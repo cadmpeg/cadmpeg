@@ -357,12 +357,8 @@ pub(super) fn project(
             continue;
         };
         let mut profile_storage = [0_u8; 64];
-        let profile_id = crate::ids::directory_lookup_key(
-            "iges:model:curve#D",
-            profile,
-            &mut profile_storage,
-            ctx,
-        )?;
+        let profile_id =
+            crate::ids::directory_lookup_key("iges:model:curve#D", profile, &mut profile_storage);
         let profile = match profile_id {
             Some(profile_id) => {
                 let index = match &mut profile_index {
