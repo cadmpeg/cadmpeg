@@ -90,6 +90,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
+    let mut body_id_index = None;
+    let mut body_id_storage = ctx.reserve_scoped(0, "creo model body identity index scratch")?;
     for transform in ctx.admit_iter(&scan.features.section_transforms, "creo sweep transform scan")? {
         if unique_feature_section_transform(
             ctx,
@@ -135,7 +137,11 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             continue;
         };
         let body_id: BodyId = circular_identity(ctx, feature_id, "body")?;
-        if ctx.any_by(&ir.model.bodies, |body| ctx.equal(body.id.as_str(), body_id.as_str(), "creo model identity comparison"), "creo model identity scan")? {
+        if body_id_index.is_none() {
+            body_id_index = Some(body_id_storage.with_storage(|| ctx.collect_string_set(ir.model.bodies.iter().map(|body| body.id.as_str()), "creo model body identity index"))?);
+        }
+        let Some(indexed_body_ids) = &mut body_id_index else { continue; };
+        if ctx.contains_hash_set(indexed_body_ids, body_id.as_str(), "creo model identity comparison")? {
             continue;
         }
         let region_id: RegionId = circular_identity(ctx, feature_id, "region")?;
@@ -542,6 +548,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             shells: circular_item(ctx, shell_id, "creo circular region shells")?,
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
+        body_id_storage.with_storage(|| ctx.insert_string_set(indexed_body_ids, body_id.as_str(), "creo model body identity index"))?;
         source_carriers.admit_body(
             ctx,
             ir,

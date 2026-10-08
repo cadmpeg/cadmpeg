@@ -241,6 +241,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
+    let mut body_id_index = None;
+    let mut body_id_storage = ctx.reserve_scoped(0, "creo model body identity index scratch")?;
     for transform in ctx.admit_iter(&scan.features.section_transforms, "creo sweep transform scan")? {
         if unique_feature_section_transform(
             ctx,
@@ -302,7 +304,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         };
         let body_id = extrusion_id!(BodyId, "body");
-        if ctx.any_by(&ir.model.bodies, |body| ctx.equal(body.id.as_str(), body_id.as_str(), "creo model identity comparison"), "creo model identity scan")? {
+        if body_id_index.is_none() {
+            body_id_index = Some(body_id_storage.with_storage(|| ctx.collect_string_set(ir.model.bodies.iter().map(|body| body.id.as_str()), "creo model body identity index"))?);
+        }
+        let Some(indexed_body_ids) = &mut body_id_index else { continue; };
+        if ctx.contains_hash_set(indexed_body_ids, body_id.as_str(), "creo model identity comparison")? {
             continue;
         }
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -802,14 +808,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             edge_index
                         ),
                         sense: Sense::Reversed,
-                        pcurves: ctx.collect_vec(
-                            [PcurveUse {
+                        pcurves: {
+    let mut uses = ctx.collection_vec(1, "creo extrusion bottom coedge pcurve uses")?;
+    uses.push(PcurveUse {
                                 pcurve: bottom_pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
-                            }],
-                            "creo extrusion bottom coedge pcurve uses",
-                        )?,
+                            });
+    uses
+},
                         use_curve: None,
                     },
                 )?;
@@ -875,14 +882,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             ring_index
                         ),
                         sense: Sense::Forward,
-                        pcurves: ctx.collect_vec(
-                            [PcurveUse {
+                        pcurves: {
+    let mut uses = ctx.collection_vec(1, "creo extrusion top coedge pcurve uses")?;
+    uses.push(PcurveUse {
                                 pcurve: top_pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
-                            }],
-                            "creo extrusion top coedge pcurve uses",
-                        )?,
+                            });
+    uses
+},
                         use_curve: None,
                     },
                 )?;
@@ -1040,14 +1048,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             edge: copy_id!(edge_uses[use_index].0),
                             radial_next,
                             sense: edge_uses[use_index].1,
-                            pcurves: ctx.collect_vec(
-                                [PcurveUse {
+                            pcurves: {
+    let mut uses = ctx.collection_vec(1, "creo extrusion side coedge pcurve uses")?;
+    uses.push(PcurveUse {
                                     pcurve,
                                     isoparametric: None,
                                     parameter_range: None,
-                                }],
-                                "creo extrusion side coedge pcurve uses",
-                            )?,
+                                });
+    uses
+},
                             use_curve: None,
                         },
                     )?;
@@ -1066,7 +1075,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             Sense::Reversed
                         },
                         loops: cadmpeg_ir::topology::FaceLoops::unspecified(
-                            ctx.collect_vec([loop_id], "creo extrusion side face loop IDs")?,
+                            { let mut ids = ctx.collection_vec(1, "creo extrusion side face loop IDs")?; ids.push(loop_id); ids },
                         ),
                         name: None,
                         color: None,
@@ -1121,16 +1130,17 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         ir.model.regions.push(Region {
             id: copy_id!(region_id),
             body: copy_id!(body_id),
-            shells: ctx.collect_vec([shell_id], "creo extrusion region shell IDs")?,
+            shells: { let mut ids = ctx.collection_vec(1, "creo extrusion region shell IDs")?; ids.push(shell_id); ids },
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
+        body_id_storage.with_storage(|| ctx.insert_string_set(indexed_body_ids, body_id.as_str(), "creo model body identity index"))?;
         source_carriers.admit_body(
             ctx,
             ir,
             Body {
                 id: body_id,
                 kind: BodyKind::Solid,
-                regions: ctx.collect_vec([region_id], "creo extrusion body region IDs")?,
+                regions: { let mut ids = ctx.collection_vec(1, "creo extrusion body region IDs")?; ids.push(region_id); ids },
                 transform: None,
                 name: None,
                 color: None,
