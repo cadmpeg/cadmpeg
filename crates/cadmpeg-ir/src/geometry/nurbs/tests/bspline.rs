@@ -42,8 +42,8 @@ fn bspline_constructor_admits_each_scan_row_and_pole_before_its_visit() {
             },
         );
     }
-    // Two nine-probe knot axes, a two-probe shape search and nine collection probes.
-    let cap = 29;
+    // Each axis checks four finite knots and three pairs; one row width and nine collection probes.
+    let cap = 24;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = cap;
@@ -102,8 +102,8 @@ fn bspline_constructor_preserves_storage_refusal_wire_and_source_order() {
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two nine-probe knot axes, two shape probes and nine collection probes.
-    policy.limits.max_work_units = 29;
+    // Two axes each check four finite knots and three pairs, then one row and nine collection probes.
+    policy.limits.max_work_units = 24;
     policy.limits.max_collection_items = 6;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let knots = vec![0.0, 0.0, 1.0, 1.0];

@@ -1254,7 +1254,8 @@ fn raw_lane_constructors_share_caller_work_and_keep_refusal() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 9;
+    // Four finite knots and three adjacent pairs exhaust the shared account.
+    policy.limits.max_work_units = 7;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -1277,7 +1278,7 @@ fn raw_lane_constructors_share_caller_work_and_keep_refusal() {
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "IR NURBS grid row shape");
-    assert_eq!(limit.used, 9);
+    assert_eq!(limit.used, 7);
     assert_eq!(limit.additional, 1);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
