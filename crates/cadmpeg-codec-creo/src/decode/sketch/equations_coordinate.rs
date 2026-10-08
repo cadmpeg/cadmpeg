@@ -881,16 +881,6 @@ fn next_section_component(
     Ok(Some(component))
 }
 
-fn insert_solved_coordinate(
-    ctx: &DecodeContext<'_>,
-    solved: &mut BTreeMap<SectionCoordinateVariable, f64>,
-    variable: SectionCoordinateVariable,
-    value: f64,
-) -> Result<(), CodecError> {
-    ctx.insert_btree_map(solved, variable, value, "creo section solved coordinates")?;
-    Ok(())
-}
-
 pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     ctx: &DecodeContext<'_>,
     equations: &[SectionCoordinateEquation],
@@ -1357,7 +1347,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
             for &global in ctx.admit_iter(&columns, "creo section unresolved component columns")? {
                 let variable = variables[global];
                 if let Some(value) = ctx.get_btree_map(&stored_coordinates, &variable, "creo section stored coordinates get")? {
-                    scratch.with_storage(|| insert_solved_coordinate(ctx, &mut solved, variable, *value))?;
+                    scratch.with_storage(|| ctx.insert_btree_map(&mut solved, variable, *value, "creo section solved coordinates"))?;
                 }
             }
             continue;
@@ -1365,7 +1355,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
         for &(local, value) in
             ctx.admit_iter(&component_solution, "creo section solved component columns")?
         {
-            scratch.with_storage(|| insert_solved_coordinate(ctx, &mut solved, variables[columns[local]], value))?;
+            scratch.with_storage(|| ctx.insert_btree_map(&mut solved, variables[columns[local]], value, "creo section solved coordinates"))?;
         }
     }
     let mut points = BTreeMap::<u32, [Option<f64>; 2]>::new();
