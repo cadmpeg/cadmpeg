@@ -207,7 +207,7 @@ pub(super) fn decode(
             )?
             .unwrap_or_default();
         let mut datum_records = BTreeSet::new();
-        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
+        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit, ctx)?;
         let mut datum_references = Vec::new();
         for (index, constituent) in ctx
             .admit_iter(&constituents[..], "STEP decode traversal")?
@@ -528,7 +528,7 @@ pub(super) fn decode(
             "STEP decode traversal",
         )?;
         if let (Some(index), Some(limits)) = (dimension, limits) {
-            let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
+            let mut measurements = measure_context(geometry, id, &mut losses, graph_limit, ctx)?;
             let lower = limits
                 .parameters()
                 .first()
@@ -634,7 +634,7 @@ pub(super) fn decode(
             ctx,
             "step_pmi_geometric_tolerance_references",
         )?;
-        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
+        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit, ctx)?;
         let magnitude = first_measure(
             ctx.admit_iter(
                 record
@@ -2331,7 +2331,7 @@ fn characteristic_values(
 ) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
-        let mut measurements = measure_context(geometry, id, losses, graph_limit);
+        let mut measurements = measure_context(geometry, id, losses, graph_limit, ctx)?;
         let Some(characteristic) = find_record_value(record, ctx, |value| {
             first_matching([value], ctx, |id| {
                 Ok({
@@ -2629,13 +2629,14 @@ fn measure_context<'a>(
     id: u64,
     losses: &'a mut Vec<LossNote>,
     graph_limit: usize,
-) -> MeasureContext<'a> {
-    MeasureContext {
-        length_scale: geometry.units.length([id]).get(),
-        angle_scale: geometry.units.angle([id]).get(),
+    ctx: &DecodeContext<'_>,
+) -> Result<MeasureContext<'a>, CodecError> {
+    Ok(MeasureContext {
+        length_scale: geometry.units.length([id], ctx)?.get(),
+        angle_scale: geometry.units.angle([id], ctx)?.get(),
         graph_limit,
         losses,
-    }
+    })
 }
 
 fn first_measure<'a>(

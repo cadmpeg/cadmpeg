@@ -24,10 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_ENDPOINT_WITNESS: f64 = 1.0e-6;
 
-fn source_curve_refusal(
-    collection_limit: u64,
-    depth_limit: Option<u64>,
-) -> cadmpeg_core::CodecError {
+fn source_curve_refusal(operation: &'static str) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CIRCLE();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
@@ -39,16 +36,18 @@ fn source_curve_refusal(
         length: BTreeMap::new(),
         angle: BTreeMap::new(),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    if let Some(limit) = depth_limit {
-        policy.limits.max_recursion_depth = limit;
-    }
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    super::super::resolve_source_curve_parameter_scales(&exchange, &scales, &ctx)
-        .expect_err("source curve admission exceeds the limit")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("source fits policy");
+            super::super::resolve_source_curve_parameter_scales(&exchange, &scales, &ctx)
+        },
+    )
 }
 
 /// Runs the parameter-scale walk over a fresh index of `ir`.
@@ -61,52 +60,42 @@ fn surface_parameter_scales_for_step(
     source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
-    let (index, _workspace) = SurfaceScaleIndex::build(ir, ctx)?;
-    procedural_surface_parameter_scales(
-        ir,
-        &index,
-        surface_id,
-        geometry,
-        length_scale,
-        angle_scale,
-        source_curve_parameter_scales,
-        ctx,
-    )
+    let (mut index, mut workspace) = SurfaceScaleIndex::build(ir, ctx)?;
+    workspace.with_storage(|| {
+        procedural_surface_parameter_scales(
+            ir,
+            &mut index,
+            surface_id,
+            geometry,
+            [length_scale, angle_scale],
+            source_curve_parameter_scales,
+            ctx,
+        )
+    })
 }
 
 #[test]
-fn source_curve_parameter_active_refuses_collection_limit() {
+fn source_curve_parameter_memo_refuses_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(
-        source_curve_refusal(0, None),
+        source_curve_refusal("step source curve scale memo"),
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_source_curve_parameter_active"
+                && refusal.operation == "step source curve scale memo"
     ));
 }
 
 #[test]
 fn source_curve_parameter_scales_refuse_collection_limit() {
+    // One memo slot and one path slot precede the first resolved scale slot.
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(
-        source_curve_refusal(1, None),
+        source_curve_refusal("step_source_curve_parameter_scales"),
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_source_curve_parameter_scales"
-    ));
-}
-
-#[test]
-fn source_curve_parameter_walk_refuses_depth_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    assert!(matches!(
-        source_curve_refusal(2, Some(0)),
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RecursionDepth
-                && refusal.operation == "step_source_curve_parameter_walk"
     ));
 }
 
@@ -304,7 +293,11 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
         Some([0.0, 2.0])
     );
     assert_eq!(
-        surface_periodic_domains(&SolvedSurfaceGeometry::Nurbs(surface)),
+        surface_periodic_domains(
+            &SolvedSurfaceGeometry::Nurbs(surface),
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         [Some([0.0, 2.0]), Some([0.0, 1.0])]
     );
 }
@@ -345,7 +338,13 @@ fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
     let start = FiniteReal::new(max * 0.5).expect("finite start");
     let end = FiniteReal::new(-max).expect("finite end");
     assert_eq!(
-        edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end),
+        edge_parameter_range(
+            &SolvedCurveGeometry::Nurbs(curve),
+            start,
+            end,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         Some([max * 0.5, max])
     );
 }
@@ -366,7 +365,14 @@ fn periodic_pcurve_trim_shifts_a_wide_finite_seam_endpoint() {
     .expect("wide periodic pcurve");
     let geometry = PcurveGeometry::Nurbs { nurbs };
     assert_eq!(
-        trimmed_pcurve_parameterization(&geometry, max * 0.5, -max, true),
+        trimmed_pcurve_parameterization(
+            &geometry,
+            max * 0.5,
+            -max,
+            true,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         ([max * 0.5, max], true)
     );
 }
@@ -382,15 +388,33 @@ fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
     ));
     let [two, five] = [2.0, 5.0].map(|value| FiniteReal::new(value).expect("finite parameter"));
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), two, five),
+        edge_parameter_range(
+            line.solved().expect("solved carrier"),
+            two,
+            five,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         Some([2.0, 5.0])
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), five, two),
+        edge_parameter_range(
+            line.solved().expect("solved carrier"),
+            five,
+            two,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         None
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), two, two),
+        edge_parameter_range(
+            line.solved().expect("solved carrier"),
+            two,
+            two,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         None
     );
 }
@@ -411,8 +435,14 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
         0.5 - 20_000.0 * std::f64::consts::TAU,
     ]
     .map(|value| FiniteReal::new(value).expect("finite parameter"));
-    let range = edge_parameter_range(circle.solved().expect("solved carrier"), start, end)
-        .expect("periodic interval");
+    let range = edge_parameter_range(
+        circle.solved().expect("solved carrier"),
+        start,
+        end,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("parameter walk admission")
+    .expect("periodic interval");
     assert!((range[0] - 1.5).abs() < 1.0e-10);
     assert!((range[1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-10);
 }
@@ -430,7 +460,14 @@ fn periodic_edge_range_reduces_finite_endpoints_separately_when_difference_overf
     );
     let start = FiniteReal::new(-f64::MAX).expect("finite start");
     let end = FiniteReal::new(f64::MAX).expect("finite end");
-    let range = edge_parameter_range(&circle, start, end).expect("finite cyclic sweep");
+    let range = edge_parameter_range(
+        &circle,
+        start,
+        end,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("parameter walk admission")
+    .expect("finite cyclic sweep");
     assert!(range[0].is_finite() && range[1].is_finite());
     assert!(range[1] > range[0]);
     assert!(range[1] - range[0] < std::f64::consts::TAU);
@@ -469,7 +506,13 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         1.0,
     )
     .expect("end point");
-    let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
+    let start_seed = curve_endpoint_seed(
+        geometry.solved().expect("solved carrier"),
+        false,
+        0.0,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("parameter walk admission");
     let start = nurbs_curve_parameter_near_point(
         &cadmpeg_test_support::service_decode_context(),
         &nurbs,
@@ -491,7 +534,13 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     .expect("unanchored end witness")
     .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
-    let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start);
+    let end_seed = curve_endpoint_seed(
+        geometry.solved().expect("solved carrier"),
+        true,
+        start,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("parameter walk admission");
     let end = nurbs_curve_parameter_near_point(
         &cadmpeg_test_support::service_decode_context(),
         &nurbs,
@@ -1153,7 +1202,15 @@ ENDSEC;END-ISO-10303-21;",
             angle_scale: 1.0
         },
         &mut losses,
-        &mut active,
+        &mut super::super::PcurveWalk {
+            active: &mut active,
+            workspace: &mut super::super::PcurveWorkspace {
+                records: BTreeSet::new(),
+                storage: ctx
+                    .reserve_scoped(0, "test pcurve workspace")
+                    .expect("empty scope")
+            }
+        },
         0,
         &ctx
     )
@@ -1171,7 +1228,15 @@ ENDSEC;END-ISO-10303-21;",
             angle_scale: 1.0
         },
         &mut losses,
-        &mut active,
+        &mut super::super::PcurveWalk {
+            active: &mut active,
+            workspace: &mut super::super::PcurveWorkspace {
+                records: BTreeSet::new(),
+                storage: ctx
+                    .reserve_scoped(0, "test pcurve workspace")
+                    .expect("empty scope")
+            }
+        },
         0,
         &ctx
     )
@@ -1246,10 +1311,369 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
         .unwrap();
         let [start, end] =
             [0.8 * d, 0.9 * d].map(|value| FiniteReal::new(value).expect("finite parameter"));
-        let range =
-            super::super::edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end)
-                .unwrap();
+        let range = super::super::edge_parameter_range(
+            &SolvedCurveGeometry::Nurbs(curve),
+            start,
+            end,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("parameter walk admission")
+        .unwrap();
         assert!((range[0] / d - 0.8).abs() < 16. * f64::EPSILON);
         assert!((range[1] / d - 0.9).abs() < 16. * f64::EPSILON);
     }
+}
+
+#[test]
+fn surface_scale_index_tracks_appends_and_duplicate_owners() {
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let mut ir = CadIr::empty();
+        let owner = SurfaceId::mint("test:model:surface#owner").expect("identity");
+        let construction = ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
+            .expect("identity");
+        let surface = Surface {
+            id: owner.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        };
+        ir.model.surfaces.push(surface);
+        ir.model
+            .add_procedural_surface(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &owner,
+                ProceduralSurface::new(
+                    construction,
+                    ProceduralSurfaceDefinition::DegenerateTorus { select_outer: true },
+                    None,
+                ),
+            )
+            .expect("construction admission")
+            .expect("valid construction");
+        let (mut index, mut storage) =
+            SurfaceScaleIndex::build(&CadIr::empty(), ctx).expect("empty index");
+        storage
+            .with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+                index.add_surface(&ir.model.surfaces[0], 0, ctx)?;
+                index.add_procedural(&ir.model.procedural_surfaces[0], 0, ctx)
+            })
+            .expect("appended records");
+        assert_eq!(
+            index
+                .surface(&ir, ctx, &owner)
+                .expect("lookup")
+                .map(|s| &s.id),
+            Some(&owner)
+        );
+        assert!(index
+            .owned_procedural(&ir, ctx, &owner)
+            .expect("lookup")
+            .is_some());
+        assert_eq!(
+            storage
+                .with_storage(|| procedural_surface_parameter_scales(
+                    &ir,
+                    &mut index,
+                    &owner,
+                    &ir.model.surfaces[0].geometry,
+                    [10.0, 0.25],
+                    &BTreeMap::new(),
+                    ctx,
+                ))
+                .expect("cache unique procedure"),
+            Some([0.25, 0.25])
+        );
+        assert!(!index.terminals.is_empty());
+        ir.model.surfaces.push(ir.model.surfaces[0].clone());
+        storage
+            .with_storage(|| index.add_surface(&ir.model.surfaces[1], 1, ctx))
+            .expect("duplicate owner");
+        assert!(index
+            .owned_procedural(&ir, ctx, &owner)
+            .expect("lookup")
+            .is_none());
+        assert_eq!(
+            storage
+                .with_storage(|| procedural_surface_parameter_scales(
+                    &ir,
+                    &mut index,
+                    &owner,
+                    &ir.model.surfaces[0].geometry,
+                    [10.0, 0.25],
+                    &BTreeMap::new(),
+                    ctx,
+                ))
+                .expect("ambiguous cached owner"),
+            None
+        );
+        let (rebuilt, _rebuilt_storage) =
+            SurfaceScaleIndex::build(&ir, ctx).expect("rebuilt index");
+        assert!(rebuilt
+            .owned_procedural(&ir, ctx, &owner)
+            .expect("lookup")
+            .is_none());
+    });
+}
+
+#[test]
+fn pcurve_trim_fallback_visits_each_selector_once() {
+    let value = Value::List(vec![
+        Value::Integer(17),
+        Value::Omitted,
+        Value::Reference(1),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Three selector visits plus the terminal probe; the first bare number is kept during typed selection.
+    policy.limits.max_work_units = 3 + 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert_eq!(
+        pcurve_trim_parameter(&ctx, &value)
+            .expect("one selector pass fits")
+            .map(FiniteReal::get),
+        Some(17.0)
+    );
+}
+
+#[test]
+fn surface_support_memo_uses_linear_slots_and_requester_units() {
+    use cadmpeg_core::decode::DecodePolicy;
+    let mut ir = CadIr::empty();
+    let cylinder = SurfaceId::mint("test:model:surface#0").expect("identity");
+    ir.model.surfaces.push(Surface {
+        id: cylinder,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("cylinder"),
+        )),
+        source_object: None,
+    });
+    for position in 1..=256 {
+        let owner = SurfaceId::mint(format!("test:model:surface#{position}")).expect("identity");
+        let support = ir.model.surfaces[position - 1].id.clone();
+        ir.model.surfaces.push(Surface {
+            id: owner.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        ir.model.add_procedural_surface(
+            &cadmpeg_ir::document::admission::StandardAdmission, &owner,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint(format!("test:model:procedural-surface#{position}")).expect("identity"),
+                ProceduralSurfaceDefinition::ParallelOffset(
+                    cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(
+                        support, 1.0, Some(false),
+                    ).expect("offset"),
+                ), None,
+            ),
+        ).expect("procedure admission").expect("owned procedure");
+    }
+    let mut policy = DecodePolicy::service();
+    // A linear allowance for index, memo and traversal slots excludes one active
+    // entry for every prefix of the 256-surface chain.
+    policy.limits.max_collection_items = 16 * 257;
+    crate::test_support::with_policy_context(b"support graph", &policy, |_, ctx| {
+        let (mut index, mut storage) = SurfaceScaleIndex::build(&ir, ctx).expect("index");
+        for (position, surface) in ir.model.surfaces.iter().enumerate() {
+            let length = f64::from(u32::try_from(position + 1).expect("small chain"));
+            let angle = length / 100.0;
+            for units in [[length, angle], [length * 2.0, angle * 3.0]] {
+                assert_eq!(
+                    storage
+                        .with_storage(|| procedural_surface_parameter_scales(
+                            &ir,
+                            &mut index,
+                            &surface.id,
+                            &surface.geometry,
+                            units,
+                            &BTreeMap::new(),
+                            ctx,
+                        ))
+                        .expect("linear support walk"),
+                    Some([units[1], units[0]])
+                );
+            }
+        }
+        assert_eq!(index.terminals.len(), ir.model.surfaces.len());
+    });
+}
+
+#[test]
+fn surface_support_memo_observes_first_appended_procedure() {
+    crate::test_support::with_service_context(b"append graph", |_, ctx| {
+        let mut ir = CadIr::empty();
+        let owner = SurfaceId::mint("test:model:surface#owner").expect("identity");
+        let support = SurfaceId::mint("test:model:surface#support").expect("identity");
+        ir.model.surfaces.push(Surface {
+            id: owner.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: support.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("plane"),
+            )),
+            source_object: None,
+        });
+        let (mut index, mut storage) = SurfaceScaleIndex::build(&ir, ctx).expect("index");
+        assert_eq!(
+            storage
+                .with_storage(|| procedural_surface_parameter_scales(
+                    &ir,
+                    &mut index,
+                    &owner,
+                    &ir.model.surfaces[0].geometry,
+                    [10.0, 0.25],
+                    &BTreeMap::new(),
+                    ctx,
+                ))
+                .expect("unknown terminal"),
+            None
+        );
+        ir.model.add_procedural_surface(
+            &cadmpeg_ir::document::admission::StandardAdmission, &owner,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint("test:model:procedural-surface#owner").expect("identity"),
+                ProceduralSurfaceDefinition::ParallelOffset(
+                    cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, 1.0, Some(false)).expect("offset"),
+                ), None,
+            ),
+        ).expect("procedure admission").expect("owned procedure");
+        storage
+            .with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+                index.add_surface(&ir.model.surfaces[0], 0, ctx)?;
+                index.add_procedural(&ir.model.procedural_surfaces[0], 0, ctx)
+            })
+            .expect("append procedure");
+        assert_eq!(
+            storage
+                .with_storage(|| procedural_surface_parameter_scales(
+                    &ir,
+                    &mut index,
+                    &owner,
+                    &ir.model.surfaces[0].geometry,
+                    [10.0, 0.25],
+                    &BTreeMap::new(),
+                    ctx,
+                ))
+                .expect("new support"),
+            Some([10.0, 10.0])
+        );
+    });
+}
+
+#[test]
+fn surface_support_memo_marks_closed_cycles_unresolved() {
+    crate::test_support::with_service_context(b"cycle graph", |_, ctx| {
+        let mut ir = CadIr::empty();
+        for position in 0..2 {
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId::mint(format!("test:model:surface#{position}")).expect("identity"),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+            });
+        }
+        for position in 0..2 {
+            let owner = ir.model.surfaces[position].id.clone();
+            let support = ir.model.surfaces[1 - position].id.clone();
+            ir.model.add_procedural_surface(
+                &cadmpeg_ir::document::admission::StandardAdmission, &owner,
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint(format!("test:model:procedural-surface#{position}")).expect("identity"),
+                    ProceduralSurfaceDefinition::ParallelOffset(
+                        cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, 1.0, Some(false)).expect("offset"),
+                    ), None,
+                ),
+            ).expect("procedure admission").expect("owned procedure");
+        }
+        let (mut index, mut storage) = SurfaceScaleIndex::build(&ir, ctx).expect("index");
+        for surface in &ir.model.surfaces {
+            assert_eq!(
+                storage
+                    .with_storage(|| procedural_surface_parameter_scales(
+                        &ir,
+                        &mut index,
+                        &surface.id,
+                        &surface.geometry,
+                        [10.0, 0.25],
+                        &BTreeMap::new(),
+                        ctx,
+                    ))
+                    .expect("cycle walk"),
+                None
+            );
+        }
+        assert_eq!(index.terminals.len(), 2);
+        assert!(index
+            .terminals
+            .values()
+            .all(|(_, terminal)| terminal.is_none()));
+    });
+}
+
+#[test]
+fn surface_scale_memo_keeps_each_duplicate_root_geometry() {
+    crate::test_support::with_service_context(b"duplicate roots", |_, ctx| {
+        let mut ir = CadIr::empty();
+        let id = SurfaceId::mint("test:model:surface#root").expect("identity");
+        ir.model.surfaces.push(Surface {
+            id: id.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("cylinder"),
+            )),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: id.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("sphere"),
+            )),
+            source_object: None,
+        });
+        let (mut index, mut storage) = SurfaceScaleIndex::build(&ir, ctx).expect("index");
+        for position in [0, 1, 0] {
+            let expected = if position == 0 {
+                [0.25, 10.0]
+            } else {
+                [0.25, 0.25]
+            };
+            assert_eq!(
+                storage
+                    .with_storage(|| procedural_surface_parameter_scales(
+                        &ir,
+                        &mut index,
+                        &id,
+                        &ir.model.surfaces[position].geometry,
+                        [10.0, 0.25],
+                        &BTreeMap::new(),
+                        ctx,
+                    ))
+                    .expect("duplicate root scale"),
+                Some(expected)
+            );
+        }
+    });
 }

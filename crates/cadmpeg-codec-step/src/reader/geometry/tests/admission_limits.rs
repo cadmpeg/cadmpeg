@@ -7,21 +7,6 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 #[test]
-fn uncertainty_values_text_refuses_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    assert!(matches!(
-        &ctx.join_display_retained(["0.1", "0.2"], ", ", "step_uncertainty_values_text"),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_uncertainty_values_text"
-    ));
-}
-
-#[test]
 fn uncertainty_note_text_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -47,6 +32,12 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
     policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    let mut workspace = super::super::PcurveWorkspace {
+        records: BTreeSet::new(),
+        storage: ctx
+            .reserve_scoped(0, "test pcurve workspace")
+            .expect("empty scope"),
+    };
     super::super::decode_pcurve_geometry(
         1,
         &exchange,
@@ -58,7 +49,10 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
             angle_scale: 1.0,
         },
         &mut Vec::new(),
-        &mut BTreeSet::new(),
+        &mut super::super::PcurveWalk {
+            active: &mut BTreeSet::new(),
+            workspace: &mut workspace,
+        },
         0,
         &ctx,
     )
@@ -106,21 +100,23 @@ fn surface_scale_refusal(
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let ir = cadmpeg_ir::document::CadIr::empty();
     let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#1").expect("valid identity");
-    let (index, _workspace) =
+    let (mut index, mut workspace) =
         super::super::SurfaceScaleIndex::build(&ir, &ctx).expect("empty model index");
-    super::super::procedural_surface_parameter_scales(
-        &ir,
-        &index,
-        &id,
-        &cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
-        ),
-        1.0,
-        1.0,
-        &BTreeMap::new(),
-        &ctx,
-    )
-    .expect_err("surface scale exceeds limit")
+    workspace
+        .with_storage(|| {
+            super::super::procedural_surface_parameter_scales(
+                &ir,
+                &mut index,
+                &id,
+                &cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+                ),
+                [1.0, 1.0],
+                &BTreeMap::new(),
+                &ctx,
+            )
+        })
+        .expect_err("surface scale exceeds limit")
 }
 
 #[test]
@@ -129,15 +125,6 @@ fn surface_scale_active_refuses_collection_limit() {
         matches!(surface_scale_refusal(0, u64::MAX, 128), CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::CollectionItems
             && refusal.operation == "step_surface_scale_active")
-    );
-}
-
-#[test]
-fn surface_scale_active_id_refuses_scoped_limit() {
-    assert!(
-        matches!(surface_scale_refusal(128, 0, 128), CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::MaterializedBytes
-            && refusal.operation == "step_surface_scale_active_id")
     );
 }
 
@@ -156,51 +143,6 @@ fn surface_geometry_scale_walk_refuses_depth_limit() {
         matches!(surface_scale_refusal(128, u64::MAX, 1), CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::RecursionDepth
             && refusal.operation == "step_surface_geometry_scale_walk")
-    );
-}
-
-fn directrix_scale_refusal(
-    collection_limit: u64,
-    retained_limit: u64,
-    depth_limit: u64,
-) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    policy.limits.max_recursion_depth = depth_limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let ir = cadmpeg_ir::document::CadIr::empty();
-    let id = cadmpeg_ir::ids::CurveId::mint("test:model:curve#1").expect("valid identity");
-    super::super::directrix_parameter_scale_inner(&ir, &id, 1.0, 1.0, &mut BTreeSet::new(), &ctx)
-        .expect_err("directrix scale exceeds limit")
-}
-
-#[test]
-fn directrix_scale_active_refuses_collection_limit() {
-    assert!(
-        matches!(directrix_scale_refusal(0, u64::MAX, 128), CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "step_directrix_scale_active")
-    );
-}
-
-#[test]
-fn directrix_scale_active_id_refuses_retained_limit() {
-    assert!(
-        matches!(directrix_scale_refusal(128, 0, 128), CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::RetainedBytes
-            && refusal.operation == "step_directrix_scale_active_id")
-    );
-}
-
-#[test]
-fn directrix_scale_walk_refuses_depth_limit() {
-    assert!(
-        matches!(directrix_scale_refusal(128, u64::MAX, 0), CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::RecursionDepth
-            && refusal.operation == "step_directrix_scale_walk")
     );
 }
 
@@ -412,7 +354,7 @@ fn deferred_dependency_refusal(
     policy.limits.max_collection_items = limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    super::super::defer_geometry_dependency(&mut HashMap::new(), 1, 2, &ctx, group, member)
+    ctx.push_hash_group(&mut HashMap::new(), 1, 2, group, member)
         .expect_err("dependency exceeds the limit")
 }
 
@@ -458,7 +400,10 @@ fn deferred_wake_refusal(operation: &'static str) -> CodecError {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let mut waiting = HashMap::from([(1, vec![2])]);
+    let mut waiting = super::super::DeferredDependencies {
+        waiting_on: HashMap::from([(1, vec![2])]),
+        remaining: HashMap::from([(2, 1)]),
+    };
     super::super::wake_deferred_dependents(1, &mut waiting, &mut VecDeque::new(), &ctx, operation)
         .expect_err("wake queue exceeds the limit")
 }
@@ -580,4 +525,201 @@ fn transformation_operator_partial_refusal_stays_error() {
             );
         });
     }
+}
+
+#[test]
+fn nested_trim_value_walks_the_geometry_scale_once() {
+    use cadmpeg_ir::geometry::{CurveGeometry, PlacedCurve, SolvedCurveGeometry};
+    let mut geometry = SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("line"),
+    );
+    for _ in 0..4 {
+        geometry = SolvedCurveGeometry::Transformed(
+            PlacedCurve::try_new(
+                Box::new(geometry),
+                cadmpeg_ir::transform::Transform::identity(),
+            )
+            .expect("placed line"),
+        );
+    }
+    let geometry = CurveGeometry::Solved(geometry);
+    let mut value = crate::parse::Value::Integer(2);
+    for _ in 0..8 {
+        value = crate::parse::Value::Typed("PARAMETER_VALUE".into(), Box::new(value));
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Eight typed-value steps plus four basis steps; the geometry scale is computed once.
+    policy.limits.max_work_units = 8 + 4;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    let mut losses = Vec::new();
+    let context = super::super::TrimParameterContext {
+        points: &BTreeMap::new(),
+        geometry: &geometry,
+        angle_scale: 1.0,
+        linear_parameter_scale: 7.0,
+        parameter_offset: 3.0,
+        tolerance: 1.0,
+        master_representation: super::super::TrimMasterRepresentation::Parameter,
+        record_id: 1,
+        losses: &mut losses,
+        ctx: &ctx,
+    };
+    assert_eq!(
+        super::super::trim_parameter_value(&value, &context).expect("each walk fits the budget"),
+        Some(17.0)
+    );
+}
+
+#[test]
+fn transformed_curve_parameter_walks_refuse_work_limits() {
+    use cadmpeg_ir::geometry::{PlacedCurve, SolvedCurveGeometry};
+    let mut geometry = SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("line"),
+    );
+    for _ in 0..4 {
+        geometry = SolvedCurveGeometry::Transformed(
+            PlacedCurve::try_new(
+                Box::new(geometry),
+                cadmpeg_ir::transform::Transform::identity(),
+            )
+            .expect("placed line"),
+        );
+    }
+    for operation in [
+        "step_trim_parameter_scale_walk",
+        "step_directrix_geometry_scale_walk",
+        "step curve point parameter basis walk",
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                    .expect("empty root fits policy");
+                match operation {
+                    "step_trim_parameter_scale_walk" => {
+                        super::super::parameter_scale(&geometry, 2.0, 7.0, &ctx).map(Some)
+                    }
+                    "step_directrix_geometry_scale_walk" => {
+                        super::super::directrix_geometry_parameter_scale(&geometry, 7.0, 2.0, &ctx)
+                    }
+                    _ => super::super::curve_parameter_at_point(
+                        &ctx,
+                        &geometry,
+                        cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
+                        1.0,
+                    ),
+                }
+            },
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation)
+        );
+    }
+}
+
+#[test]
+fn composite_segment_scratch_is_scoped_and_released() {
+    use cadmpeg_ir::geometry::CompositeCurveTransition;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=LINE('',#10,#11);#2=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#1);#3=COMPOSITE_CURVE('',(#2),.F.);#10=CARTESIAN_POINT('',(0.,0.,0.));#11=VECTOR('',#12,1.);#12=DIRECTION('',(1.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid composite records");
+    let decoded = super::super::CarrierIndex {
+        curves: HashMap::from([(1, super::super::CurveIndex(0))]),
+        points: HashMap::new(),
+        surfaces: HashMap::new(),
+    };
+    let run = |cap| -> Result<(), CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+        let ((segments, self_intersect), storage) =
+            super::super::composite_curve(&exchange.records()[&3], &exchange, &decoded, &ctx)?
+                .expect("composite segments");
+        assert_eq!(self_intersect, Some(false));
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].0, 2);
+        assert_eq!(segments[0].1.curve.as_str(), "step:data:curve#1");
+        assert!(segments[0].1.same_sense);
+        assert_eq!(
+            segments[0].1.transition,
+            CompositeCurveTransition::Continuous
+        );
+        drop(segments);
+        drop(storage);
+        let _released = ctx.reserve_scoped(cap, "test composite scratch released")?;
+        Ok(())
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_composite_curve_segments",
+        run,
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("expected a composite storage refusal");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(refusal.operation, "step_composite_curve_segments");
+    // The first segment admits the vector capacity; releasing it frees the whole allowance.
+    run(refusal.used + refusal.additional)
+        .expect("scratch needs no retained bytes and releases its reservation");
+}
+
+#[test]
+fn deferred_composite_wakes_only_after_all_missing_edges() {
+    crate::test_support::with_service_context(b"dependency graph", |_, ctx| {
+        let mut waiting = super::super::DeferredDependencies::default();
+        let mut queue = VecDeque::new();
+        let mut storage = ctx
+            .reserve_scoped(0, "test deferred storage")
+            .expect("scope");
+        storage
+            .with_storage(|| -> Result<(), CodecError> {
+                for dependency in 1..=20 {
+                    waiting.register(ctx, dependency, 100, "test groups", "test members")?;
+                }
+                // Repeated segments preserve their separate edges without an early wake.
+                waiting.register(ctx, 20, 100, "test groups", "test members")?;
+                for dependency in 1..20 {
+                    super::super::wake_deferred_dependents(
+                        dependency,
+                        &mut waiting,
+                        &mut queue,
+                        ctx,
+                        "test queue",
+                    )?;
+                    assert!(queue.is_empty());
+                }
+                super::super::wake_deferred_dependents(
+                    20,
+                    &mut waiting,
+                    &mut queue,
+                    ctx,
+                    "test queue",
+                )?;
+                assert_eq!(queue, VecDeque::from([100]));
+                assert!(waiting.waiting_on.is_empty());
+                assert!(waiting.remaining.is_empty());
+                Ok(())
+            })
+            .expect("resolve dependency graph");
+    });
 }

@@ -881,7 +881,7 @@ fn assembly_depth_limit(ctx: &DecodeContext<'_>) -> usize {
 
 #[derive(Clone, Copy)]
 struct BodyPlacementSources<'a> {
-    geometry: &'a GeometryData,
+    geometry: &'a GeometryData<'a>,
     topology: &'a TopologyData<'a>,
     usages: &'a BTreeMap<u64, Usage>,
 }

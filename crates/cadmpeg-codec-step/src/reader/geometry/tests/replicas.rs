@@ -1035,3 +1035,63 @@ fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
             )
     }));
 }
+
+#[test]
+fn composite_over_forward_replicas_decodes_without_repeated_wakeups() {
+    use cadmpeg_core::decode::DecodePolicy;
+
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,1.);
+#6=LINE('',#1,#5);
+#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,1.,#4);
+",
+    );
+    let segments = (100..120)
+        .map(|id| format!("#{id}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    writeln!(records, "#8=COMPOSITE_CURVE('',({segments}),.F.);").expect("composite");
+    for id in 9..29 {
+        let parent = if id == 28 { 6 } else { id + 1 };
+        writeln!(records, "#{id}=CURVE_REPLICA('',#{parent},#7);").expect("replica");
+        writeln!(
+            records,
+            "#{}=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#{id});",
+            id + 91
+        )
+        .expect("segment");
+    }
+    let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("replica graph");
+    let mut policy = DecodePolicy::service();
+    // Linear graph bookkeeping and retained replica bases fit this slot allowance.
+    // Repeated registrations and queue entries for this graph exceed it.
+    policy.limits.max_collection_items = 16_000;
+    crate::test_support::with_policy_context(source.as_bytes(), &policy, |_, ctx| {
+        let mut ir = CadIr::empty();
+        let decoded =
+            super::super::decode(&exchange, &mut ir, ctx).expect("bounded dependency storage");
+        let composite = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == "step:data:curve#8")
+            .expect("resolved composite");
+        let Some(SolvedCurveGeometry::Composite { segments, .. }) = composite.geometry.solved()
+        else {
+            panic!("composite definition");
+        };
+        assert_eq!(segments.len(), 20);
+        assert_eq!(ir.model.curves.len(), 22);
+        assert!(!decoded
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("invalid or unresolved")));
+    });
+}
