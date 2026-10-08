@@ -1013,7 +1013,7 @@ fn transfer_schema_one<'ctx>(
         properties: native_properties,
         losses,
     };
-    let (material_lists, _material_storage) = ctx
+    let (material_lists, material_storage) = ctx
         .with_scoped_storage("FCStd GUI material lookup", || {
             validate_gui_list_payloads(ctx, &graph.properties, entries, requires_alpha_conversion)
         })?;
@@ -1028,7 +1028,7 @@ fn transfer_schema_one<'ctx>(
         &mut material_losses,
     )?;
     drop(material_lists);
-    drop(_material_storage);
+    drop(material_storage);
     append_graph_losses(ctx, &mut graph, material_losses)?;
     let mut presentation_losses = Vec::new();
     transfer_neutral_presentation(
@@ -1117,18 +1117,17 @@ fn gui_xml_attributes(
     Ok(result)
 }
 
+type GuiNamedEntries<'ctx> = (
+    BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    Vec<cadmpeg_core::text::NamedEntryError>,
+    cadmpeg_core::decode::ScopedReservation<'ctx>,
+);
+
 fn gui_named_entries<'ctx, 'a>(
     ctx: &'ctx DecodeContext<'_>,
     record: impl Fn() -> Result<String, CodecError>,
     entries: impl IntoIterator<Item = (&'a str, &'a str)>,
-) -> Result<
-    (
-        BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-        Vec<cadmpeg_core::text::NamedEntryError>,
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    ),
-    CodecError,
-> {
+) -> Result<GuiNamedEntries<'ctx>, CodecError> {
     use cadmpeg_core::text::{NamedEntryError, NonBlankString};
     let mut kept = BTreeMap::new();
     let mut refused = Vec::new();
@@ -3372,15 +3371,12 @@ fn validate_gui_techdraw_list(
         .ok_or_else(|| {
             gui_techdraw_error(ctx, property_name, format_args!("{list_tag} has no count"))
         })?;
-    let count = match ctx.parse_text::<usize>(count_text, "FCStd GUI TechDraw list count")? {
-        Ok(count) => count,
-        Err(_) => {
-            return Err(gui_techdraw_error(
-                ctx,
-                property_name,
-                format_args!("{list_tag} has an invalid count"),
-            ));
-        }
+    let Ok(count) = ctx.parse_text::<usize>(count_text, "FCStd GUI TechDraw list count")? else {
+        return Err(gui_techdraw_error(
+            ctx,
+            property_name,
+            format_args!("{list_tag} has an invalid count"),
+        ));
     };
     let (record_nodes, _record_node_storage) = ctx
         .with_scoped_storage("FCStd GUI TechDraw child nodes", || {
@@ -3502,15 +3498,12 @@ fn validate_gui_geom_format_record(
         .ok_or_else(|| {
             gui_techdraw_error(ctx, property_name, "GeomFormat has an invalid weight")
         })?;
-    let weight = match ctx.parse_text::<f64>(weight_text, "FCStd GUI GeomFormat weight")? {
-        Ok(weight) => weight,
-        Err(_) => {
-            return Err(gui_techdraw_error(
-                ctx,
-                property_name,
-                "GeomFormat has an invalid weight",
-            ));
-        }
+    let Ok(weight) = ctx.parse_text::<f64>(weight_text, "FCStd GUI GeomFormat weight")? else {
+        return Err(gui_techdraw_error(
+            ctx,
+            property_name,
+            "GeomFormat has an invalid weight",
+        ));
     };
     if !weight.is_finite() {
         return Err(gui_techdraw_error(
@@ -3695,17 +3688,14 @@ fn validate_gui_center_line_string_collection(
         .ok_or_else(|| {
             gui_techdraw_error(ctx, property_name, "CenterLine collection has no count")
         })?;
-    let count =
-        match ctx.parse_text::<usize>(count_text, "FCStd GUI CenterLine collection count")? {
-            Ok(count) => count,
-            Err(_) => {
-                return Err(gui_techdraw_error(
-                    ctx,
-                    property_name,
-                    "CenterLine collection has an invalid count",
-                ));
-            }
-        };
+    let Ok(count) = ctx.parse_text::<usize>(count_text, "FCStd GUI CenterLine collection count")?
+    else {
+        return Err(gui_techdraw_error(
+            ctx,
+            property_name,
+            "CenterLine collection has an invalid count",
+        ));
+    };
     let (children, _children_storage) =
         ctx.with_scoped_storage("FCStd GUI CenterLine collection child nodes", || {
             ctx.collect_vec(
@@ -4095,15 +4085,12 @@ fn validate_gui_techdraw_points(
     let count_text = ctx
         .xml_attribute(field, "PointsCount", "FCStd GUI value attribute")?
         .ok_or_else(|| gui_techdraw_error(ctx, property_name, "TechDraw Points has no count"))?;
-    let count = match ctx.parse_text::<usize>(count_text, "FCStd GUI TechDraw Points count")? {
-        Ok(count) => count,
-        Err(_) => {
-            return Err(gui_techdraw_error(
-                ctx,
-                property_name,
-                "TechDraw Points has an invalid count",
-            ));
-        }
+    let Ok(count) = ctx.parse_text::<usize>(count_text, "FCStd GUI TechDraw Points count")? else {
+        return Err(gui_techdraw_error(
+            ctx,
+            property_name,
+            "TechDraw Points has an invalid count",
+        ));
     };
     let (children, _children_storage) = ctx
         .with_scoped_storage("FCStd GUI TechDraw Points child nodes", || {
@@ -4337,15 +4324,12 @@ fn parse_gui_techdraw_finite(
     let text = ctx
         .xml_attribute(field, "value", "FCStd GUI value attribute")?
         .ok_or_else(|| gui_techdraw_error(ctx, property_name, "TechDraw scalar has no value"))?;
-    let value = match ctx.parse_text::<f64>(text, "FCStd GUI TechDraw scalar")? {
-        Ok(value) => value,
-        Err(_) => {
-            return Err(gui_techdraw_error(
-                ctx,
-                property_name,
-                "TechDraw scalar is invalid",
-            ));
-        }
+    let Ok(value) = ctx.parse_text::<f64>(text, "FCStd GUI TechDraw scalar")? else {
+        return Err(gui_techdraw_error(
+            ctx,
+            property_name,
+            "TechDraw scalar is invalid",
+        ));
     };
     if !value.is_finite() {
         return Err(gui_techdraw_error(

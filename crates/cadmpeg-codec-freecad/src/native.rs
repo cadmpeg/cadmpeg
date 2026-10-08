@@ -251,6 +251,7 @@ pub(crate) fn model_id(kind: &str, parent: &str, child: impl AsRef<str>) -> Stri
     format!("fcstd:model:{kind}#{}:{}", id_key(parent), child_key)
 }
 
+#[cfg(test)]
 pub(crate) fn id_key(id: &str) -> &str {
     id.split_once('#').map_or(id, |(_, key)| key)
 }
@@ -634,7 +635,7 @@ mod tests {
                 "   doc".to_owned().try_into().unwrap(),
             )),
             Some("   object".to_owned().try_into().unwrap()),
-            vec!["Face1".into(), "".into(), "É".into()],
+            vec!["Face1".into(), String::new(), "É".into()],
         )
         .unwrap();
         crate::test_support::with_service_context(&[], |ctx| {
@@ -3459,7 +3460,7 @@ impl DocumentFacts {
                         DocumentKind::Empty | DocumentKind::ApplicationDocument
                     ) =>
                 {
-                    kind = DocumentKind::Part
+                    kind = DocumentKind::Part;
                 }
                 _ => {}
             }

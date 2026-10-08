@@ -628,7 +628,7 @@ fn parse_legacy_element_map(
         .transpose()?;
     if let Some(name) = source_entry.as_deref() {
         let bytes = *ctx
-            .get_btree_map(&entry_data, name, "FreeCAD element entry lookup")?
+            .get_btree_map(entry_data, name, "FreeCAD element entry lookup")?
             .ok_or_else(|| {
                 CodecError::Malformed("legacy ElementMap references missing entry".into())
             })?;
@@ -707,9 +707,9 @@ fn parse_legacy_stream<'c>(
     Ok((count, records))
 }
 
-fn parse_legacy_records<'a, 'c>(
+fn parse_legacy_records<'c>(
     ctx: &'c DecodeContext<'_>,
-    tokens: &mut TextScanner<'a>,
+    tokens: &mut TextScanner<'_>,
     count: usize,
 ) -> Result<LegacyNameGroups<'c>, CodecError> {
     if count > MAX_NAMES {
@@ -722,7 +722,10 @@ fn parse_legacy_records<'a, 'c>(
         ctx.reserve_scoped(0, "FreeCAD legacy element groups")?,
     );
     let mut records_left = 0..count;
-    while let Some(_) = ctx.next_charged(&mut records_left, "FreeCAD element-map record step")? {
+    while ctx
+        .next_charged(&mut records_left, "FreeCAD element-map record step")?
+        .is_some()
+    {
         let indexed_name = next_token(ctx, tokens, "legacy element indexed name")?;
         let mapped_name = ctx.copy_retained_text(
             next_token(ctx, tokens, "legacy mapped name")?,
@@ -746,8 +749,9 @@ fn parse_legacy_records<'a, 'c>(
         .ok_or_else(|| CodecError::malformed("legacy string-id count exceeds input"))?;
         let mut string_ids = ctx.collection_vec(sid_capacity, "FreeCAD legacy string IDs")?;
         let mut records_left = 0..sid_count;
-        while let Some(_) =
-            ctx.next_charged(&mut records_left, "FreeCAD element-map record step")?
+        while ctx
+            .next_charged(&mut records_left, "FreeCAD element-map record step")?
+            .is_some()
         {
             string_ids.push(
                 ctx.parse_text::<i64>(
@@ -1069,7 +1073,10 @@ fn parse_string_table(
     let mut output = ctx.collection_vec(capacity, "FreeCAD string table entries")?;
     let mut previous_id = 0_i64;
     let mut records_left = 0..declared_count;
-    while let Some(_) = ctx.next_charged(&mut records_left, "FreeCAD element-map record step")? {
+    while ctx
+        .next_charged(&mut records_left, "FreeCAD element-map record step")?
+        .is_some()
+    {
         scanner.skip_whitespace(ctx)?;
         let record_start = scanner.position;
         let header = scanner.token(ctx)?;
@@ -1347,7 +1354,10 @@ fn parse_element_map(
     .ok_or_else(|| CodecError::malformed("element-map postfix count exceeds input"))?;
     let mut postfixes = ctx.collection_vec(postfix_capacity, "FreeCAD element map postfixes")?;
     let mut records_left = 0..postfix_count;
-    while let Some(_) = ctx.next_charged(&mut records_left, "FreeCAD element-map record step")? {
+    while ctx
+        .next_charged(&mut records_left, "FreeCAD element-map record step")?
+        .is_some()
+    {
         postfixes.push(ctx.copy_retained_text(
             next_token(ctx, &mut tokens, "postfix")?,
             "FreeCAD element map postfix text",
@@ -1386,8 +1396,9 @@ fn parse_element_map(
         .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
         let mut groups = ctx.collection_vec(group_capacity, "FreeCAD element map groups")?;
         let mut records_left = 0..group_count;
-        while let Some(_) =
-            ctx.next_charged(&mut records_left, "FreeCAD element-map record step")?
+        while ctx
+            .next_charged(&mut records_left, "FreeCAD element-map record step")?
+            .is_some()
         {
             let indexed_name = ctx.copy_retained_text(
                 next_token(ctx, &mut tokens, "indexed name")?,
@@ -1405,8 +1416,9 @@ fn parse_element_map(
             let mut children =
                 ctx.collection_vec(child_capacity, "FreeCAD element map children")?;
             let mut records_left = 0..child_count;
-            while let Some(_) =
-                ctx.next_charged(&mut records_left, "FreeCAD element-map record step")?
+            while ctx
+                .next_charged(&mut records_left, "FreeCAD element-map record step")?
+                .is_some()
             {
                 let mut fields = [""; 7];
                 for field in &mut fields {
@@ -1429,8 +1441,9 @@ fn parse_element_map(
             .ok_or_else(|| CodecError::Malformed("element-map name count exceeds input".into()))?;
             let mut names = ctx.collection_vec(name_capacity, "FreeCAD element map names")?;
             let mut records_left = 0..name_count;
-            while let Some(_) =
-                ctx.next_charged(&mut records_left, "FreeCAD element-map record step")?
+            while ctx
+                .next_charged(&mut records_left, "FreeCAD element-map record step")?
+                .is_some()
             {
                 let mut chain = Vec::new();
                 loop {
@@ -1570,9 +1583,9 @@ fn next_token<'a>(
         .ok_or_else(|| element_map_malformed(ctx, format_args!("element map ends before {field}")))
 }
 
-fn expect<'a>(
+fn expect(
     ctx: &DecodeContext<'_>,
-    tokens: &mut TextScanner<'a>,
+    tokens: &mut TextScanner<'_>,
     expected: &str,
 ) -> Result<(), CodecError> {
     let actual = next_token(ctx, tokens, expected)?;
@@ -1585,9 +1598,9 @@ fn expect<'a>(
     Ok(())
 }
 
-fn next_count<'a>(
+fn next_count(
     ctx: &DecodeContext<'_>,
-    tokens: &mut TextScanner<'a>,
+    tokens: &mut TextScanner<'_>,
     field: &str,
     limit: usize,
 ) -> Result<usize, CodecError> {
@@ -1601,9 +1614,9 @@ fn next_count<'a>(
     Ok(value)
 }
 
-fn next_u64<'a>(
+fn next_u64(
     ctx: &DecodeContext<'_>,
-    tokens: &mut TextScanner<'a>,
+    tokens: &mut TextScanner<'_>,
     field: &str,
 ) -> Result<u64, CodecError> {
     ctx.parse_text(
