@@ -19,6 +19,47 @@ pub struct TextureAsset {
 }
 
 impl TextureAsset {
+    /// Compares all fields, admitting only visited text bytes and path slots.
+    /// Fixed mapping fields and unequal collection lengths require no scan.
+    pub fn equal_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        other: &Self,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        // Observe the original refusal even when a fixed-size comparison can
+        // decide the result without visiting text or paths.
+        ctx.charge_work(0, operation)?;
+        if self.mapping != other.mapping
+            || self.bump != other.bump
+            || self.paths.len() != other.paths.len()
+        {
+            return Ok(false);
+        }
+        if !ctx.equal_bytes(self.asset_guid.as_bytes(), other.asset_guid.as_bytes(), operation)?
+            || !ctx.equal_bytes(self.schema.as_bytes(), other.schema.as_bytes(), operation)?
+        {
+            return Ok(false);
+        }
+        match (&self.urn, &other.urn) {
+            (Some(left), Some(right)) => {
+                if !ctx.equal_bytes(left.as_bytes(), right.as_bytes(), operation)? {
+                    return Ok(false);
+                }
+            }
+            (None, None) => {}
+            _ => return Ok(false),
+        }
+        if self.paths.is_empty() {
+            return Ok(true);
+        }
+        ctx.all_by(
+            self.paths.iter().zip(&other.paths),
+            |(left, right)| ctx.equal_bytes(left.as_bytes(), right.as_bytes(), operation),
+            operation,
+        )
+    }
+
     /// Bind this texture to an appearance property. The caller admits the
     /// collection slot that keeps the reference.
     pub fn to_ref(&self, ctx: &DecodeContext<'_>, slot: &str) -> Result<TextureRef, CodecError> {
