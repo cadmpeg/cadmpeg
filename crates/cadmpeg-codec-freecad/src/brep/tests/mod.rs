@@ -5,6 +5,7 @@ mod allocation_tests;
 mod actual_visits;
 mod nesting;
 mod numeric_text;
+mod reference_diagnostics;
 mod source_transfer;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
