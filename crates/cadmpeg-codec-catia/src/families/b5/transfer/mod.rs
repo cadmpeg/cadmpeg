@@ -617,12 +617,6 @@ fn build_plan(
             let Some(knots) = scratch.with_storage(|| pcurve_nurbs_knots(ctx, pcurve))? else {
                 return Ok(None);
             };
-            let knots = scratch.with_storage(|| {
-                ctx.collect_vec(
-                    knots.into_iter().map(FiniteReal::get),
-                    "catia_b5_transfer_pcurve_knots",
-                )
-            })?;
             let Some(parameter_range) = pcurve_parameter_domain(ctx, pcurve)? else {
                 return Ok(None);
             };
@@ -1451,13 +1445,6 @@ pub(in crate::families) fn resolved_extrusion_surface(
                 let knots = match pcurve_nurbs_knots(ctx, pcurve) {
                     Ok(Some(knots)) => knots,
                     Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
-                let knots = match ctx.collect_vec(
-                    knots.into_iter().map(FiniteReal::get),
-                    "catia_b5_extrusion_pcurve_knots",
-                ) {
-                    Ok(knots) => knots,
                     Err(error) => return Some(Err(error)),
                 };
                 let domain = match pcurve_parameter_domain(ctx, pcurve) {
