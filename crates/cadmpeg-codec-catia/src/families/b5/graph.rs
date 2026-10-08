@@ -2921,11 +2921,10 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
         }
         Ok::<_, CodecError>((headers, records, rolling))
     })?;
+    let mut resolver = TargetedSurfaceResolver::new(ctx, &records, &headers, &resolved, &rolling)?;
     let mut surfaces = BTreeMap::new();
     for &object_id in ctx.admit_iter(object_ids, "catia_b5_targeted_surface_id_scan")? {
-        if let Some(surface) =
-            resolve_targeted_surface(ctx, object_id, &records, &headers, &resolved, &rolling)?
-        {
+        if let Some(surface) = resolver.copy_output(object_id)? {
             ctx.insert_btree_map(
                 &mut surfaces,
                 object_id,
@@ -3040,6 +3039,225 @@ fn merge_targeted_surface(
     Ok(())
 }
 
+/// A shared alias or construction suffix resolves once. Cycles keep a tombstone.
+#[derive(Clone, Copy)]
+enum TargetedSurfaceState {
+    Visiting,
+    Terminal(Option<u32>),
+}
+
+enum TargetedSurfaceNode<'a> {
+    Borrowed(&'a B5Surface),
+    Parsed(Box<B5Surface>),
+}
+
+impl AsRef<B5Surface> for TargetedSurfaceNode<'_> {
+    fn as_ref(&self) -> &B5Surface {
+        match self {
+            Self::Borrowed(surface) => surface,
+            Self::Parsed(surface) => surface,
+        }
+    }
+}
+
+/// Terminal identities share geometry without copying it along alias paths.
+struct TargetedSurfaceResolver<'data, 'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
+    records: &'data HashMap<u32, Option<B5Record<'data>>>,
+    headers: &'data BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
+    resolved: &'data HashMap<u32, Option<B5Surface>>,
+    rolling: &'data HashMap<u32, Option<B5Surface>>,
+    states: HashMap<u32, TargetedSurfaceState>,
+    nodes: HashMap<u32, TargetedSurfaceNode<'data>>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'data, 'ctx, 'arena> TargetedSurfaceResolver<'data, 'ctx, 'arena> {
+    fn new(
+        ctx: &'ctx DecodeContext<'arena>,
+        records: &'data HashMap<u32, Option<B5Record<'data>>>,
+        headers: &'data BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
+        resolved: &'data HashMap<u32, Option<B5Surface>>,
+        rolling: &'data HashMap<u32, Option<B5Surface>>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            ctx,
+            records,
+            headers,
+            resolved,
+            rolling,
+            states: HashMap::new(),
+            nodes: HashMap::new(),
+            storage: ctx.reserve_scoped(0, "catia_b5_targeted_surface_cache")?,
+        })
+    }
+
+    fn copy_output(&mut self, object_id: u32) -> Result<Option<B5Surface>, CodecError> {
+        let Some(terminal) = self.terminal(object_id)? else {
+            return Ok(None);
+        };
+        let Some(node) =
+            self.ctx
+                .get_hash_map(&self.nodes, &terminal, "catia_b5_targeted_surface_nodes")?
+        else {
+            return Ok(None);
+        };
+        copy_surface(self.ctx, node.as_ref()).map(Some)
+    }
+
+    fn terminal(&mut self, mut object_id: u32) -> Result<Option<u32>, CodecError> {
+        const OPERATION: &str = "catia_b5_targeted_surface_lookup";
+        let ctx = self.ctx;
+        // Only offset dependencies recurse. Alias length does not consume depth.
+        let _depth = ctx.enter_nested("catia_b5_targeted_surface_resolution")?;
+        let mut path_storage = ctx.reserve_scoped(0, "catia_b5_targeted_surface_path")?;
+        let mut path = Vec::new();
+        let terminal = loop {
+            match ctx
+                .get_hash_map(&self.states, &object_id, OPERATION)?
+                .copied()
+            {
+                Some(TargetedSurfaceState::Visiting) => break None,
+                Some(TargetedSurfaceState::Terminal(terminal)) => break terminal,
+                None => {}
+            }
+            self.storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut self.states,
+                    object_id,
+                    TargetedSurfaceState::Visiting,
+                    "catia_b5_targeted_surface_visited",
+                )
+            })?;
+            ctx.push_scoped_vec(
+                &mut path_storage,
+                &mut path,
+                object_id,
+                "catia_b5_targeted_surface_path",
+            )?;
+            let record = match ctx.get_hash_map(self.records, &object_id, OPERATION)? {
+                Some(None) => break None,
+                Some(Some(record)) => Some(*record),
+                None => None,
+            };
+            let rolling = ctx
+                .get_hash_map(self.rolling, &object_id, OPERATION)?
+                .and_then(Option::as_ref);
+            let resolved = ctx
+                .get_hash_map(self.resolved, &object_id, OPERATION)?
+                .and_then(Option::as_ref);
+            let borrowed = match (rolling, resolved) {
+                (Some(left), Some(right)) if !equal_b5_surfaces(ctx, left, right, OPERATION)? => {
+                    break None
+                }
+                (Some(surface), _) | (_, Some(surface)) => Some(surface),
+                (None, None) => None,
+            };
+            if let Some(surface) = borrowed {
+                self.storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut self.nodes,
+                        object_id,
+                        TargetedSurfaceNode::Borrowed(surface),
+                        "catia_b5_targeted_surface_nodes",
+                    )
+                })?;
+                break Some(object_id);
+            }
+            let Some(record) = record else {
+                break None;
+            };
+            if let Some(target) = surface_alias_target(&record) {
+                object_id = target;
+                continue;
+            }
+            if let Some(construction) = parse_supported_surface(&record) {
+                object_id = construction.carrier_surface;
+                continue;
+            }
+            if record.family == 0xb5 && record.class == 0x30 {
+                break self.offset_terminal(&record)?;
+            }
+            let Some(surface) = self
+                .storage
+                .with_storage(|| surface_node(ctx, &record, self.headers))?
+            else {
+                break None;
+            };
+            self.storage.with_storage(|| {
+                ctx.charge_retained(
+                    u64_from_index(std::mem::size_of::<B5Surface>()),
+                    "catia_b5_targeted_surface_node_box",
+                )?;
+                ctx.insert_hash_map(
+                    &mut self.nodes,
+                    object_id,
+                    TargetedSurfaceNode::Parsed(Box::new(surface)),
+                    "catia_b5_targeted_surface_nodes",
+                )
+            })?;
+            break Some(object_id);
+        };
+        for object_id in ctx.admit_iter(path, "catia_b5_targeted_surface_path_finish")? {
+            self.storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut self.states,
+                    object_id,
+                    TargetedSurfaceState::Terminal(terminal),
+                    "catia_b5_targeted_surface_visited",
+                )
+            })?;
+        }
+        Ok(terminal)
+    }
+
+    fn offset_terminal(&mut self, record: &B5Record<'_>) -> Result<Option<u32>, CodecError> {
+        const OPERATION: &str = "catia_b5_targeted_offset_surfaces";
+        let Some(fields) = parse_offset_surface_fields(record) else {
+            return Ok(None);
+        };
+        let Some(carrier_terminal) = self.terminal(fields.carrier_surface)? else {
+            return Ok(None);
+        };
+        let ctx = self.ctx;
+        let Some(carrier) = ctx.get_hash_map(&self.nodes, &carrier_terminal, OPERATION)? else {
+            return Ok(None);
+        };
+        let rolling = matches!(carrier.as_ref(), B5Surface::RollingBall { .. });
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut surfaces = BTreeMap::new();
+        storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut surfaces,
+                fields.carrier_surface,
+                copy_surface(ctx, carrier.as_ref())?,
+                OPERATION,
+            )
+        })?;
+        if !rolling {
+            let Some(source_terminal) = self.terminal(fields.source_surface)? else {
+                return Ok(None);
+            };
+            let Some(source) = ctx.get_hash_map(&self.nodes, &source_terminal, OPERATION)? else {
+                return Ok(None);
+            };
+            storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut surfaces,
+                    fields.source_surface,
+                    copy_surface(ctx, source.as_ref())?,
+                    OPERATION,
+                )
+            })?;
+        }
+        Ok(
+            offset_surface_agrees(ctx, &fields, &surfaces, &BTreeMap::new(), &HashMap::new())?
+                .then_some(carrier_terminal),
+        )
+    }
+}
+
+#[cfg(test)]
 fn resolve_targeted_surface(
     ctx: &DecodeContext<'_>,
     object_id: u32,
@@ -3048,148 +3266,7 @@ fn resolve_targeted_surface(
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
 ) -> Result<Option<B5Surface>, CodecError> {
-    resolve_targeted_surface_inner(
-        ctx,
-        object_id,
-        records,
-        headers,
-        resolved,
-        rolling,
-        (
-            BTreeSet::new(),
-            ctx.reserve_scoped(0, "catia_b5_targeted_surface_visited")?,
-        ),
-    )
-}
-
-fn resolve_targeted_surface_inner(
-    ctx: &DecodeContext<'_>,
-    mut object_id: u32,
-    records: &HashMap<u32, Option<B5Record<'_>>>,
-    headers: &BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
-    resolved: &HashMap<u32, Option<B5Surface>>,
-    rolling: &HashMap<u32, Option<B5Surface>>,
-    (mut visited, mut visited_storage): (BTreeSet<u32>, ScopedReservation<'_>),
-) -> Result<Option<B5Surface>, CodecError> {
-    const OPERATION: &str = "catia_b5_targeted_surface_lookup";
-    let _depth = ctx.enter_nested("catia_b5_targeted_surface_resolution")?;
-    loop {
-        if !visited_storage.with_storage(|| {
-            ctx.insert_btree_set(&mut visited, object_id, "catia_b5_targeted_surface_visited")
-        })? {
-            return Ok(None);
-        }
-        let record = match ctx.get_hash_map(records, &object_id, OPERATION)? {
-            // An identity framed twice with different bytes is ambiguous.
-            Some(None) => return Ok(None),
-            Some(Some(record)) => Some(record),
-            None => None,
-        };
-        let rolling_surface = ctx
-            .get_hash_map(rolling, &object_id, OPERATION)?
-            .and_then(Option::as_ref);
-        let resolved_surface = ctx
-            .get_hash_map(resolved, &object_id, OPERATION)?
-            .and_then(Option::as_ref);
-        match (rolling_surface, resolved_surface) {
-            (Some(left), Some(right)) if !equal_b5_surfaces(ctx, left, right, OPERATION)? => {
-                return Ok(None)
-            }
-            (Some(surface), _) | (_, Some(surface)) => return copy_surface(ctx, surface).map(Some),
-            (None, None) => {}
-        }
-        let Some(record) = record else {
-            return Ok(None);
-        };
-        if let Some(target) = surface_alias_target(record) {
-            object_id = target;
-            continue;
-        }
-        if let Some(construction) = parse_supported_surface(record) {
-            object_id = construction.carrier_surface;
-            continue;
-        }
-        if record.family == 0xb5 && record.class == 0x30 {
-            return resolve_targeted_analytic_offset(
-                ctx, record, records, headers, resolved, rolling, &visited,
-            );
-        }
-        return surface_node(ctx, record, headers);
-    }
-}
-
-/// Copies the visited set into scratch storage that the recursive call owns
-/// and releases when it returns.
-fn copy_visited<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    visited: &BTreeSet<u32>,
-) -> Result<(BTreeSet<u32>, ScopedReservation<'ctx>), CodecError> {
-    const OPERATION: &str = "catia_b5_targeted_visited_copy";
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let copy = storage.with_storage(|| {
-        ctx.collect_btree_set(ctx.admit_iter(visited, OPERATION)?.copied(), OPERATION)
-    })?;
-    Ok((copy, storage))
-}
-
-fn resolve_targeted_analytic_offset(
-    ctx: &DecodeContext<'_>,
-    record: &B5Record<'_>,
-    records: &HashMap<u32, Option<B5Record<'_>>>,
-    headers: &BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
-    resolved: &HashMap<u32, Option<B5Surface>>,
-    rolling: &HashMap<u32, Option<B5Surface>>,
-    visited: &BTreeSet<u32>,
-) -> Result<Option<B5Surface>, CodecError> {
-    const OPERATION: &str = "catia_b5_targeted_offset_surfaces";
-    if record.payload.first() != Some(&0x82) {
-        return Ok(None);
-    }
-    let mut position = 1;
-    let Some(carrier_id) = wire::tokens::object_ref(record.payload, &mut position, true) else {
-        return Ok(None);
-    };
-    let Some(source_id) = wire::tokens::object_ref(record.payload, &mut position, true) else {
-        return Ok(None);
-    };
-    let Some(carrier) = resolve_targeted_surface_inner(
-        ctx,
-        carrier_id,
-        records,
-        headers,
-        resolved,
-        rolling,
-        copy_visited(ctx, visited)?,
-    )?
-    else {
-        return Ok(None);
-    };
-    let rolling_carrier = matches!(carrier, B5Surface::RollingBall { .. });
-    // The two-entry context holds the resolved surfaces themselves; the
-    // carrier is taken back out once the construction agrees with it.
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut surfaces = BTreeMap::new();
-    storage.with_storage(|| ctx.insert_btree_map(&mut surfaces, carrier_id, carrier, OPERATION))?;
-    if !rolling_carrier {
-        let Some(source) = resolve_targeted_surface_inner(
-            ctx,
-            source_id,
-            records,
-            headers,
-            resolved,
-            rolling,
-            copy_visited(ctx, visited)?,
-        )?
-        else {
-            return Ok(None);
-        };
-        storage
-            .with_storage(|| ctx.insert_btree_map(&mut surfaces, source_id, source, OPERATION))?;
-    }
-    if parse_offset_surface(ctx, record, &surfaces, &BTreeMap::new(), &HashMap::new())?.is_none() {
-        return Ok(None);
-    }
-    ctx.remove_btree_map(&mut surfaces, &carrier_id, OPERATION)
+    TargetedSurfaceResolver::new(ctx, records, headers, resolved, rolling)?.copy_output(object_id)
 }
 
 fn parse_edge(record: &B5Record) -> Option<B5Edge> {
