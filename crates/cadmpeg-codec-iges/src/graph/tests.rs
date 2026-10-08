@@ -747,19 +747,29 @@ fn graph_variable_traversals_refuse_at_their_own_boundaries() {
 #[test]
 fn transform_cycle_tree_lookups_refuse_before_searching() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let graph = [1, 3].into_iter().map(|source| (source, vec![ReferenceEdge {
-        origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
-        raw_pointer: i64::from(source),
-        resolution: Resolution::Resolved(source),
-        expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
-    }])).collect::<BTreeMap<_, _>>();
+    let graph = [1, 3]
+        .into_iter()
+        .map(|source| {
+            (
+                source,
+                vec![ReferenceEdge {
+                    origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+                    raw_pointer: i64::from(source),
+                    resolution: Resolution::Resolved(source),
+                    expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+                }],
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     for operation in [
         "iges completed transform lookup",
         "iges active transform lookup",
         "iges transform successor lookup",
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, |cap| {
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
@@ -770,7 +780,10 @@ fn transform_cycle_tree_lookups_refuse_before_searching() {
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(cyclic_transform_nodes(&graph, &ctx).unwrap(), [1, 3].into_iter().collect());
+    assert_eq!(
+        cyclic_transform_nodes(&graph, &ctx).unwrap(),
+        [1, 3].into_iter().collect()
+    );
 }
 
 #[test]
@@ -779,9 +792,14 @@ fn directory_graph_source_lookups_refuse_before_searching() {
     let mut source = directory_target(1, 124);
     source.transform = 1;
     let directory = [source];
-    for operation in ["iges cyclic transform source lookup", "iges structure reference source lookup"] {
+    for operation in [
+        "iges cyclic transform source lookup",
+        "iges structure reference source lookup",
+    ] {
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, |cap| {
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
@@ -923,9 +941,18 @@ fn parameter_resolver_append_transfers_into_an_empty_graph_bucket() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
-    assert_eq!(resolver.resolve(
-        1, 0, 3, ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry), |_| true,
-    ).unwrap(), None);
+    assert_eq!(
+        resolver
+            .resolve(
+                1,
+                0,
+                3,
+                ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
+                |_| true,
+            )
+            .unwrap(),
+        None
+    );
     let mut graph = BTreeMap::from([(1, Vec::new())]);
     let storage = resolver.append_to(&mut graph).unwrap();
     assert_eq!(graph[&1].len(), 1);
@@ -949,7 +976,10 @@ fn parameter_expected_forms_match_fixed_caller_lists() {
             (116, &[1, 0][..], Some(3)),
             (116, &[][..], Some(3)),
             (124, &[0][..], None),
-        ].into_iter().enumerate() {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let result = if negative {
                 resolver.resolve_negative_type(1, index, -3, entity_type, forms)
             } else {

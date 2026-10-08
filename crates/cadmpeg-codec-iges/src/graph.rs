@@ -319,26 +319,37 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         let resolution = classify(target_sequence, target, accepts);
         let mut graph = self.edges.borrow_mut();
         let edge = ReferenceEdge {
-            origin: ReferenceOrigin::Parameter { index: parameter_index },
+            origin: ReferenceOrigin::Parameter {
+                index: parameter_index,
+            },
             raw_pointer,
             resolution,
             expected,
         };
         if let Some(edges) = self.ctx.get_mut_btree_map(
-            &mut graph, &source, "iges parameter resolver edge groups",
+            &mut graph,
+            &source,
+            "iges parameter resolver edge groups",
         )? {
             self.ctx.reserve_scoped_vec(
-                &mut self.storage.borrow_mut(), edges, 1, "iges parameter resolver edges",
+                &mut self.storage.borrow_mut(),
+                edges,
+                1,
+                "iges parameter resolver edges",
             )?;
             edges.push(edge);
         } else {
-            let mut edges = self.storage.borrow_mut().with_storage(|| {
-                self.ctx.collection_vec(1, "iges parameter resolver edges")
-            })?;
+            let mut edges = self
+                .storage
+                .borrow_mut()
+                .with_storage(|| self.ctx.collection_vec(1, "iges parameter resolver edges"))?;
             edges.push(edge);
             self.group_storage.borrow_mut().with_storage(|| {
                 self.ctx.insert_btree_map(
-                    &mut graph, source, edges, "iges parameter resolver edge groups",
+                    &mut graph,
+                    source,
+                    edges,
+                    "iges parameter resolver edge groups",
                 )
             })?;
         }
@@ -466,7 +477,11 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             self.edges.into_inner(),
             "iges parameter resolver graph sources",
         )? {
-            match self.ctx.get_mut_btree_map(graph, &source, "iges parameter resolver graph groups")? {
+            match self.ctx.get_mut_btree_map(
+                graph,
+                &source,
+                "iges parameter resolver graph groups",
+            )? {
                 Some(target) if target.is_empty() => {
                     *target = edges;
                 }
@@ -480,9 +495,14 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
                     })?;
                 }
                 None => {
-                    storage.with_storage(|| self.ctx.insert_btree_map(
-                        graph, source, edges, "iges parameter resolver graph groups",
-                    ))?;
+                    storage.with_storage(|| {
+                        self.ctx.insert_btree_map(
+                            graph,
+                            source,
+                            edges,
+                            "iges parameter resolver graph groups",
+                        )
+                    })?;
                 }
             }
         }
@@ -634,9 +654,10 @@ fn cyclic_transform_nodes(
     let mut next = BTreeMap::new();
     for (source, values) in ctx.admit_iter(edges, "iges transform cycle sources")? {
         // Directory graphs have at most seven reference kinds per source.
-        if let Some(target) = values.iter().find_map(
-            |edge| edge.resolved_target_sequence_for(ReferenceKind::Transform),
-        ) {
+        if let Some(target) = values
+            .iter()
+            .find_map(|edge| edge.resolved_target_sequence_for(ReferenceKind::Transform))
+        {
             index_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut next,
@@ -663,7 +684,10 @@ fn cyclic_transform_nodes(
             if ctx.contains_btree_set(&completed, &current, "iges completed transform lookup")? {
                 break;
             }
-            if let Some(position) = ctx.get_btree_map(&active, &current, "iges active transform lookup")?.copied() {
+            if let Some(position) = ctx
+                .get_btree_map(&active, &current, "iges active transform lookup")?
+                .copied()
+            {
                 for node in ctx
                     .admit_iter(&path[position..], "iges cyclic transform nodes")?
                     .copied()
@@ -687,7 +711,9 @@ fn cyclic_transform_nodes(
                 "iges transform reference path",
             )?;
             path.push(current);
-            successor = ctx.get_btree_map(&next, &current, "iges transform successor lookup")?.copied();
+            successor = ctx
+                .get_btree_map(&next, &current, "iges transform successor lookup")?
+                .copied();
         }
         for node in ctx.admit_iter(path, "iges completed transform path")? {
             index_storage.with_storage(|| {
@@ -738,10 +764,14 @@ pub(crate) fn build<'ctx>(
                 cyclic_transform_nodes(&graph, ctx)
             })?;
         for source in ctx.admit_iter(cyclic, "iges cyclic transform sources")? {
-            let edge = match ctx.get_mut_btree_map(&mut graph, &source, "iges cyclic transform source lookup")? {
-                Some(edges) => edges.iter_mut().find(
-                    |edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform),
-                ),
+            let edge = match ctx.get_mut_btree_map(
+                &mut graph,
+                &source,
+                "iges cyclic transform source lookup",
+            )? {
+                Some(edges) => edges.iter_mut().find(|edge| {
+                    edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform)
+                }),
                 None => None,
             };
             if let Some(edge) = edge {
@@ -759,7 +789,9 @@ pub(crate) fn resolved_structure_sequence(
     source: u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<u32>, CodecError> {
-    let Some(edges) = ctx.get_btree_map(graph, &source, "iges structure reference source lookup")? else {
+    let Some(edges) =
+        ctx.get_btree_map(graph, &source, "iges structure reference source lookup")?
+    else {
         return Ok(None);
     };
     ctx.find_map(

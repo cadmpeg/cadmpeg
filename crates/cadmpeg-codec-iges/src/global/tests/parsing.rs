@@ -878,7 +878,11 @@ fn global_date_validation_checks_fixed_components_and_version_width() {
         ("20260714.00000", true, false),
         ("20260714.0000000", true, false),
     ] {
-        assert_eq!(crate::global::date_value_is_valid(text.as_bytes(), accepts_long), valid, "{text}");
+        assert_eq!(
+            crate::global::date_value_is_valid(text.as_bytes(), accepts_long),
+            valid,
+            "{text}"
+        );
     }
 }
 
@@ -886,7 +890,9 @@ fn global_date_validation_checks_fixed_components_and_version_width() {
 fn global_layout_field_spans_charge_one_visited_field() {
     let bytes = format!(",,{}{};", "a".repeat(73), ",".repeat(1_000));
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "iges global layout field spans", |cap| {
+        ResourceDimension::WorkUnits,
+        "iges global layout field spans",
+        |cap| {
             with_work_limit(bytes.as_bytes(), cap, |ctx| {
                 crate::global::layout_global_cards(bytes.as_bytes(), ctx)
             })
@@ -894,6 +900,9 @@ fn global_layout_field_spans_charge_one_visited_field() {
     );
     assert_work_limit(&error, "iges global layout field spans", 1);
     with_work_limit(bytes.as_bytes(), u64::MAX, |ctx| {
-        assert!(matches!(crate::global::layout_global_cards(bytes.as_bytes(), ctx), Err(CodecError::Malformed(_))));
+        assert!(matches!(
+            crate::global::layout_global_cards(bytes.as_bytes(), ctx),
+            Err(CodecError::Malformed(_))
+        ));
     });
 }

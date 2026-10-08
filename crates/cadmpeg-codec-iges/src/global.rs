@@ -827,25 +827,22 @@ pub(crate) fn parse<'ctx>(
     resolve(&raw, ctx)
 }
 
-fn date_value_is_valid(
-    bytes: &[u8],
-    accepts_four_digit_date: bool,
-) -> bool {
+fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
     let dot = match bytes.len() {
         13 => 6,
         15 if accepts_four_digit_date => 8,
         _ => return false,
     };
     if bytes.get(dot) != Some(&b'.')
-        || bytes.iter().enumerate().any(
-            |(index, byte)| index != dot && !byte.is_ascii_digit(),
-        )
+        || bytes
+            .iter()
+            .enumerate()
+            .any(|(index, byte)| index != dot && !byte.is_ascii_digit())
     {
         return false;
     }
-    let number = |start: usize| {
-        10 * u32::from(bytes[start] - b'0') + u32::from(bytes[start + 1] - b'0')
-    };
+    let number =
+        |start: usize| 10 * u32::from(bytes[start] - b'0') + u32::from(bytes[start + 1] - b'0');
     let (month_start, day_start, hour_start, minute_start, second_start) = if dot == 6 {
         (2, 4, 7, 9, 11)
     } else {
@@ -1084,10 +1081,7 @@ impl Resolution<'_, '_, '_> {
     ) -> Result<Supplied<&str>, CodecError> {
         Ok(match self.supplied_string(index)? {
             Supplied::Value(text) => {
-                if date_value_is_valid(
-                    text.as_bytes(),
-                    global_table.accepts_four_digit_date(),
-                ) {
+                if date_value_is_valid(text.as_bytes(), global_table.accepts_four_digit_date()) {
                     Supplied::Value(text)
                 } else {
                     Supplied::Malformed
