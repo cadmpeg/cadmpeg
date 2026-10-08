@@ -40,12 +40,12 @@ pub const TERMINAL_MARKER: &[u8] = &terminal_page::MARKER_VALUE;
 pub(crate) const MAX_SCHEMA_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RECOVERY_VALUES: u64 = 1_024;
 
-fn take_lp_utf8_capped<A: ProteinAdmission>(
+fn take_lp_utf8_capped<'bytes, A: ProteinAdmission>(
     admission: A,
-    bytes: &[u8],
+    bytes: &'bytes [u8],
     at: &mut usize,
     max: usize,
-) -> Result<Option<String>, CodecError>
+) -> Result<Option<&'bytes str>, CodecError>
 where
     CodecError: From<A::Error>,
 {
@@ -72,7 +72,6 @@ where
     let Ok(value) = admission.validate_utf8(value_bytes, "Protein decoded string UTF-8")? else {
         return Ok(None);
     };
-    let value = admission.copy_text(value, "Protein decoded string")?;
     *at = end;
     Ok(Some(value))
 }
@@ -592,7 +591,7 @@ where
     let Some(asset_lib_id) = take_lp_utf8_capped(admission, record, &mut at, 1_048_576)? else {
         return Ok(None);
     };
-    let properties = catalog.properties_for(admission, &schema)?;
+    let properties = catalog.properties_for(admission, schema)?;
     let mut values = BTreeMap::new();
     for (id, property) in admission.traverse(properties, "Protein decoded properties")? {
         if !instance_property_serializes(id) {
@@ -684,10 +683,10 @@ where
     Ok(Some(DecodedRecord {
         ordinal,
         logical_offset,
-        schema,
-        guid,
-        base,
-        asset_lib_id,
+        schema: admission.copy_text(schema, "Protein decoded string")?,
+        guid: admission.copy_text(guid, "Protein decoded string")?,
+        base: admission.copy_text(base, "Protein decoded string")?,
+        asset_lib_id: admission.copy_text(asset_lib_id, "Protein decoded string")?,
         properties: values,
     }))
 }
@@ -755,7 +754,11 @@ where
         return Ok(PropertyValue::TextureUri(admission.collect_indexed(
             1,
             "Protein texture URI paths",
-            |_| take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(malformed),
+            |_| {
+                let value = take_lp_utf8_capped(admission, bytes, at, 1_048_576)?
+                    .ok_or_else(malformed)?;
+                Ok(admission.copy_text(value, "Protein decoded string")?)
+            },
         )?));
     }
     if kind != 0 {
@@ -765,7 +768,9 @@ where
     }
     let count = read_count(admission, bytes, at, id)?;
     let paths = admission.collect_indexed(count, "Protein texture URI paths", |_| {
-        take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(malformed)
+        let value = take_lp_utf8_capped(admission, bytes, at, 1_048_576)?
+            .ok_or_else(malformed)?;
+        Ok(admission.copy_text(value, "Protein decoded string")?)
     })?;
     Ok(PropertyValue::TextureUri(paths))
 }
@@ -841,9 +846,11 @@ where
             unit: read_u32_le(bytes, at).ok_or_else(malformed)?,
             value: finite_value(admission, read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
         },
-        ValueCarrier::String => PropertyValue::String(
-            take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(malformed)?,
-        ),
+        ValueCarrier::String => {
+            let value = take_lp_utf8_capped(admission, bytes, at, 1_048_576)?
+                .ok_or_else(malformed)?;
+            PropertyValue::String(admission.copy_text(value, "Protein decoded string")?)
+        }
         ValueCarrier::Color => {
             let mut rgba = [FiniteReal::ZERO; 4];
             for value in &mut rgba {
@@ -898,9 +905,10 @@ where
     }
     let count = read_count(admission, bytes, at, "connection")?;
     admission.collect_indexed(count, "Protein connected asset GUIDs", |_| {
-        take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(|| {
+        let value = take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(|| {
             CodecError::Malformed("Protein property connection GUID is truncated".into())
-        })
+        })?;
+        Ok(admission.copy_text(value, "Protein decoded string")?)
     })
 }
 
@@ -1783,6 +1791,64 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn rejected_headers_do_not_copy_valid_prefix_strings() {
+        let long = "x".repeat(1_048_576);
+        for truncated_field in 1..4 {
+            let mut record = Vec::new();
+            for _ in 0..truncated_field {
+                push_lp(&mut record, &long);
+            }
+            record.extend_from_slice(&4_u32.to_le_bytes());
+            record.push(b'x');
+            let stream = paged_stream(&[&record]);
+            // Frame fixture setup outside the restricted record context. The
+            // record input still contains every large prefix byte.
+            let frames = framing::record_frames_admitted(super::admission::StandardAdmission, &stream)
+                .expect("fixture framing is valid");
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 256;
+            policy.limits.max_materialized_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
+                .expect("stream fits input limit");
+            let mut catalog = catalog_of(&ctx, HashMap::new(), HashMap::new());
+            let outcome = super::decode_frames_admitted(&ctx, &mut catalog, frames.frames())
+                .expect("only rejection detail and its outcome slot need ownership");
+            assert!(outcome.records.is_empty());
+            assert_eq!(outcome.rejected.len(), 1);
+            assert_eq!(outcome.rejected[0].ordinal, 0);
+            assert_eq!(outcome.rejected[0].detail, "Protein instance record header is malformed");
+            assert!(ctx.resource_refusal().is_none(), "truncated field {truncated_field}");
+        }
+    }
+
+    #[test]
+    fn accepted_headers_copy_all_fields_without_scratch_storage() {
+        let values = ["Simple", "guid", "base", "library"];
+        let mut record = Vec::new();
+        for value in values {
+            push_lp(&mut record, value);
+        }
+        let stream = paged_stream(&[&record]);
+        let frames = frames_of(&stream).expect("fixture framing is valid");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
+            .expect("stream fits input limit");
+        let mut catalog = catalog_of(&ctx, HashMap::new(), HashMap::from([
+            ("Simple".into(), BTreeMap::new()),
+        ]));
+        let outcome = super::decode_frames_admitted(&ctx, &mut catalog, &frames)
+            .expect("accepted header bytes are retained output, not scratch");
+        assert!(outcome.rejected.is_empty());
+        assert_eq!(outcome.records.len(), 1);
+        let decoded = &outcome.records[0];
+        assert_eq!([decoded.schema.as_str(), decoded.guid.as_str(), decoded.base.as_str(), decoded.asset_lib_id.as_str()], values);
+        assert!(decoded.properties.is_empty());
     }
 
     #[test]
