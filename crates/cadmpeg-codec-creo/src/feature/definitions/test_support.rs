@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Variable-table fixture construction from section coordinates.
+//! Definition and trim fixture construction.
+
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use super::{
     FeatureSectionPoint, FeatureVariableRow, FeatureVariableTable, ScalarLane, VariableType,
@@ -41,4 +43,33 @@ pub(crate) fn replace_points(table: &mut FeatureVariableTable, points: Vec<Featu
     table.declared_count -=
         u32::try_from(previous_count - table.rows.len()).expect("fixture value fits u32");
     append_points(table, points);
+}
+
+pub(super) fn reconciled_points(
+    variables: &FeatureVariableTable,
+) -> (
+    std::collections::BTreeMap<u32, [Option<f64>; 2]>,
+    std::collections::BTreeSet<u32>,
+) {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        variables
+            .reconciled_points(ctx)
+            .map(|result| (result.points, result.ambiguous))
+    })
+    .expect("test point reconciliation")
+}
+
+
+pub(super) fn with_trim_limits<T>(
+    collection_limit: u64,
+    work_limit: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> T,
+) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_work_units = work_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits the trim policy");
+    run(&ctx)
 }

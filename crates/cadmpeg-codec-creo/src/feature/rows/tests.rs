@@ -988,3 +988,5 @@ fn loop_history_index_preserves_first_overlapping_row_and_next_table() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].loop_id, 42);
 }
+
+mod scalar_arrays;
