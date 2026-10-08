@@ -4,7 +4,10 @@
 use crate::test_support::{
     with_materialized_limit, with_retained_limit, with_service_context, with_work_limit,
 };
-use cadmpeg_core::{decode::ResourceDimension, CodecError};
+use cadmpeg_core::{
+    decode::{u64_from_index, ResourceDimension},
+    CodecError,
+};
 
 #[test]
 fn native_rejected_signature_releases_speculative_storage() {
@@ -164,4 +167,153 @@ fn native_signature_stops_at_first_invalid_clause() {
             super::super::relation_type_signature_charged(ctx, None, &source)
         });
     assert!(matches!(refusal, Err(CodecError::ResourceLimit(limit)) if limit.additional == 1));
+}
+
+#[test]
+fn native_extent_index_preserves_strict_containment_and_overlap_boundaries() {
+    let sources = [
+        (10_usize, 10),
+        (2, 20),
+        (5, 2),
+        (10, 20),
+        (8, 0),
+        (usize::MAX, 1),
+    ];
+    with_service_context(|ctx| -> Result<_, CodecError> {
+        let (index, _storage) = ctx.with_scoped_storage("test extent index", || {
+            super::super::NativeExtentIndex::new(ctx, &sources, |&extent| extent)
+        })?;
+        for start in (0..32).chain([usize::MAX]) {
+            for len in 0..16 {
+                assert_eq!(
+                    index.contains(ctx, start, len, "test indexed containment")?,
+                    sources
+                        .iter()
+                        .any(|&(owner, width)| crate::object_graph::extent_contains(
+                            owner, width, start, len
+                        ))
+                );
+                assert_eq!(
+                    index.overlaps(ctx, start, len, "test indexed overlap")?,
+                    sources
+                        .iter()
+                        .any(|&(owner, width)| crate::checked::extents_overlap(
+                            owner, width, start, len
+                        ))
+                );
+            }
+        }
+        Ok(())
+    })
+    .expect("indexed predicates preserve interval boundaries and overflow");
+}
+
+#[test]
+fn native_inventory_overlap_filter_has_bounded_work_and_preserves_source_order() {
+    let mut graphs: Vec<_> = (0..8192)
+        .rev()
+        .map(|index| crate::object_graph::ObjectGraph {
+            pos: index * 64 + 32,
+            total_len: 8,
+            catalog_pos: None,
+            records: Vec::new(),
+        })
+        .collect();
+    let mut blocks: Vec<_> = (0..8192)
+        .map(|index| crate::value_block::ValueBlock {
+            pos: index * 64,
+            payload: Vec::new(),
+        })
+        .collect();
+    let graph_offsets: Vec<_> = graphs.iter().map(|graph| graph.pos).collect();
+    let block_offsets: Vec<_> = blocks.iter().map(|block| block.pos).collect();
+    // Ordered index construction and logarithmic queries fit this allowance.
+    // The old block-by-graph scan alone needs 8192 squared comparisons.
+    with_work_limit(8192 * 4096, |ctx| {
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut Vec::new())
+    })
+    .expect("overlap filtering does not scan every graph for every block");
+    assert_eq!(
+        graphs.iter().map(|graph| graph.pos).collect::<Vec<_>>(),
+        graph_offsets
+    );
+    assert_eq!(
+        blocks.iter().map(|block| block.pos).collect::<Vec<_>>(),
+        block_offsets
+    );
+}
+
+#[test]
+fn native_alias_overlap_filter_has_bounded_work_and_preserves_source_order() {
+    let graphs: Vec<_> = (0..8192)
+        .rev()
+        .map(|index| super::super::CatiaObjectGraph {
+            id: String::new(),
+            byte_offset: index * 64 + 32,
+            byte_len: 8,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: Vec::new(),
+        })
+        .collect();
+    let mut rows: Vec<_> = (0..8192)
+        .map(|index| super::super::CatiaAliasRow {
+            id: String::new(),
+            byte_offset: index * 64 + u64_from_index(crate::layout::outer_alias_row::MARKER),
+            lead_raw: 0,
+            tag_raw: 0,
+            flag: 0,
+            f1: [0; 3],
+            object_graph: None,
+            object_record: None,
+            design_object: None,
+            f2: 0,
+            f3: 0,
+            group: None,
+            canonical_surface_tag: None,
+        })
+        .collect();
+    let offsets: Vec<_> = rows.iter().map(|row| row.byte_offset).collect();
+    // The old row-by-graph scan needs 8192 squared comparisons.
+    with_work_limit(8192 * 2048, |ctx| {
+        super::super::filter_nested_alias_rows(ctx, &mut rows, &graphs, &[], &[])
+    })
+    .expect("alias filtering uses indexed overlap queries");
+    assert_eq!(
+        rows.iter().map(|row| row.byte_offset).collect::<Vec<_>>(),
+        offsets
+    );
+}
+
+#[test]
+fn native_inventory_index_preserves_transitive_and_equal_start_containment() {
+    let mut graphs = vec![crate::object_graph::ObjectGraph {
+        pos: 10,
+        total_len: 20,
+        catalog_pos: None,
+        records: Vec::new(),
+    }];
+    // The complete block spans [0, 40), including its header and terminator.
+    let mut blocks = vec![crate::value_block::ValueBlock {
+        pos: 0,
+        payload: vec![0; 33],
+    }];
+    let mut catalogs: Vec<_> = [(15, 4), (0, 1), (32, 8)]
+        .into_iter()
+        .map(|(pos, total_len)| crate::catalog::Catalog {
+            pos,
+            total_len,
+            entries: Vec::new(),
+        })
+        .collect();
+    with_service_context(|ctx| {
+        super::super::filter_nested_inventory(ctx, &mut graphs, &mut blocks, &mut catalogs)
+    })
+    .expect("indexed inventory containment");
+    assert!(graphs.is_empty());
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(catalogs.len(), 1);
+    assert_eq!(catalogs[0].pos, 0);
 }
