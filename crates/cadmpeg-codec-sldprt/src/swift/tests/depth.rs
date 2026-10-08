@@ -43,9 +43,17 @@ fn swift_rotational_depth_refuses_instead_of_partial_contributors() {
         .map(|(id, entity)| (id.as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(
-        matches!(crate::swift::collect_rotational_projections(&ctx, "F0", &index, [1.,0.,0.], &mut BTreeSet::new(), 0, &mut Vec::new()), Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan SWIFT rotational features")
-    );
+    let mut traversal = crate::swift::FeatureListTraversal::<crate::swift::FiniteReal, _>::new(
+        &ctx,
+        &index,
+        "scan SWIFT rotational features",
+        "track SWIFT rotational path",
+        "collect SWIFT rotational projections",
+        |_| Ok(None),
+    )
+    .unwrap();
+    assert!(matches!(traversal.collect("F0", 0, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan SWIFT rotational features"));
 }
 
 #[test]
@@ -56,9 +64,17 @@ fn swift_diameter_depth_refuses_instead_of_partial_contributors() {
         .map(|(id, entity)| (id.as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(
-        matches!(crate::swift::collect_diameter_contributors(&ctx, "F0", &index, &mut BTreeSet::new(), 0, &mut Vec::new()), Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan SWIFT diameter features")
-    );
+    let mut traversal = crate::swift::FeatureListTraversal::<crate::swift::PositiveReal, _>::new(
+        &ctx,
+        &index,
+        "scan SWIFT diameter features",
+        "track SWIFT diameter path",
+        "collect SWIFT diameter contributors",
+        |_| Ok(None),
+    )
+    .unwrap();
+    assert!(matches!(traversal.collect("F0", 0, &mut Vec::new()),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan SWIFT diameter features"));
 }
 
 #[test]
@@ -69,9 +85,10 @@ fn swift_measurement_depth_refuses_instead_of_missing_child() {
         .map(|(id, entity)| (id.as_str(), entity))
         .collect::<BTreeMap<_, _>>();
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert!(
-        matches!(crate::swift::measurement_for_feature(&ctx, "F0", &index, &mut BTreeSet::new(), 0, |_| Ok(None)), Err(CodecError::ResourceLimit(limit)) if limit.operation == "measure SWIFT feature geometry")
-    );
+    let mut traversal =
+        crate::swift::FeatureMeasurementTraversal::new(&ctx, &index, |_| Ok(None)).unwrap();
+    assert!(matches!(traversal.visit("F0", 0),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "measure SWIFT feature geometry"));
 }
 
 #[test]
@@ -322,4 +339,336 @@ fn swift_direct_reachability_defers_subfeature_validation() {
         crate::swift::feature_reaches(ctx, "root", "absent", &index, &mut BTreeSet::new(), 0)
             .map(drop)
     });
+}
+
+fn shared_diamond() -> Vec<(String, Entity)> {
+    let mut features = Vec::new();
+    for level in 0..20 {
+        for branch in 0..2 {
+            let mut feature = entity("GdtCompoundHole");
+            if level < 19 {
+                for child in 0..2 {
+                    feature.features.references.push(reference(
+                        &format!("F{}-{child}", level + 1),
+                        "GdtCompoundHole",
+                    ));
+                }
+            }
+            features.push((format!("F{level}-{branch}"), feature));
+        }
+    }
+    features
+}
+
+fn feature_index(features: &[(String, Entity)]) -> BTreeMap<&str, &Entity> {
+    features
+        .iter()
+        .map(|(id, feature)| (id.as_str(), feature))
+        .collect()
+}
+
+#[test]
+fn list_traversals_cache_empty_diamond_results_per_query() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    const UNIQUE_FEATURES: usize = 39; // F0-0 plus two features at each of levels 1..19.
+    let features = shared_diamond();
+    let index = feature_index(&features);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let rotational_visits = std::cell::Cell::new(0_usize);
+    let (values, output_storage) = ctx
+        .with_scoped_storage("diamond output", || {
+            let mut values = Vec::new();
+            let mut traversal =
+                crate::swift::FeatureListTraversal::<crate::swift::FiniteReal, _>::new(
+                    &ctx,
+                    &index,
+                    "scan SWIFT rotational features",
+                    "track SWIFT rotational path",
+                    "collect SWIFT rotational projections",
+                    |_| {
+                        let visits = rotational_visits.get().checked_add(1).expect("bounded visits");
+                        assert!(visits <= UNIQUE_FEATURES, "a completed feature result was evaluated twice");
+                        rotational_visits.set(visits);
+                        Ok(None)
+                    },
+                )?;
+            traversal.collect("F0-0", 0, &mut values)?;
+            Ok::<_, CodecError>(values)
+        })
+        .unwrap();
+    assert!(values.is_empty());
+    assert_eq!(rotational_visits.get(), UNIQUE_FEATURES);
+    drop((values, output_storage));
+    ctx.finish_session().unwrap();
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let diameter_visits = std::cell::Cell::new(0_usize);
+    let (values, output_storage) = ctx
+        .with_scoped_storage("diamond output", || {
+            let mut values = Vec::new();
+            let mut traversal =
+                crate::swift::FeatureListTraversal::<crate::swift::PositiveReal, _>::new(
+                    &ctx,
+                    &index,
+                    "scan SWIFT diameter features",
+                    "track SWIFT diameter path",
+                    "collect SWIFT diameter contributors",
+                    |_| {
+                        let visits = diameter_visits.get().checked_add(1).expect("bounded visits");
+                        assert!(visits <= UNIQUE_FEATURES, "a completed feature result was evaluated twice");
+                        diameter_visits.set(visits);
+                        Ok(None)
+                    },
+                )?;
+            traversal.collect("F0-0", 0, &mut values)?;
+            Ok::<_, CodecError>(values)
+        })
+        .unwrap();
+    assert!(values.is_empty());
+    assert_eq!(diameter_visits.get(), UNIQUE_FEATURES);
+    drop((values, output_storage));
+    ctx.finish_session().unwrap();
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let measurement_visits = std::cell::Cell::new(0_usize);
+    let mut traversal = crate::swift::FeatureMeasurementTraversal::new(&ctx, &index, |_| {
+        let visits = measurement_visits.get().checked_add(1).expect("bounded visits");
+        assert!(visits <= UNIQUE_FEATURES, "a completed feature result was evaluated twice");
+        measurement_visits.set(visits);
+        Ok(None)
+    })
+    .unwrap();
+    assert_eq!(traversal.visit("F0-0", 0).unwrap().value, None);
+    assert_eq!(measurement_visits.get(), UNIQUE_FEATURES);
+    drop(traversal);
+    ctx.finish_session().unwrap();
+}
+
+fn marker(value: f64) -> Entity {
+    let mut feature = entity("Leaf");
+    feature.doubles.insert("value".into(), value);
+    feature
+}
+
+#[test]
+fn cached_feature_lists_preserve_path_order_and_repeated_contributors() {
+    let mut root = entity("GdtCompoundHole");
+    root.features.references = vec![
+        reference("left", "GdtCompoundHole"),
+        reference("right", "GdtCompoundHole"),
+    ];
+    let mut left = entity("GdtCompoundHole");
+    left.features.references = vec![reference("one", "Leaf"), reference("two", "Leaf")];
+    let mut right = entity("GdtCompoundHole");
+    right.features.references = vec![reference("two", "Leaf"), reference("one", "Leaf")];
+    let features = vec![
+        ("root".to_owned(), root),
+        ("left".to_owned(), left),
+        ("right".to_owned(), right),
+        ("one".to_owned(), marker(1.0)),
+        ("two".to_owned(), marker(2.0)),
+    ];
+    let index = feature_index(&features);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut traversal = crate::swift::FeatureListTraversal::<crate::swift::FiniteReal, _>::new(
+        &ctx,
+        &index,
+        "scan SWIFT rotational features",
+        "track SWIFT rotational path",
+        "collect SWIFT rotational projections",
+        |feature| {
+            Ok(ctx
+                .get_btree_map(&feature.doubles, "value", "test value")?
+                .copied()
+                .and_then(crate::swift::FiniteReal::new))
+        },
+    )
+    .unwrap();
+    let mut values = Vec::new();
+    traversal.collect("root", 0, &mut values).unwrap();
+    assert_eq!(
+        values.iter().map(|value| value.get()).collect::<Vec<_>>(),
+        [1.0, 2.0, 2.0, 1.0]
+    );
+}
+
+#[test]
+fn cycle_dependent_list_results_are_recomputed_for_each_path() {
+    let mut root = entity("GdtCompoundHole");
+    root.features.references = vec![
+        reference("a", "GdtCompoundHole"),
+        reference("b", "GdtCompoundHole"),
+    ];
+    let mut a = entity("GdtCompoundHole");
+    a.features.references = vec![
+        reference("shared", "GdtCompoundHole"),
+        reference("two", "Leaf"),
+    ];
+    let mut b = entity("GdtCompoundHole");
+    b.features
+        .references
+        .push(reference("shared", "GdtCompoundHole"));
+    let mut shared = entity("GdtCompoundHole");
+    shared.features.references = vec![reference("a", "GdtCompoundHole"), reference("one", "Leaf")];
+    let features = vec![
+        ("root".to_owned(), root),
+        ("a".to_owned(), a),
+        ("b".to_owned(), b),
+        ("shared".to_owned(), shared),
+        ("one".to_owned(), marker(1.0)),
+        ("two".to_owned(), marker(2.0)),
+    ];
+    let index = feature_index(&features);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut traversal = crate::swift::FeatureListTraversal::<crate::swift::FiniteReal, _>::new(
+        &ctx,
+        &index,
+        "scan SWIFT rotational features",
+        "track SWIFT rotational path",
+        "collect SWIFT rotational projections",
+        |feature| {
+            Ok(ctx
+                .get_btree_map(&feature.doubles, "value", "test value")?
+                .copied()
+                .and_then(crate::swift::FiniteReal::new))
+        },
+    )
+    .unwrap();
+    let mut values = Vec::new();
+    traversal.collect("root", 0, &mut values).unwrap();
+    assert_eq!(
+        values.iter().map(|value| value.get()).collect::<Vec<_>>(),
+        [1.0, 2.0, 2.0, 1.0]
+    );
+}
+
+#[test]
+fn measurement_cache_preserves_child_disagreement() {
+    use std::cell::Cell;
+    let mut root = entity("GdtCompoundHole");
+    root.features.references = vec![reference("low", "Leaf"), reference("high", "Leaf")];
+    let low = marker(4.0);
+    let high = marker(9.0);
+    let features = vec![
+        ("root".to_owned(), root),
+        ("low".to_owned(), low),
+        ("high".to_owned(), high),
+    ];
+    let index = feature_index(&features);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let calls = Cell::new(0usize);
+    let mut traversal = crate::swift::FeatureMeasurementTraversal::new(&ctx, &index, |feature| {
+        calls.set(calls.get() + 1);
+        Ok(ctx
+            .get_btree_map(&feature.doubles, "value", "test value")?
+            .copied()
+            .and_then(crate::swift::PositiveReal::new))
+    })
+    .unwrap();
+    assert_eq!(traversal.visit("root", 0).unwrap().value, None);
+    assert_eq!(traversal.visit("root", 0).unwrap().value, None);
+    assert_eq!(
+        calls.get(),
+        3,
+        "the second query reuses the cached disagreement"
+    );
+}
+
+#[test]
+fn measurement_results_with_cycle_dependence_are_not_reused() {
+    let mut a = entity("GdtCompoundHole");
+    a.features.references = vec![
+        reference("shared", "GdtCompoundHole"),
+        reference("nine", "Leaf"),
+    ];
+    let mut shared = entity("GdtCompoundHole");
+    shared.features.references = vec![reference("a", "GdtCompoundHole"), reference("five", "Leaf")];
+    let mut b = entity("GdtCompoundHole");
+    b.features
+        .references
+        .push(reference("shared", "GdtCompoundHole"));
+    let features = vec![
+        ("a".to_owned(), a),
+        ("b".to_owned(), b),
+        ("shared".to_owned(), shared),
+        ("nine".to_owned(), marker(9.0)),
+        ("five".to_owned(), marker(5.0)),
+    ];
+    let index = feature_index(&features);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut traversal = crate::swift::FeatureMeasurementTraversal::new(&ctx, &index, |feature| {
+        Ok(ctx
+            .get_btree_map(&feature.doubles, "value", "test value")?
+            .copied()
+            .and_then(crate::swift::PositiveReal::new))
+    })
+    .unwrap();
+    assert_eq!(traversal.visit("a", 0).unwrap().value, None);
+    assert_eq!(traversal.visit("b", 0).unwrap().value, None);
+}
+
+#[test]
+fn cached_list_depth_does_not_bypass_policy_nesting() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut root = entity("GdtCompoundHole");
+    root.features.references = vec![
+        reference("short", "GdtCompoundHole"),
+        reference("long0", "GdtCompoundHole"),
+    ];
+    let mut short = entity("GdtCompoundHole");
+    short
+        .features
+        .references
+        .push(reference("shared", "GdtCompoundHole"));
+    let mut long0 = entity("GdtCompoundHole");
+    long0
+        .features
+        .references
+        .push(reference("long1", "GdtCompoundHole"));
+    let mut long1 = entity("GdtCompoundHole");
+    long1
+        .features
+        .references
+        .push(reference("shared", "GdtCompoundHole"));
+    let mut shared = entity("GdtCompoundHole");
+    shared.features.references.push(reference("leaf", "Leaf"));
+    let features = vec![
+        ("root".to_owned(), root),
+        ("short".to_owned(), short),
+        ("long0".to_owned(), long0),
+        ("long1".to_owned(), long1),
+        ("shared".to_owned(), shared),
+        ("leaf".to_owned(), marker(1.0)),
+    ];
+    let index = feature_index(&features);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut traversal = crate::swift::FeatureListTraversal::<crate::swift::FiniteReal, _>::new(
+        &ctx,
+        &index,
+        "scan SWIFT rotational features",
+        "track SWIFT rotational path",
+        "collect SWIFT rotational projections",
+        |feature| {
+            Ok(ctx
+                .get_btree_map(&feature.doubles, "value", "test value")?
+                .copied()
+                .and_then(crate::swift::FiniteReal::new))
+        },
+    )
+    .unwrap();
+    let refusal = traversal.collect("root", 0, &mut Vec::new())
+        .expect_err("the deeper contributor path must hit the live nesting limit");
+    assert!(matches!(&refusal, CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth));
+    drop(traversal);
+    let repeated = ctx.finish_session().expect_err("the depth refusal remains fused");
+    assert!(matches!((refusal, repeated),
+        (CodecError::ResourceLimit(first), CodecError::ResourceLimit(repeated))
+            if first == repeated));
 }
