@@ -219,6 +219,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
 
     let mut with_witness = source_ir();
     let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        let mut result_storage = ctx.reserve_scoped(0, "creo curve evidence workspace")?;
         transfer_carrier_intersection_curves(
             ctx,
             &scan,
@@ -226,6 +227,7 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
             &mut AnnotationBuilder::new(),
             &witness,
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut result_storage,
         )
     })
     .expect("valid source object identity");
@@ -251,16 +253,18 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
             }));
 
     let mut without_witness = source_ir();
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| transfer_carrier_intersection_curves(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        let mut result_storage = ctx.reserve_scoped(0, "creo curve evidence workspace")?;
+        transfer_carrier_intersection_curves(
             ctx,
             &scan,
             &mut without_witness,
             &mut AnnotationBuilder::new(),
             &BTreeSet::new(),
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-        ))
-        .expect("valid source object identity")
-        .is_empty()
-    );
+            &mut result_storage,
+        )
+    })
+    .expect("valid source object identity")
+    .is_empty());
 }

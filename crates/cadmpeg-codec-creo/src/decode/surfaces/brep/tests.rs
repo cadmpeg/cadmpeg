@@ -37,19 +37,26 @@ mod split_shells;
 fn closed_component_refuses_before_curve_traversal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, Some("creo B-rep closed component curve traversal"), |cap| {
-                let arena = cadmpeg_core::decode::DecodeArena::new();
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                component_is_closed(
-        &ctx,
-        &BTreeSet::from([7]),
-        &BTreeSet::new(),
-        &BTreeMap::new(),
-        &[5],
-    ).map(|_| ())
-            });
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        Some("creo B-rep closed component curve traversal"),
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            component_is_closed(
+                &ctx,
+                &BTreeSet::from([7]),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &[5],
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = component_is_closed(
         &ctx,
@@ -73,13 +80,19 @@ fn rejection_evidence_refuses_before_diagnostic_count() {
     .expect("service rejection admitted");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, Some("creo B-rep rejection evidence count"), |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        diagnostics.evidence(&ctx, FaceAdmissionRejection::MissingLoops).map(|_| ())
-    });
+    policy.limits.max_work_units = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits,
+        Some("creo B-rep rejection evidence count"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            diagnostics
+                .evidence(&ctx, FaceAdmissionRejection::MissingLoops)
+                .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert!(matches!(
         diagnostics.evidence(&ctx, FaceAdmissionRejection::MissingLoops),
@@ -94,14 +107,21 @@ fn brep_coverage_refuses_before_first_report_node() {
     let diagnostics = BrepTransferDiagnostics::default();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("decode coverage nodes"), |cap| {
-                let arena = cadmpeg_core::decode::DecodeArena::new();
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                diagnostics
-        .record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default()).map(|_| ())
-            });
+    policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("decode coverage nodes"),
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("root");
+            diagnostics
+                .record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default())
+                .map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = diagnostics
         .record_coverage(&ctx, &mut cadmpeg_ir::report::decode::Coverage::default())
@@ -111,116 +131,12 @@ fn brep_coverage_refuses_before_first_report_node() {
             && resource.operation == "decode coverage nodes"));
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #[test]
 fn infinite_point_cannot_match_a_finite_point() {
     assert!(
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::INFINITY, 0.0, 0.0)).is_none()
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 #[test]
 fn brep_diagnostics_report_component_gate_inputs() {
@@ -265,8 +181,6 @@ fn explicit_single_body_merges_disconnected_components() {
         }]
     );
 }
-
-
 
 #[test]
 fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
@@ -351,8 +265,12 @@ fn admitted_face_component_refs_refuse_collection_limit() {
         .expect("component admission")
         .expect("valid component fixture"),
     );
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "creo B-rep admitted component refs", |ctx| admitted_face_components(ctx, &scan, &BTreeSet::from([5])));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo B-rep admitted component refs",
+        |ctx| admitted_face_components(ctx, &scan, &BTreeSet::from([5])),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep admitted component refs"));
@@ -383,17 +301,11 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
             offset: 0,
         });
 
-    assert!(
-        is_neutral_face_reference(&scan, 5)
-    );
-    assert!(
-        !is_neutral_face_reference(&scan, 7)
-    );
+    assert!(is_neutral_face_reference(&scan, 5));
+    assert!(!is_neutral_face_reference(&scan, 7));
 
     scan.framing.layout = crate::container::Layout::Nd;
-    assert!(
-        is_neutral_face_reference(&scan, 7)
-    );
+    assert!(is_neutral_face_reference(&scan, 7));
 }
 
 #[test]
@@ -549,10 +461,6 @@ fn closed_component_counts_two_uses_of_one_face() {
         .expect("closed component search")
     );
 }
-
-
-
-
 
 #[test]
 fn native_brep_rejects_ambiguous_model_carriers() {
@@ -738,6 +646,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             &mut Vec::new(),
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
+        .map(|(summary, _storage)| summary)
     })
     .expect("valid source object identity");
 
@@ -831,6 +740,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             &mut Vec::new(),
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
+        .map(|(summary, _storage)| summary)
     })
     .expect("valid source object identity");
 
@@ -845,7 +755,6 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     assert_eq!(ir.model.shells[0].wire_edges().len(), 3);
 }
 
-
-mod source_indexes;
-mod parameter_loops;
 mod diagnostics;
+mod parameter_loops;
+mod source_indexes;
