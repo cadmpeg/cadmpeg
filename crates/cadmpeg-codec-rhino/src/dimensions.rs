@@ -599,11 +599,7 @@ pub(crate) fn v2_annotation_direct(
     let kind = reader.i32()?;
     let plane_offset = reader.position();
     let raw_plane = plane(ctx, reader)?;
-    if ctx.any_by(
-        &(raw_plane.origin)[..],
-        |value| Ok(value.abs() > V2_REALLY_BIG_NUMBER),
-        "Rhino v2 annotation direct traversal",
-    )? {
+    if raw_plane.origin.iter().any(|value| value.abs() > V2_REALLY_BIG_NUMBER) {
         return Err(FramingError::structural(
             plane_offset,
             "V2 annotation plane origin is outside the source bound",
@@ -626,11 +622,7 @@ pub(crate) fn v2_annotation_direct(
         ctx.charge_work(1, "Rhino dimensions cursor traversal")?;
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
-        if ctx.any_by(
-            &raw_point[..],
-            |value| Ok(value.abs() > V2_REALLY_BIG_NUMBER),
-            "Rhino v2 annotation direct traversal",
-        )? {
+        if raw_point.iter().any(|value| value.abs() > V2_REALLY_BIG_NUMBER) {
             return Err(FramingError::structural(
                 point_offset,
                 "V2 annotation point is outside the source bound",
@@ -661,8 +653,20 @@ pub(crate) fn v2_effective_text(
     } else {
         &annotation.user_text
     };
+    let Some((start, _)) = ctx.find_by(
+        text.char_indices(),
+        |(_, character)| Ok(!character.is_whitespace() && !character.is_control()),
+        "Rhino V2 effective text leading boundary",
+    )? else {
+        return ctx.copy_retained_text("", "Rhino V2 effective text");
+    };
+    let end = ctx.find_by(
+        text[start..].char_indices().rev(),
+        |(_, character)| Ok(!character.is_whitespace() && !character.is_control()),
+        "Rhino V2 effective text trailing boundary",
+    )?.map_or(start, |(last, character)| start + last + character.len_utf8());
     ctx.copy_retained_text(
-        text.trim_matches(|character: char| character.is_whitespace() || character.is_control()),
+        &text[start..end],
         "Rhino V2 effective text",
     )
 }
@@ -1889,6 +1893,7 @@ pub(crate) fn semantic_json(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod budget_repairs;
 
     #[test]
     fn dimension_point_reader_holds_finite_lanes_and_preserves_refusal_offset() {
