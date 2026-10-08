@@ -157,3 +157,125 @@ fn native_point_index_filters_all_coordinates_on_a_constant_x_plane() {
         }
     });
 }
+
+#[test]
+fn face_witness_spatial_dedup_preserves_first_order_and_limits_visits() {
+    use super::super::distinct_face_witnesses;
+    let points = (0..1024)
+        .map(|index| Point3::new(0.0, f64::from(index), 0.0))
+        .collect::<Vec<_>>();
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| distinct_face_witnesses(ctx, &points);
+    let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        crate::test_support::with_work_refusal("catia_a5_distinct_face_witnesses", run)
+            .expect_err("first visit")
+    else {
+        panic!("work refusal");
+    };
+    assert_eq!(
+        crate::test_support::with_work_limit(limit.used + 200_000, run).expect("spatial visits"),
+        points
+    );
+    let tolerance = super::super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE;
+    let points = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(tolerance * 0.75, 0.0, 0.0),
+        Point3::new(tolerance * 1.5, 0.0, 0.0),
+    ];
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| distinct_face_witnesses(ctx, &points))
+            .expect("service"),
+        vec![points[0], points[2]]
+    );
+}
+
+#[test]
+fn a5_bounds_binding_avoids_separated_owner_carrier_and_face_products() {
+    use super::super::A5BindingIndex;
+    use crate::families::a5a8::records::FreeformSurface;
+    use crate::families::standard::records::StandardFaceBounds;
+    use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let packet_bytes = crate::test_support::test_b2::b2_all_compact_owner_packet_stream();
+    let records = crate::wire::records::consolidated_records(&packet_bytes);
+    let template = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_owner_packets_from_records(ctx, &packet_bytes, &records)
+            .map(|mut packets| packets.next().expect("one packet"))
+    })
+    .expect("fixture");
+    let mut carriers = Vec::new();
+    let mut owners = Vec::new();
+    let mut faces = Vec::new();
+    for item in 0..1024 {
+        let x = f64::from(item) * 4.0;
+        let geometry = NurbsSurface::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 1.0, 0.0)],
+                    vec![
+                        Point3::new(x + 1.0, 0.0, 0.0),
+                        Point3::new(x + 1.0, 1.0, 0.0),
+                    ],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("admitted fixture")
+        .expect("square");
+        carriers.push(FreeformSurface {
+            pos: usize::try_from(item).expect("bounded"),
+            identity: None,
+            geometry,
+        });
+        let mut owner = template.clone();
+        let lower = f32::from(u16::try_from(item * 4).expect("bounded"));
+        owner.numeric_tail = CatiaOwnerNumericTail::new(
+            [0x84, 0x41, 0, 0, 0x0d],
+            [0.0; 2],
+            [1.0; 2],
+            [[lower, lower + 1.0], [0.0, 1.0], [-0.1, 0.1]],
+        )
+        .expect("tail");
+        owners.push(owner);
+        faces.push(StandardFaceBounds {
+            aabb_center: [
+                crate::test_support::test_b5::finite(x + 0.5),
+                crate::test_support::test_b5::finite(0.5),
+                crate::test_support::test_b5::finite(0.0),
+            ],
+            aabb_half_extents: [
+                crate::test_support::test_b5::nonnegative_length(0.5),
+                crate::test_support::test_b5::nonnegative_length(0.5),
+                crate::test_support::test_b5::nonnegative_length(0.0),
+            ],
+            sphere_center: [crate::test_support::test_b5::finite(0.0); 3],
+            sphere_radius: crate::test_support::test_b5::nonnegative_length(1.0),
+        });
+    }
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let index = A5BindingIndex::new(ctx, &carriers, &owners)?;
+        let mut owner_carriers = Vec::new();
+        for (item, owner) in owners.iter().enumerate() {
+            let matched = index.matching_carriers(ctx, &owner.numeric_tail)?;
+            assert_eq!(matched, vec![item]);
+            owner_carriers.push(matched);
+        }
+        for (item, face) in faces.iter().enumerate() {
+            assert_eq!(
+                index.containing_owners(ctx, *face, &owner_carriers)?,
+                vec![item]
+            );
+        }
+        Ok::<_, cadmpeg_core::CodecError>(())
+    };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        crate::test_support::with_work_refusal("catia_a5_owner_carriers", run)
+            .expect_err("first query")
+    else {
+        panic!("work refusal");
+    };
+    crate::test_support::with_work_limit(limit.used + 900_000, run).expect("both indexed products");
+}
