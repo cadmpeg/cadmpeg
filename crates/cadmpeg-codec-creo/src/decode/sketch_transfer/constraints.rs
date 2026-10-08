@@ -2154,7 +2154,7 @@ fn native_section_dimension_constraint_definition(
     sketch: &SketchId,
     relation: &crate::feature::definitions::FeatureRelation,
     solver: &RelationIncidences<'_, '_>,
-) -> Result<Option<SketchConstraintDefinitionInput>, cadmpeg_core::CodecError> {
+) -> Result<SketchConstraintDefinitionInput, cadmpeg_core::CodecError> {
     let definition = solver.definition;
     let native_kind = ctx.format_retained(
         format_args!("creo:relation:{}", relation.relation_type),
@@ -2180,7 +2180,7 @@ fn native_section_dimension_constraint_definition(
             "relation_id",
             relation.relation_id,
         )?;
-        return Ok(Some(SketchConstraintDefinitionInput::Native {
+        return Ok(SketchConstraintDefinitionInput::Native {
             native_kind,
             native_state: Some(u64::from(relation.used)),
             native_flags: None,
@@ -2188,7 +2188,7 @@ fn native_section_dimension_constraint_definition(
             entities: Vec::new(),
             parameter: None,
             operands: Vec::new(),
-        }));
+        });
     }
     let unique_relation_id = solver.is_unique(relation.relation_id);
     let joined_relation_incidence_link = if unique_relation_id { solver.joined(relation.relation_id) } else { None };
@@ -2217,7 +2217,8 @@ fn native_section_dimension_constraint_definition(
             relation.relation_id,
         )?;
     }
-    let native_ref = sketch_native_ref_admitted(ctx, sketch)?;
+    let mut reference_storage = ctx.reserve_scoped(0, "creo native relation reference storage")?;
+    let native_ref = reference_storage.with_storage(|| sketch_native_ref_admitted(ctx, sketch))?;
     let mut operands = Vec::new();
     if unique_relation_id {
         push_relation_operand(
@@ -2273,7 +2274,7 @@ fn native_section_dimension_constraint_definition(
             }
         }
     }
-    Ok(Some(SketchConstraintDefinitionInput::Native {
+    Ok(SketchConstraintDefinitionInput::Native {
         native_kind,
         native_state: Some(u64::from(relation.used)),
         native_flags: None,
@@ -2281,7 +2282,7 @@ fn native_section_dimension_constraint_definition(
         entities,
         parameter,
         operands,
-    }))
+    })
 }
 
 pub(super) fn reconcile_section_dimension_constraint(
@@ -2300,11 +2301,7 @@ pub(super) fn reconcile_section_dimension_constraint(
     if entity_reconciled && parameter_reconciled {
         return Ok(true);
     }
-    let Some(native_definition) =
-        native_section_dimension_constraint_definition(ctx, sketch, relation, solver)?
-    else {
-        return Ok(false);
-    };
+    let native_definition = native_section_dimension_constraint_definition(ctx, sketch, relation, solver)?;
     *constraint_definition = native_definition;
     Ok(
         reconcile_constraint_entity_references(ctx, constraint_definition, emitted)?
@@ -2410,6 +2407,7 @@ pub(super) fn section_dimension_constraints_with_links(
         .admit_iter(&relations.rows, "creo section dimension relation rows")?
         .enumerate()
     {
+        let mut dimension_storage = ctx.reserve_scoped(0, "creo relation dimension scratch storage")?;
         let mut coordinate_refusal = None;
         let locus_refusal = Cell::new(None);
         let candidate = (|| {
@@ -2422,32 +2420,20 @@ pub(super) fn section_dimension_constraints_with_links(
                 {
                     Some((dimensions, ordinal)) => capture_constraint_refusal(
                         &mut coordinate_refusal,
-                        resolved_feature_dimension_parameter_admitted(
+                        dimension_storage.with_storage(|| resolved_feature_dimension_parameter_admitted(
                             ctx, sketch, dimensions, ordinal,
-                        ),
+                        )),
                     )?,
                     None => None,
                 };
-                let parameter = capture_constraint_refusal(
-                    &mut coordinate_refusal,
-                    dimension
-                        .as_ref()
-                        .map(|(_, parameter)| {
-                            parameter
-                                .try_clone_for_decode(ctx, "creo section dimension parameter copy")
-                        })
-                        .transpose(),
-                )?;
                 let joined_incidence_link = if unique_relation_id { solver.joined(relation.relation_id) } else { None };
                 let joined_incidence = joined_incidence_link.map(|(_, incidence)| incidence);
                 let typed = (|| {
                     unique_relation_id.then_some(())?;
-                    let (dimension, _) = dimension.as_ref()?;
+                    let (dimension, parameter) = dimension.as_ref()?;
                     let parameter = capture_constraint_refusal(
                         &mut coordinate_refusal,
-                        parameter
-                            .as_ref()?
-                            .try_clone_for_decode(ctx, "creo typed dimension parameter copy"),
+                        parameter.try_clone_for_decode(ctx, "creo typed dimension parameter copy"),
                     )?;
                     if relation.relation_type == 1
                         && dimension.unit() == crate::feature::definitions::DimensionUnit::Radians
@@ -2740,7 +2726,7 @@ pub(super) fn section_dimension_constraints_with_links(
                         native_section_dimension_constraint_definition(
                             ctx, sketch, relation, solver,
                         ),
-                    )??,
+                    )?,
                 };
                 (
                     SketchConstraint {
@@ -2880,7 +2866,6 @@ mod tests {
                     ctx,
                     &sketch,
                     &relation, &super::RelationIncidences::new(ctx, &definition)?)
-                .map(|candidate| candidate.expect("one relation produces a native constraint"))
             },
         );
         let SketchConstraintDefinitionInput::Native {

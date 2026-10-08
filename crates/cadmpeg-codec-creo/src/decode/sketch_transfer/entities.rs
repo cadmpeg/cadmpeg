@@ -197,7 +197,28 @@ pub(super) fn transfer_section_entities(
         losses,
         source_carriers,
     } = transfer;
-    let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+    let mut family_storage = ctx.reserve_scoped(0, "creo section family row storage")?;
+    let mut circle_rows = Vec::new();
+    let mut point_rows = Vec::new();
+    let mut centered_line_rows = Vec::new();
+    let mut reference_line_rows = Vec::new();
+    let mut bounded_curve_rows = Vec::new();
+    let mut conic_rows = Vec::new();
+    let mut opaque_rows = Vec::new();
+    if let Some(table) = definition.segments.as_ref() {
+        for row in ctx.admit_iter(table.rows.as_slice(), "creo section family source rows")? {
+            match row {
+                SegmentRow::Ordinary(_) => {}
+                SegmentRow::Circle(row) => ctx.push_scoped_vec(&mut family_storage, &mut circle_rows, row, "creo section family row storage")?,
+                SegmentRow::Point(row) => ctx.push_scoped_vec(&mut family_storage, &mut point_rows, row, "creo section family row storage")?,
+                SegmentRow::CenteredLine(row) => ctx.push_scoped_vec(&mut family_storage, &mut centered_line_rows, row, "creo section family row storage")?,
+                SegmentRow::ReferenceLine(row) => ctx.push_scoped_vec(&mut family_storage, &mut reference_line_rows, row, "creo section family row storage")?,
+                SegmentRow::BoundedCurve(row) => ctx.push_scoped_vec(&mut family_storage, &mut bounded_curve_rows, row, "creo section family row storage")?,
+                SegmentRow::Conic(row) => ctx.push_scoped_vec(&mut family_storage, &mut conic_rows, row, "creo section family row storage")?,
+                SegmentRow::Opaque(row) => ctx.push_scoped_vec(&mut family_storage, &mut opaque_rows, row, "creo section family row storage")?,
+            }
+        }
+    }
     let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| {
         if let Some(geometry) = ctx.get_btree_map(segment_geometries, &segment.offset, "creo section entity geometry lookup")?.and_then(Option::as_ref) {
             return geometry.try_clone_for_decode(ctx, "creo section entity geometry copy").map(Some);
@@ -214,6 +235,7 @@ pub(super) fn transfer_section_entities(
     };
     let mut entities = Vec::new();
     for segment in ctx.admit_iter(segments, "creo emitted section segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
         let Some(geometry) = segment_geometry(segment)? else {
             continue;
         };
@@ -298,6 +320,7 @@ pub(super) fn transfer_section_entities(
         )?;
     }
     for segment in ctx.admit_iter(segments, "creo unresolved section segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
         if section_degenerate_axis_line(ctx, definition, segment)?
             || ctx.get_btree_map(segment_geometries, &segment.offset, "creo section entity geometry lookup")?
                 .and_then(Option::as_ref)
@@ -346,14 +369,8 @@ pub(super) fn transfer_section_entities(
                 .with_endpoint_refs(endpoint_refs),
         )?;
     }
-    if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx
-            .admit_iter(table.rows.as_slice(), "creo entities circles segment rows")?
-            .filter_map(|row| match row {
-                SegmentRow::Circle(segment) => Some(segment),
-                _ => None,
-            })
-        {
+    for segment in ctx.admit_iter(&circle_rows, "creo entities circles segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
             let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
                 && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
@@ -413,15 +430,9 @@ pub(super) fn transfer_section_entities(
                     .with_geometry_ref(geometry_ref),
             )?;
         }
-    }
-    if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx
-            .admit_iter(table.rows.as_slice(), "creo entities points segment rows")?
-            .filter_map(|row| match row {
-                SegmentRow::Point(segment) => Some(segment),
-                _ => None,
-            })
-        {
+
+    for segment in ctx.admit_iter(&point_rows, "creo entities points segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
             let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
                 && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
@@ -480,18 +491,9 @@ pub(super) fn transfer_section_entities(
                     .with_endpoint_refs(endpoint_refs),
             )?;
         }
-    }
-    if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx
-            .admit_iter(
-                table.rows.as_slice(),
-                "creo entities centered_lines segment rows",
-            )?
-            .filter_map(|row| match row {
-                SegmentRow::CenteredLine(segment) => Some(segment),
-                _ => None,
-            })
-        {
+
+    for segment in ctx.admit_iter(&centered_line_rows, "creo entities centered_lines segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
             let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
                 && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
@@ -545,18 +547,9 @@ pub(super) fn transfer_section_entities(
                     .with_endpoint_refs(endpoint_refs),
             )?;
         }
-    }
-    if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx
-            .admit_iter(
-                table.rows.as_slice(),
-                "creo entities reference_lines segment rows",
-            )?
-            .filter_map(|row| match row {
-                SegmentRow::ReferenceLine(segment) => Some(segment),
-                _ => None,
-            })
-        {
+
+    for segment in ctx.admit_iter(&reference_line_rows, "creo entities reference_lines segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
             let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
                 && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
@@ -617,18 +610,9 @@ pub(super) fn transfer_section_entities(
                     .with_endpoint_refs(endpoint_refs),
             )?;
         }
-    }
-    if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx
-            .admit_iter(
-                table.rows.as_slice(),
-                "creo entities bounded_curves segment rows",
-            )?
-            .filter_map(|row| match row {
-                SegmentRow::BoundedCurve(segment) => Some(segment),
-                _ => None,
-            })
-        {
+
+    for segment in ctx.admit_iter(&bounded_curve_rows, "creo entities bounded_curves segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
             let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
                 && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
@@ -674,15 +658,9 @@ pub(super) fn transfer_section_entities(
                     .with_endpoint_refs(endpoint_refs),
             )?;
         }
-    }
-    if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx
-            .admit_iter(table.rows.as_slice(), "creo entities conics segment rows")?
-            .filter_map(|row| match row {
-                SegmentRow::Conic(segment) => Some(segment),
-                _ => None,
-            })
-        {
+
+    for segment in ctx.admit_iter(&conic_rows, "creo entities conics segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
             let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
                 && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
@@ -720,15 +698,9 @@ pub(super) fn transfer_section_entities(
                     .with_native_ref(Some(native_ref)),
             )?;
         }
-    }
-    if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx
-            .admit_iter(table.rows.as_slice(), "creo entities opaque segment rows")?
-            .filter_map(|row| match row {
-                SegmentRow::Opaque(segment) => Some(segment),
-                _ => None,
-            })
-        {
+
+    for segment in ctx.admit_iter(&opaque_rows, "creo entities opaque segment rows")? {
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
             let unique_external_id = ctx.contains_btree_set(unique_segment_ids, &segment.external_id, "creo section entity ID membership")?;
             if unique_external_id
                 && ctx.contains_btree_set(materialized_saved_section_external_ids, &segment.external_id, "creo section entity ID membership")?
@@ -801,7 +773,7 @@ pub(super) fn transfer_section_entities(
                     .with_geometry_ref(geometry_ref),
             )?;
         }
-    }
+
     let mut identity_storage = ctx.reserve_scoped(0, "creo saved entity identity index")?;
     let mut entity_ids = std::collections::HashSet::<String>::new();
     for entity in ctx.admit_iter(&entities, "creo saved entity identity sources")? {
@@ -815,7 +787,8 @@ pub(super) fn transfer_section_entities(
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
         std::convert::Infallible,
     >(ctx, definition, |saved| {
-        let Some((internal_id, geometry, offset)) = saved_section_entity_geometry(saved) else {
+    let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
+            let Some((internal_id, geometry, offset)) = saved_section_entity_geometry(saved) else {
             return Ok(ControlFlow::Continue(()));
         };
         let unique_internal_id = ctx.contains_btree_set(
@@ -899,7 +872,7 @@ pub(super) fn transfer_section_entities(
         let native_ref = ctx.format_retained(
             format_args!(
                 "{}:saved_entity#{internal_id}",
-                sketch_native_ref_admitted(ctx, sketch_id)?
+                suffix_storage.with_storage(|| sketch_native_ref_admitted(ctx, sketch_id))?
             ),
             "creo saved entity native reference",
         )?;
@@ -950,6 +923,7 @@ pub(super) fn transfer_section_entities(
             }
             return Ok(ControlFlow::Continue(()));
         };
+        let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
         let unique_internal_id = match spline.entity_id {
             Some(id)
                 if ctx.contains_btree_set(
@@ -1045,7 +1019,7 @@ pub(super) fn transfer_section_entities(
         let native_ref = ctx.format_retained(
             format_args!(
                 "{}:saved_spline#{suffix}",
-                sketch_native_ref_admitted(ctx, sketch_id)?
+                suffix_storage.with_storage(|| sketch_native_ref_admitted(ctx, sketch_id))?
             ),
             "creo saved spline native reference",
         )?;
@@ -1120,6 +1094,7 @@ pub(super) fn transfer_section_entities(
                 "creo placed curve index nodes"))?;
         }
         for segment in ctx.admit_iter(segments, "creo placed section segment rows")? {
+            let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
             let section_geometry = match ctx.get_btree_map(resolved_segment_geometries, &segment.offset, "creo placed resolved geometry lookup")?.and_then(Option::as_ref) {
                 Some(geometry) => Some(geometry),
                 None => ctx.get_btree_map(segment_geometries, &segment.offset, "creo placed fallback geometry lookup")?
@@ -1167,14 +1142,8 @@ pub(super) fn transfer_section_entities(
                 },
             )?;
         }
-        if let Some(table) = definition.segments.as_ref() {
-            for segment in ctx
-                .admit_iter(table.rows.as_slice(), "creo placed section circles rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Circle(segment) => Some(segment),
-                    _ => None,
-                })
-            {
+        for segment in ctx.admit_iter(&circle_rows, "creo placed section circles rows")? {
+            let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
                 let Some(section_geometry) = ctx.get_btree_map(circle_geometries, &segment.offset, "creo section entity geometry lookup")? else {
                     continue;
                 };
@@ -1226,18 +1195,9 @@ pub(super) fn transfer_section_entities(
                     },
                 )?;
             }
-        }
-        if let Some(table) = definition.segments.as_ref() {
-            for segment in ctx
-                .admit_iter(
-                    table.rows.as_slice(),
-                    "creo placed section centered-lines rows",
-                )?
-                .filter_map(|row| match row {
-                    SegmentRow::CenteredLine(segment) => Some(segment),
-                    _ => None,
-                })
-            {
+
+        for segment in ctx.admit_iter(&centered_line_rows, "creo placed section centered-lines rows")? {
+            let mut suffix_storage = ctx.reserve_scoped(0, "creo section identity suffix storage")?;
                 let Some(section_geometry) = ctx.get_btree_map(centered_line_geometries, &segment.offset, "creo section entity geometry lookup")? else {
                     continue;
                 };
@@ -1289,7 +1249,7 @@ pub(super) fn transfer_section_entities(
                     },
                 )?;
             }
-        }
+
         for (internal_id, external_id, section_geometry, offset, id) in ctx.admit_iter(saved_section_geometries, "creo placed saved geometry rows")? {
             let already_present = ctx.contains_hash_set(&curve_ids, id.as_str(), "creo placed curve index membership")?;
             if already_present {
