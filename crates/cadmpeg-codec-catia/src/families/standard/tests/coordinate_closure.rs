@@ -123,7 +123,6 @@ fn port_domain_pruning_refuses_input_sized_collections() {
         "catia_port_effective_deferred",
         "catia_deferred_ports",
         "catia_port_all_points",
-        "catia_port_deferred_domain",
         "catia_port_candidate_domain",
         "catia_port_domains",
         "catia_port_nodes",

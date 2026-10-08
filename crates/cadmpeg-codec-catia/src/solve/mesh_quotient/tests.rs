@@ -11,19 +11,20 @@ use std::sync::Arc;
 
 #[test]
 fn direction_work_estimate_states_no_figure_the_work_counter_cannot_hold() {
-    assert_eq!(direction_work_estimate([0usize, 1, 2].into_iter()), Some(7));
+    let estimate = |unknown_uses: &[usize]| {
+        crate::test_support::with_service_context(|ctx| direction_work_estimate(ctx, unknown_uses))
+            .expect("service resource budget")
+    };
+    assert_eq!(estimate(&[0usize, 1, 2]), Some(7));
     let widest = cadmpeg_core::decode::index_from_u32(usize::BITS) - 1;
-    assert_eq!(
-        direction_work_estimate([widest].into_iter()),
-        Some(1usize << widest)
-    );
+    assert_eq!(estimate(&[widest]), Some(1usize << widest));
     for unknown in [
         cadmpeg_core::decode::index_from_u32(usize::BITS),
         usize::MAX,
     ] {
-        assert_eq!(direction_work_estimate([unknown].into_iter()), None);
+        assert_eq!(estimate(&[unknown]), None);
     }
-    assert_eq!(direction_work_estimate([widest, widest].into_iter()), None);
+    assert_eq!(estimate(&[widest, widest]), None);
 }
 
 /// A face whose direction choices the work counter cannot hold exhausts the

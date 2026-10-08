@@ -5,7 +5,7 @@ use super::super::MeshQuotient;
 use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[test]
@@ -25,7 +25,14 @@ fn mesh_orientation_options_refuse_collection_limit_before_declining() {
     );
     let run = |ctx: &DecodeContext<'_>| {
         quotient
-            .assignment_options_limited(ctx, &assignment, &[vec![[0, 1]]], &HashSet::new(), 1, None)
+            .assignment_options_limited(
+                ctx,
+                &assignment,
+                &[vec![[0, 1]]],
+                &BTreeSet::new(),
+                1,
+                None,
+            )
             .map(|options| options.is_empty())
     };
     catia_test_context!(service_ctx);

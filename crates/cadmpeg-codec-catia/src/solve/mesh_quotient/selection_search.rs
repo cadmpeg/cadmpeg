@@ -6,15 +6,15 @@ use cadmpeg_core::decode::u64_from_index;
 use super::{
     canonical_mesh_boundary_directions, changed_quotient_edges, common_supported_corner_equations,
     copy_mesh_assignment, copy_mesh_boundary_directions, copy_mesh_edge_rows,
-    distinct_domain_matching_with_budget, initial_mesh_quotient,
+    distinct_domain_matching_with_budget, domain_contains, initial_mesh_quotient, least_rotation,
     mesh_candidates_equivalent_with_context, mesh_candidates_identical_with_context,
-    orient_face_cycles, reconstruct_mesh_selection, same_unordered_pair, Arc, BoundaryDraft,
-    CodecError, CoedgeUse, DecodeContext, EdgeRow, FaceTopologyDraft, HashMap, HashSet,
-    MeshBoundaryEdgeCandidate, MeshCandidateFailure, MeshCandidateGauge, MeshEndpointResolve,
-    MeshFaceBoundaryAssignment, MeshFaceSelection, MeshFixedDirectionOption, MeshQuotient,
-    MeshQuotientSignature, MeshSelectionSearch, MeshSelectionStateSignature, MeshSolve,
-    SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget, MAX_FACE_EQUATION_CACHE_ENTRIES,
-    MAX_SELECTION_STATE_MEMO_ENTRIES,
+    orient_face_cycles, reconstruct_mesh_selection, same_unordered_pair, Arc, BTreeMap, BTreeSet,
+    BoundaryDraft, CodecError, CoedgeUse, DecodeContext, EdgeRow, FaceTopologyDraft, HashMap,
+    HashSet, MeshBoundaryEdgeCandidate, MeshCandidateFailure, MeshCandidateGauge,
+    MeshEndpointResolve, MeshFaceBoundaryAssignment, MeshFaceSelection, MeshFixedDirectionOption,
+    MeshQuotient, MeshQuotientSignature, MeshSelectionSearch, MeshSelectionStateSignature,
+    MeshSolve, SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget,
+    MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_SELECTION_STATE_MEMO_ENTRIES,
 };
 
 #[cfg(test)]
@@ -30,27 +30,32 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         self.outcome.is_closed()
     }
 
-    pub(super) fn has_exact_singleton_endpoint_domains(&self) -> bool {
-        self.port_identities.is_some()
-            && self
-                .edge_candidates
-                .iter()
-                .all(|candidates| candidates.len() == 1)
+    /// Whether every edge holds exactly one candidate pair.
+    pub(super) fn has_singleton_edge_candidates(&self) -> Result<bool, CodecError> {
+        self.ctx.all_by(
+            self.edge_candidates,
+            |candidates| Ok(candidates.len() == 1),
+            "catia_selection_singleton_candidates",
+        )
     }
 
-    pub(super) fn selected_edges(&self) -> Result<HashSet<usize>, CodecError> {
-        let mut edges = HashSet::new();
-        for (face, selected) in self.selected.iter().enumerate() {
+    pub(super) fn has_exact_singleton_endpoint_domains(&self) -> Result<bool, CodecError> {
+        Ok(self.port_identities.is_some() && self.has_singleton_edge_candidates()?)
+    }
+
+    pub(super) fn selected_edges(&self) -> Result<BTreeSet<usize>, CodecError> {
+        const OPERATION: &str = "catia_selection_selected_edges";
+        let ctx = self.ctx;
+        let mut edges = BTreeSet::new();
+        for (face, selected) in ctx.admit_iter(&self.selected, OPERATION)?.enumerate() {
             let Some((index, _)) = selected else {
                 continue;
             };
             if let Some(assignment) = self.assignments[face].get(*index) {
-                for use_ in assignment.boundaries.iter().flatten() {
-                    self.ctx.insert_hash_set(
-                        &mut edges,
-                        use_.edge,
-                        "catia_selection_selected_edges",
-                    )?;
+                for boundary in ctx.admit_iter(&assignment.boundaries, OPERATION)? {
+                    for use_ in ctx.admit_iter(boundary, OPERATION)? {
+                        ctx.insert_btree_set(&mut edges, use_.edge, OPERATION)?;
+                    }
                 }
             }
         }
@@ -283,66 +288,73 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         face: usize,
         quotient: &mut MeshQuotient<'storage>,
     ) -> Result<MeshQuotientSignature, CodecError> {
-        let mut root_set = HashSet::new();
-        for use_ in self.assignments[face]
-            .iter()
-            .flat_map(|assignment| &assignment.boundaries)
-            .flatten()
-        {
-            for node in [use_.edge * 2, use_.edge * 2 + 1] {
-                self.ctx.insert_hash_set(
-                    &mut root_set,
-                    quotient.union.find(self.ctx, node)?,
-                    "catia_face_projection_roots",
-                )?;
+        let ctx = self.ctx;
+        let mut roots = Vec::new();
+        for assignment in ctx.admit_iter(&self.assignments[face], "catia_face_projection_roots")? {
+            for boundary in ctx.admit_iter(&assignment.boundaries, "catia_face_projection_roots")? {
+                for use_ in ctx.admit_iter(boundary, "catia_face_projection_roots")? {
+                    for node in [use_.edge * 2, use_.edge * 2 + 1] {
+                        ctx.push_vec(
+                            &mut roots,
+                            quotient.union.find(ctx, node)?,
+                            "catia_face_projection_roots",
+                        )?;
+                    }
+                }
             }
         }
-        let mut roots = Vec::new();
-        self.ctx.reserve_vec(
-            &mut roots,
-            root_set.len(),
-            "catia_face_projection_root_order",
-        )?;
-        roots.extend(root_set);
-        self.ctx.sort_unstable_by(
+        ctx.sort_unstable_by(
             &mut roots,
             |value| value,
             Ord::cmp,
             "catia_face_projection_root_order_sort",
         )?;
-        let mut signature = Vec::new();
-        self.ctx.reserve_vec(
-            &mut signature,
-            roots.len(),
-            "catia_face_projection_signature_rows",
-        )?;
-        for root in roots {
-            let mut domain = Vec::new();
-            self.ctx.reserve_vec(
-                &mut domain,
-                quotient.domains[root].len(),
-                "catia_face_projection_domain_points",
-            )?;
-            domain.extend(quotient.domains[root].iter().copied());
-            self.ctx.sort_unstable_by(
-                &mut domain,
-                |value| value,
-                Ord::cmp,
-                "catia_face_projection_domain_points_sort",
-            )?;
+        ctx.dedup_vec(&mut roots, "catia_face_projection_root_order")?;
+        let mut signature =
+            ctx.collection_vec(roots.len(), "catia_face_projection_signature_rows")?;
+        for &root in ctx.admit_iter(&roots, "catia_face_projection_signature_rows")? {
             signature.push((
-                self.ctx
-                    .copy_slice(quotient.members(root), "catia_face_projection_member_nodes")?,
-                domain,
+                ctx.copy_slice(quotient.members(root), "catia_face_projection_member_nodes")?,
+                ctx.copy_slice(
+                    &quotient.domains[root],
+                    "catia_face_projection_domain_points",
+                )?,
             ));
         }
-        self.ctx.sort_unstable_by(
+        ctx.sort_unstable_by(
             &mut signature,
             |value| value,
             Ord::cmp,
             "catia_face_projection_signature_rows_sort",
         )?;
         Ok(signature)
+    }
+
+    /// Whether any assignment of `face` uses an edge of `edges`.
+    fn face_uses_any_edge(
+        &self,
+        face: usize,
+        edges: &HashSet<usize>,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        let ctx = self.ctx;
+        ctx.any_by(
+            &self.assignments[face],
+            |assignment| {
+                ctx.any_by(
+                    &assignment.boundaries,
+                    |boundary| {
+                        ctx.any_by(
+                            boundary,
+                            |use_| ctx.contains_hash_set(edges, &use_.edge, operation),
+                            operation,
+                        )
+                    },
+                    operation,
+                )
+            },
+            operation,
+        )
     }
 
     #[cfg(test)]
@@ -362,15 +374,15 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
     ) -> Result<bool, CodecError> {
         let mut queue = VecDeque::new();
         let mut queued = HashSet::new();
-        for (face, selected) in self.selected.iter().enumerate() {
+        for (face, selected) in self
+            .ctx
+            .admit_iter(&self.selected, "catia_forced_equation_queue")?
+            .enumerate()
+        {
             if selected.is_none()
-                && changed_edges.is_none_or(|changed_edges| {
-                    self.assignments[face]
-                        .iter()
-                        .flat_map(|assignment| &assignment.boundaries)
-                        .flatten()
-                        .any(|use_| changed_edges.contains(&use_.edge))
-                })
+                && changed_edges.map_or(Ok(true), |changed_edges| {
+                    self.face_uses_any_edge(face, changed_edges, "catia_forced_equation_queue")
+                })?
             {
                 self.ctx
                     .push_back(&mut queue, face, "catia_forced_equation_queue")?;
@@ -384,18 +396,25 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             if !budget.charge() {
                 return Ok(true);
             }
-            queued.remove(&face);
+            self.ctx
+                .remove_hash_set(&mut queued, &face, "catia_forced_equation_queued")?;
             if self.selected[face].is_some() {
                 continue;
             }
             let before = quotient.clone_charged(self.ctx)?;
             let mut changed = false;
             let deterministic = self.assignments[face].len() == 1
-                && self.assignments[face][0]
-                    .boundaries
-                    .iter()
-                    .flatten()
-                    .all(|use_| use_.reversed.is_some());
+                && self.ctx.all_by(
+                    &self.assignments[face][0].boundaries,
+                    |boundary| {
+                        self.ctx.all_by(
+                            boundary,
+                            |use_| Ok(use_.reversed.is_some()),
+                            "catia_forced_deterministic_equations",
+                        )
+                    },
+                    "catia_forced_deterministic_equations",
+                )?;
             let equations = if deterministic {
                 let [choice] = self.possible_face_choices[face].as_slice() else {
                     return Ok(false);
@@ -406,8 +425,8 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 let cache_key = (face, self.face_projection_signature(face, quotient)?);
                 let cached = {
                     let cache = self.face_equation_cache.borrow();
-                    cache
-                        .get(&cache_key)
+                    self.ctx
+                        .get_hash_map(&cache, &cache_key, "catia_forced_equation_cache")?
                         .map(|equations| {
                             self.ctx
                                 .copy_slice(equations, "catia_forced_cached_equations")
@@ -426,13 +445,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     else {
                         return Ok(budget.exhausted());
                     };
-                    let mut equations = Vec::new();
-                    self.ctx.reserve_vec(
-                        &mut equations,
-                        common.len(),
-                        "catia_forced_common_equations",
-                    )?;
-                    equations.extend(common);
+                    let equations = common;
                     let cached_equations = self
                         .ctx
                         .copy_slice(&equations, "catia_forced_cached_equation_copy")?;
@@ -440,40 +453,6 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     if cache.len() >= MAX_FACE_EQUATION_CACHE_ENTRIES {
                         cache.clear();
                     }
-                    let Some(key_row_bytes) =
-                        cache_key
-                            .1
-                            .len()
-                            .checked_mul(std::mem::size_of::<(Vec<usize>, Vec<usize>)>())
-                    else {
-                        return Err(self.ctx.refuse_codec_limit(
-                            "catia_forced_equation_cache_key",
-                            u64::MAX,
-                            u64::MAX,
-                        ));
-                    };
-                    let Some(key_bytes) = cache_key
-                        .1
-                        .iter()
-                        .try_fold(key_row_bytes, |total, (members, domain)| {
-                            total
-                                .checked_add(
-                                    members.len().checked_mul(std::mem::size_of::<usize>())?,
-                                )?
-                                .checked_add(
-                                    domain.len().checked_mul(std::mem::size_of::<usize>())?,
-                                )
-                        })
-                        .map(u64_from_index)
-                    else {
-                        return Err(self.ctx.refuse_codec_limit(
-                            "catia_forced_equation_cache_key",
-                            u64::MAX,
-                            u64::MAX,
-                        ));
-                    };
-                    self.ctx
-                        .charge_retained(key_bytes, "catia_forced_equation_cache_key")?;
                     self.ctx.insert_hash_map(
                         &mut cache,
                         cache_key,
@@ -483,7 +462,10 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     equations
                 }
             };
-            for [left, right] in equations {
+            for [left, right] in self
+                .ctx
+                .admit_iter(equations, "catia_forced_equation_merges")?
+            {
                 if quotient.union.find(self.ctx, left)? == quotient.union.find(self.ctx, right)? {
                     continue;
                 }
@@ -504,15 +486,22 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 continue;
             }
             let changed_edges = changed_quotient_edges(self.ctx, &before, quotient)?;
-            for (dependent, assignments) in self.assignments.iter().enumerate() {
+            for dependent in self
+                .ctx
+                .admit_iter(0..self.assignments.len(), "catia_forced_equation_queue")?
+            {
                 if self.selected[dependent].is_none()
                     && dependent != face
-                    && !queued.contains(&dependent)
-                    && assignments
-                        .iter()
-                        .flat_map(|assignment| &assignment.boundaries)
-                        .flatten()
-                        .any(|use_| changed_edges.contains(&use_.edge))
+                    && !self.ctx.contains_hash_set(
+                        &queued,
+                        &dependent,
+                        "catia_forced_equation_queued",
+                    )?
+                    && self.face_uses_any_edge(
+                        dependent,
+                        &changed_edges,
+                        "catia_forced_equation_queue",
+                    )?
                 {
                     self.ctx.insert_hash_set(
                         &mut queued,
@@ -531,9 +520,13 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         &self,
         selection: &[MeshFaceSelection],
     ) -> Result<bool, CodecError> {
+        let ctx = self.ctx;
         let mut constraints = Vec::<Vec<(usize, bool)>>::new();
-        let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
-        for (face, selected) in selection.iter().enumerate() {
+        let mut edge_uses = BTreeMap::<usize, Vec<(usize, bool)>>::new();
+        for (face, selected) in ctx
+            .admit_iter(selection, "catia_selection_constraint_nodes")?
+            .enumerate()
+        {
             let Some((assignment_index, directions)) = selected else {
                 continue;
             };
@@ -543,7 +536,10 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             if assignment.boundaries.len() != directions.len() {
                 return Ok(false);
             }
-            for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
+            for (boundary, directions) in ctx
+                .admit_iter(&assignment.boundaries, "catia_selection_constraint_nodes")?
+                .zip(directions)
+            {
                 if boundary.len() != directions.len() {
                     return Ok(false);
                 }
@@ -553,17 +549,17 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     Vec::new(),
                     "catia_selection_constraint_nodes",
                 )?;
-                for (use_, &direction) in boundary.iter().zip(directions) {
+                for (use_, &direction) in ctx
+                    .admit_iter(boundary, "catia_selection_edge_uses")?
+                    .zip(directions)
+                {
                     let reversed = use_.reversed.unwrap_or(direction);
                     if use_.reversed.is_some() && reversed != direction {
                         return Ok(false);
                     }
-                    self.ctx.admit_hash_map_entry(
-                        &mut edge_uses,
-                        &use_.edge,
-                        "catia_selection_edge_keys",
-                    )?;
-                    let uses = edge_uses.entry(use_.edge).or_default();
+                    let uses = ctx
+                        .entry_btree_map(&mut edge_uses, use_.edge, "catia_selection_edge_keys")?
+                        .or_default();
                     if uses.len() == 2 {
                         return Ok(false);
                     }
@@ -572,7 +568,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 }
             }
         }
-        for uses in edge_uses.values() {
+        for (_, uses) in ctx.admit_iter(&edge_uses, "catia_selection_adjacent_constraints")? {
             let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
                 continue;
             };
@@ -597,7 +593,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         let mut flips = self
             .ctx
             .alloc_filled(constraints.len(), None, "catia_selection_flips")?;
-        for root in 0..constraints.len() {
+        for root in ctx.admit_iter(0..constraints.len(), "catia_selection_flips")? {
             if flips[root].is_some() {
                 continue;
             }
@@ -611,7 +607,9 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 let Some(flip) = flips[node] else {
                     return Ok(false);
                 };
-                for &(neighbor, parity) in &constraints[node] {
+                for &(neighbor, parity) in
+                    ctx.admit_iter(&constraints[node], "catia_selection_orientation_work")?
+                {
                     let required = flip ^ parity;
                     match flips[neighbor] {
                         Some(existing) if existing != required => return Ok(false),
@@ -636,61 +634,54 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
     }
 
     pub(super) fn fixed_remaining_faces_are_orientable(&self) -> Result<bool, CodecError> {
-        let mut completion = Vec::new();
-        self.ctx.reserve_vec(
-            &mut completion,
-            self.selected.len(),
-            "catia_selection_completion",
-        )?;
-        for selected in &self.selected {
+        let ctx = self.ctx;
+        let mut completion =
+            ctx.collection_vec(self.selected.len(), "catia_selection_completion")?;
+        for selected in ctx.admit_iter(&self.selected, "catia_selection_completion")? {
             completion.push(match selected {
                 Some((index, directions)) => {
-                    Some((*index, copy_mesh_boundary_directions(self.ctx, directions)?))
+                    Some((*index, copy_mesh_boundary_directions(ctx, directions)?))
                 }
                 None => None,
             });
         }
-        for (face, selected) in completion.iter_mut().enumerate() {
+        for (face, selected) in ctx
+            .admit_iter(&mut completion, "catia_selection_completion_boundaries")?
+            .enumerate()
+        {
             if selected.is_some() {
                 continue;
             }
             let [assignment] = self.assignments[face].as_slice() else {
                 continue;
             };
-            let mut directions = Vec::new();
-            self.ctx.reserve_vec(
-                &mut directions,
-                assignment.boundaries.len(),
-                "catia_selection_completion_boundaries",
-            )?;
-            for boundary in &assignment.boundaries {
-                self.ctx.charge_collection_items(
-                    u64_from_index(boundary.len()),
-                    "catia_selection_completion_directions",
-                )?;
-            }
-            let mut complete = true;
-            for boundary in &assignment.boundaries {
-                if boundary.iter().any(|use_| use_.reversed.is_none()) {
-                    complete = false;
-                    break;
-                }
-                let mut row = Vec::new();
-                self.ctx.reserve_capacity(
-                    &mut row,
-                    boundary.len(),
-                    "catia_selection_completion_directions",
-                )?;
-                for use_ in boundary {
-                    if let Some(reversed) = use_.reversed {
-                        row.push(reversed);
-                    }
-                }
-                directions.push(row);
-            }
-            if !complete {
+            // A face with a single assignment whose uses are all reversed has
+            // exactly one direction row per boundary.
+            if !ctx.all_by(
+                &assignment.boundaries,
+                |boundary| {
+                    ctx.all_by(
+                        boundary,
+                        |use_| Ok(use_.reversed.is_some()),
+                        "catia_selection_completion_directions",
+                    )
+                },
+                "catia_selection_completion_directions",
+            )? {
                 continue;
             }
+            let directions = ctx.collect_indexed_vec(
+                assignment.boundaries.len(),
+                "catia_selection_completion_boundaries",
+                |boundary| {
+                    ctx.collect_vec(
+                        assignment.boundaries[boundary]
+                            .iter()
+                            .map(|use_| use_.reversed.unwrap_or(false)),
+                        "catia_selection_completion_directions",
+                    )
+                },
+            )?;
             *selected = Some((0, directions));
         }
         self.selection_orientable(&completion)
@@ -703,7 +694,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         propagation_budget: &WorkBudget<'_>,
     ) -> Result<Option<MeshQuotient<'storage>>, CodecError> {
         let mut measured = quotient.clone_charged(self.ctx)?;
-        if !self.has_exact_singleton_endpoint_domains()
+        if !self.has_exact_singleton_endpoint_domains()?
             && !self.propagate_forced_face_equations_from(
                 &mut measured,
                 Some(changed_edges),
@@ -720,7 +711,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             return Ok(None);
         }
         if root_count == self.vertex_points.len()
-            && !self.has_exact_singleton_endpoint_domains()
+            && !self.has_exact_singleton_endpoint_domains()?
             && !measured.point_assignment_exists(
                 self.ctx,
                 self.vertex_points.len(),
@@ -730,7 +721,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         {
             return Ok(None);
         }
-        let orientable = if self.has_exact_singleton_endpoint_domains() {
+        let orientable = if self.has_exact_singleton_endpoint_domains()? {
             true
         } else {
             self.fixed_remaining_faces_are_orientable()?
@@ -768,34 +759,43 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         let [assignment] = self.assignments[face].as_slice() else {
             return Ok(Vec::new());
         };
+        let ctx = self.ctx;
         let mut seen = HashSet::<(Vec<Vec<bool>>, Vec<Option<bool>>)>::new();
         let mut output = Vec::new();
-        for label_directions in direction_options {
-            let mut next_orientations = self.ctx.copy_slice(
+        for label_directions in
+            ctx.admit_iter(direction_options, "catia_fixed_direction_options")?
+        {
+            let mut next_orientations = ctx.copy_slice(
                 &self.fixed_edge_orientations,
                 "catia_fixed_next_orientations",
             )?;
-            let constrained = assignment
-                .boundaries
-                .iter()
-                .zip(label_directions)
-                .flat_map(|(boundary, directions)| boundary.iter().zip(directions))
-                .all(|(use_, &label_direction)| {
-                    let Some(required) = use_.reversed else {
-                        return true;
-                    };
-                    let Some(orientation) = next_orientations.get_mut(use_.edge) else {
-                        return false;
-                    };
-                    let required_orientation = required ^ label_direction;
-                    match *orientation {
-                        Some(existing) => existing == required_orientation,
-                        None => {
-                            *orientation = Some(required_orientation);
-                            true
-                        }
+            let mut orient = |use_: &MeshBoundaryEdgeCandidate, label_direction: bool| {
+                let Some(required) = use_.reversed else {
+                    return Ok(true);
+                };
+                let Some(orientation) = next_orientations.get_mut(use_.edge) else {
+                    return Ok(false);
+                };
+                let required_orientation = required ^ label_direction;
+                Ok(match *orientation {
+                    Some(existing) => existing == required_orientation,
+                    None => {
+                        *orientation = Some(required_orientation);
+                        true
                     }
-                });
+                })
+            };
+            let constrained = ctx.all_by(
+                assignment.boundaries.iter().zip(label_directions),
+                |(boundary, directions)| {
+                    ctx.all_by(
+                        boundary.iter().zip(directions),
+                        |(use_, &label_direction)| orient(use_, label_direction),
+                        "catia_fixed_next_orientations",
+                    )
+                },
+                "catia_fixed_next_orientations",
+            )?;
             if !constrained {
                 continue;
             }
@@ -858,19 +858,36 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             }
         }
         let selected_edges = self.selected_edges()?;
+        let ctx = self.ctx;
         let mut impossible = false;
-        let face = self
-            .selected
-            .iter()
+        // The ready face with the least search key: adjacent to the selection
+        // first, then fewer options, any fixed use, more uses.
+        let mut face = None;
+        for (face_index, selected) in ctx
+            .admit_iter(&self.selected, "catia_fixed_face_order")?
             .enumerate()
-            .filter(|(_, selected)| selected.is_none())
-            .filter_map(|(face, _)| {
-                let directions = self.fixed_face_directions.get(face)?.as_ref()?;
-                let [assignment] = self.assignments[face].as_slice() else {
-                    return None;
-                };
-                let ready = assignment.boundaries.iter().flatten().all(|use_| {
-                    self.fixed_edge_orientations
+        {
+            if selected.is_some() {
+                continue;
+            }
+            let Some(directions) = self
+                .fixed_face_directions
+                .get(face_index)
+                .and_then(Option::as_ref)
+            else {
+                continue;
+            };
+            let [assignment] = self.assignments[face_index].as_slice() else {
+                continue;
+            };
+            let mut ready = true;
+            let mut local_fixed = 0usize;
+            let mut adjacent = false;
+            let mut use_count = 0usize;
+            for boundary in ctx.admit_iter(&assignment.boundaries, "catia_fixed_face_order")? {
+                for use_ in ctx.admit_iter(boundary, "catia_fixed_face_order")? {
+                    ready &= self
+                        .fixed_edge_orientations
                         .get(use_.edge)
                         .and_then(Option::as_ref)
                         .is_some()
@@ -879,63 +896,57 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                             .edge_has_fixed_direction
                             .get(use_.edge)
                             .copied()
-                            .unwrap_or(false)
-                });
-                if !ready {
-                    return None;
+                            .unwrap_or(false);
+                    local_fixed += usize::from(use_.reversed.is_some());
+                    adjacent |= ctx.contains_btree_set(
+                        &selected_edges,
+                        &use_.edge,
+                        "catia_fixed_face_order",
+                    )?;
+                    use_count += 1;
                 }
-                let local_fixed = assignment
-                    .boundaries
-                    .iter()
-                    .flatten()
-                    .filter(|use_| use_.reversed.is_some())
-                    .count();
-                let adjacent = assignment
-                    .boundaries
-                    .iter()
-                    .flatten()
-                    .any(|use_| selected_edges.contains(&use_.edge));
-                // The exact quotient options are generated once for the face
-                // selected below. This count only orders the search; probing
-                // every face here would construct and hash the same large
-                // quotient states a second time.
-                let viable_options = directions.len();
-                if viable_options == 0 {
-                    impossible = true;
-                    return None;
-                }
-                let use_count = assignment.boundaries.iter().map(Vec::len).sum::<usize>();
-                Some((
-                    (
-                        !adjacent,
-                        viable_options,
-                        local_fixed == 0,
-                        usize::MAX - use_count,
-                        directions.len(),
-                        face,
-                    ),
-                    face,
-                ))
-            })
-            .min_by_key(|(key, _)| *key)
-            .map(|(_, face)| face);
+            }
+            if !ready {
+                continue;
+            }
+            // The exact quotient options are generated once for the face
+            // selected below. This count only orders the search; probing
+            // every face here would construct and hash the same large
+            // quotient states a second time.
+            let viable_options = directions.len();
+            if viable_options == 0 {
+                impossible = true;
+                continue;
+            }
+            let key = (
+                !adjacent,
+                viable_options,
+                local_fixed == 0,
+                usize::MAX - use_count,
+                directions.len(),
+                face_index,
+            );
+            if face.is_none_or(|(least, _)| key < least) {
+                face = Some((key, face_index));
+            }
+        }
+        let face = face.map(|(_, face)| face);
         if impossible {
             return Ok(());
         }
         let Some(face) = face else {
-            if let Some(edge) =
-                self.edge_has_fixed_direction
-                    .iter()
-                    .enumerate()
-                    .find_map(|(edge, has_fixed)| {
-                        (*has_fixed
-                            && self
-                                .fixed_edge_orientations
-                                .get(edge)
-                                .is_some_and(Option::is_none))
-                        .then_some(edge)
-                    })
-            {
+            if let Some(edge) = ctx.find_map(
+                self.edge_has_fixed_direction.iter().enumerate(),
+                |(edge, has_fixed)| {
+                    Ok((*has_fixed
+                        && self
+                            .fixed_edge_orientations
+                            .get(edge)
+                            .is_some_and(Option::is_none))
+                    .then_some(edge))
+                },
+                "catia_fixed_unoriented_edges",
+            )? {
                 for orientation in [false, true] {
                     if self.should_stop() {
                         return Ok(());
@@ -958,7 +969,10 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 self.selected.len(),
                 "catia_fixed_selected_directions",
             )?;
-            for (face, selected) in self.selected.iter().enumerate() {
+            for (face, selected) in ctx
+                .admit_iter(&self.selected, "catia_fixed_selected_assignments")?
+                .enumerate()
+            {
                 let Some((assignment, selected_directions)) = selected else {
                     return Ok(());
                 };
@@ -1008,7 +1022,9 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             self.outcome.exhaust();
             return Ok(());
         }
-        for (directions, next_quotient, next_orientations) in options {
+        for (directions, next_quotient, next_orientations) in
+            ctx.admit_iter(options, "catia_fixed_direction_options")?
+        {
             if self.should_stop() {
                 return Ok(());
             }
@@ -1038,9 +1054,11 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         quotient: &MeshQuotient<'storage>,
         prepared: bool,
     ) -> Result<MeshSelectionStateSignature, CodecError> {
-        let mut quotient = quotient.clone_charged(self.ctx)?;
         let mut selected = Vec::new();
-        for choice in &self.selected {
+        for choice in self
+            .ctx
+            .admit_iter(&self.selected, "catia_selection_signature_faces")?
+        {
             let copy = match choice {
                 Some((assignment, directions)) => Some((
                     *assignment,
@@ -1098,7 +1116,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
     ) -> Result<(), CodecError> {
         let mut measured = quotient.clone_charged(self.ctx)?;
         if !prepared {
-            if !self.has_exact_singleton_endpoint_domains()
+            if !self.has_exact_singleton_endpoint_domains()?
                 && !self.propagate_forced_face_equations_from(
                     &mut measured,
                     None,
@@ -1114,7 +1132,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             if root_count < self.vertex_points.len() {
                 return Ok(());
             }
-            if !self.has_exact_singleton_endpoint_domains()
+            if !self.has_exact_singleton_endpoint_domains()?
                 && root_count == self.vertex_points.len()
                 && !measured.point_assignment_exists(
                     self.ctx,
@@ -1128,22 +1146,44 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 }
                 return Ok(());
             }
-            if !self.has_exact_singleton_endpoint_domains()
+            if !self.has_exact_singleton_endpoint_domains()?
                 && !self.fixed_remaining_faces_are_orientable()?
             {
                 return Ok(());
             }
         }
         let selected_edges = self.selected_edges()?;
+        let ctx = self.ctx;
         let mut adjacent_faces = HashSet::new();
         if !selected_edges.is_empty() {
-            for (face, selected) in self.selected.iter().enumerate() {
+            for (face, selected) in ctx
+                .admit_iter(&self.selected, "catia_selection_adjacent_faces")?
+                .enumerate()
+            {
                 if selected.is_none()
-                    && self.assignments[face]
-                        .iter()
-                        .flat_map(|assignment| &assignment.boundaries)
-                        .flatten()
-                        .any(|use_| selected_edges.contains(&use_.edge))
+                    && ctx.any_by(
+                        &self.assignments[face],
+                        |assignment| {
+                            ctx.any_by(
+                                &assignment.boundaries,
+                                |boundary| {
+                                    ctx.any_by(
+                                        boundary,
+                                        |use_| {
+                                            ctx.contains_btree_set(
+                                                &selected_edges,
+                                                &use_.edge,
+                                                "catia_selection_adjacent_faces",
+                                            )
+                                        },
+                                        "catia_selection_adjacent_faces",
+                                    )
+                                },
+                                "catia_selection_adjacent_faces",
+                            )
+                        },
+                        "catia_selection_adjacent_faces",
+                    )?
                 {
                     self.ctx.insert_hash_set(
                         &mut adjacent_faces,
@@ -1155,11 +1195,17 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         }
         let adjacent_faces = (!adjacent_faces.is_empty()).then_some(adjacent_faces);
         let mut next = None;
-        for (face, selected) in self.selected.iter().enumerate() {
-            if selected.is_some()
+        for face in ctx.admit_iter(0..self.selected.len(), "catia_selection_next_face")? {
+            if self.selected[face].is_some()
                 || adjacent_faces
                     .as_ref()
-                    .is_some_and(|adjacent| !adjacent.contains(&face))
+                    .map_or(Ok::<_, CodecError>(false), |adjacent| {
+                        Ok(!ctx.contains_hash_set(
+                            adjacent,
+                            &face,
+                            "catia_selection_adjacent_faces",
+                        )?)
+                    })?
             {
                 continue;
             }
@@ -1173,30 +1219,44 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             let key = if assignments.is_empty() {
                 (0, 0, 0, 0, 0, face)
             } else {
-                let Some(direction_work) =
-                    direction_work_estimate(assignments.iter().map(|assignment| {
-                        assignment
-                            .boundaries
-                            .iter()
-                            .flatten()
-                            .filter(|use_| use_.reversed.is_none())
-                            .count()
-                    }))
-                else {
+                let mut unknown_uses = Vec::new();
+                for assignment in ctx.admit_iter(assignments, "catia_selection_direction_work")? {
+                    let unknown = ctx.fold(
+                        &assignment.boundaries,
+                        0usize,
+                        |total, boundary| {
+                            Ok(total
+                                + ctx.fold(
+                                    boundary,
+                                    0usize,
+                                    |count, use_| Ok(count + usize::from(use_.reversed.is_none())),
+                                    "catia_selection_direction_work",
+                                )?)
+                        },
+                        "catia_selection_direction_work",
+                    )?;
+                    ctx.push_vec(&mut unknown_uses, unknown, "catia_selection_direction_work")?;
+                }
+                let Some(direction_work) = direction_work_estimate(ctx, &unknown_uses)? else {
                     budget.exhaust();
                     break;
                 };
                 let mut can_merge = false;
                 let mut selected_incidence = 0;
                 let mut constrained = 0;
-                for assignment in assignments {
+                for assignment in ctx.admit_iter(assignments, "catia_selection_face_key")? {
                     if !can_merge {
                         can_merge = mesh_assignment_can_merge(self.ctx, assignment, &mut measured)?;
                     }
                     let mut used = 0;
                     let mut constrained_uses = 0;
                     for use_ in assignment.boundaries.iter().flatten() {
-                        if selected_edges.contains(&use_.edge) {
+                        ctx.charge_work(1, "catia_selection_face_key")?;
+                        if ctx.contains_btree_set(
+                            &selected_edges,
+                            &use_.edge,
+                            "catia_selection_face_key",
+                        )? {
                             used += 1;
                         }
                         let left = measured.union.find(self.ctx, use_.edge * 2)?;
@@ -1245,7 +1305,10 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 self.selected.len(),
                 "catia_search_selected_directions",
             )?;
-            for (face, selected) in self.selected.iter().enumerate() {
+            for (face, selected) in ctx
+                .admit_iter(&self.selected, "catia_search_selected_assignments")?
+                .enumerate()
+            {
                 let Some((index, selected_directions)) = selected else {
                     return Ok(());
                 };
@@ -1258,11 +1321,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     selected_directions,
                 )?);
             }
-            if self
-                .edge_candidates
-                .iter()
-                .all(|candidates| candidates.len() == 1)
-            {
+            if self.has_singleton_edge_candidates()? {
                 if let Some(port_identities) = self.port_identities {
                     let outcome = resolve_singleton_mesh_selection(self.ctx, crate::solve::mesh_quotient::selection_search::ResolveSingletonMeshSelectionInputs { edge_rows: self.edge_rows, vertex_points: self.vertex_points, edge_candidates: self.edge_candidates, selected: &selected_assignments, directions: &directions, port_identities, budget, candidate_gauge: self.candidate_gauge })?;
                     if let Some(outcome) = outcome {
@@ -1325,19 +1384,27 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     0usize,
                     "catia_search_edge_uses",
                 )?;
-                for coedge in topology
-                    .faces
-                    .iter()
-                    .flat_map(|face| &face.boundaries)
-                    .flat_map(|boundary| &boundary.coedges)
-                {
-                    use_counts[coedge.edge_row] += 1;
+                for face in ctx.admit_iter(&topology.faces, "catia_search_edge_uses")? {
+                    for boundary in ctx.admit_iter(&face.boundaries, "catia_search_edge_uses")? {
+                        for coedge in
+                            ctx.admit_iter(&boundary.coedges[..], "catia_search_edge_uses")?
+                        {
+                            use_counts[coedge.edge_row] += 1;
+                        }
+                    }
                 }
-                if use_counts.iter().any(|count| *count > 2) {
+                if ctx.any_by(
+                    &use_counts,
+                    |count| Ok(*count > 2),
+                    "catia_search_edge_uses",
+                )? {
                     break 'candidate None;
                 }
-                if use_counts.iter().all(|count| *count == 2)
-                    && orient_face_cycles(self.ctx, &mut topology.faces)?.is_none()
+                if ctx.all_by(
+                    &use_counts,
+                    |count| Ok(*count == 2),
+                    "catia_search_edge_uses",
+                )? && orient_face_cycles(self.ctx, &mut topology.faces)?.is_none()
                 {
                     break 'candidate None;
                 }
@@ -1349,10 +1416,15 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     None,
                     "catia_search_point_assignment",
                 )?;
-                for (edge, vertices) in edge_vertices.into_iter().enumerate() {
+                for (edge, vertices) in ctx
+                    .admit_iter(edge_vertices, "catia_search_point_assignment")?
+                    .enumerate()
+                {
                     for (port, vertex) in vertices.into_iter().enumerate() {
                         let root = quotient.union.find(self.ctx, edge * 2 + port)?;
-                        let Some(&point) = root_points.get(&root) else {
+                        let Some(&point) =
+                            ctx.get_hash_map(&root_points, &root, "catia_search_point_assignment")?
+                        else {
                             break 'candidate None;
                         };
                         match point_assignment[vertex] {
@@ -1369,20 +1441,17 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                     let closed_ports = quotient.union.find(self.ctx, edge * 2)?
                         == quotient.union.find(self.ctx, edge * 2 + 1)?;
                     if !mesh_edge_points_compatible(
+                        ctx,
                         closed_ports,
                         &self.edge_candidates[edge],
                         points,
-                    ) {
+                    )? {
                         break 'candidate None;
                     }
                 }
-                let mut completed_points = Vec::new();
-                self.ctx.reserve_vec(
-                    &mut completed_points,
-                    point_assignment.len(),
-                    "catia_search_completed_points",
-                )?;
-                for point in point_assignment {
+                let mut completed_points =
+                    ctx.collection_vec(point_assignment.len(), "catia_search_completed_points")?;
+                for point in ctx.admit_iter(point_assignment, "catia_search_completed_points")? {
                     let Some(point) = point else {
                         break 'candidate None;
                     };
@@ -1414,6 +1483,7 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
         }
         let mut options = Vec::new();
         for assignment_index in 0..self.assignments[face].len() {
+            ctx.charge_work(1, "catia_search_assignment_options")?;
             if !budget.charge() {
                 self.outcome.exhaust();
                 return Ok(());
@@ -1455,29 +1525,21 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 self.outcome.exhaust();
                 return Ok(());
             }
-            self.ctx.reserve_vec(
-                &mut options,
-                assignment_options.len(),
-                "catia_search_assignment_options",
-            )?;
-            options.extend(
-                assignment_options
-                    .into_iter()
-                    .map(|(directions, next_quotient)| {
-                        (assignment_index, directions, next_quotient)
-                    }),
-            );
-        }
-        let mut index = 0;
-        while index < options.len() {
-            self.ctx
-                .charge_work(1, "catia_selection_search_iteration")?;
-            if options[index].2.root_count(self.ctx)? < self.vertex_points.len() {
-                options.remove(index);
-            } else {
-                index += 1;
+            for (directions, next_quotient) in
+                ctx.admit_iter(assignment_options, "catia_search_assignment_options")?
+            {
+                ctx.push_vec(
+                    &mut options,
+                    (assignment_index, directions, next_quotient),
+                    "catia_search_assignment_options",
+                )?;
             }
         }
+        ctx.retain_vec(
+            &mut options,
+            |(_, _, quotient)| Ok(quotient.root_count(ctx)? >= self.vertex_points.len()),
+            "catia_selection_search_iteration",
+        )?;
         if options.is_empty() {
             return Ok(());
         }
@@ -1502,10 +1564,12 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             return Ok(());
         }
         let mut ranked_options = Vec::new();
-        for (assignment, directions, quotient) in options {
+        for (assignment, directions, quotient) in
+            ctx.admit_iter(options, "catia_search_ranked_options")?
+        {
             let mut count = 0usize;
             let mut freedom = 0u128;
-            for node in 0..quotient.union.len() {
+            for node in ctx.admit_iter(0..quotient.union.len(), "catia_search_ranked_options")? {
                 if quotient.union.root(self.ctx, node)? == node {
                     count += 1;
                     freedom += u128::from(u64_from_index(quotient.domains[node].len()));
@@ -1524,7 +1588,9 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             "catia_search_assignment_options_sort",
         )?;
 
-        for ((_, assignment_index, directions), next_quotient) in ranked_options {
+        for ((_, assignment_index, directions), next_quotient) in
+            ctx.admit_iter(ranked_options, "catia_search_ranked_options")?
+        {
             let changed_edges = changed_quotient_edges(self.ctx, &measured, &next_quotient)?;
             self.selected[face] = Some((assignment_index, directions));
             if self.selected_orientable()? {
@@ -1555,14 +1621,22 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
 /// with no stated reversal. `None` states a figure the work counter cannot
 /// hold: more choices than any budget can enumerate.
 pub(super) fn direction_work_estimate(
-    mut unknown_uses: impl Iterator<Item = usize>,
-) -> Option<usize> {
-    unknown_uses.try_fold(0usize, |total, unknown| {
-        let choices = u32::try_from(unknown)
-            .ok()
-            .and_then(|unknown| 1usize.checked_shl(unknown))?;
-        total.checked_add(choices)
-    })
+    ctx: &DecodeContext<'_>,
+    unknown_uses: &[usize],
+) -> Result<Option<usize>, CodecError> {
+    ctx.fold(
+        unknown_uses,
+        Some(0usize),
+        |total, &unknown| {
+            Ok(total.and_then(|total| {
+                let choices = u32::try_from(unknown)
+                    .ok()
+                    .and_then(|unknown| 1usize.checked_shl(unknown))?;
+                total.checked_add(choices)
+            }))
+        },
+        "catia_selection_direction_work",
+    )
 }
 
 pub(super) fn mesh_assignment_can_merge(
@@ -1583,7 +1657,9 @@ pub(super) fn mesh_assignment_can_merge(
     }
 
     for boundary in &assignment.boundaries {
+        ctx.charge_work(1, "catia_selection_assignment_merge")?;
         for index in 0..boundary.len() {
+            ctx.charge_work(1, "catia_selection_assignment_merge")?;
             let left = possible_ports(boundary[index], true);
             let right = possible_ports(boundary[(index + 1) % boundary.len()], false);
             for left in left.into_iter().flatten() {
@@ -1599,15 +1675,18 @@ pub(super) fn mesh_assignment_can_merge(
 }
 
 pub(in crate::solve) fn mesh_edge_points_compatible(
+    ctx: &DecodeContext<'_>,
     closed_ports: bool,
     candidates: &[[usize; 2]],
     points: [usize; 2],
-) -> bool {
-    (points[0] != points[1] || closed_ports)
+) -> Result<bool, CodecError> {
+    Ok((points[0] != points[1] || closed_ports)
         && (candidates.is_empty()
-            || candidates
-                .iter()
-                .any(|candidate| same_unordered_pair(*candidate, points)))
+            || ctx.any_by(
+                candidates,
+                |candidate| Ok(same_unordered_pair(*candidate, points)),
+                "catia_mesh_edge_point_candidates",
+            )?))
 }
 
 /// Resolve standard trim assignments through their abstract physical-port
@@ -1717,6 +1796,7 @@ pub(super) fn singleton_mesh_boundary_directions(
         )?;
         let mut valid = true;
         for use_ in &boundary[1..] {
+            ctx.charge_work(1, "catia_singleton_direction_step")?;
             let Some(pair) = edge_candidates
                 .get(use_.edge)
                 .and_then(|candidates| candidates.first())
@@ -1759,15 +1839,19 @@ pub(super) fn singleton_mesh_boundary_directions(
         Ord::cmp,
         "catia_singleton_direction_solutions_sort",
     )?;
-    solutions.dedup();
+    ctx.dedup_vec(&mut solutions, "catia_singleton_direction_solutions")?;
     if solutions.len() == 2
-        && boundary.iter().all(|use_| {
-            use_.reversed.is_none()
-                || !edge_direction_evidence
-                    .and_then(|evidence| evidence.get(use_.edge))
-                    .copied()
-                    .unwrap_or(false)
-        })
+        && ctx.all_by(
+            boundary,
+            |use_| {
+                Ok(use_.reversed.is_none()
+                    || !edge_direction_evidence
+                        .and_then(|evidence| evidence.get(use_.edge))
+                        .copied()
+                        .unwrap_or(false))
+            },
+            "catia_singleton_direction_solutions",
+        )?
     {
         solutions.truncate(1);
     }
@@ -1780,47 +1864,27 @@ pub(super) fn canonical_singleton_coordinate_cycles(
     directions: &[Vec<bool>],
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
+    /// The least rotation of the cycle read forward or backward.
     pub(super) fn canonical_cycle(
         ctx: &DecodeContext<'_>,
         points: &[usize],
     ) -> Result<Vec<usize>, CodecError> {
-        if points.is_empty() {
-            return Ok(Vec::new());
-        }
-        let value = |reversed: bool, start: usize, offset: usize| {
-            let until_wrap = points.len() - start;
-            let index = if offset >= until_wrap {
-                offset - until_wrap
-            } else {
-                start + offset
-            };
-            if reversed {
-                points[points.len() - 1 - index]
-            } else {
-                points[index]
-            }
+        const OPERATION: &str = "catia_singleton_canonical_cycle";
+        let reversed = ctx.collect_vec(points.iter().rev().copied(), OPERATION)?;
+        let rotate = |values: &[usize]| -> Result<Vec<usize>, CodecError> {
+            let start = least_rotation(ctx, values, OPERATION)?;
+            let mut rotated = ctx.collection_vec(values.len(), OPERATION)?;
+            rotated.extend_from_slice(&values[start..]);
+            rotated.extend_from_slice(&values[..start]);
+            Ok(rotated)
         };
-        let mut best = (false, 0usize);
-        for reversed in [false, true] {
-            for start in 0..points.len() {
-                let candidate = (reversed, start);
-                if (0..points.len())
-                    .map(|offset| value(reversed, start, offset))
-                    .cmp((0..points.len()).map(|offset| value(best.0, best.1, offset)))
-                    .is_lt()
-                {
-                    best = candidate;
-                }
-            }
-        }
-        let mut canonical = Vec::new();
-        ctx.reserve_vec(
-            &mut canonical,
-            points.len(),
-            "catia_singleton_canonical_cycle",
-        )?;
-        canonical.extend((0..points.len()).map(|offset| value(best.0, best.1, offset)));
-        Ok(canonical)
+        let forward = rotate(points)?;
+        let reversed = rotate(&reversed)?;
+        Ok(if ctx.compare(&reversed, &forward, OPERATION)?.is_lt() {
+            reversed
+        } else {
+            forward
+        })
     }
 
     let mut cycles = Vec::new();
@@ -1829,13 +1893,19 @@ pub(super) fn canonical_singleton_coordinate_cycles(
         assignment.boundaries.len().min(directions.len()),
         "catia_singleton_cycle_rows",
     )?;
-    for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
+    for (boundary, directions) in ctx
+        .admit_iter(&assignment.boundaries, "catia_singleton_cycle_rows")?
+        .zip(directions)
+    {
         if boundary.len() != directions.len() {
             return Ok(None);
         }
         let mut points = Vec::new();
         ctx.reserve_vec(&mut points, boundary.len(), "catia_singleton_cycle_points")?;
-        for (use_, &reversed) in boundary.iter().zip(directions) {
+        for (use_, &reversed) in ctx
+            .admit_iter(boundary, "catia_singleton_cycle_points")?
+            .zip(directions)
+        {
             let Some(pair) = edge_candidates
                 .get(use_.edge)
                 .and_then(|candidates| candidates.first())
@@ -1869,14 +1939,23 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
     }
     let mut faces = Vec::new();
     ctx.reserve_vec(&mut faces, selected.len(), "catia_singleton_topology_faces")?;
-    for (assignment, face_directions) in selected.iter().zip(directions) {
+    for (assignment, face_directions) in ctx
+        .admit_iter(selected, "catia_singleton_topology_faces")?
+        .zip(directions)
+    {
         let mut boundaries = Vec::new();
         ctx.reserve_vec(
             &mut boundaries,
             assignment.boundaries.len().min(face_directions.len()),
             "catia_singleton_topology_boundaries",
         )?;
-        for (boundary, directions) in assignment.boundaries.iter().zip(face_directions) {
+        for (boundary, directions) in ctx
+            .admit_iter(
+                &assignment.boundaries,
+                "catia_singleton_topology_boundaries",
+            )?
+            .zip(face_directions)
+        {
             if boundary.len() != directions.len() || boundary.is_empty() {
                 return Ok(None);
             }
@@ -1886,7 +1965,10 @@ pub(super) fn reconstruct_singleton_coordinate_topology(
                 boundary.len(),
                 "catia_singleton_topology_coedges",
             )?;
-            for (use_, &reversed) in boundary.iter().zip(directions) {
+            for (use_, &reversed) in ctx
+                .admit_iter(boundary, "catia_singleton_topology_coedges")?
+                .zip(directions)
+            {
                 let Some(pair) = edge_candidates
                     .get(use_.edge)
                     .and_then(|candidates| candidates.first())
@@ -1958,11 +2040,16 @@ pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
         "catia_merged_mesh_point_assignment",
     )?;
     let mut points_by_identity = HashMap::<u32, usize>::new();
-    for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
+    for (edge, &[start, end]) in ctx
+        .admit_iter(&edge_vertices, "catia_merged_mesh_point_assignment")?
+        .enumerate()
+    {
         let mut points = [0; 2];
         for (port, vertex) in [start, end].into_iter().enumerate() {
             let root = quotient.union.find(ctx, edge * 2 + port)?;
-            let Some(&point) = root_points.get(&root) else {
+            let Some(&point) =
+                ctx.get_hash_map(&root_points, &root, "catia_merged_mesh_point_assignment")?
+            else {
                 return Ok(None);
             };
             match point_assignment[vertex] {
@@ -1974,7 +2061,7 @@ pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
         }
         let closed_ports =
             quotient.union.find(ctx, edge * 2)? == quotient.union.find(ctx, edge * 2 + 1)?;
-        if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
+        if !mesh_edge_points_compatible(ctx, closed_ports, &edge_candidates[edge], points)? {
             return Ok(None);
         }
         for (identity, point) in port_identities[edge].into_iter().zip(points) {
@@ -1989,13 +2076,9 @@ pub(super) fn resolve_mesh_selection_from_quotient<'storage>(
             }
         }
     }
-    let mut completed = Vec::new();
-    ctx.reserve_vec(
-        &mut completed,
-        point_assignment.len(),
-        "catia_merged_mesh_completed_points",
-    )?;
-    for point in point_assignment {
+    let mut completed =
+        ctx.collection_vec(point_assignment.len(), "catia_merged_mesh_completed_points")?;
+    for point in ctx.admit_iter(point_assignment, "catia_merged_mesh_completed_points")? {
         let Some(point) = point else {
             return Ok(None);
         };
@@ -2045,7 +2128,10 @@ fn reduced_distinct_matching(
     let mut assignment = ctx.alloc_filled(domains.len(), None, "catia_reduced_matching")?;
     let mut used = ctx.alloc_filled(point_count, false, "catia_reduced_matching_used")?;
     let mut remaining = Vec::new();
-    for (root, domain) in domains.iter().enumerate() {
+    for (root, domain) in ctx
+        .admit_iter(domains, "catia_reduced_matching")?
+        .enumerate()
+    {
         if domain.len() == 1 {
             let point = domain[0];
             if point >= point_count {
@@ -2061,25 +2147,26 @@ fn reduced_distinct_matching(
             assignment[root] = Some(point);
         }
     }
-    for (root, domain) in domains.iter().enumerate() {
+    for (root, domain) in ctx
+        .admit_iter(domains, "catia_reduced_matching_remaining_rows")?
+        .enumerate()
+    {
         if domain.len() == 1 {
             continue;
         }
-        if domain.iter().any(|point| *point >= point_count) {
-            return Ok(None);
-        }
         let mut values = Vec::new();
-        ctx.reserve_vec(
-            &mut values,
-            domain.len(),
-            "catia_reduced_matching_domain_values",
-        )?;
-        values.extend(domain.iter().copied().filter(|point| {
-            !used[*point]
+        for &point in ctx.admit_iter(domain, "catia_reduced_matching_domain_values")? {
+            if point >= point_count {
+                return Ok(None);
+            }
+            if !used[point]
                 && excluded.is_none_or(|(excluded_root, excluded_point)| {
-                    excluded_root != root || excluded_point != *point
+                    excluded_root != root || excluded_point != point
                 })
-        }));
+            {
+                ctx.push_vec(&mut values, point, "catia_reduced_matching_domain_values")?;
+            }
+        }
         if values.is_empty() {
             return Ok(None);
         }
@@ -2089,13 +2176,10 @@ fn reduced_distinct_matching(
             "catia_reduced_matching_remaining_rows",
         )?;
     }
-    let mut remaining_domains = Vec::new();
-    ctx.reserve_vec(
-        &mut remaining_domains,
-        remaining.len(),
+    let remaining_domains = ctx.collect_vec(
+        remaining.iter().map(|(_, domain)| domain.as_slice()),
         "catia_reduced_matching_domain_refs",
     )?;
-    remaining_domains.extend(remaining.iter().map(|(_, domain)| domain.as_slice()));
     let Some(matching) = distinct_domain_matching_with_budget(
         ctx,
         remaining_domains,
@@ -2106,16 +2190,14 @@ fn reduced_distinct_matching(
     else {
         return Ok(None);
     };
-    for ((root, _), point) in remaining.into_iter().zip(matching) {
+    for ((root, _), point) in ctx
+        .admit_iter(remaining, "catia_reduced_matching")?
+        .zip(matching)
+    {
         assignment[root] = Some(point);
     }
-    let mut completed = Vec::new();
-    ctx.reserve_vec(
-        &mut completed,
-        assignment.len(),
-        "catia_reduced_matching_completed",
-    )?;
-    for point in assignment {
+    let mut completed = ctx.collection_vec(assignment.len(), "catia_reduced_matching_completed")?;
+    for point in ctx.admit_iter(assignment, "catia_reduced_matching_completed")? {
         let Some(point) = point else {
             return Ok(None);
         };
@@ -2183,7 +2265,10 @@ pub(super) fn resolve_singleton_mesh_selection(
         return Ok(None);
     };
     let mut port_by_vertex = HashMap::<usize, usize>::new();
-    for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
+    for (edge, &[start, end]) in ctx
+        .admit_iter(&edge_vertices, "catia_mesh_port_by_vertex")?
+        .enumerate()
+    {
         for (port, vertex) in [(0, start), (1, end)] {
             let node = edge * 2 + port;
             if let Some(previous) = ctx.insert_hash_map(
@@ -2198,7 +2283,10 @@ pub(super) fn resolve_singleton_mesh_selection(
             }
         }
     }
-    for (edge, candidates) in edge_candidates.iter().enumerate() {
+    for (edge, candidates) in ctx
+        .admit_iter(edge_candidates, "catia_singleton_root_domain_copy")?
+        .enumerate()
+    {
         let &[[left_point, right_point]] = candidates.as_slice() else {
             return Ok(None);
         };
@@ -2208,72 +2296,48 @@ pub(super) fn resolve_singleton_mesh_selection(
             return Ok(None);
         }
         for root in [left_root, right_root] {
-            let retained = quotient.domains[root]
-                .len()
-                .checked_mul(std::mem::size_of::<usize>())
-                .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
-                .map(u64_from_index)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("catia_singleton_root_domain_copy", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_retained(retained, "catia_singleton_root_domain_copy")?;
-            let mut domain = HashSet::new();
-            ctx.reserve_set(
-                &mut domain,
-                quotient.domains[root].len(),
-                "catia_singleton_root_domain_copy",
-            )?;
-            domain.extend(
-                quotient.domains[root]
-                    .iter()
-                    .copied()
-                    .filter(|point| *point == left_point || *point == right_point),
-            );
+            let current = Arc::clone(&quotient.domains[root]);
+            let domain = quotient.new_domain("catia_singleton_root_domain_copy", || {
+                let mut domain = Vec::new();
+                for point in [left_point.min(right_point), left_point.max(right_point)] {
+                    if domain.last() != Some(&point)
+                        && domain_contains(
+                            ctx,
+                            &current,
+                            point,
+                            "catia_singleton_root_domain_copy",
+                        )?
+                    {
+                        ctx.push_vec(&mut domain, point, "catia_singleton_root_domain_copy")?;
+                    }
+                }
+                Ok(domain)
+            })?;
             if domain.is_empty() {
                 return Ok(None);
             }
-            quotient.domains[root] = Arc::new(domain);
+            quotient.domains[root] = domain;
         }
     }
     let mut roots = Vec::new();
-    for node in 0..quotient.union.len() {
+    let mut root_indices =
+        ctx.alloc_filled(quotient.union.len(), None, "catia_singleton_root_indices")?;
+    for node in ctx.admit_iter(0..quotient.union.len(), "catia_singleton_root_rows")? {
         if quotient.union.find(ctx, node)? == node {
+            root_indices[node] = Some(roots.len());
             ctx.push_vec(&mut roots, node, "catia_singleton_root_rows")?;
         }
     }
     if roots.len() != vertex_points.len() {
         return Ok(None);
     }
-    let mut root_indices = HashMap::new();
-    for (index, &root) in roots.iter().enumerate() {
-        ctx.insert_hash_map(
-            &mut root_indices,
-            root,
-            index,
-            "catia_singleton_root_indices",
-        )?;
-    }
-    let mut domain_values = Vec::new();
-    ctx.reserve_vec(
-        &mut domain_values,
-        roots.len(),
-        "catia_singleton_domain_rows",
-    )?;
-    for &root in &roots {
+    let mut domain_values = ctx.collection_vec(roots.len(), "catia_singleton_domain_rows")?;
+    for &root in ctx.admit_iter(&roots, "catia_singleton_domain_rows")? {
         let domain = &quotient.domains[root];
         if domain.is_empty() {
             return Ok(None);
         }
-        let mut values = Vec::new();
-        ctx.reserve_vec(&mut values, domain.len(), "catia_singleton_domain_values")?;
-        values.extend(domain.iter().copied());
-        ctx.sort_unstable_by(
-            &mut values,
-            |value| value,
-            Ord::cmp,
-            "catia_singleton_domain_values_sort",
-        )?;
-        domain_values.push(values);
+        domain_values.push(ctx.copy_slice(domain, "catia_singleton_domain_values")?);
     }
     let first_assignment =
         reduced_distinct_matching(ctx, &domain_values, vertex_points.len(), budget, None)?;
@@ -2284,17 +2348,21 @@ pub(super) fn resolve_singleton_mesh_selection(
     };
     let mut edge_use_counts =
         ctx.alloc_filled(edge_rows.len(), 0usize, "catia_mesh_edge_use_counts")?;
-    for use_ in selected
-        .iter()
-        .flat_map(|assignment| &assignment.boundaries)
-        .flatten()
-    {
-        let Some(count) = edge_use_counts.get_mut(use_.edge) else {
-            return Ok(None);
-        };
-        *count += 1;
+    for assignment in ctx.admit_iter(selected, "catia_mesh_edge_use_counts")? {
+        for boundary in ctx.admit_iter(&assignment.boundaries, "catia_mesh_edge_use_counts")? {
+            for use_ in ctx.admit_iter(boundary, "catia_mesh_edge_use_counts")? {
+                let Some(count) = edge_use_counts.get_mut(use_.edge) else {
+                    return Ok(None);
+                };
+                *count += 1;
+            }
+        }
     }
-    if edge_use_counts.iter().any(|count| *count > 2) {
+    if ctx.any_by(
+        &edge_use_counts,
+        |count| Ok(*count > 2),
+        "catia_mesh_edge_use_counts",
+    )? {
         return Ok(None);
     }
     let mut materialize =
@@ -2308,11 +2376,14 @@ pub(super) fn resolve_singleton_mesh_selection(
                 "catia_selection_singleton_point_assignment",
             )?;
             let mut points_by_identity = HashMap::<u32, usize>::new();
-            for (edge, [start, end]) in edge_vertices.iter().copied().enumerate() {
+            for (edge, &[start, end]) in ctx
+                .admit_iter(&edge_vertices, "catia_selection_singleton_point_assignment")?
+                .enumerate()
+            {
                 let mut points = [0; 2];
                 for (port, vertex) in [start, end].into_iter().enumerate() {
                     let root = quotient.union.find(ctx, edge * 2 + port)?;
-                    let Some(&root) = root_indices.get(&root) else {
+                    let Some(root) = root_indices[root] else {
                         return Ok(None);
                     };
                     let Some(&point) = assignment.get(root) else {
@@ -2327,7 +2398,8 @@ pub(super) fn resolve_singleton_mesh_selection(
                 }
                 let closed_ports = quotient.union.find(ctx, edge * 2)?
                     == quotient.union.find(ctx, edge * 2 + 1)?;
-                if !mesh_edge_points_compatible(closed_ports, &edge_candidates[edge], points) {
+                if !mesh_edge_points_compatible(ctx, closed_ports, &edge_candidates[edge], points)?
+                {
                     return Ok(None);
                 }
                 for (identity, point) in port_identities[edge].into_iter().zip(points) {
@@ -2342,13 +2414,9 @@ pub(super) fn resolve_singleton_mesh_selection(
                     }
                 }
             }
-            let mut points = Vec::new();
-            ctx.reserve_vec(
-                &mut points,
-                point_assignment.len(),
-                "catia_singleton_completed_points",
-            )?;
-            for point in point_assignment {
+            let mut points =
+                ctx.collection_vec(point_assignment.len(), "catia_singleton_completed_points")?;
+            for point in ctx.admit_iter(point_assignment, "catia_singleton_completed_points")? {
                 let Some(point) = point else {
                     return Ok(None);
                 };
@@ -2360,7 +2428,10 @@ pub(super) fn resolve_singleton_mesh_selection(
         return Ok(None);
     };
     let mut ambiguous_roots = Vec::new();
-    for (root, domain) in domain_values.iter().enumerate() {
+    for (root, domain) in ctx
+        .admit_iter(&domain_values, "catia_singleton_ambiguous_roots")?
+        .enumerate()
+    {
         if domain.len() > 1 {
             ctx.push_vec(
                 &mut ambiguous_roots,
@@ -2369,7 +2440,7 @@ pub(super) fn resolve_singleton_mesh_selection(
             )?;
         }
     }
-    for root in ambiguous_roots {
+    for root in ctx.admit_iter(ambiguous_roots, "catia_singleton_ambiguous_roots")? {
         let Some(alternate) = reduced_distinct_matching(
             ctx,
             &domain_values,
