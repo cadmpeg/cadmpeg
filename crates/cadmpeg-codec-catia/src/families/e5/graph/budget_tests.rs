@@ -101,3 +101,25 @@ fn e5_duplicate_identity_charges_one_visit_at_a_time() {
             .is_none()
     );
 }
+
+#[test]
+fn e5_rejected_bound_and_body_release_candidate_lanes() {
+    let mut payload = vec![0x81, 0x81, 0x81];
+    payload.extend(f64::NAN.to_le_bytes());
+    payload.extend(0_u32.to_le_bytes());
+    let bound = Record {
+        class: 0x0e,
+        id: 1,
+        payload: &payload,
+    };
+    crate::test_support::with_retained_limit(0, |ctx| {
+        for _ in 0..4 {
+            assert!(parse_bounds(ctx, &bound)
+                .expect("invalid bound scratch")
+                .is_none());
+            assert!(parse_body_root(ctx, &[0x81, 0x81])
+                .expect("missing body trailer scratch")
+                .is_none());
+        }
+    });
+}

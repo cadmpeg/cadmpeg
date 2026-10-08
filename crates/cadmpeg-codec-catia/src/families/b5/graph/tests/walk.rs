@@ -147,10 +147,12 @@ fn retained_object_frames_refuse_the_caller_collection_limit() {
 }
 
 #[test]
-fn streaming_object_frame_scan_refuses_work_before_iteration() {
+fn streaming_object_frame_scan_refuses_work_before_the_first_visit() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     crate::test_support::with_work_limit(0, |ctx| {
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = object_stream_frames(ctx, &bytes)
+        let mut frames = object_stream_frames(ctx, &bytes).expect("lazy frame source");
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            frames.next().expect("first visit refuses")
         else {
             panic!("frame source admission must refuse");
         };

@@ -11,7 +11,6 @@ type LoopReferencesOutput = Result<Option<(Vec<u32>, B5LoopMetadata, Vec<[i16; 3
 type LoopMetadataOutput = Result<Option<(B5LoopMetadata, Vec<[i16; 3]>)>, CodecError>;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::num::NonZeroUsize;
 use std::ops::Range;
 
 use cadmpeg_core::decode::{cost::DecodeCost, DecodeContext, ScopedReservation, View, WorkBudget};
@@ -2372,291 +2371,301 @@ fn parse_a8_class21_pcurve(
     object_id: u32,
     payload: &[u8],
 ) -> Result<Option<B5Pcurve>, CodecError> {
-    (|| -> Option<Result<B5Pcurve, CodecError>> {
-        (payload.first() == Some(&0x81)).then_some(())?;
-        let mut position = 1;
-        let surface = wire::tokens::object_ref(payload, &mut position, true)?;
-        (payload.get(position) == Some(&0x01)).then_some(())?;
-        position += 1;
-        let degree = wire::tokens::compact_uint(payload, &mut position)?;
-        (degree == 5 && payload.get(position..position + 2) == Some(&[0x01, 0x01])).then_some(())?;
-        position += 2;
-        let knot_count =
-            usize::try_from(wire::tokens::compact_uint(payload, &mut position)?).ok()?;
-        (knot_count >= 2).then_some(())?;
-        matches!(payload.get(position), Some(0x01 | 0x11 | 0x19)).then_some(())?;
-        position += 1;
-        let scalar_bytes = knot_count.checked_mul(8)?;
-        let minimum_known_bytes = scalar_bytes
-            .checked_mul(7)?
-            .checked_add(knot_count)?
-            .checked_add(36)?;
-        if position.checked_add(minimum_known_bytes)? > payload.len() {
-            return None;
-        }
-        let read_values = |position: &mut usize, values: &mut Vec<FiniteReal>| {
-            let Some(end) = (*position).checked_add(scalar_bytes) else {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "catia_b5_a8_class21_scalar_lane_bytes",
-                    u64::MAX,
-                    u64::MAX,
-                )));
-            };
-            let lane = payload.get(*position..end)?;
-            let mut chunks = lane.chunks_exact(8);
-            loop {
-                let chunk =
-                    match ctx.next_charged(&mut chunks, "catia_b5_a8_class21_scalar_lane_bytes") {
-                        Ok(Some(chunk)) => chunk,
-                        Ok(None) => break,
-                        Err(error) => return Some(Err(error.into())),
-                    };
-                if let Err(error) =
-                    ctx.push_vec(values, f64_le(chunk, 0)?, "catia B5 pcurve distinct knots")
-                {
-                    return Some(Err(error));
-                }
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_parse_a8_class21_pcurve_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        (|| -> Option<Result<B5Pcurve, CodecError>> {
+            (payload.first() == Some(&0x81)).then_some(())?;
+            let mut position = 1;
+            let surface = wire::tokens::object_ref(payload, &mut position, true)?;
+            (payload.get(position) == Some(&0x01)).then_some(())?;
+            position += 1;
+            let degree = wire::tokens::compact_uint(payload, &mut position)?;
+            (degree == 5 && payload.get(position..position + 2) == Some(&[0x01, 0x01]))
+                .then_some(())?;
+            position += 2;
+            let knot_count =
+                usize::try_from(wire::tokens::compact_uint(payload, &mut position)?).ok()?;
+            (knot_count >= 2).then_some(())?;
+            matches!(payload.get(position), Some(0x01 | 0x11 | 0x19)).then_some(())?;
+            position += 1;
+            let scalar_bytes = knot_count.checked_mul(8)?;
+            let minimum_known_bytes = scalar_bytes
+                .checked_mul(7)?
+                .checked_add(knot_count)?
+                .checked_add(36)?;
+            if position.checked_add(minimum_known_bytes)? > payload.len() {
+                return None;
             }
-            *position = end;
-            Some(Ok(()))
-        };
-        let mut distinct_knots = Vec::new();
-        if let Err(error) = ctx.reserve_capacity(
-            &mut distinct_knots,
-            knot_count,
-            "catia B5 pcurve distinct knots",
-        ) {
-            return Some(Err(error));
-        }
-        match read_values(&mut position, &mut distinct_knots) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        // The knot and jet lanes are scratch for the B-spline fit.
-        let mut scratch = match ctx.reserve_scoped(0, "catia_b5_a8_class21_jet_lanes") {
-            Ok(scratch) => scratch,
-            Err(error) => return Some(Err(error)),
-        };
-        let knot_values = match scratch.with_storage(|| {
-            ctx.collect_vec(
-                distinct_knots.iter().copied().map(FiniteReal::get),
-                "catia B5 pcurve knot values",
-            )
-        }) {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
-        match knots_strictly_increasing(&knot_values, |count| {
-            ctx.charge_work(count, "IR strict knot order")
-        }) {
-            Ok(true) => {}
-            Ok(false) => return None,
-            Err(error) => return Some(Err(error)),
-        }
-        let mut multiplicities_valid = true;
-        let mut multiplicity_indices = 0..knot_count;
-        loop {
-            let index = match ctx.next_charged(
-                &mut multiplicity_indices,
-                "catia_b5_a8_class21_multiplicity_scan",
-            ) {
-                Ok(Some(index)) => index,
-                Ok(None) => break,
-                Err(error) => return Some(Err(error.into())),
-            };
-            let multiplicity = wire::tokens::compact_uint(payload, &mut position)?;
-            multiplicities_valid &= multiplicity
-                == if index == 0 || index + 1 == knot_count {
-                    degree + 1
-                } else {
-                    3
+            let read_values = |position: &mut usize, values: &mut Vec<FiniteReal>| {
+                let Some(end) = (*position).checked_add(scalar_bytes) else {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "catia_b5_a8_class21_scalar_lane_bytes",
+                        u64::MAX,
+                        u64::MAX,
+                    )));
                 };
-        }
-        multiplicities_valid.then_some(())?;
-        let read_lane = |position: &mut usize, values: &mut Vec<f64>| {
-            let Some(end) = (*position).checked_add(scalar_bytes) else {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "catia_b5_a8_class21_scalar_lane_bytes",
-                    u64::MAX,
-                    u64::MAX,
-                )));
-            };
-            let lane = payload.get(*position..end)?;
-            let mut chunks = lane.chunks_exact(8);
-            loop {
-                let chunk =
-                    match ctx.next_charged(&mut chunks, "catia_b5_a8_class21_scalar_lane_bytes") {
+                let lane = payload.get(*position..end)?;
+                let mut chunks = lane.chunks_exact(8);
+                loop {
+                    let chunk = match ctx
+                        .next_charged(&mut chunks, "catia_b5_a8_class21_scalar_lane_bytes")
+                    {
                         Ok(Some(chunk)) => chunk,
                         Ok(None) => break,
                         Err(error) => return Some(Err(error.into())),
                     };
-                values.push(f64_le(chunk, 0)?.get());
+                    if let Err(error) =
+                        ctx.push_vec(values, f64_le(chunk, 0)?, "catia B5 pcurve distinct knots")
+                    {
+                        return Some(Err(error));
+                    }
+                }
+                *position = end;
+                Some(Ok(()))
+            };
+            let mut distinct_knots = Vec::new();
+            if let Err(error) = ctx.reserve_capacity(
+                &mut distinct_knots,
+                knot_count,
+                "catia B5 pcurve distinct knots",
+            ) {
+                return Some(Err(error));
             }
-            *position = end;
-            Some(Ok(()))
-        };
-        let mut u = Vec::new();
-        if let Err(error) =
-            ctx.reserve_scoped_vec(&mut scratch, &mut u, knot_count, "catia B5 pcurve u jet")
-        {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut u) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut v = Vec::new();
-        if let Err(error) =
-            ctx.reserve_scoped_vec(&mut scratch, &mut v, knot_count, "catia B5 pcurve v jet")
-        {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut v) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut du = Vec::new();
-        if let Err(error) =
-            ctx.reserve_scoped_vec(&mut scratch, &mut du, knot_count, "catia B5 pcurve du jet")
-        {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut du) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut dv = Vec::new();
-        if let Err(error) =
-            ctx.reserve_scoped_vec(&mut scratch, &mut dv, knot_count, "catia B5 pcurve dv jet")
-        {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut dv) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut ddu = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut ddu,
-            knot_count,
-            "catia B5 pcurve ddu jet",
-        ) {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut ddu) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut ddv = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut ddv,
-            knot_count,
-            "catia B5 pcurve ddv jet",
-        ) {
-            return Some(Err(error));
-        }
-        match read_lane(&mut position, &mut ddv) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Some(Err(error)),
-            None => return None,
-        }
-        let mut points = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut points,
-            knot_count,
-            "catia B5 pcurve point jets",
-        ) {
-            return Some(Err(error));
-        }
-        let admitted = match ctx.admit_iter(u, "catia_b5_pcurve_point_jet_pair_scan") {
-            Ok(admitted) => admitted,
-            Err(error) => return Some(Err(error.into())),
-        };
-        points.extend(admitted.zip(v).map(|(u, v)| [u, v]));
-        let mut first = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut first,
-            knot_count,
-            "catia B5 pcurve first jets",
-        ) {
-            return Some(Err(error));
-        }
-        let admitted = match ctx.admit_iter(du, "catia_b5_pcurve_first_jet_pair_scan") {
-            Ok(admitted) => admitted,
-            Err(error) => return Some(Err(error.into())),
-        };
-        first.extend(admitted.zip(dv).map(|(u, v)| [u, v]));
-        let mut second = Vec::new();
-        if let Err(error) = ctx.reserve_scoped_vec(
-            &mut scratch,
-            &mut second,
-            knot_count,
-            "catia B5 pcurve second jets",
-        ) {
-            return Some(Err(error));
-        }
-        let admitted = match ctx.admit_iter(ddu, "catia_b5_pcurve_second_jet_pair_scan") {
-            Ok(admitted) => admitted,
-            Err(error) => return Some(Err(error.into())),
-        };
-        second.extend(admitted.zip(ddv).map(|(u, v)| [u, v]));
-        let (_, control_points) = match crate::nurbs::quintic_jet_bspline(
-            ctx,
-            degree,
-            &knot_values,
-            &points,
-            &first,
-            &second,
-            cadmpeg_ir::units::FiniteVector::new,
-        ) {
-            Ok(Some(curve)) => curve,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let tail = payload.get(position..)?;
-        let tail_control = tail.get(..2);
-        let extension_control = tail.get(34..36);
-        (matches!(tail.len(), 36 | 38)
-            && (tail_control == Some(&[0x05, 0x05]) || tail_control == Some(&[0x05, 0x11]))
-            && f64_le(tail, 2)?.get() == 0.0
-            && f64_le(tail, 18)?.get() == 1.0
-            && f64_le(tail, 26)?.get() == 0.0
-            && (tail.len() == 36
-                || extension_control == Some(&[0x01, 0x11])
-                || extension_control == Some(&[0x01, 0x19]))
-            && tail.get(tail.len() - 2..) == Some(&[0x00, 0x07]))
-        .then_some(())?;
-        let parameter_range = [*distinct_knots.first()?, *distinct_knots.last()?];
-        let multiplicities =
-            match ctx.alloc_filled(knot_count, degree + 1, "catia B5 pcurve multiplicities") {
-                Ok(multiplicities) => multiplicities,
+            match read_values(&mut position, &mut distinct_knots) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            // The knot and jet lanes are scratch for the B-spline fit.
+            let mut scratch = match ctx.reserve_scoped(0, "catia_b5_a8_class21_jet_lanes") {
+                Ok(scratch) => scratch,
                 Err(error) => return Some(Err(error)),
             };
-        Some(Ok(B5Pcurve {
-            object_id,
-            surface,
-            degree,
-            distinct_knots,
-            multiplicities,
-            control_points,
-            weights: None,
-            parameter_range: Some(parameter_range),
-            parameterization: B5PcurveParameterization::Native,
-            class_21_suffix_scalar: Some(PositiveReal::new(f64_le(tail, 10)?.get())?),
-            lifted_endpoints: None,
-        }))
-    })()
-    .transpose()
+            let knot_values = match scratch.with_storage(|| {
+                ctx.collect_vec(
+                    distinct_knots.iter().copied().map(FiniteReal::get),
+                    "catia B5 pcurve knot values",
+                )
+            }) {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            };
+            match knots_strictly_increasing(&knot_values, |count| {
+                ctx.charge_work(count, "IR strict knot order")
+            }) {
+                Ok(true) => {}
+                Ok(false) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+            let mut multiplicities_valid = true;
+            let mut multiplicity_indices = 0..knot_count;
+            loop {
+                let index = match ctx.next_charged(
+                    &mut multiplicity_indices,
+                    "catia_b5_a8_class21_multiplicity_scan",
+                ) {
+                    Ok(Some(index)) => index,
+                    Ok(None) => break,
+                    Err(error) => return Some(Err(error.into())),
+                };
+                let multiplicity = wire::tokens::compact_uint(payload, &mut position)?;
+                multiplicities_valid &= multiplicity
+                    == if index == 0 || index + 1 == knot_count {
+                        degree + 1
+                    } else {
+                        3
+                    };
+            }
+            multiplicities_valid.then_some(())?;
+            let read_lane = |position: &mut usize, values: &mut Vec<f64>| {
+                let Some(end) = (*position).checked_add(scalar_bytes) else {
+                    return Some(Err(ctx.refuse_codec_limit(
+                        "catia_b5_a8_class21_scalar_lane_bytes",
+                        u64::MAX,
+                        u64::MAX,
+                    )));
+                };
+                let lane = payload.get(*position..end)?;
+                let mut chunks = lane.chunks_exact(8);
+                loop {
+                    let chunk = match ctx
+                        .next_charged(&mut chunks, "catia_b5_a8_class21_scalar_lane_bytes")
+                    {
+                        Ok(Some(chunk)) => chunk,
+                        Ok(None) => break,
+                        Err(error) => return Some(Err(error.into())),
+                    };
+                    values.push(f64_le(chunk, 0)?.get());
+                }
+                *position = end;
+                Some(Ok(()))
+            };
+            let mut u = Vec::new();
+            if let Err(error) =
+                ctx.reserve_scoped_vec(&mut scratch, &mut u, knot_count, "catia B5 pcurve u jet")
+            {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut u) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut v = Vec::new();
+            if let Err(error) =
+                ctx.reserve_scoped_vec(&mut scratch, &mut v, knot_count, "catia B5 pcurve v jet")
+            {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut v) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut du = Vec::new();
+            if let Err(error) =
+                ctx.reserve_scoped_vec(&mut scratch, &mut du, knot_count, "catia B5 pcurve du jet")
+            {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut du) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut dv = Vec::new();
+            if let Err(error) =
+                ctx.reserve_scoped_vec(&mut scratch, &mut dv, knot_count, "catia B5 pcurve dv jet")
+            {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut dv) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut ddu = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut ddu,
+                knot_count,
+                "catia B5 pcurve ddu jet",
+            ) {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut ddu) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut ddv = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut ddv,
+                knot_count,
+                "catia B5 pcurve ddv jet",
+            ) {
+                return Some(Err(error));
+            }
+            match read_lane(&mut position, &mut ddv) {
+                Some(Ok(())) => {}
+                Some(Err(error)) => return Some(Err(error)),
+                None => return None,
+            }
+            let mut points = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut points,
+                knot_count,
+                "catia B5 pcurve point jets",
+            ) {
+                return Some(Err(error));
+            }
+            let admitted = match ctx.admit_iter(u, "catia_b5_pcurve_point_jet_pair_scan") {
+                Ok(admitted) => admitted,
+                Err(error) => return Some(Err(error.into())),
+            };
+            points.extend(admitted.zip(v).map(|(u, v)| [u, v]));
+            let mut first = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut first,
+                knot_count,
+                "catia B5 pcurve first jets",
+            ) {
+                return Some(Err(error));
+            }
+            let admitted = match ctx.admit_iter(du, "catia_b5_pcurve_first_jet_pair_scan") {
+                Ok(admitted) => admitted,
+                Err(error) => return Some(Err(error.into())),
+            };
+            first.extend(admitted.zip(dv).map(|(u, v)| [u, v]));
+            let mut second = Vec::new();
+            if let Err(error) = ctx.reserve_scoped_vec(
+                &mut scratch,
+                &mut second,
+                knot_count,
+                "catia B5 pcurve second jets",
+            ) {
+                return Some(Err(error));
+            }
+            let admitted = match ctx.admit_iter(ddu, "catia_b5_pcurve_second_jet_pair_scan") {
+                Ok(admitted) => admitted,
+                Err(error) => return Some(Err(error.into())),
+            };
+            second.extend(admitted.zip(ddv).map(|(u, v)| [u, v]));
+            let (_, control_points) = match crate::nurbs::quintic_jet_bspline(
+                ctx,
+                degree,
+                &knot_values,
+                &points,
+                &first,
+                &second,
+                cadmpeg_ir::units::FiniteVector::new,
+            ) {
+                Ok(Some(curve)) => curve,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            let tail = payload.get(position..)?;
+            let tail_control = tail.get(..2);
+            let extension_control = tail.get(34..36);
+            (matches!(tail.len(), 36 | 38)
+                && (tail_control == Some(&[0x05, 0x05]) || tail_control == Some(&[0x05, 0x11]))
+                && f64_le(tail, 2)?.get() == 0.0
+                && f64_le(tail, 18)?.get() == 1.0
+                && f64_le(tail, 26)?.get() == 0.0
+                && (tail.len() == 36
+                    || extension_control == Some(&[0x01, 0x11])
+                    || extension_control == Some(&[0x01, 0x19]))
+                && tail.get(tail.len() - 2..) == Some(&[0x00, 0x07]))
+            .then_some(())?;
+            let parameter_range = [*distinct_knots.first()?, *distinct_knots.last()?];
+            let multiplicities =
+                match ctx.alloc_filled(knot_count, degree + 1, "catia B5 pcurve multiplicities") {
+                    Ok(multiplicities) => multiplicities,
+                    Err(error) => return Some(Err(error)),
+                };
+            Some(Ok(B5Pcurve {
+                object_id,
+                surface,
+                degree,
+                distinct_knots,
+                multiplicities,
+                control_points,
+                weights: None,
+                parameter_range: Some(parameter_range),
+                parameterization: B5PcurveParameterization::Native,
+                class_21_suffix_scalar: Some(PositiveReal::new(f64_le(tail, 10)?.get())?),
+                lifted_endpoints: None,
+            }))
+        })()
+        .transpose()
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
+    }
+    Ok(output)
 }
 
 /// Return native start/end vertex identities for every framed `b5 03 5e`
@@ -3458,69 +3467,77 @@ fn parameter_incidence(
     ctx: &DecodeContext<'_>,
     record: &B5Record,
 ) -> Result<Option<B5ParameterIncidence>, CodecError> {
-    if record.class != 0x06 {
-        return Ok(None);
-    }
-    let Some(count) = record
-        .payload
-        .first()
-        .and_then(|lead| lead.checked_sub(0x80))
-    else {
-        return Ok(None);
-    };
-    let count = usize::from(count);
-    let mut position = 1;
-    let mut reference_storage = ctx.reserve_scoped(0, "catia_b5_parameter_incidence_references")?;
-    let Some(references) = reference_storage.with_storage(|| {
-        ctx.collect_options(
-            (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
-            "catia_b5_parameter_incidence_references",
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_parameter_incidence_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        if record.class != 0x06 {
+            return Ok(None);
+        }
+        let Some(count) = record
+            .payload
+            .first()
+            .and_then(|lead| lead.checked_sub(0x80))
+        else {
+            return Ok(None);
+        };
+        let count = usize::from(count);
+        let mut position = 1;
+        let mut reference_storage =
+            ctx.reserve_scoped(0, "catia_b5_parameter_incidence_references")?;
+        let Some(references) = reference_storage.with_storage(|| {
+            ctx.collect_options(
+                (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
+                "catia_b5_parameter_incidence_references",
+            )
+        })?
+        else {
+            return Ok(None);
+        };
+        let Some(expected) = u8::try_from(count)
+            .ok()
+            .and_then(|count| 0x80u8.checked_add(count))
+        else {
+            return Ok(None);
+        };
+        if record.payload.get(position) != Some(&expected) {
+            return Ok(None);
+        }
+        position += 1;
+        let mut lanes = Vec::new();
+        let mut references = references.into_iter();
+        while let Some(curve) =
+            ctx.next_charged(&mut references, "catia_b5_parameter_incidence_lane_scan")?
+        {
+            let Some(parameter) = f64_le(&record.payload, position) else {
+                return Ok(None);
+            };
+            let Some(next) = position.checked_add(8) else {
+                return Ok(None);
+            };
+            position = next;
+            let Some(control) = wire::tokens::compact_uint(&record.payload, &mut position) else {
+                return Ok(None);
+            };
+            ctx.push_vec(
+                &mut lanes,
+                B5IncidenceLane {
+                    curve,
+                    parameter,
+                    control,
+                },
+                "catia_b5_parameter_incidence_lanes",
+            )?;
+        }
+        Ok(
+            (position == record.payload.len()).then_some(B5ParameterIncidence {
+                object_id: record.object_id,
+                lanes,
+            }),
         )
-    })?
-    else {
-        return Ok(None);
-    };
-    let Some(expected) = u8::try_from(count)
-        .ok()
-        .and_then(|count| 0x80u8.checked_add(count))
-    else {
-        return Ok(None);
-    };
-    if record.payload.get(position) != Some(&expected) {
-        return Ok(None);
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
     }
-    position += 1;
-    let mut lanes = Vec::new();
-    let mut references = references.into_iter();
-    while let Some(curve) =
-        ctx.next_charged(&mut references, "catia_b5_parameter_incidence_lane_scan")?
-    {
-        let Some(parameter) = f64_le(&record.payload, position) else {
-            return Ok(None);
-        };
-        let Some(next) = position.checked_add(8) else {
-            return Ok(None);
-        };
-        position = next;
-        let Some(control) = wire::tokens::compact_uint(&record.payload, &mut position) else {
-            return Ok(None);
-        };
-        ctx.push_vec(
-            &mut lanes,
-            B5IncidenceLane {
-                curve,
-                parameter,
-                control,
-            },
-            "catia_b5_parameter_incidence_lanes",
-        )?;
-    }
-    Ok(
-        (position == record.payload.len()).then_some(B5ParameterIncidence {
-            object_id: record.object_id,
-            lanes,
-        }),
-    )
+    Ok(output)
 }
 
 /// Bind each loop pcurve occurrence that has no geometry record to the loop's
@@ -4384,9 +4401,9 @@ fn point_index(
     points: &[FinitePoint3],
 ) -> Result<HashMap<[i64; 3], Vec<usize>>, CodecError> {
     let mut index = HashMap::<[i64; 3], Vec<usize>>::new();
-    for (point_index, point) in ctx
-        .admit_iter(points, "catia_b5_point_index_scan")?
-        .enumerate()
+    let mut points = points.iter().enumerate();
+    while let Some((point_index, point)) =
+        ctx.next_charged(&mut points, "catia_b5_point_index_scan")?
     {
         let cell = point_cell(coordinates(*point))
             .ok_or_else(|| CodecError::malformed("B5 point exceeds spatial index range"))?;
@@ -5855,11 +5872,14 @@ fn analytic_pcurve_range(
     ctx: &DecodeContext<'_>,
     record: &B5Record,
 ) -> Result<Option<[FiniteReal; 2]>, CodecError> {
-    let pcurve = match record.class {
-        0x18 => parse_line_pcurve(ctx, record)?,
-        0x19 => parse_circle_pcurve(ctx, record)?,
-        _ => None,
-    };
+    let mut storage = ctx.reserve_scoped(0, "catia_b5_analytic_pcurve_range")?;
+    let pcurve = storage.with_storage(|| {
+        Ok::<_, CodecError>(match record.class {
+            0x18 => parse_line_pcurve(ctx, record)?,
+            0x19 => parse_circle_pcurve(ctx, record)?,
+            _ => None,
+        })
+    })?;
     Ok(pcurve.and_then(|pcurve| {
         Some([
             *pcurve.distinct_knots.first()?,
@@ -6218,104 +6238,115 @@ fn parse_pcurve(
     ctx: &DecodeContext<'_>,
     record: &B5Record,
 ) -> Result<Option<B5Pcurve>, CodecError> {
-    (|| -> Option<Result<B5Pcurve, CodecError>> {
-        if record.family != 0xb5 || record.class != 0x21 || record.payload.first() != Some(&0x81) {
-            return None;
-        }
-        let mut position = 1;
-        let surface = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-        if record.payload.get(position) != Some(&0x01) {
-            return None;
-        }
-        position += 1;
-        let degree = wire::tokens::compact_uint(&record.payload, &mut position)?;
-        if !matches!(degree, 1 | 2 | 5)
-            || record.payload.get(position..position + 2) != Some(&[0x01, 0x01])
-        {
-            return None;
-        }
-        position += 2;
-        let knot_count =
-            usize::try_from(wire::tokens::compact_uint(&record.payload, &mut position)?).ok()?;
-        if knot_count != 2 || record.payload.get(position) != Some(&0x01) {
-            return None;
-        }
-        position += 1;
-        // The record holds exactly two knots and at most six poles, so its
-        // lanes are fixed-width reads.
-        let knot_lane = record.payload.get(position..position + 16)?;
-        let mut distinct_knots = Vec::new();
-        for chunk in knot_lane.chunks_exact(8) {
-            let knot = f64_le(chunk, 0)?;
-            if let Err(error) =
-                ctx.push_vec(&mut distinct_knots, knot, "catia_b5_class21_distinct_knots")
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_parse_pcurve_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        (|| -> Option<Result<B5Pcurve, CodecError>> {
+            if record.family != 0xb5
+                || record.class != 0x21
+                || record.payload.first() != Some(&0x81)
             {
-                return Some(Err(error));
+                return None;
             }
-        }
-        position += 16;
-        if distinct_knots[0] >= distinct_knots[1] {
-            return None;
-        }
-        let multiplicities = match ctx.collect_fallible_options(
-            (0..knot_count).map(|_| {
-                Ok::<_, CodecError>(wire::tokens::compact_uint(&record.payload, &mut position))
-            }),
-            "catia_b5_class21_multiplicities",
-        ) {
-            Ok(Some(values)) => values,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        let endpoint_multiplicity = degree + 1;
-        if multiplicities != [endpoint_multiplicity; 2] {
-            return None;
-        }
-        let pole_count = usize::try_from(endpoint_multiplicity).ok()?;
-        let point_lane = record
-            .payload
-            .get(position..position.checked_add(pole_count * 16)?)?;
-        let mut control_points = Vec::new();
-        for chunk in point_lane.chunks_exact(16) {
-            let point = FiniteVector::new([f64_le(chunk, 0)?.get(), f64_le(chunk, 8)?.get()])?;
-            if let Err(error) = ctx.push_vec(
-                &mut control_points,
-                point,
-                "catia_b5_class21_control_points",
-            ) {
-                return Some(Err(error));
+            let mut position = 1;
+            let surface = wire::tokens::object_ref(&record.payload, &mut position, true)?;
+            if record.payload.get(position) != Some(&0x01) {
+                return None;
             }
-        }
-        position += point_lane.len();
-        let tail = record.payload.get(position..)?;
-        let suffix_scalar = PositiveReal::new(f64_le(tail, 10)?.get())?;
-        let native_origin = *distinct_knots.first()?;
-        let native_span = distinct_knots[1].get() - native_origin.get();
-        if tail.len() != 36
-            || tail.get(..2) != Some(&[0x05, 0x05])
-            || f64_le(tail, 2)?.get() != 0.0
-            || suffix_scalar.get().to_bits() != native_span.to_bits()
-            || f64_le(tail, 18)?.get() != 1.0
-            || f64_le(tail, 26)?.get() != 0.0
-            || tail.get(34..) != Some(&[0x00, 0x07])
-        {
-            return None;
-        }
-        Some(Ok(B5Pcurve {
-            object_id: record.object_id,
-            surface,
-            degree,
-            distinct_knots,
-            multiplicities,
-            control_points,
-            weights: None,
-            parameter_range: None,
-            parameterization: B5PcurveParameterization::Translated { native_origin },
-            class_21_suffix_scalar: Some(suffix_scalar),
-            lifted_endpoints: None,
-        }))
-    })()
-    .transpose()
+            position += 1;
+            let degree = wire::tokens::compact_uint(&record.payload, &mut position)?;
+            if !matches!(degree, 1 | 2 | 5)
+                || record.payload.get(position..position + 2) != Some(&[0x01, 0x01])
+            {
+                return None;
+            }
+            position += 2;
+            let knot_count =
+                usize::try_from(wire::tokens::compact_uint(&record.payload, &mut position)?)
+                    .ok()?;
+            if knot_count != 2 || record.payload.get(position) != Some(&0x01) {
+                return None;
+            }
+            position += 1;
+            // The record holds exactly two knots and at most six poles, so its
+            // lanes are fixed-width reads.
+            let knot_lane = record.payload.get(position..position + 16)?;
+            let mut distinct_knots = Vec::new();
+            for chunk in knot_lane.chunks_exact(8) {
+                let knot = f64_le(chunk, 0)?;
+                if let Err(error) =
+                    ctx.push_vec(&mut distinct_knots, knot, "catia_b5_class21_distinct_knots")
+                {
+                    return Some(Err(error));
+                }
+            }
+            position += 16;
+            if distinct_knots[0] >= distinct_knots[1] {
+                return None;
+            }
+            let values = [
+                wire::tokens::compact_uint(&record.payload, &mut position)?,
+                wire::tokens::compact_uint(&record.payload, &mut position)?,
+            ];
+            let mut multiplicities = match ctx.vector_storage(2, "catia_b5_class21_multiplicities")
+            {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            };
+            multiplicities.extend(values);
+            let endpoint_multiplicity = degree + 1;
+            if multiplicities != [endpoint_multiplicity; 2] {
+                return None;
+            }
+            let pole_count = usize::try_from(endpoint_multiplicity).ok()?;
+            let point_lane = record
+                .payload
+                .get(position..position.checked_add(pole_count * 16)?)?;
+            let mut control_points = Vec::new();
+            for chunk in point_lane.chunks_exact(16) {
+                let point = FiniteVector::new([f64_le(chunk, 0)?.get(), f64_le(chunk, 8)?.get()])?;
+                if let Err(error) = ctx.push_vec(
+                    &mut control_points,
+                    point,
+                    "catia_b5_class21_control_points",
+                ) {
+                    return Some(Err(error));
+                }
+            }
+            position += point_lane.len();
+            let tail = record.payload.get(position..)?;
+            let suffix_scalar = PositiveReal::new(f64_le(tail, 10)?.get())?;
+            let native_origin = *distinct_knots.first()?;
+            let native_span = distinct_knots[1].get() - native_origin.get();
+            if tail.len() != 36
+                || tail.get(..2) != Some(&[0x05, 0x05])
+                || f64_le(tail, 2)?.get() != 0.0
+                || suffix_scalar.get().to_bits() != native_span.to_bits()
+                || f64_le(tail, 18)?.get() != 1.0
+                || f64_le(tail, 26)?.get() != 0.0
+                || tail.get(34..) != Some(&[0x00, 0x07])
+            {
+                return None;
+            }
+            Some(Ok(B5Pcurve {
+                object_id: record.object_id,
+                surface,
+                degree,
+                distinct_knots,
+                multiplicities,
+                control_points,
+                weights: None,
+                parameter_range: None,
+                parameterization: B5PcurveParameterization::Translated { native_origin },
+                class_21_suffix_scalar: Some(suffix_scalar),
+                lifted_endpoints: None,
+            }))
+        })()
+        .transpose()
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
+    }
+    Ok(output)
 }
 
 fn parse_circle_pcurve(
@@ -6455,137 +6486,148 @@ fn rational_arc_pcurve(
     ctx: &DecodeContext<'_>,
     inputs: RationalArcPcurveInputs<'_>,
 ) -> Result<Option<B5Pcurve>, CodecError> {
-    let RationalArcPcurveInputs {
-        record,
-        surface,
-        center,
-        reference_x,
-        reference_y,
-        radius,
-        parameter_range,
-        angle_range,
-    } = inputs;
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_rational_arc_pcurve_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        let RationalArcPcurveInputs {
+            record,
+            surface,
+            center,
+            reference_x,
+            reference_y,
+            radius,
+            parameter_range,
+            angle_range,
+        } = inputs;
 
-    let [start, end] = parameter_range;
-    let [start_angle, end_angle] = angle_range;
-    let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2).ceil();
-    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
-        return Ok(None);
-    }
-    // `ceil` answers zero only for an angular span of exactly zero: an arc that
-    // sweeps no angle states no span, which this route refuses as it refuses
-    // every other degeneracy.
-    let Some(span_count) = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
-    else {
-        return Ok(None);
-    };
-    let span_count = span_count.get();
-    let Some(control_count) = span_count
-        .checked_mul(2)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return Ok(None);
-    };
-    // Each lane is reserved at its exact final length and validated as it is
-    // filled; an invalid value withholds the pcurve.
-    let mut control_points = Vec::<FiniteVector<2>>::new();
-    let mut weights = Vec::<PositiveReal>::new();
-    let mut distinct_knots = Vec::<FiniteReal>::new();
-    let mut multiplicities = Vec::new();
-    ctx.reserve_vec(
-        &mut control_points,
-        control_count,
-        "catia_b5_arc_control_points",
-    )?;
-    ctx.reserve_vec(&mut weights, control_count, "catia_b5_arc_weights")?;
-    ctx.reserve_vec(
-        &mut distinct_knots,
-        span_count + 1,
-        "catia_b5_arc_distinct_knots",
-    )?;
-    ctx.reserve_vec(
-        &mut multiplicities,
-        span_count + 1,
-        "catia_b5_arc_multiplicities",
-    )?;
-    let arc_point = |angle: f64, scale: f64| {
-        FiniteVector::new([
-            center[0] + scale * (reference_x[0] * angle.cos() + reference_y[0] * angle.sin()),
-            center[1] + scale * (reference_x[1] * angle.cos() + reference_y[1] * angle.sin()),
-        ])
-    };
-    let (Some(start_knot), Some(end_knot), Some(unit_weight)) = (
-        FiniteReal::new(start),
-        FiniteReal::new(end),
-        PositiveReal::new(1.0),
-    ) else {
-        return Ok(None);
-    };
-    distinct_knots.push(start_knot);
-    multiplicities.push(3);
-    let (Some(span_total), true) = (f64_from_index(span_count), span_count > 0) else {
-        return Ok(None);
-    };
-    let mut steps = 0..span_count;
-    while let Some(span) = ctx.next_charged(&mut steps, "catia_b5_rational_arc_span_generation")? {
-        let (Some(span_start), Some(span_end)) = (f64_from_index(span), f64_from_index(span + 1))
+        let [start, end] = parameter_range;
+        let [start_angle, end_angle] = angle_range;
+        let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2).ceil();
+        if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
+            return Ok(None);
+        }
+        // `ceil` answers zero only for an angular span of exactly zero: an arc that
+        // sweeps no angle states no span, which this route refuses as it refuses
+        // every other degeneracy.
+        let Some(span_count) =
+            truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
         else {
             return Ok(None);
         };
-        let fraction0 = span_start / span_total;
-        let fraction1 = span_end / span_total;
-        let angle0 = start_angle + (end_angle - start_angle) * fraction0;
-        let angle1 = start_angle + (end_angle - start_angle) * fraction1;
-        let middle = (angle0 + angle1) * 0.5;
-        let middle_weight = ((angle1 - angle0) * 0.5).cos();
-        if middle_weight <= f64::EPSILON {
+        let span_count = span_count.get();
+        let Some(control_count) = span_count
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(1))
+        else {
             return Ok(None);
-        }
-        if span == 0 {
-            let Some(point) = arc_point(angle0, radius) else {
-                return Ok(None);
-            };
-            control_points.push(point);
-            weights.push(unit_weight);
-        }
-        let (Some(middle_point), Some(end_point), Some(middle_weight)) = (
-            arc_point(middle, radius / middle_weight),
-            arc_point(angle1, radius),
-            PositiveReal::new(middle_weight),
+        };
+        // Each lane is reserved at its exact final length and validated as it is
+        // filled; an invalid value withholds the pcurve.
+        let mut control_points = Vec::<FiniteVector<2>>::new();
+        let mut weights = Vec::<PositiveReal>::new();
+        let mut distinct_knots = Vec::<FiniteReal>::new();
+        let mut multiplicities = Vec::new();
+        ctx.reserve_vec(
+            &mut control_points,
+            control_count,
+            "catia_b5_arc_control_points",
+        )?;
+        ctx.reserve_vec(&mut weights, control_count, "catia_b5_arc_weights")?;
+        ctx.reserve_vec(
+            &mut distinct_knots,
+            span_count + 1,
+            "catia_b5_arc_distinct_knots",
+        )?;
+        ctx.reserve_vec(
+            &mut multiplicities,
+            span_count + 1,
+            "catia_b5_arc_multiplicities",
+        )?;
+        let arc_point = |angle: f64, scale: f64| {
+            FiniteVector::new([
+                center[0] + scale * (reference_x[0] * angle.cos() + reference_y[0] * angle.sin()),
+                center[1] + scale * (reference_x[1] * angle.cos() + reference_y[1] * angle.sin()),
+            ])
+        };
+        let (Some(start_knot), Some(end_knot), Some(unit_weight)) = (
+            FiniteReal::new(start),
+            FiniteReal::new(end),
+            PositiveReal::new(1.0),
         ) else {
             return Ok(None);
         };
-        control_points.extend([middle_point, end_point]);
-        weights.extend([middle_weight, unit_weight]);
-        if span + 1 < span_count {
-            let ordinary = start + (end - start) * fraction1;
-            let knot = if ordinary.is_finite() {
-                FiniteReal::new(ordinary)
-            } else {
-                cadmpeg_ir::math::interpolate(start, end, fraction1)
-            };
-            let Some(knot) = knot else {
+        distinct_knots.push(start_knot);
+        multiplicities.push(3);
+        let (Some(span_total), true) = (f64_from_index(span_count), span_count > 0) else {
+            return Ok(None);
+        };
+        let mut steps = 0..span_count;
+        while let Some(span) =
+            ctx.next_charged(&mut steps, "catia_b5_rational_arc_span_generation")?
+        {
+            let (Some(span_start), Some(span_end)) =
+                (f64_from_index(span), f64_from_index(span + 1))
+            else {
                 return Ok(None);
             };
-            distinct_knots.push(knot);
-            multiplicities.push(2);
+            let fraction0 = span_start / span_total;
+            let fraction1 = span_end / span_total;
+            let angle0 = start_angle + (end_angle - start_angle) * fraction0;
+            let angle1 = start_angle + (end_angle - start_angle) * fraction1;
+            let middle = (angle0 + angle1) * 0.5;
+            let middle_weight = ((angle1 - angle0) * 0.5).cos();
+            if middle_weight <= f64::EPSILON {
+                return Ok(None);
+            }
+            if span == 0 {
+                let Some(point) = arc_point(angle0, radius) else {
+                    return Ok(None);
+                };
+                control_points.push(point);
+                weights.push(unit_weight);
+            }
+            let (Some(middle_point), Some(end_point), Some(middle_weight)) = (
+                arc_point(middle, radius / middle_weight),
+                arc_point(angle1, radius),
+                PositiveReal::new(middle_weight),
+            ) else {
+                return Ok(None);
+            };
+            control_points.extend([middle_point, end_point]);
+            weights.extend([middle_weight, unit_weight]);
+            if span + 1 < span_count {
+                let ordinary = start + (end - start) * fraction1;
+                let knot = if ordinary.is_finite() {
+                    FiniteReal::new(ordinary)
+                } else {
+                    cadmpeg_ir::math::interpolate(start, end, fraction1)
+                };
+                let Some(knot) = knot else {
+                    return Ok(None);
+                };
+                distinct_knots.push(knot);
+                multiplicities.push(2);
+            }
         }
+        distinct_knots.push(end_knot);
+        multiplicities.push(3);
+        Ok(Some(B5Pcurve {
+            object_id: record.object_id,
+            surface,
+            degree: 2,
+            distinct_knots,
+            multiplicities,
+            control_points,
+            weights: Some(weights),
+            parameter_range: None,
+            parameterization: B5PcurveParameterization::Native,
+            class_21_suffix_scalar: None,
+            lifted_endpoints: None,
+        }))
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
     }
-    distinct_knots.push(end_knot);
-    multiplicities.push(3);
-    Ok(Some(B5Pcurve {
-        object_id: record.object_id,
-        surface,
-        degree: 2,
-        distinct_knots,
-        multiplicities,
-        control_points,
-        weights: Some(weights),
-        parameter_range: None,
-        parameterization: B5PcurveParameterization::Native,
-        class_21_suffix_scalar: None,
-        lifted_endpoints: None,
-    }))
+    Ok(output)
 }
 
 /// Keep a structurally bounded pcurve record whose chart geometry is not
@@ -7182,15 +7224,26 @@ pub(in crate::families) fn object_stream_frames<'a>(
     ctx: &'a DecodeContext<'_>,
     bytes: &'a [u8],
 ) -> Result<impl Iterator<Item = Result<ObjectFrame, CodecError>> + 'a, CodecError> {
+    ctx.charge_work(0, "catia_b5_object_frame_scan")?;
     let mut child = None::<(usize, usize)>;
     let mut skip_until = 0usize;
     let mut failed = false;
-    Ok(ctx
-        .admit_iter(bytes, "catia_b5_object_frame_scan")?
-        .enumerate()
-        .filter_map(move |(position, _)| {
-            if failed || position < skip_until {
-                return None;
+    let mut positions = 0..bytes.len();
+    Ok(std::iter::from_fn(move || {
+        if failed {
+            return None;
+        }
+        loop {
+            let position = match ctx.next_charged(&mut positions, "catia_b5_object_frame_scan") {
+                Ok(Some(position)) => position,
+                Ok(None) => return None,
+                Err(error) => {
+                    failed = true;
+                    return Some(Err(error.into()));
+                }
+            };
+            if position < skip_until {
+                continue;
             }
             if child.is_some_and(|(_, end)| position >= end) {
                 child = None;
@@ -7205,7 +7258,7 @@ pub(in crate::families) fn object_stream_frames<'a>(
                     child = None;
                     skip_until = limit;
                 }
-                return None;
+                continue;
             }
             let Some((end, family, class, object_id)) = object_frame(&bytes[..limit], position)
             else {
@@ -7213,13 +7266,13 @@ pub(in crate::families) fn object_stream_frames<'a>(
                     child = None;
                     skip_until = limit;
                 }
-                return None;
+                continue;
             };
             if inside_child {
                 if family != 0xb5 {
                     child = None;
                     skip_until = limit;
-                    return None;
+                    continue;
                 }
                 skip_until = end;
             } else {
@@ -7240,17 +7293,18 @@ pub(in crate::families) fn object_stream_frames<'a>(
                         }
                     }
                     0xb5 => skip_until = end,
-                    _ => return None,
+                    _ => continue,
                 }
             }
-            Some(Ok(ObjectFrame {
+            return Some(Ok(ObjectFrame {
                 start: position,
                 end,
                 family,
                 class,
                 object_id,
-            }))
-        }))
+            }));
+        }
+    }))
 }
 
 pub(in crate::families) fn collect_object_stream_frames(
@@ -7998,93 +8052,108 @@ fn parse_face(
     surfaces: &BTreeMap<u32, B5Surface>,
     surface_aliases: &BTreeMap<u32, u32>,
 ) -> Result<Option<B5Face>, CodecError> {
-    const OPERATION: &str = "catia_b5_face_reference_lookup";
-    let references = &record.references;
-    let Some((&surface, loop_references)) = references.split_first() else {
-        return Ok(None);
-    };
-    if !ctx.contains_key_btree_map(surfaces, &surface, OPERATION)? {
-        return Ok(None);
-    }
-    let Some(canonical_surface) = canonical_surface_id(ctx, surface_aliases, surface)? else {
-        return Ok(None);
-    };
-    let mut loop_ids = Vec::new();
-    let mut references = loop_references.iter();
-    while let Some(&reference) =
-        ctx.next_charged(&mut references, "catia_b5_face_loop_reference_scan")?
-    {
-        if ctx.contains_key_btree_map(loops, &reference, OPERATION)? {
-            ctx.push_vec(&mut loop_ids, reference, "catia_b5_face_loop_ids")?;
-        } else {
-            let repeats_carrier = ctx.contains_key_btree_map(surfaces, &reference, OPERATION)?
-                && canonical_surface_id(ctx, surface_aliases, reference)?
-                    == Some(canonical_surface);
-            if !repeats_carrier {
-                // A distinct surface reference is a multi-surface variant. Its
-                // composition is not represented by the neutral Face type, so
-                // keep the typed record but withhold the face from topology.
-                return Ok(None);
-            }
-            // A face may repeat its carrier through an alias identity. This is
-            // the same carrier incidence, not a multi-surface face.
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_parse_face_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        const OPERATION: &str = "catia_b5_face_reference_lookup";
+        let references = &record.references;
+        let Some((&surface, loop_references)) = references.split_first() else {
+            return Ok(None);
+        };
+        if !ctx.contains_key_btree_map(surfaces, &surface, OPERATION)? {
+            return Ok(None);
         }
+        let Some(canonical_surface) = canonical_surface_id(ctx, surface_aliases, surface)? else {
+            return Ok(None);
+        };
+        let mut loop_ids = Vec::new();
+        let mut references = loop_references.iter();
+        while let Some(&reference) =
+            ctx.next_charged(&mut references, "catia_b5_face_loop_reference_scan")?
+        {
+            if ctx.contains_key_btree_map(loops, &reference, OPERATION)? {
+                ctx.push_vec(&mut loop_ids, reference, "catia_b5_face_loop_ids")?;
+            } else {
+                let repeats_carrier = ctx
+                    .contains_key_btree_map(surfaces, &reference, OPERATION)?
+                    && canonical_surface_id(ctx, surface_aliases, reference)?
+                        == Some(canonical_surface);
+                if !repeats_carrier {
+                    // A distinct surface reference is a multi-surface variant. Its
+                    // composition is not represented by the neutral Face type, so
+                    // keep the typed record but withhold the face from topology.
+                    return Ok(None);
+                }
+                // A face may repeat its carrier through an alias identity. This is
+                // the same carrier incidence, not a multi-surface face.
+            }
+        }
+        if loop_ids.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(B5Face {
+            object_id: record.object_id,
+            surface,
+            loops: loop_ids,
+            terminal_control: record.terminal_control,
+        }))
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
     }
-    if loop_ids.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(B5Face {
-        object_id: record.object_id,
-        surface,
-        loops: loop_ids,
-        terminal_control: record.terminal_control,
-    }))
+    Ok(output)
 }
 
 fn parse_face_record(
     ctx: &DecodeContext<'_>,
     record: &B5Record,
 ) -> Result<Option<B5FaceRecord>, CodecError> {
-    if record.class != 0x5f {
-        return Ok(None);
-    }
-    if let Some(count) = record
-        .payload
-        .first()
-        .and_then(|lead| lead.checked_sub(0x80))
-    {
-        if count == 0 {
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_parse_face_record_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        if record.class != 0x5f {
             return Ok(None);
         }
-        let mut position = 1;
-        let Some(references) = ctx.collect_options(
-            (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
-            "catia_b5_counted_face_references",
-        )?
-        else {
-            return Ok(None);
-        };
-        let Some(&[terminal_control]) = record.payload.get(position..) else {
-            return Ok(None);
-        };
-        let Some(terminal_control) = B5FramingControl::from_byte(terminal_control) else {
-            return Ok(None);
-        };
-        Ok(Some(B5FaceRecord {
-            object_id: record.object_id,
-            references,
-            terminal_control: Some(terminal_control),
-        }))
-    } else {
-        let Some(references) = uncounted_references(ctx, &record.payload)? else {
-            return Ok(None);
-        };
-        Ok((!references.is_empty()).then_some(B5FaceRecord {
-            object_id: record.object_id,
-            references,
-            terminal_control: None,
-        }))
+        if let Some(count) = record
+            .payload
+            .first()
+            .and_then(|lead| lead.checked_sub(0x80))
+        {
+            if count == 0 {
+                return Ok(None);
+            }
+            let mut position = 1;
+            let Some(references) = ctx.collect_options(
+                (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
+                "catia_b5_counted_face_references",
+            )?
+            else {
+                return Ok(None);
+            };
+            let Some(&[terminal_control]) = record.payload.get(position..) else {
+                return Ok(None);
+            };
+            let Some(terminal_control) = B5FramingControl::from_byte(terminal_control) else {
+                return Ok(None);
+            };
+            Ok(Some(B5FaceRecord {
+                object_id: record.object_id,
+                references,
+                terminal_control: Some(terminal_control),
+            }))
+        } else {
+            let Some(references) = uncounted_references(ctx, &record.payload)? else {
+                return Ok(None);
+            };
+            Ok((!references.is_empty()).then_some(B5FaceRecord {
+                object_id: record.object_id,
+                references,
+                terminal_control: None,
+            }))
+        }
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
     }
+    Ok(output)
 }
 
 /// Read every structurally complete face record independently of target
@@ -8461,36 +8530,42 @@ fn parse_loop_record(
     ctx: &DecodeContext<'_>,
     record: &B5Record,
 ) -> Result<Option<B5Loop>, CodecError> {
-    let Some((references, metadata, edge_controls)) = loop_references_and_metadata(ctx, record)?
-    else {
-        return Ok(None);
-    };
-    let Some(&surface) = references.last() else {
-        return Ok(None);
-    };
-    let pairs = &references[..references.len() - 1];
-    if pairs.len() / 2 != edge_controls.len() {
-        return Ok(None);
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_parse_loop_record_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        let mut input_storage = ctx.reserve_scoped(0, "catia_b5_loop_record_inputs")?;
+        let Some((references, metadata, edge_controls)) =
+            input_storage.with_storage(|| loop_references_and_metadata(ctx, record))?
+        else {
+            return Ok(None);
+        };
+        let Some(&surface) = references.last() else {
+            return Ok(None);
+        };
+        let pairs = &references[..references.len() - 1];
+        if pairs.len() / 2 != edge_controls.len() {
+            return Ok(None);
+        }
+        let members = ctx.collect_vec(
+            ctx.admit_iter(&edge_controls, "catia_b5_loop_member_pair_scan")?
+                .zip(pairs.chunks_exact(2))
+                .map(|(controls, pair)| B5LoopMember {
+                    pcurve: pair[0],
+                    edge: pair[1],
+                    controls: *controls,
+                }),
+            "catia_b5_loop_members",
+        )?;
+        Ok(Some(B5Loop {
+            object_id: record.object_id,
+            members,
+            metadata,
+            surface,
+        }))
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
     }
-    let pair_width = NonZeroUsize::new(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_loop_member_pair_width", 0, 1))?;
-    let members = ctx.collect_vec(
-        ctx.admit_iter(pairs, "catia_b5_loop_member_pair_scan")?
-            .chunks(pair_width)
-            .zip(ctx.admit_iter(&edge_controls, "catia_b5_loop_edge_control_scan")?)
-            .map(|(pair, controls)| B5LoopMember {
-                pcurve: pair[0],
-                edge: pair[1],
-                controls: *controls,
-            }),
-        "catia_b5_loop_members",
-    )?;
-    Ok(Some(B5Loop {
-        object_id: record.object_id,
-        members,
-        metadata,
-        surface,
-    }))
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -8506,114 +8581,129 @@ fn loop_references_and_metadata(
     ctx: &DecodeContext<'_>,
     record: &B5Record,
 ) -> LoopReferencesOutput {
-    if record.class != 0x62 {
-        return Ok(None);
+    let mut output_storage =
+        ctx.reserve_scoped(0, "catia_b5_loop_references_and_metadata_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        if record.class != 0x62 {
+            return Ok(None);
+        }
+        let mut position = 0;
+        let Some(count) = counted_cardinality(&record.payload, &mut position) else {
+            return Ok(None);
+        };
+        if count < 3 || count % 2 == 0 {
+            return Ok(None);
+        }
+        let Some(references) = ctx.collect_options(
+            (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
+            "catia_b5_loop_references",
+        )?
+        else {
+            return Ok(None);
+        };
+        let edge_count = (count - 1) / 2;
+        if counted_cardinality(&record.payload, &mut position) != Some(edge_count) {
+            return Ok(None);
+        }
+        let Some(bytes) = record.payload.get(position..) else {
+            return Ok(None);
+        };
+        let Some((metadata, edge_controls)) = loop_metadata(ctx, bytes, edge_count)? else {
+            return Ok(None);
+        };
+        Ok(Some((references, metadata, edge_controls)))
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
     }
-    let mut position = 0;
-    let Some(count) = counted_cardinality(&record.payload, &mut position) else {
-        return Ok(None);
-    };
-    if count < 3 || count % 2 == 0 {
-        return Ok(None);
-    }
-    let Some(references) = ctx.collect_options(
-        (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
-        "catia_b5_loop_references",
-    )?
-    else {
-        return Ok(None);
-    };
-    let edge_count = (count - 1) / 2;
-    if counted_cardinality(&record.payload, &mut position) != Some(edge_count) {
-        return Ok(None);
-    }
-    let Some(bytes) = record.payload.get(position..) else {
-        return Ok(None);
-    };
-    let Some((metadata, edge_controls)) = loop_metadata(ctx, bytes, edge_count)? else {
-        return Ok(None);
-    };
-    Ok(Some((references, metadata, edge_controls)))
+    Ok(output)
 }
 
 fn loop_metadata(ctx: &DecodeContext<'_>, bytes: &[u8], edge_count: usize) -> LoopMetadataOutput {
-    let Some((controls_end, framing_controls)) = (|| {
-        let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
-        let controls_end = 3usize.checked_add(controls_len)?;
-        let framing_controls = [
-            B5FramingControl::from_byte(*bytes.first()?)?,
-            B5FramingControl::from_byte(*bytes.get(1)?)?,
-        ];
-        Some((controls_end, framing_controls))
-    })() else {
-        return Ok(None);
-    };
-    if bytes.get(2) != Some(&0x03) || controls_end > bytes.len() {
-        return Ok(None);
-    }
-    let Some(edge_controls) = ctx.collect_options(
-        bytes[3..controls_end].chunks_exact(6).map(|controls| {
-            let mut view = View::over_retained(controls);
-            let controls = [view.i16_le()?, view.i16_le()?, view.i16_le()?];
-            controls
-                .iter()
-                .all(|control| matches!(control, -1 | 1))
-                .then_some(controls)
-        }),
-        "catia_b5_loop_edge_controls",
-    )?
-    else {
-        return Ok(None);
-    };
-    let extension = (|| -> Option<_> {
-        Some(match bytes.get(controls_end..)? {
-            [0x01] => None,
-            extended
-                if extended.len() == 62
-                    && extended[0] == 0x0d
-                    && extended.get(33..35) == Some(&[0x05, 0x05])
-                    && extended[35] & 1 == 1
-                    && extended.get(36..38) == Some(&[0x05, 0x01]) =>
-            {
-                let mut view = View::over_retained(extended);
-                view.seek(1)?;
-                let scalars = [
-                    FiniteReal::new(view.f64_le()?)?,
-                    FiniteReal::new(view.f64_le()?)?,
-                    FiniteReal::new(view.f64_le()?)?,
-                    FiniteReal::new(view.f64_le()?)?,
-                ];
-                view.seek(38)?;
-                let floats = [
-                    view.f32_le()?,
-                    view.f32_le()?,
-                    view.f32_le()?,
-                    view.f32_le()?,
-                    view.f32_le()?,
-                    view.f32_le()?,
-                ];
-                if floats.iter().any(|value| !value.is_finite()) {
-                    return None;
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_loop_metadata_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        let Some((controls_end, framing_controls)) = (|| {
+            let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
+            let controls_end = 3usize.checked_add(controls_len)?;
+            let framing_controls = [
+                B5FramingControl::from_byte(*bytes.first()?)?,
+                B5FramingControl::from_byte(*bytes.get(1)?)?,
+            ];
+            Some((controls_end, framing_controls))
+        })() else {
+            return Ok(None);
+        };
+        if bytes.get(2) != Some(&0x03) || controls_end > bytes.len() {
+            return Ok(None);
+        }
+        let Some(edge_controls) = ctx.collect_options(
+            bytes[3..controls_end].chunks_exact(6).map(|controls| {
+                let mut view = View::over_retained(controls);
+                let controls = [view.i16_le()?, view.i16_le()?, view.i16_le()?];
+                controls
+                    .iter()
+                    .all(|control| matches!(control, -1 | 1))
+                    .then_some(controls)
+            }),
+            "catia_b5_loop_edge_controls",
+        )?
+        else {
+            return Ok(None);
+        };
+        let extension = (|| -> Option<_> {
+            Some(match bytes.get(controls_end..)? {
+                [0x01] => None,
+                extended
+                    if extended.len() == 62
+                        && extended[0] == 0x0d
+                        && extended.get(33..35) == Some(&[0x05, 0x05])
+                        && extended[35] & 1 == 1
+                        && extended.get(36..38) == Some(&[0x05, 0x01]) =>
+                {
+                    let mut view = View::over_retained(extended);
+                    view.seek(1)?;
+                    let scalars = [
+                        FiniteReal::new(view.f64_le()?)?,
+                        FiniteReal::new(view.f64_le()?)?,
+                        FiniteReal::new(view.f64_le()?)?,
+                        FiniteReal::new(view.f64_le()?)?,
+                    ];
+                    view.seek(38)?;
+                    let floats = [
+                        view.f32_le()?,
+                        view.f32_le()?,
+                        view.f32_le()?,
+                        view.f32_le()?,
+                        view.f32_le()?,
+                        view.f32_le()?,
+                    ];
+                    if floats.iter().any(|value| !value.is_finite()) {
+                        return None;
+                    }
+                    Some(B5LoopMetadataExtension {
+                        scalars,
+                        control: extended[35],
+                        floats,
+                    })
                 }
-                Some(B5LoopMetadataExtension {
-                    scalars,
-                    control: extended[35],
-                    floats,
-                })
-            }
-            _ => return None,
-        })
-    })();
-    let Some(extension) = extension else {
-        return Ok(None);
-    };
-    Ok(Some((
-        B5LoopMetadata {
-            framing_controls,
-            extension,
-        },
-        edge_controls,
-    )))
+                _ => return None,
+            })
+        })();
+        let Some(extension) = extension else {
+            return Ok(None);
+        };
+        Ok(Some((
+            B5LoopMetadata {
+                framing_controls,
+                extension,
+            },
+            edge_controls,
+        )))
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
+    }
+    Ok(output)
 }
 
 fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
@@ -8630,19 +8720,23 @@ fn uncounted_references(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let mut position = 0;
-    let mut references = Vec::new();
-    while position < bytes.len() {
-        let Some(reference) = wire::tokens::object_ref(bytes, &mut position, true) else {
-            return Ok(None);
-        };
-        ctx.push_vec(
-            &mut references,
-            reference,
+    let mut output_storage = ctx.reserve_scoped(0, "catia_b5_uncounted_references_output")?;
+    let output = output_storage.with_storage(|| -> Result<_, CodecError> {
+        let mut position = 0;
+        ctx.collect_options(
+            std::iter::from_fn(|| {
+                if position == bytes.len() {
+                    return None;
+                }
+                Some(wire::tokens::object_ref(bytes, &mut position, true))
+            }),
             "catia_b5_uncounted_face_references",
-        )?;
+        )
+    })?;
+    if output.is_some() {
+        output_storage.commit()?;
     }
-    Ok(Some(references))
+    Ok(output)
 }
 
 #[cfg(test)]

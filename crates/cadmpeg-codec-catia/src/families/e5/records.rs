@@ -730,79 +730,80 @@ fn e5_nurbs_surface(
     record: E5Frame,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<SurfaceGeometry>, CodecError> {
-    let Some(mut view) = View::over_retained(data).child(record.payload_start(), record.end())
-    else {
-        return Ok(None);
-    };
-    if view.u8() != Some(0x80) {
-        return Ok(None);
-    }
-    let (Some(u_axis), Some(v_axis)) = (read_nurbs_axis(&mut view), read_nurbs_axis(&mut view))
-    else {
-        return Ok(None);
-    };
-    let Some((u_knots, u_count)) = expand_nurbs_axis(ctx, &u_axis, record.size)? else {
-        return Ok(None);
-    };
-    let Some((v_knots, v_count)) = expand_nurbs_axis(ctx, &v_axis, record.size)? else {
-        return Ok(None);
-    };
-    let Some(mode) = view.u16_le() else {
-        return Ok(None);
-    };
-    if !matches!(mode, 0 | 1) {
-        return Ok(None);
-    }
-    let Some(control_count) = u_count.checked_mul(v_count) else {
-        return Ok(None);
-    };
-    let Some(points) = control_count
-        .checked_mul(24)
-        .and_then(|bytes| view.take(bytes))
-    else {
-        return Ok(None);
-    };
-    let weights = if mode == 1 {
-        let Some(weights) = control_count
-            .checked_mul(8)
+    let mut geometry_storage = ctx.reserve_scoped(0, "catia_e5_nurbs_surface_geometry")?;
+    let constructed = geometry_storage.with_storage(|| {
+        let Some(mut view) = View::over_retained(data).child(record.payload_start(), record.end())
+        else {
+            return Ok(None);
+        };
+        if view.u8() != Some(0x80) {
+            return Ok(None);
+        }
+        let (Some(u_axis), Some(v_axis)) = (read_nurbs_axis(&mut view), read_nurbs_axis(&mut view))
+        else {
+            return Ok(None);
+        };
+        let Some((u_knots, u_count)) = expand_nurbs_axis(ctx, &u_axis, record.size)? else {
+            return Ok(None);
+        };
+        let Some((v_knots, v_count)) = expand_nurbs_axis(ctx, &v_axis, record.size)? else {
+            return Ok(None);
+        };
+        let Some(mode) = view.u16_le() else {
+            return Ok(None);
+        };
+        if !matches!(mode, 0 | 1) {
+            return Ok(None);
+        }
+        let Some(control_count) = u_count.checked_mul(v_count) else {
+            return Ok(None);
+        };
+        let Some(points) = control_count
+            .checked_mul(24)
             .and_then(|bytes| view.take(bytes))
         else {
             return Ok(None);
         };
-        Some(weights)
-    } else {
-        None
-    };
-    if view.remaining() != E5_NURBS_SURFACE_TAIL_BYTES {
-        return Ok(None);
-    }
-    // The grid is built from the borrowed lanes and retained only when every
-    // pole is admissible.
-    let mut storage = ctx.reserve_scoped(0, "catia_e5_nurbs_pole_rows")?;
-    let poles = match weights {
-        None => storage
-            .with_storage(|| {
-                nurbs_pole_rows(ctx, u_count, v_count, |index| f64_point(points, index * 24))
-            })?
-            .map(|rows| cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows }),
-        Some(weights) => storage
-            .with_storage(|| {
-                nurbs_pole_rows(ctx, u_count, v_count, |index| {
-                    Some(cadmpeg_ir::geometry::nurbs::WeightedPole3 {
-                        point: f64_point(points, index * 24)?,
-                        weight: View::f64_le_at(weights, index * 8).and_then(NonZeroReal::new)?,
+        let weights = if mode == 1 {
+            let Some(weights) = control_count
+                .checked_mul(8)
+                .and_then(|bytes| view.take(bytes))
+            else {
+                return Ok(None);
+            };
+            Some(weights)
+        } else {
+            None
+        };
+        if view.remaining() != E5_NURBS_SURFACE_TAIL_BYTES {
+            return Ok(None);
+        }
+        // The grid is built from the borrowed lanes and retained only when every
+        // pole is admissible.
+        let mut storage = ctx.reserve_scoped(0, "catia_e5_nurbs_pole_rows")?;
+        let poles = match weights {
+            None => storage
+                .with_storage(|| {
+                    nurbs_pole_rows(ctx, u_count, v_count, |index| f64_point(points, index * 24))
+                })?
+                .map(|rows| cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows }),
+            Some(weights) => storage
+                .with_storage(|| {
+                    nurbs_pole_rows(ctx, u_count, v_count, |index| {
+                        Some(cadmpeg_ir::geometry::nurbs::WeightedPole3 {
+                            point: f64_point(points, index * 24)?,
+                            weight: View::f64_le_at(weights, index * 8)
+                                .and_then(NonZeroReal::new)?,
+                        })
                     })
-                })
-            })?
-            .map(|rows| cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows }),
-    };
-    let Some(poles) = poles else {
-        return Ok(None);
-    };
-    storage.commit()?;
-    crate::nurbs::note_refusal(
-        ctx,
-        NurbsSurface::new(
+                })?
+                .map(|rows| cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows }),
+        };
+        let Some(poles) = poles else {
+            return Ok(None);
+        };
+        storage.commit()?;
+        Ok::<_, CodecError>(Some(NurbsSurface::new(
             ctx,
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 u_axis.degree,
@@ -818,15 +819,23 @@ fn e5_nurbs_surface(
             ),
             poles,
             false,
-        )?,
+        )?))
+    })?;
+    let Some(constructed) = constructed else {
+        return Ok(None);
+    };
+    let surface = crate::nurbs::note_refusal(
+        ctx,
+        constructed,
         refusal,
         format_args!("e5 NURBS surface record at byte {}", record.pos),
-    )
-    .map(|surface| {
-        surface
-            .map(SolvedSurfaceGeometry::Nurbs)
-            .map(SurfaceGeometry::Solved)
-    })
+    )?;
+    if surface.is_some() {
+        geometry_storage.commit()?;
+    }
+    Ok(surface
+        .map(SolvedSurfaceGeometry::Nurbs)
+        .map(SurfaceGeometry::Solved))
 }
 
 /// Builds `u_count` rows of `v_count` poles read by grid index, absent when a
@@ -1237,6 +1246,23 @@ mod tests {
     #[test]
     fn e5_width_coded_reference_widens_before_shifting() {
         assert_eq!(e5_ref(&[0x10, 0xff], 0), Some((0xff00, 2)));
+    }
+
+    #[test]
+    fn e7_rejected_nurbs_surface_releases_axis_and_pole_lanes() {
+        let mut payload = nurbs_surface_payload(1);
+        payload.pop();
+        let mut bytes = Vec::new();
+        append_e5_record(&mut bytes, 0xe7, 116, &payload);
+        crate::test_support::with_retained_limit(0, |ctx| {
+            for _ in 0..4 {
+                assert!(
+                    e5_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+                        .expect("rejected surface scratch")
+                        .is_empty()
+                );
+            }
+        });
     }
 
     #[test]

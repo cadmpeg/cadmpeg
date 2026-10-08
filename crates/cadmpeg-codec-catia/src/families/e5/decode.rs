@@ -879,7 +879,7 @@ fn solve_e5_plane_frame(
             ctx.reserve_vec(&mut pairs, pair_count, "catia_e5_plane_pairs")?;
             for (segment, &reversed) in ctx
                 .admit_iter(&segments, "catia_e5_plane_pair_segment_scan")?
-                .zip(ctx.admit_iter(&orientations, "catia_e5_plane_orientation_scan")?)
+                .zip(&orientations)
             {
                 pairs.extend(endpoint_pairs(segment, reversed));
             }
@@ -926,7 +926,7 @@ fn solve_e5_plane_frame(
             ctx.reserve_vec(&mut pairs, pair_count, "catia_e5_plane_pairs")?;
             for (segment, &reversed) in ctx
                 .admit_iter(&segments, "catia_e5_plane_pair_segment_scan")?
-                .zip(ctx.admit_iter(&orientations, "catia_e5_plane_orientation_scan")?)
+                .zip(&orientations)
             {
                 pairs.extend(endpoint_pairs(segment, reversed));
             }
@@ -937,9 +937,8 @@ fn solve_e5_plane_frame(
     }
 
     let mut candidates: Vec<(UnitVector3, UnitVector3)> = Vec::new();
-    for ((u_axis, v_axis, residual), pairs) in
-        ctx.admit_iter(&fitted_axes, "catia_e5_plane_fit_scan")?
-    {
+    // At most four anchor masks produce candidates; their pair lanes vary.
+    for ((u_axis, v_axis, residual), pairs) in &fitted_axes {
         let Some(u_axis) = unit_vector(*u_axis) else {
             continue;
         };
@@ -980,16 +979,10 @@ fn solve_e5_plane_frame(
         }) {
             continue;
         }
-        if !ctx.any_by(
-            &candidates,
-            |(existing_normal, existing_u)| {
-                Ok(
-                    existing_normal.as_raw().dot(*normal.as_raw()) > 1.0 - EPS_AXIS_ALIGN
-                        && existing_u.as_raw().dot(*u_axis.as_raw()) > 1.0 - EPS_AXIS_ALIGN,
-                )
-            },
-            "catia_e5_plane_candidate_duplicate_scan",
-        )? {
+        if !candidates.iter().any(|(existing_normal, existing_u)| {
+            existing_normal.as_raw().dot(*normal.as_raw()) > 1.0 - EPS_AXIS_ALIGN
+                && existing_u.as_raw().dot(*u_axis.as_raw()) > 1.0 - EPS_AXIS_ALIGN
+        }) {
             ctx.push_vec(
                 &mut candidates,
                 (normal, u_axis),
@@ -998,10 +991,7 @@ fn solve_e5_plane_frame(
         }
     }
     let mut canonical: Vec<(UnitVector3, UnitVector3, [FiniteReal; 2])> = Vec::new();
-    for (normal, mut u_axis) in ctx
-        .admit_iter(&candidates, "catia_e5_plane_candidate_canonical_scan")?
-        .copied()
-    {
+    for (normal, mut u_axis) in candidates.iter().copied() {
         let Some(first) = [u_axis.as_raw().x, u_axis.as_raw().y, u_axis.as_raw().z]
             .into_iter()
             .find(|value| value.abs() > EPS_E5_DECODE_EXACT_GEOMETRY)
@@ -1014,16 +1004,10 @@ fn solve_e5_plane_frame(
         } else {
             [FiniteReal::ONE; 2]
         };
-        if !ctx.any_by(
-            &canonical,
-            |(existing_normal, existing_u, _)| {
-                Ok(
-                    existing_normal.as_raw().dot(*normal.as_raw()) > 1.0 - EPS_AXIS_ALIGN
-                        && existing_u.as_raw().dot(*u_axis.as_raw()) > 1.0 - EPS_AXIS_ALIGN,
-                )
-            },
-            "catia_e5_plane_canonical_duplicate_scan",
-        )? {
+        if !canonical.iter().any(|(existing_normal, existing_u, _)| {
+            existing_normal.as_raw().dot(*normal.as_raw()) > 1.0 - EPS_AXIS_ALIGN
+                && existing_u.as_raw().dot(*u_axis.as_raw()) > 1.0 - EPS_AXIS_ALIGN
+        }) {
             ctx.push_vec(
                 &mut canonical,
                 (normal, u_axis, uv_scale),
@@ -1425,10 +1409,11 @@ impl<'a> E5LoopPlan<'a> {
                 E5MemberPlan {
                     source: member,
                     orientation,
-                    id: CoedgeId::compose(
-                        &cadmpeg_ir::identity_namespace!("catia", "e5", "coedge"),
-                        cadmpeg_ir::ids::IdentityKey::from(source.record_id).dash(index),
-                    ),
+                    id: CoedgeId::mint(ctx.format_retained(
+                        format_args!("catia:e5:coedge#{}-{index}", source.record_id),
+                        "catia_e5_loop_plan_coedge_id",
+                    )?)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 },
                 "catia_e5_loop_plan_members",
             )?;
@@ -2889,23 +2874,33 @@ fn emit_e5_faces_loops_coedges(
     let mut steps = boundary.faces.iter();
     while let Some(face_plan) = ctx.next_charged(&mut steps, "catia_e5_emitted_face_plan_scan")? {
         let face = face_plan.source;
-        let face_id = crate::resource::compose_u32_id(
-            ctx,
-            &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
-            face.record_id,
-            FaceId::mint,
-            "catia_e5_face_id",
-        )?;
-        let mut loop_ids = Vec::new();
-        ctx.reserve_vec(&mut loop_ids, face.loops.len(), "catia_e5_face_loop_ids")?;
-        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_emitted_face_loop_id_scan")? {
-            loop_ids.push(crate::resource::compose_u32_id(
+        let mut identity_storage = ctx.reserve_scoped(0, "catia_e5_emitted_identity_scratch")?;
+        let face_id = identity_storage.with_storage(|| {
+            crate::resource::compose_u32_id(
                 ctx,
-                &cadmpeg_ir::identity_namespace!("catia", "e5", "loop"),
-                loop_.record_id,
-                LoopId::mint,
-                "catia_e5_face_loop_id",
-            )?);
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
+                face.record_id,
+                FaceId::mint,
+                "catia_e5_face_id",
+            )
+        })?;
+        let mut loop_ids = Vec::new();
+        ctx.reserve_scoped_vec(
+            &mut identity_storage,
+            &mut loop_ids,
+            face.loops.len(),
+            "catia_e5_face_loop_ids",
+        )?;
+        for loop_ in ctx.admit_iter(&face.loops, "catia_e5_emitted_face_loop_id_scan")? {
+            loop_ids.push(identity_storage.with_storage(|| {
+                crate::resource::compose_u32_id(
+                    ctx,
+                    &cadmpeg_ir::identity_namespace!("catia", "e5", "loop"),
+                    loop_.record_id,
+                    LoopId::mint,
+                    "catia_e5_face_loop_id",
+                )
+            })?);
         }
         annotate(
             ctx,
@@ -2962,13 +2957,15 @@ fn emit_e5_faces_loops_coedges(
             ctx.next_charged(&mut steps, "catia_e5_emitted_loop_plan_scan")?
         {
             let loop_ = loop_plan.source;
-            let loop_id = crate::resource::compose_u32_id(
-                ctx,
-                &cadmpeg_ir::identity_namespace!("catia", "e5", "loop"),
-                loop_.record_id,
-                LoopId::mint,
-                "catia_e5_loop_id",
-            )?;
+            let loop_id = identity_storage.with_storage(|| {
+                crate::resource::compose_u32_id(
+                    ctx,
+                    &cadmpeg_ir::identity_namespace!("catia", "e5", "loop"),
+                    loop_.record_id,
+                    LoopId::mint,
+                    "catia_e5_loop_id",
+                )
+            })?;
             let members = &loop_plan.members;
             let mut coedge_ids = Vec::new();
             let mut vertex_uses = Vec::new();
@@ -3715,7 +3712,11 @@ fn e5_support_occurrence_intersection_context(
     let [left, right] = sides else {
         return Ok(None);
     };
-    if left.surface == right.surface {
+    if ctx.equal(
+        &left.surface,
+        &right.surface,
+        "catia_e5_occurrence_surface_compare",
+    )? {
         return Ok(None);
     }
     if !e5_parameter_range_is_valid(support_range)
