@@ -294,7 +294,9 @@ struct InstanceJournal<'a> {
 }
 
 impl<'a> InstanceJournal<'a> {
-    fn new(ctx: &'a cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
+    fn new(
+        ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             rows: BTreeMap::new(),
             storage: ctx.reserve_scoped(0, "Rhino instance touched rows")?,
@@ -308,12 +310,20 @@ impl<'a> InstanceJournal<'a> {
         source_order: usize,
         link: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let row = ctx.get_mut_btree_map(&mut self.rows, &source_order, "Rhino instance added link row")?
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino instance row checkpoint is missing"))?;
-        let key = ctx.copy_scoped_text(link, &mut self.storage, "Rhino instance added link copy")?;
-        self.storage.with_storage(|| ctx.insert_btree_set(
-            &mut row.additions, key, "Rhino instance added links",
-        ))?;
+        let row = ctx
+            .get_mut_btree_map(
+                &mut self.rows,
+                &source_order,
+                "Rhino instance added link row",
+            )?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino instance row checkpoint is missing")
+            })?;
+        let key =
+            ctx.copy_scoped_text(link, &mut self.storage, "Rhino instance added link copy")?;
+        self.storage.with_storage(|| {
+            ctx.insert_btree_set(&mut row.additions, key, "Rhino instance added links")
+        })?;
         Ok(())
     }
 }
@@ -644,12 +654,19 @@ impl<'a> DecodeContext<'a> {
         self.session.unknowns().len()
     }
 
-    fn checkpoint_instance_row(&mut self, source_order: usize) -> Result<(), cadmpeg_core::CodecError> {
+    fn checkpoint_instance_row(
+        &mut self,
+        source_order: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(journal) = &mut self.instance_journal else {
             return Ok(());
         };
         let ctx = self.expand.ctx();
-        if ctx.contains_key_btree_map(&journal.rows, &source_order, "Rhino instance row checkpoint lookup")? {
+        if ctx.contains_key_btree_map(
+            &journal.rows,
+            &source_order,
+            "Rhino instance row checkpoint lookup",
+        )? {
             return Ok(());
         }
         if self.session.unknowns().get(source_order).is_none() {
@@ -658,12 +675,17 @@ impl<'a> DecodeContext<'a> {
         let status = self.statuses.get(source_order).copied().ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("Rhino instance status is missing")
         })?;
-        journal.storage.with_storage(|| ctx.insert_btree_map(
-            &mut journal.rows,
-            source_order,
-            InstanceRowSnapshot { status, additions: BTreeSet::new() },
-            "Rhino instance touched rows",
-        ))?;
+        journal.storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut journal.rows,
+                source_order,
+                InstanceRowSnapshot {
+                    status,
+                    additions: BTreeSet::new(),
+                },
+                "Rhino instance touched rows",
+            )
+        })?;
         Ok(())
     }
 
@@ -672,16 +694,30 @@ impl<'a> DecodeContext<'a> {
             cadmpeg_core::CodecError::malformed("Rhino instance journal is missing")
         })?;
         let ctx = self.expand.ctx();
-        for (position, row) in ctx.admit_iter(journal.rows, "Rhino instance row rollback traversal")? {
+        for (position, row) in
+            ctx.admit_iter(journal.rows, "Rhino instance row rollback traversal")?
+        {
             let (_, links) = self.session.unknown_links_mut(position).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("Rhino source record disappeared during instance expansion")
+                cadmpeg_core::CodecError::malformed(
+                    "Rhino source record disappeared during instance expansion",
+                )
             })?;
             let status = self.statuses.get_mut(position).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("Rhino instance status disappeared during expansion")
+                cadmpeg_core::CodecError::malformed(
+                    "Rhino instance status disappeared during expansion",
+                )
             })?;
-            ctx.retain_vec(links, |link| Ok(!ctx.contains_btree_set(
-                &row.additions, link.as_str(), "Rhino instance rollback link lookup",
-            )?), "Rhino instance rollback links")?;
+            ctx.retain_vec(
+                links,
+                |link| {
+                    Ok(!ctx.contains_btree_set(
+                        &row.additions,
+                        link.as_str(),
+                        "Rhino instance rollback link lookup",
+                    )?)
+                },
+                "Rhino instance rollback links",
+            )?;
             *status = row.status;
         }
         Ok(())
@@ -697,7 +733,15 @@ impl<'a> DecodeContext<'a> {
         let Some((id, links)) = self.session.unknown_links_mut(source_order) else {
             return Ok(false);
         };
-        append_link_to_record(self.expand.ctx(), id, links, link, self.instance_journal.as_mut().map(|journal| (journal, source_order)))
+        append_link_to_record(
+            self.expand.ctx(),
+            id,
+            links,
+            link,
+            self.instance_journal
+                .as_mut()
+                .map(|journal| (journal, source_order)),
+        )
     }
 
     fn append_links(
@@ -750,7 +794,11 @@ impl<'a> DecodeContext<'a> {
             {
                 let copy = if let Some(journal) = &mut self.instance_journal {
                     journal.record_link(ctx, source_order, link)?;
-                    ctx.copy_scoped_text(link, &mut journal.field_text_storage, "Rhino unknown record link copy")?
+                    ctx.copy_scoped_text(
+                        link,
+                        &mut journal.field_text_storage,
+                        "Rhino unknown record link copy",
+                    )?
                 } else {
                     ctx.copy_retained_text(link, "Rhino unknown record link copy")?
                 };
@@ -1475,10 +1523,12 @@ impl<'a> DecodeContext<'a> {
         let Some((key, _key_storage)) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
-        let (association, _association_storage) = self.expand.ctx().with_scoped_storage(
-            "Rhino borrowed source association",
-            || self.source_association(identity),
-        )?;
+        let (association, _association_storage) = self
+            .expand
+            .ctx()
+            .with_scoped_storage("Rhino borrowed source association", || {
+                self.source_association(identity)
+            })?;
         let feature_id = {
             let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
             copied_storage.with_storage(|| {
@@ -1505,7 +1555,9 @@ impl<'a> DecodeContext<'a> {
             }
         };
         let mut hatch_loops = hatch.loops.iter_mut();
-        while let Some(hatch_loop) = ctx.next_charged(&mut hatch_loops, "Rhino hatch placement traversal")? {
+        while let Some(hatch_loop) =
+            ctx.next_charged(&mut hatch_loops, "Rhino hatch placement traversal")?
+        {
             match transform_decoded_curve(self.expand.ctx(), &mut hatch_loop.curve, transform) {
                 Ok(()) => {}
                 Err(ReferenceFailure::Codec(error)) => return Err(error),
@@ -1828,10 +1880,12 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let mut link_storage = ctx.reserve_scoped(0, "Rhino source link scratch")?;
-        let (association, _association_storage) = self.expand.ctx().with_scoped_storage(
-            "Rhino borrowed source association",
-            || self.source_association(identity),
-        )?;
+        let (association, _association_storage) = self
+            .expand
+            .ctx()
+            .with_scoped_storage("Rhino borrowed source association", || {
+                self.source_association(identity)
+            })?;
         let curve_id = ctx.format_scoped_text(
             &mut link_storage,
             format_args!("rhino:object:curve#{key}.detail-boundary"),
@@ -2794,12 +2848,16 @@ impl<'a> DecodeContext<'a> {
         });
         let result = (|| {
             let mut links = Vec::new();
-            let mut backing = self.expand.ctx().reserve_scoped(0, "Rhino instance link slots")?;
+            let mut backing = self
+                .expand
+                .ctx()
+                .reserve_scoped(0, "Rhino instance link slots")?;
             let mut members = definition_members.iter();
-            while let Some(&member_id) = self.expand.ctx().next_charged(
-                &mut members,
-                "Rhino instance definition members",
-            )? {
+            while let Some(&member_id) = self
+                .expand
+                .ctx()
+                .next_charged(&mut members, "Rhino instance definition members")?
+            {
                 self.expansion_budget.member(self.expand.ctx())?;
                 self.expand
                     .ctx()
@@ -2868,7 +2926,10 @@ impl<'a> DecodeContext<'a> {
                     )
                 })?;
             }
-            Ok(InstanceLinks { values: links, _backing: backing })
+            Ok(InstanceLinks {
+                values: links,
+                _backing: backing,
+            })
         })();
         self.instance_display = previous_display;
         path.pop();
@@ -2898,7 +2959,12 @@ impl<'a> DecodeContext<'a> {
             )
             .map_err(cadmpeg_core::CodecError::from)?
         {
-            ctx.reserve_scoped_vec(&mut backing, &mut links, 1, "Rhino transformed instance links")?;
+            ctx.reserve_scoped_vec(
+                &mut backing,
+                &mut links,
+                1,
+                "Rhino transformed instance links",
+            )?;
             let id = ctx.format_scoped_text(
                 scratch,
                 format_args!("{}", body.id.as_str()),
@@ -2912,11 +2978,15 @@ impl<'a> DecodeContext<'a> {
                 "Rhino transformed instance annotations",
             )?;
         }
-        let mut point_source = ir.model
-                    .points
-                    .get_mut(before.arena_len::<Point>()..)
-                    .ok_or_else(|| "instance decode removed existing points".to_string())?.iter_mut();
-        while let Some(point) = ctx.next_charged(&mut point_source, "Rhino transformed entity traversal")? {
+        let mut point_source = ir
+            .model
+            .points
+            .get_mut(before.arena_len::<Point>()..)
+            .ok_or_else(|| "instance decode removed existing points".to_string())?
+            .iter_mut();
+        while let Some(point) =
+            ctx.next_charged(&mut point_source, "Rhino transformed entity traversal")?
+        {
             let placed = placed_finite_point(transform, point.position())?;
             point.set_position(placed);
             ctx.push_scoped_vec(
@@ -2926,18 +2996,27 @@ impl<'a> DecodeContext<'a> {
                 "Rhino transformed instance annotations",
             )?;
         }
-        let mut curve_source = ir.model
-                    .curves
-                    .get_mut(before.arena_len::<Curve>()..)
-                    .ok_or_else(|| "instance decode removed existing curves".to_string())?.iter_mut();
-        while let Some(curve) = ctx.next_charged(&mut curve_source, "Rhino transformed entity traversal")? {
+        let mut curve_source = ir
+            .model
+            .curves
+            .get_mut(before.arena_len::<Curve>()..)
+            .ok_or_else(|| "instance decode removed existing curves".to_string())?
+            .iter_mut();
+        while let Some(curve) =
+            ctx.next_charged(&mut curve_source, "Rhino transformed entity traversal")?
+        {
             if let CurveGeometry::Procedural { cache, .. } = &mut curve.geometry {
                 if let Some(cache) = cache.take() {
                     curve.geometry = CurveGeometry::Solved(cache);
                 }
             }
             transform_curve(self.expand.ctx(), curve, transform)?;
-            ctx.reserve_scoped_vec(&mut backing, &mut links, 1, "Rhino transformed instance links")?;
+            ctx.reserve_scoped_vec(
+                &mut backing,
+                &mut links,
+                1,
+                "Rhino transformed instance links",
+            )?;
             let id = ctx.format_scoped_text(
                 scratch,
                 format_args!("{}", curve.id.as_str()),
@@ -2951,18 +3030,27 @@ impl<'a> DecodeContext<'a> {
                 "Rhino transformed instance annotations",
             )?;
         }
-        let mut surface_source = ir.model
-                    .surfaces
-                    .get_mut(before.arena_len::<Surface>()..)
-                    .ok_or_else(|| "instance decode removed existing surfaces".to_string())?.iter_mut();
-        while let Some(surface) = ctx.next_charged(&mut surface_source, "Rhino transformed entity traversal")? {
+        let mut surface_source = ir
+            .model
+            .surfaces
+            .get_mut(before.arena_len::<Surface>()..)
+            .ok_or_else(|| "instance decode removed existing surfaces".to_string())?
+            .iter_mut();
+        while let Some(surface) =
+            ctx.next_charged(&mut surface_source, "Rhino transformed entity traversal")?
+        {
             if let SurfaceGeometry::Procedural { cache, .. } = &mut surface.geometry {
                 if let Some(cache) = cache.take() {
                     surface.geometry = SurfaceGeometry::Solved(cache);
                 }
             }
             transform_surface(ctx, surface, transform)?;
-            ctx.reserve_scoped_vec(&mut backing, &mut links, 1, "Rhino transformed instance links")?;
+            ctx.reserve_scoped_vec(
+                &mut backing,
+                &mut links,
+                1,
+                "Rhino transformed instance links",
+            )?;
             let id = ctx.format_scoped_text(
                 scratch,
                 format_args!("{}", surface.id.as_str()),
@@ -2976,11 +3064,15 @@ impl<'a> DecodeContext<'a> {
                 "Rhino transformed instance annotations",
             )?;
         }
-        let mut mesh_source = ir.model
-                    .tessellations
-                    .get_mut(before.arena_len::<Tessellation>()..)
-                    .ok_or_else(|| "instance decode removed existing tessellations".to_string())?.iter_mut();
-        while let Some(mesh) = ctx.next_charged(&mut mesh_source, "Rhino transformed entity traversal")? {
+        let mut mesh_source = ir
+            .model
+            .tessellations
+            .get_mut(before.arena_len::<Tessellation>()..)
+            .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
+            .iter_mut();
+        while let Some(mesh) =
+            ctx.next_charged(&mut mesh_source, "Rhino transformed entity traversal")?
+        {
             mesh.edit_vertices(|vertex| {
                 *vertex = transform
                     .apply_point(*vertex)
@@ -3027,7 +3119,12 @@ impl<'a> DecodeContext<'a> {
                     .map_or_else(Into::into, ReferenceFailure::Semantic)
                 })?;
             }
-            ctx.reserve_scoped_vec(&mut backing, &mut links, 1, "Rhino transformed instance links")?;
+            ctx.reserve_scoped_vec(
+                &mut backing,
+                &mut links,
+                1,
+                "Rhino transformed instance links",
+            )?;
             let id = ctx.format_scoped_text(
                 scratch,
                 format_args!("{}", mesh.id.as_str()),
@@ -3041,13 +3138,15 @@ impl<'a> DecodeContext<'a> {
                 "Rhino transformed instance annotations",
             )?;
         }
-        let mut subd_source = ir.model
-                    .subds
-                    .get_mut(before.arena_len::<cadmpeg_ir::SubdSurface>()..)
-                    .ok_or_else(|| {
-                        "instance decode removed existing subdivision surfaces".to_string()
-                    })?.iter_mut();
-        while let Some(subd) = ctx.next_charged(&mut subd_source, "Rhino transformed entity traversal")? {
+        let mut subd_source = ir
+            .model
+            .subds
+            .get_mut(before.arena_len::<cadmpeg_ir::SubdSurface>()..)
+            .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?
+            .iter_mut();
+        while let Some(subd) =
+            ctx.next_charged(&mut subd_source, "Rhino transformed entity traversal")?
+        {
             subd.cage
                 .edit_vertices(
                     |vertices| {
@@ -3072,7 +3171,12 @@ impl<'a> DecodeContext<'a> {
                     )
                     .map_or_else(Into::into, ReferenceFailure::Semantic)
                 })?;
-            ctx.reserve_scoped_vec(&mut backing, &mut links, 1, "Rhino transformed instance links")?;
+            ctx.reserve_scoped_vec(
+                &mut backing,
+                &mut links,
+                1,
+                "Rhino transformed instance links",
+            )?;
             let id = ctx.format_scoped_text(
                 scratch,
                 format_args!("{}", subd.id.as_str()),
@@ -3126,7 +3230,10 @@ impl<'a> DecodeContext<'a> {
         {
             annotate_derived(self.expand.ctx(), &mut self.annotations, id)?;
         }
-        Ok(InstanceLinks { values: links, _backing: backing })
+        Ok(InstanceLinks {
+            values: links,
+            _backing: backing,
+        })
     }
 
     fn decode_subd(
@@ -3874,10 +3981,12 @@ impl<'a> DecodeContext<'a> {
         let Some((key, _key_storage)) = self.checked_object_key(identity, source_order)? else {
             return Ok(false);
         };
-        let (association, association_storage) = self.expand.ctx().with_scoped_storage(
-            "Rhino borrowed source association",
-            || self.source_association(identity),
-        )?;
+        let (association, association_storage) = self
+            .expand
+            .ctx()
+            .with_scoped_storage("Rhino borrowed source association", || {
+                self.source_association(identity)
+            })?;
         let Some(unknown) = self
             .session
             .unknowns()
@@ -4462,10 +4571,12 @@ impl<'a> DecodeContext<'a> {
         if extrusion.boundaries.is_empty() {
             return Ok(false);
         }
-        let (association, _association_storage) = self.expand.ctx().with_scoped_storage(
-            "Rhino borrowed source association",
-            || self.source_association(identity),
-        )?;
+        let (association, _association_storage) = self
+            .expand
+            .ctx()
+            .with_scoped_storage("Rhino borrowed source association", || {
+                self.source_association(identity)
+            })?;
         let session = self.expand.ctx();
         let mut source_boundaries = std::mem::take(&mut extrusion.boundaries);
         let mut link_storage = ctx.reserve_scoped(0, "Rhino extrusion link scratch")?;
@@ -4862,10 +4973,12 @@ impl<'a> DecodeContext<'a> {
             self.scan_unbound_unit_warning(source_order, "Brep")?;
             return Ok(());
         };
-        let (association, _association_storage) = self.expand.ctx().with_scoped_storage(
-            "Rhino borrowed source association",
-            || self.source_association(identity),
-        )?;
+        let (association, _association_storage) = self
+            .expand
+            .ctx()
+            .with_scoped_storage("Rhino borrowed source association", || {
+                self.source_association(identity)
+            })?;
         let Some((key, _key_storage)) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
@@ -5158,7 +5271,11 @@ fn append_link_to_record(
     };
     let copy = if let Some((journal, source_order)) = journal {
         journal.record_link(ctx, source_order, link)?;
-        ctx.copy_scoped_text(link, &mut journal.field_text_storage, "Rhino unknown record link copy")?
+        ctx.copy_scoped_text(
+            link,
+            &mut journal.field_text_storage,
+            "Rhino unknown record link copy",
+        )?
     } else {
         ctx.copy_retained_text(link, "Rhino unknown record link copy")?
     };
@@ -5345,7 +5462,9 @@ fn stage_extrusion_caps(
         )?;
         let mut loop_ids = ctx.collection_vec(boundaries.len(), "Rhino extrusion cap loop IDs")?;
         let mut cap_boundaries = boundaries.iter().enumerate();
-        while let Some((profile, committed)) = ctx.next_charged(&mut cap_boundaries, "Rhino stage extrusion caps traversal")? {
+        while let Some((profile, committed)) =
+            ctx.next_charged(&mut cap_boundaries, "Rhino stage extrusion caps traversal")?
+        {
             let boundary = committed.boundary;
             let mut suffix_copy_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
             let suffix = suffix_copy_storage
@@ -6384,7 +6503,9 @@ fn stage_brep(
     )
     .map_err(crate::curves::GeometryError::from)?;
     let mut vertices = raw.vertices.iter().enumerate();
-    while let Some((index, vertex)) = ctx.next_charged(&mut vertices, "Rhino stage brep traversal")? {
+    while let Some((index, vertex)) =
+        ctx.next_charged(&mut vertices, "Rhino stage brep traversal")?
+    {
         let point_id = {
             let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
             copied_storage.with_storage(|| {
@@ -6595,7 +6716,9 @@ fn stage_brep(
     )
     .map_err(crate::curves::GeometryError::from)?;
     let mut loops = resolved.loops.iter().enumerate();
-    while let Some((index, loop_record)) = ctx.next_charged(&mut loops, "Rhino stage brep traversal")? {
+    while let Some((index, loop_record)) =
+        ctx.next_charged(&mut loops, "Rhino stage brep traversal")?
+    {
         let id = {
             let mut copied_storage = ctx.reserve_scoped(0, "Rhino temporary identity key")?;
             copied_storage.with_storage(|| {
@@ -7844,10 +7967,9 @@ fn c2_curve_to_nurbs_join(
                 .map_err(crate::curves::GeometryError::from)?;
             let mut warnings = Diagnostics::new();
             let mut children = children.into_iter().peekable();
-            while let Some((start, child)) = ctx.next_charged(
-                &mut children,
-                "Rhino C2 joined segment traversal",
-            )? {
+            while let Some((start, child)) =
+                ctx.next_charged(&mut children, "Rhino C2 joined segment traversal")?
+            {
                 let end = children.peek().map_or(end_parameter, |(start, _)| *start);
                 let target = [start, end];
                 if target[0] >= target[1] {
@@ -8476,10 +8598,9 @@ fn transform_decoded_curve(
     match curve {
         crate::curves::DecodedCurve::Compound { children, .. } => {
             let mut children = children.iter_mut();
-            while let Some((_, child)) = ctx.next_charged(
-                &mut children,
-                "Rhino curve placement traversal",
-            )? {
+            while let Some((_, child)) =
+                ctx.next_charged(&mut children, "Rhino curve placement traversal")?
+            {
                 transform_decoded_curve(ctx, child, transform)?;
             }
             Ok(())

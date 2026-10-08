@@ -6,9 +6,8 @@ use super::{
     commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
     hatch_loop_ids, hatch_plane_transform, hatch_source_links, region_shell_groups,
     region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
-    stage_brep, stage_curve_tree,
-    stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
-    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    stage_brep, stage_curve_tree, stage_extrusion_caps, transform_decoded_curve, transform_surface,
+    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
     CommittedExtrusionBoundary, CurveCommitSource, DecodeContext, GeometryOutcome,
     ReferenceFailure, ReportBuckets,
 };

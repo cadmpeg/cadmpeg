@@ -149,9 +149,13 @@ fn c2_join_rejects_first_child_without_charging_unused_suffix() {
     // One visit reaches the first child; no later child or terminal step runs.
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = c2_curve_to_nurbs_join(&ctx, compound, 17).err().expect("first child is unrepresentable");
+    let error = c2_curve_to_nurbs_join(&ctx, compound, 17)
+        .err()
+        .expect("first child is unrepresentable");
     assert!(matches!(error, crate::curves::GeometryError::Malformed(_)));
-    assert!(error.to_string().contains("C2 child has no parameter-space representation"));
+    assert!(error
+        .to_string()
+        .contains("C2 child has no parameter-space representation"));
     assert!(ctx.resource_refusal().is_none());
     ctx.finish_session().unwrap();
 }
@@ -174,7 +178,9 @@ fn recursive_curve_walks_preserve_session_depth_refusal() {
             )
             .map_err(|error| match error {
                 super::super::ReferenceFailure::Codec(error) => error,
-                other => panic!("unexpected placement refusal: {other:?}"),
+                other @ super::super::ReferenceFailure::Semantic(_) => {
+                    panic!("unexpected placement refusal: {other:?}")
+                }
             })
         } else {
             c2_curve_to_nurbs_join(&ctx, compound, 0)
@@ -190,13 +196,18 @@ fn recursive_curve_walks_preserve_session_depth_refusal() {
         assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
         assert_eq!(refusal.used, 2);
         assert_eq!(refusal.additional, 1);
-        assert_eq!(refusal.operation, if placement {
-            "Rhino curve placement nesting"
-        } else {
-            "Rhino C2 join nesting"
-        });
+        assert_eq!(
+            refusal.operation,
+            if placement {
+                "Rhino curve placement nesting"
+            } else {
+                "Rhino C2 join nesting"
+            }
+        );
         assert_eq!(ctx.resource_refusal(), Some(refusal));
         drop(caller);
-        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal)
+        );
     }
 }
