@@ -1119,12 +1119,13 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
             self.outcome.exhaust();
             return Ok(());
         }
-        for (directions, next_quotient, next_orientations) in
-            ctx.admit_iter(options, "catia_fixed_direction_options")?
-        {
-            if self.should_stop() {
-                return Ok(());
-            }
+        let mut options = options.into_iter();
+        while !self.should_stop() {
+            let Some((directions, next_quotient, next_orientations)) =
+                ctx.next_charged(&mut options, "catia_fixed_direction_options")?
+            else {
+                break;
+            };
             let previous_orientations =
                 std::mem::replace(&mut self.fixed_edge_orientations, next_orientations);
             self.selected[face] = Some((0, directions));
@@ -1767,8 +1768,9 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
 
             Ok::<_, CodecError>(ranked_options)
         })?;
-        for ((_, assignment_index, directions), next_quotient) in
-            ctx.admit_iter(ranked_options, "catia_search_ranked_options")?
+        let mut ranked_options = ranked_options.into_iter();
+        while let Some(((_, assignment_index, directions), next_quotient)) =
+            ctx.next_charged(&mut ranked_options, "catia_search_ranked_options")?
         {
             let (changed_edges, _changed_edge_storage) = self
                 .ctx
