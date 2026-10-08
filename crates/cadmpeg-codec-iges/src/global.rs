@@ -587,13 +587,17 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, Codec
 }
 
 fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
-    if bytes.first() == Some(&b',') {
-        return Ok((b',', 1));
+    let start = bytes
+        .iter()
+        .position(|byte| *byte != b' ')
+        .unwrap_or(bytes.len());
+    if bytes.get(start) == Some(&b',') {
+        return Ok((b',', start + 1));
     }
-    let Some((payload, cursor)) = hollerith(bytes, 0)? else {
+    let Some((payload, cursor)) = hollerith(bytes, start)? else {
         return Err(malformed("parameter delimiter is not a Hollerith string"));
     };
-    if source_span_crosses_card(0, cursor - payload.len()) {
+    if source_span_crosses_card(start, cursor - payload.len()) {
         return Err(malformed(
             "parameter delimiter is not a valid one-card Hollerith string",
         ));
@@ -713,6 +717,15 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
     let bytes = global_bytes(scan, ctx)?;
     if bytes.is_empty() {
         return Err(malformed("section is missing"));
+    }
+    if bytes.iter().copied().filter(|byte| *byte != b' ').eq(*b";") {
+        return Ok(RawGlobal {
+            parameter_delimiter: b',',
+            record_delimiter: b';',
+            values: ctx.alloc_filled(26, Value::Omitted, "iges_global_fields")?,
+            field_count: 1,
+            unreadable_suffix: None,
+        });
     }
     let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
     let (record_value, next, _) =
@@ -1458,6 +1471,14 @@ fn resolve(
         values,
         losses: Vec::new(),
     };
+    if field_count < 2 {
+        let message = ctx.format_retained(
+            format_args!("IGES Global record ends before the delimiter declarations; all fields are omitted and the decoder uses the default comma and semicolon grammar"),
+            "iges global framing loss message",
+        )?;
+        let note = admitted_global_loss(ctx, IgesLossCode::GlobalNoncanonicalFraming, message)?;
+        ctx.push_vec(&mut resolution.losses, note, "iges global loss notes")?;
+    }
     if let Some((offset, error)) = unreadable_suffix {
         let message = ctx.format_retained(
             format_args!("IGES Global field {} ({}) at Global byte {offset} has an unreadable suffix: {error}; preceding interpretation fields retained, remaining metadata left source-only", field_count + 1, field_name(field_count)),
