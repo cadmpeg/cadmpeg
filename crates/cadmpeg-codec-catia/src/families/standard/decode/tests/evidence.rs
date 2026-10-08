@@ -10,23 +10,23 @@ use crate::families::standard::decode::edge_geometry::circular_range_choices_hav
 use crate::families::standard::decode::edge_geometry::circular_ranges_are_nonoverlapping_or_coincident;
 use crate::families::standard::decode::edge_geometry::native_support_circle_param_range;
 use crate::families::standard::decode::edge_geometry::point_on_surface;
+use crate::families::standard::decode::edge_geometry::resolve_standard_limit_curve_binding;
 use crate::families::standard::decode::edge_geometry::standard_circle_param_range;
+use crate::families::standard::decode::edge_geometry::standard_limit_curve_bindings;
+use crate::families::standard::decode::edge_geometry::standard_limit_curve_point_parameter;
+use crate::families::standard::decode::edge_geometry::standard_line_pair_solution_is_simple;
+use crate::families::standard::decode::edge_geometry::standard_line_pair_solution_is_simple_cached;
 use crate::families::standard::decode::edge_geometry::standard_oriented_native_support_pcurves;
+use crate::families::standard::decode::edge_geometry::standard_shared_nurbs_boundary_pair_options as charged_shared_nurbs_boundary_pair_options;
 use crate::families::standard::decode::refine_repeated_face_domains_by_geometry_and_bounds;
 use crate::families::standard::decode::resolve_standard_endpoint_pairs;
-use crate::families::standard::decode::resolve_standard_limit_curve_binding;
 use crate::families::standard::decode::retry_rejected_mesh_solution;
 use crate::families::standard::decode::standard_edge_identity_is_admitted;
 use crate::families::standard::decode::standard_extrusion_support_id;
-use crate::families::standard::decode::standard_limit_curve_bindings;
-use crate::families::standard::decode::standard_limit_curve_point_parameter;
-use crate::families::standard::decode::standard_line_pair_solution_is_simple;
-use crate::families::standard::decode::standard_line_pair_solution_is_simple_cached;
 use crate::families::standard::decode::standard_native_support_endpoint_pair;
 use crate::families::standard::decode::standard_object_evidence_from_streams;
 use crate::families::standard::decode::standard_plane_normals_from_face_frames;
 use crate::families::standard::decode::standard_shared_boundary_group_domains as charged_shared_boundary_group_domains;
-use crate::families::standard::decode::standard_shared_nurbs_boundary_pair_options as charged_shared_nurbs_boundary_pair_options;
 use crate::families::standard::decode::standard_surface_evidence;
 use crate::families::standard::decode::StandardEdgeSupport;
 use crate::families::standard::decode::StandardSurfaceProcedure;
@@ -1891,7 +1891,7 @@ mod surface_intersections;
 #[test]
 fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
     let constraint = crate::test_support::with_service_context(|ctx| {
-        super::super::StandardLinePairConstraint::new(ctx, &[], &[], &[])
+        super::super::edge_geometry::StandardLinePairConstraint::new(ctx, &[], &[], &[])
     })
     .expect("service budget admits line constraint");
     assert!(constraint.edge_pairs(&[None]).is_none());

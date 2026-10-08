@@ -1,5 +1,5 @@
+use crate::families::standard::decode::edge_geometry::split_bezier_half;
 use crate::families::standard::decode::merge_standard_edge_vertex_references;
-use crate::families::standard::decode::split_bezier_half;
 use cadmpeg_ir::math::Point3;
 use std::collections::BTreeMap;
 
@@ -68,7 +68,7 @@ fn circle_selection_admits_caller_recursion_depth() {
 
 #[test]
 fn bezier_heap_admits_sifting_and_releases_search_storage() {
-    use crate::families::standard::decode::collect_bezier_point_parameters;
+    use crate::families::standard::decode::edge_geometry::collect_bezier_point_parameters;
     let control = std::array::from_fn(|index| {
         Point3::new(
             f64::from(u32::try_from(index).expect("six poles")),
@@ -563,7 +563,7 @@ fn indexed_circle_selection_matches_exhaustive_pair_predicate() {
 
 #[test]
 fn line_segment_index_filters_separated_segments_and_exact_duplicates() {
-    use crate::families::standard::decode::StandardLinePairConstraint;
+    use crate::families::standard::decode::edge_geometry::StandardLinePairConstraint;
     use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::{ids::PointId, topology::Point};
     for separated in [true, false] {
@@ -612,7 +612,7 @@ fn line_segment_index_filters_separated_segments_and_exact_duplicates() {
 
 #[test]
 fn indexed_line_validation_matches_pair_predicate() {
-    use crate::families::standard::decode::{
+    use crate::families::standard::decode::edge_geometry::{
         standard_line_pair_solution_is_simple, StandardLinePairConstraint,
     };
     use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
@@ -666,7 +666,7 @@ fn indexed_line_validation_matches_pair_predicate() {
 
 #[test]
 fn limit_binding_bounds_remove_separated_point_and_support_products() {
-    use super::super::standard_limit_curve_bindings;
+    use super::super::edge_geometry::standard_limit_curve_bindings;
     use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::{
@@ -776,7 +776,7 @@ fn limit_binding_bounds_remove_separated_point_and_support_products() {
 
 #[test]
 fn limit_curve_candidate_selection_stops_after_a_third_supported_point() {
-    use super::super::standard_limit_curve_bindings;
+    use super::super::edge_geometry::standard_limit_curve_bindings;
     use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
