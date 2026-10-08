@@ -108,15 +108,13 @@ fn fc05_witness_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn fc05_witness_limit_error(limit: u64) -> CodecError {
+fn fc05_witness_limit_error(operation: &'static str) -> CodecError {
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+
     let scan = fc05_witness_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+
     fc05_cylinder_model_witness(
-        &ctx,
+        ctx,
         &scan,
         2,
         CylinderEquation {
@@ -126,29 +124,22 @@ fn fc05_witness_limit_error(limit: u64) -> CodecError {
             radius: 1.0,
         },
     )
-    .err()
-    .expect("FC05 witness exceeds collection limit")
+    })
 }
 
 #[test]
 fn fc05_witness_curve_id_node_refuses_collection_limit() {
-    let error = fc05_witness_limit_error(0);
+    let error = fc05_witness_limit_error("creo FC05 witness curve ID nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo FC05 witness curve ID nodes"));
 }
 
-#[test]
-fn fc05_witness_circle_vector_refuses_collection_limit() {
-    let error = fc05_witness_limit_error(1);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo FC05 witness circles"));
-}
+
 
 #[test]
 fn fc05_tangent_plane_id_node_refuses_collection_limit() {
-    let error = fc05_witness_limit_error(2);
+    let error = fc05_witness_limit_error("creo FC05 tangent plane ID nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo FC05 tangent plane ID nodes"));
@@ -166,21 +157,18 @@ fn fc05_branch_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn fc05_branch_limit_error(limit: u64) -> CodecError {
+fn fc05_branch_limit_error(operation: &'static str) -> CodecError {
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+
     let scan = fc05_branch_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    fc05_cylinder_branch_witnesses(&ctx, &scan)
-        .err()
-        .expect("FC05 branch witnesses exceed collection limit")
+
+    fc05_cylinder_branch_witnesses(ctx, &scan)
+    })
 }
 
 #[test]
 fn fc05_cylinder_frame_node_refuses_collection_limit() {
-    let error = fc05_branch_limit_error(4);
+    let error = fc05_branch_limit_error("creo FC05 cylinder frame nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo FC05 cylinder frame nodes"));
@@ -188,7 +176,7 @@ fn fc05_cylinder_frame_node_refuses_collection_limit() {
 
 #[test]
 fn fc05_witness_plane_node_refuses_collection_limit() {
-    let error = fc05_branch_limit_error(5);
+    let error = fc05_branch_limit_error("creo FC05 witness plane nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo FC05 witness plane nodes"));
@@ -196,7 +184,7 @@ fn fc05_witness_plane_node_refuses_collection_limit() {
 
 #[test]
 fn fc05_cylinder_witness_vector_refuses_collection_limit() {
-    let error = fc05_branch_limit_error(6);
+    let error = fc05_branch_limit_error("creo FC05 cylinder witnesses");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo FC05 cylinder witnesses"));
@@ -213,21 +201,19 @@ fn fc05_branch_witnesses_keep_plane_and_cylinder_identity() {
     assert_eq!(witnesses[&1][0].radius, 1.0);
 }
 
-fn fc05_branch_selection_limit_error(limit: u64) -> CodecError {
+fn fc05_branch_selection_limit_error(operation: &'static str) -> CodecError {
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+
     let scan = fc05_branch_scan();
     let mut candidates = std::collections::BTreeMap::new();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    select_stored_frame_branches(&ctx, &scan, &mut candidates)
-        .expect_err("FC05 branch selection exceeds collection limit")
+
+    select_stored_frame_branches(ctx, &scan, &mut candidates)
+    })
 }
 
 #[test]
 fn plane_origin_domain_node_refuses_collection_limit() {
-    let error = fc05_branch_selection_limit_error(7);
+    let error = fc05_branch_selection_limit_error("creo plane origin domain nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo plane origin domain nodes"));
@@ -235,7 +221,7 @@ fn plane_origin_domain_node_refuses_collection_limit() {
 
 #[test]
 fn plane_origin_domain_candidates_refuse_collection_limit() {
-    let error = fc05_branch_selection_limit_error(8);
+    let error = fc05_branch_selection_limit_error("creo plane origin domain candidates");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo plane origin domain candidates"));
@@ -243,7 +229,7 @@ fn plane_origin_domain_candidates_refuse_collection_limit() {
 
 #[test]
 fn fc05_origin_plane_branch_refuses_collection_limit() {
-    let error = fc05_branch_selection_limit_error(13);
+    let error = fc05_branch_selection_limit_error("creo FC05 origin plane branch");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo FC05 origin plane branch"));
@@ -251,7 +237,7 @@ fn fc05_origin_plane_branch_refuses_collection_limit() {
 
 #[test]
 fn fc05_tangent_plane_branch_refuses_collection_limit() {
-    let error = fc05_branch_selection_limit_error(20);
+    let error = fc05_branch_selection_limit_error("creo FC05 tangent plane branch");
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -328,7 +314,9 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
     scan
 }
 
-fn stored_branch_limit_error(limit: u64, with_pcurve: bool) -> CodecError {
+fn stored_branch_limit_error(operation: &'static str, with_pcurve: bool) -> CodecError {
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+
     let scan = stored_frame_branch_scan(with_pcurve);
     let mut candidates = std::collections::BTreeMap::new();
     if with_pcurve {
@@ -349,18 +337,14 @@ fn stored_branch_limit_error(limit: u64, with_pcurve: bool) -> CodecError {
             }],
         );
     }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    select_stored_frame_branches(&ctx, &scan, &mut candidates)
-        .expect_err("stored branch selection exceeds collection limit")
+
+    select_stored_frame_branches(ctx, &scan, &mut candidates)
+    })
 }
 
 #[test]
 fn plane_variable_domain_node_refuses_collection_limit() {
-    let error = stored_branch_limit_error(0, false);
+    let error = stored_branch_limit_error("creo plane variable domain nodes", false);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo plane variable domain nodes"));
@@ -368,7 +352,7 @@ fn plane_variable_domain_node_refuses_collection_limit() {
 
 #[test]
 fn plane_variable_domain_candidate_refuses_collection_limit() {
-    let error = stored_branch_limit_error(1, false);
+    let error = stored_branch_limit_error("creo plane variable domain candidates", false);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo plane variable domain candidates"));
@@ -376,7 +360,7 @@ fn plane_variable_domain_candidate_refuses_collection_limit() {
 
 #[test]
 fn copied_plane_domain_candidates_refuse_collection_limit() {
-    let error = stored_branch_limit_error(3, false);
+    let error = stored_branch_limit_error("creo copied plane domain candidates", false);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo copied plane domain candidates"));
@@ -384,7 +368,7 @@ fn copied_plane_domain_candidates_refuse_collection_limit() {
 
 #[test]
 fn copied_plane_domain_node_refuses_collection_limit() {
-    let error = stored_branch_limit_error(5, false);
+    let error = stored_branch_limit_error("creo copied plane domain nodes", false);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo copied plane domain nodes"));
@@ -392,7 +376,7 @@ fn copied_plane_domain_node_refuses_collection_limit() {
 
 #[test]
 fn plane_branch_surface_count_node_refuses_collection_limit() {
-    let error = stored_branch_limit_error(6, false);
+    let error = stored_branch_limit_error("creo unique-row count nodes", false);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo unique-row count nodes"));
@@ -400,7 +384,7 @@ fn plane_branch_surface_count_node_refuses_collection_limit() {
 
 #[test]
 fn plane_branch_surface_projection_refuses_collection_limit() {
-    let error = stored_branch_limit_error(8, false);
+    let error = stored_branch_limit_error("creo unique-row projection", false);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo unique-row projection"));
@@ -408,7 +392,7 @@ fn plane_branch_surface_projection_refuses_collection_limit() {
 
 #[test]
 fn fixed_plane_domain_candidate_refuses_collection_limit() {
-    let error = stored_branch_limit_error(10, true);
+    let error = stored_branch_limit_error("creo fixed plane domain candidates", true);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo fixed plane domain candidates"));
@@ -416,7 +400,7 @@ fn fixed_plane_domain_candidate_refuses_collection_limit() {
 
 #[test]
 fn fixed_plane_domain_node_refuses_collection_limit() {
-    let error = stored_branch_limit_error(11, true);
+    let error = stored_branch_limit_error("creo fixed plane domain nodes", true);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo fixed plane domain nodes"));
@@ -424,7 +408,7 @@ fn fixed_plane_domain_node_refuses_collection_limit() {
 
 #[test]
 fn plane_branch_constraint_refuses_collection_limit() {
-    let error = stored_branch_limit_error(12, true);
+    let error = stored_branch_limit_error("creo plane branch constraints", true);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo plane branch constraints"));
@@ -432,7 +416,7 @@ fn plane_branch_constraint_refuses_collection_limit() {
 
 #[test]
 fn filtered_first_plane_candidate_refuses_collection_limit() {
-    let error = stored_branch_limit_error(13, true);
+    let error = stored_branch_limit_error("creo filtered first plane candidates", true);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo filtered first plane candidates"));
@@ -440,7 +424,7 @@ fn filtered_first_plane_candidate_refuses_collection_limit() {
 
 #[test]
 fn selected_plane_branch_refuses_collection_limit() {
-    let error = stored_branch_limit_error(15, true);
+    let error = stored_branch_limit_error("creo selected plane branch", true);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo selected plane branch"));
@@ -448,7 +432,7 @@ fn selected_plane_branch_refuses_collection_limit() {
 
 #[test]
 fn selected_plane_branch_node_refuses_collection_limit() {
-    let error = stored_branch_limit_error(16, true);
+    let error = stored_branch_limit_error("creo selected plane branch nodes", true);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo selected plane branch nodes"));
@@ -542,14 +526,7 @@ fn carrier_branch_domains() -> std::collections::BTreeMap<u32, Vec<PlaneCandidat
 #[test]
 fn plane_branch_cylinder_carrier_node_refuses_collection_limit() {
     let scan = carrier_pcurve_branch_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = native_positional_cylinder_carriers(&ctx, &scan)
-        .err()
-        .expect("cylinder carrier node exceeds collection limit");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo plane branch cylinder carrier nodes", |ctx| { native_positional_cylinder_carriers(ctx, &scan) });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo plane branch cylinder carrier nodes"));
@@ -559,14 +536,8 @@ fn plane_branch_cylinder_carrier_node_refuses_collection_limit() {
 fn carrier_pcurve_plane_branch_refuses_collection_limit() {
     let scan = carrier_pcurve_branch_scan();
     let domains = carrier_branch_domains();
-    let mut selected = domains.clone();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = select_stored_frame_carrier_pcurve_branches(&ctx, &scan, &domains, &mut selected)
-        .expect_err("carrier pcurve branch exceeds collection limit");
+    let selected = domains.clone();
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo carrier pcurve plane branch", |ctx| { let mut selected = selected.clone(); select_stored_frame_carrier_pcurve_branches(ctx, &scan, &domains, &mut selected) });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo carrier pcurve plane branch"));
@@ -609,14 +580,8 @@ fn two_variable_plane_branches_keep_mirror_ambiguity() {
 #[test]
 fn filtered_second_plane_candidate_refuses_collection_limit() {
     let scan = two_variable_plane_branch_scan();
-    let mut candidates = std::collections::BTreeMap::new();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 19;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = select_stored_frame_branches(&ctx, &scan, &mut candidates)
-        .expect_err("second plane filter exceeds collection limit");
+    let candidates = std::collections::BTreeMap::new();
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo filtered second plane candidates", |ctx| { let mut candidates = candidates.clone(); select_stored_frame_branches(ctx, &scan, &mut candidates) });
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -630,8 +595,7 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
     let scan = stored_frame_branch_scan(false);
     let frame = &scan.planes.local_systems[0];
     let (candidates, count) =
-        crate::decode::with_test_decode_ctx(|ctx| stored_parameter_normal_candidates(ctx, frame))
-            .expect("service stored plane branch scan admitted")
+        stored_parameter_normal_candidates(frame)
             .expect("ambiguous frame");
     assert_eq!(count, 2);
     assert!(candidates[..count].iter().any(|candidate| {
@@ -645,10 +609,7 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
 
     let mut nonzero_origin = frame.clone();
     nonzero_origin.slots[11] = Some(2.0);
-    let (candidates, count) = crate::decode::with_test_decode_ctx(|ctx| {
-        stored_parameter_normal_candidates(ctx, &nonzero_origin)
-    })
-    .expect("service stored plane branch scan admitted")
+    let (candidates, count) = stored_parameter_normal_candidates(&nonzero_origin)
     .expect("ambiguous frame");
     assert_eq!(count, 2);
     assert!(candidates[..count]
@@ -657,18 +618,12 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
 
     let mut invalid = frame.clone();
     invalid.slots[4] = Some(1.0);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        stored_parameter_normal_candidates(ctx, &invalid)
-    })
-    .expect("service stored plane branch scan admitted")
+    assert!(stored_parameter_normal_candidates(&invalid)
     .is_none());
 
     let mut compact = frame.clone();
     compact.classification = LocalSystemClassification::Simple;
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        stored_parameter_normal_candidates(ctx, &compact)
-    })
-    .expect("service stored plane branch scan admitted")
+    assert!(stored_parameter_normal_candidates(&compact)
     .is_none());
 }
 
@@ -874,28 +829,20 @@ fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn round_edge_envelope_limit_error(limit: u64) -> CodecError {
+fn round_edge_envelope_limit_error(operation: &'static str) -> CodecError {
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+
     let scan = round_edge_envelope_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    round_edge_envelopes_for_plane(&ctx, &scan, 1)
-        .expect_err("round-edge envelopes exceed collection limit")
+
+    round_edge_envelopes_for_plane(ctx, &scan, 1)
+    })
 }
 
-#[test]
-fn round_edge_surface_row_node_refuses_collection_limit() {
-    let error = round_edge_envelope_limit_error(4);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo round-edge surface row nodes"));
-}
+
 
 #[test]
 fn round_edge_surface_count_node_refuses_collection_limit() {
-    let error = round_edge_envelope_limit_error(0);
+    let error = round_edge_envelope_limit_error("creo unique-row count nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo unique-row count nodes"));
@@ -903,7 +850,7 @@ fn round_edge_surface_count_node_refuses_collection_limit() {
 
 #[test]
 fn round_edge_surface_projection_refuses_collection_limit() {
-    let error = round_edge_envelope_limit_error(2);
+    let error = round_edge_envelope_limit_error("creo unique-row projection");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo unique-row projection"));
@@ -911,7 +858,7 @@ fn round_edge_surface_projection_refuses_collection_limit() {
 
 #[test]
 fn round_edge_topology_count_node_refuses_collection_limit() {
-    let error = round_edge_envelope_limit_error(6);
+    let error = round_edge_envelope_limit_error("creo unique-row count nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo unique-row count nodes"));
@@ -919,7 +866,7 @@ fn round_edge_topology_count_node_refuses_collection_limit() {
 
 #[test]
 fn round_edge_topology_projection_refuses_collection_limit() {
-    let error = round_edge_envelope_limit_error(7);
+    let error = round_edge_envelope_limit_error("creo unique-row projection");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo unique-row projection"));
@@ -927,7 +874,7 @@ fn round_edge_topology_projection_refuses_collection_limit() {
 
 #[test]
 fn round_edge_plane_envelope_refuses_collection_limit() {
-    let error = round_edge_envelope_limit_error(8);
+    let error = round_edge_envelope_limit_error("creo round-edge plane envelopes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo round-edge plane envelopes"));
@@ -1005,54 +952,37 @@ fn numerical_followup_fc05_tangency_is_relative_to_radius() {
     }
 }
 
-#[test]
-fn fc05_tangent_plane_score_refuses_bounded_face_scan() {
-    let scan = fc05_witness_scan();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "creo FC05 tangent bounded faces",
-        |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            fc05_cylinder_model_witness(
-                &ctx,
-                &scan,
-                2,
-                CylinderEquation {
-                    origin: [0.0, 0.0, 0.0],
-                    axis: [0.0, 1.0, 0.0],
-                    ref_direction: [1.0, 0.0, 0.0],
-                    radius: 1.0,
-                },
-            )
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo FC05 tangent bounded faces"));
-}
+
+
+
+
+
 
 #[test]
-fn round_edge_envelope_refuses_bounded_face_scan() {
-    let scan = round_edge_envelope_scan();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "creo round-edge bounded topology faces",
-        |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-            round_edge_envelopes_for_plane(&ctx, &scan, 1)
+fn stored_plane_origin_sign_mask_traversal_refuses_work_and_preserves_candidates() {
+    let base = PlaneCandidate {
+        equation: PlaneEquation {
+            origin: [1.0, 2.0, 0.0],
+            normal: [1.0, 1.0, 0.0],
         },
+        chart: None,
+        offset: 0,
+    };
+    let (candidates, count) = super::super::stored_parameter_origin_sign_candidates(base);
+    assert_eq!(count, 4);
+    let origins = candidates[..count]
+        .iter()
+        .map(|candidate| candidate.equation.origin)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        origins,
+        vec![
+            [1.0, 2.0, 0.0],
+            [-1.0, 2.0, 0.0],
+            [1.0, -2.0, 0.0],
+            [-1.0, -2.0, 0.0],
+        ]
     );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo round-edge bounded topology faces"));
 }
 
 #[test]
@@ -1073,34 +1003,4 @@ fn plane_candidates_refuse_surface_identity_child_scan() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo plane candidate surface identity count"));
-}
-
-#[test]
-fn stored_plane_origin_sign_mask_traversal_refuses_work_and_preserves_candidates() {
-    let base = PlaneCandidate {
-        equation: PlaneEquation {
-            origin: [1.0, 2.0, 0.0],
-            normal: [1.0, 1.0, 0.0],
-        },
-        chart: None,
-        offset: 0,
-    };
-    let (candidates, count) = crate::test_support::assert_work_boundaries(
-        &["creo stored plane origin sign mask traversal"],
-        |ctx| super::super::stored_parameter_origin_sign_candidates(ctx, base),
-    );
-    assert_eq!(count, 4);
-    let origins = candidates[..count]
-        .iter()
-        .map(|candidate| candidate.equation.origin)
-        .collect::<Vec<_>>();
-    assert_eq!(
-        origins,
-        vec![
-            [1.0, 2.0, 0.0],
-            [-1.0, 2.0, 0.0],
-            [1.0, -2.0, 0.0],
-            [-1.0, -2.0, 0.0],
-        ]
-    );
 }

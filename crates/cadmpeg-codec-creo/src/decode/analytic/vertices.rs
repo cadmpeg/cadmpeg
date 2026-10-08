@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -15,6 +15,7 @@ use crate::decode::quadratic::{real_roots, Coefficient};
 
 use super::super::surfaces::intersection_resolve::curve_contains_points;
 
+use super::model_index::CurveIndex;
 use super::edges::{nonperiodic_nurbs_endpoint_points, planar_conic_equation, PlanarConicEquation};
 use super::equations::{
     common_plane_conic_parameters, plane_intersection_line, CarrierEquation, PlaneConicEquation,
@@ -30,22 +31,6 @@ use crate::vecmath::{cross, dot};
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
 const CARRIER_VERTEX_SAMPLE_LIMIT: usize = 8;
-
-fn unique_model_curve<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &'a CadIr,
-    id: &CurveId,
-) -> Result<Option<&'a Curve>, cadmpeg_core::CodecError> {
-    let mut matching_curve = None;
-    for curve in ctx.admit_iter(&ir.model.curves, "creo unique model curve search")? {
-        if ctx.equal(&curve.id, id, "creo unique model curve identity comparison")?
-            && matching_curve.replace(curve).is_some()
-        {
-            return Ok(None);
-        }
-    }
-    Ok(matching_curve)
-}
 
 /// Admit a model point for the agreement test. A point outside the finite
 /// range has no admitted form, and agrees with no point.
@@ -69,22 +54,22 @@ pub(super) fn model_points_agree(first: FinitePoint3, second: FinitePoint3) -> b
 }
 
 fn pcurve_candidate_agrees_with_fixed_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     vertices: [u32; 2],
     points: [[f64; 3]; 2],
     directions: [u8; 2],
     fixed_points: &BTreeMap<u32, [f64; 3]>,
-) -> bool {
-    let Some(ordered) = directed_pcurve_points(directions, points) else {
-        return true;
-    };
-    // A point outside the finite range agrees with no fixed point.
-    vertices.into_iter().zip(ordered).all(|(vertex, point)| {
-        fixed_points.get(&vertex).is_none_or(|known| {
-            finite_model_point(*known)
-                .zip(finite_model_point(point))
-                .is_some_and(|(known, point)| model_points_agree(known, point))
-        })
-    })
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let Some(ordered) = directed_pcurve_points(directions, points) else { return Ok(true); };
+    for (vertex, point) in vertices.into_iter().zip(ordered) {
+        if let Some(known) = ctx.get_btree_map(fixed_points, &vertex, "creo pcurve fixed vertex lookup")? {
+            if !finite_model_point(*known).zip(finite_model_point(point))
+                .is_some_and(|(known, point)| model_points_agree(known, point)) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
 /// A vertex whose pcurve endpoint candidates do not all agree. A candidate
@@ -400,7 +385,8 @@ fn conic_conic_intersections(
         first_equation.x_axis,
         first_equation.y_axis,
     );
-    let parameters = common_plane_conic_parameters(ctx, first_chart, second_chart)?;
+    let mut parameter_storage = ctx.reserve_scoped(0, "creo conic intersection parameter storage")?;
+    let parameters = parameter_storage.with_storage(|| common_plane_conic_parameters(ctx, first_chart, second_chart))?;
     let mut intersections = Vec::new();
     ctx.reserve_vec(
         &mut intersections,
@@ -427,6 +413,7 @@ fn incident_analytic_vertex_domain(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curves: &[&CurveGeometry],
 ) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo incident analytic vertex domain scratch")?;
     let mut candidates = Vec::new();
     for (first, first_curve) in ctx
         .admit_iter(curves, "creo incident analytic curve pairs")?
@@ -437,31 +424,31 @@ fn incident_analytic_vertex_domain(
         {
             let first_curve = *first_curve;
             let second_curve = *second_curve;
-            let conic_points = conic_conic_intersections(ctx, first_curve, second_curve)?;
+            let conic_points = scratch.with_storage(|| conic_conic_intersections(ctx, first_curve, second_curve))?;
             let line_line_point = line_line_intersection(first_curve, second_curve);
-            let first_line_conic_points = line_conic_intersections(ctx, first_curve, second_curve)?;
+            let first_line_conic_points = scratch.with_storage(|| line_conic_intersections(ctx, first_curve, second_curve))?;
             let second_line_conic_points =
-                line_conic_intersections(ctx, second_curve, first_curve)?;
+                scratch.with_storage(|| line_conic_intersections(ctx, second_curve, first_curve))?;
             if let Some(point) = line_line_point {
-                ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates"))?;
                 candidates.push(point);
             }
             for point in ctx.admit_iter(
                 &first_line_conic_points,
                 "creo incident line-conic candidates",
             )? {
-                ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates"))?;
                 candidates.push(*point);
             }
             for point in ctx.admit_iter(
                 &second_line_conic_points,
                 "creo incident conic-line candidates",
             )? {
-                ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates"))?;
                 candidates.push(*point);
             }
             for point in ctx.admit_iter(&conic_points, "creo incident conic candidates")? {
-                ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates")?;
+                scratch.with_storage(|| ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates"))?;
                 candidates.push(*point);
             }
         }
@@ -558,27 +545,29 @@ pub(in crate::decode) fn solve_topological_vertices(
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<SolvedTopologicalVertices, cadmpeg_core::CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo solve topological vertices scratch")?;
     let mut diagnostics = TopologicalVertexSolveDiagnostics {
         topological_vertices: scan.topology.vertices.len(),
         ..TopologicalVertexSolveDiagnostics::default()
     };
-    let vertex_faces = crate::topology::vertex_incident_faces(
+    let vertex_faces = scratch.with_storage(|| crate::topology::vertex_incident_faces(
         ctx,
         &scan.topology.vertices,
         &scan.topology.half_edges,
-    )?;
+    ))?;
     let mut carrier_points = BTreeMap::new();
     for vertex in ctx.admit_iter(&scan.topology.vertices, "creo topological vertices")? {
-        let Some(face_ids) = vertex_faces.get(&vertex.id) else {
+        let Some(face_ids) = ctx.get_btree_map(&vertex_faces, &vertex.id, "creo analytic vertex faces lookup")? else {
             continue;
         };
+        let mut incident_storage = ctx.reserve_scoped(0, "creo vertex incident carrier scratch")?;
         let mut incident_face_ids = Vec::new();
         let mut incident_carriers = Vec::new();
         for face_id in ctx.admit_iter(face_ids, "creo vertex incident faces")? {
-            if let Some(carrier) = carriers.get(face_id) {
-                ctx.reserve_vec(&mut incident_face_ids, 1, "creo carrier incident face IDs")?;
+            if let Some(carrier) = ctx.get_btree_map(&carriers, face_id, "creo analytic carriers lookup")? {
+                incident_storage.with_storage(|| ctx.reserve_vec(&mut incident_face_ids, 1, "creo carrier incident face IDs"))?;
                 incident_face_ids.push(*face_id);
-                ctx.reserve_vec(&mut incident_carriers, 1, "creo vertex incident carriers")?;
+                incident_storage.with_storage(|| ctx.reserve_vec(&mut incident_carriers, 1, "creo vertex incident carriers"))?;
                 incident_carriers.push(*carrier);
             }
         }
@@ -603,19 +592,14 @@ pub(in crate::decode) fn solve_topological_vertices(
                 }
                 if diagnostics.carrier_rejection_samples.len() < CARRIER_VERTEX_SAMPLE_LIMIT {
                     let mut sample_face_ids = Vec::new();
-                    ctx.reserve_vec(
-                        &mut sample_face_ids,
-                        incident_face_ids.len(),
-                        "creo carrier rejection face IDs",
-                    )?;
-                    sample_face_ids.extend_from_slice(&incident_face_ids);
+                    ctx.extend_from_slice(&mut sample_face_ids, &incident_face_ids, "creo carrier rejection face IDs")?;
                     let mut carrier_kinds = Vec::new();
                     ctx.reserve_vec(
                         &mut carrier_kinds,
                         incident_carriers.len(),
                         "creo carrier rejection kinds",
                     )?;
-                    carrier_kinds.extend(incident_carriers.iter().map(CarrierEquation::kind_str));
+                    carrier_kinds.extend(ctx.admit_iter(&incident_carriers, "creo carrier rejection kind source")?.map(CarrierEquation::kind_str));
                     ctx.reserve_vec(
                         &mut diagnostics.carrier_rejection_samples,
                         1,
@@ -635,12 +619,12 @@ pub(in crate::decode) fn solve_topological_vertices(
             }
             1 => {
                 if let Some(point) = point {
-                    ctx.insert_btree_map(
+                    scratch.with_storage(|| ctx.insert_btree_map(
                         &mut carrier_points,
                         vertex.id.get(),
                         point,
                         "creo carrier vertex point nodes",
-                    )?;
+                    ))?;
                 }
             }
             _ => diagnostics.carrier_ambiguous_candidate_vertices += 1,
@@ -648,71 +632,61 @@ pub(in crate::decode) fn solve_topological_vertices(
     }
     diagnostics.carrier_points = carrier_points.len();
     let edge_start_vertices =
-        crate::topology::edge_start_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
+        scratch.with_storage(|| crate::topology::edge_start_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence))?;
     let mut fixed_points = carrier_points;
     let (endpoint_evidence, pcurve_diagnostics) =
         pcurve_edge_endpoint_evidence_with_carriers(ctx, scan, ir, carriers, source_carriers)?;
     diagnostics.pcurve = pcurve_diagnostics;
-    let mut edge_endpoints = BTreeMap::new();
-    for (curve_id, evidence) in
-        ctx.admit_iter(&endpoint_evidence, "creo pcurve endpoint evidence")?
-    {
-        ctx.insert_btree_map(
-            &mut edge_endpoints,
-            *curve_id,
-            (evidence.points, evidence.complete, evidence.authoritative),
-            "creo vertex pcurve endpoint nodes",
-        )?;
-    }
-    let topology_rows = crate::identity::uniquely_identified_rows_checked(
+    let topology_rows = scratch.with_storage(|| crate::identity::uniquely_identified_rows_checked(
         ctx,
         &scan.curves.topology_rows,
         |row| row.id,
-    )?;
+    ))?;
     let mut pcurve_constraints = Vec::new();
     let mut pcurve_endpoint_candidates = BTreeMap::<u32, Vec<[f64; 3]>>::new();
     for row in ctx.admit_iter(&topology_rows, "creo topology curve rows")? {
-        let Some((points, complete, authoritative)) = edge_endpoints.get(&row.id).copied() else {
+        let Some(evidence) = ctx.get_btree_map(&endpoint_evidence, &row.id, "creo analytic edge endpoints lookup")? else {
             continue;
         };
-        let Some(vertices) = edge_start_vertices
-            .get(&row.id)
+        let (points, complete, authoritative) = (evidence.points, evidence.complete, evidence.authoritative);
+        let Some(vertices) = ctx.get_btree_map(&edge_start_vertices, &row.id, "creo analytic edge start vertices lookup")?
             .copied()
             .map(|pair| pair.map(std::num::NonZeroU32::get))
         else {
             continue;
         };
         if !pcurve_candidate_agrees_with_fixed_points(
+            ctx,
             vertices,
             points,
             row.directions,
             &fixed_points,
-        ) {
+        )? {
             diagnostics.pcurve_fixed_endpoint_conflicts += 1;
             continue;
         }
         let ordered = directed_pcurve_points(row.directions, points);
         if let Some(ordered) = ordered {
             for (vertex, point) in vertices.into_iter().zip(ordered) {
-                match ctx.entry_btree_map(
+                match scratch.with_storage(|| ctx.entry_btree_map(
                     &mut pcurve_endpoint_candidates,
                     vertex,
                     "creo vertex pcurve candidate nodes",
-                )? {
+                ))? {
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
-                        ctx.reserve_vec(entry.get_mut(), 1, "creo vertex pcurve candidate points")?;
+                        scratch.with_storage(|| ctx.reserve_vec(entry.get_mut(), 1, "creo vertex pcurve candidate points"))?;
                         entry.get_mut().push(point);
                     }
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         let mut points = Vec::new();
-                        ctx.reserve_vec(&mut points, 1, "creo vertex pcurve candidate points")?;
+                        scratch.with_storage(|| ctx.reserve_vec(&mut points, 1, "creo vertex pcurve candidate points"))?;
                         points.push(point);
                         entry.insert(points);
                     }
                 }
             }
         }
-        ctx.reserve_vec(&mut pcurve_constraints, 1, "creo vertex pcurve constraints")?;
+        scratch.with_storage(|| ctx.reserve_vec(&mut pcurve_constraints, 1, "creo vertex pcurve constraints"))?;
         pcurve_constraints.push((vertices, points, ordered, complete, authoritative));
     }
     let mut ambiguous_pcurve_vertices = BTreeSet::new();
@@ -721,11 +695,11 @@ pub(in crate::decode) fn solve_topological_vertices(
         "creo pcurve endpoint candidates",
     )? {
         if pcurve_endpoint_is_ambiguous(ctx, candidates)? {
-            ctx.insert_btree_set(
+            scratch.with_storage(|| ctx.insert_btree_set(
                 &mut ambiguous_pcurve_vertices,
                 *vertex,
                 "creo ambiguous pcurve vertex nodes",
-            )?;
+            ))?;
         }
     }
     diagnostics.pcurve_ambiguous_endpoint_vertices = ambiguous_pcurve_vertices.len();
@@ -735,40 +709,41 @@ pub(in crate::decode) fn solve_topological_vertices(
         ctx.admit_iter(&pcurve_constraints, "creo pcurve endpoint constraints")?
     {
         if let Some(ordered) = ordered {
-            let ambiguous = vertices
-                .iter()
-                .any(|vertex| ambiguous_pcurve_vertices.contains(vertex));
+            let mut ambiguous = false;
+            for vertex in vertices {
+                if ctx.contains_btree_set(&ambiguous_pcurve_vertices, vertex, "creo ambiguous pcurve vertex membership")? { ambiguous = true; break; }
+            }
             if ambiguous && !complete {
                 continue;
             }
             diagnostics.pcurve_constraints += 1;
-            ctx.reserve_vec(&mut constraints, 1, "creo vertex endpoint constraints")?;
+            scratch.with_storage(|| ctx.reserve_vec(&mut constraints, 1, "creo vertex endpoint constraints"))?;
             constraints.push((*vertices, *points));
             if ambiguous {
                 continue;
             }
             for (vertex, point) in vertices.iter().zip(ordered) {
                 diagnostics.directed_endpoint_assignments += 1;
-                ctx.entry_btree_map(&mut fixed_points, *vertex, "creo fixed vertex point nodes")?
+                scratch.with_storage(|| ctx.entry_btree_map(&mut fixed_points, *vertex, "creo fixed vertex point nodes"))?
                     .or_insert(*point);
                 if *authoritative && !ambiguous {
-                    ctx.entry_btree_map(
+                    scratch.with_storage(|| ctx.entry_btree_map(
                         &mut authoritative_points,
                         *vertex,
                         "creo authoritative vertex point nodes",
-                    )?
+                    ))?
                     .or_insert(*point);
                 }
             }
         } else {
             diagnostics.pcurve_constraints += 1;
-            ctx.reserve_vec(&mut constraints, 1, "creo vertex endpoint constraints")?;
+            scratch.with_storage(|| ctx.reserve_vec(&mut constraints, 1, "creo vertex endpoint constraints"))?;
             constraints.push((*vertices, *points));
         }
     }
+    let curve_index = CurveIndex::new(ctx, &ir.model.curves)?;
     for row in ctx.admit_iter(&topology_rows, "creo topology curve rows")? {
-        let Some(vertices) = edge_start_vertices
-            .get(&row.id)
+        let Some(vertices) = ctx.get_btree_map(&edge_start_vertices, &row.id, "creo analytic edge start vertices lookup")?
             .copied()
             .map(|pair| pair.map(std::num::NonZeroU32::get))
         else {
@@ -787,7 +762,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         )? {
             continue;
         }
-        let Some(geometry) = unique_model_curve(ctx, ir, &id)? else {
+        let Some(geometry) = curve_index.unique(row.id).map(|position| &ir.model.curves[position]) else {
             continue;
         };
         let Some(points) =
@@ -796,7 +771,7 @@ pub(in crate::decode) fn solve_topological_vertices(
             continue;
         };
         diagnostics.nurbs_endpoint_constraints += 1;
-        ctx.reserve_vec(&mut constraints, 1, "creo vertex endpoint constraints")?;
+        scratch.with_storage(|| ctx.reserve_vec(&mut constraints, 1, "creo vertex endpoint constraints"))?;
         constraints.push((vertices, points));
     }
     // Non-periodic NURBS boundary rows contribute their intrinsic endpoint
@@ -804,13 +779,7 @@ pub(in crate::decode) fn solve_topological_vertices(
     // carrier equations for the vertex-domain solver.
     let mut analytic_curves = BTreeMap::new();
     for row in ctx.admit_iter(&topology_rows, "creo topology curve rows")? {
-        let (id, _id_reservation) = crate::identity::compose_scoped::<CurveId>(
-            ctx,
-            &crate::identity::VISIBGEOM_CURVE,
-            row.id,
-            "creo vertex curve lookup identity",
-        )?;
-        let Some(curve) = unique_model_curve(ctx, ir, &id)? else {
+        let Some(curve) = curve_index.unique(row.id).map(|position| &ir.model.curves[position]) else {
             continue;
         };
         let geometry = source_carriers.curve_geometry(curve);
@@ -825,42 +794,42 @@ pub(in crate::decode) fn solve_topological_vertices(
             )
         );
         if evaluable {
-            ctx.insert_btree_map(
+            scratch.with_storage(|| ctx.insert_btree_map(
                 &mut analytic_curves,
                 row.id,
                 geometry,
                 "creo analytic curve lookup nodes",
-            )?;
+            ))?;
         }
     }
     let mut incident_curves = BTreeMap::new();
     for vertex in ctx.admit_iter(&scan.topology.vertices, "creo topological vertices")? {
         let mut curves = Vec::new();
         for half_edge in ctx.admit_iter(vertex.half_edges(), "creo vertex half-edges")? {
-            if let Some(curve) = analytic_curves.get(&half_edge.curve_id).copied() {
-                ctx.reserve_vec(&mut curves, 1, "creo incident analytic curves")?;
+            if let Some(curve) = ctx.get_btree_map(&analytic_curves, &half_edge.curve_id, "creo analytic analytic curves lookup")?.copied() {
+                scratch.with_storage(|| ctx.reserve_vec(&mut curves, 1, "creo incident analytic curves"))?;
                 curves.push(curve);
             }
         }
         if !curves.is_empty() {
-            ctx.insert_btree_map(
+            scratch.with_storage(|| ctx.insert_btree_map(
                 &mut incident_curves,
                 vertex.id.get(),
                 curves,
                 "creo incident analytic curve nodes",
-            )?;
+            ))?;
         }
     }
     let mut analytic_domains = BTreeMap::new();
     for (vertex, curves) in ctx.admit_iter(&incident_curves, "creo incident analytic curves")? {
-        let candidates = incident_analytic_vertex_domain(ctx, curves)?;
+        let candidates = scratch.with_storage(|| incident_analytic_vertex_domain(ctx, curves))?;
         if !candidates.is_empty() {
-            ctx.insert_btree_map(
+            scratch.with_storage(|| ctx.insert_btree_map(
                 &mut analytic_domains,
                 *vertex,
                 candidates,
                 "creo analytic vertex domain nodes",
-            )?;
+            ))?;
         }
     }
     diagnostics.analytic_domain_vertices = analytic_domains.len();
@@ -908,7 +877,7 @@ mod tests {
     use super::super::planes::CarrierSolveDiagnostics;
     use super::{
         carrier_failure_kind, line_conic_intersections, pcurve_endpoint_is_ambiguous,
-        restrict_planar_conic_to_chart, unique_model_curve, CarrierFailureKind,
+        restrict_planar_conic_to_chart, CurveIndex, CarrierFailureKind,
     };
     use crate::vecmath::normalize;
     use cadmpeg_ir::document::CadIr;
@@ -1236,7 +1205,7 @@ mod tests {
         ]);
 
         crate::decode::with_test_decode_ctx(|ctx| {
-            assert!(unique_model_curve(ctx, &ir, &id)?.is_none());
+            assert!(CurveIndex::new(ctx, &ir.model.curves)?.unique(7).is_none());
             Ok::<(), cadmpeg_core::CodecError>(())
         })
         .expect("unique curve search is admitted");
@@ -1265,11 +1234,11 @@ mod tests {
             .expect("empty root admitted");
 
         let error =
-            unique_model_curve(&ctx, &ir, &id).expect_err("the first curve exceeds the work limit");
+            match CurveIndex::new(&ctx, &ir.model.curves) { Err(error) => error, Ok(_) => panic!("the first curve exceeds the work limit") };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && refusal.operation == "creo unique model curve search")
+                && refusal.operation == "creo model curve index rows")
         );
     }
 

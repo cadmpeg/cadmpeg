@@ -700,13 +700,8 @@ fn analytic_nurbs_endpoints_propagate_evaluator_refusal() {
     .expect("fixture constructor admission")
     .expect("quadratic spline");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(
-        matches!(super::nonperiodic_nurbs_endpoint_points(&ctx, &geometry), Err(CodecError::ResourceLimit(limit)) if limit.operation == "IR B-spline basis")
-    );
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems, "IR B-spline basis", |ctx| super::nonperiodic_nurbs_endpoint_points(ctx, &geometry));
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "IR B-spline basis"));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
