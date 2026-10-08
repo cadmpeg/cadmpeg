@@ -15,9 +15,8 @@ use crate::container::{self};
 use crate::CreoCodec;
 
 use super::{
-    arc_z_coordinate, conic_local_system, conic_parameter,
-    positional_conic_local_system, scalar_suffix, ConicType, ReferenceConic, ReferenceEllipse,
-    ReferenceLineKind,
+    arc_z_coordinate, conic_local_system, conic_parameter, positional_conic_local_system,
+    scalar_suffix, ConicType, ReferenceConic, ReferenceEllipse, ReferenceLineKind,
 };
 use crate::scalar::ScalarCache;
 use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
@@ -771,19 +770,26 @@ fn line3d_lines_deduplication_refuses_work() {
     );
 }
 
-fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<(cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::scalar::PositiveReal)> {
-    crate::decode::with_test_decode_ctx(|ctx| super::line3d_fields(ctx, body, cache)).expect("line3d trial admission")
+fn line3d_fields(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<(
+    cadmpeg_ir::features::FinitePoint3,
+    cadmpeg_ir::features::FinitePoint3,
+    cadmpeg_ir::scalar::PositiveReal,
+)> {
+    crate::decode::with_test_decode_ctx(|ctx| super::line3d_fields(ctx, body, cache))
+        .expect("line3d trial admission")
 }
-
 
 #[test]
 fn line3d_numeric_trials_charge_failed_candidates() {
     let body = [0; 64];
     let cache = ScalarCache::default();
-    let selected = crate::test_support::assert_work_boundaries(
-        &["creo line3d numeric trials"],
-        |ctx| super::line3d_fields(ctx, &body, &cache),
-    );
+    let selected =
+        crate::test_support::assert_work_boundaries(&["creo line3d numeric trials"], |ctx| {
+            super::line3d_fields(ctx, &body, &cache)
+        });
     assert!(selected.is_none());
 }
 
@@ -792,8 +798,10 @@ fn line3d_ambiguity_stops_before_unvisited_bytes() {
     let body = b"\x0f\x0f\x0f\xe4\x0f\x0f\xe4\x0f\x0f\x0f\xe4\x0f\x0f\xe4";
     let cache = ScalarCache::default();
     let boundary = |bytes: &[u8]| match crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo line3d numeric trials", |ctx| super::line3d_fields(ctx, bytes, &cache),
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo line3d numeric trials",
+        |ctx| super::line3d_fields(ctx, bytes, &cache),
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
         error => panic!("expected resource refusal: {error}"),

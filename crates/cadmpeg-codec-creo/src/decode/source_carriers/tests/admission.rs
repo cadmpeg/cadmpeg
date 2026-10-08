@@ -140,20 +140,38 @@ fn replacement_curve_refuses_source_node_and_id_copy_limits() {
     };
     let geometry = curve.geometry.clone();
     for (dimension, operation) in [
-        (ResourceDimension::CollectionItems, "creo replacement source curve nodes"),
-        (ResourceDimension::MaterializedBytes, "creo replacement source curve IDs"),
+        (
+            ResourceDimension::CollectionItems,
+            "creo replacement source curve nodes",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "creo replacement source curve IDs",
+        ),
     ] {
         let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-            SourceUnitCarriers::for_decode(ctx, None).replace_curve_geometry(ctx, &mut curve.clone(), geometry.clone())
+            SourceUnitCarriers::for_decode(ctx, None).replace_curve_geometry(
+                ctx,
+                &mut curve.clone(),
+                geometry.clone(),
+            )
         });
-        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation),
+            "{error:?}"
+        );
     }
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
     })
     .expect("service replacement");
-    assert_eq!(carriers.curve_geometry(&curve).expect("source carrier lookup"), &geometry);
+    assert_eq!(
+        carriers
+            .curve_geometry(&curve)
+            .expect("source carrier lookup"),
+        &geometry
+    );
 }
 
 #[test]
@@ -172,17 +190,32 @@ fn replacement_curve_refuses_materialized_geometry_copy() {
         source_object: None,
     };
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::MaterializedBytes, "creo replacement source curve geometry", |ctx| {
-            SourceUnitCarriers::for_decode(ctx, None).replace_curve_geometry(ctx, &mut curve.clone(), geometry.clone())
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo replacement source curve geometry",
+        |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).replace_curve_geometry(
+                ctx,
+                &mut curve.clone(),
+                geometry.clone(),
+            )
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo replacement source curve geometry"), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo replacement source curve geometry"),
+        "{error:?}"
+    );
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
     })
     .expect("valid test setup or admitted service result");
-    assert_eq!(carriers.curve_geometry(&curve).expect("source carrier lookup"), &geometry);
+    assert_eq!(
+        carriers
+            .curve_geometry(&curve)
+            .expect("source carrier lookup"),
+        &geometry
+    );
 }
 
 #[test]
@@ -194,20 +227,38 @@ fn replacement_surface_refuses_source_node_and_id_copy_limits() {
     };
     let geometry = surface.geometry.clone();
     for (dimension, operation) in [
-        (ResourceDimension::CollectionItems, "creo replacement source surface nodes"),
-        (ResourceDimension::MaterializedBytes, "creo replacement source surface IDs"),
+        (
+            ResourceDimension::CollectionItems,
+            "creo replacement source surface nodes",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "creo replacement source surface IDs",
+        ),
     ] {
         let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-            SourceUnitCarriers::for_decode(ctx, None).replace_surface_geometry(ctx, &mut surface.clone(), geometry.clone())
+            SourceUnitCarriers::for_decode(ctx, None).replace_surface_geometry(
+                ctx,
+                &mut surface.clone(),
+                geometry.clone(),
+            )
         });
-        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation),
+            "{error:?}"
+        );
     }
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
     })
     .expect("service replacement");
-    assert_eq!(carriers.surface_geometry(&surface).expect("source carrier lookup"), &geometry);
+    assert_eq!(
+        carriers
+            .surface_geometry(&surface)
+            .expect("source carrier lookup"),
+        &geometry
+    );
 }
 
 #[test]
@@ -226,17 +277,32 @@ fn replacement_surface_refuses_materialized_geometry_copy() {
         source_object: None,
     };
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::MaterializedBytes, "creo replacement source surface geometry", |ctx| {
-            SourceUnitCarriers::for_decode(ctx, None).replace_surface_geometry(ctx, &mut surface.clone(), geometry.clone())
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo replacement source surface geometry",
+        |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).replace_surface_geometry(
+                ctx,
+                &mut surface.clone(),
+                geometry.clone(),
+            )
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo replacement source surface geometry"), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo replacement source surface geometry"),
+        "{error:?}"
+    );
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
     })
     .expect("valid test setup or admitted service result");
-    assert_eq!(carriers.surface_geometry(&surface).expect("source carrier lookup"), &geometry);
+    assert_eq!(
+        carriers
+            .surface_geometry(&surface)
+            .expect("source carrier lookup"),
+        &geometry
+    );
 }
 
 #[test]
@@ -247,24 +313,37 @@ fn source_curve_admission_refuses_each_outer_boundary() {
         source_object: None,
     };
     for (dimension, operation) in [
-        (ResourceDimension::CollectionItems, "creo source curve nodes"),
+        (
+            ResourceDimension::CollectionItems,
+            "creo source curve nodes",
+        ),
         (ResourceDimension::CollectionItems, "creo model curves"),
-        (ResourceDimension::MaterializedBytes, "creo source curve IDs"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "creo source curve IDs",
+        ),
     ] {
         let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-            SourceUnitCarriers::for_decode(ctx, None).admit_curve(ctx, &mut CadIr::empty(), curve.clone())
+            SourceUnitCarriers::for_decode(ctx, None).admit_curve(
+                ctx,
+                &mut CadIr::empty(),
+                curve.clone(),
+            )
         });
-        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation),
+            "{error:?}"
+        );
     }
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::default();
-    crate::decode::with_test_decode_ctx(|ctx| {
-        carriers.admit_curve(ctx, &mut ir, curve.clone())
-    })
-    .expect("service curve admission");
+    crate::decode::with_test_decode_ctx(|ctx| carriers.admit_curve(ctx, &mut ir, curve.clone()))
+        .expect("service curve admission");
     assert_eq!(ir.model.curves, vec![curve]);
     assert_eq!(
-        carriers.curve_geometry(&ir.model.curves[0]).expect("source carrier lookup"),
+        carriers
+            .curve_geometry(&ir.model.curves[0])
+            .expect("source carrier lookup"),
         &ir.model.curves[0].geometry
     );
 }
@@ -285,18 +364,31 @@ fn source_curve_admission_refuses_materialized_geometry_copy() {
         source_object: None,
     };
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::MaterializedBytes, "creo source curve geometry", |ctx| {
-            SourceUnitCarriers::for_decode(ctx, None).admit_curve(ctx, &mut CadIr::empty(), curve.clone())
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo source curve geometry",
+        |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).admit_curve(
+                ctx,
+                &mut CadIr::empty(),
+                curve.clone(),
+            )
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo source curve geometry"), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo source curve geometry"),
+        "{error:?}"
+    );
     let mut carriers = SourceUnitCarriers::default();
     let mut ir = CadIr::empty();
-    crate::decode::with_test_decode_ctx(|ctx| {
-        carriers.admit_curve(ctx, &mut ir, curve.clone())
-    })
-    .expect("valid test setup or admitted service result");
-    assert_eq!(carriers.curve_geometry(&ir.model.curves[0]).expect("source carrier lookup"), &geometry);
+    crate::decode::with_test_decode_ctx(|ctx| carriers.admit_curve(ctx, &mut ir, curve.clone()))
+        .expect("valid test setup or admitted service result");
+    assert_eq!(
+        carriers
+            .curve_geometry(&ir.model.curves[0])
+            .expect("source carrier lookup"),
+        &geometry
+    );
 }
 
 #[test]
@@ -307,14 +399,27 @@ fn source_surface_admission_refuses_each_outer_boundary() {
         source_object: None,
     };
     for (dimension, operation) in [
-        (ResourceDimension::CollectionItems, "creo source surface nodes"),
+        (
+            ResourceDimension::CollectionItems,
+            "creo source surface nodes",
+        ),
         (ResourceDimension::CollectionItems, "creo model surfaces"),
-        (ResourceDimension::MaterializedBytes, "creo source surface IDs"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "creo source surface IDs",
+        ),
     ] {
         let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-            SourceUnitCarriers::for_decode(ctx, None).admit_surface(ctx, &mut CadIr::empty(), surface.clone())
+            SourceUnitCarriers::for_decode(ctx, None).admit_surface(
+                ctx,
+                &mut CadIr::empty(),
+                surface.clone(),
+            )
         });
-        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation),
+            "{error:?}"
+        );
     }
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::default();
@@ -324,7 +429,9 @@ fn source_surface_admission_refuses_each_outer_boundary() {
     .expect("service surface admission");
     assert_eq!(ir.model.surfaces, vec![surface]);
     assert_eq!(
-        carriers.surface_geometry(&ir.model.surfaces[0]).expect("source carrier lookup"),
+        carriers
+            .surface_geometry(&ir.model.surfaces[0])
+            .expect("source carrier lookup"),
         &ir.model.surfaces[0].geometry
     );
 }
@@ -345,18 +452,33 @@ fn source_surface_admission_refuses_materialized_geometry_copy() {
         source_object: None,
     };
     let error = crate::test_support::last_refusal_at(
-        &[], ResourceDimension::MaterializedBytes, "creo source surface geometry", |ctx| {
-            SourceUnitCarriers::for_decode(ctx, None).admit_surface(ctx, &mut CadIr::empty(), surface.clone())
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo source surface geometry",
+        |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).admit_surface(
+                ctx,
+                &mut CadIr::empty(),
+                surface.clone(),
+            )
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo source surface geometry"), "{error:?}");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo source surface geometry"),
+        "{error:?}"
+    );
     let mut carriers = SourceUnitCarriers::default();
     let mut ir = CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.admit_surface(ctx, &mut ir, surface.clone())
     })
     .expect("valid test setup or admitted service result");
-    assert_eq!(carriers.surface_geometry(&ir.model.surfaces[0]).expect("source carrier lookup"), &geometry);
+    assert_eq!(
+        carriers
+            .surface_geometry(&ir.model.surfaces[0])
+            .expect("source carrier lookup"),
+        &geometry
+    );
 }
 
 #[test]
@@ -402,14 +524,12 @@ fn point_admission_refuses_before_model_vector_growth() {
     let mut ir = CadIr::empty();
     let point = Point::new(
         cadmpeg_ir::ids::PointId::mint("creo:test:point#0").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-            .expect("finite point"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite point"),
         None,
     );
-    let error = zero_collection_ctx(|ctx| {
-        SourceUnitCarriers::default().admit_point(ctx, &mut ir, point)
-    })
-    .expect_err("one point needs one model vector row");
+    let error =
+        zero_collection_ctx(|ctx| SourceUnitCarriers::default().admit_point(ctx, &mut ir, point))
+            .expect_err("one point needs one model vector row");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo model points"));
@@ -424,10 +544,9 @@ fn vertex_admission_refuses_before_model_vector_growth() {
         point: cadmpeg_ir::ids::PointId::mint("creo:test:point#0").expect("identity grammar"),
         tolerance: None,
     };
-    let error = zero_collection_ctx(|ctx| {
-        SourceUnitCarriers::default().admit_vertex(ctx, &mut ir, vertex)
-    })
-    .expect_err("one vertex needs one model vector row");
+    let error =
+        zero_collection_ctx(|ctx| SourceUnitCarriers::default().admit_vertex(ctx, &mut ir, vertex))
+            .expect_err("one vertex needs one model vector row");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo model vertices"));
@@ -462,18 +581,16 @@ fn coedge_admission_refuses_before_model_vector_growth() {
     let id = cadmpeg_ir::ids::CoedgeId::mint("creo:test:coedge#0").expect("identity grammar");
     let coedge = Coedge {
         id: id.clone(),
-        owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:test:loop#0")
-            .expect("identity grammar"),
+        owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:test:loop#0").expect("identity grammar"),
         edge: cadmpeg_ir::ids::EdgeId::mint("creo:test:edge#0").expect("identity grammar"),
         radial_next: id,
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
     };
-    let error = zero_collection_ctx(|ctx| {
-        SourceUnitCarriers::default().admit_coedge(ctx, &mut ir, coedge)
-    })
-    .expect_err("one coedge needs one model vector row");
+    let error =
+        zero_collection_ctx(|ctx| SourceUnitCarriers::default().admit_coedge(ctx, &mut ir, coedge))
+            .expect_err("one coedge needs one model vector row");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo model coedges"));
@@ -490,12 +607,7 @@ fn pcurve_admission_refuses_before_model_vector_growth() {
         source_object: None,
     });
     let error = zero_collection_ctx(|ctx| {
-        SourceUnitCarriers::default().admit_pcurve(
-            ctx,
-            &mut ir,
-            admission_pcurve(),
-            &surface_id,
-        )
+        SourceUnitCarriers::default().admit_pcurve(ctx, &mut ir, admission_pcurve(), &surface_id)
     })
     .expect_err("one pcurve needs one model vector row");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -550,12 +662,23 @@ fn bounded_edge_admission_refuses_before_source_range_node() {
 
 #[test]
 fn bounded_edge_admission_refuses_before_source_range_id_copy() {
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::MaterializedBytes, "creo source edge range IDs", |ctx| {
-        let mut ir = CadIr::empty();
-        let result = SourceUnitCarriers::for_decode(ctx, None).admit_edge(ctx, &mut ir, admission_edge(Some([0.0, 1.0])));
-        if result.is_err() { assert!(ir.model.edges.is_empty()); }
-        result
-    });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::MaterializedBytes,
+        "creo source edge range IDs",
+        |ctx| {
+            let mut ir = CadIr::empty();
+            let result = SourceUnitCarriers::for_decode(ctx, None).admit_edge(
+                ctx,
+                &mut ir,
+                admission_edge(Some([0.0, 1.0])),
+            );
+            if result.is_err() {
+                assert!(ir.model.edges.is_empty());
+            }
+            result
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::MaterializedBytes
             && resource.operation == "creo source edge range IDs"));
@@ -569,8 +692,7 @@ fn body_admission_refuses_before_model_vector_growth() {
             ctx,
             &mut ir,
             Body {
-                id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
-                    .expect("identity grammar"),
+                id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0").expect("identity grammar"),
                 kind: BodyKind::Solid,
                 regions: Vec::new(),
                 transform: None,
@@ -637,4 +759,3 @@ fn sketch_constraint_admission_refuses_before_counted_model_rows() {
             && resource.operation == "creo model sketch constraints"));
     assert!(ir.model.sketch_constraints.is_empty());
 }
-

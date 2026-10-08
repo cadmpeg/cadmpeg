@@ -27,14 +27,22 @@ impl<T> NumericArray<T> {
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let mut expected = 1usize;
         let mut extents = dimensions.iter();
-        while let Some(dimension) = ctx.next_charged(&mut extents, "creo numeric array extent validation")? {
-            let Some(product) = expected.checked_mul(index_from_u32(*dimension)) else { return Ok(None); };
+        while let Some(dimension) =
+            ctx.next_charged(&mut extents, "creo numeric array extent validation")?
+        {
+            let Some(product) = expected.checked_mul(index_from_u32(*dimension)) else {
+                return Ok(None);
+            };
             expected = product;
         }
         let mut actual = 0usize;
         let mut source_runs = runs.iter();
-        while let Some(run) = ctx.next_charged(&mut source_runs, "creo numeric array run validation")? {
-            let Some(total) = actual.checked_add(index_from_u32(run.count)) else { return Ok(None); };
+        while let Some(run) =
+            ctx.next_charged(&mut source_runs, "creo numeric array run validation")?
+        {
+            let Some(total) = actual.checked_add(index_from_u32(run.count)) else {
+                return Ok(None);
+            };
             actual = total;
         }
         Ok((expected == actual).then_some(Self {

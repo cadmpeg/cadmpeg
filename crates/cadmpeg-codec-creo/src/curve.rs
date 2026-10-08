@@ -8436,33 +8436,34 @@ pub(crate) fn pcurve_endpoints(
 ) -> Result<Vec<PcurveEndpoints>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     {
-let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
-        record.curve_id
-    })?;
-for record in unique_rows {
-        if !matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
-            continue;
+        let (unique_rows, _unique_storage) =
+            crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+                record.curve_id
+            })?;
+        for record in unique_rows {
+            if !matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
+                continue;
+            }
+            let Some(values) = complete_pcurve_values(record) else {
+                continue;
+            };
+            let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
+            let Some(topology) = matching.next() else {
+                continue;
+            };
+            if matching.next().is_some() || topology.type_byte != record.type_byte {
+                continue;
+            }
+            ctx.reserve_vec(&mut result, 1, "creo pcurve endpoint rows")?;
+            result.push(PcurveEndpoints {
+                curve_id: record.curve_id,
+                faces: topology.faces,
+                face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
+                face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
+                offset: record.offset,
+            });
         }
-        let Some(values) = complete_pcurve_values(record) else {
-            continue;
-        };
-        let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
-        let Some(topology) = matching.next() else {
-            continue;
-        };
-        if matching.next().is_some() || topology.type_byte != record.type_byte {
-            continue;
-        }
-        ctx.reserve_vec(&mut result, 1, "creo pcurve endpoint rows")?;
-        result.push(PcurveEndpoints {
-            curve_id: record.curve_id,
-            faces: topology.faces,
-            face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
-            face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
-            offset: record.offset,
-        });
     }
-}
     ctx.stable_sort_by(
         result.as_mut_slice(),
         |value| &value.offset,
@@ -8689,29 +8690,30 @@ pub(crate) fn fc02_short_pcurve_endpoints(
 ) -> Result<Vec<Fc02ShortPcurveEndpoints>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     {
-let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
-        record.curve_id
-    })?;
-for record in unique_rows {
-        let Some(face_0_endpoints) = complete_fc02_short_pcurve_values(record) else {
-            continue;
-        };
-        let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
-        let Some(topology) = matching.next() else {
-            continue;
-        };
-        if matching.next().is_some() || topology.type_byte != record.type_byte {
-            continue;
+        let (unique_rows, _unique_storage) =
+            crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+                record.curve_id
+            })?;
+        for record in unique_rows {
+            let Some(face_0_endpoints) = complete_fc02_short_pcurve_values(record) else {
+                continue;
+            };
+            let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
+            let Some(topology) = matching.next() else {
+                continue;
+            };
+            if matching.next().is_some() || topology.type_byte != record.type_byte {
+                continue;
+            }
+            ctx.reserve_vec(&mut result, 1, "creo FC02 short pcurve endpoints")?;
+            result.push(Fc02ShortPcurveEndpoints {
+                curve_id: record.curve_id,
+                faces: topology.faces.map(stored_face_reference),
+                face_0_endpoints,
+                offset: record.offset,
+            });
         }
-        ctx.reserve_vec(&mut result, 1, "creo FC02 short pcurve endpoints")?;
-        result.push(Fc02ShortPcurveEndpoints {
-            curve_id: record.curve_id,
-            faces: topology.faces.map(stored_face_reference),
-            face_0_endpoints,
-            offset: record.offset,
-        });
     }
-}
     ctx.stable_sort_by(
         result.as_mut_slice(),
         |value| &value.offset,
@@ -8728,75 +8730,80 @@ pub(crate) fn fc_coordinates(
 ) -> Result<Vec<FcCurveCoordinates>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     {
-let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
-        record.curve_id
-    })?;
-for record in unique_rows {
-        let Some((&0xfc, tail)) = record.body.split_first() else {
-            continue;
-        };
-        let Some((&subtype, lane)) = tail.split_first() else {
-            continue;
-        };
-        let mut tokens = Vec::new();
-        let mut cursor = 0;
-        while cursor < lane.len() {
-            if matches!(lane[cursor], 0x46 | 0x2d) {
-                if let Some((value, next)) = scalar::decode(lane, cursor) {
-                    ctx.reserve_vec(&mut tokens, 1, "creo fc coordinate tokens")?;
-                    tokens.push(FcCurveCoordinateToken {
-                        value_mm: value,
-                        raw: ctx
-                            .copy_retained(&lane[cursor..next], "creo fc coordinate token bytes")?,
-                        offset: cursor + 2,
-                    });
-                    cursor = next;
-                    continue;
+        let (unique_rows, _unique_storage) =
+            crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+                record.curve_id
+            })?;
+        for record in unique_rows {
+            let Some((&0xfc, tail)) = record.body.split_first() else {
+                continue;
+            };
+            let Some((&subtype, lane)) = tail.split_first() else {
+                continue;
+            };
+            let mut tokens = Vec::new();
+            let mut cursor = 0;
+            while cursor < lane.len() {
+                if matches!(lane[cursor], 0x46 | 0x2d) {
+                    if let Some((value, next)) = scalar::decode(lane, cursor) {
+                        ctx.reserve_vec(&mut tokens, 1, "creo fc coordinate tokens")?;
+                        tokens.push(FcCurveCoordinateToken {
+                            value_mm: value,
+                            raw: ctx.copy_retained(
+                                &lane[cursor..next],
+                                "creo fc coordinate token bytes",
+                            )?,
+                            offset: cursor + 2,
+                        });
+                        cursor = next;
+                        continue;
+                    }
                 }
+                cursor += 1;
             }
-            cursor += 1;
-        }
-        if tokens.len() >= 4 {
-            let mut opaque_spans = Vec::new();
-            let mut unclaimed = 0;
-            for token in &tokens {
-                if unclaimed < token.offset {
+            if tokens.len() >= 4 {
+                let mut opaque_spans = Vec::new();
+                let mut unclaimed = 0;
+                for token in &tokens {
+                    if unclaimed < token.offset {
+                        ctx.reserve_vec(&mut opaque_spans, 1, "creo fc opaque spans")?;
+                        opaque_spans.push(FcCurveOpaqueSpan {
+                            raw: ctx.copy_retained(
+                                &record.body[unclaimed..token.offset],
+                                "creo fc opaque span bytes",
+                            )?,
+                            offset: unclaimed,
+                        });
+                    }
+                    unclaimed = token.offset + token.raw.len();
+                }
+                if unclaimed < record.body.len() {
                     ctx.reserve_vec(&mut opaque_spans, 1, "creo fc opaque spans")?;
                     opaque_spans.push(FcCurveOpaqueSpan {
                         raw: ctx.copy_retained(
-                            &record.body[unclaimed..token.offset],
+                            &record.body[unclaimed..],
                             "creo fc opaque span bytes",
                         )?,
                         offset: unclaimed,
                     });
                 }
-                unclaimed = token.offset + token.raw.len();
-            }
-            if unclaimed < record.body.len() {
-                ctx.reserve_vec(&mut opaque_spans, 1, "creo fc opaque spans")?;
-                opaque_spans.push(FcCurveOpaqueSpan {
-                    raw: ctx
-                        .copy_retained(&record.body[unclaimed..], "creo fc opaque span bytes")?,
-                    offset: unclaimed,
+                let mut values_mm = Vec::new();
+                ctx.reserve_vec(&mut values_mm, tokens.len(), "creo fc coordinate values")?;
+                values_mm.extend(tokens.iter().map(|token| token.value_mm));
+                let body = ctx.copy_retained(&record.body, "creo fc coordinate body")?;
+                ctx.reserve_vec(&mut result, 1, "creo fc coordinate rows")?;
+                result.push(FcCurveCoordinates {
+                    curve_id: record.curve_id,
+                    subtype,
+                    body,
+                    values_mm,
+                    tokens,
+                    opaque_spans,
+                    offset: record.offset,
                 });
             }
-            let mut values_mm = Vec::new();
-            ctx.reserve_vec(&mut values_mm, tokens.len(), "creo fc coordinate values")?;
-            values_mm.extend(tokens.iter().map(|token| token.value_mm));
-            let body = ctx.copy_retained(&record.body, "creo fc coordinate body")?;
-            ctx.reserve_vec(&mut result, 1, "creo fc coordinate rows")?;
-            result.push(FcCurveCoordinates {
-                curve_id: record.curve_id,
-                subtype,
-                body,
-                values_mm,
-                tokens,
-                opaque_spans,
-                offset: record.offset,
-            });
         }
     }
-}
     ctx.stable_sort_by(
         result.as_mut_slice(),
         |value| &value.offset,
@@ -8837,160 +8844,170 @@ pub(crate) fn fc05_circles(
 ) -> Result<Vec<Fc05Circle>, cadmpeg_core::CodecError> {
     let mut circles = Vec::new();
     {
-let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
-        record.curve_id
-    })?;
-for record in unique_rows {
-        if record.body.get(..2) != Some(&[0xfc, 0x05]) {
-            continue;
-        }
-        let mut points = Vec::new();
-        let mut cursor = 2;
-        while cursor < record.body.len() {
-            if !matches!(record.body[cursor], 0x46 | 0x2d) {
-                break;
+        let (unique_rows, _unique_storage) =
+            crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+                record.curve_id
+            })?;
+        for record in unique_rows {
+            if record.body.get(..2) != Some(&[0xfc, 0x05]) {
+                continue;
             }
-            let Some((x, next)) = fc05_scalar(&record.body, cursor) else {
-                break;
-            };
-            let Some((z, next)) = fc05_scalar(&record.body, next) else {
-                break;
-            };
-            let parameter_start = next;
-            let Some((decoded_parameter, decoded_next)) = fc05_scalar(&record.body, next) else {
-                break;
-            };
-            let (parameter, next) = if matches!(record.body.get(decoded_next), Some(0x46 | 0x2d)) {
-                (Some(decoded_parameter), decoded_next)
-            } else {
-                let following = (parameter_start + 1..(parameter_start + 9).min(record.body.len()))
-                    .find(|offset| matches!(record.body[*offset], 0x46 | 0x2d));
-                let Some(following) = following else {
+            let mut points = Vec::new();
+            let mut cursor = 2;
+            while cursor < record.body.len() {
+                if !matches!(record.body[cursor], 0x46 | 0x2d) {
+                    break;
+                }
+                let Some((x, next)) = fc05_scalar(&record.body, cursor) else {
                     break;
                 };
-                (None, following)
-            };
-            let Some((ordinate, next)) = fc05_scalar(&record.body, next) else {
-                break;
-            };
-            ctx.reserve_vec(&mut points, 1, "creo fc05 point rows")?;
-            points.push((x, z, parameter, ordinate));
-            cursor = next;
-        }
-        if cursor != record.body.len() && record.body.get(cursor..) != Some(&[0xff]) {
-            continue;
-        }
-        if points.len() < 4 {
-            continue;
-        }
-        let ordinate = points[0].3;
-        if points
-            .iter()
-            .any(|point| (point.3 - ordinate).abs() > EPS_ORDINATE_AGREEMENT)
-        {
-            continue;
-        }
-        let first = points[0];
-        let middle = points[points.len() / 2];
-        let last = points[points.len() - 1];
-        let middle_delta = [middle.0 - first.0, middle.1 - first.1];
-        let last_delta = [last.0 - first.0, last.1 - first.1];
-        let scale = middle_delta
-            .into_iter()
-            .chain(last_delta)
-            .map(f64::abs)
-            .fold(0.0, f64::max);
-        if !scale.is_finite() || scale == 0.0 {
-            continue;
-        }
-        let middle_delta = middle_delta.map(|value| value / scale);
-        let last_delta = last_delta.map(|value| value / scale);
-        let determinant = middle_delta[0].mul_add(last_delta[1], -middle_delta[1] * last_delta[0]);
-        if determinant.abs() <= 64.0 * f64::EPSILON {
-            continue;
-        }
-        // Fit in a translated chart so subtracting squared world positions
-        // cannot erase a small circle's radius.
-        let middle_squared =
-            middle_delta[0].mul_add(middle_delta[0], middle_delta[1] * middle_delta[1]);
-        let last_squared = last_delta[0].mul_add(last_delta[0], last_delta[1] * last_delta[1]);
-        let center_u = 0.5 * middle_squared.mul_add(last_delta[1], -middle_delta[1] * last_squared)
-            / determinant;
-        let center_v = 0.5 * middle_delta[0].mul_add(last_squared, -middle_squared * last_delta[0])
-            / determinant;
-        let center_x = center_u.mul_add(scale, first.0);
-        let center_z = center_v.mul_add(scale, first.1);
-        let radius = (first.0 - center_x).hypot(first.1 - center_z);
-        if ![center_x, center_z, radius].into_iter().all(f64::is_finite) || radius <= 0.0 {
-            continue;
-        }
-        let max_residual = points
-            .iter()
-            .map(|point| ((point.0 - center_x).hypot(point.1 - center_z) - radius).abs())
-            .fold(0.0, f64::max);
-        if max_residual > EPS_CIRCLE_RESIDUAL * radius {
-            continue;
-        }
-        let angle_0 = (first.1 - center_z).atan2(first.0 - center_x);
-        let parameter_0 = first.2;
-        let wrapped_distance = |left: f64, right: f64| {
-            let difference = left - right;
-            difference
-                .is_finite()
-                .then(|| difference.rem_euclid(std::f64::consts::TAU))
-                .map_or(f64::INFINITY, |wrapped| {
-                    wrapped.min(std::f64::consts::TAU - wrapped)
-                })
-        };
-        let sign_matches = |sign: f64| {
-            points.iter().all(|point| {
-                let (Some(parameter), Some(parameter_0)) = (point.2, parameter_0) else {
-                    return false;
+                let Some((z, next)) = fc05_scalar(&record.body, next) else {
+                    break;
                 };
-                let angle = (point.1 - center_z).atan2(point.0 - center_x);
-                let expected = angle_0 + sign * (parameter - parameter_0);
-                wrapped_distance(angle, expected) <= EPS_ANGLE_AGREEMENT
-            })
-        };
-        let positive = sign_matches(1.0);
-        let negative = sign_matches(-1.0);
-        let angle_parameter = match (positive, negative, parameter_0) {
-            (true, false, Some(parameter_0)) | (false, true, Some(parameter_0)) => {
-                let sense = if positive {
-                    ParameterSense::Increasing
-                } else {
-                    ParameterSense::Decreasing
+                let parameter_start = next;
+                let Some((decoded_parameter, decoded_next)) = fc05_scalar(&record.body, next)
+                else {
+                    break;
                 };
-                let reference_angle = angle_0 - f64::from(sense.as_i8()) * parameter_0;
-                Fc05AngleParameterRelation::Consistent {
-                    sense,
-                    reference_direction_row_frame: [reference_angle.cos(), reference_angle.sin()],
-                }
+                let (parameter, next) =
+                    if matches!(record.body.get(decoded_next), Some(0x46 | 0x2d)) {
+                        (Some(decoded_parameter), decoded_next)
+                    } else {
+                        let following = (parameter_start + 1
+                            ..(parameter_start + 9).min(record.body.len()))
+                            .find(|offset| matches!(record.body[*offset], 0x46 | 0x2d));
+                        let Some(following) = following else {
+                            break;
+                        };
+                        (None, following)
+                    };
+                let Some((ordinate, next)) = fc05_scalar(&record.body, next) else {
+                    break;
+                };
+                ctx.reserve_vec(&mut points, 1, "creo fc05 point rows")?;
+                points.push((x, z, parameter, ordinate));
+                cursor = next;
             }
-            _ => Fc05AngleParameterRelation::Inconsistent,
-        };
-        let Some((sample_direction_row_frame, _)) =
-            cadmpeg_ir::units::HypotDirection2::normalized_with_length([
-                first.0 - center_x,
-                first.1 - center_z,
-            ])
-        else {
-            continue;
-        };
-        ctx.reserve_vec(&mut circles, 1, "creo fc05 circles")?;
-        circles.push(Fc05Circle {
-            curve_id: record.curve_id,
-            center_row_frame: [center_x, center_z],
-            radius_mm: radius,
-            sample_direction_row_frame,
-            angle_parameter,
-            cap_ordinate_row_frame: Some(ordinate),
-            point_count: points.len(),
-            max_residual,
-            offset: record.offset,
-        });
+            if cursor != record.body.len() && record.body.get(cursor..) != Some(&[0xff]) {
+                continue;
+            }
+            if points.len() < 4 {
+                continue;
+            }
+            let ordinate = points[0].3;
+            if points
+                .iter()
+                .any(|point| (point.3 - ordinate).abs() > EPS_ORDINATE_AGREEMENT)
+            {
+                continue;
+            }
+            let first = points[0];
+            let middle = points[points.len() / 2];
+            let last = points[points.len() - 1];
+            let middle_delta = [middle.0 - first.0, middle.1 - first.1];
+            let last_delta = [last.0 - first.0, last.1 - first.1];
+            let scale = middle_delta
+                .into_iter()
+                .chain(last_delta)
+                .map(f64::abs)
+                .fold(0.0, f64::max);
+            if !scale.is_finite() || scale == 0.0 {
+                continue;
+            }
+            let middle_delta = middle_delta.map(|value| value / scale);
+            let last_delta = last_delta.map(|value| value / scale);
+            let determinant =
+                middle_delta[0].mul_add(last_delta[1], -middle_delta[1] * last_delta[0]);
+            if determinant.abs() <= 64.0 * f64::EPSILON {
+                continue;
+            }
+            // Fit in a translated chart so subtracting squared world positions
+            // cannot erase a small circle's radius.
+            let middle_squared =
+                middle_delta[0].mul_add(middle_delta[0], middle_delta[1] * middle_delta[1]);
+            let last_squared = last_delta[0].mul_add(last_delta[0], last_delta[1] * last_delta[1]);
+            let center_u = 0.5
+                * middle_squared.mul_add(last_delta[1], -middle_delta[1] * last_squared)
+                / determinant;
+            let center_v = 0.5
+                * middle_delta[0].mul_add(last_squared, -middle_squared * last_delta[0])
+                / determinant;
+            let center_x = center_u.mul_add(scale, first.0);
+            let center_z = center_v.mul_add(scale, first.1);
+            let radius = (first.0 - center_x).hypot(first.1 - center_z);
+            if ![center_x, center_z, radius].into_iter().all(f64::is_finite) || radius <= 0.0 {
+                continue;
+            }
+            let max_residual = points
+                .iter()
+                .map(|point| ((point.0 - center_x).hypot(point.1 - center_z) - radius).abs())
+                .fold(0.0, f64::max);
+            if max_residual > EPS_CIRCLE_RESIDUAL * radius {
+                continue;
+            }
+            let angle_0 = (first.1 - center_z).atan2(first.0 - center_x);
+            let parameter_0 = first.2;
+            let wrapped_distance = |left: f64, right: f64| {
+                let difference = left - right;
+                difference
+                    .is_finite()
+                    .then(|| difference.rem_euclid(std::f64::consts::TAU))
+                    .map_or(f64::INFINITY, |wrapped| {
+                        wrapped.min(std::f64::consts::TAU - wrapped)
+                    })
+            };
+            let sign_matches = |sign: f64| {
+                points.iter().all(|point| {
+                    let (Some(parameter), Some(parameter_0)) = (point.2, parameter_0) else {
+                        return false;
+                    };
+                    let angle = (point.1 - center_z).atan2(point.0 - center_x);
+                    let expected = angle_0 + sign * (parameter - parameter_0);
+                    wrapped_distance(angle, expected) <= EPS_ANGLE_AGREEMENT
+                })
+            };
+            let positive = sign_matches(1.0);
+            let negative = sign_matches(-1.0);
+            let angle_parameter = match (positive, negative, parameter_0) {
+                (true, false, Some(parameter_0)) | (false, true, Some(parameter_0)) => {
+                    let sense = if positive {
+                        ParameterSense::Increasing
+                    } else {
+                        ParameterSense::Decreasing
+                    };
+                    let reference_angle = angle_0 - f64::from(sense.as_i8()) * parameter_0;
+                    Fc05AngleParameterRelation::Consistent {
+                        sense,
+                        reference_direction_row_frame: [
+                            reference_angle.cos(),
+                            reference_angle.sin(),
+                        ],
+                    }
+                }
+                _ => Fc05AngleParameterRelation::Inconsistent,
+            };
+            let Some((sample_direction_row_frame, _)) =
+                cadmpeg_ir::units::HypotDirection2::normalized_with_length([
+                    first.0 - center_x,
+                    first.1 - center_z,
+                ])
+            else {
+                continue;
+            };
+            ctx.reserve_vec(&mut circles, 1, "creo fc05 circles")?;
+            circles.push(Fc05Circle {
+                curve_id: record.curve_id,
+                center_row_frame: [center_x, center_z],
+                radius_mm: radius,
+                sample_direction_row_frame,
+                angle_parameter,
+                cap_ordinate_row_frame: Some(ordinate),
+                point_count: points.len(),
+                max_residual,
+                offset: record.offset,
+            });
+        }
     }
-}
     ctx.stable_sort_by(
         circles.as_mut_slice(),
         |value| &value.offset,
@@ -9012,16 +9029,17 @@ pub(crate) fn fc05_cylinder_cap_pairs(
 
     let mut faces = BTreeMap::<u32, [Option<NonZeroU32>; 2]>::new();
     {
-let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, topology, |row| row.id)?;
-for row in unique_rows {
-        ctx.insert_btree_map(
-            &mut faces,
-            row.id,
-            row.faces,
-            "creo fc05 topology-face nodes",
-        )?;
+        let (unique_rows, _unique_storage) =
+            crate::identity::uniquely_identified_rows_checked(ctx, topology, |row| row.id)?;
+        for row in unique_rows {
+            ctx.insert_btree_map(
+                &mut faces,
+                row.id,
+                row.faces,
+                "creo fc05 topology-face nodes",
+            )?;
+        }
     }
-}
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {
         match ctx.entry_btree_map(

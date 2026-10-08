@@ -61,15 +61,16 @@ fn legacy_scope_bounds_error_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::scan(&ctx, &[0], std::iter::once(0..2)).expect_err("scope end exceeds source length");
+    let error = super::scan(&ctx, &[0], std::iter::once(0..2))
+        .expect_err("scope end exceeds source length");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo legacy scope bounds error")
     );
     crate::decode::with_test_decode_ctx(|ctx| {
-        let error =
-            super::scan(ctx, &[0], std::iter::once(0..2)).expect_err("scope end exceeds source length");
+        let error = super::scan(ctx, &[0], std::iter::once(0..2))
+            .expect_err("scope end exceeds source length");
         assert!(error.to_string().contains("past the file length"));
         Ok::<(), cadmpeg_core::CodecError>(())
     })
@@ -92,8 +93,12 @@ fn scan(
 }
 
 fn assert_scope_collection_refusal(data: &[u8], operation: &'static str) {
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems,
-        operation, |ctx| super::scan(ctx, data, std::iter::once(0..data.len())));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| super::scan(ctx, data, std::iter::once(0..data.len())),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -108,10 +113,7 @@ fn legacy_scope_vec_refuses_before_first_scope() {
 
 #[test]
 fn legacy_declaration_index_refuses_before_new_node() {
-    assert_scope_collection_refusal(
-        b"@size 1 1\n0 1 9\n",
-        "creo legacy declaration index nodes",
-    );
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", "creo legacy declaration index nodes");
 }
 
 #[test]
@@ -121,10 +123,7 @@ fn legacy_declaration_vec_refuses_before_row() {
 
 #[test]
 fn legacy_scope_candidate_vec_refuses_before_value_row() {
-    assert_scope_collection_refusal(
-        b"@size 1 1\n0 1 9\n",
-        "creo legacy scope value candidates",
-    );
+    assert_scope_collection_refusal(b"@size 1 1\n0 1 9\n", "creo legacy scope value candidates");
 }
 
 #[test]
@@ -154,8 +153,12 @@ fn legacy_declaration_name_refuses_before_scoped_copy() {
 fn assert_parent_lookup_refusal(operation: &'static str) {
     let data = b"@root 1 0\n@child 2 0\n0 1 ->\n1 2 ->\n";
     let scopes = vec![scope_fixture(data, 0..data.len())];
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems,
-        operation, |ctx| super::parent_object_offsets(ctx, &scopes));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| super::parent_object_offsets(ctx, &scopes),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -206,19 +209,28 @@ fn legacy_continuation_run_refuses_before_vec_growth() {
 }
 
 fn scope_fixture(data: &[u8], range: std::ops::Range<usize>) -> super::Scope {
-    crate::decode::with_test_decode_ctx(|ctx| super::scan_scope(ctx, data, range)).expect("fixture scope")
+    crate::decode::with_test_decode_ctx(|ctx| super::scan_scope(ctx, data, range))
+        .expect("fixture scope")
 }
 
-fn object_fixture_parts(data: &[u8]) -> (Vec<super::Scope>, std::collections::HashMap<usize, usize>) {
+fn object_fixture_parts(
+    data: &[u8],
+) -> (Vec<super::Scope>, std::collections::HashMap<usize, usize>) {
     let scopes = vec![scope_fixture(data, 0..data.len())];
-    let parents = crate::decode::with_test_decode_ctx(|ctx| super::parent_object_offsets(ctx, &scopes)).expect("parent lookup fits service limits");
+    let parents =
+        crate::decode::with_test_decode_ctx(|ctx| super::parent_object_offsets(ctx, &scopes))
+            .expect("parent lookup fits service limits");
     (scopes, parents)
 }
 
 fn assert_object_collection_refusal(data: &[u8], operation: &'static str) {
     let (scopes, parents) = object_fixture_parts(data);
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems,
-        operation, |ctx| super::object_records(ctx, data, &scopes, &parents));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| super::object_records(ctx, data, &scopes, &parents),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems

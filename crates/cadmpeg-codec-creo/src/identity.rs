@@ -119,7 +119,9 @@ pub(crate) fn uniquely_identified_rows_checked<'ctx, 'a, T>(
     let mut counts = std::collections::HashMap::<u32, usize>::new();
     for row in ctx.admit_iter(rows, "creo unique-row identity work")? {
         let key = id(row);
-        match count_storage.with_storage(|| ctx.entry_hash_map(&mut counts, key, "creo unique-row count nodes"))? {
+        match count_storage
+            .with_storage(|| ctx.entry_hash_map(&mut counts, key, "creo unique-row count nodes"))?
+        {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = entry.get().checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit("creo unique-row multiplicity", u64::MAX, u64::MAX)
@@ -130,10 +132,12 @@ pub(crate) fn uniquely_identified_rows_checked<'ctx, 'a, T>(
             }
         }
     }
-    let (mut unique, mut unique_storage) = ctx.temporary_vec(0, "creo unique-row projection storage")?;
+    let (mut unique, mut unique_storage) =
+        ctx.temporary_vec(0, "creo unique-row projection storage")?;
     for row in ctx.admit_iter(rows, "creo unique-row identity work")? {
         if counts.get(&id(row)) == Some(&1) {
-            unique_storage.with_storage(|| ctx.reserve_vec(&mut unique, 1, "creo unique-row projection"))?;
+            unique_storage
+                .with_storage(|| ctx.reserve_vec(&mut unique, 1, "creo unique-row projection"))?;
             unique.push(row);
         }
     }
@@ -414,31 +418,40 @@ mod tests {
     fn unique_row_projection_holds_scratch_storage_until_drop() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let rows = [1u32, 2, 1];
-        let cap = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = cap;
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let (unique, storage) = super::uniquely_identified_rows_checked(&ctx, &rows, |row| *row)?;
-            assert_eq!(unique, [&2]);
-            drop(unique);
-            drop(storage);
-            Ok(())
-        });
+        let cap = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            None,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                let (unique, storage) =
+                    super::uniquely_identified_rows_checked(&ctx, &rows, |row| *row)?;
+                assert_eq!(unique, [&2]);
+                drop(unique);
+                drop(storage);
+                Ok(())
+            },
+        );
         let probe = |release: bool| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let (unique, storage) = super::uniquely_identified_rows_checked(&ctx, &rows, |row| *row)?;
+            let (unique, storage) =
+                super::uniquely_identified_rows_checked(&ctx, &rows, |row| *row)?;
             if release {
                 drop(unique);
                 drop(storage);
-                ctx.reserve_scoped(cap, "unique projection storage probe").map(drop)
+                ctx.reserve_scoped(cap, "unique projection storage probe")
+                    .map(drop)
             } else {
-                let result = ctx.reserve_scoped(cap, "unique projection storage probe").map(drop);
+                let result = ctx
+                    .reserve_scoped(cap, "unique projection storage probe")
+                    .map(drop);
                 drop(unique);
                 drop(storage);
                 result
@@ -450,5 +463,4 @@ mod tests {
                 && resource.operation == "unique projection storage probe"));
         probe(true).expect("dropped projection releases all temporary bytes");
     }
-
 }

@@ -4,15 +4,17 @@ use cadmpeg_core::decode::ResourceDimension;
 
 use super::super::ValueKind;
 
-fn assert_numeric_refusal(
-    data: &[u8],
-    dimension: ResourceDimension,
-    operation: &'static str,
-) {
+fn assert_numeric_refusal(data: &[u8], dimension: ResourceDimension, operation: &'static str) {
     let (scopes, parents) = super::object_fixture_parts(data);
     let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-        super::super::numeric_records(ctx, data, &scopes, ValueKind::INTEGER,
-            super::super::signed_integer, &parents)
+        super::super::numeric_records(
+            ctx,
+            data,
+            &scopes,
+            ValueKind::INTEGER,
+            super::super::signed_integer,
+            &parents,
+        )
     });
 
     assert!(

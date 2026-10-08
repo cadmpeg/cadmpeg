@@ -6,8 +6,12 @@ use super::super::{NullToken, ValueKind};
 
 fn assert_string_collection_refusal(data: &[u8], operation: &'static str) {
     let (scopes, parents) = super::object_fixture_parts(data);
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems,
-        operation, |ctx| super::super::string_records(ctx, data, &scopes, &parents));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| super::super::string_records(ctx, data, &scopes, &parents),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -24,10 +28,7 @@ fn active_string_array_refuses_before_growth() {
 
 #[test]
 fn string_array_child_refuses_before_hash_node() {
-    assert_string_collection_refusal(
-        ONE_STRING_ELEMENT,
-        "creo legacy string array child nodes",
-    );
+    assert_string_collection_refusal(ONE_STRING_ELEMENT, "creo legacy string array child nodes");
 }
 
 #[test]
@@ -76,29 +77,26 @@ fn string_record_name_refuses_before_retained_copy() {
 
 #[test]
 fn string_utf8_payload_refuses_before_retained_copy() {
-    assert_string_retained_refusal(
-        b"@name 1 10\n0 1 W\n",
-        "creo legacy string UTF-8 payload",
-    );
+    assert_string_retained_refusal(b"@name 1 10\n0 1 W\n", "creo legacy string UTF-8 payload");
 }
 
 #[test]
 fn string_byte_payload_refuses_before_retained_copy() {
-    assert_string_retained_refusal(
-        b"@name 1 10\n0 1 \xff\n",
-        "creo legacy string byte payload",
-    );
+    assert_string_retained_refusal(b"@name 1 10\n0 1 \xff\n", "creo legacy string byte payload");
 }
 
-fn assert_scalar_string_refusal(
-    operation: &'static str,
-    dimension: ResourceDimension,
-) {
+fn assert_scalar_string_refusal(operation: &'static str, dimension: ResourceDimension) {
     let data = b"@code 1 3\n0 1 TEXT\n";
     let (scopes, parents) = super::object_fixture_parts(data);
     let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-        super::super::scalar_string_records(ctx, data, &scopes, ValueKind::TYPE3,
-            NullToken::RepresentsNull, &parents)
+        super::super::scalar_string_records(
+            ctx,
+            data,
+            &scopes,
+            ValueKind::TYPE3,
+            NullToken::RepresentsNull,
+            &parents,
+        )
     });
 
     assert!(

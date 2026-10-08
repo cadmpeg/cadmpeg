@@ -38,8 +38,11 @@ fn legacy_visible_surface_row_aggregation_refuses_before_vec_growth() {
         1,
         "the legacy fixture supplies one visible row"
     );
-    let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems,
-        Some("creo legacy surface row aggregation"), |cap| scan_legacy_surface_with_limit(&bytes, cap));
+    let cap = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo legacy surface row aggregation"),
+        |cap| scan_legacy_surface_with_limit(&bytes, cap),
+    );
     let refusal = match scan_legacy_surface_with_limit(&bytes, cap) {
         Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => Some(refusal),
         _ => None,
@@ -62,8 +65,11 @@ fn legacy_nonvisible_surface_row_aggregation_refuses_before_vec_growth() {
         1,
         "the legacy fixture supplies one nonvisible row"
     );
-    let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems,
-        Some("creo legacy nonvisible surface row aggregation"), |cap| scan_legacy_surface_with_limit(&bytes, cap));
+    let cap = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo legacy nonvisible surface row aggregation"),
+        |cap| scan_legacy_surface_with_limit(&bytes, cap),
+    );
     let refusal = match scan_legacy_surface_with_limit(&bytes, cap) {
         Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => Some(refusal),
         _ => None,
@@ -103,7 +109,12 @@ fn placement_plane_result(
 #[test]
 fn placement_outline_plane_copy_refuses_before_vec_growth() {
     use cadmpeg_core::decode::ResourceDimension;
-    let rows = placement_plane_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, placement_plane_result)).expect("two plane copies are admitted");
+    let rows = placement_plane_result(crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        None,
+        placement_plane_result,
+    ))
+    .expect("two plane copies are admitted");
     assert_eq!(
         rows.iter().map(|row| row.surface_id).collect::<Vec<_>>(),
         [7, 8]
@@ -152,12 +163,24 @@ fn prototype_topology_row_aggregation_refuses_before_vec_growth() {
         crate::container::append_topology_rows(
             &ctx,
             &mut rows,
-            ctx.admit_iter([topology_row_fixture(7)], "creo topology row append traversal")?,
+            ctx.admit_iter(
+                [topology_row_fixture(7)],
+                "creo topology row append traversal",
+            )?,
             "creo prototype topology row aggregation",
         )?;
         Ok::<_, cadmpeg_core::CodecError>(rows)
     };
-    assert_eq!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("one topology row is admitted")[0].id, 7);
+    assert_eq!(
+        run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            run
+        ))
+        .expect("one topology row is admitted")[0]
+            .id,
+        7
+    );
     assert!(matches!(
         run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo prototype topology row aggregation"), run)),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -207,7 +230,12 @@ fn legacy_curve_witnesses_result(
 #[test]
 fn legacy_topology_row_aggregation_refuses_before_vec_growth() {
     use cadmpeg_core::decode::ResourceDimension;
-    let (rows, pcurves) = legacy_curve_witnesses_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, legacy_curve_witnesses_result)).expect("two witnesses are admitted");
+    let (rows, pcurves) = legacy_curve_witnesses_result(crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        None,
+        legacy_curve_witnesses_result,
+    ))
+    .expect("two witnesses are admitted");
     assert_eq!((rows[0].id, pcurves[0].curve_id), (7, 7));
     assert!(matches!(
         legacy_curve_witnesses_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo legacy topology row aggregation"), legacy_curve_witnesses_result)),

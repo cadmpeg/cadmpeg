@@ -929,11 +929,7 @@ fn append_definition_with_limit(
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("definition input is admitted");
     let mut definitions = Vec::new();
-    ctx.extend_vec(
-        &mut definitions,
-        vec![one_feature_definition()],
-        operation,
-    )?;
+    ctx.extend_vec(&mut definitions, vec![one_feature_definition()], operation)?;
     Ok(definitions.len())
 }
 
@@ -1349,7 +1345,6 @@ fn native_model_name_utf8_refuses_before_invalid_name() {
             && resource.operation == "creo UTF-8 validation")
     );
 }
-
 
 #[test]
 fn aggregate_pcurve_retain_refuses_work() {

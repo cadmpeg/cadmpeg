@@ -1143,10 +1143,15 @@ pub(crate) fn positional_conics(
             if after_type == after_id || payload.get(after_type) != Some(&0xe2) {
                 continue;
             }
-            headers_storage.with_storage(|| ctx.reserve_vec(&mut headers, 1, "creo positional conic headers"))?;
+            headers_storage.with_storage(|| {
+                ctx.reserve_vec(&mut headers, 1, "creo positional conic headers")
+            })?;
             headers.push((close, entity_id, type_id, after_type + 1));
         }
-        for (index, &(close, entity_id, type_id, body_start)) in ctx.admit_iter(&headers, "creo reference header traversal")?.enumerate() {
+        for (index, &(close, entity_id, type_id, body_start)) in ctx
+            .admit_iter(&headers, "creo reference header traversal")?
+            .enumerate()
+        {
             let body_end = headers
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _, _)| *next_close);
@@ -1193,34 +1198,72 @@ pub(crate) fn lines(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = ctx.find_bytes_in(payload, PROTOTYPE, search, payload.len(), "creo reference byte search")?
-    {
+    while let Some(prototype) = ctx.find_bytes_in(
+        payload,
+        PROTOTYPE,
+        search,
+        payload.len(),
+        "creo reference byte search",
+    )? {
         let instance_search = prototype + PROTOTYPE.len();
-        let prototype_end = ctx.find_bytes_in(payload, LIST, instance_search, payload.len(), "creo reference byte search")?.unwrap_or(payload.len());
-        let Some(instance) = ctx.find_bytes_in(payload, INSTANCE, instance_search, prototype_end, "creo reference byte search")?
+        let prototype_end = ctx
+            .find_bytes_in(
+                payload,
+                LIST,
+                instance_search,
+                payload.len(),
+                "creo reference byte search",
+            )?
+            .unwrap_or(payload.len());
+        let Some(instance) = ctx.find_bytes_in(
+            payload,
+            INSTANCE,
+            instance_search,
+            prototype_end,
+            "creo reference byte search",
+        )?
         else {
             search = prototype_end.max(instance_search);
             continue;
         };
         let rows_start = instance + INSTANCE.len();
-        let block_end = ctx.find_bytes_in(payload, ENTITY, rows_start, payload.len(), "creo reference byte search")?.unwrap_or(payload.len());
+        let block_end = ctx
+            .find_bytes_in(
+                payload,
+                ENTITY,
+                rows_start,
+                payload.len(),
+                "creo reference byte search",
+            )?
+            .unwrap_or(payload.len());
         let mut starts_storage = ctx.reserve_scoped(0, "creo reference line starts")?;
         let mut starts = Vec::new();
         let mut cursor = rows_start;
-        while let Some(start) = ctx.find_bytes_in(payload, ROW_START, cursor, block_end, "creo reference byte search")?
-        {
+        while let Some(start) = ctx.find_bytes_in(
+            payload,
+            ROW_START,
+            cursor,
+            block_end,
+            "creo reference byte search",
+        )? {
             if starts.is_empty()
                 || match start.checked_sub(1) {
                     Some(before) => payload.get(before) == Some(&0xe3),
                     None => false, // Position zero has no preceding row marker.
                 }
             {
-                starts_storage.with_storage(|| ctx.reserve_vec(&mut starts, 1, "creo reference line starts"))?;
+                starts_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut starts, 1, "creo reference line starts")
+                })?;
                 starts.push(start);
             }
             cursor = start + ROW_START.len();
         }
-        for (index, start) in ctx.admit_iter(&starts, "creo reference start traversal")?.copied().enumerate() {
+        for (index, start) in ctx
+            .admit_iter(&starts, "creo reference start traversal")?
+            .copied()
+            .enumerate()
+        {
             let end = starts.get(index + 1).map_or(block_end, |next| next - 1);
             let end = match end.checked_sub(1) {
                 Some(before) if payload.get(before) == Some(&0xe3) => before,
@@ -1292,10 +1335,21 @@ fn line3d_fields(
         Some((start, first_checked, second_checked, stored_length))
     };
     let Some((start, first, second, stored_length)) = ctx.find_map(
-        0..body.len(), |start| Ok(candidate(start)), "creo line3d numeric trials",
-    )? else { return Ok(None); };
-    Ok(ctx.find_map(start + 1..body.len(), |start| Ok(candidate(start)), "creo line3d numeric trials")?
-        .is_none().then_some((first, second, stored_length)))
+        0..body.len(),
+        |start| Ok(candidate(start)),
+        "creo line3d numeric trials",
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .find_map(
+            start + 1..body.len(),
+            |start| Ok(candidate(start)),
+            "creo line3d numeric trials",
+        )?
+        .is_none()
+        .then_some((first, second, stored_length)))
 }
 
 fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
@@ -1333,10 +1387,23 @@ pub(crate) fn line3d_lines(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = ctx.find_bytes_in(payload, PROTOTYPE, search, payload.len(), "creo reference byte search")?
-    {
+    while let Some(prototype) = ctx.find_bytes_in(
+        payload,
+        PROTOTYPE,
+        search,
+        payload.len(),
+        "creo reference byte search",
+    )? {
         let rows_start = prototype + PROTOTYPE.len();
-        let block_end = ctx.find_bytes_in(payload, LIST, rows_start, payload.len(), "creo reference byte search")?.unwrap_or(payload.len());
+        let block_end = ctx
+            .find_bytes_in(
+                payload,
+                LIST,
+                rows_start,
+                payload.len(),
+                "creo reference byte search",
+            )?
+            .unwrap_or(payload.len());
         let mut headers_storage = ctx.reserve_scoped(0, "creo line3d headers")?;
         let mut headers = Vec::new();
         for close in ctx.admit_iter(rows_start..block_end, "creo reference row header traversal")? {
@@ -1354,10 +1421,15 @@ pub(crate) fn line3d_lines(
                 continue;
             }
             let body_start = body_start + 1;
-            headers_storage.with_storage(|| ctx.reserve_vec(&mut headers, 1, "creo line3d headers"))?;
+            headers_storage
+                .with_storage(|| ctx.reserve_vec(&mut headers, 1, "creo line3d headers"))?;
             headers.push((close, body_start, id));
         }
-        for (index, (close, body_start, entity_id)) in ctx.admit_iter(&headers, "creo reference header traversal")?.copied().enumerate() {
+        for (index, (close, body_start, entity_id)) in ctx
+            .admit_iter(&headers, "creo reference header traversal")?
+            .copied()
+            .enumerate()
+        {
             let body_end = headers
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _)| *next_close);
@@ -1484,13 +1556,22 @@ fn arc_z_fields(
             start,
         )
     };
-    let mut trials = (0..body.len()).map(|start| (true, start))
+    let mut trials = (0..body.len())
+        .map(|start| (true, start))
         .chain((0..body.len()).map(|start| (false, start)));
     let mut selected = None;
-    while let Some((stored_center, start)) = ctx.next_charged(&mut trials, "creo arc-z numeric trials")? {
-        let candidate = if stored_center { explicit(start) } else { diametric(start) };
+    while let Some((stored_center, start)) =
+        ctx.next_charged(&mut trials, "creo arc-z numeric trials")?
+    {
+        let candidate = if stored_center {
+            explicit(start)
+        } else {
+            diametric(start)
+        };
         if let Some(circle) = candidate {
-            if selected.is_some() { return Ok(None); }
+            if selected.is_some() {
+                return Ok(None);
+            }
             selected = Some(circle);
         }
     }
@@ -1510,9 +1591,13 @@ pub(crate) fn arc_z_circles(
     let cache = ScalarCache::from_section_checked(ctx, payload)?;
     let mut result = Vec::new();
     let mut search = 0;
-    while let Some(prototype) = ctx.find_bytes_from(payload, PROTOTYPE, search, "creo arc-z prototype search")? {
+    while let Some(prototype) =
+        ctx.find_bytes_from(payload, PROTOTYPE, search, "creo arc-z prototype search")?
+    {
         let rows_start = prototype + PROTOTYPE.len();
-        let block_end = ctx.find_bytes_from(payload, LIST, rows_start, "creo arc-z block search")?.unwrap_or(payload.len());
+        let block_end = ctx
+            .find_bytes_from(payload, LIST, rows_start, "creo arc-z block search")?
+            .unwrap_or(payload.len());
         let mut headers_storage = ctx.reserve_scoped(0, "creo arc-z headers")?;
         let mut headers = Vec::new();
         for close in ctx.admit_iter(rows_start..block_end, "creo arc-z row headers")? {
@@ -1529,10 +1614,15 @@ pub(crate) fn arc_z_circles(
             if body_start == after_id || payload.get(body_start) != Some(&0xe2) {
                 continue;
             }
-            headers_storage.with_storage(|| ctx.reserve_vec(&mut headers, 1, "creo arc-z headers"))?;
+            headers_storage
+                .with_storage(|| ctx.reserve_vec(&mut headers, 1, "creo arc-z headers"))?;
             headers.push((close, body_start + 1, id));
         }
-        for (index, (close, body_start, entity_id)) in ctx.admit_iter(&headers, "creo reference header traversal")?.copied().enumerate() {
+        for (index, (close, body_start, entity_id)) in ctx
+            .admit_iter(&headers, "creo reference header traversal")?
+            .copied()
+            .enumerate()
+        {
             let body_end = headers
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _, _)| *next_close);
@@ -1553,7 +1643,11 @@ pub(crate) fn arc_z_circles(
         Ord::cmp,
         "creo arc z circles result ordering",
     )?;
-    ctx.dedup_by_key(&mut result, |circle| Ok(circle.offset), "creo arc-z row deduplication")?;
+    ctx.dedup_by_key(
+        &mut result,
+        |circle| Ok(circle.offset),
+        "creo arc-z row deduplication",
+    )?;
     Ok(result)
 }
 

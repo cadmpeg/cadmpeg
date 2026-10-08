@@ -405,7 +405,9 @@ fn positional_sphere_is_in_millimeters_at_ir_admission() {
     assert_eq!(sphere.center().get(), [25.4, 0.0, 0.0].into());
     assert_eq!(sphere.radius().get(), 50.8);
     let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(source)) =
-        source_carriers.surface_geometry(surface).expect("source carrier lookup")
+        source_carriers
+            .surface_geometry(surface)
+            .expect("source carrier lookup")
     else {
         panic!("source positional sphere changed family");
     };

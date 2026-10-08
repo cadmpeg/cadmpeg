@@ -10,8 +10,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -23,8 +23,8 @@ use cadmpeg_ir::sketches::{
     SketchProfiles,
 };
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, CoedgeUseCurve, Edge, EdgeCarrier, Face, FaceLoops,
-    ParameterInterval, Point, Sense, Vertex,
+    Body, BodyKind, Coedge, CoedgeUseCurve, Edge, EdgeCarrier, Face, FaceLoops, ParameterInterval,
+    Point, Sense, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -35,7 +35,6 @@ fn zero_collection_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     run(&ctx)
 }
-
 
 fn admission_pcurve() -> cadmpeg_ir::geometry::pcurve::Pcurve {
     cadmpeg_ir::geometry::pcurve::Pcurve {
@@ -51,7 +50,6 @@ fn admission_pcurve() -> cadmpeg_ir::geometry::pcurve::Pcurve {
     }
 }
 
-
 fn admission_plane() -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -63,10 +61,8 @@ fn admission_plane() -> SurfaceGeometry {
     ))
 }
 
-
 fn admission_edge(range: Option<[f64; 2]>) -> Edge {
-    let vertex =
-        cadmpeg_ir::ids::VertexId::mint("creo:test:vertex#0").expect("identity grammar");
+    let vertex = cadmpeg_ir::ids::VertexId::mint("creo:test:vertex#0").expect("identity grammar");
     Edge {
         id: cadmpeg_ir::ids::EdgeId::mint("creo:test:edge#0").expect("identity grammar"),
         carrier: EdgeCarrier::new(
@@ -80,11 +76,9 @@ fn admission_edge(range: Option<[f64; 2]>) -> Edge {
     }
 }
 
-
 fn source_feature(definition: FeatureDefinition) -> Feature {
     Feature {
-        id: cadmpeg_ir::features::FeatureId::mint("creo:test:feature#1")
-            .expect("identity grammar"),
+        id: cadmpeg_ir::features::FeatureId::mint("creo:test:feature#1").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -119,8 +113,7 @@ fn source_length_parameter(value: f64) -> DesignParameter {
 
 fn source_sketch(origin: Point3) -> Sketch {
     Sketch {
-        id: cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1")
-            .expect("identity grammar"),
+        id: cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1").expect("identity grammar"),
         name: None,
         configuration: None,
         visible: None,
@@ -147,8 +140,7 @@ fn source_distance_constraint(value: f64) -> SketchConstraint {
             SketchConstraintDefinitionInput::DistanceLociValue {
                 first: SketchLocus::Start(entity.clone()),
                 second: SketchLocus::End(entity),
-                distance: cadmpeg_ir::scalar::Length::new(value)
-                    .expect("finite source distance"),
+                distance: cadmpeg_ir::scalar::Length::new(value).expect("finite source distance"),
                 parameter: None,
             },
         )
@@ -196,7 +188,7 @@ fn source_occurrence(transform: Transform, linked_prototype: Option<Transform>) 
 }
 
 mod admission;
-mod units;
 mod pcurve_work;
+mod units;
 
 mod cache;

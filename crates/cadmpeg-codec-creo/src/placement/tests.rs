@@ -14,8 +14,8 @@ use super::{
     definition_local_plane_equation as parse_definition_local_plane_equation,
     generated_cylinder_section_transform as parse_generated_cylinder_section_transform,
     generated_planar_section_transform as parse_generated_planar_section_transform,
-    generated_planar_table_shape, resolve as parse_resolve,
-    FeatureSectionTransform, PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
+    generated_planar_table_shape, resolve as parse_resolve, FeatureSectionTransform,
+    PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
 };
 use crate::datum::DatumPlaneRecord;
 use crate::feature::definitions::ReferencePlanes;
@@ -44,7 +44,12 @@ fn generated_cylinder_section_transform(
     tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_generated_cylinder_section_transform(ctx, definition, tables, &mut super::PlacementLookup::new(ctx, sources, &[])?)
+        parse_generated_cylinder_section_transform(
+            ctx,
+            definition,
+            tables,
+            &mut super::PlacementLookup::new(ctx, sources, &[])?,
+        )
     })
     .expect("test cylinder placement")
 }
@@ -55,7 +60,12 @@ fn generated_planar_section_transform(
     tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        parse_generated_planar_section_transform(ctx, definition, tables, &mut super::PlacementLookup::new(ctx, sources, &[])?)
+        parse_generated_planar_section_transform(
+            ctx,
+            definition,
+            tables,
+            &mut super::PlacementLookup::new(ctx, sources, &[])?,
+        )
     })
     .expect("test planar placement")
 }
@@ -84,11 +94,17 @@ fn generated_planar_table_entry_nodes_refuse_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo generated planar table entry nodes"), |cap| {
+        Some("creo generated planar table entry nodes"),
+        |cap| {
             let trial_arena = cadmpeg_core::decode::DecodeArena::new();
             let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
             trial_policy.limits.max_collection_items = cap;
-            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("root");
             generated_planar_table_shape(&trial_ctx, &table)
         },
     );
@@ -198,13 +214,20 @@ fn placement_reference_ids_refuse_before_growth() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        Some("creo placement reference IDs"), |cap| {
+        Some("creo placement reference IDs"),
+        |cap| {
             let trial_arena = cadmpeg_core::decode::DecodeArena::new();
             let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
             trial_policy.limits.max_collection_items = cap;
-            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &trial_arena, &trial_policy).expect("test input");
+            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[0],
+                &trial_arena,
+                &trial_policy,
+            )
+            .expect("test input");
             parse_resolve(&trial_ctx, &[definition.clone()], &sources, &[])
-        });
+        },
+    );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("test input admitted");
     assert!(
@@ -1651,14 +1674,31 @@ fn section_frame_refuses_a_non_finite_origin_or_axis() {
 mod work_admission;
 
 fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<SignedPlaneEquation> {
-    crate::decode::with_test_decode_ctx(|ctx| parse_definition_local_plane_equation(ctx, definition)).expect("test local plane selection")
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_definition_local_plane_equation(ctx, definition)
+    })
+    .expect("test local plane selection")
 }
 
-fn plane_equation(id: u32, datums: &[DatumPlaneRecord], models: &[PlaneLocalSystem], outlines: &[OutlinePlane]) -> Option<SignedPlaneEquation> {
+fn plane_equation(
+    id: u32,
+    datums: &[DatumPlaneRecord],
+    models: &[PlaneLocalSystem],
+    outlines: &[OutlinePlane],
+) -> Option<SignedPlaneEquation> {
     crate::decode::with_test_decode_ctx(|ctx| {
         let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
-        let sources = PlacementSources { datums, surface_rows: &rows, model_planes: models, outline_planes: outlines,
-            plane_envelopes: &[], surface_parameters: &[], geometry_tables: &[], affected_ids: &[] };
+        let sources = PlacementSources {
+            datums,
+            surface_rows: &rows,
+            model_planes: models,
+            outline_planes: outlines,
+            plane_envelopes: &[],
+            surface_parameters: &[],
+            geometry_tables: &[],
+            affected_ids: &[],
+        };
         super::PlacementLookup::new(ctx, &sources, &[])?.equation(id)
-    }).expect("test plane equation")
+    })
+    .expect("test plane equation")
 }

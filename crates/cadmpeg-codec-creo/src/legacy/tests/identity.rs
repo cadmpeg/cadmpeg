@@ -320,4 +320,3 @@ fn legacy_unit_array_conflict_withholds_length_scale() {
 
     assert_eq!(principal_unit_system(&persistence), None);
 }
-

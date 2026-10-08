@@ -1180,9 +1180,13 @@ fn round_placed_cylinder_radius(
         },
         "creo round placed cylinder surface",
     )?;
-    let geometry = surface.map(|surface| source_carriers.surface_geometry(surface)).transpose()?;
+    let geometry = surface
+        .map(|surface| source_carriers.surface_geometry(surface))
+        .transpose()?;
     Ok(match geometry {
-        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder))) => Some(cylinder.radius().get()),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder))) => {
+            Some(cylinder.radius().get())
+        }
         _ => None,
     })
 }
@@ -1386,7 +1390,9 @@ fn chamfer_cone_equation(
             "creo:visibgeom:surface#",
             row.id,
         )
-    })) else { return Ok(None); };
+    })) else {
+        return Ok(None);
+    };
     let Some(SolvedSurfaceGeometry::Cone(cone_surface)) =
         source_carriers.surface_geometry(surface)?.solved()
     else {

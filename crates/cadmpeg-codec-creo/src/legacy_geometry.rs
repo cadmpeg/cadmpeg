@@ -266,12 +266,23 @@ fn geometry_array_elements<'a>(
         return Ok(None);
     }
 
-    let Some(array) = crate::decode::uniqueness::exactly_one_by(ctx, objects, |object| {
-        Ok(object.parent == Some(branch.offset) && object.name == array_name
-            && matches!(&object.payload, ObjectPayload::Array { .. })
-            && object.payload.is_complete(ctx)?)
-    }, "creo legacy geometry complete array selection")? else { return Ok(None); };
-    let ObjectPayload::Array { elements, .. } = &array.payload else { return Ok(None); };
+    let Some(array) = crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        objects,
+        |object| {
+            Ok(object.parent == Some(branch.offset)
+                && object.name == array_name
+                && matches!(&object.payload, ObjectPayload::Array { .. })
+                && object.payload.is_complete(ctx)?)
+        },
+        "creo legacy geometry complete array selection",
+    )?
+    else {
+        return Ok(None);
+    };
+    let ObjectPayload::Array { elements, .. } = &array.payload else {
+        return Ok(None);
+    };
 
     let mut rows = Vec::new();
     ctx.reserve_vec(
