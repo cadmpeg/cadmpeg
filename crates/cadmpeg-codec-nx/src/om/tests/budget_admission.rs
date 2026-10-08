@@ -138,6 +138,7 @@ fn control_word_traversal_pays_for_exactly_the_declared_words() {
         |policy| policy.limits.max_work_units = 2,
         |ctx| {
             let values = crate::om::offset_store_control_values(ctx, &bytes)
+                .map(|values| values.map(|(values, _storage)| values))
                 .unwrap()
                 .unwrap();
             assert_eq!(

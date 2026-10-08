@@ -112,3 +112,31 @@ fn point_ordinal_decimal_parse_preserves_values_and_refuses_work() {
         );
     }
 }
+
+#[test]
+fn control_interpretations_do_not_double_the_live_vector_peak() {
+    let zero = [0, 7, 0, 0, 0, 8, 0, 0];
+    let mut product = vec![7, 0, 0, 0, 8, 0, 0, 0];
+    product.extend_from_slice(b"\x04\x01\x05NX \0");
+    let mut prefixed = zero.to_vec();
+    prefixed.extend_from_slice(b"\x04\x01\x05NX \0\0");
+    for (bytes, slots) in [
+        (
+            zero.as_slice(),
+            std::mem::size_of::<crate::om::control_word::ControlWord24>(),
+        ),
+        (product.as_slice(), std::mem::size_of::<u32>()),
+        (prefixed.as_slice(), std::mem::size_of::<u32>()),
+    ] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_materialized_bytes = u64::try_from(4 * slots).unwrap(),
+            |ctx| {
+                assert!(crate::om::offset_store_control_form(ctx, bytes, None)
+                    .unwrap()
+                    .is_some());
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+    }
+}

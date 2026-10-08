@@ -137,6 +137,7 @@ fn offset_store_control_values(
 ) -> Option<crate::om::nonempty::NonEmpty<crate::om::control_word::ControlWord24>> {
     crate::test_support::with_decode_context(|ctx| {
         crate::om::offset_store_control_values(ctx, bytes)
+            .map(|values| values.map(|(values, _storage)| values))
     })
     .unwrap()
 }
