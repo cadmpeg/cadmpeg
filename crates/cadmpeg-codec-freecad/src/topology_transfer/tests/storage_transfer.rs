@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surviving topology storage reaches retained admission through its owner.
 
+mod face_candidate;
+
 use super::{assert_codec_retained_refusal, archive_entries};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};

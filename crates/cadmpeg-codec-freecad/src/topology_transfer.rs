@@ -1705,14 +1705,20 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             .compose(self.tables.location(location)?)
             .map_err(location_transform_error)?;
         let face_key = self.topology_label(face_use.shape, face_transform)?;
-        let face_id = FaceId::mint(crate::native::model_id_charged_at(
-            self.ctx,
-            "face",
-            &self.payload.id,
-            &face_key.data,
-            "FreeCAD face identity",
-        )?)
-        .map_err(CodecError::malformed)?;
+        let (data, storage) = self.ctx.with_scoped_storage("FreeCAD face identity", || {
+            FaceId::mint(crate::native::model_id_charged_at(
+                self.ctx,
+                "face",
+                &self.payload.id,
+                &face_key.data,
+                "FreeCAD face identity",
+            )?)
+            .map_err(CodecError::malformed)
+        })?;
+        let face_id = ScopedData {
+            data,
+            _storage: storage,
+        };
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
         // Only the owning topological face placement remains to be applied here.
         let located_triangulation = triangulation
@@ -1804,6 +1810,7 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             } else {
                 return Ok(None);
             };
+        let face_id = face_id._storage.commit_value(face_id.data)?;
         if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             located_triangulation
         {
