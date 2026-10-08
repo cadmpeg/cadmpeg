@@ -1576,19 +1576,19 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
 #[test]
 fn a5_surface_poles_refuse_collection_limit_before_materialization() {
     let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 16, "catia_a5_surface_poles");
+    assert_a5_surface_collection_refusal(&bytes, 12, "catia_a5_surface_poles");
 }
 
 #[test]
 fn a5_surface_rows_refuse_collection_limit_before_materialization() {
     let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 20, "catia_a5_surface_pole_rows");
+    assert_a5_surface_collection_refusal(&bytes, 16, "catia_a5_surface_pole_rows");
 }
 
 #[test]
 fn a5_mirrored_weights_refuse_collection_limit_before_materialization() {
     let bytes = a5_rational_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 20, "catia_a5_mirrored_weights");
+    assert_a5_surface_collection_refusal(&bytes, 16, "catia_a5_mirrored_weights");
 }
 
 fn assert_a5_surface_collection_refusal(bytes: &[u8], first_cap: u64, operation: &str) {
