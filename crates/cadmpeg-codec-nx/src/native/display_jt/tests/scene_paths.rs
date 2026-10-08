@@ -22,11 +22,12 @@ fn base(object_id: u32) -> DisplayJtBaseNodeData {
 }
 
 fn chain_peak() -> u64 {
-    // At most two four-slot path vectors coexist during a parent transfer.
+    // Each single-parent level moves the same four-slot path vector.
     // Both the ancestor stack and the 24-node output path have 32 u32 slots.
+    // Node growth from 16 to 32 slots also admits the old 16-slot overlap.
     // Only the root contributes an instance: four String slots and its bytes.
-    u64_from_index(8 * std::mem::size_of::<DisplayJtPath<'_>>()
-        + 64 * std::mem::size_of::<u32>()
+    u64_from_index(4 * std::mem::size_of::<DisplayJtPath<'_>>()
+        + 80 * std::mem::size_of::<u32>()
         + 4 * std::mem::size_of::<String>() + "root-instance".len())
 }
 
@@ -42,7 +43,7 @@ fn recursive_paths_release_transferred_slots_and_keep_instance_bytes_scoped() {
             let graph = JtSceneGraph {
                 by_object: bases.iter().map(|value| (value.object_id, value)).collect(),
                 parents: (2..=24).map(|id| (id, vec![id - 1])).collect(),
-                instance_ids: HashMap::from([(1, "root-instance".into())]),
+                instance_ids: HashMap::from([(1, "root-instance")]),
                 transforms: HashMap::new(),
                 materials: HashMap::new(),
                 _storage: ctx.reserve_scoped(0, "test graph").unwrap(),
@@ -60,10 +61,10 @@ fn recursive_paths_release_transferred_slots_and_keep_instance_bytes_scoped() {
                 assert!(ctx.resource_refusal().is_none());
             } else {
                 let Err(CodecError::ResourceLimit(limit)) = result else {
-                    panic!("one byte below simultaneous parent transfer storage must refuse");
+                    panic!("one byte below the node buffer growth peak must refuse");
                 };
                 assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-                assert_eq!(limit.operation, "nx JT parent path states");
+                assert_eq!(limit.operation, "nx JT node path nodes");
                 assert_eq!(limit.used + limit.additional, chain_peak());
                 assert_eq!(ctx.resource_refusal(), Some(limit));
             }
@@ -83,7 +84,7 @@ fn rejected_paths_release_instance_text_before_the_next_resolution() {
         let graph = JtSceneGraph {
             by_object: BTreeMap::from([(1, &bases[0]), (2, &bases[1])]),
             parents: HashMap::from([(2, vec![1])]),
-            instance_ids: HashMap::from([(1, "root-instance".into())]),
+            instance_ids: HashMap::from([(1, "root-instance")]),
             transforms: HashMap::from([(9, JtKeyed::Repeated)]),
             materials: HashMap::new(),
             _storage: ctx.reserve_scoped(0, "test graph").unwrap(),
