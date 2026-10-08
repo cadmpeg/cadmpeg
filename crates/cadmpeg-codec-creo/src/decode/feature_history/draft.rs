@@ -959,7 +959,7 @@ pub(in super::super) fn schema_feature_definition(
                 .iter()
                 .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)),
         ) {
-            if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+            if let Some(values) = crate::placement::unique_complete_local_system(ctx, definition)? {
                 let values = values.get();
                 let raw_normal = [values[6], values[7], values[8]];
                 let raw_u_axis = [values[0], values[1], values[2]];
@@ -996,7 +996,7 @@ pub(in super::super) fn schema_feature_definition(
                 .iter()
                 .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)),
         ) {
-            if let Some(values) = crate::placement::unique_complete_local_system(definition) {
+            if let Some(values) = crate::placement::unique_complete_local_system(ctx, definition)? {
                 let values = values.get();
                 let x_axis = normalize([values[0], values[1], values[2]]);
                 let y_axis = normalize([values[3], values[4], values[5]]);

@@ -36,3 +36,29 @@ fn circular_entity_selection_stops_after_second_match() {
     assert_eq!(short_refusal, long_refusal);
     assert_eq!(crate::decode::with_test_decode_ctx(|ctx| run(ctx, &long)).expect("ambiguous selection"), None);
 }
+
+#[test]
+fn local_frame_selection_stops_after_second_complete_match() {
+    let frame = FeatureParameterFrame {
+        kind: FeatureParameterFrameKind::LocalSystem,
+        body: Vec::new(),
+        decoded_values: Some(finite_frame([0.0; 12])),
+        offset: 1,
+    };
+    let mut short = blank_definition();
+    short.parameter_frames = vec![frame.clone(), frame.clone()];
+    let mut long = short.clone();
+    long.parameter_frames.extend(std::iter::repeat_n(frame, 64));
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>, definition: &FeatureDefinition| {
+        super::super::unique_complete_local_system(ctx, definition)
+    };
+    crate::test_support::assert_work_boundaries(
+        &["creo complete local frame selection"], |ctx| run(ctx, &short));
+    let refusal = |definition: &FeatureDefinition| crate::test_support::last_refusal_at(
+        b"", cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo complete local frame selection", |ctx| run(ctx, definition));
+    let cadmpeg_core::CodecError::ResourceLimit(short_refusal) = refusal(&short) else { panic!("work refusal") };
+    let cadmpeg_core::CodecError::ResourceLimit(long_refusal) = refusal(&long) else { panic!("work refusal") };
+    assert_eq!(short_refusal, long_refusal);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| run(ctx, &long)).expect("ambiguous frame"), None);
+}

@@ -2,7 +2,7 @@
 //! Model-space frames resolved from feature-section datum references.
 
 use crate::datum::DatumPlaneRecord;
-use crate::decode::uniqueness::exactly_one;
+use crate::decode::uniqueness::{exactly_one, exactly_one_by};
 use crate::feature::definitions::ReferencePlanes;
 use crate::feature::definitions::{
     placement_instructions, BinaryFlag, FeatureDefinition, FeatureParameterFrameKind,
@@ -643,104 +643,80 @@ fn plane_equation(
     outline_equation
 }
 
-fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<SignedPlaneEquation> {
-    let [.., raw_normal, origin] =
-        local_system_lanes(unique_complete_local_system(definition)?.get());
-    let normal = normalize(raw_normal)?;
-    Some(SignedPlaneEquation {
-        normal,
-        offset: dot(normal, origin),
-    })
+fn definition_local_plane_equation(ctx: &DecodeContext<'_>, definition: &FeatureDefinition) -> Result<Option<SignedPlaneEquation>, CodecError> {
+    let Some(values) = unique_complete_local_system(ctx, definition)? else { return Ok(None); };
+    let [.., raw_normal, origin] = local_system_lanes(values.get());
+    Ok(normalize(raw_normal).map(|normal| SignedPlaneEquation { normal, offset: dot(normal, origin) }))
 }
 
 pub(crate) fn unique_complete_local_system(
-    definition: &FeatureDefinition,
-) -> Option<cadmpeg_ir::units::FiniteVector<12>> {
-    let mut frames = definition
-        .parameter_frames
-        .iter()
-        .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
-        .filter_map(|frame| frame.decoded_values.as_ref());
-    let values = *frames.next()?;
-    frames.next().is_none().then_some(values)
+    ctx: &DecodeContext<'_>, definition: &FeatureDefinition,
+) -> Result<Option<cadmpeg_ir::units::FiniteVector<12>>, CodecError> {
+    Ok(exactly_one_by(ctx, &definition.parameter_frames,
+        |frame| Ok(frame.kind == FeatureParameterFrameKind::LocalSystem && frame.decoded_values.is_some()),
+        "creo complete local frame selection")?.and_then(|frame| frame.decoded_values))
 }
 
 fn reference_flip_for_reference(
-    section: &crate::feature::definitions::FeatureSection3d,
+    ctx: &DecodeContext<'_>, section: &crate::feature::definitions::FeatureSection3d,
     reference_id: Option<u32>,
-) -> Option<BinaryFlag> {
-    match &section.reference_planes {
+) -> Result<Option<BinaryFlag>, CodecError> {
+    Ok(match &section.reference_planes {
         ReferencePlanes::Named(_) => section.orientation.reference_flip,
-        ReferencePlanes::Positional(rows) => {
-            let reference_id = reference_id?;
-            exactly_one(
-                rows.iter()
-                    .filter(|row| row.plane_entity_id == reference_id),
-            )
-            .and_then(|row| row.reference_flip)
-        }
-    }
+        ReferencePlanes::Positional(rows) => match reference_id {
+            Some(reference_id) => exactly_one_by(ctx, rows,
+                |row| Ok(row.plane_entity_id == reference_id),
+                "creo positional reference plane selection")?.and_then(|row| row.reference_flip),
+            None => None,
+        },
+    })
 }
 
 fn unique_carrier_reference_id(
-    section: &crate::feature::definitions::FeatureSection3d,
-) -> Option<u32> {
-    if let Some(id) = section.reference_plane_datum_geometry_id {
-        return Some(id);
-    }
+    ctx: &DecodeContext<'_>, section: &crate::feature::definitions::FeatureSection3d,
+) -> Result<Option<u32>, CodecError> {
+    if let Some(id) = section.reference_plane_datum_geometry_id { return Ok(Some(id)); }
     let mut ids = section.reference_planes.entity_ids();
-    let id = ids.next()?;
-    ids.all(|candidate| candidate == id).then_some(id)
+    let Some(id) = ctx.next_charged(&mut ids, "creo carrier reference ID selection")? else { return Ok(None); };
+    Ok(ctx.all_by(ids, |candidate| Ok(candidate == id), "creo carrier reference ID selection")?.then_some(id))
 }
 
 fn apply_section_orientation(
-    mut transform: FeatureSectionTransform,
+    ctx: &DecodeContext<'_>, mut transform: FeatureSectionTransform,
     section: &crate::feature::definitions::FeatureSection3d,
-) -> FeatureSectionTransform {
-    if section.sketch_plane_flip == Some(BinaryFlag::Set) {
-        transform = transform.flipped_v();
-    }
-    if section.orientation.section_flip == Some(BinaryFlag::Set) {
-        transform = transform.flipped_v();
-    }
-    if reference_flip_for_reference(section, unique_carrier_reference_id(section))
-        == Some(BinaryFlag::Set)
-    {
+) -> Result<FeatureSectionTransform, CodecError> {
+    if section.sketch_plane_flip == Some(BinaryFlag::Set) { transform = transform.flipped_v(); }
+    if section.orientation.section_flip == Some(BinaryFlag::Set) { transform = transform.flipped_v(); }
+    let reference_flip = match &section.reference_planes {
+        ReferencePlanes::Named(_) => section.orientation.reference_flip,
+        ReferencePlanes::Positional(_) => {
+            let reference_id = unique_carrier_reference_id(ctx, section)?;
+            reference_flip_for_reference(ctx, section, reference_id)?
+        }
+    };
+    if reference_flip == Some(BinaryFlag::Set) {
         transform = transform.flipped_u_and_v();
     }
-    transform
+    Ok(transform)
 }
 
 fn definition_local_frame_transform(
-    definition: &FeatureDefinition,
+    ctx: &DecodeContext<'_>, definition: &FeatureDefinition,
     section: &crate::feature::definitions::FeatureSection3d,
-) -> Option<FeatureSectionTransform> {
-    let feature_id = definition.identity.owner_feature_id()?;
-    let [stored_u_axis, _, stored_axis, origin] =
-        local_system_lanes(unique_complete_local_system(definition)?.get());
-    let mut u_axis = normalize(stored_u_axis)?;
-    let raw_normal = normalize(stored_axis)?;
-    (dot(u_axis, raw_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
+) -> Result<Option<FeatureSectionTransform>, CodecError> {
+    let Some(feature_id) = definition.identity.owner_feature_id() else { return Ok(None); };
+    let Some(values) = unique_complete_local_system(ctx, definition)? else { return Ok(None); };
+    let [stored_u_axis, _, stored_axis, origin] = local_system_lanes(values.get());
+    let Some(mut u_axis) = normalize(stored_u_axis) else { return Ok(None); };
+    let Some(raw_normal) = normalize(stored_axis) else { return Ok(None); };
+    if dot(u_axis, raw_normal).abs() > EPS_PLACEMENT_EXACT_GEOMETRY { return Ok(None); }
     let mut normal = raw_normal;
-    if section.sketch_plane_flip == Some(BinaryFlag::Set) {
-        normal = scale(normal, -1.0);
-    }
-    if section.orientation.section_flip == Some(BinaryFlag::Set) {
-        normal = scale(normal, -1.0);
-    }
-    if reference_flip_for_reference(section, None) == Some(BinaryFlag::Set) {
-        u_axis = scale(u_axis, -1.0);
-    }
+    if section.sketch_plane_flip == Some(BinaryFlag::Set) { normal = scale(normal, -1.0); }
+    if section.orientation.section_flip == Some(BinaryFlag::Set) { normal = scale(normal, -1.0); }
+    if reference_flip_for_reference(ctx, section, None)? == Some(BinaryFlag::Set) { u_axis = scale(u_axis, -1.0); }
     let v_axis = cross(normal, u_axis);
-    ((dot(v_axis, v_axis) - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
-    FeatureSectionTransform::new(
-        definition.identity.id(),
-        Some(feature_id),
-        origin,
-        u_axis,
-        v_axis,
-        section.offset,
-    )
+    if (dot(v_axis, v_axis) - 1.0).abs() > EPS_PLACEMENT_EXACT_GEOMETRY { return Ok(None); }
+    Ok(FeatureSectionTransform::new(definition.identity.id(), Some(feature_id), origin, u_axis, v_axis, section.offset))
 }
 
 fn generated_datum_plane_equation(
@@ -1190,7 +1166,7 @@ pub(crate) fn resolve(
                     generated_planar_section_transform(ctx, definition, sources, entity_tables)?
                 }
             }
-            .map(|transform| apply_section_orientation(transform, section));
+            .map(|transform| apply_section_orientation(ctx, transform, section)).transpose()?;
         let mut reference_ids = Vec::new();
         if let Some(id) = section.reference_plane_datum_geometry_id {
             ctx.reserve_vec(&mut reference_ids, 1, "creo placement reference IDs")?;
@@ -1208,21 +1184,20 @@ pub(crate) fn resolve(
             "creo placement reference ID sort",
         )?;
         reference_ids.dedup();
-        let direct_sketch = plane_equation(
-            sketch_id,
-            sources.datums,
-            sources.model_planes,
-            sources.outline_planes,
-        )
-        .or_else(|| definition_local_plane_equation(definition))
-        .or_else(|| {
-            generated_section_cap_plane_equation(
-                sketch_id,
-                definition.identity.owner_feature_id()?,
-                sources,
-                entity_tables,
-            )
-        });
+        let direct_sketch = match plane_equation(
+            sketch_id, sources.datums, sources.model_planes, sources.outline_planes,
+        ) {
+            Some(plane) => Some(plane),
+            None => match definition_local_plane_equation(ctx, definition)? {
+                Some(plane) => Some(plane),
+                None => match definition.identity.owner_feature_id() {
+                    Some(feature_id) => generated_section_cap_plane_equation(
+                        sketch_id, feature_id, sources, entity_tables,
+                    ),
+                    None => None,
+                },
+            },
+        };
         let mut candidates = Vec::<SectionFrameCandidate>::new();
         for reference_id in reference_ids {
             let direct_reference = plane_equation(
@@ -1306,7 +1281,7 @@ pub(crate) fn resolve(
             if let Some(transform) = carrier_transform {
                 ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
                 result.push(transform);
-            } else if let Some(transform) = definition_local_frame_transform(definition, section) {
+            } else if let Some(transform) = definition_local_frame_transform(ctx, definition, section)? {
                 ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
                 result.push(transform);
             }
@@ -1331,17 +1306,18 @@ pub(crate) fn resolve(
             sketch_normal = scale(sketch_normal, -1.0);
             sketch_offset = -sketch_offset;
         }
-        if let ReferencePlanes::Positional(rows) = &section.reference_planes {
-            let reference_rows = rows
-                .iter()
-                .filter(|row| row.plane_entity_id == candidate.reference_id);
-            if exactly_one(reference_rows).is_none() {
-                continue;
+        let reference_flip = match &section.reference_planes {
+            ReferencePlanes::Named(_) => section.orientation.reference_flip,
+            ReferencePlanes::Positional(rows) => {
+                let Some(row) = exactly_one_by(ctx, rows,
+                    |row| Ok(row.plane_entity_id == candidate.reference_id),
+                    "creo placement positional row selection")? else {
+                    continue;
+                };
+                row.reference_flip
             }
-        }
-        if reference_flip_for_reference(section, Some(candidate.reference_id))
-            == Some(BinaryFlag::Set)
-        {
+        };
+        if reference_flip == Some(BinaryFlag::Set) {
             reference_normal = scale(reference_normal, -1.0);
             reference_offset = -reference_offset;
         }
