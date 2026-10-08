@@ -582,7 +582,7 @@ fn equation_header_uses_definition_source_base() {
 fn native_equation_row_uses_definition_source_base() {
     let (scan, row_start) = equation_scan();
     crate::decode::with_test_decode_ctx(|ctx| {
-        let records = crate::decode::records::sketch_records(ctx, &scan).expect("records");
+        let (records, _storage) = crate::decode::records::sketch_records(ctx, &scan).expect("records");
         let record = serde_json::to_value(&records[0]).expect("native record");
         assert_eq!(record["equations"].as_array().expect("equations").len(), 1);
         assert_eq!(record["equations"][0]["offset"], 1000 + row_start);
