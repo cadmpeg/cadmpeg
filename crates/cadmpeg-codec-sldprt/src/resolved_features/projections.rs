@@ -1319,7 +1319,6 @@ pub(crate) fn project_compact_edge_selections(
                     if unresolved_edges || radius_groups.len() == 1 {
                         const GROUP_OPERATION: &str = "collect SLDPRT variable fillet groups";
                         let mut replacement_groups = Vec::new();
-                        ctx.reserve_vec(&mut replacement_groups, radius_groups.len(), GROUP_OPERATION)?;
                         let mut carried_edges = match &mut *definition {
                             FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
                                 if !unresolved_edges => groups

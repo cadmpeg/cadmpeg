@@ -4212,7 +4212,6 @@ fn compact_u16_edge_ids(
                 return Ok(None);
             };
             let mut ids = Vec::new();
-            ctx.reserve_vec(&mut ids, count, OPERATION)?;
 
             let mut view = View::over_retained(bytes);
             for _ in ctx.admit_iter(0..count, OPERATION)? {
@@ -4450,7 +4449,6 @@ pub(super) fn component_reference_curve_path_at(
                 return Ok(None);
             };
             let mut components = Vec::new();
-            ctx.reserve_vec(&mut components, count, OPERATION)?;
             let mut indices = 0..count;
             while let Some(index) = ctx.next_charged(&mut indices, OPERATION)? {
                 if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice()) {
