@@ -214,10 +214,6 @@ fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
         (explicit_vertex_loop_file(), "iges B-rep vertex-list nodes"),
         (
             explicit_tetrahedron_solid_file(),
-            "iges B-rep definition reservations",
-        ),
-        (
-            explicit_tetrahedron_solid_file(),
             "iges B-rep edge-list nodes",
         ),
         (explicit_vertex_loop_file(), "iges B-rep loop nodes"),
@@ -1171,3 +1167,4 @@ fn rejected_brep_definition_vectors_release_their_storage() {
 }
 
 mod definition_storage;
+mod body_storage;
