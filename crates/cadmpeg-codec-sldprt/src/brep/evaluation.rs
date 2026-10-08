@@ -82,23 +82,6 @@ pub(crate) fn surface_point(
     )?)
 }
 
-pub(super) fn charge_nurbs_isocurve_comparison(
-    ctx: &DecodeContext<'_>,
-    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
-    curve: &NurbsCurve,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "compare SLDPRT NURBS isocurve";
-    let work = u64_from_index(surface.u_count())
-        .checked_mul(u64_from_index(surface.v_count()))
-        .and_then(|count| count.checked_add(u64_from_index(curve.pole_count())))
-        .and_then(|count| count.checked_add(u64_from_index(surface.u_knots().len())))
-        .and_then(|count| count.checked_add(u64_from_index(surface.v_knots().len())))
-        .and_then(|count| count.checked_add(u64_from_index(curve.knots().len())))
-        .and_then(|count| count.checked_mul(512))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)
-}
-
 const SURFACE_SOLVER_LOCAL_WORK: u64 = 1_000_000;
 
 fn surface_solver_budget<'ctx>(

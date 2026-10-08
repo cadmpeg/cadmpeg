@@ -1000,18 +1000,15 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        buf,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    ) else {
-        return false;
-    };
-    let Ok(mut tables) = scan(&ctx, buf) else {
-        return false;
-    };
-    let Some(record) = tables.points.remove(&attr) else {
+    let mut selected = None;
+    for offset in 0..buf.len().saturating_sub(13) {
+        if let Some(point) = parse_point(buf, offset, false) {
+            if point.attr == attr {
+                selected = Some(point);
+            }
+        }
+    }
+    let Some(record) = selected else {
         return false;
     };
     patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m)
@@ -1520,6 +1517,25 @@ mod tests {
             scan_deltas_with_curve_attrs_excluding(&ctx, &bytes, &curve_attrs, &BTreeSet::new())
                 .expect("topology scan");
         assert_eq!(tables.edge_uses[&40].references.curve(), 0x0103);
+    }
+
+    #[test]
+    fn patch_point_selects_the_last_matching_record() {
+        let mut bytes = crate::test_support::parasolid::world_point(60, [1.0, 2.0, 3.0]);
+        let last = bytes.len();
+        bytes.extend(crate::test_support::parasolid::world_point(
+            60,
+            [7.0, 8.0, 9.0],
+        ));
+        assert!(patch_point(&mut bytes, 60, [4.0, 5.0, 6.0]));
+        assert_eq!(
+            parse_point(&bytes, 0, false).unwrap().xyz_m,
+            [1.0, 2.0, 3.0]
+        );
+        assert_eq!(
+            parse_point(&bytes, last, false).unwrap().xyz_m,
+            [4.0, 5.0, 6.0]
+        );
     }
 
     #[test]
