@@ -961,3 +961,30 @@ fn replay_ids_withholds_zero_count_past_end() {
         assert!(super::replay_ids(ctx, &[], 0, 1).is_none());
     });
 }
+
+#[test]
+fn loop_history_index_preserves_first_overlapping_row_and_next_table() {
+    let first_body = b"\xe0\x01lo_hist\0\xf8\x06\x2a\x01\x02\x03\x04\xe3";
+    let rows = [
+        FeatureRow { feature_id: 7, root_schema_class: None, stream_offset: 0,
+            body: first_body.to_vec().try_into().expect("first row"), body_offset: 100, offset: 98 },
+        FeatureRow { feature_id: 7, root_schema_class: None, stream_offset: 0,
+            body: b"\xe0\x01lo_hist\0\xf8\x06\x2b\x01\x02\x03\x04\xe3".to_vec().try_into().expect("second row"), body_offset: 100, offset: 98 },
+    ];
+    let table = |offset| super::FeatureGeometryTable { feature_id: 7,
+        kind: super::FeatureGeometryTableKind::LoopIds, count: 1, entity_class: 96, offset };
+    let entries = crate::test_support::assert_work_boundaries(
+        &["creo loop row lower bound", "creo loop row upper bound", "creo loop row key traversal", "creo loop history materialization"],
+        |ctx| super::loop_history_entries(ctx, &rows, &[table(101), table(100)]),
+    );
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].loop_id, 42);
+    // A later table before a history label excludes that label from the earlier table.
+    let mut body = vec![0, 0];
+    body.extend_from_slice(first_body);
+    let row = FeatureRow { feature_id: 7, root_schema_class: None, stream_offset: 0,
+        body: body.try_into().expect("prefixed row"), body_offset: 100, offset: 98 };
+    let entries = loop_history_entries(&[row], &[table(101), table(100)]);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].loop_id, 42);
+}
