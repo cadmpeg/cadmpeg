@@ -2259,33 +2259,17 @@ fn unbound_feature_input_operation_objects(
     }
     let mut named_binding_counts = BTreeMap::<(&str, &str, &str), usize>::new();
     for lane in ctx.admit_iter(&native.feature_input_lanes, OPERATION)? {
-        let (by_source, _source_storage) = ctx.unique_index(
-            ctx.admit_iter(&lane.names, OPERATION)?.filter_map(|name| {
-                name.object_id
-                    .and_then(ObjectId::value)
-                    .map(|source| (source, name))
-            }),
-            OPERATION,
-        )?;
-        let (by_name, _name_storage) = ctx.unique_index(
-            lane.names.iter().map(|name| (name.value.as_str(), name)),
-            OPERATION,
-        )?;
+        let mut object_names = None;
         for history in ctx.admit_iter(&native.feature_histories, OPERATION)? {
             for feature in ctx.admit_iter(&history.features, OPERATION)? {
                 let Some(class) = feature.input_class.as_deref() else {
                     continue;
                 };
-                let by_source = match feature.source_value() {
-                    Some(source) => ctx.get_hash_map(&by_source, &source, OPERATION)?,
-                    None => None,
+                let names = match &object_names {
+                    Some(names) => names,
+                    None => object_names.insert(crate::resolved_features::scalars::ObjectNames::new(ctx, lane)?),
                 };
-                let name = match by_source {
-                    Some(name) => name.as_ref(),
-                    None => ctx
-                        .get_hash_map(&by_name, feature.name.as_str(), OPERATION)?
-                        .and_then(Option::as_ref),
-                };
+                let name = names.of(ctx, feature)?;
                 if let Some(name) = name {
                     workspace.with_storage(|| {
                         increment(
@@ -2791,24 +2775,26 @@ fn try_decode_brep<'ctx>(
     // Without a resolved active site, this is only a deterministic merge
     // accumulator. All site identities are qualified below.
     let selected_site = resolved_active_site.unwrap_or(0);
-    let selected_streams = ctx
-        .get_btree_map(
-            &sites,
-            decoded_sites[selected_site].0,
-            "look up SLDPRT site streams",
-        )?
-        .ok_or_else(|| CodecError::malformed("decoded SLDPRT site has no streams"))?;
-    let selected_is_empty_model = decoded_sites[selected_site].2.stats.source_entity_records == 0
-        && ctx.any_by(
+    let selected_is_empty_model = if decoded_sites[selected_site].2.stats.source_entity_records == 0 {
+        let selected_streams = ctx
+            .get_btree_map(
+                &sites,
+                decoded_sites[selected_site].0,
+                "look up SLDPRT site streams",
+            )?
+            .ok_or_else(|| CodecError::malformed("decoded SLDPRT site has no streams"))?;
+        ctx.any_by(
             selected_streams,
             |index| Ok(streams[*index].header.words.partition()),
             "scan SLDPRT selected site body streams",
-        )?
-        && ctx.any_by(
+        )? && ctx.any_by(
             selected_streams,
             |index| Ok(streams[*index].header.words.deltas()),
             "scan SLDPRT selected site body streams",
-        )?;
+        )?
+    } else {
+        false
+    };
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
         || !decoded_sites[selected_site].2.points.is_empty();
@@ -3160,15 +3146,15 @@ fn build_geometry_ir(
     ) -> Result<(), CodecError> {
         const OPERATION: &str = "index SLDPRT opaque geometry record";
         let link = ctx.copy_retained_text(entity, "retain SLDPRT opaque geometry link")?;
-        if !ctx.contains_key_btree_map(opaque_links, record, OPERATION)? {
-            workspace.with_storage(|| {
-                ctx.insert_btree_map(opaque_links, record, Vec::new(), OPERATION)
-            })?;
-        }
-        let links = ctx
-            .get_mut_btree_map(opaque_links, record, OPERATION)?
-            .ok_or_else(|| CodecError::malformed("opaque geometry link group is missing"))?;
-        ctx.push_vec(links, link, "index SLDPRT opaque geometry link")
+        workspace.with_storage(|| {
+            ctx.push_btree_group(
+                opaque_links,
+                record,
+                link,
+                OPERATION,
+                "index SLDPRT opaque geometry link",
+            )
+        })
     }
 
     let DecodedBrep {
@@ -3234,7 +3220,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &pmi_dimensions,
     )?;
-    let (identity_lanes, _identity_lane_storage) = ctx
+    let (identity_lanes, identity_lane_storage) = ctx
         .with_scoped_storage("SLDPRT parameter identity lane workspace", || {
             parameter_identity_lanes(ctx, &lanes)
         })?;
@@ -3245,6 +3231,7 @@ fn build_geometry_ir(
         &histories,
         identity_lanes,
     )?;
+    drop(identity_lane_storage);
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         ctx,
         &mut ir.model.parameters,
@@ -4229,7 +4216,7 @@ fn build_geometry_ir(
         }
     }
     if !opaque_links.is_empty() {
-        let (unknown_positions, _position_storage) = ctx.collect_scoped_string_map(
+        let (unknown_positions, unknown_position_storage) = ctx.collect_scoped_string_map(
             unknowns.len(),
             unknowns
                 .iter()
@@ -4261,7 +4248,7 @@ fn build_geometry_ir(
                 )
             })?;
         }
-        drop(unknown_positions);
+        drop((unknown_positions, unknown_position_storage));
         for (position, links) in
             ctx.admit_iter(linked_positions, "append SLDPRT opaque geometry links")?
         {
@@ -4272,6 +4259,7 @@ fn build_geometry_ir(
             )?;
         }
     }
+    drop(opaque_storage);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
@@ -4878,7 +4866,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &pmi_dimensions,
     )?;
-    let (identity_lanes, _identity_lane_storage) = ctx
+    let (identity_lanes, identity_lane_storage) = ctx
         .with_scoped_storage("SLDPRT parameter identity lane workspace", || {
             parameter_identity_lanes(ctx, &lanes)
         })?;
@@ -4889,6 +4877,7 @@ fn build_metadata_ir(
         &histories,
         identity_lanes,
     )?;
+    drop(identity_lane_storage);
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         ctx,
         &mut ir.model.parameters,
@@ -5235,12 +5224,16 @@ fn project_design_history(
                 histories,
                 "clone SLDPRT semantic histories",
             )?;
-            let scene_feature_classes = crate::tessellation::scene_feature_classes(ctx, scan)?;
+            let (scene_feature_classes, scene_storage) = ctx.with_scoped_storage(
+                "SLDPRT scene feature class workspace",
+                || crate::tessellation::scene_feature_classes(ctx, scan),
+            )?;
             crate::history::enrich_scene_classes(
                 ctx,
                 &mut semantic_projection,
                 &scene_feature_classes,
             )?;
+            drop((scene_feature_classes, scene_storage));
             crate::history::configuration::enrich_history_semantic(
                 ctx,
                 &mut semantic_projection,
@@ -5922,21 +5915,27 @@ fn assign_configuration_bodies(
     let mut workspace = ctx.reserve_scoped(0, "SLDPRT configuration partition lookup workspace")?;
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     // Each partition keeps the first copy of every body, in site order.
-    let mut seen = BTreeSet::<(u32, cadmpeg_ir::ids::BodyId)>::new();
+    let mut seen_storage = ctx.reserve_scoped(0, "SLDPRT configuration body uniqueness workspace")?;
+    let mut seen = BTreeMap::<u32, BTreeSet<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in ctx.admit_iter(configuration_bodies, MERGE)? {
         let Ok(index) = u32::try_from(index) else {
             continue;
         };
         for ConfigurationBodyIdentity { id: body, storage } in ctx.admit_iter(bodies, MERGE)? {
-            if !workspace.with_storage(|| {
-                ctx.insert_btree_set(
+            if let Some(bodies) = ctx.get_btree_map(&seen, &index, MERGE)? {
+                if ctx.contains_btree_set(bodies, &body, MERGE)? {
+                    continue;
+                }
+            }
+            seen_storage.with_storage(|| {
+                ctx.insert_btree_group_set(
                     &mut seen,
-                    (index, body.try_clone_for_decode(ctx, MERGE)?),
+                    index,
+                    body.try_clone_for_decode(ctx, MERGE)?,
+                    MERGE,
                     MERGE,
                 )
-            })? {
-                continue;
-            }
+            })?;
             storage.commit()?;
             if let Some(bodies) = ctx.get_mut_btree_map(
                 &mut partition_map,
@@ -5958,7 +5957,7 @@ fn assign_configuration_bodies(
             }
         }
     }
-    drop(seen);
+    drop((seen, seen_storage));
 
     let mut source_counts = BTreeMap::<u32, usize>::new();
     for source_index in ctx
@@ -6407,6 +6406,10 @@ fn brep_local_sha256_in_place(
                 "save SLDPRT body display fields for digest",
             )
         })?;
+    const DISPLAY_WORK: &str = "save and restore SLDPRT body display fields for digest";
+    let display_work = ir.model.bodies.len().checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit(DISPLAY_WORK, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(display_work), DISPLAY_WORK)?;
     let mut binding_partition = binding_partition.move_from();
     let mut appearance_partition = appearance_partition.move_from();
     // The slots were reserved above, so saving the display fields cannot fail
@@ -6517,6 +6520,28 @@ mod digest_tests {
         let (ctx, _) = DecodeContext::from_root_bytes(b"digest", &arena, &policy).unwrap();
         let error = brep_local_sha256_in_place(&ctx, &mut named_body_document()).unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn digest_body_display_work_refuses_before_mutation() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let arena = DecodeArena::new();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "save and restore SLDPRT body display fields for digest",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let mut ir = named_body_document();
+                let before = ir.clone();
+                let result = brep_local_sha256_in_place(&ctx, &mut ir);
+                assert_eq!(ir, before);
+                result
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 2));
     }
 
     #[test]

@@ -1396,6 +1396,18 @@ fn feature_name_index_refuses_caller_scoped_limit() {
     let table = u64::try_from(4 * std::mem::size_of::<(FeatureId, String)>() + 15 + 4 + 16)
         .expect("table size fits");
     assert_eq!(limit.additional, table);
+    // The borrowed feature-ID table, copied identity and copied name are live.
+    let feature_ids = 4 * std::mem::size_of::<&FeatureId>() + 15 + 4 + 16;
+    let identity = ir.model.features[0].id.as_str().len();
+    let name = ir.model.features[0].name.as_ref().unwrap().len();
+    assert_eq!(limit.used, u64::try_from(feature_ids + identity + name).unwrap());
+    let storage = design_loss_probe(
+        &ir,
+        ResourceDimension::MaterializedBytes,
+        "copy SLDPRT feature-name identity",
+    );
+    assert_eq!(storage.used, u64::try_from(feature_ids).unwrap());
+    assert_eq!(storage.additional, u64::try_from(identity).unwrap());
     let limit = design_loss_probe(
         &ir,
         ResourceDimension::WorkUnits,
@@ -1468,6 +1480,17 @@ fn global_parameter_owner_refuses_caller_scoped_limit() {
     let table =
         u64::try_from(4 * std::mem::size_of::<FeatureId>() + 15 + 4 + 16).expect("table size fits");
     assert_eq!(limit.additional, table);
+    // The borrowed feature-ID table and the copied owner identity are live.
+    let feature_ids = 4 * std::mem::size_of::<&FeatureId>() + 15 + 4 + 16;
+    let identity = ir.model.features[0].id.as_str().len();
+    assert_eq!(limit.used, u64::try_from(feature_ids + identity).unwrap());
+    let storage = design_loss_probe(
+        &ir,
+        ResourceDimension::MaterializedBytes,
+        "copy SLDPRT global parameter owner identity",
+    );
+    assert_eq!(storage.used, u64::try_from(feature_ids).unwrap());
+    assert_eq!(storage.additional, u64::try_from(identity).unwrap());
 }
 
 #[test]

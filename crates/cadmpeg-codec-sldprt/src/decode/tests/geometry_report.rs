@@ -432,6 +432,12 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         feature_input_lanes: vec![lane.clone()],
         ..SldprtNative::default()
     };
+    {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "index SLDPRT object names by id",
+            None,
+        );
     assert_eq!(
         unbound_feature_input_operation_objects(
             &cadmpeg_test_support::service_decode_context(),
@@ -440,6 +446,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         .unwrap(),
         1
     );
+    }
 
     native.feature_histories.push(FeatureHistory {
         id: "history".into(),

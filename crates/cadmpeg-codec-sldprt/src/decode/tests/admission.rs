@@ -1014,3 +1014,26 @@ fn repeated_key_count_preserves_mutable_lookup_refusal() {
     assert!(repeat.additional >= cadmpeg_core::decode::u64_from_index(key.len()));
     assert_eq!(repeat.used + repeat.additional, admitted);
 }
+
+
+#[test]
+fn populated_site_does_not_look_up_empty_model_streams() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let source = sldprt_with_body(&triangle_body());
+    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "look up SLDPRT site streams", None);
+    let decoded = SldprtCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    assert!(!decoded.ir().model.faces.is_empty());
+}
+
+
+#[test]
+fn opaque_geometry_link_staging_uses_scoped_storage() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let source = sldprt_with_body(&crate::test_support::parasolid::untyped_triangle(0.0));
+    for operation in ["index SLDPRT opaque geometry record", "index SLDPRT opaque geometry link"] {
+        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+        let decoded = SldprtCodec.decode(&mut Cursor::new(&source), &DecodeOptions::default()).unwrap();
+        let unknowns = decoded.ir().native_unknowns("sldprt").unwrap();
+        assert!(unknowns.iter().any(|unknown| unknown.links.len() >= 2));
+    }
+}

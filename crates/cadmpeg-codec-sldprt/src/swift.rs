@@ -49,7 +49,8 @@ impl ObjectSection {
     ) -> Result<Option<Self>, CodecError> {
         let mut ids = std::collections::HashSet::new();
         let mut ids_storage = ctx.reserve_scoped(0, "SWIFT reference identity workspace")?;
-        for reference in ctx.admit_iter(&references, "scan SLDPRT new values")? {
+        let mut reference_ids = references.iter();
+        while let Some(reference) = ctx.next_charged(&mut reference_ids, "scan SLDPRT new values")? {
             if !ids_storage.with_storage(|| {
                 ctx.insert_hash_set(
                     &mut ids,
@@ -67,13 +68,14 @@ impl ObjectSection {
         if entities.len() > references.len() {
             return Ok(None);
         }
-        for (reference, entity) in ctx
-            .admit_iter(&references, "scan SWIFT object references")?
-            .zip(ctx.admit_iter(&entities, "scan SWIFT object entities")?)
-        {
-            let class = ctx
-                .split_once(&reference.class, ",", "bind SWIFT reference classes")?
-                .map_or(reference.class.as_str(), |(class, _)| class);
+        let mut pairs = references.iter().zip(&entities);
+        while let Some((reference, entity)) = ctx.next_charged(&mut pairs, "scan SWIFT object pairs")? {
+            let separator = ctx.find_map(
+                reference.class.bytes().enumerate(),
+                |(offset, byte)| Ok((byte == b',').then_some(offset)),
+                "bind SWIFT reference classes",
+            )?;
+            let class = separator.map_or(reference.class.as_str(), |offset| reference.class.split_at(offset).0);
             if !ctx.equal(class, entity.class.as_str(), "bind SWIFT reference classes")? {
                 return Ok(None);
             }
@@ -1172,9 +1174,13 @@ fn read_related(
         let Some(entity) = parse_entity(ctx, cursor, next_depth)? else {
             return Ok(None);
         };
+        let separator = ctx.find_map(
+            class.bytes().enumerate(),
+            |(offset, byte)| Ok((byte == b',').then_some(offset)),
+            "bind SWIFT related class",
+        )?;
         if !ctx.equal(
-            ctx.split_once(&class, ",", "bind SWIFT related class")?
-                .map_or(class.as_str(), |(name, _)| name),
+            separator.map_or(class.as_str(), |offset| class.split_at(offset).0),
             entity.class.as_str(),
             "bind SWIFT related class",
         )? {
@@ -2172,13 +2178,19 @@ fn feature_reaches<'a>(
             u64::MAX,
         )
     })?;
-    let mut children = child_feature_ids(ctx, feature)?;
-    while let Some(child) = ctx.next_charged(&mut children, "scan SWIFT child features")? {
-        if ctx.equal(child, target, "compare SWIFT reachability target")?
-            || feature_reaches(ctx, child, target, feature_index, visited, next_depth)?
-        {
-            return Ok(true);
-        }
+    let mut reaches = |child: &'a str| {
+        Ok(ctx.equal(child, target, "compare SWIFT reachability target")?
+            || feature_reaches(ctx, child, target, feature_index, visited, next_depth)?)
+    };
+    if ctx.any_by(
+        feature.features.references.iter().map(|reference| reference.id.as_str()),
+        &mut reaches,
+        "scan SWIFT child features",
+    )? {
+        return Ok(true);
+    }
+    if let Some(children) = direct_subfeature_ids(ctx, feature)? {
+        return ctx.any_by(children, reaches, "scan SWIFT child features");
     }
     Ok(false)
 }
@@ -4163,9 +4175,14 @@ fn short_class<'text>(
     ctx: &DecodeContext<'_>,
     class: &'text str,
 ) -> Result<&'text str, CodecError> {
-    Ok(ctx
-        .rsplit_once(class, ".", "read SWIFT class suffix")?
-        .map_or(class, |(_, suffix)| suffix))
+    let separator = ctx.find_map(
+        class.bytes().enumerate().rev(),
+        |(offset, byte)| Ok((byte == b'.').then_some(offset)),
+        "read SWIFT class suffix",
+    )?;
+    Ok(separator.map_or(class, |offset| {
+        class.split_at(offset).1.strip_prefix('.').unwrap_or(class)
+    }))
 }
 
 fn object_name(ctx: &DecodeContext<'_>, entity: &Entity) -> Result<Option<String>, CodecError> {

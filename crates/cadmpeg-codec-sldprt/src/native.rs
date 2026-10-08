@@ -871,7 +871,7 @@ impl SldprtNative {
         // Lane records are validated against a context of all history
         // features, so lanes are filled before the features move into their
         // histories.
-        let (lane_ids, _lane_ids_storage) =
+        let (lane_ids, lane_ids_storage) =
             ctx.with_scoped_storage("index SLDPRT native lanes", || {
                 ctx.collect_vec(
                     native
@@ -958,7 +958,7 @@ impl SldprtNative {
             crate::records::SketchInputEntity::parent,
             crate::records::SketchInputEntity::ordinal,
         )?;
-        drop(lane_ids);
+        drop((lane_ids, lane_ids_storage));
         for (index, lane) in ctx
             .admit_iter(
                 &mut native.feature_input_lanes,
@@ -1009,7 +1009,7 @@ impl SldprtNative {
             }
             lane.sketch_entities = std::mem::take(&mut lane_entities[index]);
         }
-        let (history_ids, _history_ids_storage) =
+        let (history_ids, history_ids_storage) =
             ctx.with_scoped_storage("index SLDPRT native histories", || {
                 ctx.collect_vec(
                     native
@@ -1033,7 +1033,7 @@ impl SldprtNative {
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        drop(history_ids);
+        drop((history_ids, history_ids_storage));
         for (index, history) in ctx
             .admit_iter(
                 &mut native.feature_histories,
