@@ -69,7 +69,9 @@ enum ViewListKind {
 }
 
 #[derive(Clone, Copy)]
-struct ViewListSlot {
+struct ViewRecordSource {
+    archive: ArchiveVersion,
+    scale: MillimeterScale,
     kind: ViewListKind,
     index: usize,
 }
@@ -1181,16 +1183,16 @@ fn parse_view(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     record: &crate::chunks::Chunk,
-    archive: ArchiveVersion,
-    scale: MillimeterScale,
-    slot: ViewListSlot,
+    source: ViewRecordSource,
     losses: &mut Vec<LossNote>,
     staging: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<ViewRecord, FramingError> {
-    let ViewListSlot {
+    let ViewRecordSource {
+        archive,
+        scale,
         kind: list_kind,
         index: list_index,
-    } = slot;
+    } = source;
     let mut offset = record.body().start;
     let mut name = String::new();
     let mut target = None;
@@ -1627,9 +1629,9 @@ fn parse_list(
             ctx,
             data,
             &view,
-            archive,
-            scale,
-            ViewListSlot {
+            ViewRecordSource {
+                archive,
+                scale,
                 kind: list_kind,
                 index,
             },
