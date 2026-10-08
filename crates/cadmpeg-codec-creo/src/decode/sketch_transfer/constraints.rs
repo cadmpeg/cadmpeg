@@ -5,10 +5,9 @@ use crate::decode::sketch::axis::SectionAxis;
 use crate::feature::segment_rows::SegmentRow;
 
 use crate::decode::sketch::equations_scalar::SectionScalarVariable;
-use crate::feature::definitions::SolverSubtable;
 
 use super::super::feature_history::dimensions::{
-    feature_relation_table_complete, resolved_feature_dimension_parameter_admitted,
+    resolved_feature_dimension_parameter_admitted,
 };
 use super::super::sketch::coordinates::{
     resolved_section_coordinates, saved_section_coordinate_witnesses,
@@ -49,6 +48,7 @@ use cadmpeg_ir::{
     features::ParameterId,
     scalar::{Angle, Length},
 };
+use super::solver_links::{EquationIncidences, RelationIncidences};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -495,164 +495,58 @@ pub(in super::super) fn close_sketch_constraint_parameter_references(
     Ok(())
 }
 
-pub(in super::super) fn joined_relation_incidence(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    relation_id: u32,
-) -> Option<&crate::feature::definitions::FeatureSkamp> {
-    joined_relation_incidence_link(definition, relation_id).map(|(_, incidence)| incidence)
-}
-
-fn joined_relation_incidence_link(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    relation_id: u32,
-) -> Option<(
-    &crate::feature::definitions::FeatureRelationTriple,
-    &crate::feature::definitions::FeatureSkamp,
-)> {
-    let Some(relations) = &definition.relations else {
-        return None;
-    };
-    if !relations
-        .triples
-        .as_ref()
-        .is_none_or(SolverSubtable::is_complete)
-        || !relations
-            .skamps
-            .as_ref()
-            .is_none_or(SolverSubtable::is_complete)
-    {
-        return None;
-    }
-    let (join, incidence_id) = crate::decode::uniqueness::exactly_one(
-        relations
-            .triples()
-            .iter()
-            .filter(|triple| triple.relation_id == Some(relation_id))
-            .filter_map(|triple| triple.skamp_id.map(|incidence_id| (triple, incidence_id))),
-    )?;
-    let incidence = crate::decode::uniqueness::exactly_one(
-        relations
-            .skamps()
-            .iter()
-            .filter(|skamp| skamp.id == incidence_id),
-    )?;
-    Some((join, incidence))
-}
-
-pub(in super::super) fn section_solver_relation_is_disabled(
+#[cfg(test)]
+pub(in super::super) fn joined_relation_incidence<'definition>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    definition: &crate::feature::definitions::FeatureDefinition,
+    definition: &'definition crate::feature::definitions::FeatureDefinition,
     relation_id: u32,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    let Some(relations) = definition
-        .relations
-        .as_ref()
-        .filter(|relations| feature_relation_table_complete(relations))
-    else {
-        return Ok(false);
-    };
-    let mut has_matching_relation = false;
-    let mut has_multiple_matching_relations = false;
-    for relation in ctx.admit_iter(&relations.rows, "creo solver relation rows")? {
-        if relation.relation_id == relation_id {
-            if has_matching_relation {
-                has_multiple_matching_relations = true;
-            } else {
-                has_matching_relation = true;
-            }
+) -> Result<Option<&'definition crate::feature::definitions::FeatureSkamp>, cadmpeg_core::CodecError> {
+    Ok(RelationIncidences::new(ctx, definition)?.joined(relation_id).map(|(_, incidence)| incidence))
+}
+
+#[cfg(test)]
+pub(in super::super) fn relation_incidence<'definition>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &'definition crate::feature::definitions::FeatureDefinition,
+    relation_id: u32,
+) -> Result<Option<&'definition crate::feature::definitions::FeatureSkamp>, cadmpeg_core::CodecError> {
+    Ok(joined_relation_incidence(ctx, definition, relation_id)?.filter(|incidence| section_skamp_active(incidence.status)))
+}
+
+fn incidence_entities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    sketch: &SketchId,
+    incidence: Option<&crate::feature::definitions::FeatureSkamp>,
+    operation: &'static str,
+) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
+    let Some(incidence) = incidence else { return Ok(Vec::new()); };
+    let mut entities = Vec::new();
+    for item in ctx.admit_iter(&incidence.items, operation)? {
+        if let Some(entity) = sketch_entity_id_admitted(ctx, sketch, item.entity_id)? {
+            ctx.push_vec(&mut entities, entity, operation)?;
         }
     }
-    if !has_matching_relation || has_multiple_matching_relations {
-        return Ok(false);
-    }
-    Ok(joined_relation_incidence(definition, relation_id)
-        .is_some_and(|incidence| !section_skamp_active(incidence.status)))
+    Ok(entities)
 }
 
-pub(in super::super) fn section_solver_equation_is_disabled(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    equation_id: u32,
-) -> bool {
-    let Some(relations) = &definition.relations else {
-        return false;
-    };
-    if !relations
-        .triples
-        .as_ref()
-        .is_none_or(SolverSubtable::is_complete)
-        || !relations
-            .skamps
-            .as_ref()
-            .is_none_or(SolverSubtable::is_complete)
-    {
-        return false;
-    }
-    let incidence_id = crate::decode::uniqueness::exactly_one(
-        relations
-            .triples()
-            .iter()
-            .filter(|triple| triple.equation_id == Some(equation_id))
-            .filter_map(|triple| triple.skamp_id),
-    );
-    let Some(incidence_id) = incidence_id else {
-        return false;
-    };
-    let incidence = crate::decode::uniqueness::exactly_one(
-        relations
-            .skamps()
-            .iter()
-            .filter(|skamp| skamp.id == incidence_id),
-    );
-    let Some(incidence) = incidence else {
-        return false;
-    };
-    !section_skamp_active(incidence.status)
-}
-
-pub(in super::super) fn relation_incidence(
-    definition: &crate::feature::definitions::FeatureDefinition,
-    relation_id: u32,
-) -> Option<&crate::feature::definitions::FeatureSkamp> {
-    let incidence = joined_relation_incidence(definition, relation_id)?;
-    section_skamp_active(incidence.status).then_some(incidence)
-}
-
+#[cfg(test)]
 pub(in super::super) fn relation_incidence_entities(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     relation_id: u32,
 ) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
-    let Some(incidence) = relation_incidence(definition, relation_id) else {
-        return Ok(Vec::new());
-    };
-    let mut entities = Vec::new();
-    for item in ctx.admit_iter(&incidence.items, "creo relation incidence items")? {
-        if let Some(entity) = sketch_entity_id_admitted(ctx, sketch, item.entity_id)? {
-            ctx.reserve_vec(&mut entities, 1, "creo relation incidence entities")?;
-            entities.push(entity);
-        }
-    }
-    Ok(entities)
+    incidence_entities(ctx, sketch, relation_incidence(ctx, definition, relation_id)?, "creo relation incidence items")
 }
 
+#[cfg(test)]
 pub(in super::super) fn joined_relation_incidence_entities(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     relation_id: u32,
 ) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
-    let Some(incidence) = joined_relation_incidence(definition, relation_id) else {
-        return Ok(Vec::new());
-    };
-    let mut entities = Vec::new();
-    for item in ctx.admit_iter(&incidence.items, "creo joined relation incidence items")? {
-        if let Some(entity) = sketch_entity_id_admitted(ctx, sketch, item.entity_id)? {
-            ctx.reserve_vec(&mut entities, 1, "creo joined relation incidence entities")?;
-            entities.push(entity);
-        }
-    }
-    Ok(entities)
+    incidence_entities(ctx, sketch, joined_relation_incidence(ctx, definition, relation_id)?, "creo joined relation incidence items")
 }
 
 fn relation_incidence_loci(
@@ -660,20 +554,12 @@ fn relation_incidence_loci(
     refusal: &Cell<Option<cadmpeg_core::CodecError>>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-    relation_id: u32,
+    incidence: Option<&crate::feature::definitions::FeatureSkamp>,
 ) -> Result<Option<[SketchLocus; 2]>, cadmpeg_core::CodecError> {
-    let Some(incidence) = relation_incidence(definition, relation_id) else {
-        return Ok(None);
-    };
-    let [first, second] = incidence.items.as_slice() else {
-        return Ok(None);
-    };
-    let Some(first) = section_skamp_locus(ctx, refusal, definition, sketch, first)? else {
-        return Ok(None);
-    };
-    let Some(second) = section_skamp_locus(ctx, refusal, definition, sketch, second)? else {
-        return Ok(None);
-    };
+    let Some(incidence) = incidence.filter(|incidence| section_skamp_active(incidence.status)) else { return Ok(None); };
+    let [first, second] = incidence.items.as_slice() else { return Ok(None); };
+    let Some(first) = section_skamp_locus(ctx, refusal, definition, sketch, first)? else { return Ok(None); };
+    let Some(second) = section_skamp_locus(ctx, refusal, definition, sketch, second)? else { return Ok(None); };
     Ok(Some([first, second]))
 }
 
@@ -1818,12 +1704,13 @@ pub(in super::super) fn section_equation_native_constraints(
     else {
         return Ok(Vec::new());
     };
+    let solver = EquationIncidences::new(ctx, definition)?;
     let mut constraints = Vec::new();
     for equation in ctx.admit_iter(&table.rows, "creo native equation rows")? {
         if ctx.contains_btree_set(typed_offsets, &equation.offset, "creo typed equation offset membership")? {
             continue;
         }
-        let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+        let active = !solver.is_disabled(equation.equation_id);
         let native_ref = sketch_native_ref_admitted(ctx, sketch)?;
         let mut native_properties = BTreeMap::new();
         insert_native_equation_property(
@@ -2319,6 +2206,7 @@ fn native_section_dimension_constraint_definition(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     relation: &crate::feature::definitions::FeatureRelation,
+    solver: &RelationIncidences<'_, '_>,
 ) -> Result<Option<SketchConstraintDefinitionInput>, cadmpeg_core::CodecError> {
     let native_kind = ctx.format_retained(
         format_args!("creo:relation:{}", relation.relation_type),
@@ -2337,7 +2225,7 @@ fn native_section_dimension_constraint_definition(
         relation.dimension_id,
     )?;
     insert_relation_property(ctx, &mut native_properties, "sign", relation.sign)?;
-    let Some(relations) = definition.relations.as_ref() else {
+    let Some(_) = definition.relations.as_ref() else {
         insert_relation_property(
             ctx,
             &mut native_properties,
@@ -2354,15 +2242,8 @@ fn native_section_dimension_constraint_definition(
             operands: Vec::new(),
         }));
     };
-    let unique_relation_id = feature_relation_table_complete(relations)
-        && ctx
-            .admit_iter(&relations.rows, "creo native relation identity rows")?
-            .filter(|candidate| candidate.relation_id == relation.relation_id)
-            .count()
-            == 1;
-    let joined_relation_incidence_link = unique_relation_id
-        .then(|| joined_relation_incidence_link(definition, relation.relation_id))
-        .flatten();
+    let unique_relation_id = solver.is_unique(relation.relation_id);
+    let joined_relation_incidence_link = if unique_relation_id { solver.joined(relation.relation_id) } else { None };
     let joined_incidence = joined_relation_incidence_link.map(|(_, incidence)| incidence);
     let parameter = match definition
         .dimensions
@@ -2376,7 +2257,7 @@ fn native_section_dimension_constraint_definition(
         None => None,
     };
     let entities = if unique_relation_id {
-        joined_relation_incidence_entities(ctx, definition, sketch, relation.relation_id)?
+        incidence_entities(ctx, sketch, joined_incidence, "creo joined relation incidence items")?
     } else {
         Vec::new()
     };
@@ -2463,6 +2344,7 @@ pub(super) fn reconcile_section_dimension_constraint(
     relation: &crate::feature::definitions::FeatureRelation,
     emitted: &BTreeSet<SketchEntityId>,
     available_parameters: &BTreeSet<ParameterId>,
+    solver: &RelationIncidences<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let entity_reconciled =
         reconcile_constraint_entity_references(ctx, constraint_definition, emitted)?;
@@ -2472,7 +2354,7 @@ pub(super) fn reconcile_section_dimension_constraint(
         return Ok(true);
     }
     let Some(native_definition) =
-        native_section_dimension_constraint_definition(ctx, definition, sketch, relation)?
+        native_section_dimension_constraint_definition(ctx, definition, sketch, relation, solver)?
     else {
         return Ok(false);
     };
@@ -2513,10 +2395,21 @@ fn capture_constraint_refusal<T>(
     }
 }
 
+#[cfg(test)]
 pub(in super::super) fn section_dimension_constraints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
+) -> Result<Vec<(SketchConstraint, usize, usize)>, cadmpeg_core::CodecError> {
+    let solver = RelationIncidences::new(ctx, definition)?;
+    section_dimension_constraints_with_links(ctx, definition, sketch, &solver)
+}
+
+pub(super) fn section_dimension_constraints_with_links(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    sketch: &SketchId,
+    solver: &RelationIncidences<'_, '_>,
 ) -> Result<Vec<(SketchConstraint, usize, usize)>, cadmpeg_core::CodecError> {
     let Some(relations) = &definition.relations else {
         return Ok(Vec::new());
@@ -2547,18 +2440,7 @@ pub(in super::super) fn section_dimension_constraints(
         let locus_refusal = Cell::new(None);
         let candidate = (|| {
             Some({
-                let unique_relation_id = feature_relation_table_complete(relations)
-                    && capture_constraint_refusal(
-                        &mut coordinate_refusal,
-                        ctx.admit_iter(&relations.rows, "creo unique section dimension relation")
-                            .map(|rows| {
-                                rows.filter(|candidate| {
-                                    candidate.relation_id == relation.relation_id
-                                })
-                                .count()
-                            })
-                            .map_err(cadmpeg_core::CodecError::ResourceLimit),
-                    )? == 1;
+                let unique_relation_id = solver.is_unique(relation.relation_id);
                 let dimension = match definition
                     .dimensions
                     .as_ref()
@@ -2582,9 +2464,7 @@ pub(in super::super) fn section_dimension_constraints(
                         })
                         .transpose(),
                 )?;
-                let joined_incidence_link = unique_relation_id
-                    .then(|| joined_relation_incidence_link(definition, relation.relation_id))
-                    .flatten();
+                let joined_incidence_link = if unique_relation_id { solver.joined(relation.relation_id) } else { None };
                 let joined_incidence = joined_incidence_link.map(|(_, incidence)| incidence);
                 let typed = (|| {
                     unique_relation_id.then_some(())?;
@@ -2865,7 +2745,7 @@ pub(in super::super) fn section_dimension_constraints(
                             &locus_refusal,
                             definition,
                             sketch,
-                            relation.relation_id,
+                            joined_incidence,
                         ),
                     ) {
                         return Some(SketchConstraintDefinitionInput::DistanceLoci {
@@ -2906,12 +2786,7 @@ pub(in super::super) fn section_dimension_constraints(
                             return Some(SketchConstraintDefinitionInput::Distance {
                                 entities: capture_constraint_refusal(
                                     &mut coordinate_refusal,
-                                    joined_relation_incidence_entities(
-                                        ctx,
-                                        definition,
-                                        sketch,
-                                        relation.relation_id,
-                                    ),
+                                    incidence_entities(ctx, sketch, joined_incidence, "creo joined relation incidence items"),
                                 )?,
                                 parameter,
                             });
@@ -2919,7 +2794,7 @@ pub(in super::super) fn section_dimension_constraints(
                     }
                     let entities = capture_constraint_refusal(
                         &mut coordinate_refusal,
-                        relation_incidence_entities(ctx, definition, sketch, relation.relation_id),
+                        incidence_entities(ctx, sketch, joined_incidence.filter(|incidence| section_skamp_active(incidence.status)), "creo relation incidence items"),
                     )?;
                     (!entities.is_empty()).then_some(SketchConstraintDefinitionInput::Distance {
                         entities,
@@ -2936,7 +2811,7 @@ pub(in super::super) fn section_dimension_constraints(
                     None => capture_constraint_refusal(
                         &mut coordinate_refusal,
                         native_section_dimension_constraint_definition(
-                            ctx, definition, sketch, relation,
+                            ctx, definition, sketch, relation, solver,
                         ),
                     )??,
                 };
@@ -3072,14 +2947,13 @@ mod tests {
         };
         let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch identity");
         let result = crate::test_support::assert_work_boundaries(
-            &["creo native relation identity rows"],
+            &["creo solver relation identity rows"],
             |ctx| {
                 super::native_section_dimension_constraint_definition(
                     ctx,
                     &definition,
                     &sketch,
-                    &relation,
-                )
+                    &relation, &super::RelationIncidences::new(ctx, &definition)?)
                 .map(|candidate| candidate.expect("one relation produces a native constraint"))
             },
         );
@@ -4024,8 +3898,7 @@ mod tests {
                 &sketch,
                 &relation,
                 &BTreeSet::new(),
-                &BTreeSet::new(),
-            ))
+                &BTreeSet::new(), &super::RelationIncidences::new(ctx, &definition)?))
             .expect("service dimension fallback admission")
         );
         assert!(matches!(
@@ -4052,8 +3925,7 @@ mod tests {
                 &sketch,
                 &relation,
                 &BTreeSet::from([emitted_entity]),
-                &BTreeSet::new(),
-            ))
+                &BTreeSet::new(), &super::RelationIncidences::new(ctx, &definition)?))
             .expect("service dimension fallback admission")
         );
         assert!(matches!(
@@ -4106,32 +3978,18 @@ mod tests {
             offset: 0,
         };
         let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let at_two = super::section_dimension_constraints(&ctx, &definition, &sketch);
-        assert!(
-            matches!(&at_two,
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo native relation operands"),
-            "{at_two:?}"
+        let admitted = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &["creo solver relation identity rows", "creo native relation operands",
+              "creo section dimension constraints"],
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                super::section_dimension_constraints(&ctx, &definition, &sketch)
+            },
         );
-        policy.limits.max_collection_items = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let at_three = super::section_dimension_constraints(&ctx, &definition, &sketch);
-        assert!(
-            matches!(&at_three,
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo section dimension constraints"),
-            "{at_three:?}"
-        );
-        policy.limits.max_collection_items = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let admitted = super::section_dimension_constraints(&ctx, &definition, &sketch)
-            .expect("exact cap admits dimension row");
         assert_eq!(admitted.len(), 1);
         assert_eq!(
             admitted[0].0.id.as_str(),

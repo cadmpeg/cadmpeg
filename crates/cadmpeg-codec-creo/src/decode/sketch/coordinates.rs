@@ -2,6 +2,7 @@
 //! Resolved section point coordinates from variables, dimensions, and equations.
 
 use super::axis::SectionAxis;
+use crate::decode::sketch_transfer::solver_links::RelationIncidences;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -33,7 +34,7 @@ use super::skamp::{
     SectionPointSource, SectionSymmetryAxis,
 };
 use crate::decode::sketch_transfer::constraints::{
-    section_linear_distance_vectors, section_solver_relation_is_disabled,
+    section_linear_distance_vectors,
 };
 use crate::decode::sketch_transfer::loci::{
     section_skamp_arc_midpoint_source, section_skamp_line_midpoint_sources,
@@ -639,8 +640,10 @@ pub(in crate::decode) fn resolved_section_coordinates(
     let mut linear_dimension_candidates = Vec::new();
     if let Some(relation_table) = definition.relations.as_ref() {
         if feature_relation_table_complete(relation_table) {
-            for relation in ctx.admit_iter(&relation_table.rows, "creo section relation rows")? {
-                if section_solver_relation_is_disabled(ctx, definition, relation.relation_id)? {
+            let relation_solver_rows = ctx.admit_iter(&relation_table.rows, "creo section relation rows")?;
+            let relation_solver = RelationIncidences::new(ctx, definition)?;
+            for relation in relation_solver_rows {
+                if relation_solver.is_disabled(relation.relation_id) {
                     continue;
                 }
                 let Some((first, second)) = (|| {
