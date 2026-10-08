@@ -1230,10 +1230,11 @@ fn decode_container<'a>(
     if !kernel_unknowns.is_empty() {
         source_fidelity
             .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns, ctx)
-            .map_err(|error| {
-                CodecError::malformed(format_args!(
+            .map_err(|error| match error {
+                error @ CodecError::ResourceLimit(_) => error,
+                error => CodecError::malformed(format_args!(
                     "Inventor kernel unknown retention failed: {error}"
-                ))
+                )),
             })?;
     }
     let appearance_binding_count = ir.model.appearance_bindings.len();
@@ -1728,10 +1729,12 @@ fn project_protein_state(
     state: &ProteinState<'_>,
 ) -> Result<ProteinRecord, CodecError> {
     ctx.charge_entities(1, "admit Inventor native structural records")?;
-    let id = ctx.copy_retained_text(
-        "inventor:protein:state#root",
+    let id_text = "inventor:protein:state#root";
+    let mut id = ctx.retained_string(
+        id_text.len(),
         "retain Inventor Protein state id",
     )?;
+    id.push_str(id_text);
     Ok(match state {
         ProteinState::Absent => ProteinRecord::Absent { id },
         ProteinState::Empty { stream } => ProteinRecord::Empty {
@@ -2600,9 +2603,14 @@ impl MetadataProjection {
             ("part_number", &self.part_number),
         ] {
             if let Some(value) = value {
+                let mut key = ctx.retained_string(
+                    name.len(),
+                    "retain Inventor metadata attribute key",
+                )?;
+                key.push_str(name);
                 ctx.insert_btree_map(
                     attributes,
-                    ctx.copy_retained_text(name, "retain Inventor metadata attribute key")?,
+                    key,
                     ctx.copy_retained_text(value, "retain Inventor metadata attribute value")?,
                     "collect Inventor metadata attribute",
                 )?;
