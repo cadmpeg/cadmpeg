@@ -2,9 +2,10 @@
 //! Feature parameter scopes and their operand frames.
 
 use super::{
-    design_stream, folded_guid, group_records, reference_member_at, valid_vertex_recipe, Ctx,
+    folded_guid, group_records, reference_member_at, valid_vertex_recipe, Ctx,
     RecordGroups,
 };
+use crate::ids::design_stream;
 use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_distance_layout;
 use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_to_face_layout;
 use crate::design::decode::scopes::extrude::is_class_296_one_sided_to_face_layout;

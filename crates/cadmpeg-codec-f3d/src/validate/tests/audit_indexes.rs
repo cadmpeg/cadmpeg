@@ -42,7 +42,7 @@ fn design_stream_search_preserves_unqualified_and_last_separator_semantics() {
             ("f3d:stream:record:tail", "f3d:stream:record"),
             ("f3d:流:record", "f3d:流"),
         ] {
-            assert_eq!(super::super::design_stream(decode, id).unwrap(), expected);
+            assert_eq!(crate::ids::design_stream(decode, id).unwrap(), expected);
         }
     });
 }
@@ -54,7 +54,7 @@ fn arbitrary_record_id_refuses_before_reverse_stream_search() {
         ResourceDimension::WorkUnits,
         "resolve F3D validation design stream",
         0,
-        |decode| super::super::design_stream(decode, &id).map(|_| ()),
+        |decode| crate::ids::design_stream(decode, &id).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "resolve F3D validation design stream"));
@@ -353,7 +353,7 @@ fn design_segment_uses_the_parsed_stream_and_admits_its_reverse_search() {
             ("f3d:Design/Other.dat", None),
         ] {
             assert_eq!(
-                super::super::design_segment(decode, stream).unwrap(),
+                crate::ids::design_segment_from_stream(decode, stream).unwrap(),
                 expected
             );
         }
@@ -363,7 +363,7 @@ fn design_segment_uses_the_parsed_stream_and_admits_its_reverse_search() {
         ResourceDimension::WorkUnits,
         "resolve F3D validation design segment",
         0,
-        |decode| super::super::design_segment(decode, &stream).map(|_| ()),
+        |decode| crate::ids::design_segment_from_stream(decode, &stream).map(|_| ()),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "resolve F3D validation design segment"));

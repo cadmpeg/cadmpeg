@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Dimension frames and their cross-record links.
 
-use super::{design_stream, Ctx, ScopedRecordSet};
+use super::{Ctx, ScopedRecordSet};
+use crate::ids::design_stream;
 use crate::{design, records};
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::DecodeContext;

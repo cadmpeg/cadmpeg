@@ -28,12 +28,32 @@ pub(crate) const DEFAULT_STREAM: &str = "f3d:design";
 
 /// Parse the native stream segment out of an identity key: the text before the
 /// final `:` separator. Returns `None` when the key carries no separator.
-///
-/// The search runs from the end. A native record id ends in `:{kind}#{key}`
-/// with a literal kind and a numeric or GUID key, and its stream escapes `:`,
-/// so the search reads only that bounded suffix and needs no admission.
+/// This context-free query is for non-decode callers. Loaded record IDs can
+/// have arbitrary suffix lengths; decode callers use `native_stream_charged`.
 pub(crate) fn native_stream(id: &str) -> Option<&str> {
     id.rsplit_once(':').map(|(stream, _)| stream)
+}
+
+/// Find the final separator, admitting each visited byte and the end probe.
+pub(crate) fn native_stream_charged<'id>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    id: &'id str,
+    operation: &'static str,
+) -> Result<Option<&'id str>, cadmpeg_core::CodecError> {
+    ctx.find_map(
+        id.as_bytes().iter().enumerate().rev(),
+        |(offset, byte)| Ok((*byte == b':').then(|| &id[..offset])),
+        operation,
+    )
+}
+
+/// Resolve a record's stream, using the primary stream for an unqualified ID.
+pub(crate) fn design_stream<'id>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    id: &'id str,
+) -> Result<&'id str, cadmpeg_core::CodecError> {
+    Ok(native_stream_charged(ctx, id, "resolve F3D validation design stream")?
+        .unwrap_or(DEFAULT_STREAM))
 }
 
 /// Return whether two native IDs belong to the same root document or xref occurrence.
@@ -84,7 +104,24 @@ pub(crate) fn same_native_occurrence(
 pub(crate) fn design_segment(id: &str) -> Option<&str> {
     let stream = native_stream(id)?;
     let (segment, entry) = stream.rsplit_once('/')?;
+    design_segment_parts(segment, entry)
+}
+
+fn design_segment_parts<'stream>(segment: &'stream str, entry: &str) -> Option<&'stream str> {
     matches!(entry, "MetaStream.dat" | "BulkStream.dat").then_some(segment)
+}
+
+/// Resolve the Design segment of an already parsed stream by visited bytes.
+pub(crate) fn design_segment_from_stream<'stream>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    stream: &'stream str,
+) -> Result<Option<&'stream str>, cadmpeg_core::CodecError> {
+    let parts = ctx.find_map(
+        stream.as_bytes().iter().enumerate().rev(),
+        |(offset, byte)| Ok((*byte == b'/').then(|| (&stream[..offset], &stream[offset + 1..]))),
+        "resolve F3D validation design segment",
+    )?;
+    Ok(parts.and_then(|(segment, entry)| design_segment_parts(segment, entry)))
 }
 
 /// The fixed key of the single source-image record a design carries.
@@ -1890,5 +1927,56 @@ mod tests {
             neutral_assembly_legacy_object_id(&selection),
             neutral_assembly_legacy_object_id(&second)
         );
+    }
+}
+
+#[cfg(test)]
+mod stream_admission_tests {
+    #[test]
+    fn reverse_stream_search_admits_only_the_visited_suffix() {
+        for prefix in ["", "流", &"a".repeat(4096)] {
+            let stream = format!("f3d:{prefix}");
+            let id = format!("{stream}:parameter#7");
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            // Eleven suffix bytes and the final colon are visited.
+            policy.limits.max_work_units = 12;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                assert_eq!(super::design_stream(ctx, &id).unwrap(), stream);
+            });
+            policy.limits.max_work_units = 11;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                let error = super::design_stream(ctx, &id).unwrap_err();
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref limit)
+                    if limit.used == 11 && limit.additional == 1));
+                match (error, super::design_stream(ctx, "a:b").unwrap_err()) {
+                    (cadmpeg_core::CodecError::ResourceLimit(original), cadmpeg_core::CodecError::ResourceLimit(later)) => assert_eq!(later, original),
+                    _ => panic!("stream search must preserve the original resource refusal"),
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn reverse_segment_search_admits_only_the_visited_entry() {
+        for prefix in ["", "流", &"a".repeat(4096)] {
+            let segment = format!("f3d:{prefix}");
+            let stream = format!("{segment}/BulkStream.dat");
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            // Fifteen bytes: the entry's fourteen bytes and the slash.
+            policy.limits.max_work_units = 15;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                assert_eq!(super::design_segment_from_stream(ctx, &stream).unwrap(), Some(segment.as_str()));
+            });
+            policy.limits.max_work_units = 14;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                let error = super::design_segment_from_stream(ctx, &stream).unwrap_err();
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref limit)
+                    if limit.used == 14 && limit.additional == 1));
+                match (error, super::design_segment_from_stream(ctx, "a/b").unwrap_err()) {
+                    (cadmpeg_core::CodecError::ResourceLimit(original), cadmpeg_core::CodecError::ResourceLimit(later)) => assert_eq!(later, original),
+                    _ => panic!("stream search must preserve the original resource refusal"),
+                }
+            });
+        }
     }
 }
