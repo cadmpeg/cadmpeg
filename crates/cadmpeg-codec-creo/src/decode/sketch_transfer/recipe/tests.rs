@@ -109,3 +109,33 @@ fn revolution_extent_lookup_refuses_before_search() {
             && resource.operation == "creo feature revolution extent rows")
     );
 }
+
+#[test]
+fn schema_conflict_does_not_admit_unused_rows_or_depdb_tail() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows = vec![
+        row(crate::feature::schema::SchemaClass::Round),
+        row(crate::feature::schema::SchemaClass::Chamfer),
+    ];
+    let run = |scan: &crate::container::ContainerScan<'_>, cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        feature_schema_class(&ctx, scan, 40)
+    };
+    let cap = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
+        run(&scan, cap)
+    });
+    assert_eq!(run(&scan, cap).expect("short conflict"), None);
+    scan.features
+        .rows
+        .extend((0..4096).map(|_| row(crate::feature::schema::SchemaClass::Round)));
+    scan.features
+        .depdb_recipe_rows
+        .extend((0..4096).map(|_| row(crate::feature::schema::SchemaClass::Round)));
+    assert_eq!(
+        run(&scan, cap).expect("conflict stops before both tails"),
+        None
+    );
+}

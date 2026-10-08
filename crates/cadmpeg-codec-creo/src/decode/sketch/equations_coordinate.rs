@@ -15,7 +15,7 @@ use super::equations_scalar::{
 };
 use super::skamp::SectionPointSource;
 use crate::decode::quadratic::Coefficient;
-use crate::decode::sketch_transfer::constraints::section_solver_equation_is_disabled;
+use crate::decode::sketch_transfer::solver_links::EquationIncidences;
 
 const EPS_DIMENSION_BINDING: f64 = 1.0e-9;
 const EPS_DISTANCE_AGREEMENT: f64 = 1.0e-9;
@@ -125,7 +125,9 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     let mut rows = Vec::new();
-    for equation in ctx.admit_iter(&equations.rows, "creo section source equation rows")? {
+    let equation_solver_rows = ctx.admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows {
         if equation.function_id != 6 {
             continue;
         }
@@ -183,7 +185,7 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
         if radius_value.is_some() && stored_distance.is_none() {
             continue;
         }
-        let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+        let active = !equation_solver.is_disabled(equation.equation_id);
         let first_point = ctx
             .get_btree_map(coordinates, &first_u.key, "creo section coordinates get")?
             .and_then(|point| Some([point[0]?, point[1]?]));
@@ -343,8 +345,10 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    for equation in ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?
+    let equation_solver_rows = ctx
+        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
     {
         let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice() else {
@@ -429,7 +433,7 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
                 value,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                active: !equation_solver.is_disabled(equation.equation_id),
             },
             "creo section equation unsigned coordinate distance rows",
         )?;
@@ -471,8 +475,10 @@ pub(in crate::decode) fn section_equation_radius_dimensions(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    for equation in ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?
+    let equation_solver_rows = ctx
+        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
     {
         let [Some(first), Some(second)] = equation.arguments.as_slice() else {
@@ -557,7 +563,7 @@ pub(in crate::decode) fn section_equation_radius_dimensions(
                 value,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                active: !equation_solver.is_disabled(equation.equation_id),
             },
             "creo section equation radius dimensions",
         )?;
@@ -625,8 +631,10 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    for equation in ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?
+    let equation_solver_rows = ctx
+        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 35 && equation.arguments.len() == 9)
     {
         let [Some(target_u), Some(target_v), Some(first_u), Some(first_v), Some(second_u), Some(second_v), Some(line_parameter), Some(first_zero), Some(second_zero)] =
@@ -736,7 +744,7 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
                 second: second_u.key,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                active: !equation_solver.is_disabled(equation.equation_id),
             },
             "creo section equation point on line constraint rows",
         )?;
@@ -802,8 +810,10 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
     let scalar_equality_values =
         scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
     let mut rows = Vec::new();
-    for equation in ctx
-        .admit_iter(&equations.rows, "creo section source equation rows")?
+    let equation_solver_rows = ctx
+        .admit_iter(&equations.rows, "creo section source equation rows")?;
+    let equation_solver = EquationIncidences::new(ctx, definition)?;
+    for equation in equation_solver_rows
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
     {
         let argument_rows: [Option<&crate::feature::definitions::FeatureVariableRow>; 9] =
@@ -879,7 +889,7 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
                 second: [third_u.key, fourth_u.key],
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+                active: !equation_solver.is_disabled(equation.equation_id),
             },
             "creo section equation equal length constraint rows",
         )?;

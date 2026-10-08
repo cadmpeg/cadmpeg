@@ -63,186 +63,80 @@ pub(super) fn section_point_locus(
     let Some(segments) = definition.segments.as_ref() else {
         return Ok(None);
     };
-    let unique_entities = |external_id| segments.rows.get(external_id).is_some();
     let mut candidate = None;
-    let mut record_candidate = |value| {
-        if candidate.is_some() {
-            true
-        } else {
-            candidate = Some(value);
-            false
+    let mut rows = segments.rows.as_slice().iter();
+    while let Some(row) = ctx.next_charged(&mut rows, "creo point locus rows")? {
+        let (external_id, kinds) = match row {
+            SegmentRow::Ordinary(segment) => {
+                use crate::feature::definitions::FeatureSegmentKind;
+                let endpoint = match segment.kind {
+                    FeatureSegmentKind::Point(id) if id == point_id => Some(PointLocusKind::Entity),
+                    FeatureSegmentKind::Line([start, _]) if start == point_id => {
+                        Some(PointLocusKind::Start)
+                    }
+                    FeatureSegmentKind::Line([_, end]) if end == point_id => {
+                        Some(PointLocusKind::End)
+                    }
+                    FeatureSegmentKind::Arc([end, _]) if end == point_id => {
+                        Some(PointLocusKind::End)
+                    }
+                    FeatureSegmentKind::Arc([_, start]) if start == point_id => {
+                        Some(PointLocusKind::Start)
+                    }
+                    _ => None,
+                };
+                let center = (matches!(segment.kind, FeatureSegmentKind::Arc(_))
+                    && segment.center_id == Some(point_id))
+                .then_some(PointLocusKind::Center);
+                (segment.external_id, [endpoint, center])
+            }
+            SegmentRow::Circle(segment) => (
+                segment.external_id,
+                [
+                    (segment.center_id == point_id).then_some(PointLocusKind::Center),
+                    None,
+                ],
+            ),
+            SegmentRow::Point(segment) => (
+                segment.external_id,
+                [
+                    (segment.point_id == point_id).then_some(PointLocusKind::Entity),
+                    None,
+                ],
+            ),
+            SegmentRow::CenteredLine(segment) => (
+                segment.external_id,
+                [
+                    (point_id == 0).then_some(PointLocusKind::Start),
+                    (point_id == 1).then_some(PointLocusKind::End),
+                ],
+            ),
+            SegmentRow::ReferenceLine(segment) => (
+                segment.external_id,
+                [
+                    (segment.point_ids[0] == Some(point_id)).then_some(PointLocusKind::Start),
+                    (segment.point_ids[1] == Some(point_id)).then_some(PointLocusKind::End),
+                ],
+            ),
+            SegmentRow::BoundedCurve(segment) => (
+                segment.external_id,
+                [
+                    (segment.point_ids[0] == point_id).then_some(PointLocusKind::Start),
+                    (segment.point_ids[1] == point_id).then_some(PointLocusKind::End),
+                ],
+            ),
+            SegmentRow::Conic(_) | SegmentRow::Opaque(_) => continue,
+        };
+        if segments.rows.get(external_id).is_none() {
+            continue;
         }
-    };
-    for segment in ctx
-        .admit_iter(segments.rows.as_slice(), "creo point locus ordinary rows")?
-        .filter_map(|row| match row {
-            SegmentRow::Ordinary(segment) => Some(segment),
-            _ => None,
-        })
-        .filter(|segment| unique_entities(segment.external_id))
-        .filter_map(|segment| {
-            let kind = match segment.kind {
-                crate::feature::definitions::FeatureSegmentKind::Point(id) if id == point_id => {
-                    PointLocusKind::Entity
-                }
-                crate::feature::definitions::FeatureSegmentKind::Line([start, _])
-                    if start == point_id =>
-                {
-                    PointLocusKind::Start
-                }
-                crate::feature::definitions::FeatureSegmentKind::Line([_, end])
-                    if end == point_id =>
-                {
-                    PointLocusKind::End
-                }
-                crate::feature::definitions::FeatureSegmentKind::Arc([end, _])
-                    if end == point_id =>
-                {
-                    PointLocusKind::End
-                }
-                crate::feature::definitions::FeatureSegmentKind::Arc([_, start])
-                    if start == point_id =>
-                {
-                    PointLocusKind::Start
-                }
-                _ => return None,
-            };
-            Some((segment.external_id, kind))
-        })
-    {
-        if record_candidate(segment) {
-            return Ok(None);
-        }
-    }
-    for segment in ctx
-        .admit_iter(segments.rows.as_slice(), "creo point locus arc-center rows")?
-        .filter_map(|row| match row {
-            SegmentRow::Ordinary(segment) => Some(segment),
-            _ => None,
-        })
-        .filter(|segment| {
-            unique_entities(segment.external_id)
-                && matches!(
-                    segment.kind,
-                    crate::feature::definitions::FeatureSegmentKind::Arc(_)
-                )
-                && segment.center_id == Some(point_id)
-        })
-        .map(|segment| (segment.external_id, PointLocusKind::Center))
-    {
-        if record_candidate(segment) {
-            return Ok(None);
-        }
-    }
-    for segment in ctx
-        .admit_iter(segments.rows.as_slice(), "creo point locus circle rows")?
-        .filter_map(|row| match row {
-            SegmentRow::Circle(segment) => Some(segment),
-            _ => None,
-        })
-        .filter(|segment| unique_entities(segment.external_id) && segment.center_id == point_id)
-        .map(|segment| (segment.external_id, PointLocusKind::Center))
-    {
-        if record_candidate(segment) {
-            return Ok(None);
-        }
-    }
-    for segment in ctx
-        .admit_iter(segments.rows.as_slice(), "creo point locus point rows")?
-        .filter_map(|row| match row {
-            SegmentRow::Point(segment) => Some(segment),
-            _ => None,
-        })
-        .filter(|segment| segment.point_id == point_id && unique_entities(segment.external_id))
-        .map(|segment| (segment.external_id, PointLocusKind::Entity))
-    {
-        if record_candidate(segment) {
-            return Ok(None);
-        }
-    }
-    for segment in ctx
-        .admit_iter(
-            segments.rows.as_slice(),
-            "creo point locus centered-line rows",
-        )?
-        .filter_map(|row| match row {
-            SegmentRow::CenteredLine(segment) => Some(segment),
-            _ => None,
-        })
-        .filter(|segment| unique_entities(segment.external_id))
-    {
-        let endpoints = [
-            (0 == point_id).then_some((segment.external_id, PointLocusKind::Start)),
-            (1 == point_id).then_some((segment.external_id, PointLocusKind::End)),
-        ];
-        for candidate in
-            ctx.admit_iter(&endpoints, "creo point locus centered-line endpoint slots")?
-        {
-            let Some(candidate) = candidate else {
-                continue;
-            };
-            if record_candidate(*candidate) {
+        for kind in kinds.into_iter().flatten() {
+            if candidate.is_some() {
                 return Ok(None);
             }
+            candidate = Some((external_id, kind));
         }
     }
-    for segment in ctx
-        .admit_iter(
-            segments.rows.as_slice(),
-            "creo point locus reference-line rows",
-        )?
-        .filter_map(|row| match row {
-            SegmentRow::ReferenceLine(segment) => Some(segment),
-            _ => None,
-        })
-        .filter(|segment| unique_entities(segment.external_id))
-    {
-        let endpoints = [
-            (segment.point_ids[0] == Some(point_id))
-                .then_some((segment.external_id, PointLocusKind::Start)),
-            (segment.point_ids[1] == Some(point_id))
-                .then_some((segment.external_id, PointLocusKind::End)),
-        ];
-        for candidate in
-            ctx.admit_iter(&endpoints, "creo point locus reference-line endpoint slots")?
-        {
-            let Some(candidate) = candidate else {
-                continue;
-            };
-            if record_candidate(*candidate) {
-                return Ok(None);
-            }
-        }
-    }
-    for segment in ctx
-        .admit_iter(
-            segments.rows.as_slice(),
-            "creo point locus bounded-curve rows",
-        )?
-        .filter_map(|row| match row {
-            SegmentRow::BoundedCurve(segment) => Some(segment),
-            _ => None,
-        })
-        .filter(|segment| unique_entities(segment.external_id))
-    {
-        let endpoints = [
-            (segment.point_ids[0] == point_id)
-                .then_some((segment.external_id, PointLocusKind::Start)),
-            (segment.point_ids[1] == point_id)
-                .then_some((segment.external_id, PointLocusKind::End)),
-        ];
-        for candidate in
-            ctx.admit_iter(&endpoints, "creo point locus bounded-curve endpoint slots")?
-        {
-            let Some(candidate) = candidate else {
-                continue;
-            };
-            if record_candidate(*candidate) {
-                return Ok(None);
-            }
-        }
-    }
-    drop(record_candidate);
     let Some((external_id, kind)) = candidate else {
         return Ok(None);
     };
@@ -599,12 +493,14 @@ pub(in super::super) fn section_skamp_incidence_locus(
     let Some(geometry) = geometry else {
         return Ok(None);
     };
-    let native = geometry.get(&entity).is_some_and(|geometry| {
-        matches!(
-            geometry.definition(),
-            SketchGeometryDefinition::Native { .. }
-        )
-    });
+    let native = ctx
+        .get_btree_map(geometry, &entity, "creo SKAMP locus geometry lookup")?
+        .is_some_and(|geometry| {
+            matches!(
+                geometry.definition(),
+                SketchGeometryDefinition::Native { .. }
+            )
+        });
     if !native {
         return Ok(None);
     }
@@ -709,7 +605,9 @@ pub(super) fn section_skamp_oriented_line(
     let Some(geometry) = geometry else {
         return Ok(None);
     };
-    let Some(geometry) = geometry.get(&entity) else {
+    let Some(geometry) =
+        ctx.get_btree_map(geometry, &entity, "creo SKAMP locus geometry lookup")?
+    else {
         return Ok(None);
     };
     if !matches!(
@@ -754,13 +652,16 @@ pub(super) fn section_skamp_same_coordinate(
         let Some(points) = resolved_points else {
             return Ok(None);
         };
-        let point = |source| {
-            Some(match source {
-                SectionPointSource::Point(point_id) => *points.get(&point_id)?,
-                SectionPointSource::Value(point) => point.get(),
-            })
+        let point = |source| -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+            match source {
+                SectionPointSource::Point(point_id) => Ok(ctx
+                    .get_btree_map(points, &point_id, "creo SKAMP resolved point lookup")?
+                    .copied()),
+                SectionPointSource::Value(point) => Ok(Some(point.get())),
+            }
         };
-        if let (Some(first_point), Some(second_point)) = (point(first_source), point(second_source))
+        if let (Some(first_point), Some(second_point)) =
+            (point(first_source)?, point(second_source)?)
         {
             let scale = first_point
                 .iter()
@@ -894,41 +795,20 @@ pub(in super::super) fn section_degenerate_axis_line(
         Some(1) => 1,
         _ => return Ok(false),
     };
-    let unary_orientation = matches!(
-        visit_section_skamps(ctx, definition, false, |skamp| {
-            Ok(
-                if matches!(
-                    (skamp.kind, skamp.items.as_slice()),
-                    (kind, [item])
-                        if kind == expected_kind
-                            && item.entity_id == segment.external_id
-                            && item.sense == 0
-                ) {
-                    ControlFlow::Break(())
-                } else {
-                    ControlFlow::Continue(())
-                },
-            )
-        })?,
-        ControlFlow::Break(())
-    );
-    let symmetry_axis = matches!(
-        visit_section_skamps(ctx, definition, false, |skamp| {
-            Ok(
-                if matches!(
-                    (skamp.kind, skamp.items.as_slice()),
-                    (14, [axis, _, _])
-                        if axis.entity_id == segment.external_id && axis.sense == 0
-                ) {
-                    ControlFlow::Break(())
-                } else {
-                    ControlFlow::Continue(())
-                },
-            )
-        })?,
-        ControlFlow::Break(())
-    );
-    Ok(unary_orientation && symmetry_axis)
+    let mut unary_orientation = false;
+    let mut symmetry_axis = false;
+    let evidence = visit_section_skamps(ctx, definition, false, |skamp| {
+        unary_orientation |= matches!((skamp.kind, skamp.items.as_slice()), (kind, [item])
+            if kind == expected_kind && item.entity_id == segment.external_id && item.sense == 0);
+        symmetry_axis |= matches!((skamp.kind, skamp.items.as_slice()), (14, [axis, _, _])
+            if axis.entity_id == segment.external_id && axis.sense == 0);
+        Ok(if unary_orientation && symmetry_axis {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        })
+    })?;
+    Ok(evidence.is_break())
 }
 
 pub(in super::super) fn section_skamp_is_point(
@@ -1503,7 +1383,8 @@ pub(in super::super) fn visit_section_skamps<B>(
     if !feature_skamp_table_complete(relation) {
         return Ok(ControlFlow::Continue(()));
     }
-    for skamp in ctx.admit_iter(relation.skamps(), "creo relation skamp rows")? {
+    let mut skamps = relation.skamps().iter();
+    while let Some(skamp) = ctx.next_charged(&mut skamps, "creo relation skamp rows")? {
         if active_only && !section_skamp_active(skamp.status) {
             continue;
         }
@@ -1524,7 +1405,8 @@ pub(in super::super) fn visit_all_section_skamps<B>(
     let Some(relation) = definition.relations.as_ref() else {
         return Ok(ControlFlow::Continue(()));
     };
-    for skamp in ctx.admit_iter(relation.skamps(), "creo relation skamp rows")? {
+    let mut skamps = relation.skamps().iter();
+    while let Some(skamp) = ctx.next_charged(&mut skamps, "creo relation skamp rows")? {
         if let ControlFlow::Break(value) = visit(skamp)? {
             return Ok(ControlFlow::Break(value));
         }
@@ -1659,7 +1541,27 @@ mod tests {
             entity_id: 7,
             sense: 0,
         };
-        let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:7".len());
+        let need = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                let refusal = std::cell::Cell::new(None);
+                let result = section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item)?;
+                match refusal.into_inner() {
+                    Some(error) => Err(error),
+                    None => Ok(result),
+                }
+            },
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = need - 1;
@@ -1815,7 +1717,22 @@ mod tests {
         let sketch = SketchId::mint("creo:model:sketch#917").expect("valid test fixture");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:12".len());
+        let need = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            None,
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                section_point_locus(&ctx, &definition, &sketch, 7)
+            },
+        );
         policy.limits.max_retained_bytes = need - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = section_point_locus(&ctx, &definition, &sketch, 7)
@@ -1838,7 +1755,7 @@ mod tests {
     }
 
     #[test]
-    fn point_locus_refuses_each_child_endpoint_scan() {
+    fn point_locus_admits_source_rows() {
         let definition = crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(917),
@@ -1899,14 +1816,10 @@ mod tests {
         };
         let sketch =
             SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture");
-        let result = crate::test_support::assert_work_boundaries(
-            &[
-                "creo point locus centered-line endpoint slots",
-                "creo point locus reference-line endpoint slots",
-                "creo point locus bounded-curve endpoint slots",
-            ],
-            |ctx| section_point_locus(ctx, &definition, &sketch, 0),
-        );
+        let result =
+            crate::test_support::assert_work_boundaries(&["creo point locus rows"], |ctx| {
+                section_point_locus(ctx, &definition, &sketch, 0)
+            });
         assert_eq!(
             result,
             Some(SketchLocus::Start(

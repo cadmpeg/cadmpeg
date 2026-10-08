@@ -15,12 +15,15 @@ pub(in super::super) fn section_entity_external_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+    let mut identity_storage = ctx.reserve_scoped(0, "creo saved identity scratch storage")?;
     let mut ids = unique_section_segment_external_ids(ctx, definition)?;
     let Some(order) = &definition.order_table else {
         return Ok(ids);
     };
-    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
-    let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
+    let ambiguous_segment_ids = identity_storage
+        .with_storage(|| ambiguous_section_segment_external_ids(ctx, definition))?;
+    let unique_saved_ids =
+        identity_storage.with_storage(|| unique_saved_section_internal_ids(ctx, definition))?;
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
         std::convert::Infallible,
     >(ctx, definition, |entity| {
@@ -213,30 +216,33 @@ pub(in super::super) fn unresolved_saved_section_entity(
         )?,
         _ => None,
     };
-    let suffix = if let Some(internal_id) = unique_internal_id {
-        match external_id {
-            Some(external_id) => ctx.format_retained(
-                format_args!("{external_id}"),
-                "creo unresolved saved entity suffix",
-            )?,
-            None => match kind {
-                SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => ctx
-                    .format_retained(
-                        format_args!("{internal_id}"),
-                        "creo unresolved saved entity suffix",
-                    )?,
-                _ => ctx.format_retained(
-                    format_args!("saved{internal_id}"),
+    let mut suffix_storage = ctx.reserve_scoped(0, "creo unresolved saved suffix storage")?;
+    let suffix = suffix_storage.with_storage(|| {
+        if let Some(internal_id) = unique_internal_id {
+            match external_id {
+                Some(external_id) => ctx.format_retained(
+                    format_args!("{external_id}"),
                     "creo unresolved saved entity suffix",
-                )?,
-            },
+                ),
+                None => match kind {
+                    SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => ctx
+                        .format_retained(
+                            format_args!("{internal_id}"),
+                            "creo unresolved saved entity suffix",
+                        ),
+                    _ => ctx.format_retained(
+                        format_args!("saved{internal_id}"),
+                        "creo unresolved saved entity suffix",
+                    ),
+                },
+            }
+        } else {
+            ctx.format_retained(
+                format_args!("saved:offset:{offset}"),
+                "creo unresolved saved entity suffix",
+            )
         }
-    } else {
-        ctx.format_retained(
-            format_args!("saved:offset:{offset}"),
-            "creo unresolved saved entity suffix",
-        )?
-    };
+    })?;
     let id = if external_id.is_some() {
         sketch_entity_id_admitted(ctx, sketch, &suffix)?
     } else {
@@ -294,6 +300,7 @@ pub(in super::super) fn unique_saved_section_internal_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+    let mut count_storage = ctx.reserve_scoped(0, "creo saved identity count storage")?;
     let mut counts = BTreeMap::new();
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
         std::convert::Infallible,
@@ -301,12 +308,15 @@ pub(in super::super) fn unique_saved_section_internal_ids(
         let Some(internal_id) = saved_section_entity_identity(entity).0 else {
             return Ok(ControlFlow::Continue(()));
         };
-        *ctx.entry_btree_map(
-            &mut counts,
-            internal_id,
-            "creo saved section ID count nodes",
-        )?
-        .or_insert(0usize) += 1;
+        *count_storage
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut counts,
+                    internal_id,
+                    "creo saved section ID count nodes",
+                )
+            })?
+            .or_insert(0usize) += 1;
         Ok(ControlFlow::Continue(()))
     })?;
     let mut ids = BTreeSet::new();
@@ -431,16 +441,19 @@ pub(in super::super) fn materialized_saved_section_external_ids(
     definition: &crate::feature::definitions::FeatureDefinition,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
-    let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
-    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
+    let mut identity_storage = ctx.reserve_scoped(0, "creo saved identity scratch storage")?;
+    let unique_saved_ids =
+        identity_storage.with_storage(|| unique_saved_section_internal_ids(ctx, definition))?;
+    let ambiguous_segment_ids = identity_storage
+        .with_storage(|| ambiguous_section_segment_external_ids(ctx, definition))?;
     let mut external_ids = BTreeSet::new();
     let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
         std::convert::Infallible,
     >(ctx, definition, |entity| {
         let materializes = match entity {
-            crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
-                saved_spline_sketch_geometry(ctx, spline, refusal)?.is_some()
-            }
+            crate::feature::definitions::FeatureSavedEntity::Spline(spline) => identity_storage
+                .with_storage(|| saved_spline_sketch_geometry(ctx, spline, refusal))?
+                .is_some(),
             _ => saved_section_entity_geometry(entity).is_some(),
         };
         if !materializes {
@@ -507,7 +520,11 @@ pub(in super::super) fn section_segment_identity_suffix_admitted(
     unique_external_ids: &BTreeSet<u32>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    if unique_external_ids.contains(&segment.external_id) {
+    if ctx.contains_btree_set(
+        unique_external_ids,
+        &segment.external_id,
+        "creo section suffix identity membership",
+    )? {
         ctx.format_retained(
             format_args!("{}", segment.external_id),
             "creo section entity suffix",
@@ -525,7 +542,11 @@ pub(super) fn opaque_section_segment_identity_suffix_admitted(
     unique_external_ids: &BTreeSet<u32>,
     segment: &crate::feature::definitions::FeatureOpaqueSegment,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    if unique_external_ids.contains(&segment.external_id) {
+    if ctx.contains_btree_set(
+        unique_external_ids,
+        &segment.external_id,
+        "creo section suffix identity membership",
+    )? {
         ctx.format_retained(
             format_args!("{}", segment.external_id),
             "creo opaque entity suffix",
@@ -597,8 +618,25 @@ mod tests {
         saved.entities = vec![dummy(3, 0), dummy(3, 1), dummy(4, 9), dummy(4, 10)];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Four source visits fit; a later prototype search needs four more visits.
-        policy.limits.max_work_units = 4;
+        let mut short = definition.clone();
+        short
+            .saved_section
+            .as_mut()
+            .expect("saved section")
+            .entities
+            .truncate(2);
+        policy.limits.max_work_units = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            None,
+            |cap| {
+                let trial_arena = DecodeArena::new();
+                let mut trial_policy = policy;
+                trial_policy.limits.max_work_units = cap;
+                let (trial_ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
+                super::saved_section_internal_id_is_unique(&trial_ctx, &short, 3)
+            },
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(
             !super::saved_section_internal_id_is_unique(&ctx, &definition, 3)
@@ -607,7 +645,9 @@ mod tests {
     }
 
     #[test]
-    fn unresolved_saved_dummy_refuses_each_retained_field() {
+    fn unresolved_saved_dummy_refuses_each_field() {
+        use cadmpeg_core::decode::ResourceDimension;
+
         let definition = definition(None);
         let saved = crate::feature::definitions::FeatureSavedEntity::Dummy(
             crate::feature::definitions::FeatureSavedDummy {
@@ -618,34 +658,42 @@ mod tests {
         );
         let sketch =
             cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
-        let fields = [
-            ("saved:offset:9", "creo unresolved saved entity suffix"),
+        for (dimension, operation) in [
             (
-                "creo:featdefs:saved_dummy#5:saved:offset:9",
+                ResourceDimension::MaterializedBytes,
+                "creo unresolved saved entity suffix",
+            ),
+            (
+                ResourceDimension::RetainedBytes,
                 "creo unresolved saved entity identity",
             ),
-            ("saved_dummy", "creo unresolved saved native kind"),
             (
-                "creo:model:sketch#5",
+                ResourceDimension::RetainedBytes,
+                "creo unresolved saved native kind",
+            ),
+            (
+                ResourceDimension::RetainedBytes,
                 "creo unresolved saved sketch identity",
             ),
-            ("creo:featdefs:sketch#5", "creo sketch native reference"),
-        ];
-        let mut total = 0u64;
-        for (field, operation) in fields {
-            total += cadmpeg_core::decode::u64_from_index(field.len());
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = total - 1;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("empty root");
-            assert!(matches!(super::unresolved_saved_section_entity(
-                &ctx, &definition, &sketch, &saved,
-                &std::collections::BTreeSet::new(), &std::collections::BTreeSet::new(),
-            ), Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && refusal.operation == operation));
+            (
+                ResourceDimension::RetainedBytes,
+                "creo sketch native reference",
+            ),
+        ] {
+            let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+                super::unresolved_saved_section_entity(
+                    ctx,
+                    &definition,
+                    &sketch,
+                    &saved,
+                    &std::collections::BTreeSet::new(),
+                    &std::collections::BTreeSet::new(),
+                )
+            });
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+                if refusal.dimension == dimension && refusal.operation == operation)
+            );
         }
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let service = cadmpeg_core::decode::DecodePolicy::service();
@@ -684,8 +732,26 @@ mod tests {
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("offset:9".len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo section entity suffix"),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                super::section_segment_identity_suffix_admitted(
+                    &ctx,
+                    &std::collections::BTreeSet::new(),
+                    &segment,
+                )
+            },
+        );
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root");
         assert!(
@@ -714,7 +780,26 @@ mod tests {
         let expected = format!("opaque:offset:{}", segment.offset);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            Some("creo opaque entity suffix"),
+            |cap| {
+                let trial_arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
+                trial_policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &[],
+                    &trial_arena,
+                    &trial_policy,
+                )
+                .expect("root");
+                super::opaque_section_segment_identity_suffix_admitted(
+                    &ctx,
+                    &std::collections::BTreeSet::new(),
+                    &segment,
+                )
+            },
+        );
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root");
         assert!(
@@ -906,29 +991,26 @@ mod tests {
     fn saved_section_identity_nodes_refuse_at_count_result_and_external_id() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let definition = saved_line_definition();
-        let arena = DecodeArena::new();
-        for (limit, operation) in [
-            (0, "creo saved section ID count nodes"),
-            (1, "creo unique saved section ID nodes"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root is admitted");
-            let error = super::unique_saved_section_internal_ids(&ctx, &definition)
-                .expect_err("saved ID node exceeds collection limit");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.operation == operation),
-                "{error:?}"
-            );
-        }
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let error = super::section_entity_external_ids(&ctx, &definition)
-            .expect_err("external ID node exceeds collection limit");
+        crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            &[
+                "creo saved section ID count nodes",
+                "creo unique saved section ID nodes",
+            ],
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                super::unique_saved_section_internal_ids(&ctx, &definition)
+            },
+        );
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo section entity external ID nodes",
+            |ctx| super::section_entity_external_ids(ctx, &definition),
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.operation == "creo section entity external ID nodes"),
@@ -964,16 +1046,18 @@ mod tests {
         .expect("one ID fits service policy");
         assert_eq!(ids, std::collections::BTreeSet::from([42]));
 
-        let mut limited = service;
-        limited.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &limited)
-            .expect("empty root fits collection limit");
-        let error = super::materialized_saved_section_external_ids(
-            &ctx,
-            &definition,
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-        .expect_err("one external ID needs one set node");
+        let error = crate::test_support::last_refusal_at(
+            &[],
+            ResourceDimension::CollectionItems,
+            "creo materialized saved-section external ID nodes",
+            |ctx| {
+                super::materialized_saved_section_external_ids(
+                    ctx,
+                    &definition,
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems

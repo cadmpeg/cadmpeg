@@ -19,6 +19,19 @@ use cadmpeg_ir::sketches::{SketchEntityUse, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
 
+#[derive(Clone, Copy)]
+struct ProfileEdge {
+    external_id: u32,
+    vertices: [u32; 2],
+    analytic_reversed: bool,
+}
+
+#[derive(Clone, Copy)]
+enum ProfileTopology<'a> {
+    Trim(&'a BTreeSet<u32>),
+    ClosedSegments,
+}
+
 pub(in super::super) fn resolved_profile_chains(
     ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
@@ -29,185 +42,42 @@ pub(in super::super) fn resolved_profile_chains(
         return resolved_segment_profile_chains(ctx, definition, sketch, emitted);
     };
     if !table.has_complete_bucket_frame(ctx)? || !table.has_unique_external_ids(ctx)? {
-        // A present trim table is authoritative; its failure cannot authorize
-        // the point-incidence fallback reserved for an absent table.
+        // A present trim table is authoritative.
         return Ok(Vec::new());
     }
-    let mut rows = Vec::new();
-    let trim_ids = trim_segment_ids(ctx, definition)?;
+    let mut storage = ctx.reserve_scoped(0, "creo trim profile storage")?;
+    let trim_ids = storage.with_storage(|| trim_segment_ids(ctx, definition))?;
+    let mut edges = Vec::new();
     for (row, id) in ctx
         .admit_iter(&table.rows, "creo trim profile rows")?
         .zip(trim_ids)
     {
-        if let Some(id) = id {
-            ctx.reserve_vec(&mut rows, 1, "creo trim profile rows")?;
-            rows.push((row, id));
-        }
-    }
-    let mut incident = BTreeMap::<u32, Vec<usize>>::new();
-    for (index, row) in ctx
-        .admit_iter(&rows, "creo trim profile incidence sources")?
-        .enumerate()
-    {
-        for vertex in row.0.vertices {
-            let indices = ctx
-                .entry_btree_map(&mut incident, vertex, "creo trim profile incidence nodes")?
-                .or_default();
-            ctx.reserve_vec(indices, 1, "creo trim profile incidence rows")?;
-            indices.push(index);
-        }
-    }
-    let mut remaining = BTreeSet::new();
-    for (index, _) in ctx
-        .admit_iter(&rows, "creo trim profile remaining sources")?
-        .enumerate()
-    {
-        ctx.insert_btree_set(&mut remaining, index, "creo trim profile remaining nodes")?;
-    }
-    let mut profiles = Vec::new();
-    while let Some(seed) = remaining.first().copied() {
-        ctx.charge_collection_items(1, "creo trim profile component nodes")?;
-        ctx.charge_work(1, "creo trim profile components")?;
-        let mut component = BTreeSet::from([seed]);
-        let mut frontier = ctx.alloc_filled(1, seed, "creo trim profile frontier")?;
-        while let Some(index) = frontier.pop() {
-            ctx.charge_work(1, "creo trim profile frontier visits")?;
-            for vertex in rows[index].0.vertices {
-                for adjacent in
-                    ctx.admit_iter(&incident[&vertex], "creo trim profile adjacent rows")?
-                {
-                    if ctx.insert_btree_set(
-                        &mut component,
-                        *adjacent,
-                        "creo trim profile component nodes",
-                    )? {
-                        ctx.reserve_vec(&mut frontier, 1, "creo trim profile frontier")?;
-                        frontier.push(*adjacent);
-                    }
-                }
-            }
-        }
-        remaining.retain(|index| !component.contains(index));
-        let mut component_degree_too_high = false;
-        for adjacent_rows in ctx
-            .admit_iter(&incident, "creo trim profile vertex rows")?
-            .map(|(_, rows)| rows)
-        {
-            let component_degree = ctx
-                .admit_iter(adjacent_rows, "creo trim profile component degrees")?
-                .filter(|row| component.contains(row))
-                .count();
-            if component_degree > 2 {
-                component_degree_too_high = true;
-                break;
-            }
-        }
-        if component_degree_too_high {
-            continue;
-        }
-        if ctx.any_by(
-            &component,
-            |index| Ok(!emitted.contains(&rows[*index].1)),
-            "creo trim profile emitted entities",
-        )? {
-            continue;
-        }
-        let mut endpoints = [0u32; 2];
-        let mut endpoint_count = 0usize;
-        for (&vertex, rows) in ctx.admit_iter(&incident, "creo trim profile endpoints")? {
-            let component_degree = ctx
-                .admit_iter(rows, "creo trim profile endpoint degree")?
-                .filter(|row| component.contains(row))
-                .count();
-            if component_degree == 1 {
-                if endpoint_count < endpoints.len() {
-                    endpoints[endpoint_count] = vertex;
-                }
-                endpoint_count += 1;
-            }
-        }
-        if !matches!(endpoint_count, 0 | 2) {
-            continue;
-        }
-        let Some(first_row) = ctx
-            .admit_iter(&component, "creo trim profile canonical row selection")?
-            .min_by_key(|index| rows[**index].1)
-            .copied()
-        else {
+        let Some(external_id) = id else {
             continue;
         };
-        let mut vertex = if endpoint_count == 2 {
-            endpoints[0]
-        } else {
-            rows[first_row].0.vertices[0]
-        };
-        let start_vertex = vertex;
-        let mut unused = component;
-        let mut profile = Vec::new();
-        while !unused.is_empty() {
-            ctx.charge_work(1, "creo trim profile row visits")?;
-            let mut candidates = ctx
-                .admit_iter(&incident[&vertex], "creo trim profile candidates")?
-                .filter(|index| unused.contains(index))
-                .copied();
-            let first_candidate = candidates.next();
-            let second_candidate = candidates.next();
-            let index = if profile.is_empty() && endpoint_count == 0 {
-                if ctx.any_by(
-                    &incident[&vertex],
-                    |candidate| Ok(*candidate == first_row && unused.contains(candidate)),
-                    "creo trim profile cycle start",
-                )? {
-                    first_row
-                } else {
-                    break;
-                }
-            } else if let (Some(index), None) = (first_candidate, second_candidate) {
-                index
-            } else {
-                break;
-            };
-            let (row, external_id) = rows[index];
-            let row_reversed = row.vertices[1] == vertex;
-            if !row_reversed && row.vertices[0] != vertex {
-                break;
-            }
-            let arc_orientation_reversed = definition
-                .segments
-                .as_ref()
-                .and_then(|table| table.segment(external_id))
-                .is_some_and(|segment| {
-                    matches!(
-                        segment.kind,
-                        crate::feature::definitions::FeatureSegmentKind::Arc(_)
-                    ) && segment.arc_orientation == Some(0)
-                });
-            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, external_id)? else {
-                continue;
-            };
-            ctx.reserve_vec(&mut profile, 1, "creo trim profile entity uses")?;
-            profile.push(SketchEntityUse {
-                entity,
-                reversed: row_reversed ^ arc_orientation_reversed,
+        let analytic_reversed = definition
+            .segments
+            .as_ref()
+            .and_then(|table| table.segment(external_id))
+            .is_some_and(|segment| {
+                matches!(
+                    segment.kind,
+                    crate::feature::definitions::FeatureSegmentKind::Arc(_)
+                ) && segment.arc_orientation == Some(0)
             });
-            vertex = if row_reversed {
-                row.vertices[0]
-            } else {
-                row.vertices[1]
-            };
-            unused.remove(&index);
-        }
-        let terminal_ok = if endpoint_count == 0 {
-            vertex == start_vertex
-        } else {
-            endpoints.contains(&vertex) && vertex != start_vertex
-        };
-        if unused.is_empty() && terminal_ok {
-            ctx.reserve_vec(&mut profiles, 1, "creo resolved trim profiles")?;
-            profiles.push(profile);
-        }
+        storage.with_storage(|| {
+            ctx.push_vec(
+                &mut edges,
+                ProfileEdge {
+                    external_id,
+                    vertices: row.vertices,
+                    analytic_reversed,
+                },
+                "creo trim profile rows",
+            )
+        })?;
     }
-    Ok(profiles)
+    profile_chains(ctx, &edges, sketch, ProfileTopology::Trim(emitted))
 }
 
 fn resolved_segment_profile_chains(
@@ -223,149 +93,216 @@ fn resolved_segment_profile_chains(
     else {
         return Ok(Vec::new());
     };
-    let mut rows = Vec::new();
-    for segment in ctx
-        .admit_iter(table.rows.as_slice(), "creo emitted segment profile rows")?
-        .filter_map(|row| match row {
-            SegmentRow::Ordinary(segment) => Some(segment),
-            _ => None,
-        })
-        .filter(|segment| {
-            emitted.contains(&segment.external_id)
-                && matches!(
-                    segment.kind,
-                    crate::feature::definitions::FeatureSegmentKind::Line(_)
-                        | crate::feature::definitions::FeatureSegmentKind::Arc(_)
-                )
-        })
-    {
-        ctx.reserve_vec(&mut rows, 1, "creo segment profile rows")?;
-        rows.push(segment);
+    let mut storage = ctx.reserve_scoped(0, "creo segment profile storage")?;
+    let mut edges = Vec::new();
+    for row in ctx.admit_iter(table.rows.as_slice(), "creo emitted segment profile rows")? {
+        let SegmentRow::Ordinary(segment) = row else {
+            continue;
+        };
+        if !ctx.contains_btree_set(
+            emitted,
+            &segment.external_id,
+            "creo segment profile emitted membership",
+        )? || !matches!(
+            segment.kind,
+            crate::feature::definitions::FeatureSegmentKind::Line(_)
+                | crate::feature::definitions::FeatureSegmentKind::Arc(_)
+        ) {
+            continue;
+        }
+        storage.with_storage(|| {
+            ctx.push_vec(
+                &mut edges,
+                ProfileEdge {
+                    external_id: segment.external_id,
+                    vertices: segment.point_ids(),
+                    analytic_reversed: matches!(
+                        segment.kind,
+                        crate::feature::definitions::FeatureSegmentKind::Arc(_)
+                    ) && segment.arc_orientation == Some(0),
+                },
+                "creo segment profile rows",
+            )
+        })?;
     }
+    profile_chains(ctx, &edges, sketch, ProfileTopology::ClosedSegments)
+}
+
+fn profile_chains(
+    ctx: &DecodeContext<'_>,
+    edges: &[ProfileEdge],
+    sketch: &SketchId,
+    topology: ProfileTopology<'_>,
+) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
+    let mut graph_storage = ctx.reserve_scoped(0, "creo profile graph storage")?;
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
-    for (index, segment) in ctx
-        .admit_iter(&rows, "creo segment profile incidence sources")?
+    for (index, edge) in ctx
+        .admit_iter(edges, "creo profile incidence sources")?
         .enumerate()
     {
-        for point in segment.point_ids() {
-            let indices = ctx
-                .entry_btree_map(&mut incident, point, "creo segment profile incidence nodes")?
-                .or_default();
-            ctx.reserve_vec(indices, 1, "creo segment profile incidence rows")?;
-            indices.push(index);
+        for vertex in edge.vertices {
+            graph_storage.with_storage(|| {
+                let indices = ctx
+                    .entry_btree_map(&mut incident, vertex, "creo profile incidence nodes")?
+                    .or_default();
+                ctx.push_vec(indices, index, "creo profile incidence rows")
+            })?;
         }
     }
-    let mut remaining = BTreeSet::new();
-    for (index, _) in ctx
-        .admit_iter(&rows, "creo segment profile remaining sources")?
-        .enumerate()
-    {
-        ctx.insert_btree_set(
-            &mut remaining,
-            index,
-            "creo segment profile remaining nodes",
-        )?;
-    }
+    let mut remaining = graph_storage
+        .with_storage(|| ctx.alloc_filled(edges.len(), true, "creo profile remaining rows"))?;
+    let mut cursor = 0;
     let mut profiles = Vec::new();
-    while let Some(seed) = remaining.first().copied() {
-        ctx.charge_collection_items(1, "creo segment profile component nodes")?;
-        ctx.charge_work(1, "creo segment profile components")?;
-        let mut component = BTreeSet::from([seed]);
-        let mut frontier = ctx.alloc_filled(1, seed, "creo segment profile frontier")?;
-        while let Some(index) = frontier.pop() {
-            ctx.charge_work(1, "creo segment profile frontier visits")?;
-            for point in rows[index].point_ids() {
-                for adjacent in
-                    ctx.admit_iter(&incident[&point], "creo segment profile adjacent rows")?
-                {
-                    if ctx.insert_btree_set(
-                        &mut component,
-                        *adjacent,
-                        "creo segment profile component nodes",
-                    )? {
-                        ctx.reserve_vec(&mut frontier, 1, "creo segment profile frontier")?;
-                        frontier.push(*adjacent);
+    while let Some(offset) = ctx.position_by(
+        &remaining[cursor..],
+        |present| Ok(*present),
+        "creo profile components",
+    )? {
+        let seed = cursor + offset;
+        cursor = seed + 1;
+        let mut component_storage = ctx.reserve_scoped(0, "creo profile component storage")?;
+        let mut component = BTreeSet::new();
+        component_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut component, seed, "creo profile component nodes")
+        })?;
+        let mut frontier = component_storage
+            .with_storage(|| ctx.alloc_filled(1, seed, "creo profile frontier"))?;
+        let mut vertices = BTreeSet::new();
+        let mut endpoints = BTreeSet::new();
+        let mut invalid_degree = false;
+        while let Some(index) = ctx.next_charged(
+            &mut std::iter::from_fn(|| frontier.pop()),
+            "creo profile frontier visits",
+        )? {
+            remaining[index] = false;
+            for vertex in edges[index].vertices {
+                if !component_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut vertices, vertex, "creo profile vertex nodes")
+                })? {
+                    continue;
+                }
+                let Some(adjacent) =
+                    ctx.get_btree_map(&incident, &vertex, "creo profile incidence lookup")?
+                else {
+                    continue;
+                };
+                if adjacent.len() > 2 {
+                    invalid_degree = true;
+                }
+                if adjacent.len() == 1 {
+                    component_storage.with_storage(|| {
+                        ctx.insert_btree_set(&mut endpoints, vertex, "creo profile endpoint nodes")
+                    })?;
+                }
+                for adjacent in ctx.admit_iter(adjacent, "creo profile adjacent rows")? {
+                    if component_storage.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut component,
+                            *adjacent,
+                            "creo profile component nodes",
+                        )
+                    })? {
+                        component_storage.with_storage(|| {
+                            ctx.push_vec(&mut frontier, *adjacent, "creo profile frontier")
+                        })?;
                     }
                 }
             }
         }
-        remaining.retain(|index| !component.contains(index));
-        let mut invalid_component_degree = false;
-        'component_rows: for index in
-            ctx.admit_iter(&component, "creo segment profile component rows")?
+        if invalid_degree
+            || !matches!(endpoints.len(), 0 | 2)
+            || matches!(topology, ProfileTopology::ClosedSegments) && !endpoints.is_empty()
         {
-            for point in rows[*index].point_ids() {
-                let component_degree = ctx
-                    .admit_iter(&incident[&point], "creo segment profile component degrees")?
-                    .filter(|row| component.contains(row))
-                    .count();
-                if component_degree != 2 {
-                    invalid_component_degree = true;
-                    break 'component_rows;
-                }
-            }
-        }
-        if invalid_component_degree {
             continue;
         }
+        if let ProfileTopology::Trim(emitted) = topology {
+            if ctx.any_by(
+                &component,
+                |index| {
+                    Ok(!ctx.contains_btree_set(
+                        emitted,
+                        &edges[*index].external_id,
+                        "creo profile emitted membership",
+                    )?)
+                },
+                "creo profile emitted entities",
+            )? {
+                continue;
+            }
+        }
         let Some(first) = ctx
-            .admit_iter(&component, "creo segment profile canonical row selection")?
-            .min_by_key(|index| rows[**index].external_id)
+            .admit_iter(&component, "creo profile canonical row selection")?
+            .min_by_key(|index| edges[**index].external_id)
             .copied()
         else {
             continue;
         };
-        let mut point = rows[first].point_ids()[0].min(rows[first].point_ids()[1]);
-        let start = point;
+        // At most two endpoints remain after the degree gate.
+        let mut endpoint_values = [0; 2];
+        for (index, endpoint) in endpoints.iter().enumerate() {
+            endpoint_values[index] = *endpoint;
+        }
+        let mut vertex = if endpoints.len() == 2 {
+            endpoint_values[0]
+        } else {
+            match topology {
+                ProfileTopology::Trim(_) => edges[first].vertices[0],
+                ProfileTopology::ClosedSegments => {
+                    edges[first].vertices[0].min(edges[first].vertices[1])
+                }
+            }
+        };
+        let start = vertex;
         let mut unused = component;
         let mut profile = Vec::new();
         while !unused.is_empty() {
-            ctx.charge_work(1, "creo segment profile row visits")?;
-            let mut candidates = ctx
-                .admit_iter(&incident[&point], "creo segment profile candidates")?
-                .filter(|index| unused.contains(index))
-                .copied();
-            let first_candidate = candidates.next();
-            let second_candidate = candidates.next();
-            let index = if profile.is_empty()
-                && ctx.any_by(
-                    &incident[&point],
-                    |candidate| Ok(*candidate == first && unused.contains(candidate)),
-                    "creo segment profile cycle start",
-                )? {
+            let index = if profile.is_empty() && endpoints.is_empty() {
                 first
-            } else if let (Some(index), None) = (first_candidate, second_candidate) {
-                index
             } else {
-                break;
+                let Some(adjacent) =
+                    ctx.get_btree_map(&incident, &vertex, "creo profile incidence lookup")?
+                else {
+                    break;
+                };
+                let Some(index) = crate::decode::uniqueness::exactly_one_by(
+                    ctx,
+                    adjacent,
+                    |index| {
+                        ctx.contains_btree_set(&unused, index, "creo profile unused membership")
+                    },
+                    "creo profile candidates",
+                )?
+                .copied() else {
+                    break;
+                };
+                index
             };
-            let segment = rows[index];
-            let traversal_reversed = segment.point_ids()[1] == point;
-            if !traversal_reversed && segment.point_ids()[0] != point {
+            let edge = edges[index];
+            let reversed = edge.vertices[1] == vertex;
+            if !reversed && edge.vertices[0] != vertex {
                 break;
             }
-            let analytic_reversed = matches!(
-                segment.kind,
-                crate::feature::definitions::FeatureSegmentKind::Arc(_)
-            ) && segment.arc_orientation == Some(0);
-            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, segment.external_id)? else {
+            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, edge.external_id)? else {
                 continue;
             };
-            ctx.reserve_vec(&mut profile, 1, "creo segment profile entity uses")?;
-            profile.push(SketchEntityUse {
-                entity,
-                reversed: traversal_reversed ^ analytic_reversed,
-            });
-            point = if traversal_reversed {
-                segment.point_ids()[0]
-            } else {
-                segment.point_ids()[1]
-            };
-            unused.remove(&index);
+            ctx.push_vec(
+                &mut profile,
+                SketchEntityUse {
+                    entity,
+                    reversed: reversed ^ edge.analytic_reversed,
+                },
+                "creo profile entity uses",
+            )?;
+            vertex = edge.vertices[usize::from(!reversed)];
+            ctx.remove_btree_set(&mut unused, &index, "creo profile unused removal")?;
         }
-        if unused.is_empty() && point == start {
-            ctx.reserve_vec(&mut profiles, 1, "creo resolved segment profiles")?;
-            profiles.push(profile);
+        let terminal_ok = if endpoints.is_empty() {
+            vertex == start
+        } else {
+            endpoint_values.contains(&vertex) && vertex != start
+        };
+        if unused.is_empty() && terminal_ok {
+            ctx.push_vec(&mut profiles, profile, "creo resolved profiles")?;
         }
     }
     Ok(profiles)
@@ -380,28 +317,17 @@ pub(in super::super) fn solver_only_section_entities(
         visit_all_section_skamps::<std::convert::Infallible>(ctx, definition, |skamp| {
             for item in ctx.admit_iter(&skamp.items, "creo solver-only SKAMP items")? {
                 let id = item.entity_id;
-                let segment_id_exists = if let Some(table) = definition.segments.as_ref() {
-                    ctx.any_by(
-                        table.rows.identity_entries(),
-                        |(&segment_id, _)| Ok(segment_id == id),
-                        "creo solver-only segment identity rows",
-                    )?
-                } else {
-                    false
-                };
+                let segment_id_exists = definition
+                    .segments
+                    .as_ref()
+                    .is_some_and(|table| table.rows.contains_id(id));
                 if segment_id_exists {
                     continue;
                 }
-                if let Some(first_offset) = entities.get_mut(&id) {
-                    *first_offset = (*first_offset).min(skamp.offset);
-                } else {
-                    ctx.insert_btree_map(
-                        &mut entities,
-                        id,
-                        skamp.offset,
-                        "creo solver-only entity nodes",
-                    )?;
-                }
+                let first_offset = ctx
+                    .entry_btree_map(&mut entities, id, "creo solver-only entity nodes")?
+                    .or_insert(skamp.offset);
+                *first_offset = (*first_offset).min(skamp.offset);
             }
             Ok(ControlFlow::Continue(()))
         })?;
@@ -413,15 +339,10 @@ pub(in super::super) fn solver_only_section_entity_offset(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let segment_id_exists = if let Some(table) = definition.segments.as_ref() {
-        ctx.any_by(
-            table.rows.identity_entries(),
-            |(&segment_id, _)| Ok(segment_id == entity_id),
-            "creo solver-only entity identity rows",
-        )?
-    } else {
-        false
-    };
+    let segment_id_exists = definition
+        .segments
+        .as_ref()
+        .is_some_and(|table| table.rows.contains_id(entity_id));
     if segment_id_exists {
         return Ok(None);
     }
@@ -480,11 +401,8 @@ impl IncidenceEvidence {
         self.0[Self::slot(family)]
     }
 
-    pub(in super::super) fn len(self, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
-        Ok(ctx
-            .admit_iter(&self.0, "creo section incidence evidence")?
-            .filter(|present| **present)
-            .count())
+    pub(in super::super) fn len(self) -> usize {
+        self.0.into_iter().filter(|present| *present).count()
     }
 
     fn iter(self) -> impl Iterator<Item = SectionEntityIncidenceFamily> {
@@ -530,7 +448,7 @@ fn section_skamp_has_proven_point_locus(
     }
     let solver_family =
         section_incidence_curve_family_evidence_without_type35(ctx, definition, item.entity_id)?;
-    if solver_family.len(ctx)? == 1
+    if solver_family.len() == 1
         && ((solver_family.contains(SectionEntityIncidenceFamily::BoundedCurve)
             || solver_family.contains(SectionEntityIncidenceFamily::Line)
             || solver_family.contains(SectionEntityIncidenceFamily::Arc))
@@ -635,23 +553,22 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
     solver_roles: SolverRoles,
 ) -> Result<IncidenceEvidence, cadmpeg_core::CodecError> {
     let mut evidence = IncidenceEvidence::default();
-    let outcome = visit_section_skamps(ctx, definition, false, |skamp| {
-        Ok(
-            if matches!(
-                (skamp.kind, skamp.items.as_slice()),
-                (1 | 2, [item]) if item.sense == 0 && item.entity_id == entity_id
-            ) {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            },
-        )
-    })?;
-    if matches!(outcome, ControlFlow::Break(())) {
-        evidence.insert(SectionEntityIncidenceFamily::Line);
-    }
+    let mut solver_only = None;
+    let mut is_solver_only = || {
+        if let Some(value) = solver_only {
+            return Ok(value);
+        }
+        let value = solver_only_section_entity_offset(ctx, definition, entity_id)?.is_some();
+        solver_only = Some(value);
+        Ok::<_, cadmpeg_core::CodecError>(value)
+    };
     let ControlFlow::Continue(()) =
         visit_section_skamps::<std::convert::Infallible>(ctx, definition, false, |skamp| {
+            if matches!((skamp.kind, skamp.items.as_slice()),
+                (1 | 2, [item]) if item.sense == 0 && item.entity_id == entity_id)
+            {
+                evidence.insert(SectionEntityIncidenceFamily::Line);
+            }
             for item in ctx.admit_iter(&skamp.items, "creo section incidence SKAMP items")? {
                 if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {
                     evidence.insert(SectionEntityIncidenceFamily::BoundedCurve);
@@ -663,7 +580,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
             if matches!(solver_roles, SolverRoles::Extended) {
                 if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
                     let roles = [(first, second), (second, first)];
-                    for (target, point) in ctx.admit_iter(&roles, "creo type-35 incidence roles")? {
+                    for (target, point) in &roles {
                         if target.entity_id != entity_id || target.sense != 0 {
                             continue;
                         }
@@ -676,8 +593,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                             continue;
                         }
                         if unique_opaque_section_entity(definition, target.entity_id)
-                            || solver_only_section_entity_offset(ctx, definition, target.entity_id)?
-                                .is_some()
+                            || is_solver_only()?
                         {
                             evidence.insert(SectionEntityIncidenceFamily::LineOrArc);
                             break;
@@ -691,7 +607,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
             ) {
                 if let (0, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
                     let roles = [(first, second), (second, first)];
-                    for (target, point) in ctx.admit_iter(&roles, "creo point incidence roles")? {
+                    for (target, point) in &roles {
                         if target.entity_id != entity_id || target.sense != 0 {
                             continue;
                         }
@@ -699,8 +615,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                             continue;
                         }
                         if unique_opaque_section_entity(definition, target.entity_id)
-                            || solver_only_section_entity_offset(ctx, definition, target.entity_id)?
-                                .is_some()
+                            || is_solver_only()?
                         {
                             evidence.insert(SectionEntityIncidenceFamily::Point);
                             break;
@@ -711,14 +626,12 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
             // Line-family roles are structural; type-six circular evidence is
             // activity-dependent, like its radius-equality constraint.
             if let (5 | 7 | 8, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-                if first.sense == 0 && second.sense == 0 {
-                    let has_solver_entity =
-                        solver_only_section_entity_offset(ctx, definition, entity_id)?.is_some();
-                    if has_solver_entity
-                        && (first.entity_id == entity_id || second.entity_id == entity_id)
-                    {
-                        evidence.insert(SectionEntityIncidenceFamily::Line);
-                    }
+                if first.sense == 0
+                    && second.sense == 0
+                    && (first.entity_id == entity_id || second.entity_id == entity_id)
+                    && is_solver_only()?
+                {
+                    evidence.insert(SectionEntityIncidenceFamily::Line);
                 }
             }
             if section_skamp_active(skamp.status)
@@ -804,45 +717,22 @@ pub(in super::super) fn solver_only_section_entity_family(
         return Ok(None);
     }
     let mut evidence = section_incidence_curve_family_evidence(ctx, definition, entity_id)?;
-    if !evidence.contains(SectionEntityIncidenceFamily::Arc) {
-        let outcome = visit_section_skamps(ctx, definition, false, |skamp| {
-            let has_circular_sense = ctx.any_by(
-                &skamp.items,
-                |item| Ok(item.entity_id == entity_id && item.sense == 4),
-                "creo solver-only circular SKAMP items",
-            )?;
-            Ok(if has_circular_sense {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            })
-        })?;
-        if matches!(outcome, ControlFlow::Break(())) {
-            evidence.insert(SectionEntityIncidenceFamily::Circular);
-            normalize_section_incidence_curve_family_evidence(&mut evidence);
-        }
-    }
     if !evidence.contains(SectionEntityIncidenceFamily::Line)
         && !evidence.contains(SectionEntityIncidenceFamily::LineOrArc)
     {
         let outcome = visit_section_skamps(ctx, definition, false, |skamp| {
-            let has_centered_line_target = if let (35, [first, second]) =
-                (skamp.kind, skamp.items.as_slice())
-            {
-                let roles = [(first, second), (second, first)];
-                ctx.any_by(
-                    &roles,
-                    |(point, target)| {
-                        Ok(point.entity_id == entity_id
+            let has_centered_line_target =
+                if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
+                    let roles = [(first, second), (second, first)];
+                    roles.into_iter().any(|(point, target)| {
+                        point.entity_id == entity_id
                             && point.sense == 0
                             && target.sense == 4
-                            && unique_centered_line_segment(definition, target.entity_id).is_some())
-                    },
-                    "creo centered-line target roles",
-                )?
-            } else {
-                false
-            };
+                            && unique_centered_line_segment(definition, target.entity_id).is_some()
+                    })
+                } else {
+                    false
+                };
             Ok(if has_centered_line_target {
                 ControlFlow::Break(())
             } else {
@@ -862,7 +752,7 @@ pub(in super::super) fn solver_only_section_entity_family(
                 let mut has_one_match = false;
                 let mut has_multiple_matches = false;
                 let roles = [(first, second), (second, first)];
-                for (point, target) in ctx.admit_iter(&roles, "creo midpoint role pairs")? {
+                for (point, target) in &roles {
                     let matches_target = point.sense == 0
                         && point.entity_id == entity_id
                         && target.sense == 0
@@ -951,15 +841,15 @@ mod tests {
         let arena = DecodeArena::new();
         let operations = [
             "creo trim profile rows",
-            "creo trim profile incidence nodes",
-            "creo trim profile incidence rows",
-            "creo trim profile incidence nodes",
-            "creo trim profile incidence rows",
-            "creo trim profile remaining nodes",
-            "creo trim profile component nodes",
-            "creo trim profile frontier",
-            "creo trim profile entity uses",
-            "creo resolved trim profiles",
+            "creo profile incidence nodes",
+            "creo profile incidence rows",
+            "creo profile incidence nodes",
+            "creo profile incidence rows",
+            "creo profile remaining rows",
+            "creo profile component nodes",
+            "creo profile frontier",
+            "creo profile entity uses",
+            "creo resolved profiles",
         ];
         crate::test_support::assert_refusal_order(
             ResourceDimension::CollectionItems,
@@ -1017,9 +907,9 @@ mod tests {
         let emitted = std::collections::BTreeSet::from([42]);
         let profiles = crate::test_support::assert_work_boundaries(
             &[
-                "creo trim profile components",
-                "creo trim profile frontier visits",
-                "creo trim profile row visits",
+                "creo profile components",
+                "creo profile frontier visits",
+                "creo profile candidates",
             ],
             |ctx| resolved_profile_chains(ctx, &definition, &sketch, &emitted),
         );
@@ -1057,9 +947,9 @@ mod tests {
         let emitted = std::collections::BTreeSet::from([10, 11]);
         let profiles = crate::test_support::assert_work_boundaries(
             &[
-                "creo segment profile components",
-                "creo segment profile frontier visits",
-                "creo segment profile row visits",
+                "creo profile components",
+                "creo profile frontier visits",
+                "creo profile candidates",
             ],
             |ctx| resolved_profile_chains(ctx, &definition, &sketch, &emitted),
         );
@@ -1099,36 +989,32 @@ mod tests {
         let operations = [
             "creo segment profile rows",
             "creo segment profile rows",
-            "creo segment profile incidence nodes",
-            "creo segment profile incidence rows",
-            "creo segment profile incidence nodes",
-            "creo segment profile incidence rows",
-            "creo segment profile incidence rows",
-            "creo segment profile incidence rows",
-            "creo segment profile remaining nodes",
-            "creo segment profile remaining nodes",
-            "creo segment profile component nodes",
-            "creo segment profile frontier",
-            "creo segment profile component nodes",
-            "creo segment profile frontier",
-            "creo segment profile entity uses",
-            "creo segment profile entity uses",
-            "creo resolved segment profiles",
+            "creo profile incidence nodes",
+            "creo profile incidence rows",
+            "creo profile incidence nodes",
+            "creo profile incidence rows",
+            "creo profile incidence rows",
+            "creo profile incidence rows",
+            "creo profile remaining rows",
+            "creo profile component nodes",
+            "creo profile frontier",
+            "creo profile component nodes",
+            "creo profile frontier",
+            "creo profile entity uses",
+            "creo profile entity uses",
+            "creo resolved profiles",
         ];
-        for (cap, operation) in operations.into_iter().enumerate() {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(cap);
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
-                .expect_err("segment profile needs the next collection item");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation),
-                "cap {cap}: {error}"
-            );
-        }
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &operations,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
+            },
+        );
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
         let profiles = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)

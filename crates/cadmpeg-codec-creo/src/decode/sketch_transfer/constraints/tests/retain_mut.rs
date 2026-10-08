@@ -45,7 +45,7 @@ fn constraint_retain_mut_refuses_work_and_service_keeps_constraint() {
     );
     assert_eq!(
         refused_document.model.sketch_constraints.as_slice(),
-        &[constraint.clone()]
+        std::slice::from_ref(&constraint)
     );
 
     let mut service_document = cadmpeg_ir::CadIr::empty();
