@@ -82,7 +82,8 @@ pub(crate) struct B5Graph {
     /// `b5 03 27/28/2d` analytic surface nodes and `a8 03 34` NURBS
     /// surfaces, keyed by `object_id`.
     pub(in crate::families) surfaces: BTreeMap<u32, B5Surface>,
-    /// Resolved class-`2e`/`38` surface alias targets, keyed by alias identity.
+    /// Class-`2e`/`38` aliases mapped to terminal identities. A self target
+    /// marks a cycle or an unresolved terminal.
     pub(in crate::families) surface_aliases: BTreeMap<u32, u32>,
     /// `b5 03 30` offset constructions, keyed by their result surface id.
     pub(in crate::families) offset_surfaces: BTreeMap<u32, B5OffsetSurface>,
@@ -228,6 +229,7 @@ pub(in crate::families) fn canonical_surface_id(
     // Each step charges its own lookup, so a chain pays only for its length.
     for _ in 0..=aliases.len() {
         match ctx.get_btree_map(aliases, &object_id, "catia_b5_surface_alias_step")? {
+            Some(&target) if target == object_id => return Ok(None),
             Some(&target) => object_id = target,
             None => return Ok(Some(object_id)),
         }
@@ -1057,7 +1059,9 @@ fn visit_topology_runs(
     refusal: &mut crate::nurbs::LaneRefusals,
     mut visit: impl FnMut(Range<usize>, B5Graph) -> Result<bool, CodecError>,
 ) -> Result<(), CodecError> {
-    let (frames, runs) = index_object_runs(ctx, bytes, 0)?;
+    let mut index_storage = ctx.reserve_scoped(0, "catia_b5_topology_index_scratch")?;
+    let (frames, runs) = index_storage.with_storage(|| index_object_runs(ctx, bytes, 0))?;
+    let isolated = index_isolated_geometry(ctx, &runs, |_| bytes, &mut index_storage)?;
     let rooted = ctx.any_by(
         &runs,
         |run| Ok(run.topology),
@@ -1071,8 +1075,18 @@ fn visit_topology_runs(
             continue;
         }
         let mut scratch = ctx.reserve_scoped(0, "catia_b5_topology_population_scratch")?;
-        let (population, _) = scratch
-            .with_storage(|| owned_object_stream_population(ctx, bytes, &frames, &runs, index))?;
+        let mut run_storage = ctx.reserve_scoped(0, "catia_b5_population_record_scratch")?;
+        let (population, _) = scratch.with_storage(|| {
+            owned_object_stream_population(
+                ctx,
+                bytes,
+                &frames,
+                &runs,
+                index,
+                &isolated,
+                &mut run_storage,
+            )
+        })?;
         let Some(graph) = parse_flat(ctx, &population, refusal)? else {
             continue;
         };
@@ -1122,7 +1136,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
     records: &[B5Record<'_>],
     frames: &[ObjectFrame],
     require_topology: bool,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget<'static>>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     if records.is_empty() {
@@ -1209,7 +1223,7 @@ fn parse_from_records_with_class21(
     bytes: &[u8],
     (records, frames): (&[B5Record<'_>], &[ObjectFrame]),
     require_topology: bool,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget<'static>>,
     refusal: &mut crate::nurbs::LaneRefusals,
     prepared: PreparedB5Graph<'_, '_>,
 ) -> Result<Option<B5Graph>, CodecError> {
@@ -1400,11 +1414,14 @@ fn parse_from_records_with_class21(
     // Each pass resolves the extrusions whose directrix context is complete;
     // a pass that resolves none ends the fixpoint.
     while !pending_extrusions.is_empty() {
-        if budget.is_some_and(|budget| !budget.charge_by(pending_extrusions.len())) {
-            return Ok(None);
-        }
         let mut changed = false;
-        for record in ctx.admit_iter(&pending_extrusions, "catia_b5_extrusion_fixpoint_scan")? {
+        let mut extrusions = pending_extrusions.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut extrusions, "catia_b5_extrusion_fixpoint_scan")?
+        {
+            if budget.is_some_and(|budget| !budget.charge()) {
+                return Ok(None);
+            }
             let Some(extrusion) = parse_extrusion_surface_with_context(
                 ctx,
                 record,
@@ -1470,28 +1487,33 @@ fn parse_from_records_with_class21(
         }
         Ok::<_, CodecError>((aliases, supported))
     })?;
+    let Some(alias_terminals) =
+        surface_alias_terminals(ctx, &alias_records, by_id, budget, &mut scratch)?
+    else {
+        return Ok(None);
+    };
     let mut fixpoint = !offset_constructions.is_empty()
         || !alias_records.is_empty()
         || !supported_constructions.is_empty();
     while fixpoint {
-        if budget.is_some_and(|budget| {
-            !budget.charge_by(
-                offset_constructions.len() + alias_records.len() + supported_constructions.len(),
-            )
-        }) {
-            return Ok(None);
-        }
-        let mut changed = resolve_surface_aliases(
+        let Some(mut changed) = resolve_surface_aliases(
             ctx,
             &alias_records,
-            by_id,
+            &alias_terminals,
             &mut surfaces,
             (&mut conflicting_surfaces, &mut scratch),
-        )?;
-        for offset in ctx.admit_iter(
-            &offset_constructions,
-            "catia_b5_offset_surface_fixpoint_scan",
-        )? {
+            budget,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut candidates = offset_constructions.iter();
+        while let Some(offset) =
+            ctx.next_charged(&mut candidates, "catia_b5_offset_surface_fixpoint_scan")?
+        {
+            if budget.is_some_and(|budget| !budget.charge()) {
+                return Ok(None);
+            }
             if !offset_surface_agrees(ctx, offset, &surfaces, &extrusion_surfaces, by_id)? {
                 continue;
             }
@@ -1536,10 +1558,13 @@ fn parse_from_records_with_class21(
             )?;
             changed |= surface_changed || metadata_changed;
         }
-        for construction in ctx.admit_iter(
-            &supported_constructions,
-            "catia_b5_supported_surface_fixpoint_scan",
-        )? {
+        let mut candidates = supported_constructions.iter();
+        while let Some(construction) =
+            ctx.next_charged(&mut candidates, "catia_b5_supported_surface_fixpoint_scan")?
+        {
+            if budget.is_some_and(|budget| !budget.charge()) {
+                return Ok(None);
+            }
             let Some(carrier) =
                 ctx.get_btree_map(&surfaces, &construction.carrier_surface, LOOKUP)?
             else {
@@ -1587,13 +1612,18 @@ fn parse_from_records_with_class21(
                 changed |= surface_changed || metadata_changed;
             }
         }
-        changed |= resolve_surface_aliases(
+        let Some(alias_changed) = resolve_surface_aliases(
             ctx,
             &alias_records,
-            by_id,
+            &alias_terminals,
             &mut surfaces,
             (&mut conflicting_surfaces, &mut scratch),
-        )?;
+            budget,
+        )?
+        else {
+            return Ok(None);
+        };
+        changed |= alias_changed;
         fixpoint = changed;
     }
     ctx.retain_btree_map(
@@ -1790,7 +1820,12 @@ fn parse_from_records_with_class21(
         .filter(|record| record.class == 0x62)
     {
         if let Some(parsed) = parse_loop_record(ctx, record)? {
-            ctx.push_vec(&mut parsed_loops, parsed, "catia_b5_parsed_loops")?;
+            ctx.push_scoped_vec(
+                &mut scratch,
+                &mut parsed_loops,
+                parsed,
+                "catia_b5_parsed_loops",
+            )?;
         }
     }
     let implicit_pcurves = implicit_pcurve_bindings(
@@ -1857,9 +1892,11 @@ fn parse_from_records_with_class21(
     }
     let mut surface_aliases = BTreeMap::new();
     for record in ctx.admit_iter(&alias_records, "catia_b5_surface_alias_record_scan")? {
-        let Some(target) = surface_alias_target(record) else {
-            continue;
-        };
+        let target = ctx
+            .get_hash_map(&alias_terminals, &record.object_id, LOOKUP)?
+            .copied()
+            .flatten()
+            .unwrap_or(record.object_id);
         if ctx.contains_key_btree_map(&surfaces, &record.object_id, LOOKUP)? {
             ctx.insert_btree_map(
                 &mut surface_aliases,
@@ -2145,19 +2182,96 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
     })
 }
 
-/// Merges each alias identity with the resolved surface its chain ends at.
-/// Returns whether any alias entry changed.
-fn resolve_surface_aliases(
+/// Memoize terminal identities and cycles independently of carrier resolution.
+fn surface_alias_terminals(
     ctx: &DecodeContext<'_>,
     alias_records: &[&B5Record<'_>],
     by_id: &HashMap<u32, &B5Record<'_>>,
+    budget: Option<&WorkBudget<'static>>,
+    scratch: &mut ScopedReservation<'_>,
+) -> Result<Option<HashMap<u32, Option<u32>>>, CodecError> {
+    const OPERATION: &str = "catia_b5_surface_alias_step";
+    scratch.with_storage(|| {
+        let mut terminals = HashMap::<u32, Option<u32>>::new();
+        let mut path = Vec::new();
+        let mut visiting = HashMap::new();
+        let mut roots = alias_records.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut roots, "catia_b5_surface_alias_index_scan")?
+        {
+            if ctx.contains_key_hash_map(&terminals, &record.object_id, OPERATION)? {
+                continue;
+            }
+            path.clear();
+            let mut object_id = record.object_id;
+            let mut terminal = None;
+            let mut steps = 0..=alias_records.len();
+            while ctx.next_charged(&mut steps, OPERATION)?.is_some() {
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return Ok(None);
+                }
+                if let Some(cached) = ctx.get_hash_map(&terminals, &object_id, OPERATION)? {
+                    terminal = *cached;
+                    break;
+                }
+                if ctx.get_hash_map(&visiting, &object_id, OPERATION)? == Some(&record.object_id) {
+                    break;
+                }
+                ctx.insert_hash_map(&mut visiting, object_id, record.object_id, OPERATION)?;
+                let target =
+                    record_by_id(ctx, by_id, object_id, OPERATION)?.and_then(surface_alias_target);
+                let Some(target) = target else {
+                    terminal = Some(object_id);
+                    break;
+                };
+                ctx.push_vec(&mut path, object_id, OPERATION)?;
+                object_id = target;
+            }
+            for object_id in ctx.admit_iter(&path, "catia_b5_surface_alias_memo_scan")? {
+                ctx.insert_hash_map(&mut terminals, *object_id, terminal, OPERATION)?;
+            }
+        }
+        Ok(Some(terminals))
+    })
+}
+
+/// Query the current carrier at a memoized terminal. Cycles never resolve.
+fn resolved_surface_alias_terminal(
+    ctx: &DecodeContext<'_>,
+    object_id: u32,
+    terminals: &HashMap<u32, Option<u32>>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+) -> Result<Option<u32>, CodecError> {
+    const OPERATION: &str = "catia_b5_surface_alias_step";
+    let terminal = match ctx.get_hash_map(terminals, &object_id, OPERATION)? {
+        Some(Some(terminal)) => *terminal,
+        Some(None) => return Ok(None),
+        None => object_id,
+    };
+    Ok(ctx
+        .get_btree_map(surfaces, &terminal, OPERATION)?
+        .is_some_and(|surface| !unresolved_surface_candidate(surface))
+        .then_some(terminal))
+}
+
+/// Merge aliases with their current terminal carriers. Each candidate is one
+/// independent local step; core traversal and lookups debit session work.
+fn resolve_surface_aliases(
+    ctx: &DecodeContext<'_>,
+    alias_records: &[&B5Record<'_>],
+    terminals: &HashMap<u32, Option<u32>>,
     surfaces: &mut BTreeMap<u32, B5Surface>,
     (conflicts, conflict_storage): (&mut HashSet<u32>, &mut ScopedReservation<'_>),
-) -> Result<bool, CodecError> {
+    budget: Option<&WorkBudget<'static>>,
+) -> Result<Option<bool>, CodecError> {
     let mut changed = false;
-    for record in ctx.admit_iter(alias_records, "catia_b5_surface_alias_record_scan")? {
+    let mut records = alias_records.iter();
+    while let Some(record) = ctx.next_charged(&mut records, "catia_b5_surface_alias_record_scan")? {
+        if budget.is_some_and(|budget| !budget.charge()) {
+            return Ok(None);
+        }
         let Some(terminal) =
-            surface_alias_terminal(ctx, record.object_id, by_id, surfaces, alias_records.len())?
+            resolved_surface_alias_terminal(ctx, record.object_id, terminals, surfaces)?
         else {
             continue;
         };
@@ -2170,32 +2284,7 @@ fn resolve_surface_aliases(
         )?
         .unwrap_or(false);
     }
-    Ok(changed)
-}
-
-/// Follows alias records from `object_id` to the identity that ends the
-/// chain, when that identity holds a resolved surface. Every step but the last
-/// passes an alias record, so a chain longer than `alias_count` repeats one
-/// and is refused. Each step charges its own record lookup.
-fn surface_alias_terminal(
-    ctx: &DecodeContext<'_>,
-    mut object_id: u32,
-    by_id: &HashMap<u32, &B5Record<'_>>,
-    surfaces: &BTreeMap<u32, B5Surface>,
-    alias_count: usize,
-) -> Result<Option<u32>, CodecError> {
-    const OPERATION: &str = "catia_b5_surface_alias_step";
-    for _ in 0..=alias_count {
-        let target = record_by_id(ctx, by_id, object_id, OPERATION)?.and_then(surface_alias_target);
-        let Some(target) = target else {
-            let resolved = ctx
-                .get_btree_map(surfaces, &object_id, OPERATION)?
-                .is_some_and(|surface| !unresolved_surface_candidate(surface));
-            return Ok(resolved.then_some(object_id));
-        };
-        object_id = target;
-    }
-    Ok(None)
+    Ok(Some(changed))
 }
 
 fn object_stream_pcurve_candidate(
@@ -6634,7 +6723,7 @@ fn records_from_frames<'a>(
 }
 
 /// Borrow the topology records of a frame population and close them over
-/// their referenced dependencies, with an optional session work budget.
+/// their referenced dependencies, with an optional independent local step ceiling.
 ///
 /// The dependency candidates are indexed once by object identity, so each
 /// discovered dependency costs one keyed lookup.
@@ -6642,14 +6731,11 @@ fn records_from_frames_budgeted<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     frames: &[ObjectFrame],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget<'static>>,
 ) -> Result<Vec<B5Record<'a>>, CodecError> {
-    if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
-        return Ok(Vec::new());
-    }
     let mut scratch = ctx.reserve_scoped(0, "catia_b5_record_closure_scratch")?;
     let Some((records, candidates)) =
-        topology_records_and_dependency_candidates(ctx, bytes, frames, None, &mut scratch)?
+        topology_records_and_dependency_candidates(ctx, bytes, frames, budget, &mut scratch)?
     else {
         return Ok(Vec::new());
     };
@@ -6659,13 +6745,13 @@ fn records_from_frames_budgeted<'a>(
 /// Materialize one already-indexed topology population.
 ///
 /// The caller has already charged the frame index. This path charges each
-/// topology record as it is borrowed, then charges each admitted dependency
-/// in the closure fixpoint.
+/// frame as it is visited, then charges each dependency candidate in the
+/// closure fixpoint. The local ceiling counts those visits independently.
 fn records_from_indexed_frames_budgeted<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     frames: &[ObjectFrame],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget<'static>>,
 ) -> Result<Option<Vec<B5Record<'a>>>, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "catia_b5_record_closure_scratch")?;
     let Some((records, candidates)) =
@@ -6714,7 +6800,7 @@ fn admit_dependency_records<'a>(
     bytes: &'a [u8],
     mut records: Vec<B5Record<'a>>,
     candidates: &DependencyCandidates,
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget<'static>>,
     scratch: &mut ScopedReservation<'_>,
 ) -> Result<Vec<B5Record<'a>>, CodecError> {
     const VISITED: &str = "catia_b5_visited_dependency_ids";
@@ -6742,12 +6828,15 @@ fn admit_dependency_records<'a>(
         if pending.is_empty() {
             break;
         }
-        if budget.is_some_and(|budget| !budget.charge_by(pending.len())) {
-            break;
-        }
         let mut found = scratch.with_storage(|| {
             let mut found = Vec::new();
-            for object_id in ctx.admit_iter(&pending, "catia_b5_pending_dependency_scan")? {
+            let mut pending_ids = pending.iter();
+            while let Some(object_id) =
+                ctx.next_charged(&mut pending_ids, "catia_b5_pending_dependency_scan")?
+            {
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    break;
+                }
                 if let Some(record) = ctx
                     .get_hash_map(candidates, object_id, "catia_b5_pending_dependency_frame")?
                     .and_then(Option::as_ref)
@@ -6786,14 +6875,14 @@ fn admit_dependency_records<'a>(
 /// Borrow the topology records of a frame population and index its exact
 /// dependency candidates by object identity in one frame pass. A repeated
 /// identity whose frame bytes differ leaves its candidate ambiguous. With
-/// `per_record`, each topology record charges one step of that budget and an
+/// `per_frame`, each frame visit charges one independent local step and an
 /// exhausted budget answers `None`. The seen-record and candidate indexes
 /// live in `scratch`.
 fn topology_records_and_dependency_candidates<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     frames: &[ObjectFrame],
-    per_record: Option<&WorkBudget<'_>>,
+    per_frame: Option<&WorkBudget<'static>>,
     scratch: &mut ScopedReservation<'_>,
 ) -> Result<Option<(Vec<B5Record<'a>>, DependencyCandidates)>, CodecError> {
     const CANDIDATES: &str = "catia_b5_dependency_candidates";
@@ -6801,7 +6890,14 @@ fn topology_records_and_dependency_candidates<'a>(
     let mut records = Vec::new();
     let mut seen = HashMap::<u32, (u8, &[u8])>::new();
     let mut candidates = DependencyCandidates::new();
-    for frame in ctx.admit_iter(frames, "catia_b5_framed_record_dependency_scan")? {
+    let mut indexed_frames = frames.iter();
+    while let Some(frame) = ctx.next_charged(
+        &mut indexed_frames,
+        "catia_b5_framed_record_dependency_scan",
+    )? {
+        if per_frame.is_some_and(|budget| !budget.charge()) {
+            return Ok(None);
+        }
         if is_reference_dependency_class(frame.family, frame.class)
             && frame_payload(bytes, frame).is_some()
         {
@@ -6823,9 +6919,6 @@ fn topology_records_and_dependency_candidates<'a>(
             || (frame.family == 0xa8 && matches!(frame.class, 0x34 | 0x62)))
         {
             continue;
-        }
-        if per_record.is_some_and(|budget| !budget.charge()) {
-            return Ok(None);
         }
         let Some(record) = record_from_frame(bytes, frame) else {
             continue;
@@ -7164,8 +7257,9 @@ pub(in crate::families) fn object_stream_populations(
     stream: &[u8],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     const CLAIMED: &str = "catia_b5_claimed_isolated_ids";
-    let (frames, runs) = index_object_runs(ctx, stream, 0)?;
     let mut scratch = ctx.reserve_scoped(0, "catia_b5_population_partition_scratch")?;
+    let (frames, runs) = scratch.with_storage(|| index_object_runs(ctx, stream, 0))?;
+    let isolated_index = index_isolated_geometry(ctx, &runs, |_| stream, &mut scratch)?;
     let mut topology_populations = Vec::new();
     let mut claimed_isolated_ids = HashSet::new();
     for (index, run) in ctx
@@ -7175,8 +7269,16 @@ pub(in crate::families) fn object_stream_populations(
         if !run.topology {
             continue;
         }
-        let (population, isolated) =
-            owned_object_stream_population(ctx, stream, &frames, &runs, index)?;
+        let mut run_storage = ctx.reserve_scoped(0, "catia_b5_population_record_scratch")?;
+        let (population, isolated) = owned_object_stream_population(
+            ctx,
+            stream,
+            &frames,
+            &runs,
+            index,
+            &isolated_index,
+            &mut run_storage,
+        )?;
         scratch.with_storage(|| {
             let mut root_ids = HashSet::new();
             for frame in ctx.admit_iter(
@@ -7306,20 +7408,25 @@ impl ObjectStreamSelection<'_> {
 /// Select one topology-root population, or one unrooted run when it is the
 /// only object run in the reconstructed logical streams. The selected source
 /// borrows its run when no isolated geometry joins it; otherwise the run and
-/// its isolated geometry are copied once into one arena buffer.
+/// its isolated geometry are copied once into one arena buffer. The independent
+/// local ceiling counts indexed frames, record-frame visits, dependency
+/// candidates, alias-chain steps, and construction fixpoint candidates. Core
+/// operations debit session work for the corresponding traversal and lookups.
 pub(in crate::families) fn select_object_stream_population<'a>(
     ctx: &DecodeContext<'a>,
     streams: &'a [Vec<u8>],
-    budget: Option<&WorkBudget<'_>>,
+    budget: Option<&WorkBudget<'static>>,
+    scratch: &mut ScopedReservation<'_>,
 ) -> Result<ObjectStreamSelection<'a>, CodecError> {
     let mut stream_ranges = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_scoped_vec(
+        scratch,
         &mut stream_ranges,
         streams.len(),
         "catia_b5_selected_stream_ranges",
     )?;
     for stream in ctx.admit_iter(streams, "catia_b5_stream_run_range_scan")? {
-        stream_ranges.push(object_stream_run_ranges(ctx, stream)?);
+        stream_ranges.push(scratch.with_storage(|| object_stream_run_ranges(ctx, stream))?);
     }
     let run_count = ctx.fold(
         &stream_ranges,
@@ -7329,22 +7436,23 @@ pub(in crate::families) fn select_object_stream_population<'a>(
     )?;
     let exhausted = || ObjectStreamSelection::Exhausted { run_count };
     let mut stream_frames = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_scoped_vec(
+        scratch,
         &mut stream_frames,
         streams.len(),
         "catia_b5_selected_stream_frames",
     )?;
     let mut runs = Vec::new();
-    for (stream_index, (stream, ranges)) in ctx
-        .admit_iter(streams, "catia_b5_selected_stream_scan")?
-        .zip(ctx.admit_iter(stream_ranges, "catia_b5_selected_stream_range_scan")?)
-        .enumerate()
+    let mut indexed_streams = streams.iter().zip(stream_ranges).enumerate();
+    while let Some((stream_index, (stream, ranges))) =
+        ctx.next_charged(&mut indexed_streams, "catia_b5_selected_stream_scan")?
     {
-        let frames = collect_object_stream_frames(ctx, stream)?;
+        let frames = scratch.with_storage(|| collect_object_stream_frames(ctx, stream))?;
         if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
             return Ok(exhausted());
         }
-        place_object_runs(ctx, ranges, &frames, stream_index, &mut runs)?;
+        scratch
+            .with_storage(|| place_object_runs(ctx, ranges, &frames, stream_index, &mut runs))?;
         stream_frames.push(frames);
     }
     let mut topology_runs = Vec::new();
@@ -7353,7 +7461,12 @@ pub(in crate::families) fn select_object_stream_population<'a>(
         .enumerate()
     {
         if run.topology {
-            ctx.push_vec(&mut topology_runs, index, "catia_b5_topology_run_indices")?;
+            ctx.push_scoped_vec(
+                scratch,
+                &mut topology_runs,
+                index,
+                "catia_b5_topology_run_indices",
+            )?;
         }
     }
     let selected_run = match topology_runs.as_slice() {
@@ -7363,18 +7476,24 @@ pub(in crate::families) fn select_object_stream_population<'a>(
     };
     let Some((selected_index, topology)) = selected_run else {
         let mut census_records = Vec::new();
-        for run in ctx.admit_iter(&runs, "catia_b5_unselected_run_scan")? {
+        let mut unselected_runs = runs.iter();
+        while let Some(run) =
+            ctx.next_charged(&mut unselected_runs, "catia_b5_unselected_run_scan")?
+        {
             let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
-            let mut records =
-                records_from_frames_budgeted(ctx, &streams[run.stream_index], frames, budget)?;
+            let mut records = scratch.with_storage(|| {
+                records_from_frames_budgeted(ctx, &streams[run.stream_index], frames, budget)
+            })?;
             if budget.is_some_and(WorkBudget::exhausted) {
                 return Ok(exhausted());
             }
-            ctx.append_vec(
-                &mut census_records,
-                &mut records,
-                "catia_b5_unselected_census_records",
-            )?;
+            scratch.with_storage(|| {
+                ctx.append_vec(
+                    &mut census_records,
+                    &mut records,
+                    "catia_b5_unselected_census_records",
+                )
+            })?;
         }
         return Ok(ObjectStreamSelection::Unselected {
             run_count,
@@ -7384,38 +7503,50 @@ pub(in crate::families) fn select_object_stream_population<'a>(
     let selected = &runs[selected_index];
     let selected_stream = &streams[selected.stream_index];
     let selected_frames = &stream_frames[selected.stream_index][selected.frame_range.clone()];
-    let Some(mut records) =
-        records_from_indexed_frames_budgeted(ctx, selected_stream, selected_frames, budget)?
+    let Some(mut records) = scratch.with_storage(|| {
+        records_from_indexed_frames_budgeted(ctx, selected_stream, selected_frames, budget)
+    })?
     else {
         return Ok(exhausted());
     };
-    let mut census_records = ctx.copy_slice(&records, "catia_b5_census_records")?;
-    for (index, run) in ctx
-        .admit_iter(&runs, "catia_b5_census_run_scan")?
-        .enumerate()
-    {
+    let mut census_records =
+        scratch.with_storage(|| ctx.copy_slice(&records, "catia_b5_census_records"))?;
+    let mut census_runs = runs.iter().enumerate();
+    while let Some((index, run)) = ctx.next_charged(&mut census_runs, "catia_b5_census_run_scan")? {
         if index == selected_index {
             continue;
         }
         let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
-        let mut run_records =
-            records_from_frames_budgeted(ctx, &streams[run.stream_index], frames, budget)?;
+        let mut run_records = scratch.with_storage(|| {
+            records_from_frames_budgeted(ctx, &streams[run.stream_index], frames, budget)
+        })?;
         if budget.is_some_and(WorkBudget::exhausted) {
             return Ok(exhausted());
         }
-        ctx.append_vec(
-            &mut census_records,
-            &mut run_records,
-            "catia_b5_census_records",
-        )?;
+        scratch.with_storage(|| {
+            ctx.append_vec(
+                &mut census_records,
+                &mut run_records,
+                "catia_b5_census_records",
+            )
+        })?;
     }
     let isolated = if topology {
-        isolated_geometry_runs(ctx, selected_stream, &runs, selected_index, &records)?
+        let isolated_index = index_isolated_geometry(ctx, &runs, |index| &streams[index], scratch)?;
+        isolated_geometry_runs(
+            ctx,
+            &runs,
+            selected_index,
+            &records,
+            &isolated_index,
+            scratch,
+        )?
     } else {
         Vec::new()
     };
     let mut frames = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_scoped_vec(
+        scratch,
         &mut frames,
         selected_frames.len(),
         "catia_b5_selected_frames",
@@ -7459,14 +7590,19 @@ pub(in crate::families) fn select_object_stream_population<'a>(
             let mut frame = *frame;
             frame.start = destination + frame.start - run.range.start;
             frame.end = destination + frame.end - run.range.start;
-            ctx.push_vec(&mut frames, frame, "catia_b5_selected_isolated_frames")?;
+            ctx.push_scoped_vec(
+                scratch,
+                &mut frames,
+                frame,
+                "catia_b5_selected_isolated_frames",
+            )?;
         }
         destination += run.range.len();
     }
     let source = ctx.concat_views(&parts)?.window();
     drop(parts);
     drop(parts_storage);
-    let records = records_from_frames(ctx, source, &frames)?;
+    let records = scratch.with_storage(|| records_from_frames(ctx, source, &frames))?;
     Ok(ObjectStreamSelection::Selected {
         source,
         frames,
@@ -7476,20 +7612,60 @@ pub(in crate::families) fn select_object_stream_population<'a>(
     })
 }
 
-/// Return, in stream order, the single-frame runs of `stream` that hold
-/// referenced geometry the selected population does not own. A geometry
-/// identity framed with different bytes in two runs is ambiguous and joins
-/// neither.
+/// Eligible isolated geometry is indexed once by logical stream and identity.
+/// Conflicting frame bytes leave a tombstone; equal bytes keep the first run.
+type IsolatedGeometryIndex = HashMap<(usize, u32), Option<usize>>;
+
+fn index_isolated_geometry<'a>(
+    ctx: &DecodeContext<'_>,
+    runs: &[IndexedObjectRun],
+    stream: impl Fn(usize) -> &'a [u8],
+    scratch: &mut ScopedReservation<'_>,
+) -> Result<IsolatedGeometryIndex, CodecError> {
+    const OPERATION: &str = "catia_b5_isolated_geometry_candidates";
+    scratch.with_storage(|| {
+        let mut isolated = IsolatedGeometryIndex::new();
+        for (index, run) in ctx
+            .admit_iter(runs, "catia_b5_isolated_candidate_scan")?
+            .enumerate()
+        {
+            let bytes = stream(run.stream_index);
+            let Some((end, family, class, object_id)) = object_frame(bytes, run.range.start) else {
+                continue;
+            };
+            if end != run.range.end || !is_referenced_geometry_class(family, class) {
+                continue;
+            }
+            let key = (run.stream_index, object_id);
+            if let Some(stored) = ctx.get_mut_hash_map(&mut isolated, &key, OPERATION)? {
+                if let Some(previous) = *stored {
+                    if !ctx.equal_bytes(
+                        &bytes[runs[previous].range.clone()],
+                        &bytes[run.range.clone()],
+                        OPERATION,
+                    )? {
+                        *stored = None;
+                    }
+                }
+            } else {
+                ctx.insert_hash_map(&mut isolated, key, Some(index), OPERATION)?;
+            }
+        }
+        Ok(isolated)
+    })
+}
+
+/// Look up referenced, unowned identities and return their source-ordered runs.
 fn isolated_geometry_runs(
     ctx: &DecodeContext<'_>,
-    stream: &[u8],
     runs: &[IndexedObjectRun],
     selected_index: usize,
     records: &[B5Record<'_>],
+    isolated: &IsolatedGeometryIndex,
+    scratch: &mut ScopedReservation<'_>,
 ) -> Result<Vec<usize>, CodecError> {
     const OPERATION: &str = "catia_b5_isolated_geometry_candidates";
-    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
-    let ordered = scratch.with_storage(|| {
+    scratch.with_storage(|| {
         let referenced = topology_surface_references(ctx, records)?;
         let mut owned_ids = HashSet::new();
         for record in ctx.admit_iter(records, "catia_b5_population_owned_id_scan")? {
@@ -7499,49 +7675,24 @@ fn isolated_geometry_runs(
                 "catia_b5_population_owned_ids",
             )?;
         }
-        let mut isolated = HashMap::<u32, Option<usize>>::new();
         let mut ordered = BTreeSet::new();
-        for (index, run) in ctx
-            .admit_iter(runs, "catia_b5_isolated_candidate_scan")?
-            .enumerate()
-        {
-            if index == selected_index || run.stream_index != runs[selected_index].stream_index {
+        let stream = runs[selected_index].stream_index;
+        for object_id in ctx.admit_iter(&referenced, "catia_b5_isolated_reference_scan")? {
+            if ctx.contains_hash_set(&owned_ids, object_id, OPERATION)? {
                 continue;
             }
-            let Some((end, family, class, object_id)) = object_frame(stream, run.range.start)
-            else {
-                continue;
-            };
-            if end != run.range.end
-                || !is_referenced_geometry_class(family, class)
-                || !ctx.contains_btree_set(&referenced, &object_id, OPERATION)?
-                || ctx.contains_hash_set(&owned_ids, &object_id, OPERATION)?
+            if let Some(index) = ctx
+                .get_hash_map(isolated, &(stream, *object_id), OPERATION)?
+                .copied()
+                .flatten()
             {
-                continue;
-            }
-            match ctx.get_mut_hash_map(&mut isolated, &object_id, OPERATION)? {
-                // Equal frame bytes carry equal family and class headers.
-                Some(stored) => {
-                    if let Some(previous) = *stored {
-                        if !ctx.equal_bytes(
-                            &stream[runs[previous].range.clone()],
-                            &stream[run.range.clone()],
-                            OPERATION,
-                        )? {
-                            ctx.remove_btree_set(&mut ordered, &previous, OPERATION)?;
-                            *stored = None;
-                        }
-                    }
-                }
-                None => {
-                    ctx.insert_hash_map(&mut isolated, object_id, Some(index), OPERATION)?;
+                if index != selected_index {
                     ctx.insert_btree_set(&mut ordered, index, OPERATION)?;
                 }
             }
         }
-        Ok::<_, CodecError>(ordered)
-    })?;
-    ctx.collect_vec(ordered, "catia_b5_isolated_geometry_order")
+        ctx.collect_vec(ordered, "catia_b5_isolated_geometry_order")
+    })
 }
 
 /// Build one topology population from its owning run and uniquely referenced
@@ -7553,13 +7704,20 @@ fn owned_object_stream_population(
     frames: &[ObjectFrame],
     runs: &[IndexedObjectRun],
     topology_index: usize,
+    isolated_index: &IsolatedGeometryIndex,
+    scratch: &mut ScopedReservation<'_>,
 ) -> Result<(Vec<u8>, Vec<usize>), CodecError> {
     let run = &runs[topology_index];
-    let mut scratch = ctx.reserve_scoped(0, "catia_b5_population_record_scratch")?;
-    let isolated = scratch.with_storage(|| {
-        let run_records = records_from_frames(ctx, stream, &frames[run.frame_range.clone()])?;
-        isolated_geometry_runs(ctx, stream, runs, topology_index, &run_records)
-    })?;
+    let run_records = scratch
+        .with_storage(|| records_from_frames(ctx, stream, &frames[run.frame_range.clone()]))?;
+    let isolated = isolated_geometry_runs(
+        ctx,
+        runs,
+        topology_index,
+        &run_records,
+        isolated_index,
+        scratch,
+    )?;
     let mut population =
         ctx.copy_slice(&stream[run.range.clone()], "catia_b5_topology_run_bytes")?;
     for &index in ctx.admit_iter(&isolated, "catia_b5_population_isolated_order_scan")? {

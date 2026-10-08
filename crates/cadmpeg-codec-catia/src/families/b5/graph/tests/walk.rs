@@ -197,7 +197,9 @@ fn object_population_selection_refuses_before_indexing_runs() {
     let mut reached = false;
     for _ in 0..128 {
         match crate::test_support::with_collection_limit(cap, |ctx| {
-            select_object_stream_population(ctx, std::slice::from_ref(&bytes), None).map(|_| ())
+            let mut storage = ctx.reserve_scoped(0, "test_b5_selection")?;
+            select_object_stream_population(ctx, std::slice::from_ref(&bytes), None, &mut storage)
+                .map(|_| ())
         }) {
             Err(cadmpeg_core::CodecError::ResourceLimit(error))
                 if error.operation == "catia_b5_selected_stream_ranges" =>
@@ -217,7 +219,9 @@ fn object_population_selection_refuses_before_indexing_runs() {
     }
     assert!(reached, "selection index limit was not reached");
     let (selected, source) = crate::test_support::with_service_context(|ctx| {
-        let selection = select_object_stream_population(ctx, std::slice::from_ref(&bytes), None)?;
+        let mut storage = ctx.reserve_scoped(0, "test_b5_selection")?;
+        let selection =
+            select_object_stream_population(ctx, std::slice::from_ref(&bytes), None, &mut storage)?;
         Ok::<_, cadmpeg_core::CodecError>((selection.selected(), selection.source().to_vec()))
     })
     .expect("service collection budget");
@@ -826,7 +830,8 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
     );
     let streams = [bytes];
     let (selected, source_empty) = crate::test_support::with_service_context(|ctx| {
-        let selection = select_object_stream_population(ctx, &streams, None)?;
+        let mut storage = ctx.reserve_scoped(0, "test_b5_selection")?;
+        let selection = select_object_stream_population(ctx, &streams, None, &mut storage)?;
         Ok::<_, cadmpeg_core::CodecError>((selection.selected(), selection.source().is_empty()))
     })
     .expect("service collection budget");
@@ -1102,8 +1107,11 @@ fn indexed_population_selection_preserves_records_and_census() {
     let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
     crate::test_support::with_service_context(|ctx| {
         let streams = std::slice::from_ref(&topology);
-        let expected = select_object_stream_population(ctx, streams, None)?;
-        let actual = select_object_stream_population(ctx, streams, Some(&budget))?;
+        let mut expected_storage = ctx.reserve_scoped(0, "test_b5_selection")?;
+        let expected = select_object_stream_population(ctx, streams, None, &mut expected_storage)?;
+        let mut actual_storage = ctx.reserve_scoped(0, "test_b5_selection")?;
+        let actual =
+            select_object_stream_population(ctx, streams, Some(&budget), &mut actual_storage)?;
         assert!(actual.selected());
         assert!(!actual.exhausted());
         assert_eq!(actual.source(), expected.source());
