@@ -58,7 +58,8 @@ fn variable_radius_points(
         }
     }
     let mut points = Vec::new();
-    for (name, radius) in ctx.admit_iter(&feature.parameters, RADII)? {
+    let mut parameters = feature.parameters.iter();
+    while let Some((name, radius)) = ctx.next_charged(&mut parameters, RADII)? {
         let Some(suffix) = name.as_str().strip_prefix("Radius") else {
             continue;
         };
@@ -588,18 +589,6 @@ pub(super) fn project_flex(
         None => property_literal(ctx, feature, "AxisDirection")?,
     }
     .and_then(parse_valid_direction);
-    let angle = parameter_literal(ctx, feature, "Angle")?.and_then(parse_angle_rad);
-    let factor = match ctx.get_btree_map(&feature.parameters, "Factor", super::FEATURE_LITERAL)? {
-        Some(value) => ctx
-            .parse_text::<f64>(
-                ctx.trim_text(value, super::FEATURE_LITERAL)?,
-                super::FEATURE_LITERAL,
-            )?
-            .ok()
-            .and_then(cadmpeg_ir::scalar::PositiveReal::new),
-        None => None,
-    };
-    let distance = parameter_literal(ctx, feature, "Distance")?.and_then(parse_length_mm);
     let form = property_value(ctx, feature, "Mode")?.and_then(|value| {
         if ["bending", "bend"]
             .iter()
@@ -625,12 +614,28 @@ pub(super) fn project_flex(
             None
         }
     });
-    let mode = match (form, angle, factor, distance) {
-        (Some(FlexForm::Bending), Some(angle), _, _) => FlexMode::Bending { angle },
-        (Some(FlexForm::Twisting), Some(angle), _, _) => FlexMode::Twisting { angle },
-        (Some(FlexForm::Tapering), _, Some(factor), _) => FlexMode::Tapering { factor },
-        (Some(FlexForm::Stretching), _, _, Some(distance)) => FlexMode::Stretching { distance },
-        (form, _, _, _) => FlexMode::Unresolved { form },
+    let mode = match form {
+        Some(FlexForm::Bending | FlexForm::Twisting) => {
+            match parameter_literal(ctx, feature, "Angle")?.and_then(parse_angle_rad) {
+                Some(angle) if form == Some(FlexForm::Bending) => FlexMode::Bending { angle },
+                Some(angle) => FlexMode::Twisting { angle },
+                None => FlexMode::Unresolved { form },
+            }
+        }
+        Some(FlexForm::Tapering) => {
+            let factor = match ctx.get_btree_map(&feature.parameters, "Factor", super::FEATURE_LITERAL)? {
+                Some(value) => ctx.parse_text::<f64>(
+                    ctx.trim_text(value, super::FEATURE_LITERAL)?,
+                    super::FEATURE_LITERAL,
+                )?.ok().and_then(cadmpeg_ir::scalar::PositiveReal::new),
+                None => None,
+            };
+            factor.map_or(FlexMode::Unresolved { form }, |factor| FlexMode::Tapering { factor })
+        }
+        Some(FlexForm::Stretching) => parameter_literal(ctx, feature, "Distance")?
+            .and_then(parse_length_mm)
+            .map_or(FlexMode::Unresolved { form }, |distance| FlexMode::Stretching { distance }),
+        None => FlexMode::Unresolved { form },
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Flex {
         axis,

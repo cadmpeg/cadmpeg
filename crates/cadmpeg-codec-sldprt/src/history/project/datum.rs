@@ -258,29 +258,29 @@ pub(super) fn project_composite_curve(
     let mut closed = None;
     let mut segments = Vec::new();
     let mut characters = segment_text.char_indices();
-    let mut start = 0;
-    let mut finished = false;
-    while !finished {
+    while let Some(start) = ctx.find_map(
+        &mut characters,
+        |(offset, character)| Ok((character != ';' && !character.is_whitespace()).then_some(offset)),
+        OPERATION,
+    )? {
+        if closed.is_none() {
+            closed = Some(require!(
+                property_value(ctx, feature, "Closed")?.map_or(Some(false), parse_bool)
+            ));
+        }
         let delimiter = ctx.find_map(
             &mut characters,
             |(offset, character)| Ok((character == ';').then_some(offset)),
             OPERATION,
         )?;
         let end = delimiter.unwrap_or(segment_text.len());
-        finished = delimiter.is_none();
         let source = ctx.trim_text(&segment_text[start..end], OPERATION)?;
-        start = end + usize::from(!finished);
-        if source.is_empty() {
-            continue;
-        }
-        if closed.is_none() {
-            closed = Some(require!(
-                property_value(ctx, feature, "Closed")?.map_or(Some(false), parse_bool)
-            ));
-        }
         let source = native_source(ctx, native_by_source, source)?;
         let segment = PathRef::Native(copy_reference_text(ctx, source)?);
         ctx.push_vec(&mut segments, segment, OPERATION)?;
+        if delimiter.is_none() {
+            break;
+        }
     }
     let Some(closed) = closed else {
         return Ok(None);
