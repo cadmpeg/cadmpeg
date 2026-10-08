@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS boundary regressions.
 
+const EPS_CUBIC_ROOT_TEST: f64 = 1.0e-12;
+
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::quadratic::Coefficient;
 use crate::decode::surfaces::nurbs_boundaries::{
@@ -24,8 +26,16 @@ fn nurbs_plane_boundary_curve(
     plane: PlaneEquation,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<CurveGeometry> {
-    with_decode_ctx(|ctx| decode_nurbs_plane_boundary_curve(ctx, nurbs, surface_id, plane, refusal))
-        .expect("service profile admits the boundary")
+    with_decode_ctx(|ctx| {
+        decode_nurbs_plane_boundary_curve(ctx, nurbs, surface_id, plane, refusal).and_then(
+            |candidate| {
+                candidate
+                    .map(crate::decode::surfaces::nurbs_boundaries::NurbsCurveCandidate::into_geometry)
+                    .transpose()
+            },
+        )
+    })
+    .expect("service profile admits the boundary")
 }
 
 fn shared_extrusion_generator_curve(
@@ -44,6 +54,11 @@ fn shared_extrusion_generator_curve(
             second_surface_id,
             refusal,
         )
+        .and_then(|candidate| {
+            candidate
+                .map(crate::decode::surfaces::nurbs_boundaries::NurbsCurveCandidate::into_geometry)
+                .transpose()
+        })
     })
     .expect("service profile admits the shared boundary")
 }
@@ -435,6 +450,11 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
             },
             &mut Vec::new(),
         )
+        .and_then(|candidate| {
+            candidate
+                .map(crate::decode::surfaces::nurbs_boundaries::NurbsCurveCandidate::into_geometry)
+                .transpose()
+        })
     })
     .expect("resource limits")
     .expect("unique directrix-plane root");
@@ -463,7 +483,10 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
             normal: [1.0, 0.0, 0.0],
         },
         &mut Vec::new(),
-    ))
+    )
+    .and_then(|candidate| candidate
+        .map(crate::decode::surfaces::nurbs_boundaries::NurbsCurveCandidate::into_geometry)
+        .transpose()))
     .expect("resource limits")
     .is_none());
     assert!(with_decode_ctx(|ctx| cubic_extrusion_plane_generator_curve(
@@ -475,32 +498,31 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
             normal: [0.0, 0.0, 1.0],
         },
         &mut Vec::new(),
-    ))
+    )
+    .and_then(|candidate| candidate
+        .map(crate::decode::surfaces::nurbs_boundaries::NurbsCurveCandidate::into_geometry)
+        .transpose()))
     .expect("resource limits")
     .is_none());
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| cubic_unit_interval_roots(
-            ctx,
+        cubic_unit_interval_roots(
             Coefficient::single(1.0),
             Coefficient::single(-1.5),
             Coefficient::single(0.66),
             Coefficient::single(-0.08),
-            1.0e-12
-        ))
-        .expect("roots are admitted")
+            EPS_CUBIC_ROOT_TEST
+        )
         .len(),
         3
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| cubic_unit_interval_roots(
-            ctx,
+        cubic_unit_interval_roots(
             Coefficient::single(1.0),
             Coefficient::single(-1.8),
             Coefficient::single(1.05),
             Coefficient::single(-0.2),
-            1.0e-12
-        ))
-        .expect("roots are admitted")
+            EPS_CUBIC_ROOT_TEST
+        )
         .len(),
         2
     );

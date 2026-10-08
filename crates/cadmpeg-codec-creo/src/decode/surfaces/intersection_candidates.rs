@@ -2,8 +2,6 @@
 //! Parallel, coaxial, and meridian intersection candidate families.
 
 use crate::vecmath::normalize;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{planar::line_circle_intersections, Point2, Point3, Vector3};
 
@@ -350,12 +348,11 @@ pub(in super::super) fn coaxial_cone_cylinder_circle_candidates(
 }
 
 pub(in super::super) fn coaxial_cones_section_candidates(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Result<FixedCandidates<(CurveGeometry, &'static str)>, cadmpeg_core::CodecError> {
+) -> FixedCandidates<(CurveGeometry, &'static str)> {
     let (CarrierEquation::Cone(first), CarrierEquation::Cone(second)) = (first, second) else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     let (Some(first_axis), Some(second_axis), Some(reference), Some(second_reference)) = (
         normalize(first.axis()),
@@ -363,14 +360,14 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         normalize(first.ref_direction()),
         normalize(second.ref_direction()),
     ) else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     let axis_alignment = dot(first_axis, second_axis);
     if (axis_alignment.abs() - 1.0).abs() > EPS_AXIS_ORTHO
         || dot(first_axis, reference).abs() > EPS_AXIS_ORTHO
         || dot(second_axis, second_reference).abs() > EPS_AXIS_ORTHO
     {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let first_y = cross(first_axis, reference);
     let second_y = cross(second_axis, second_reference);
@@ -395,7 +392,7 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         || (metric_yy - metric_scale_squared / (first.ratio() * first.ratio())).abs()
             > EPS_METRIC_AGREEMENT * metric_coefficient_scale
     {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let metric_scale = metric_scale_squared.sqrt();
     let relative: [f64; 3] =
@@ -416,7 +413,7 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         || first_slope.abs() <= EPS_SLOPE_NONZERO
         || second_slope.abs() <= EPS_SLOPE_NONZERO
     {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
 
     let mut parameters = FixedCandidates::<f64>::default();
@@ -433,7 +430,7 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         let numerator = radial_sense * second_intercept - scaled_first_radius;
         if denominator.abs() <= EPS_DETERMINANT * slope_scale {
             if numerator.abs() <= EPS_GEOMETRY_AGREEMENT * intercept_scale {
-                return Ok(FixedCandidates::default());
+                return FixedCandidates::default();
             }
             continue;
         }
@@ -442,16 +439,14 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         if radius <= EPS_RADIUS_NONZERO * scale {
             continue;
         }
-        let duplicate = ctx.any_by(
-            &*parameters,
-            |known| Ok((parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale),
-            "creo coaxial cone section parameter candidates",
-        )?;
+        let duplicate = parameters
+            .iter()
+            .any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
         if !duplicate {
             parameters.push(parameter);
         }
     }
-    Ok(parameters
+    parameters
         .into_iter()
         .filter_map(|parameter| {
             let radius = (first.radius() + parameter * first_slope).abs();
@@ -487,32 +482,31 @@ pub(in super::super) fn coaxial_cones_section_candidates(
             };
             Some((geometry, tag))
         })
-        .collect())
+        .collect()
 }
 
 pub(in super::super) fn apex_plane_cone_generator_candidates(
-    ctx: &DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Result<FixedCandidates<(CurveGeometry, &'static str)>, CodecError> {
+) -> FixedCandidates<(CurveGeometry, &'static str)> {
     let ((CarrierEquation::Plane(plane), CarrierEquation::Cone(cone))
     | (CarrierEquation::Cone(cone), CarrierEquation::Plane(plane))) = (first, second)
     else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     let Some(normal) = normalize(plane.normal) else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     let Some(axis) = normalize(cone.axis()) else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     let Some(x_axis) = normalize(cone.ref_direction()) else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     let slope = cone.half_angle().tan();
     if slope <= EPS_SLOPE_NONZERO || cone.radius() < 0.0 || dot(axis, x_axis).abs() > EPS_AXIS_ORTHO
     {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let apex: [f64; 3] =
         std::array::from_fn(|index| cone.origin()[index] - cone.radius() / slope * axis[index]);
@@ -529,7 +523,7 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
     if !plane_distance.is_finite()
         || plane_distance.abs() > (EPS_GEOMETRY_AGREEMENT * scale).max(roundoff)
     {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let reference = cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal));
     let plane_u = [reference.x, reference.y, reference.z];
@@ -561,7 +555,7 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
     let determinant = quadratic_uu.mul_add(quadratic_vv, -quadratic_uv * quadratic_uv);
     let determinant_tolerance = EPS_DETERMINANT * coefficient_scale * coefficient_scale;
     if determinant > determinant_tolerance {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let angle = 0.5 * (2.0 * quadratic_uv).atan2(quadratic_uu - quadratic_vv);
     let (sine, cosine) = angle.sin_cos();
@@ -604,8 +598,8 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
     } else {
         "plane_cone_secant_generator"
     };
-    Ok(ctx
-        .admit_iter(&*directions, "creo apex plane cone generator candidates")?
+    directions
+        .iter()
         .copied()
         .filter_map(|direction| {
             Some((
@@ -619,7 +613,7 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
                 tag,
             ))
         })
-        .collect())
+        .collect()
 }
 
 pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
@@ -697,27 +691,26 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
 }
 
 pub(in super::super) fn coaxial_cone_torus_circle_candidates(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Result<FixedCandidates<(CurveGeometry, &'static str)>, cadmpeg_core::CodecError> {
+) -> FixedCandidates<(CurveGeometry, &'static str)> {
     let ((CarrierEquation::Cone(cone), CarrierEquation::Torus(torus))
     | (CarrierEquation::Torus(torus), CarrierEquation::Cone(cone))) = (first, second)
     else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     if !circular_cone(cone) {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let (Some(cone_axis), Some(torus_axis), Some(reference)) = (
         normalize(cone.axis()),
         normalize(torus.axis),
         normalize(cone.ref_direction()),
     ) else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     if (dot(cone_axis, torus_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let relative: [f64; 3] =
         std::array::from_fn(|index| torus.center[index] - cone.origin()[index]);
@@ -736,7 +729,7 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
         || torus.minor_radius <= EPS_RADIUS_NONZERO * scale
         || slope.abs() <= EPS_SLOPE_NONZERO
     {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
 
     let mut parameters = FixedCandidates::<f64>::default();
@@ -757,17 +750,15 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
             if radius <= EPS_RADIUS_NONZERO * scale {
                 continue;
             }
-            let duplicate = ctx.any_by(
-                &*parameters,
-                |known| Ok((parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale),
-                "creo coaxial cone torus parameter candidates",
-            )?;
+            let duplicate = parameters
+                .iter()
+                .any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
             if !duplicate {
                 parameters.push(parameter);
             }
         }
     }
-    Ok(parameters
+    parameters
         .into_iter()
         .filter_map(|parameter| {
             let radius = (cone.radius() + parameter * slope).abs();
@@ -786,7 +777,7 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
                 "coaxial_cone_torus_circle",
             ))
         })
-        .collect())
+        .collect()
 }
 
 pub(in super::super) fn coaxial_cylinder_torus_circle_candidates(
@@ -997,18 +988,17 @@ pub(in super::super) fn axis_containing_plane_torus_circle_candidates(
 }
 
 pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
-    ctx: &DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Result<FixedCandidates<(CurveGeometry, &'static str)>, CodecError> {
+) -> FixedCandidates<(CurveGeometry, &'static str)> {
     let ((CarrierEquation::Sphere(sphere), CarrierEquation::Torus(torus))
     | (CarrierEquation::Torus(torus), CarrierEquation::Sphere(sphere))) = (first, second)
     else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     let (Some(axis), Some(reference)) = (normalize(torus.axis), normalize(torus.ref_direction))
     else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     let relative: [f64; 3] =
         std::array::from_fn(|index| torus.center[index] - sphere.center[index]);
@@ -1019,7 +1009,7 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
         .max(torus.minor_radius)
         .max(sphere.radius);
     if Vector3::from(transverse).norm() > EPS_CENTER_ALIGNMENT * scale {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let intersections = meridian_circle_intersections(
         [0.0, 0.0],
@@ -1030,13 +1020,10 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
     let tag = match intersections.len() {
         1 => "coaxial_sphere_torus_tangent_circle",
         2 => "coaxial_sphere_torus_secant_circle",
-        _ => return Ok(FixedCandidates::default()),
+        _ => return FixedCandidates::default(),
     };
-    Ok(ctx
-        .admit_iter(
-            &*intersections,
-            "creo coaxial sphere torus output candidates",
-        )?
+    intersections
+        .iter()
         .copied()
         .filter_map(|[radius, center_axial]| {
             let radius = radius.abs();
@@ -1058,26 +1045,25 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
                 tag,
             ))
         })
-        .collect())
+        .collect()
 }
 
 pub(in super::super) fn coaxial_tori_circle_candidates(
-    ctx: &DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Result<FixedCandidates<(CurveGeometry, &'static str)>, CodecError> {
+) -> FixedCandidates<(CurveGeometry, &'static str)> {
     let (CarrierEquation::Torus(first), CarrierEquation::Torus(second)) = (first, second) else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     let (Some(first_axis), Some(second_axis), Some(reference)) = (
         normalize(first.axis),
         normalize(second.axis),
         normalize(first.ref_direction),
     ) else {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     };
     if (dot(first_axis, second_axis).abs() - 1.0).abs() > EPS_AXIS_ALIGNMENT {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let relative: [f64; 3] =
         std::array::from_fn(|index| second.center[index] - first.center[index]);
@@ -1090,7 +1076,7 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
         .max(second.major_radius)
         .max(second.minor_radius);
     if Vector3::from(transverse).norm() > EPS_CENTER_ALIGNMENT * scale {
-        return Ok(FixedCandidates::default());
+        return FixedCandidates::default();
     }
     let intersections = meridian_circle_intersections(
         [first.major_radius, 0.0],
@@ -1101,10 +1087,10 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
     let tag = match intersections.len() {
         1 => "coaxial_tori_tangent_circle",
         2 => "coaxial_tori_secant_circle",
-        _ => return Ok(FixedCandidates::default()),
+        _ => return FixedCandidates::default(),
     };
-    Ok(ctx
-        .admit_iter(&*intersections, "creo coaxial tori output candidates")?
+    intersections
+        .iter()
         .copied()
         .filter_map(|[radius, center_axial]| {
             let radius = radius.abs();
@@ -1126,7 +1112,7 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
                 tag,
             ))
         })
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]

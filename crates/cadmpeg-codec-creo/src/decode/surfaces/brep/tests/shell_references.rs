@@ -23,7 +23,8 @@ fn references_result(
     policy.limits.max_retained_bytes = retained_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    BrepShellReferences::from_shell(&ctx, &shell, &shell_id, &mut BTreeMap::new())
+    let mut storage = ctx.reserve_scoped(0, "shell references workspace")?;
+    BrepShellReferences::from_shell(&ctx, &shell, &shell_id, &mut BTreeMap::new(), &mut storage)
 }
 
 fn assert_refusal(error: &CodecError, dimension: ResourceDimension, operation: &'static str) {
@@ -37,25 +38,34 @@ fn assert_refusal(error: &CodecError, dimension: ResourceDimension, operation: &
 #[test]
 fn brep_face_shell_nodes_refuse_collection_limit() {
     assert_refusal(
-        &references_result(0, u64::MAX).err().expect("node refused"),
+        &references_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo B-rep face-shell nodes"),
+                |cap| references_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .err()
+        .expect("node refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep face-shell nodes",
     );
 }
 
 #[test]
-fn brep_face_shell_identity_copies_refuse_retained_limit() {
-    assert_refusal(
-        &references_result(16, 0).err().expect("copy refused"),
-        ResourceDimension::RetainedBytes,
-        "creo B-rep face-shell identity copies",
-    );
-}
-
-#[test]
 fn brep_shell_face_references_refuse_collection_limit() {
     assert_refusal(
-        &references_result(1, u64::MAX).err().expect("face refused"),
+        &references_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo B-rep shell face references"),
+                |cap| references_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .err()
+        .expect("face refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep shell face references",
     );
@@ -69,7 +79,7 @@ fn brep_shell_face_identities_refuse_retained_limit() {
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo B-rep shell face identities"),
-                |cap| references_result(16, cap),
+                |cap| references_result(u64::MAX, cap),
             ),
         )
         .err()
@@ -82,7 +92,16 @@ fn brep_shell_face_identities_refuse_retained_limit() {
 #[test]
 fn brep_shell_edge_references_refuse_collection_limit() {
     assert_refusal(
-        &references_result(2, u64::MAX).err().expect("edge refused"),
+        &references_result(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo B-rep shell edge references"),
+                |cap| references_result(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .err()
+        .expect("edge refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep shell edge references",
     );
@@ -96,7 +115,7 @@ fn brep_shell_edge_identities_refuse_retained_limit() {
             crate::test_support::allocation_limit_at(
                 cadmpeg_core::decode::ResourceDimension::RetainedBytes,
                 Some("creo B-rep shell edge identities"),
-                |cap| references_result(16, cap),
+                |cap| references_result(u64::MAX, cap),
             ),
         )
         .err()
@@ -108,7 +127,8 @@ fn brep_shell_edge_identities_refuse_retained_limit() {
 
 #[test]
 fn brep_shell_references_preserve_service_order() {
-    let references = references_result(16, u64::MAX).expect("service shell references admitted");
+    let references =
+        references_result(u64::MAX, u64::MAX).expect("service shell references admitted");
     assert_eq!(
         references.face_ids,
         vec![FaceId::compose(&crate::identity::VISIBGEOM_FACE, 5)]

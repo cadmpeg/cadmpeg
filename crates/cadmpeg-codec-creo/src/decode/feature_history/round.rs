@@ -402,9 +402,11 @@ fn unique_section_torus_minor_radius(
         },
         "creo torus prototype records",
     )?;
-    Ok(prototype
-        .and_then(|prototype| prototype_scalar(prototype, "radius2"))
-        .filter(|radius| radius.is_finite() && *radius > 0.0))
+    let radius = match prototype {
+        Some(prototype) => prototype_scalar(ctx, prototype, "radius2")?,
+        None => None,
+    };
+    Ok(radius.filter(|radius| radius.is_finite() && *radius > 0.0))
 }
 
 pub(in super::super) fn replayed_torus_minor_radius(
@@ -450,10 +452,10 @@ fn prototype_round_radius(
         if !matched_row {
             continue;
         }
-        let Some(radius1) = prototype_scalar(record.record(), "radius1") else {
+        let Some(radius1) = prototype_scalar(ctx, record.record(), "radius1")? else {
             continue;
         };
-        let Some(radius2) = prototype_scalar(record.record(), "radius2") else {
+        let Some(radius2) = prototype_scalar(ctx, record.record(), "radius2")? else {
             continue;
         };
         if radii.replace((radius1, radius2)).is_some() {

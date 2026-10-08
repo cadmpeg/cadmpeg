@@ -931,7 +931,7 @@ pub(in super::super) fn build_ir(
         &mut annotations,
         &mut source_carriers,
     )?;
-    let brep_diagnostics = transfer_and_record_scanned_geometry(
+    let (brep_diagnostics, _brep_diagnostic_storage) = transfer_and_record_scanned_geometry(
         ctx,
         scan,
         &mut ir,

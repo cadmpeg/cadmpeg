@@ -30,40 +30,23 @@ const EPS_AXIS_COMPONENT: f64 = 1.0e-10;
 const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 
 pub(super) fn multi_component_intersection_candidates(
-    ctx: &DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Result<impl Iterator<Item = (CurveGeometry, &'static str)>, CodecError> {
-    Ok(parallel_plane_cylinder_generator_candidates(first, second)
+) -> impl Iterator<Item = (CurveGeometry, &'static str)> {
+    parallel_plane_cylinder_generator_candidates(first, second)
         .into_iter()
         .chain(parallel_cylinder_generator_candidates(first, second))
         .chain(coaxial_cylinder_sphere_circle_candidates(first, second))
         .chain(coaxial_cone_cylinder_circle_candidates(first, second))
-        .chain(coaxial_cones_section_candidates(ctx, first, second)?)
-        .chain(apex_plane_cone_generator_candidates(ctx, first, second)?)
+        .chain(coaxial_cones_section_candidates(first, second))
+        .chain(apex_plane_cone_generator_candidates(first, second))
         .chain(coaxial_cone_sphere_circle_candidates(first, second))
-        .chain(coaxial_cone_torus_circle_candidates(ctx, first, second)?)
+        .chain(coaxial_cone_torus_circle_candidates(first, second))
         .chain(coaxial_cylinder_torus_circle_candidates(first, second))
-        .chain(coaxial_sphere_torus_circle_candidates(ctx, first, second)?)
-        .chain(coaxial_tori_circle_candidates(ctx, first, second)?)
+        .chain(coaxial_sphere_torus_circle_candidates(first, second))
+        .chain(coaxial_tori_circle_candidates(first, second))
         .chain(axis_normal_plane_torus_circle_candidates(first, second))
-        .chain(axis_containing_plane_torus_circle_candidates(first, second)))
-}
-
-fn carrier_intersection_components(
-    ctx: &DecodeContext<'_>,
-    first: CarrierEquation,
-    second: CarrierEquation,
-) -> Result<Vec<(CurveGeometry, &'static str)>, CodecError> {
-    let mut components = Vec::new();
-    for component in carrier_intersection_curve(ctx, first, second)?
-        .into_iter()
-        .chain(multi_component_intersection_candidates(ctx, first, second)?)
-    {
-        ctx.reserve_vec(&mut components, 1, "creo carrier intersection components")?;
-        components.push(component);
-    }
-    Ok(components)
+        .chain(axis_containing_plane_torus_circle_candidates(first, second))
 }
 
 pub(in super::super) fn intersect_plane_with_carrier_components(
@@ -73,13 +56,17 @@ pub(in super::super) fn intersect_plane_with_carrier_components(
     second: CarrierEquation,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
     let mut intersections = Vec::new();
-    let components = carrier_intersection_components(ctx, first, second)?;
-    for (geometry, _) in ctx.admit_iter(&components, "creo carrier intersection components")? {
-        let Some((center, axis, radius)) = circle_parameters(geometry) else {
+    for (geometry, _) in carrier_intersection_curve(first, second)
+        .into_iter()
+        .chain(multi_component_intersection_candidates(first, second))
+    {
+        let Some((center, axis, radius)) = circle_parameters(&geometry) else {
             continue;
         };
-        let points = intersect_plane_with_circle(ctx, plane, center, axis, radius)?;
-        for point in ctx.admit_iter(&points, "creo plane-carrier circle intersections")? {
+        let mut point_storage = ctx.reserve_scoped(0, "creo carrier component point workspace")?;
+        let points = point_storage
+            .with_storage(|| intersect_plane_with_circle(ctx, plane, center, axis, radius))?;
+        for point in &points {
             ctx.reserve_vec(
                 &mut intersections,
                 1,
@@ -165,26 +152,27 @@ pub(in super::super) fn resolve_curve_candidates(
 
 pub(in super::super) fn fc14_held_coordinate(
     ctx: &DecodeContext<'_>,
-    coordinates: &[crate::curve::FcCurveCoordinates],
-    curve_id: u32,
+    record: Option<&crate::curve::FcCurveCoordinates>,
 ) -> Result<Option<f64>, CodecError> {
-    let mut records = ctx
-        .admit_iter(coordinates, "creo FC14 coordinate records")?
-        .filter(|record| record.curve_id == curve_id && record.subtype == 0x14);
-    let Some(record) = records.next() else {
+    let Some(record) = record else {
         return Ok(None);
     };
-    if records.next().is_some() {
-        return Ok(None);
-    }
-    let mut tokens = ctx
-        .admit_iter(&record.tokens, "creo FC14 coordinate tokens")?
-        .filter(|token| token.raw.first() == Some(&0x2d));
-    let Some(first) = tokens.next() else {
+    let mut tokens = record.tokens.iter();
+    let Some(first) = ctx.find_by(
+        &mut tokens,
+        |token| Ok(token.raw.first() == Some(&0x2d)),
+        "creo FC14 coordinate tokens",
+    )?
+    else {
         return Ok(None);
     };
     for _ in 0..3 {
-        let Some(token) = tokens.next() else {
+        let Some(token) = ctx.find_by(
+            &mut tokens,
+            |token| Ok(token.raw.first() == Some(&0x2d)),
+            "creo FC14 coordinate tokens",
+        )?
+        else {
             return Ok(None);
         };
         if !ctx.equal(
@@ -199,7 +187,10 @@ pub(in super::super) fn fc14_held_coordinate(
     if !first.value_mm.is_finite() {
         return Ok(None);
     }
-    for token in tokens {
+    while let Some(token) = ctx.next_charged(&mut tokens, "creo FC14 coordinate tokens")? {
+        if token.raw.first() != Some(&0x2d) {
+            continue;
+        }
         if !ctx.equal(
             &token.raw,
             &first.raw,
@@ -253,6 +244,55 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::math::{Point3, Vector3};
 
+    #[test]
+    fn fc14_coordinate_tokens_charge_visited_search_and_comparison_steps() {
+        let held = crate::curve::FcCurveCoordinateToken {
+            value_mm: 1.0,
+            raw: vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
+            offset: 0,
+        };
+        let ignored = crate::curve::FcCurveCoordinateToken {
+            raw: vec![0],
+            ..held.clone()
+        };
+        let mut record = crate::curve::FcCurveCoordinates {
+            curve_id: 77,
+            subtype: 0x14,
+            body: Vec::new(),
+            values_mm: Vec::new(),
+            tokens: vec![
+                ignored.clone(),
+                held.clone(),
+                ignored.clone(),
+                held.clone(),
+                held.clone(),
+                held.clone(),
+                ignored.clone(),
+            ],
+            opaque_spans: Vec::new(),
+            offset: 0,
+        };
+        for expected in [Some(1.0), None] {
+            crate::test_support::assert_work_boundaries(
+                &[
+                    "creo FC14 coordinate tokens",
+                    "creo FC14 coordinate token bytes comparison",
+                ],
+                |ctx| {
+                    assert_eq!(super::fc14_held_coordinate(ctx, Some(&record))?, expected);
+                    Ok(())
+                },
+            );
+            record.tokens.push(crate::curve::FcCurveCoordinateToken {
+                value_mm: -1.0,
+                ..held.clone()
+            });
+            record
+                .tokens
+                .extend(std::iter::repeat_n(ignored.clone(), 64));
+        }
+    }
+
     fn cone_sphere_circle_carriers() -> (CarrierEquation, CarrierEquation) {
         let cone = ConeEquation::new(
             [0.0; 3],
@@ -272,27 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn carrier_intersection_components_refuse_before_vec_growth() {
-        let (cone, sphere) = cone_sphere_circle_carriers();
-        let run = |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root fits the collection policy");
-            super::carrier_intersection_components(&ctx, cone, sphere)
-        };
-        assert!(
-            matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "creo carrier intersection components")
-        );
-        assert!(!run(u64::MAX)
-            .expect("service budget admits the circle")
-            .is_empty());
-    }
-
-    #[test]
     fn plane_carrier_component_intersections_refuse_before_vec_growth() {
         let (cone, sphere) = cone_sphere_circle_carriers();
         let plane = PlaneEquation {
@@ -307,13 +326,11 @@ mod tests {
                 .expect("empty root fits the collection policy");
             super::intersect_plane_with_carrier_components(&ctx, plane, cone, sphere)
         };
-        let limit = (0..64)
-            .find(|limit| {
-                matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "creo plane-carrier component intersections")
-            })
-            .expect("the carrier circle reaches the output boundary");
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo plane-carrier component intersections"),
+            run,
+        );
         assert!(
             matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
