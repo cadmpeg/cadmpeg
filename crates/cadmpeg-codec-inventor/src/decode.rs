@@ -40,7 +40,7 @@ use crate::native::ufrx::{
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordConversionError, AssemblyPlacementRecordWire, DatabaseIssueRecord,
+    AssemblyPlacementRecordConversionError, DatabaseIssueRecord,
     DatabaseRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
     PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord,
     SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
@@ -100,19 +100,19 @@ fn decode_container<'a>(
     insert_source_attribute(
         ctx,
         &mut attributes,
-        "cfb_major_version",
+        b"cfb_major_version",
         format_args!("{}", container.snapshot.major_version()),
     )?;
     insert_source_attribute(
         ctx,
         &mut attributes,
-        "cfb_sector_size",
+        b"cfb_sector_size",
         format_args!("{}", container.snapshot.sector_size()),
     )?;
     insert_source_attribute(
         ctx,
         &mut attributes,
-        "rse_segment_pairs",
+        b"rse_segment_pairs",
         format_args!("{}", container.rse.segments.len()),
     )?;
     let mut document_kind = container.rse.document_kind();
@@ -384,7 +384,7 @@ fn decode_container<'a>(
     insert_source_attribute(
         ctx,
         &mut attributes,
-        "document_kind",
+        b"document_kind",
         format_args!("{}", document_kind.label()),
     )?;
     metadata.apply_attributes(ctx, &mut attributes)?;
@@ -581,14 +581,14 @@ fn decode_container<'a>(
         "retain Inventor assembly_occurrences records",
     )?;
     let mut assembly_placements = Vec::new();
-    let mut placements = assembly_inventory.placements.iter();
+    let mut placements = assembly_inventory.placements.into_iter();
     while let Some(placement) = ctx.next_charged(
         &mut placements,
         "visit Inventor assembly_placements records",
     )? {
         if let Some(record) = admit_assembly_placement(
             ctx,
-            AssemblyPlacementRecordWire::from_placement(ctx, placement)?,
+            AssemblyPlacementRecord::from_placement(ctx, placement),
             &mut assembly_inventory.issues,
         )? {
             ctx.push_vec(
@@ -1552,13 +1552,16 @@ fn project_root_product(
     })
 }
 
-fn insert_source_attribute(
+fn insert_source_attribute<const N: usize>(
     ctx: &DecodeContext<'_>,
     attributes: &mut BTreeMap<String, String>,
-    key: &'static str,
+    key: &[u8; N],
     value: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    let key = ctx.copy_retained_text(key, "retain Inventor source attribute key")?;
+    let key_text = std::str::from_utf8(key)
+        .map_err(|_| CodecError::malformed("Inventor source attribute key is not UTF-8"))?;
+    let mut key = ctx.retained_string(N, "retain Inventor source attribute key")?;
+    key.push_str(key_text);
     let value = ctx.format_retained(value, "retain Inventor source attribute value")?;
     ctx.insert_btree_map(attributes, key, value, "collect Inventor source attribute")?;
     Ok(())
@@ -2426,10 +2429,10 @@ fn admit_ufrx_record<T>(
 
 fn admit_assembly_placement(
     ctx: &DecodeContext<'_>,
-    wire: AssemblyPlacementRecordWire,
+    conversion: Result<AssemblyPlacementRecord, AssemblyPlacementRecordConversionError>,
     issues: &mut Vec<RecordIssue>,
 ) -> Result<Option<AssemblyPlacementRecord>, CodecError> {
-    match wire.into_record() {
+    match conversion {
         Ok(record) => {
             ctx.charge_entities(1, "admit Inventor native assembly placement")?;
             Ok(Some(record))

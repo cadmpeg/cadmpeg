@@ -470,49 +470,89 @@ pub(crate) struct AssemblyPlacementRecordConversionError {
     pub(crate) error: CodecError,
 }
 
-impl AssemblyPlacementRecordWire {
+impl AssemblyPlacementRecord {
     pub(crate) fn from_placement(
         ctx: &DecodeContext<'_>,
-        placement: &crate::assembly::AssemblyPlacement<'_>,
-    ) -> Result<Self, CodecError> {
+        placement: crate::assembly::AssemblyPlacement<'_>,
+    ) -> Result<Self, AssemblyPlacementRecordConversionError> {
+        let crate::assembly::AssemblyPlacement {
+            segment_token,
+            record_ordinal,
+            header_id,
+            owner_reference,
+            attribute_reference,
+            state,
+            transform_prefix,
+            transform,
+            branch,
+            graphics_state,
+            occurrence_id,
+            graphics_index,
+            object_reference,
+            suffix,
+        } = placement;
+        let Some(suffix_len) = std::num::NonZeroU64::new(cadmpeg_core::decode::u64_from_index(
+            suffix.window().len(),
+        )) else {
+            return Err(AssemblyPlacementRecordConversionError {
+                segment_token,
+                record_ordinal,
+                error: CodecError::malformed("suffix_len must not be zero"),
+            });
+        };
+        let id = match ctx.format_retained(
+            format_args!(
+                "inventor:assembly:placement#{}-{}",
+                segment_token,
+                record_ordinal
+            ),
+            "retain Inventor assembly placement id",
+        ) {
+            Ok(id) => id,
+            Err(error) => {
+                return Err(AssemblyPlacementRecordConversionError {
+                    segment_token,
+                    record_ordinal,
+                    error,
+                });
+            }
+        };
+        let suffix_sha256 = match cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+            ctx,
+            suffix.window(),
+            "retain Inventor assembly placement suffix digest",
+        ) {
+            Ok(digest) => digest,
+            Err(error) => {
+                return Err(AssemblyPlacementRecordConversionError {
+                    segment_token,
+                    record_ordinal,
+                    error,
+                });
+            }
+        };
         Ok(Self {
-            id: ctx.format_retained(
-                format_args!(
-                    "inventor:assembly:placement#{}-{}",
-                    placement.segment_token, placement.record_ordinal
-                ),
-                "retain Inventor assembly placement id",
-            )?,
-            segment_token: ctx.copy_retained_text(
-                &placement.segment_token,
-                "retain Inventor assembly placement token",
-            )?,
-            record_ordinal: placement.record_ordinal,
-            header_id: placement.header_id,
-            owner_reference: placement.owner_reference,
-            attribute_reference: placement.attribute_reference,
-            state: placement.state,
-            transform_prefix: placement.transform_prefix,
-            transform_encoding: {
-                let (value_mask, zero_mask) = placement.transform.masks();
-                [value_mask, zero_mask]
-            },
-            transform: placement.transform.rows(),
-            branch: placement.branch,
-            graphics_state: placement.graphics_state,
-            occurrence_id: placement.occurrence_id,
-            graphics_index: placement.graphics_index,
-            object_reference: placement.object_reference,
-            suffix_len: cadmpeg_core::decode::u64_from_index(placement.suffix.window().len()),
-            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                ctx,
-                placement.suffix.window(),
-                "retain Inventor assembly placement suffix digest",
-            )?
-            .into(),
+            id,
+            segment_token,
+            record_ordinal,
+            header_id,
+            owner_reference,
+            attribute_reference,
+            state,
+            transform_prefix,
+            transform,
+            branch,
+            graphics_state,
+            occurrence_id,
+            graphics_index,
+            object_reference,
+            suffix_len,
+            suffix_sha256,
         })
     }
+}
 
+impl AssemblyPlacementRecordWire {
     pub(crate) fn into_record(
         self,
     ) -> Result<AssemblyPlacementRecord, AssemblyPlacementRecordConversionError> {
@@ -1847,7 +1887,7 @@ mod tests {
         };
         use cadmpeg_core::CodecError;
         let suffix = b"abc";
-        let placement = crate::assembly::AssemblyPlacement {
+        let placement = || crate::assembly::AssemblyPlacement {
             segment_token: "segment".into(),
             record_ordinal: 1,
             header_id: 0,
@@ -1870,26 +1910,32 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // The id is measured and written once each, the token is copied once,
-        // and three suffix bytes are hashed. Hex encoding then admits 64 units.
-        let prior =
+        // Preserve the old cap: the moved token removes its former copy work,
+        // so this cap now admits the same digest output.
+        let source_prior =
+            2 * "inventor:assembly:placement#segment-1".len() + suffix.len();
+        let old_prior =
             2 * "inventor:assembly:placement#segment-1".len() + "segment".len() + suffix.len();
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(prior + 63);
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(old_prior + 63);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(matches!(
-            AssemblyPlacementRecordWire::from_placement(&ctx, &placement),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "retain Inventor assembly placement suffix digest"
-                    && limit.used == cadmpeg_core::decode::u64_from_index(prior)
-                    && limit.additional == 64
-        ));
-        let wire = AssemblyPlacementRecordWire::from_placement(&super::test_ctx(), &placement)
-            .expect("digest admitted");
+        let record = AssemblyPlacementRecord::from_placement(&ctx, placement())
+            .expect("former cap admits digest after the token copy is removed");
         assert_eq!(
-            wire.suffix_sha256,
+            record.suffix_sha256.as_str(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(source_prior + 63);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        assert!(matches!(
+            AssemblyPlacementRecord::from_placement(&ctx, placement()),
+            Err(failure)
+                if matches!(failure.error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "retain Inventor assembly placement suffix digest"
+                        && limit.used == cadmpeg_core::decode::u64_from_index(source_prior)
+                        && limit.additional == 64)
+        ));
     }
 
     #[test]
