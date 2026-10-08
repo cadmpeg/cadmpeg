@@ -160,101 +160,86 @@ fn curve_expression_helix_feature_definition(
     }))
 }
 
-fn expression_dependency_reaches(
-    ctx: &DecodeContext<'_>,
-    dependencies: &[Vec<usize>],
-    start: usize,
-    target: usize,
-) -> Result<bool, CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "creo curve-expression dependency scratch")?;
-    let mut pending = storage.with_storage(|| ctx.alloc_filled(1, start, "creo curve-expression pending dependency"))?;
-    let mut visited = storage.with_storage(|| ctx.alloc_filled(
-        dependencies.len(),
-        false,
-        "creo curve-expression visited dependencies",
-    ))?;
-    while let Some(index) = ctx.next_charged(&mut std::iter::from_fn(|| pending.pop()), "walk Creo curve-expression dependencies")? {
-        if index == target {
-            return Ok(true);
-        }
-        if !visited[index] {
+/// Assign a component to each vertex with two iterative depth-first passes.
+fn expression_dependency_components(ctx: &DecodeContext<'_>, dependencies: &[Vec<usize>], reverse: &[Vec<usize>]) -> Result<Vec<usize>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo curve-expression component scratch")?;
+    let mut visited = scratch.with_storage(|| ctx.alloc_filled(dependencies.len(), false, "creo curve-expression visited dependencies"))?;
+    let mut pending = Vec::new();
+    let mut finish = Vec::new();
+    for root in ctx.admit_iter(0..dependencies.len(), "creo curve-expression component roots")? {
+        if visited[root] { continue; }
+        scratch.with_storage(|| ctx.push_vec(&mut pending, (root, false), "creo curve-expression pending dependency"))?;
+        while let Some((index, expanded)) = ctx.next_charged(&mut std::iter::from_fn(|| pending.pop()), "walk Creo curve-expression dependencies")? {
+            if expanded { scratch.with_storage(|| ctx.push_vec(&mut finish, index, "creo curve-expression component finish order"))?; continue; }
+            if visited[index] { continue; }
             visited[index] = true;
-            storage.with_storage(|| ctx.extend_vec(&mut pending,
-                &dependencies[index],
-                "creo curve-expression pending dependencies"))?;
+            scratch.with_storage(|| ctx.push_vec(&mut pending, (index, true), "creo curve-expression pending dependencies"))?;
+            for &dependency in ctx.admit_iter(&dependencies[index], "creo curve-expression component edges")? {
+                if !visited[dependency] { scratch.with_storage(|| ctx.push_vec(&mut pending, (dependency, false), "creo curve-expression pending dependencies"))?; }
+            }
         }
     }
-    Ok(false)
+    let mut components = ctx.alloc_filled(dependencies.len(), 0usize, "creo curve-expression components")?;
+    for value in ctx.admit_iter(&mut visited, "creo curve-expression component marks reset")? { *value = false; }
+    let mut component = 0;
+    for root in ctx.admit_iter(finish, "creo curve-expression component finish traversal")?.rev() {
+        if visited[root] { continue; }
+        scratch.with_storage(|| ctx.push_vec(&mut pending, (root, false), "creo curve-expression pending dependency"))?;
+        while let Some((index, _)) = ctx.next_charged(&mut std::iter::from_fn(|| pending.pop()), "walk Creo curve-expression reverse dependencies")? {
+            if visited[index] { continue; }
+            visited[index] = true;
+            components[index] = component;
+            for &consumer in ctx.admit_iter(&reverse[index], "creo curve-expression reverse edges")? {
+                if !visited[consumer] { scratch.with_storage(|| ctx.push_vec(&mut pending, (consumer, false), "creo curve-expression pending dependencies"))?; }
+            }
+        }
+        component += 1;
+    }
+    Ok(components)
 }
 
-fn curve_expression_parameter_order(
-    ctx: &DecodeContext<'_>,
-    record: &crate::curve::CurveExpressionRecord,
-    unique_assignment_indices: &BTreeMap<String, usize>,
-) -> Result<Option<CurveExpressionParameterOrder>, CodecError> {
-    let mut dependencies = ctx.collect_indexed_vec(
-        record.assignments.len(),
-        "creo curve-expression dependency rows",
-        |_| Ok(Vec::new()),
-    )?;
-    for (row, assignment) in ctx.admit_iter(&mut dependencies, "creo curve-expression ordering rows")?.zip(&record.assignments) {
+fn curve_expression_parameter_order(ctx: &DecodeContext<'_>, record: &crate::curve::CurveExpressionRecord, unique_assignment_indices: &BTreeMap<String, usize>) -> Result<Option<CurveExpressionParameterOrder>, CodecError> {
+    let mut scratch = ctx.reserve_scoped(0, "creo curve-expression ordering scratch")?;
+    let mut dependencies = scratch.with_storage(|| ctx.collect_indexed_vec(record.assignments.len(), "creo curve-expression dependency rows", |_| Ok(Vec::new())))?;
+    let mut reverse = scratch.with_storage(|| ctx.collect_indexed_vec(record.assignments.len(), "creo curve-expression reverse rows", |_| Ok(Vec::new())))?;
+    for (consumer, (row, assignment)) in ctx.admit_iter(&mut dependencies, "creo curve-expression ordering rows")?.zip(&record.assignments).enumerate() {
+        let mut row_storage = ctx.reserve_scoped(0, "creo curve-expression edge index scratch")?;
+        let mut seen = HashSet::new();
         for name in ctx.admit_iter(&assignment.dependencies, "creo curve-expression dependency traversal")? {
-            let (mut key, _reservation) = ctx.format_scoped(
-                format_args!("{name}"),
-                "creo curve-expression ordering lookup",
-            )?;
+            let (mut key, _key_storage) = ctx.format_scoped(format_args!("{name}"), "creo curve-expression ordering lookup")?;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-            let Some(&index) = ctx.get_btree_map(unique_assignment_indices, &key, "creo curve-expression assignment lookup")? else {
-                continue;
-            };
-            if ctx.any_by(&*row, |known| Ok(*known == index), "creo curve-expression duplicate edge scan")? {
-                continue;
-            }
-            ctx.reserve_vec(row, 1, "creo curve-expression dependency indices")?;
-            row.push(index);
+            let Some(&index) = ctx.get_btree_map(unique_assignment_indices, &key, "creo curve-expression assignment lookup")? else { continue; };
+            if seen.contains(&index) { continue; }
+            row_storage.with_storage(|| ctx.insert_hash_set(&mut seen, index, "creo curve-expression edge index nodes"))?;
+            scratch.with_storage(|| ctx.push_vec(row, index, "creo curve-expression dependency indices"))?;
+            scratch.with_storage(|| ctx.push_vec(&mut reverse[index], consumer, "creo curve-expression reverse indices"))?;
         }
     }
+    let components = scratch.with_storage(|| expression_dependency_components(ctx, &dependencies, &reverse))?;
     let mut cyclic_edges = HashSet::new();
-    for (consumer, dependency_indices) in ctx.admit_iter(&dependencies, "creo curve-expression cycle rows")?.enumerate() {
-        for &dependency in ctx.admit_iter(dependency_indices, "creo curve-expression cycle edges")? {
-            if expression_dependency_reaches(ctx, &dependencies, dependency, consumer)? {
-                ctx.insert_hash_set(
-                    &mut cyclic_edges,
-                    (consumer, dependency),
-                    "creo curve-expression cyclic edges",
-                )?;
-            }
+    let mut remaining = scratch.with_storage(|| ctx.alloc_filled(dependencies.len(), 0usize, "creo curve-expression remaining dependency counts"))?;
+    let mut ready = BTreeSet::new();
+    for (consumer, row) in ctx.admit_iter(&dependencies, "creo curve-expression cycle rows")?.enumerate() {
+        for &dependency in ctx.admit_iter(row, "creo curve-expression cycle edges")? {
+            if components[consumer] == components[dependency] { ctx.insert_hash_set(&mut cyclic_edges, (consumer, dependency), "creo curve-expression cyclic edges")?; }
+            else { remaining[consumer] += 1; }
         }
+        if remaining[consumer] == 0 { scratch.with_storage(|| ctx.insert_btree_set(&mut ready, consumer, "creo curve-expression ready indices"))?; }
     }
-    let mut ordinals = ctx.alloc_filled(
-        dependencies.len(),
-        0u32,
-        "creo curve-expression parameter ordinals",
-    )?;
-    let mut assigned = ctx.alloc_filled(
-        dependencies.len(),
-        false,
-        "creo curve-expression assigned ordinals",
-    )?;
+    let mut ordinals = ctx.alloc_filled(dependencies.len(), 0u32, "creo curve-expression parameter ordinals")?;
     let mut ordinal_steps = 0..dependencies.len();
     while let Some(ordinal) = ctx.next_charged(&mut ordinal_steps, "creo curve-expression ordinal traversal")? {
-        let Some(index) = ctx.find_by(0..dependencies.len(), |&candidate| {
-            Ok(!assigned[candidate] && ctx.all_by(&dependencies[candidate], |dependency| {
-                Ok(cyclic_edges.contains(&(candidate, *dependency)) || assigned[*dependency])
-            }, "creo curve-expression ready edges")?)
-        }, "creo curve-expression ready candidates")? else {
-            return Ok(None);
-        };
-        let Ok(ordinal) = u32::try_from(ordinal) else {
-            return Ok(None);
-        };
+        let Some(index) = ctx.find_by(&ready, |_| Ok(true), "creo curve-expression ready candidates")?.copied() else { return Ok(None); };
+        ctx.remove_btree_set(&mut ready, &index, "creo curve-expression ready removal")?;
+        let Ok(ordinal) = u32::try_from(ordinal) else { return Ok(None); };
         ordinals[index] = ordinal;
-        assigned[index] = true;
+        for &consumer in ctx.admit_iter(&reverse[index], "creo curve-expression ready edges")? {
+            if components[consumer] == components[index] { continue; }
+            remaining[consumer] -= 1;
+            if remaining[consumer] == 0 { scratch.with_storage(|| ctx.insert_btree_set(&mut ready, consumer, "creo curve-expression ready indices"))?; }
+        }
     }
-    Ok(Some(CurveExpressionParameterOrder {
-        ordinals,
-        cyclic_edges,
-    }))
+    Ok(Some(CurveExpressionParameterOrder { ordinals, cyclic_edges }))
 }
 
 fn curve_expression_parameter_names(
@@ -770,19 +755,20 @@ pub(super) fn transfer_curve_expression_features(
             format_args!("{}-{}", record.entity_id, record.offset),
             "creo curve-expression feature identity",
         )?;
+        let mut scratch = ctx.reserve_scoped(0, "creo curve-expression transfer scratch")?;
         let AssignmentIndices {
             by_name: assignment_indices_by_name,
             unique: unique_assignment_indices,
-        } = curve_expression_assignment_indices(ctx, record)?;
+        } = scratch.with_storage(|| curve_expression_assignment_indices(ctx, record))?;
         let Some(CurveExpressionParameterOrder {
             ordinals: parameter_ordinals,
             cyclic_edges,
-        }) = curve_expression_parameter_order(ctx, record, &unique_assignment_indices)?
+        }) = scratch.with_storage(|| curve_expression_parameter_order(ctx, record, &unique_assignment_indices))?
         else {
             continue;
         };
-        let parameter_names = curve_expression_parameter_names(ctx, &record.assignments)?;
-        let emitted_ordinals = curve_expression_emitted_ordinals(ctx, record, &parameter_ordinals)?;
+        let parameter_names = scratch.with_storage(|| curve_expression_parameter_names(ctx, &record.assignments))?;
+        let emitted_ordinals = scratch.with_storage(|| curve_expression_emitted_ordinals(ctx, record, &parameter_ordinals))?;
         let mut source_content = Vec::new();
         ctx.reserve_vec(
             &mut source_content,

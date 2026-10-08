@@ -9,12 +9,11 @@ fn evaluated_relation_trim_refuses_work() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo evaluated relation line trim",
         |ctx| {
-            crate::curve::evaluate_expression_program_details(
+            { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; crate::curve::evaluate_expression_program_details(
                 ctx,
                 &lines,
                 None,
-                &crate::curve::ExternalRelationSymbols::default(),
-            )
+                &crate::curve::ExternalRelationSymbols::default(), &mut solution_storage) }
         },
     );
     assert!(

@@ -139,7 +139,7 @@ dimension_limit_test!(
 dimension_limit_test!(
     dimension_inference_refuses_variable_key_text,
     DimensionLimitCase::Basic,
-    ResourceDimension::RetainedBytes,
+    ResourceDimension::MaterializedBytes,
     "creo dimension variable key text"
 );
 dimension_limit_test!(
@@ -151,7 +151,7 @@ dimension_limit_test!(
 dimension_limit_test!(
     dimension_inference_refuses_symbolic_variable_names,
     DimensionLimitCase::Basic,
-    ResourceDimension::RetainedBytes,
+    ResourceDimension::MaterializedBytes,
     "creo dimension variable names"
 );
 dimension_limit_test!(
@@ -163,7 +163,7 @@ dimension_limit_test!(
 dimension_limit_test!(
     dimension_inference_refuses_unknown_value_names,
     DimensionLimitCase::Basic,
-    ResourceDimension::RetainedBytes,
+    ResourceDimension::MaterializedBytes,
     "creo dimension unknown value names"
 );
 dimension_limit_test!(
@@ -175,13 +175,13 @@ dimension_limit_test!(
 dimension_limit_test!(
     dimension_inference_refuses_known_value_names,
     DimensionLimitCase::KnownNumber,
-    ResourceDimension::RetainedBytes,
+    ResourceDimension::MaterializedBytes,
     "creo dimension known value names"
 );
 dimension_limit_test!(
     dimension_inference_refuses_known_text,
     DimensionLimitCase::KnownText,
-    ResourceDimension::RetainedBytes,
+    ResourceDimension::MaterializedBytes,
     "creo dimension known text"
 );
 dimension_limit_test!(
@@ -199,7 +199,7 @@ dimension_limit_test!(
 dimension_limit_test!(
     dimension_inference_refuses_axis_variable_names,
     DimensionLimitCase::Basic,
-    ResourceDimension::RetainedBytes,
+    ResourceDimension::MaterializedBytes,
     "creo dimension axis variable names"
 );
 dimension_limit_test!(
@@ -294,7 +294,7 @@ fn evaluate_expression_program_details(
     external_symbols: &ExternalRelationSymbols,
 ) -> crate::curve::CurveExpressionEvaluation {
     crate::decode::with_test_decode_ctx(|ctx| {
-        crate::curve::evaluate_expression_program_details(ctx, lines, model_name, external_symbols)
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; crate::curve::evaluate_expression_program_details(ctx, lines, model_name, external_symbols, &mut solution_storage) }
     })
     .expect("test curve expression evaluation")
 }
@@ -1251,16 +1251,9 @@ fn dimension_components_refuse_collection_limit() {
         offset: 0,
         for_offset: 1,
     };
-    let error = with_collection_limit(7, |ctx| {
-        crate::curve::infer_solve_variable_dimensions(
-            ctx,
-            &block,
-            &BTreeMap::new(),
-            &[Some(RelationDimension::LENGTH)],
-            RelationEvaluationContext::default(),
-        )
-    })
-    .expect_err("dimension component allocation exceeds the limit");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo_solve_dimension_components", |ctx| {
+        crate::curve::infer_solve_variable_dimensions(ctx, &block, &BTreeMap::new(), &[Some(RelationDimension::LENGTH)], RelationEvaluationContext::default())
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1271,14 +1264,10 @@ fn dimension_components_refuse_collection_limit() {
 
 #[test]
 fn dimension_axis_refuses_collection_limit() {
-    let mut rows = vec![AffineEquationRow {
-        coefficients: vec![1.0],
-        rhs: 2.0,
-    }];
-    let error = with_collection_limit(1, |ctx| {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo_solve_dimension_axis", |ctx| {
+        let mut rows = vec![AffineEquationRow { coefficients: vec![1.0], rhs: 2.0 }];
         crate::curve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
-    })
-    .expect_err("axis solution allocation exceeds the limit");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1289,14 +1278,10 @@ fn dimension_axis_refuses_collection_limit() {
 
 #[test]
 fn dimension_pivot_rows_refuse_collection_limit() {
-    let mut rows = vec![AffineEquationRow {
-        coefficients: vec![1.0],
-        rhs: 2.0,
-    }];
-    let error = with_collection_limit(0, |ctx| {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve dimension pivot rows", |ctx| {
+        let mut rows = vec![AffineEquationRow { coefficients: vec![1.0], rhs: 2.0 }];
         crate::curve::solve_dimension_axis(ctx, &mut rows, 1, &BTreeSet::from([0]))
-    })
-    .expect_err("pivot row exceeds the collection limit");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1305,8 +1290,8 @@ fn dimension_pivot_rows_refuse_collection_limit() {
     ));
 }
 
-fn nonlinear_seed_error(limit: u64) -> cadmpeg_core::CodecError {
-    with_collection_limit(limit, |ctx| {
+fn nonlinear_seed_error(operation: &'static str) -> cadmpeg_core::CodecError {
+    let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some(operation), |cap| with_collection_limit(cap, |ctx| {
         crate::curve::nonlinear_initial_guesses(
             ctx,
             &[Some(CurveExpressionValue::Number(
@@ -1314,14 +1299,22 @@ fn nonlinear_seed_error(limit: u64) -> cadmpeg_core::CodecError {
             ))],
             &[RelationDimension::default()],
         )
-    })
-    .expect_err("nonlinear seed allocation exceeds the limit")
+    }));
+    with_collection_limit(cap, |ctx| {
+        crate::curve::nonlinear_initial_guesses(
+            ctx,
+            &[Some(CurveExpressionValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite relation fixture"),
+            ))],
+            &[RelationDimension::default()],
+        )
+    }).expect_err("nonlinear seed allocation exceeds the limit")
 }
 
 #[test]
 fn nonlinear_zero_seed_refuses_collection_limit() {
     assert!(matches!(
-        nonlinear_seed_error(2),
+        nonlinear_seed_error("creo_solve_seed_zero"),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo_solve_seed_zero"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -1331,7 +1324,7 @@ fn nonlinear_zero_seed_refuses_collection_limit() {
 #[test]
 fn nonlinear_magnitude_seed_refuses_collection_limit() {
     assert!(matches!(
-        nonlinear_seed_error(4),
+        nonlinear_seed_error("creo_solve_seed_magnitude"),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo_solve_seed_magnitude"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -1341,7 +1334,7 @@ fn nonlinear_magnitude_seed_refuses_collection_limit() {
 #[test]
 fn nonlinear_axis_seed_refuses_collection_limit() {
     assert!(matches!(
-        nonlinear_seed_error(23),
+        nonlinear_seed_error("creo_solve_seed_axis"),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo_solve_seed_axis"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -1351,7 +1344,7 @@ fn nonlinear_axis_seed_refuses_collection_limit() {
 #[test]
 fn nonlinear_initial_seed_refuses_collection_limit() {
     assert!(matches!(
-        nonlinear_seed_error(0),
+        nonlinear_seed_error("creo solve initial seed"),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo solve initial seed"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -1361,7 +1354,7 @@ fn nonlinear_initial_seed_refuses_collection_limit() {
 #[test]
 fn nonlinear_seed_rows_refuse_collection_limit() {
     assert!(matches!(
-        nonlinear_seed_error(1),
+        nonlinear_seed_error("creo solve seed rows"),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo solve seed rows"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
