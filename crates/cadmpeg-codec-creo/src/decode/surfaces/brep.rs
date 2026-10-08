@@ -2651,7 +2651,7 @@ pub(in super::super) fn transfer_native_brep(
         "creo transfer native brep neutral edge curves traversal",
     )? {
         let [start, end] = *ctx.get_btree_map(&edge_vertices, curve_id, "creo edge vertices lookup")?.ok_or_else(|| cadmpeg_core::CodecError::malformed("edge vertices indexed record"))?;
-        let curve = crate::identity::compose_checked::<CurveId>(
+        let (curve, curve_storage) = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_CURVE,
             *curve_id,
@@ -2769,7 +2769,8 @@ pub(in super::super) fn transfer_native_brep(
         let identity_present = curves_index.lookup(ctx, &ir.model.curves, |record| record.id.as_str(), curve.as_str())?.is_some();
         if !identity_present {
             let offset = ctx.get_btree_map(&row_offsets, curve_id, "creo row offsets lookup")?.copied().unwrap_or(0);
-            annotate(
+            curve_storage.commit()?;
+        annotate(
                 ctx,
                 annotations,
                 &curve,
@@ -3406,7 +3407,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         let Some(frame) = fc05_cap_pair_model_frame(ctx, scan, pair)? else {
             continue;
         };
-        let id = crate::identity::compose_checked::<SurfaceId>(
+        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             pair.surface_id,
@@ -3424,6 +3425,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         ) else {
             continue;
         };
+        id_storage.commit()?;
         annotate(
             ctx,
             annotations,
@@ -3479,7 +3481,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 pair.reference_direction_row_frame,
                 frame.axis_sign,
             );
-            let id = crate::identity::compose_checked::<CurveId>(
+            let (id, id_storage) = crate::identity::compose_scoped::<CurveId>(
                 ctx,
                 &crate::identity::VISIBGEOM_CURVE,
                 curve_id,
@@ -3497,7 +3499,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             ) else {
                 continue;
             };
-            annotate(
+            id_storage.commit()?;
+        annotate(
                 ctx,
                 annotations,
                 &id,
