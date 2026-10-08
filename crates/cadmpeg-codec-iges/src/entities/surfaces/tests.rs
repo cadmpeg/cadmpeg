@@ -1632,7 +1632,7 @@ fn surface_projection_refuses_variable_work_and_scratch() {
                 )
             })
         });
-        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let mut policy = DecodePolicy::service();
             match dimension {
                 ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
@@ -1642,15 +1642,28 @@ fn surface_projection_refuses_variable_work_and_scratch() {
             if let Some((source, directory, parameters, global)) = &projection_inputs {
                 let mut ir = source.clone();
                 crate::test_support::with_policy_context(&[], &policy, |ctx| {
-                    super::project(
-                        &mut ir,
-                        directory,
-                        parameters,
-                        global,
-                        ctx,
-                        &mut super::super::geometry::SourceSequences::default(),
-                    )
-                    .map(|_| ())
+                    if operation == "iges ruled linear interval controls" {
+                        // The model index has an earlier materialization peak.
+                        // Keep this fixture's curve and source record for the proof.
+                        let cadmpeg_ir::geometry::CurveGeometry::Solved(
+                            SolvedCurveGeometry::Nurbs(curve),
+                        ) = &ir.model.curves[0].geometry
+                        else {
+                            panic!("the fixture starts with a NURBS curve")
+                        };
+                        super::interval_certified_linear_bezier(
+                            curve, &parameters[0], global, ctx,
+                        ).map(|_| ())
+                    } else {
+                        super::project(
+                            &mut ir,
+                            directory,
+                            parameters,
+                            global,
+                            ctx,
+                            &mut super::super::geometry::SourceSequences::default(),
+                        ).map(|_| ())
+                    }
                 })
             } else {
                 IgesCodec
@@ -1668,6 +1681,12 @@ fn surface_projection_refuses_variable_work_and_scratch() {
                     })
             }
         });
+        if operation == "iges ruled linear interval controls" {
+            // The cubic fixture has four controls; each holds three intervals.
+            let expected = 4 * std::mem::size_of::<[super::DeclaredInterval; 3]>();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.additional == u64::try_from(expected).unwrap()));
+        }
     }
 }
 
