@@ -529,7 +529,7 @@ fn transfer_schema_one<'ctx>(
         }
     }
     let document = GuiDocumentRecord {
-        id: ctx.copy_retained_text("fcstd:gui:document#0", "FCStd GUI document identity")?,
+        id: "fcstd:gui:document#0".to_owned(),
         schema_version: schema_declaration
             .map(|value| ctx.copy_retained_text(value, "FCStd GUI schema declaration"))
             .transpose()?,
@@ -975,10 +975,7 @@ fn transfer_schema_one<'ctx>(
             library_id: None,
             visual_guid: None,
             physical_token: None,
-            schema: Some(ctx.copy_retained_text(
-                "FCStd ViewProvider ShapeMaterial",
-                "FCStd GUI appearance literal text",
-            )?),
+            schema: Some("FCStd ViewProvider ShapeMaterial".to_owned()),
             category: None,
             base_color: Some(decode_color(packed_color, transparency)?),
             textures: Vec::new(),
@@ -1004,9 +1001,7 @@ fn transfer_schema_one<'ctx>(
                 source_entity_id: Some(
                     ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
                 ),
-                object_type: Some(
-                    ctx.copy_retained_text("ViewProvider", "FCStd GUI appearance literal text")?,
-                ),
+                object_type: Some("ViewProvider".to_owned()),
                 visible: None,
                 channels: BTreeMap::new(),
             });
@@ -5627,10 +5622,7 @@ fn transfer_shape_appearances(
                         source_entity_id: Some(
                             ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
                         ),
-                        object_type: Some(ctx.copy_retained_text(
-                            "ViewProvider ShapeAppearance",
-                            "FCStd GUI appearance literal text",
-                        )?),
+                        object_type: Some("ViewProvider ShapeAppearance".to_owned()),
                         visible: None,
                         channels: BTreeMap::new(),
                     });
@@ -5830,9 +5822,7 @@ fn material_appearance(
         library_id: None,
         visual_guid: None,
         physical_token: None,
-        schema: Some(
-            ctx.copy_retained_text("FCStd ShapeAppearance", "FCStd GUI appearance literal text")?,
-        ),
+        schema: Some("FCStd ShapeAppearance".to_owned()),
         category: None,
         base_color: Some(decode_color(
             material.diffuse,
@@ -5931,17 +5921,14 @@ fn bind_material_faces(
                 source_entity_id: Some(
                     ctx.copy_retained_text(object_id, "FCStd GUI binding source identity")?,
                 ),
-                object_type: Some(ctx.copy_retained_text(
-                    "ViewProvider ShapeAppearance",
-                    "FCStd GUI appearance literal text",
-                )?),
+                object_type: Some("ViewProvider ShapeAppearance".to_owned()),
                 visible: None,
                 channels: {
                     let mut channels = BTreeMap::new();
                     ctx.insert_btree_map(
                         &mut channels,
                         cadmpeg_core::nonblank_literal!("precedence"),
-                        ctx.copy_retained_text("face_over_object", "FCStd GUI binding precedence")?,
+                        "face_over_object".to_owned(),
                         "FCStd GUI binding channels",
                     )?;
                     channels
