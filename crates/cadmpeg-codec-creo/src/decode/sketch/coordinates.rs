@@ -79,7 +79,7 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
         let point_ids = segment.point_ids();
         if !ctx.all_by(
             &point_ids,
-            |point_id| Ok(!ambiguous_point_ids.contains(point_id)),
+            |point_id| Ok(!ctx.contains_btree_set(&ambiguous_point_ids, point_id, "creo section ambiguous point ids contains")?),
             "creo saved segment point IDs",
         )? {
             continue;
@@ -109,7 +109,7 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
             _ => None,
         })
     {
-        if ambiguous_point_ids.contains(&segment.center_id) {
+        if ctx.contains_btree_set(&ambiguous_point_ids, &segment.center_id, "creo section ambiguous point ids contains")? {
             continue;
         }
         let Some((center, _)) = saved_section_circle_values(ctx, definition, segment)? else {
@@ -137,9 +137,9 @@ fn append_point_on_line_equations(
             Some([Some(second_u), Some(second_v)]),
             Some(target_coordinates),
         ) = (
-            coordinates.get(&first),
-            coordinates.get(&second),
-            coordinates.get(&target),
+            ctx.get_btree_map(&coordinates, &first, "creo section coordinates get")?,
+            ctx.get_btree_map(&coordinates, &second, "creo section coordinates get")?,
+            ctx.get_btree_map(&coordinates, &target, "creo section coordinates get")?,
         )
         else {
             continue;
@@ -385,50 +385,27 @@ pub(in crate::decode) fn resolved_section_coordinates(
             ambiguous: BTreeSet::new(),
         },
     };
-    let mut segment_counts = BTreeMap::new();
+    let saved_segment_points = saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
+    let mut segment_counts = std::collections::HashMap::<u32, usize>::new();
+    let mut line_candidates = Vec::new();
     if let Some(table) = definition.segments.as_ref() {
-        for segment in ctx
-            .admit_iter(table.rows.as_slice(), "creo section segment count rows")?
-            .filter_map(|row| match row {
-                SegmentRow::Ordinary(segment) => Some(segment),
-                _ => None,
-            })
-        {
-            *ctx.entry_btree_map(
-                &mut segment_counts,
-                segment.external_id,
-                "creo section segment count nodes",
-            )?
-            .or_insert(0usize) += 1;
+        for row in ctx.admit_iter(table.rows.as_slice(), "creo section line segment rows")? {
+            let SegmentRow::Ordinary(segment) = row else { continue; };
+            *ctx.entry_hash_map(&mut segment_counts, segment.external_id, "creo section segment count nodes")?.or_default() += 1;
+            if matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_)) {
+                ctx.push_vec(&mut line_candidates, segment, "creo section line candidates")?;
+            }
         }
     }
-    let saved_segment_points =
-        saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
-    let segments = if let Some(table) = definition.segments.as_ref() {
-        ctx.collect_vec(
-            ctx.admit_iter(table.rows.as_slice(), "creo section line segment rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Ordinary(segment) => Some(segment),
-                    _ => None,
-                })
-                .filter(|segment| {
-                    matches!(
-                        segment.kind,
-                        crate::feature::definitions::FeatureSegmentKind::Line(_)
-                    )
-                })
-                .filter(|segment| segment_counts[&segment.external_id] == 1)
-                .filter(|segment| {
-                    segment
-                        .point_ids()
-                        .iter()
-                        .all(|point_id| !ambiguous_point_ids.contains(point_id))
-                }),
-            "creo section line segments",
-        )?
-    } else {
-        Vec::new()
-    };
+    let mut segments = Vec::new();
+    for segment in ctx.admit_iter(line_candidates, "creo section line candidate rows")? {
+        if segment_counts[&segment.external_id] != 1 { continue; }
+        let mut unambiguous = true;
+        for point_id in segment.point_ids() {
+            if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")? { unambiguous = false; break; }
+        }
+        if unambiguous { ctx.push_vec(&mut segments, segment, "creo section line segments")?; }
+    }
     let mut coincident_points = Vec::new();
     let ControlFlow::Continue(()) =
         visit_section_skamps::<std::convert::Infallible>(ctx, definition, true, |skamp| {
@@ -474,10 +451,15 @@ pub(in crate::decode) fn resolved_section_coordinates(
             if pair
                 .iter()
                 .any(|point| matches!(point, SectionPointSource::Point(_)))
-                && pair.iter().all(|point| match point {
-                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-                    SectionPointSource::Value(_) => true,
-                })
+                && {
+                    let mut unambiguous = true;
+                    for point in pair {
+                        if let SectionPointSource::Point(point_id) = point {
+                            if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point lookup")? { unambiguous = false; break; }
+                        }
+                    }
+                    unambiguous
+                }
             {
                 ctx.push_vec(
                     &mut coincident_points,
@@ -501,10 +483,15 @@ pub(in crate::decode) fn resolved_section_coordinates(
             if !has_point {
                 return Ok(ControlFlow::Continue(()));
             }
-            let unambiguous = pair.iter().all(|point| match point {
-                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-                SectionPointSource::Value(_) => true,
-            });
+            let unambiguous = {
+                let mut unambiguous = true;
+                for point in pair.iter() {
+                    if let SectionPointSource::Point(point_id) = point {
+                        if ctx.contains_btree_set(&ambiguous_point_ids, point_id, "creo section ambiguous point ids contains")? { unambiguous = false; break; }
+                    }
+                }
+                unambiguous
+            };
             if unambiguous {
                 ctx.push_vec(
                     &mut same_coordinate_points,
@@ -521,7 +508,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             if let Some((first, second, coordinate)) =
                 section_skamp_point_on_line(ctx, definition, skamp)?
             {
-                if !ambiguous_point_ids.contains(&first) && !ambiguous_point_ids.contains(&second) {
+                if !ctx.contains_btree_set(&ambiguous_point_ids, &first, "creo section ambiguous point ids contains")? && !ctx.contains_btree_set(&ambiguous_point_ids, &second, "creo section ambiguous point ids contains")? {
                     ctx.push_vec(
                         &mut point_on_line_coordinates,
                         (first, second, coordinate),
@@ -532,7 +519,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             if let Some((point_id, coordinate, value)) =
                 section_skamp_saved_point_on_line(ctx, definition, skamp)?
             {
-                if !ambiguous_point_ids.contains(&point_id) {
+                if !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")? {
                     ctx.push_vec(
                         &mut saved_point_on_line_coordinates,
                         (point_id, coordinate, value),
@@ -550,15 +537,20 @@ pub(in crate::decode) fn resolved_section_coordinates(
             else {
                 return Ok(ControlFlow::Continue(()));
             };
-            let sources_unambiguous = point_sources.iter().all(|source| match source {
-                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
-                SectionPointSource::Value(_) => true,
-            });
+            let sources_unambiguous = {
+                let mut unambiguous = true;
+                for source in point_sources.iter() {
+                    if let SectionPointSource::Point(point_id) = source {
+                        if ctx.contains_btree_set(&ambiguous_point_ids, point_id, "creo section ambiguous point ids contains")? { unambiguous = false; break; }
+                    }
+                }
+                unambiguous
+            };
             if !sources_unambiguous {
                 return Ok(ControlFlow::Continue(()));
             }
             let point_unambiguous = match point {
-                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
+                SectionPointSource::Point(point_id) => !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")?,
                 SectionPointSource::Value(_) => true,
             };
             if point_unambiguous {
@@ -584,15 +576,20 @@ pub(in crate::decode) fn resolved_section_coordinates(
             if !has_point {
                 return Ok(ControlFlow::Continue(()));
             }
-            let points_unambiguous = [first, second].into_iter().all(|point| match point {
-                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
-                SectionPointSource::Value(_) => true,
-            });
+            let points_unambiguous = {
+                let mut unambiguous = true;
+                for point in [first, second].into_iter() {
+                    if let SectionPointSource::Point(point_id) = point {
+                        if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")? { unambiguous = false; break; }
+                    }
+                }
+                unambiguous
+            };
             if !points_unambiguous {
                 return Ok(ControlFlow::Continue(()));
             }
             let axis_unambiguous = match axis {
-                SectionSymmetryAxis::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
+                SectionSymmetryAxis::Point(point_id) => !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")?,
                 SectionSymmetryAxis::Value(_) => true,
             };
             if axis_unambiguous {
@@ -612,13 +609,18 @@ pub(in crate::decode) fn resolved_section_coordinates(
             else {
                 return Ok(ControlFlow::Continue(()));
             };
-            if ambiguous_point_ids.contains(&center) {
+            if ctx.contains_btree_set(&ambiguous_point_ids, &center, "creo section ambiguous point ids contains")? {
                 return Ok(ControlFlow::Continue(()));
             }
-            let points_unambiguous = [first, second].into_iter().all(|point| match point {
-                SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
-                SectionPointSource::Value(_) => true,
-            });
+            let points_unambiguous = {
+                let mut unambiguous = true;
+                for point in [first, second].into_iter() {
+                    if let SectionPointSource::Point(point_id) = point {
+                        if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")? { unambiguous = false; break; }
+                    }
+                }
+                unambiguous
+            };
             if points_unambiguous {
                 ctx.push_vec(
                     &mut point_symmetric_constraints,
@@ -757,13 +759,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         } else {
             ((second, first, coordinate), -delta)
         };
-        ctx.admit_btree_entry(
-            &signed_dimensions,
-            &key,
-            "creo section signed dimension nodes",
-        )?;
-        signed_dimensions
-            .entry(key)
+        ctx.entry_btree_map(&mut signed_dimensions, key, "creo section signed dimension nodes")?
             .and_modify(|stored| {
                 if stored.is_some_and(|stored| stored != canonical_delta) {
                     *stored = None;
@@ -1069,7 +1065,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             if let Some((SectionPointSource::Point(point_id), midpoint)) =
                 section_skamp_arc_midpoint_source(ctx, definition, skamp, &solved_coordinates)?
             {
-                if !ambiguous_point_ids.contains(&point_id) {
+                if !ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")? {
                     ctx.push_vec(
                         &mut arc_midpoint_constraints,
                         (point_id, midpoint),
@@ -1111,13 +1107,12 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
     let duplicate_segment = matching_segments.next().is_some();
     let point_coordinate =
         |point_id: u32, coordinate: SectionAxis| -> Result<Result<Option<f64>, ()>, CodecError> {
-            if ambiguous_point_ids.contains(&point_id) {
+            if ctx.contains_btree_set(&ambiguous_point_ids, &point_id, "creo section ambiguous point ids contains")? {
                 return Ok(Err(()));
             }
             let mut first = None;
             let mut scale = 1.0_f64;
-            if let Some(value) = coordinates
-                .get(&point_id)
+            if let Some(value) = ctx.get_btree_map(&coordinates, &point_id, "creo section coordinates get")?
                 .and_then(|point| point[coordinate.index()])
             {
                 if !value.is_finite() {
@@ -1144,8 +1139,7 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
             let Some(first) = first else {
                 return Ok(Ok(None));
             };
-            let stored_agrees = coordinates
-                .get(&point_id)
+            let stored_agrees = ctx.get_btree_map(&coordinates, &point_id, "creo section coordinates get")?
                 .and_then(|point| point[coordinate.index()])
                 .is_none_or(|value| (value - first).abs() <= EPS_SECTION_COORDINATE * scale);
             if !stored_agrees {
@@ -1565,17 +1559,13 @@ mod tests {
     #[test]
     fn section_segment_counts_refuse_before_tree_node() {
         let definition = incomplete_segment_definition();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        // Two reconciled point IDs and two point nodes precede the segment count.
-        policy.limits.max_collection_items = 4;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("test input admitted");
-        assert!(
-            matches!(super::resolved_section_coordinates(&ctx, &definition),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "creo section segment count nodes")
+        let error = crate::test_support::last_refusal_at(
+            &[0], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo section segment count nodes",
+            |ctx| super::resolved_section_coordinates(ctx, &definition),
         );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "creo section segment count nodes"));
         assert_eq!(
             crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &definition))
                 .expect("test section solve")
