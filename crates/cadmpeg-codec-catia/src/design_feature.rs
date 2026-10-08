@@ -1959,6 +1959,9 @@ fn native_operation_owned_objects<'a>(
     objects: &BTreeMap<&'a str, &'a CatiaDesignObject>,
     operations: &HashSet<&'a str>,
 ) -> Result<HashMap<&'a str, Vec<&'a CatiaDesignObject>>, CodecError> {
+    if operations.is_empty() {
+        return Ok(HashMap::new());
+    }
     let mut cache_storage = ctx.reserve_scoped(0, "catia_feature_operation_owner_cache")?;
     let mut resolved = HashMap::<&str, Option<&str>>::new();
     let mut groups = HashMap::new();

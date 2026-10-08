@@ -164,3 +164,14 @@ fn operation_groups_admit_many_independent_operations_without_cross_products() {
     })
     .expect("one group per operation fits the allowance");
 }
+
+#[test]
+fn empty_operation_population_skips_owner_index_work() {
+    let object = design_object("object", Some("absent"));
+    let objects = BTreeMap::from([(object.id.as_str(), &object)]);
+    crate::test_support::with_work_limit(0, |ctx| {
+        assert!(native_operation_owned_objects(ctx, &objects, &HashSet::new())?.is_empty());
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("no operation population requires no ownership resolution");
+}
