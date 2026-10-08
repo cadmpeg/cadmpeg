@@ -377,7 +377,7 @@ fn parse_field_specs(
         let value_start = cursor;
         loop {
             ctx.charge_work(1, "iges compressed Directory field value")?;
-            if !bytes.get(cursor).is_some_and(|byte| *byte != b'@') {
+            if bytes.get(cursor).is_none_or(|byte| *byte == b'@') {
                 break;
             }
             cursor += 1;

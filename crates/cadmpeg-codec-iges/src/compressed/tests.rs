@@ -56,7 +56,7 @@ fn normalize_work_refusal(source: &[u8], operation: &str) -> CodecError {
     )
 }
 
-fn assert_work_limit(error: CodecError, operation: &str, additional: u64) {
+fn assert_work_limit(error: &CodecError, operation: &str, additional: u64) {
     assert!(matches!(error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
@@ -68,7 +68,7 @@ fn assert_work_limit(error: CodecError, operation: &str, additional: u64) {
 #[test]
 fn compressed_line_endings_refuse_work_before_scan() {
     let error = with_work_limit(b"line\n", 0, |ctx| split_lines(b"line\n", ctx).unwrap_err());
-    assert_work_limit(error, "iges compressed ASCII line endings", 5);
+    assert_work_limit(&error, "iges compressed ASCII line endings", 5);
 }
 
 #[test]
@@ -84,19 +84,19 @@ fn compressed_global_hollerith_count_refuses_utf8_work() {
             })
         },
     );
-    assert_work_limit(error, "iges compressed Global Hollerith count", 1);
+    assert_work_limit(&error, "iges compressed Global Hollerith count", 1);
 }
 
 #[test]
 fn compressed_hollerith_digit_scan_refuses_work_before_probe() {
     let error = with_work_limit(b"1H,", 0, |ctx| hollerith_at(b"1H,", 0, ctx).unwrap_err());
-    assert_work_limit(error, "iges compressed Global Hollerith digits", 1);
+    assert_work_limit(&error, "iges compressed Global Hollerith digits", 1);
 }
 
 #[test]
 fn compressed_hollerith_count_refuses_utf8_work() {
     let error = with_work_limit(b"1H,", 2, |ctx| hollerith_at(b"1H,", 0, ctx).unwrap_err());
-    assert_work_limit(error, "iges compressed Global Hollerith count", 1);
+    assert_work_limit(&error, "iges compressed Global Hollerith count", 1);
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn compressed_sequence_digit_scan_refuses_work_before_probe() {
     let error = with_work_limit(b"1", 0, |ctx| {
         parse_sequence(b"1", 0, "test", ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges compressed sequence digits", 1);
+    assert_work_limit(&error, "iges compressed sequence digits", 1);
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn compressed_sequence_number_refuses_utf8_work() {
     let error = with_work_limit(b"1", 2, |ctx| {
         parse_sequence(b"1", 0, "test", ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges compressed sequence number", 1);
+    assert_work_limit(&error, "iges compressed sequence number", 1);
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn compressed_directory_specifier_scan_refuses_work_before_specifier() {
     let error = with_work_limit(b"@1_116", 0, |ctx| {
         parse_field_specs(b"@1_116", ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges compressed Directory specifiers", 1);
+    assert_work_limit(&error, "iges compressed Directory specifiers", 1);
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn compressed_directory_field_digit_scan_refuses_work_before_digit() {
     let error = with_work_limit(b"@1_116", 1, |ctx| {
         parse_field_specs(b"@1_116", ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges compressed Directory field digits", 1);
+    assert_work_limit(&error, "iges compressed Directory field digits", 1);
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn compressed_directory_field_number_refuses_utf8_work() {
     let error = with_work_limit(b"@1_116", 3, |ctx| {
         parse_field_specs(b"@1_116", ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges compressed Directory field number", 1);
+    assert_work_limit(&error, "iges compressed Directory field number", 1);
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn compressed_directory_field_parse_refuses_after_utf8_admission() {
     let error = with_work_limit(b"@1_116", 4, |ctx| {
         parse_field_specs(b"@1_116", ctx).unwrap_err()
     });
-    assert_work_limit_at(error, "iges compressed Directory field index", 4, 1);
+    assert_work_limit_at(&error, "iges compressed Directory field index", 4, 1);
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn compressed_directory_field_value_scan_refuses_work_before_value() {
     let error = with_work_limit(b"@1_116", 5, |ctx| {
         parse_field_specs(b"@1_116", ctx).unwrap_err()
     });
-    assert_work_limit_at(error, "iges compressed Directory field value", 5, 1);
+    assert_work_limit_at(&error, "iges compressed Directory field value", 5, 1);
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn compressed_directory_record_line_scan_refuses_work_after_sequence_admission()
     let error = with_work_limit(b"D1;", 4, |ctx| {
         parse_directory_record(&lines, 0, b';', ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges compressed Directory record lines", 1);
+    assert_work_limit(&error, "iges compressed Directory record lines", 1);
 }
 
 #[test]
@@ -179,21 +179,21 @@ fn compressed_directory_field_text_refuses_utf8_work() {
         )
         .unwrap_err()
     });
-    assert_work_limit(error, "iges compressed Directory field text", 1);
+    assert_work_limit(&error, "iges compressed Directory field text", 1);
 }
 
 #[test]
 fn compressed_start_section_scan_refuses_work_before_section_probe() {
     let source = compressed_points_file();
     let error = normalize_work_refusal(&source, "iges compressed Start section lines");
-    assert_work_limit(error, "iges compressed Start section lines", 1);
+    assert_work_limit(&error, "iges compressed Start section lines", 1);
 }
 
 #[test]
 fn compressed_global_section_scan_refuses_work_after_start_scan() {
     let source = compressed_points_file();
     let error = normalize_work_refusal(&source, "iges compressed Global section lines");
-    assert_work_limit(error, "iges compressed Global section lines", 1);
+    assert_work_limit(&error, "iges compressed Global section lines", 1);
 }
 
 #[test]
@@ -318,7 +318,7 @@ fn compressed_entity_index_refuses_collection_limit_before_growth() {
 fn compressed_normalization_refuses_work_before_directory_loop() {
     let source = compressed_points_file();
     let error = normalize_work_refusal(&source, "iges_compressed_ascii_normalization");
-    assert_work_limit(error, "iges_compressed_ascii_normalization", 1);
+    assert_work_limit(&error, "iges_compressed_ascii_normalization", 1);
 }
 
 #[test]
@@ -782,7 +782,7 @@ fn compressed_reserved_fields_use_fixed_directory_right_justification() {
     );
 }
 
-fn assert_work_limit_at(error: CodecError, operation: &str, used: u64, additional: u64) {
+fn assert_work_limit_at(error: &CodecError, operation: &str, used: u64, additional: u64) {
     assert!(matches!(error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
@@ -805,14 +805,14 @@ fn compressed_global_hollerith_parse_refuses_after_utf8_admission() {
             })
         },
     );
-    assert_work_limit(error, "iges compressed Global Hollerith number", 1);
+    assert_work_limit(&error, "iges compressed Global Hollerith number", 1);
 }
 
 #[test]
 fn compressed_hollerith_parse_refuses_after_utf8_admission() {
     // Two digit probes and one UTF-8 byte precede the one-byte parse.
     let error = with_work_limit(b"1H,", 3, |ctx| hollerith_at(b"1H,", 0, ctx).unwrap_err());
-    assert_work_limit_at(error, "iges compressed Global Hollerith number", 3, 1);
+    assert_work_limit_at(&error, "iges compressed Global Hollerith number", 3, 1);
 }
 
 #[test]
@@ -821,7 +821,7 @@ fn compressed_sequence_parse_refuses_after_utf8_admission() {
     let error = with_work_limit(b"1", 3, |ctx| {
         parse_sequence(b"1", 0, "test", ctx).unwrap_err()
     });
-    assert_work_limit_at(error, "iges compressed sequence value", 3, 1);
+    assert_work_limit_at(&error, "iges compressed sequence value", 3, 1);
 }
 
 #[test]
@@ -842,5 +842,5 @@ fn compressed_directory_integer_parse_refuses_after_utf8_admission() {
             })
         },
     );
-    assert_work_limit(error, "iges compressed Directory field integer", 1);
+    assert_work_limit(&error, "iges compressed Directory field integer", 1);
 }

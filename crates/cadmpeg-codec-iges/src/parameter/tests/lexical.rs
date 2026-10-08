@@ -26,7 +26,7 @@ fn with_work_limit<T>(
     run(&ctx)
 }
 
-fn assert_work_limit(error: cadmpeg_core::CodecError, operation: &str, additional: u64) {
+fn assert_work_limit(error: &cadmpeg_core::CodecError, operation: &str, additional: u64) {
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(error,
@@ -38,7 +38,7 @@ fn assert_work_limit(error: cadmpeg_core::CodecError, operation: &str, additiona
 }
 
 fn assert_work_limit_at(
-    error: cadmpeg_core::CodecError,
+    error: &cadmpeg_core::CodecError,
     operation: &str,
     used: u64,
     additional: u64,
@@ -54,7 +54,7 @@ fn assert_work_limit_at(
     ));
 }
 
-fn assert_tokenize_work_refusal(error: TokenizeFailure, operation: &str, additional: u64) {
+fn assert_tokenize_work_refusal(error: &TokenizeFailure, operation: &str, additional: u64) {
     use cadmpeg_core::decode::ResourceDimension;
 
     assert!(matches!(error,
@@ -66,7 +66,7 @@ fn assert_tokenize_work_refusal(error: TokenizeFailure, operation: &str, additio
 }
 
 fn assert_tokenize_work_refusal_at(
-    error: TokenizeFailure,
+    error: &TokenizeFailure,
     operation: &str,
     used: u64,
     additional: u64,
@@ -87,7 +87,7 @@ fn parameter_layout_hollerith_digit_scan_refuses_work_before_probe() {
     let error = with_work_limit(b"1H,a", 0, |ctx| {
         super::super::layout_hollerith(b"1H,a", 0, ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges parameter layout Hollerith digits", 1);
+    assert_work_limit(&error, "iges parameter layout Hollerith digits", 1);
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn parameter_layout_hollerith_count_refuses_utf8_work() {
     let error = with_work_limit(b"1H,a", 2, |ctx| {
         super::super::layout_hollerith(b"1H,a", 0, ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges parameter layout Hollerith count", 1);
+    assert_work_limit(&error, "iges parameter layout Hollerith count", 1);
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn parameter_layout_hollerith_parse_refuses_after_utf8_admission() {
     let error = with_work_limit(b"1H,a", 3, |ctx| {
         super::super::layout_hollerith(b"1H,a", 0, ctx).unwrap_err()
     });
-    assert_work_limit_at(error, "iges parameter layout Hollerith number", 3, 1);
+    assert_work_limit_at(&error, "iges parameter layout Hollerith number", 3, 1);
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn parameter_layout_field_scan_refuses_work_before_field() {
     let error = with_work_limit(b"1;", 0, |ctx| {
         super::super::layout_parameter_cards(b"1;", ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges parameter layout fields", 1);
+    assert_work_limit(&error, "iges parameter layout fields", 1);
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn parameter_layout_field_bytes_refuse_work_before_byte() {
     let error = with_work_limit(b"1;", 3, |ctx| {
         super::super::layout_parameter_cards(b"1;", ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges parameter layout field bytes", 1);
+    assert_work_limit(&error, "iges parameter layout field bytes", 1);
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn parameter_hollerith_digit_scan_refuses_work_before_probe() {
     let error = with_work_limit(b"1Ha", 0, |ctx| {
         super::super::hollerith(b"1Ha", &[], 0, GlobalTable::V5Later, ctx).unwrap_err()
     });
-    assert_tokenize_work_refusal(error, "iges parameter Hollerith digits", 1);
+    assert_tokenize_work_refusal(&error, "iges parameter Hollerith digits", 1);
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn parameter_hollerith_count_refuses_utf8_work() {
     let error = with_work_limit(b"1Ha", 2, |ctx| {
         super::super::hollerith(b"1Ha", &[], 0, GlobalTable::V5Later, ctx).unwrap_err()
     });
-    assert_tokenize_work_refusal(error, "iges parameter Hollerith count", 1);
+    assert_tokenize_work_refusal(&error, "iges parameter Hollerith count", 1);
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn parameter_hollerith_parse_refuses_after_utf8_admission() {
     let error = with_work_limit(b"1Ha", 3, |ctx| {
         super::super::hollerith(b"1Ha", &[], 0, GlobalTable::V5Later, ctx).unwrap_err()
     });
-    assert_tokenize_work_refusal_at(error, "iges parameter Hollerith count value", 3, 1);
+    assert_tokenize_work_refusal_at(&error, "iges parameter Hollerith count value", 3, 1);
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn parameter_numeric_real_shape_refuses_work_before_scan() {
     let error = with_work_limit(b"1E2", 0, |ctx| {
         super::super::decimal_shape(b"1E2", ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges numeric real shape", 3);
+    assert_work_limit(&error, "iges numeric real shape", 3);
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn parameter_numeric_token_refuses_work_before_scan() {
     let error = with_work_limit(b"12", 0, |ctx| {
         super::super::numeric_with_limits(b"12", 0..2, declared_numeric_limits(), ctx).unwrap_err()
     });
-    assert_tokenize_work_refusal(error, "iges numeric token scan", 2);
+    assert_tokenize_work_refusal(&error, "iges numeric token scan", 2);
 }
 
 fn numeric_parse_refusal(text: &'static [u8], operation: &str) -> cadmpeg_core::CodecError {
@@ -189,13 +189,13 @@ fn numeric_parse_refusal(text: &'static [u8], operation: &str) -> cadmpeg_core::
 #[test]
 fn parameter_numeric_real_parse_refuses_by_token_length() {
     let error = numeric_parse_refusal(b"1.5", "iges numeric real token");
-    assert_work_limit(error, "iges numeric real token", 3);
+    assert_work_limit(&error, "iges numeric real token", 3);
 }
 
 #[test]
 fn parameter_numeric_integer_parse_refuses_by_token_length() {
     let error = numeric_parse_refusal(b"12", "iges numeric integer token");
-    assert_work_limit(error, "iges numeric integer token", 2);
+    assert_work_limit(&error, "iges numeric integer token", 2);
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn parameter_token_scan_refuses_work_before_token_probe() {
     let error = with_work_limit(b"1;", 0, |ctx| {
         tokenize(b"1;", &[], b',', b';', GlobalTable::V5Later, ctx).unwrap_err()
     });
-    assert_tokenize_work_refusal(error, "iges parameter token scan", 1);
+    assert_tokenize_work_refusal(&error, "iges parameter token scan", 1);
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn parameter_leading_space_scan_refuses_work_after_token_admission() {
     let error = with_work_limit(b"1;", 1, |ctx| {
         tokenize(b"1;", &[], b',', b';', GlobalTable::V5Later, ctx).unwrap_err()
     });
-    assert_tokenize_work_refusal(error, "iges parameter leading spaces", 1);
+    assert_tokenize_work_refusal(&error, "iges parameter leading spaces", 1);
 }
 
 #[test]
