@@ -1058,7 +1058,12 @@ fn active_configuration_name_length_mismatch_needs_no_comparison_work() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut active = super::ManifestActiveConfiguration::Unique(1, Some("a".into()));
-    active.merge(&ctx, super::ManifestActiveConfiguration::Unique(1, Some("b".repeat(4096)))).unwrap();
+    active
+        .merge(
+            &ctx,
+            super::ManifestActiveConfiguration::Unique(1, Some("b".repeat(4096))),
+        )
+        .unwrap();
     assert_eq!(active, super::ManifestActiveConfiguration::Ambiguous);
     ctx.finish_session().unwrap();
 }

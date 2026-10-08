@@ -774,7 +774,12 @@ fn reachable_shells<'ctx>(
         |region| Ok(u16_from_ref_or_none(region.refs[4]).is_some()),
         "find typed Parasolid shell heads",
     )? {
-        return Ok((ShellReachability { intervals: BTreeMap::new() }, storage));
+        return Ok((
+            ShellReachability {
+                intervals: BTreeMap::new(),
+            },
+            storage,
+        ));
     }
     let (by_attr, _index_storage) = ctx.unique_index(
         candidates.iter().map(|&(_, shell)| (shell.attr, shell)),
@@ -1535,20 +1540,33 @@ mod tests {
         });
         let candidates: Vec<_> = shells.iter().map(|shell| (20, shell)).collect();
         for head in [0, 8] {
-            let region = RegionNode { attr: 20, node_id: 20, refs: [0, 3, 0, 0, head], offset: 0, end: 0 };
-            let regions = Regions { by_attr: BTreeMap::from([(20, &region)]), by_previous: BTreeMap::new() };
+            let region = RegionNode {
+                attr: 20,
+                node_id: 20,
+                refs: [0, 3, 0, 0, head],
+                offset: 0,
+                end: 0,
+            };
+            let regions = Regions {
+                by_attr: BTreeMap::from([(20, &region)]),
+                by_previous: BTreeMap::new(),
+            };
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             if head == 0 {
                 policy.limits.max_materialized_bytes = 0;
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let (reachable, _storage) = super::reachable_shells(&ctx, &regions, &candidates).unwrap();
+            let (reachable, storage) =
+                super::reachable_shells(&ctx, &regions, &candidates).unwrap();
             assert_eq!(reachable.intervals.len(), if head == 0 { 0 } else { 2 });
             for attr in [8, 9, 10] {
-                assert_eq!(reachable.contains(&ctx, &regions, 20, attr).unwrap(), head == 8 && attr != 10);
+                assert_eq!(
+                    reachable.contains(&ctx, &regions, 20, attr).unwrap(),
+                    head == 8 && attr != 10
+                );
             }
-            drop(_storage);
+            drop(storage);
             ctx.finish_session().unwrap();
         }
     }
@@ -1581,7 +1599,8 @@ mod tests {
                     by_previous: BTreeMap::default(),
                 };
                 let candidates: Vec<_> = shells.iter().map(|shell| (20, shell)).collect();
-                let (reachable, _storage) = super::reachable_shells(ctx, &regions, &candidates).unwrap();
+                let (reachable, _storage) =
+                    super::reachable_shells(ctx, &regions, &candidates).unwrap();
                 for region in &nodes {
                     let mut expected = BTreeSet::new();
                     let mut current = region.refs[4];
