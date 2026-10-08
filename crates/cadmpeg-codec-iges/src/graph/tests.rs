@@ -721,7 +721,6 @@ fn graph_variable_traversals_refuse_at_their_own_boundaries() {
         "iges reference summary sources",
         "iges reference summary edges",
         "iges transform cycle sources",
-        "iges transform successor search",
         "iges transform cycle starts",
         "iges transform reference cycle walk",
         "iges cyclic transform nodes",
@@ -915,25 +914,48 @@ fn parameter_reference_storage_stays_live_after_append() {
 }
 
 #[test]
-fn parameter_expected_forms_refuse_at_the_predicate_scan() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn parameter_resolver_append_transfers_into_an_empty_graph_bucket() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let directory = [directory_target(1, 116)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One source group and one edge; transferring the vector needs no new slot.
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+    assert_eq!(resolver.resolve(
+        1, 0, 3, ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry), |_| true,
+    ).unwrap(), None);
+    let mut graph = BTreeMap::from([(1, Vec::new())]);
+    let storage = resolver.append_to(&mut graph).unwrap();
+    assert_eq!(graph[&1].len(), 1);
+    assert_eq!(graph[&1][0].resolution, Resolution::Dangling);
+    assert_eq!(graph[&1][0].origin, ReferenceOrigin::Parameter { index: 0 });
+    drop(graph);
+    drop(storage);
+}
+
+#[test]
+fn parameter_expected_forms_match_fixed_caller_lists() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let directory = [directory_target(1, 116), directory_target(3, 116)];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     for negative in [false, true] {
-        cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits,
-            "iges parameter expected form search",
-            |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let arena = DecodeArena::new();
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                let resolver = ParameterResolver::new(&directory, &ctx)?;
-                if negative {
-                    resolver.resolve_negative_type(1, 0, -3, 116, &[0])
-                } else {
-                    resolver.resolve_type(1, 0, 3, 116, &[0])
-                }
-            },
-        );
+        let resolver = ParameterResolver::new(&directory, &ctx).unwrap();
+        for (index, (entity_type, forms, expected)) in [
+            (116, &[0][..], Some(3)),
+            (116, &[1][..], None),
+            (116, &[1, 0][..], Some(3)),
+            (116, &[][..], Some(3)),
+            (124, &[0][..], None),
+        ].into_iter().enumerate() {
+            let result = if negative {
+                resolver.resolve_negative_type(1, index, -3, entity_type, forms)
+            } else {
+                resolver.resolve_type(1, index, 3, entity_type, forms)
+            };
+            assert_eq!(result.unwrap(), expected);
+        }
     }
 }

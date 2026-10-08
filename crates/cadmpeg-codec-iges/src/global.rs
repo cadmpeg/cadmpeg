@@ -536,10 +536,9 @@ pub(crate) fn layout_global_cards(
 
     let mut cards = Vec::new();
     let mut card = ctx.vector_storage(72, "iges global layout card bytes")?;
-    for field in ctx
-        .admit_iter(&fields, "iges global layout field spans")?
-        .map(|range| &bytes[range.clone()])
-    {
+    let mut field_spans = fields.iter();
+    while let Some(range) = ctx.next_charged(&mut field_spans, "iges global layout field spans")? {
+        let field = &bytes[range.clone()];
         let leading = ctx
             .position_by(
                 field,
@@ -831,63 +830,44 @@ pub(crate) fn parse<'ctx>(
 fn date_value_is_valid(
     bytes: &[u8],
     accepts_four_digit_date: bool,
-    ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> bool {
     let dot = match bytes.len() {
         13 => 6,
         15 if accepts_four_digit_date => 8,
-        _ => return Ok(false),
+        _ => return false,
     };
     if bytes.get(dot) != Some(&b'.')
-        || ctx.any_by(
-            0..bytes.len(),
-            |index| Ok(index != dot && !bytes[index].is_ascii_digit()),
-            "iges global date digits",
-        )?
+        || bytes.iter().enumerate().any(
+            |(index, byte)| index != dot && !byte.is_ascii_digit(),
+        )
     {
-        return Ok(false);
+        return false;
     }
-    let number = |start: usize, end: usize| -> Result<Option<u32>, CodecError> {
-        let Ok(value) = ctx.validate_utf8(&bytes[start..end], "iges global date component")? else {
-            return Ok(None);
-        };
-        Ok(ctx
-            .parse_text::<u32>(value, "iges global date component number")?
-            .ok())
+    let number = |start: usize| {
+        10 * u32::from(bytes[start] - b'0') + u32::from(bytes[start + 1] - b'0')
     };
     let (month_start, day_start, hour_start, minute_start, second_start) = if dot == 6 {
         (2, 4, 7, 9, 11)
     } else {
         (4, 6, 9, 11, 13)
     };
-    let Some(month) = number(month_start, month_start + 2)? else {
-        return Ok(false);
-    };
+    let month = number(month_start);
     if !(1..=12).contains(&month) {
-        return Ok(false);
+        return false;
     }
-    let Some(day) = number(day_start, day_start + 2)? else {
-        return Ok(false);
-    };
+    let day = number(day_start);
     if !(1..=31).contains(&day) {
-        return Ok(false);
+        return false;
     }
-    let Some(hour) = number(hour_start, hour_start + 2)? else {
-        return Ok(false);
-    };
+    let hour = number(hour_start);
     if hour >= 24 {
-        return Ok(false);
+        return false;
     }
-    let Some(minute) = number(minute_start, minute_start + 2)? else {
-        return Ok(false);
-    };
+    let minute = number(minute_start);
     if minute >= 60 {
-        return Ok(false);
+        return false;
     }
-    let Some(second) = number(second_start, second_start + 2)? else {
-        return Ok(false);
-    };
-    Ok(second < 60)
+    number(second_start) < 60
 }
 
 fn delegated_unit_factor_mm(name: &str) -> Option<f64> {
@@ -1107,8 +1087,7 @@ impl Resolution<'_, '_, '_> {
                 if date_value_is_valid(
                     text.as_bytes(),
                     global_table.accepts_four_digit_date(),
-                    self.ctx,
-                )? {
+                ) {
                     Supplied::Value(text)
                 } else {
                     Supplied::Malformed
