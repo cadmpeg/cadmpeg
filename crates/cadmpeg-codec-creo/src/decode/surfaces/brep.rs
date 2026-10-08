@@ -802,15 +802,22 @@ fn merge_body_components(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     components: Vec<NeutralShellSpec>,
 ) -> Result<Vec<NeutralShellSpec>, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    if components.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut components = components.into_iter();
     let Some(mut first) =
         ctx.next_charged(&mut components, "creo B-rep merged component traversal")?
     else {
         return Ok(Vec::new());
     };
-    while let Some(component) =
-        ctx.next_charged(&mut components, "creo B-rep merged component traversal")?
-    {
+    while components.len() != 0 {
+        let Some(component) = ctx.next_charged(&mut components, "creo B-rep merged component traversal")? else {
+            break;
+        };
         ctx.extend_vec(
             &mut first.faces,
             component.faces,
@@ -885,10 +892,13 @@ fn split_neutral_component_shells(
         group_storage
             .with_storage(|| ctx.reserve_vec(&mut pending, 1, "creo B-rep pending shell faces"))?;
         pending.push(start);
-        while let Some(face_id) = ctx.next_charged(
+        while !pending.is_empty() {
+            let Some(face_id) = ctx.next_charged(
             &mut std::iter::from_fn(|| pending.pop()),
             "creo B-rep pending shell face traversal",
-        )? {
+        )? else {
+                break;
+            };
             let Some(neighbours) =
                 ctx.get_btree_map(face_adjacency, &face_id, "creo face adjacency lookup")?
             else {
@@ -935,9 +945,10 @@ fn split_neutral_component_shells(
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("edge vertices indexed record"))?;
         let mut matching_shell = None;
         let mut shells = shell_specs.iter().enumerate();
-        while let Some((index, shell)) =
-            ctx.next_charged(&mut shells, "creo B-rep wire shell search")?
-        {
+        while shells.len() != 0 {
+            let Some((index, shell)) = ctx.next_charged(&mut shells, "creo B-rep wire shell search")? else {
+                break;
+            };
             if ctx.any_by(
                 &shell.faces,
                 |face_id| {
@@ -996,10 +1007,14 @@ fn component_is_closed(
     half_edges: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdge>,
     faces: &[u32],
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut curves = component_face_curves.iter();
-    while let Some(curve_id) =
-        ctx.next_charged(&mut curves, "creo B-rep closed component curve traversal")?
-    {
+    while curves.len() != 0 {
+        let Some(curve_id) = ctx.next_charged(&mut curves, "creo B-rep closed component curve traversal")? else {
+            break;
+        };
         let mut faces_used = [None; 2];
         for side in [crate::topology::Side::Zero, crate::topology::Side::One] {
             let id = HalfEdgeId {
@@ -1224,7 +1239,10 @@ fn ordered_two_edge_circle_loops<'a>(
     let mut circle_storage = ctx.reserve_scoped(0, "creo native circle loop workspace")?;
     let mut circle_loops = Vec::new();
     let mut visits = loops.iter();
-    while let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep loop traversal")? {
+    while visits.len() != 0 {
+        let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep loop traversal")? else {
+            break;
+        };
         let Some(circle) =
             native_circle_loop_geometry(ctx, &mut curves_index, lp, model_curves, source_carriers)?
         else {
@@ -1270,9 +1288,10 @@ fn ordered_two_edge_circle_loops<'a>(
     };
     let center_uv = cadmpeg_ir::math::Point2::from(center_uv);
     let mut pairs = circle_loops.iter().zip(polygons);
-    while let Some((circle, polygon)) =
-        ctx.next_charged(&mut pairs, "creo B-rep circle loop traversal")?
-    {
+    while pairs.len() != 0 {
+        let Some((circle, polygon)) = ctx.next_charged(&mut pairs, "creo B-rep circle loop traversal")? else {
+            break;
+        };
         let [first, second] = polygon.as_slice() else {
             return Ok(None);
         };
@@ -1299,9 +1318,10 @@ fn ordered_two_edge_circle_loops<'a>(
         }
     }
     let mut circles = circle_loops.iter().enumerate();
-    while let Some((index, first)) =
-        ctx.next_charged(&mut circles, "creo B-rep circle radius traversal")?
-    {
+    while circles.len() != 0 {
+        let Some((index, first)) = ctx.next_charged(&mut circles, "creo B-rep circle radius traversal")? else {
+            break;
+        };
         if ctx.any_by(
             &circle_loops[index + 1..],
             |second| Ok(scalar_values_agree(first.radius, second.radius)),
@@ -1358,9 +1378,10 @@ fn native_parameter_loop_polygon(
     let mut segment_storage = ctx.reserve_scoped(0, "creo loop parameter segment workspace")?;
     let mut segments = Vec::new();
     let mut visits = lp.half_edges().iter();
-    while let Some(half_edge) =
-        ctx.next_charged(&mut visits, "creo B-rep loop half edge traversal")?
-    {
+    while visits.len() != 0 {
+        let Some(half_edge) = ctx.next_charged(&mut visits, "creo B-rep loop half edge traversal")? else {
+            break;
+        };
         let Some(binding) = ctx.get_btree_map(incidence, half_edge, "creo incidence lookup")?
         else {
             return Ok(None);
@@ -1462,7 +1483,10 @@ fn ordered_native_parameter_face_loops<'a>(
     let mut polygon_storage = ctx.reserve_scoped(0, "creo face parameter polygon workspace")?;
     let mut polygons = Vec::new();
     let mut visits = loops.iter();
-    while let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep loop traversal")? {
+    while visits.len() != 0 {
+        let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep loop traversal")? else {
+            break;
+        };
         let Some(polygon) = polygon_storage.with_storage(|| {
             native_parameter_loop_polygon(
                 ctx,
@@ -2660,9 +2684,10 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
         };
         let mut has_unresolved_boundary_vertices = false;
         let mut visits = loops.iter();
-        while let Some(lp) =
-            ctx.next_charged(&mut visits, "creo B-rep unresolved boundary loop traversal")?
-        {
+        while visits.len() != 0 {
+            let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep unresolved boundary loop traversal")? else {
+                break;
+            };
             if ctx.any_by(
                 lp.half_edges(),
                 |half_edge| {
@@ -2696,9 +2721,10 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
         }
         let mut has_ambiguous_boundary_curve = false;
         let mut visits = loops.iter();
-        while let Some(lp) =
-            ctx.next_charged(&mut visits, "creo B-rep ambiguous boundary loop traversal")?
-        {
+        while visits.len() != 0 {
+            let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep ambiguous boundary loop traversal")? else {
+                break;
+            };
             if ctx.any_by(
                 lp.half_edges(),
                 |half_edge| {
@@ -2728,7 +2754,10 @@ pub(in super::super) fn transfer_native_brep<'ctx>(
         }
         let mut two_edge_loops_are_proven = true;
         let mut visits = loops.iter();
-        while let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep two edge loop traversal")? {
+        while visits.len() != 0 {
+            let Some(lp) = ctx.next_charged(&mut visits, "creo B-rep two edge loop traversal")? else {
+                break;
+            };
             if lp.half_edges().len() != 2 {
                 continue;
             }
