@@ -54,59 +54,34 @@ fn copious_merge_refuses_free_vertex_growth() {
 }
 
 fn assert_copious_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+    assert_copious_refusal(bytes, operation, ResourceDimension::CollectionItems);
 }
 
 fn assert_copious_retained_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
+    assert_copious_refusal(bytes, operation, ResourceDimension::RetainedBytes);
+}
+
+fn assert_copious_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimension) {
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            _ => unreachable!(),
         }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            )
+            .map_err(|error| match error {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("{other:?}"),
+            })
+    });
 }
 
 #[test]
@@ -137,15 +112,8 @@ fn copious_projection_losses_refuse_slot_and_message_limits() {
 fn copious_tuple_and_path_arrays_refuse_collection_limits() {
     let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
     for operation in [
-        "iges copious parameter index",
-        "iges copious directory index",
-        "iges copious tuple values",
-        "iges copious definition points",
         "iges copious positioned points",
-        "iges copious path points",
         "iges copious knots",
-        "iges copious finite knots",
-        "iges copious admitted knots",
         "iges copious neutral curves",
         "iges copious neutral edges",
         "iges copious wire edges",
@@ -684,15 +652,98 @@ fn copious_closed_path_intersection_refuses_work() {
         cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
     ];
-    let mut policy = DecodePolicy::service();
-    // Five indexed point visits and one end probe precede pairwise intersection checks.
-    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(points.len()) + 1;
-    crate::test_support::with_policy_context(&[], &policy, |ctx| {
-        assert!(matches!(has_form_63_self_intersection(&points, ctx),
-            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "iges planar self-intersection comparisons"));
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges planar self-intersection comparisons",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                has_form_63_self_intersection(&points, ctx)
+            })
+        },
+    );
     crate::test_support::with_service_context(&[], |ctx| {
         assert!(!has_form_63_self_intersection(&points, ctx).unwrap());
     });
+}
+
+#[test]
+fn copious_duplicate_scan_refuses_before_visiting_points() {
+    let points = [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 3];
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges copious duplicate points",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                has_forbidden_form_63_duplicate(&points, 0.0, ctx)
+            })
+        },
+    );
+}
+
+#[test]
+fn copious_closed_path_definition_points_preserve_collection_refusal() {
+    let bytes = copious_data_file(63, b"106,1,4,0,0,0,1,0,1,1,0,0;", "00000000");
+    assert_copious_collection_refusal(&bytes, "iges copious definition points");
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(
+        decoded.report().losses.is_empty(),
+        "{:#?}",
+        decoded.report().losses
+    );
+}
+
+#[test]
+fn copious_tuple_diagnostics_precede_failed_placement() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,0.1,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    for (parameters, expected) in [
+        (
+            "106,2,2,1D308,0,0,0,0;",
+            "tuple array is truncated or non-finite",
+        ),
+        (
+            "106,2,2,1D308,0,0,0,0,0;",
+            "placement produces non-finite copious points",
+        ),
+    ] {
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global(
+                    &[OwnedTestEntity {
+                        entity_type: 106,
+                        form: 12,
+                        label: "PATH".into(),
+                        status: "00000000",
+                        parameters: parameters.into(),
+                    }],
+                    global,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(decoded.ir().model.curves.is_empty());
+        assert!(decoded.ir().model.points.is_empty());
+        let projection_losses = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .collect::<Vec<_>>();
+        assert_eq!(projection_losses.len(), 1);
+        assert!(
+            projection_losses[0].message.contains(expected),
+            "{projection_losses:#?}"
+        );
+    }
+}
+
+#[test]
+fn copious_path_positions_preserve_retained_byte_refusal() {
+    let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
+    assert_copious_retained_refusal(&bytes, "iges copious positioned points");
 }
