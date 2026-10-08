@@ -103,7 +103,7 @@ fn fbb_edge_port_identities_with_namespace(
     bytes: &[u8],
     global: bool,
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    let Some(face_run) = largest_fbb_run(bytes) else {
+    let Some(face_run) = largest_fbb_run(ctx, bytes)? else {
         return Ok(None);
     };
     let after_faces = face_run.after_faces();

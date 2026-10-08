@@ -1698,7 +1698,7 @@ pub(in crate::solve) fn parse_standard_mesh_endpoint_candidates(
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Result<Option<(StandardTopologyDraft, Vec<usize>)>, CodecError> {
-    let Some(face_run) = largest_fbb_run(bytes) else {
+    let Some(face_run) = largest_fbb_run(ctx, bytes)? else {
         return Ok(None);
     };
     let face_count = face_run.face_count();

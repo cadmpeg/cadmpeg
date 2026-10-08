@@ -80,21 +80,13 @@ fn parameter_native() -> crate::native::CatiaNative {
     )
 }
 
-fn derive_semantic_indices(
+fn derive_semantic_indices<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    native: &crate::native::CatiaNative,
-) -> Result<
-    (
-        crate::native::CatiaRelationExpressionIndex,
-        crate::native::CatiaRelationExpressionEntityIndex,
-        crate::native::CatiaEntityByGraphIdentityIndex,
-        crate::native::CatiaMaximumEntityByGraphIndex,
-        crate::native::CatiaParameterBindingIndex,
-    ),
-    cadmpeg_core::CodecError,
-> {
+    native: &'a crate::native::CatiaNative,
+) -> Result<crate::native::CatiaSemanticIndices<'a>, cadmpeg_core::CodecError> {
     super::super::semantic_entity_indices(
         ctx,
+        &mut ctx.reserve_scoped(0, "test semantic indices")?,
         &native.entity_records,
         &std::collections::HashMap::new(),
     )
@@ -120,7 +112,7 @@ fn assert_semantic_lookup_refusal(native: &crate::native::CatiaNative, operation
 }
 
 #[test]
-fn native_terminal_maximum_lookup_refuses_work_and_preserves_terminal_identity() {
+fn native_terminal_maximum_entry_refuses_work_and_preserves_terminal_identity() {
     let native = crate::native::CatiaNative::decode(
         &crate::test_support::test_formula::standard_catpart_with_schema_configuration_row_chain(),
     );
@@ -135,12 +127,15 @@ fn native_terminal_maximum_lookup_refuses_work_and_preserves_terminal_identity()
         .map(|candidate| candidate.entity_id)
         .max()
         .expect("graph has an entity");
-    assert_eq!(indices.3.get(&entity.object_graph).copied(), Some(maximum));
-    assert_semantic_lookup_refusal(&native, "catia_native_terminal_maximum_lookup");
+    assert_eq!(
+        indices.maxima.get(entity.object_graph.as_str()).copied(),
+        Some(maximum)
+    );
+    assert_semantic_lookup_refusal(&native, "catia_native_terminal_maxima");
 }
 
 #[test]
-fn native_binding_graph_lookup_refuses_work_and_preserves_parameter_binding() {
+fn native_binding_graph_entry_refuses_work_and_preserves_parameter_binding() {
     let native = parameter_native();
     let indices =
         crate::test_support::with_service_context(|ctx| derive_semantic_indices(ctx, &native))
@@ -150,23 +145,21 @@ fn native_binding_graph_lookup_refuses_work_and_preserves_parameter_binding() {
         .parameter_value()
         .expect("named parameter value");
     let bound = indices
-        .4
+        .parameter_bindings
         .get(entity_record.object_graph.as_str())
         .and_then(|symbols| symbols.get(parameter.binding.value.as_str()))
         .expect("parameter graph and symbol binding");
     assert!(matches!(
         bound.as_slice(),
-        [crate::native::CatiaEntityReference::Resolved {
-            entity_id: bound_entity_id,
-            entity: bound_entity,
-            class_name: None,
-        }] if *bound_entity_id == entity_record.entity_id && bound_entity == &entity_record.id
+        [binding] if binding.entity_id == entity_record.entity_id
+            && binding.entity == entity_record.id
+            && binding.class_name.is_none()
     ));
-    assert_semantic_lookup_refusal(&native, "catia_native_binding_graph_lookup");
+    assert_semantic_lookup_refusal(&native, "catia_native_binding_graphs");
 }
 
 #[test]
-fn native_binding_symbol_lookup_refuses_work_and_preserves_parameter_binding() {
+fn native_binding_symbol_entry_refuses_work_and_preserves_parameter_binding() {
     let native = parameter_native();
     let indices =
         crate::test_support::with_service_context(|ctx| derive_semantic_indices(ctx, &native))
@@ -176,17 +169,15 @@ fn native_binding_symbol_lookup_refuses_work_and_preserves_parameter_binding() {
         .parameter_value()
         .expect("named parameter value");
     let bound = indices
-        .4
+        .parameter_bindings
         .get(entity_record.object_graph.as_str())
         .and_then(|symbols| symbols.get(parameter.binding.value.as_str()))
         .expect("parameter graph and symbol binding");
     assert!(matches!(
         bound.as_slice(),
-        [crate::native::CatiaEntityReference::Resolved {
-            entity_id: bound_entity_id,
-            entity: bound_entity,
-            class_name: None,
-        }] if *bound_entity_id == entity_record.entity_id && bound_entity == &entity_record.id
+        [binding] if binding.entity_id == entity_record.entity_id
+            && binding.entity == entity_record.id
+            && binding.class_name.is_none()
     ));
-    assert_semantic_lookup_refusal(&native, "catia_native_binding_symbol_lookup");
+    assert_semantic_lookup_refusal(&native, "catia_native_binding_symbols");
 }

@@ -230,7 +230,10 @@ pub(crate) fn transfer_native_sketch_constraints(
             "catia_sketch_constraint_sketches",
         )?;
     }
-    let mut candidates = HashMap::<(SketchId, &str), NativeSketchConstraintCandidate<'_>>::new();
+    // Candidates are keyed in their transfer order: target record offset, then
+    // target record id, then sketch.
+    let mut candidates =
+        BTreeMap::<(u64, &str, SketchId), NativeSketchConstraintCandidate<'_>>::new();
 
     for (sketch_id, sketch_native_ref) in sketches {
         let Some(sketch_object) = design_objects.get(sketch_native_ref.as_str()).copied() else {
@@ -348,15 +351,14 @@ pub(crate) fn transfer_native_sketch_constraints(
 
                     let key_id =
                         sketch_id.try_clone_for_decode(ctx, "catia_sketch_candidate_key_id")?;
-                    let key = (key_id, target_record.id.as_str());
-                    ctx.admit_hash_map_entry(
+                    let key = (target_record.byte_offset, target_record.id.as_str(), key_id);
+                    let candidate = match ctx.entry_btree_map(
                         &mut candidates,
-                        &key,
+                        key,
                         "catia_sketch_constraint_candidates",
-                    )?;
-                    let candidate = match candidates.entry(key) {
-                        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-                        std::collections::hash_map::Entry::Vacant(entry) => {
+                    )? {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
                             let owner = sketch_id
                                 .try_clone_for_decode(ctx, "catia_sketch_candidate_owner_id")?;
                             entry.insert(NativeSketchConstraintCandidate {
@@ -369,7 +371,11 @@ pub(crate) fn transfer_native_sketch_constraints(
                             })
                         }
                     };
-                    if !candidate.entities.contains(sketch_entity) {
+                    if !ctx.contains(
+                        &candidate.entities,
+                        sketch_entity,
+                        "catia_sketch_candidate_entity_checks",
+                    )? {
                         let id = sketch_entity
                             .try_clone_for_decode(ctx, "catia_sketch_candidate_entity_id")?;
                         ctx.push_vec(
@@ -394,31 +400,8 @@ pub(crate) fn transfer_native_sketch_constraints(
         }
     }
 
-    let mut candidates = ctx.collect_vec(
-        candidates.into_values(),
-        "catia_sketch_constraint_candidate_order",
-    )?;
-    ctx.stable_sort_by(
-        &mut candidates,
-        |value| &value.sketch,
-        Ord::cmp,
-        "catia_sketch_constraint_candidates_sort",
-    )?;
-    ctx.stable_sort_by(
-        &mut candidates,
-        |value| value.target_record.id.as_str(),
-        Ord::cmp,
-        "catia_sketch_constraint_candidates_sort",
-    )?;
-    ctx.stable_sort_by_key(
-        &mut candidates,
-        |value| value.target_record.byte_offset,
-        Ord::cmp,
-        "catia_sketch_constraint_candidates_sort",
-    )?;
-
     let mut transferred = HashSet::new();
-    for candidate in candidates {
+    for (_, candidate) in ctx.admit_iter(candidates, "catia_sketch_constraint_candidate_order")? {
         let constraint_id = match neutral_history_id(
             ctx,
             &candidate.target_entity_record.id,

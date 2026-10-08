@@ -11102,7 +11102,7 @@ where
         let endpoint_budget = budget.session_child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
         let Some((face_count, edge_rows, vertex_points, mut mesh_domains, port_identities)) =
             (|| -> Result<Option<_>, CodecError> {
-                let Some(face_run) = largest_fbb_run(bytes) else {
+                let Some(face_run) = largest_fbb_run(ctx, bytes)? else {
                     return Ok(None);
                 };
                 let face_count = face_run.face_count();
