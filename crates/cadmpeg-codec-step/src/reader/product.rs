@@ -4,8 +4,8 @@
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use super::{named_parameter, RecordExt, ValueExt};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use super::{RecordExt, ValueExt};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, IdentityKey, IdentityKeyTail, OccurrenceId, ProductDefinitionId};
@@ -19,7 +19,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text_charged;
+use super::decode_text_scoped;
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
@@ -42,7 +42,8 @@ const DRAWING_ITEM_OWNER_TYPES: &[&str] = &[
     "DRAUGHTING_CALLOUT",
 ];
 
-pub(super) struct ProductData {
+pub(super) struct ProductData<'ctx> {
+    _storage: ScopedReservation<'ctx>,
     pub(super) product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
     pub(super) product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
@@ -52,37 +53,40 @@ fn join_product_references(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let mut text = String::new();
-    for id in ids {
-        let separator = if text.is_empty() { "" } else { ", " };
-        ctx.append_formatted_retained(&mut text, format_args!("{separator}#{id}"), operation)?;
+    let (mut parts, mut storage) = ctx.temporary_vec(0, "STEP product reference fragments")?;
+    let mut ids = ids.into_iter();
+    while let Some(id) = ctx.next_charged(&mut ids, operation)? {
+        let part =
+            storage.with_storage(|| ctx.format_retained(format_args!("#{id}"), operation))?;
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut parts,
+            part,
+            "STEP product reference fragments",
+        )?;
     }
-    Ok(text)
+    ctx.join_retained(&parts, ", ", operation)
 }
 
-fn join_product_texts<'a>(
-    values: impl IntoIterator<Item = Result<&'a str, CodecError>>,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let mut text = String::new();
-    for value in values {
-        let value = value?;
-        let separator = if text.is_empty() { "" } else { ", " };
-        ctx.append_retained(&mut text, separator, operation)?;
-        ctx.append_retained(&mut text, value, operation)?;
-    }
-    Ok(text)
-}
-
-pub(super) fn decode(
+pub(super) fn decode<'ctx>(
     exchange: &Exchange,
     geometry: &GeometryData,
     topology: &TopologyData,
     ir: &mut CadIr,
-    ctx: &DecodeContext<'_>,
+    ctx: &'ctx DecodeContext<'_>,
     admitted_ir_entities: &mut u64,
-) -> Result<StageOutcome<ProductData>, CodecError> {
+) -> Result<
+    StageOutcome<(
+        ProductData<'ctx>,
+        ScopedReservation<'ctx>,
+        ScopedReservation<'ctx>,
+    )>,
+    CodecError,
+> {
+    let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
+    let slot_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP stage report buffers")?);
+    let mut index_storage = ctx.reserve_scoped(0, "STEP product result indices")?;
+    let mut claim_storage = ctx.reserve_scoped(0, "STEP product claims")?;
     let mut typed = BTreeSet::new();
     let mut losses = Vec::new();
     let mut formations = BTreeMap::new();
@@ -94,7 +98,9 @@ pub(super) fn decode(
         else {
             continue;
         };
-        ctx.insert_btree_map(&mut formations, id, product, "step_product_formations")?;
+        scratch_storage.with_storage(|| {
+            ctx.insert_btree_map(&mut formations, id, product, "step_product_formations")
+        })?;
     }
     let mut definitions = BTreeMap::new();
     for entity in exchange.entities_any(ctx, PRODUCT_DEFINITION_TYPES)? {
@@ -102,40 +108,52 @@ pub(super) fn decode(
         let Some(product) = product_definition_parameters(ctx, record)?
             .and_then(|parameters| parameters.get(2))
             .and_then(ValueExt::reference)
-            .and_then(|formation| formations.get(&formation).copied())
+            .map(|formation| {
+                ctx.get_btree_map(&formations, &formation, "STEP product formations get")
+            })
+            .transpose()?
+            .flatten()
+            .copied()
         else {
             continue;
         };
-        ctx.insert_btree_map(&mut definitions, id, product, "step_product_definitions")?;
+        scratch_storage.with_storage(|| {
+            ctx.insert_btree_map(&mut definitions, id, product, "step_product_definitions")
+        })?;
     }
-    let mut definitions_by_product_in_source_order = BTreeMap::<u64, Vec<u64>>::new();
+    let mut definitions_by_product_in_source_order = BTreeMap::<u64, Vec<(u64, usize)>>::new();
     for (&definition, &product) in ctx.admit_iter(&definitions, "STEP decode traversal")? {
-        ctx.admit_btree_entry(
-            &definitions_by_product_in_source_order,
-            &product,
-            "step_product_definition_groups",
-        )?;
-        let grouped = definitions_by_product_in_source_order
-            .entry(product)
+        let grouped = scratch_storage
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut definitions_by_product_in_source_order,
+                    product,
+                    "step_product_definition_groups",
+                )
+            })?
             .or_default();
-        ctx.reserve_vec(grouped, 1, "step_product_definition_group_members")?;
-        grouped.push(definition);
+        scratch_storage.with_storage(|| {
+            ctx.reserve_vec(grouped, 1, "step_product_definition_group_members")
+        })?;
+        let offset = ctx
+            .get_btree_map(
+                exchange.records(),
+                &definition,
+                "STEP product definition source offset",
+            )?
+            .ok_or_else(|| CodecError::malformed("STEP product definition was not indexed"))?
+            .span
+            .start;
+        grouped.push((definition, offset));
     }
-    for definitions in definitions_by_product_in_source_order.values_mut() {
+    for (_, definitions) in ctx.admit_iter(
+        &mut definitions_by_product_in_source_order,
+        "STEP product definition group traversal",
+    )? {
         ctx.stable_sort_by(
             definitions,
-            |value| value,
-            |left, right| {
-                let start = |definition: &u64| {
-                    exchange
-                        .records()
-                        .get(definition)
-                        .map(|record| record.span.start)
-                };
-                let left = start(left);
-                let right = start(right);
-                (left.is_none(), left).cmp(&(right.is_none(), right))
-            },
+            |value| &value.1,
+            Ord::cmp,
             "step_product_definition_group_sort",
         )?;
     }
@@ -148,21 +166,29 @@ pub(super) fn decode(
         let Some(_) = parameters
             .get(2)
             .and_then(ValueExt::reference)
-            .and_then(|formation| formations.get(&formation).copied())
+            .map(|formation| {
+                ctx.get_btree_map(&formations, &formation, "STEP product formations get")
+            })
+            .transpose()?
+            .flatten()
+            .copied()
         else {
             continue;
         };
         let Some(description) = parameters
             .get(1)
             .map(|value| {
-                decode_text_charged(
+                decode_text_scoped(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     id,
-                    "product definition description",
-                    StepLossCode::MetadataStringInvalid,
+                    (
+                        "product definition description",
+                        StepLossCode::MetadataStringInvalid,
+                    ),
                     ctx,
+                    &mut scratch_storage,
                 )
             })
             .transpose()?
@@ -171,27 +197,28 @@ pub(super) fn decode(
             continue;
         };
         if !description.is_empty() {
-            ctx.admit_btree_entry(
-                &definition_descriptions,
-                &id,
-                "step_product_definition_descriptions",
-            )?;
-            definition_descriptions.entry(id).or_insert(description);
+            scratch_storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut definition_descriptions,
+                        id,
+                        "step_product_definition_descriptions",
+                    )
+                })?
+                .or_insert(description);
         }
     }
-    let mut shape_bindings = shape_bindings(exchange, &definitions, topology, ctx)?;
-    let mut definition_counts = BTreeMap::<u64, usize>::new();
-    for product in ctx
-        .admit_iter(&(definitions), "STEP decode map traversal")?
-        .map(|(_, value)| value)
-    {
-        ctx.admit_btree_entry(
-            &definition_counts,
-            product,
-            "step_product_definition_counts",
-        )?;
-        *definition_counts.entry(*product).or_default() += 1;
-    }
+    let (mut shape_bindings, _shape_storage) = ctx
+        .with_scoped_storage("STEP product shape bindings scratch", || {
+            shape_bindings(exchange, &definitions, topology, ctx)
+        })?;
+    let (body_ids, _body_index_storage) =
+        ctx.with_scoped_storage("STEP product body membership index", || {
+            ctx.collect_btree_set(
+                ir.model.bodies.iter().map(|body| body.id.as_str()),
+                "STEP product body membership index",
+            )
+        })?;
     let mut prototype_copy_storage =
         ctx.reserve_scoped(0, "step_product_prototype_identity_copy")?;
     let mut definition_prototypes = BTreeMap::<u64, ProductDefinitionId>::new();
@@ -204,17 +231,18 @@ pub(super) fn decode(
         else {
             continue;
         };
+        let mut text_storage = ctx.reserve_scoped(0, "STEP product source text")?;
         let product_id = parameters
             .first()
             .map(|value| {
-                decode_text_charged(
+                decode_text_scoped(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     step_id,
-                    "product identifier",
-                    StepLossCode::MetadataStringInvalid,
+                    ("product identifier", StepLossCode::MetadataStringInvalid),
                     ctx,
+                    &mut text_storage,
                 )
             })
             .transpose()?
@@ -223,14 +251,14 @@ pub(super) fn decode(
         let name = parameters
             .get(1)
             .map(|value| {
-                decode_text_charged(
+                decode_text_scoped(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     step_id,
-                    "product name",
-                    StepLossCode::MetadataStringInvalid,
+                    ("product name", StepLossCode::MetadataStringInvalid),
                     ctx,
+                    &mut text_storage,
                 )
             })
             .transpose()?
@@ -239,140 +267,155 @@ pub(super) fn decode(
         let product_description = parameters
             .get(2)
             .map(|value| {
-                decode_text_charged(
+                decode_text_scoped(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     step_id,
-                    "product description",
-                    StepLossCode::MetadataStringInvalid,
+                    ("product description", StepLossCode::MetadataStringInvalid),
                     ctx,
+                    &mut text_storage,
                 )
             })
             .transpose()?
             .flatten()
             .filter(|description| !description.is_empty());
-        let product_definitions = definitions_by_product_in_source_order
-            .get(&step_id)
+        let product_definitions = ctx
+            .get_btree_map(
+                &definitions_by_product_in_source_order,
+                &step_id,
+                "STEP product definitions_by_product_in_source_order get",
+            )?
             .map(Vec::as_slice)
             .unwrap_or_default();
-        let definition_count = definition_counts.get(&step_id).copied().unwrap_or(0);
+        let definition_count = product_definitions.len();
         let definition_iter = std::iter::once(None)
             .filter(|_| product_definitions.is_empty())
             .chain(
-                ctx.admit_iter(&product_definitions[..], "STEP decode chain traversal")?
-                    .copied()
-                    .map(Some),
+                ctx.admit_iter(product_definitions, "STEP decode chain traversal")?
+                    .map(|(id, _)| Some(*id)),
             );
         for definition in definition_iter {
             let product_definition_id = definition.map_or_else(
                 || Ok::<ProductDefinitionId, CodecError>(product_ir_id(step_id)),
                 |definition| {
                     let id = product_definition_ir_id(step_id, definition, definition_count);
-                    ctx.admit_btree_entry(
-                        &definition_prototypes,
-                        &definition,
-                        "step_product_definition_prototypes",
-                    )?;
-                    definition_prototypes.insert(
-                        definition,
-                        prototype_copy_storage.with_storage(|| {
-                            id.try_clone_for_decode(ctx, "step_product_prototype_identity_copy")
-                        })?,
-                    );
+
+                    scratch_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut definition_prototypes,
+                            definition,
+                            prototype_copy_storage.with_storage(|| {
+                                id.try_clone_for_decode(ctx, "step_product_prototype_identity_copy")
+                            })?,
+                            "step_product_definition_prototypes",
+                        )
+                    })?;
                     Ok(id)
                 },
             )?;
             let definition_description = definition
-                .and_then(|definition| definition_descriptions.get(&definition))
-                .map(|text| {
-                    ctx.copy_retained_text(text, "step_product_definition_description_copy")
+                .map(|definition| {
+                    ctx.get_btree_map(
+                        &definition_descriptions,
+                        &definition,
+                        "STEP product definition_descriptions get",
+                    )
                 })
-                .transpose()?;
+                .transpose()?
+                .flatten()
+                .map(String::as_str);
             let description = if definition_count <= 1 {
                 product_description
                     .as_deref()
-                    .map(|text| ctx.copy_retained_text(text, "step_product_description_copy"))
-                    .transpose()?
-                    .or(definition_description)
+                    .map(|text| (text, "step_product_description_copy"))
+                    .or(definition_description
+                        .map(|text| (text, "step_product_definition_description_copy")))
             } else {
-                match definition_description {
-                    Some(description) => Some(description),
-                    None => product_description
+                definition_description
+                    .map(|text| (text, "step_product_definition_description_copy"))
+                    .or(product_description
                         .as_deref()
-                        .map(|text| ctx.copy_retained_text(text, "step_product_description_copy"))
-                        .transpose()?,
-                }
-            };
-            let has_shape_binding =
-                definition.is_some_and(|definition| shape_bindings.contains_key(&definition));
-            let mut bodies = definition
-                .and_then(|definition| shape_bindings.remove(&definition))
+                        .map(|text| (text, "step_product_description_copy")))
+            }
+            .map(|(text, operation)| ctx.copy_retained_text(text, operation))
+            .transpose()?;
+            let has_shape_binding = definition
+                .map(|definition| {
+                    ctx.contains_key_btree_map(
+                        &shape_bindings,
+                        &definition,
+                        "STEP product shape_bindings contains_key",
+                    )
+                })
+                .transpose()?
+                .unwrap_or(false);
+            let source_bodies = definition
+                .map(|definition| {
+                    ctx.remove_btree_map(
+                        &mut shape_bindings,
+                        &definition,
+                        "STEP product shape_bindings remove",
+                    )
+                })
+                .transpose()?
+                .flatten()
                 .unwrap_or_default();
-            let missing = join_product_texts(
-                ctx.admit_iter(bodies.as_slice(), "STEP missing body reference traversal")?
-                    .map(|body| {
-                        Ok::<_, CodecError>(
-                            (ctx.find_map(
-                                ir.model.bodies.as_slice(),
-                                |candidate| -> Result<Option<_>, CodecError> {
-                                    Ok((ctx.equal(
-                                        &candidate.id,
-                                        body,
-                                        "STEP product body identity equality",
-                                    )?)
-                                    .then_some(()))
-                                },
-                                "STEP missing body carrier traversal",
-                            )?
-                            .is_none())
-                            .then_some(body.as_str()),
-                        )
-                    })
-                    .filter_map(Result::transpose),
-                ctx,
-                "step_missing_shape_body_text",
-            )?;
-            ctx.retain_vec(
-                &mut bodies,
-                |body| {
-                    Ok(ctx
-                        .find_map(
-                            ir.model.bodies.as_slice(),
-                            |candidate| -> Result<Option<_>, CodecError> {
-                                Ok((ctx.equal(
-                                    &candidate.id,
-                                    body,
-                                    "STEP product body identity equality",
-                                )?)
-                                .then_some(()))
-                            },
-                            "STEP retained body carrier traversal",
-                        )?
-                        .is_some())
-                },
-                "STEP product body retention",
-            )?;
-            ctx.stable_sort_by(
-                &mut bodies,
-                |value| value,
-                Ord::cmp,
-                "step_product_body_sort",
-            )?;
-            bodies.dedup();
+            let (mut missing, mut missing_storage) =
+                ctx.temporary_vec(0, "STEP missing shape body fragments")?;
+            let mut selected_bodies = BTreeSet::new();
+            let mut selected_storage = ctx.reserve_scoped(0, "STEP product selected body index")?;
+            for batch in ctx.admit_iter(&source_bodies, "STEP product shape batch traversal")? {
+                for body in ctx.admit_iter(&batch[..], "STEP product shape body traversal")? {
+                    if ctx.contains_btree_set(
+                        &body_ids,
+                        body.as_str(),
+                        "STEP product body membership",
+                    )? {
+                        selected_storage.with_storage(|| {
+                            ctx.insert_btree_set(
+                                &mut selected_bodies,
+                                body,
+                                "STEP product selected body index",
+                            )
+                        })?;
+                    } else {
+                        ctx.push_scoped_vec(
+                            &mut missing_storage,
+                            &mut missing,
+                            body.as_str(),
+                            "STEP missing shape body fragments",
+                        )?;
+                    }
+                }
+            }
+            let mut bodies =
+                ctx.collection_vec(selected_bodies.len(), "STEP product committed body slots")?;
+            for body in ctx.admit_iter(selected_bodies, "STEP product selected body traversal")? {
+                bodies
+                    .push(body.try_clone_for_decode(ctx, "STEP product committed body identity")?);
+            }
             let owner = definition.map_or_else(
                 || format!("PRODUCT #{step_id}"),
                 |definition| format!("PRODUCT_DEFINITION #{definition}"),
             );
             if !missing.is_empty() {
-                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+                let (missing, _missing_text_storage) = ctx
+                    .with_scoped_storage("STEP missing shape body text scratch", || {
+                        ctx.join_retained(&missing, ", ", "step_missing_shape_body_text")
+                    })?;
+                slot_storage
+                    .borrow_mut()
+                    .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
                 losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(
                     format_args!("{owner} omitted uncommitted shape body reference(s): {missing}"),
                     "step_missing_shape_body_loss_text",
                 )?));
             }
             if has_shape_binding && bodies.is_empty() {
-                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+                slot_storage
+                    .borrow_mut()
+                    .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
                 losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(
                     format_args!(
                         "{owner} has a shape representation with no committed topology body"
@@ -407,34 +450,55 @@ pub(super) fn decode(
                     definition.map_or_else(|| format!("#{step_id}"), |id| format!("#{id}")),
                 ),
             });
-            ctx.admit_btree_entry(
-                &product_definition_ids_by_source,
-                &step_id,
-                "step_product_source_groups",
-            )?;
-            let grouped = product_definition_ids_by_source.entry(step_id).or_default();
-            ctx.reserve_vec(grouped, 1, "step_product_source_group_members")?;
-            grouped.push(product_definition_id);
+
+            let grouped = index_storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut product_definition_ids_by_source,
+                        step_id,
+                        "step_product_source_groups",
+                    )
+                })?
+                .or_default();
+            index_storage.with_storage(|| {
+                ctx.reserve_vec(grouped, 1, "step_product_source_group_members")
+            })?;
+            grouped.push(index_storage.with_storage(|| {
+                product_definition_id
+                    .try_clone_for_decode(ctx, "STEP product source index identity")
+            })?);
         }
-        ctx.insert_btree_set(&mut typed, step_id, "step_product_typed_claims")?;
+        claim_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut typed, step_id, "step_product_typed_claims")
+        })?;
     }
     let mut product_definition_ids_by_shape = BTreeMap::new();
     for (shape_id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
-        let Some(prototype) = named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?
+        let Some(prototype) = record
+            .partial(ctx, "PRODUCT_DEFINITION_SHAPE")?
+            .and_then(|partial| partial.parameters.get(2))
             .and_then(ValueExt::reference)
-            .and_then(|definition| definition_prototypes.get(&definition))
+            .map(|definition| {
+                ctx.get_btree_map(
+                    &definition_prototypes,
+                    &definition,
+                    "STEP product definition_prototypes get",
+                )
+            })
+            .transpose()?
+            .flatten()
         else {
             continue;
         };
-        ctx.admit_btree_entry(
-            &product_definition_ids_by_shape,
-            &shape_id,
-            "step_product_shape_prototypes",
-        )?;
-        product_definition_ids_by_shape.insert(
-            shape_id,
-            prototype.try_clone_for_decode(ctx, "step_product_identity_copy")?,
-        );
+
+        index_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut product_definition_ids_by_shape,
+                shape_id,
+                prototype.try_clone_for_decode(ctx, "step_product_identity_copy")?,
+                "step_product_shape_prototypes",
+            )
+        })?;
     }
     for id in ctx
         .admit_iter(&(formations), "STEP decode map traversal")?
@@ -444,58 +508,70 @@ pub(super) fn decode(
                 .map(|(key, _)| key),
         )
     {
-        ctx.insert_btree_set(&mut typed, *id, "step_product_typed_claims")?;
+        claim_storage
+            .with_storage(|| ctx.insert_btree_set(&mut typed, *id, "step_product_typed_claims"))?;
     }
 
     let mut usages = BTreeMap::new();
     for (id, record) in exchange.entities(ctx, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")? {
-        let name = named_parameter(ctx, record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1)?
+        let name = record
+            .partial(ctx, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")?
+            .and_then(|partial| partial.parameters.get(1))
             .map(|value| {
-                decode_text_charged(
+                decode_text_scoped(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     id,
-                    "assembly occurrence name",
-                    StepLossCode::MetadataStringInvalid,
+                    (
+                        "assembly occurrence name",
+                        StepLossCode::MetadataStringInvalid,
+                    ),
                     ctx,
+                    &mut scratch_storage,
                 )
             })
             .transpose()?
             .flatten();
-        let Some(parent_definition) =
-            named_parameter(ctx, record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3)?
-                .and_then(ValueExt::reference)
+        let Some(parent_definition) = record
+            .partial(ctx, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")?
+            .and_then(|partial| partial.parameters.get(3))
+            .and_then(ValueExt::reference)
         else {
             continue;
         };
-        let Some(child_definition) =
-            named_parameter(ctx, record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4)?
-                .and_then(ValueExt::reference)
+        let Some(child_definition) = record
+            .partial(ctx, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")?
+            .and_then(|partial| partial.parameters.get(4))
+            .and_then(ValueExt::reference)
         else {
             continue;
         };
-        ctx.insert_btree_map(
-            &mut usages,
-            id,
-            Usage {
-                parent_definition,
-                child_definition,
-                name: name.filter(|name| !name.is_empty()),
-            },
-            "step_product_usage_entries",
-        )?;
+        scratch_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut usages,
+                id,
+                Usage {
+                    parent_definition,
+                    child_definition,
+                    name: name.filter(|name| !name.is_empty()),
+                },
+                "step_product_usage_entries",
+            )
+        })?;
     }
     let mut child_definitions = BTreeSet::new();
     for usage in ctx
         .admit_iter(&(usages), "STEP decode map traversal")?
         .map(|(_, value)| value)
     {
-        ctx.insert_btree_set(
-            &mut child_definitions,
-            usage.child_definition,
-            "step_product_child_definitions",
-        )?;
+        scratch_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut child_definitions,
+                usage.child_definition,
+                "step_product_child_definitions",
+            )
+        })?;
     }
     let mut occurrence_index_copy_storage =
         ctx.reserve_scoped(0, "step_product_occurrence_index_identity_copy")?;
@@ -506,15 +582,22 @@ pub(super) fn decode(
         .admit_iter(&(definitions), "STEP decode map traversal")?
         .map(|(key, _)| key)
     {
-        if child_definitions.contains(&definition) {
+        if ctx.contains_btree_set(
+            &child_definitions,
+            &definition,
+            "STEP product child_definitions contains",
+        )? {
             continue;
         }
-        let Some(prototype) = definition_prototypes
-            .get(&definition)
-            .map(|id| id.try_clone_for_decode(ctx, "step_product_definition_identity_copy"))
-            .transpose()?
+        let Some(prototype) = ctx.get_btree_map(
+            &definition_prototypes,
+            &definition,
+            "STEP product definition_prototypes get",
+        )?
         else {
-            ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+            slot_storage
+                .borrow_mut()
+                .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRODUCT_DEFINITION #{definition} has no local product prototype"
             )));
@@ -529,18 +612,15 @@ pub(super) fn decode(
             return Err(ctx.refuse_codec_limit(
                 "step_assembly_occurrence_limit",
                 u64_from_index(occurrence_cap),
-                u64_from_index(ir.model.occurrences.len())
-                    .checked_add(1)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("step_assembly_occurrence_limit", u64::MAX, u64::MAX)
-                    })?,
+                u64_from_index(ir.model.occurrences.len()) + 1,
             ));
         }
         ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_root_occurrence_items")?;
         ir.model.occurrences.push(Occurrence {
             id: id.try_clone_for_decode(ctx, "step_product_identity_copy")?,
             prototype: PrototypeReference::Local {
-                definition: prototype,
+                definition: prototype
+                    .try_clone_for_decode(ctx, "step_product_definition_identity_copy")?,
             },
             parent: OccurrenceParent::Root {},
             ordinal: root_ordinal,
@@ -560,19 +640,32 @@ pub(super) fn decode(
         root_ordinal = root_ordinal
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
-        ctx.charge_collection_items(1, "step_root_occurrence_path_members")?;
-        ctx.admit_btree_entry(&occurrence_paths, &id, "step_root_occurrence_path_map")?;
-        occurrence_paths.insert(
-            occurrence_index_copy_storage.with_storage(|| {
-                id.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy")
-            })?,
-            BTreeSet::from([definition]),
-        );
-        ctx.push_back(
-            &mut pending_occurrences,
-            (definition, id),
-            "step_pending_occurrence",
-        )?;
+        let mut root_path = BTreeSet::new();
+        scratch_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut root_path,
+                definition,
+                "step_root_occurrence_path_members",
+            )
+        })?;
+
+        scratch_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut occurrence_paths,
+                occurrence_index_copy_storage.with_storage(|| {
+                    id.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy")
+                })?,
+                root_path,
+                "step_root_occurrence_path_map",
+            )
+        })?;
+        scratch_storage.with_storage(|| {
+            ctx.push_back(
+                &mut pending_occurrences,
+                (definition, id),
+                "step_pending_occurrence",
+            )
+        })?;
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
@@ -580,49 +673,61 @@ pub(super) fn decode(
         exchange,
         geometry,
         &usages,
-        &mut losses,
-        &mut ambiguous_placements,
-        &mut competing_placements,
+        (&mut losses, &slot_storage),
+        (&mut ambiguous_placements, &mut competing_placements),
+        &mut scratch_storage,
         ctx,
     )?;
     for (&usage_id, source_ids) in ctx.admit_iter(&ambiguous_placements, "STEP decode traversal")? {
-        if competing_placements.contains_key(&usage_id) {
+        if ctx.contains_key_btree_map(
+            &competing_placements,
+            &usage_id,
+            "STEP product competing_placements contains_key",
+        )? {
             continue;
         }
-        let records = join_product_references(
-            source_ids.iter().copied(),
-            ctx,
-            "step_ambiguous_placement_source_text",
+        let (records, _record_storage) =
+            ctx.with_scoped_storage("STEP product placement detail scratch", || {
+                join_product_references(
+                    source_ids.iter().copied(),
+                    ctx,
+                    "step_ambiguous_placement_source_text",
+                )
+            })?;
+        let context_dependent = ctx.all_by(
+            source_ids,
+            |id| {
+                Ok(ctx
+                    .get_btree_map(exchange.records(), id, "STEP product record get")?
+                    .map(|record| record.partial(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"))
+                    .transpose()?
+                    .flatten()
+                    .is_some())
+            },
+            "STEP context dependent placement source search",
         )?;
-        let mut context_dependent = true;
-        for id in ctx.admit_iter(&source_ids[..], "STEP decode traversal")? {
-            if exchange
-                .records()
-                .get(id)
-                .map(|record| record.partial(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"))
-                .transpose()?
-                .flatten()
-                .is_none()
-            {
-                context_dependent = false;
-                break;
-            }
-        }
         let placement_kind = if context_dependent {
             "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
         } else {
             "occurrence-owned mapped"
         };
-        ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+        slot_storage
+            .borrow_mut()
+            .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(ctx.format_retained(format_args!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"), "step_ambiguous_placement_loss_text")?));
     }
     for (&usage_id, source_ids) in ctx.admit_iter(&competing_placements, "STEP decode traversal")? {
-        let records = join_product_references(
-            source_ids.iter().copied(),
-            ctx,
-            "step_competing_placement_source_text",
-        )?;
-        ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+        let (records, _record_storage) =
+            ctx.with_scoped_storage("STEP product placement detail scratch", || {
+                join_product_references(
+                    source_ids.iter().copied(),
+                    ctx,
+                    "step_competing_placement_source_text",
+                )
+            })?;
+        slot_storage
+            .borrow_mut()
+            .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(ctx.format_retained(format_args!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"), "step_competing_placement_loss_text")?));
     }
     let mut usage_instances = BTreeMap::<u64, usize>::new();
@@ -630,57 +735,98 @@ pub(super) fn decode(
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in ctx.admit_iter(&usages, "STEP decode traversal")? {
-        ctx.admit_btree_entry(
-            &usages_by_parent,
-            &usage.parent_definition,
-            "step_product_usage_parent_groups",
-        )?;
-        let grouped = usages_by_parent.entry(usage.parent_definition).or_default();
-        ctx.reserve_vec(grouped, 1, "step_product_usage_parent_members")?;
+        let grouped = scratch_storage
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut usages_by_parent,
+                    usage.parent_definition,
+                    "step_product_usage_parent_groups",
+                )
+            })?
+            .or_default();
+        scratch_storage
+            .with_storage(|| ctx.reserve_vec(grouped, 1, "step_product_usage_parent_members"))?;
         grouped.push(usage_id);
     }
     let had_roots = !pending_occurrences.is_empty();
     while let Some((parent_definition, parent)) = pending_occurrences.pop_front() {
-        for &usage_id in usages_by_parent
-            .get(&parent_definition)
-            .into_iter()
-            .flatten()
-        {
-            if ambiguous_placements.contains_key(&usage_id) {
+        ctx.charge_work(1, "STEP product worklist step")?;
+        for &usage_id in ctx.admit_iter(
+            ctx.get_btree_map(
+                &usages_by_parent,
+                &parent_definition,
+                "STEP product usages_by_parent get",
+            )?
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+            "STEP child usage traversal",
+        )? {
+            if ctx.contains_key_btree_map(
+                &ambiguous_placements,
+                &usage_id,
+                "STEP product ambiguous_placements contains_key",
+            )? {
                 continue;
             }
-            let usage = &usages[&usage_id];
-            let Some(prototype) = definition_prototypes
-                .get(&usage.child_definition)
-                .map(|id| id.try_clone_for_decode(ctx, "step_product_definition_identity_copy"))
-                .transpose()?
+            let usage = ctx
+                .get_btree_map(&usages, &usage_id, "STEP child usage lookup")?
+                .ok_or_else(|| CodecError::malformed("STEP child usage was not indexed"))?;
+            let Some(prototype) = ctx.get_btree_map(
+                &definition_prototypes,
+                &usage.child_definition,
+                "STEP product definition_prototypes get",
+            )?
             else {
-                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+                slot_storage
+                    .borrow_mut()
+                    .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} references an unresolved child definition"
                 )));
                 continue;
             };
-            let parent_path = occurrence_paths.get(&parent);
+            let parent_path = ctx.get_btree_map(
+                &occurrence_paths,
+                &parent,
+                "STEP product occurrence_paths get",
+            )?;
             let depth_limit = assembly_depth_limit(ctx);
             if parent_path.is_some_and(|path| path.len() >= depth_limit) {
                 return Err(ctx.refuse_codec_limit(
                     "step_assembly_depth_limit",
                     u64_from_index(depth_limit),
-                    u64_from_index(depth_limit).checked_add(1).ok_or_else(|| {
-                        ctx.refuse_codec_limit("step_assembly_depth_limit", u64::MAX, u64::MAX)
-                    })?,
+                    u64_from_index(depth_limit) + 1,
                 ));
             }
-            if parent_path.is_some_and(|path| path.contains(&usage.child_definition)) {
-                ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+            if parent_path
+                .map(|path| {
+                    ctx.contains_btree_set(
+                        path,
+                        &usage.child_definition,
+                        "STEP assembly path membership",
+                    )
+                })
+                .transpose()?
+                .unwrap_or(false)
+            {
+                slot_storage
+                    .borrow_mut()
+                    .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} closes an assembly definition cycle"
                 )));
                 continue;
             }
-            ctx.admit_btree_entry(&usage_instances, &usage_id, "step_usage_instance_counts")?;
-            let instance = usage_instances.entry(usage_id).or_default();
+
+            let instance = scratch_storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut usage_instances,
+                        usage_id,
+                        "step_usage_instance_counts",
+                    )
+                })?
+                .or_default();
             *instance += 1;
             let suffix = if *instance == 1 {
                 IdentityKeyTail::empty()
@@ -698,32 +844,40 @@ pub(super) fn decode(
                 return Err(ctx.refuse_codec_limit(
                     "step_assembly_occurrence_limit",
                     u64_from_index(occurrence_cap),
-                    u64_from_index(ir.model.occurrences.len())
-                        .checked_add(1)
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit(
-                                "step_assembly_occurrence_limit",
-                                u64::MAX,
-                                u64::MAX,
-                            )
-                        })?,
+                    u64_from_index(ir.model.occurrences.len()) + 1,
                 ));
             }
-            ctx.admit_btree_entry(&child_ordinals, &parent, "step_child_occurrence_ordinals")?;
-            let ordinal = child_ordinals
-                .entry(occurrence_index_copy_storage.with_storage(|| {
-                    parent.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy")
-                })?)
+
+            let ordinal = scratch_storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut child_ordinals,
+                        occurrence_index_copy_storage.with_storage(|| {
+                            parent.try_clone_for_decode(
+                                ctx,
+                                "step_product_occurrence_index_identity_copy",
+                            )
+                        })?,
+                        "step_child_occurrence_ordinals",
+                    )
+                })?
                 .or_default();
-            let transform = if let Some(transform) = placements.get(&usage_id).copied() {
+            let transform = if let Some(transform) = ctx
+                .get_btree_map(&placements, &usage_id, "STEP product placements get")?
+                .copied()
+            {
                 transform
             } else {
-                if ctx.insert_btree_set(
-                    &mut missing_placement_reports,
-                    usage_id,
-                    "step_missing_placement_reports",
-                )? {
-                    ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+                if scratch_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut missing_placement_reports,
+                        usage_id,
+                        "step_missing_placement_reports",
+                    )
+                })? {
+                    slot_storage
+                        .borrow_mut()
+                        .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
                     losses.push(StepLossCode::NauoPlacementUnresolved.note(format!(
                         "NAUO #{usage_id} has no resolved occurrence transform; \
                              identity placement was used"
@@ -735,7 +889,8 @@ pub(super) fn decode(
             ir.model.occurrences.push(Occurrence {
                 id: id.try_clone_for_decode(ctx, "step_product_identity_copy")?,
                 prototype: PrototypeReference::Local {
-                    definition: prototype,
+                    definition: prototype
+                        .try_clone_for_decode(ctx, "step_product_definition_identity_copy")?,
                 },
                 parent: OccurrenceParent::Occurrence {
                     occurrence: parent.try_clone_for_decode(ctx, "step_product_identity_copy")?,
@@ -763,36 +918,52 @@ pub(super) fn decode(
             })?;
             let mut path = BTreeSet::new();
             if let Some(parent_path) = parent_path {
-                for &definition in parent_path {
-                    ctx.insert_btree_set(
-                        &mut path,
-                        definition,
-                        "step_child_occurrence_path_members",
-                    )?;
+                for &definition in
+                    ctx.admit_iter(parent_path, "STEP product parent_path traversal")?
+                {
+                    scratch_storage.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut path,
+                            definition,
+                            "step_child_occurrence_path_members",
+                        )
+                    })?;
                 }
             }
-            ctx.insert_btree_set(
-                &mut path,
-                usage.child_definition,
-                "step_child_occurrence_path_members",
-            )?;
-            ctx.admit_btree_entry(&occurrence_paths, &id, "step_child_occurrence_path_map")?;
-            occurrence_paths.insert(
-                occurrence_index_copy_storage.with_storage(|| {
-                    id.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy")
-                })?,
-                path,
-            );
-            ctx.push_back(
-                &mut pending_occurrences,
-                (usage.child_definition, id),
-                "step_pending_occurrence",
-            )?;
-            ctx.insert_btree_set(&mut typed, usage_id, "step_product_typed_claims")?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut path,
+                    usage.child_definition,
+                    "step_child_occurrence_path_members",
+                )
+            })?;
+
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut occurrence_paths,
+                    occurrence_index_copy_storage.with_storage(|| {
+                        id.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy")
+                    })?,
+                    path,
+                    "step_child_occurrence_path_map",
+                )
+            })?;
+            scratch_storage.with_storage(|| {
+                ctx.push_back(
+                    &mut pending_occurrences,
+                    (usage.child_definition, id),
+                    "step_pending_occurrence",
+                )
+            })?;
+            claim_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut typed, usage_id, "step_product_typed_claims")
+            })?;
         }
     }
     if !had_roots && !usages.is_empty() {
-        ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
+        slot_storage
+            .borrow_mut()
+            .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
         losses.push(
             StepLossCode::DecodeWarning.note("assembly occurrence graph has no resolvable root"),
         );
@@ -805,7 +976,7 @@ pub(super) fn decode(
             usages: &usages,
         },
         ir,
-        &mut losses,
+        (&mut losses, &slot_storage),
         ctx,
     )?;
     for entity in exchange.entities_any(
@@ -839,15 +1010,16 @@ pub(super) fn decode(
         ]
         .iter()
         .map(|name| record.partial(ctx, name))
-        .filter_map(Result::transpose)
-        .next()
+        .find_map(Result::transpose)
         .transpose()?
         .is_some()
             || record
                 .partial(ctx, "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")?
                 .is_some()
         {
-            ctx.insert_btree_set(&mut typed, id, "step_product_typed_claims")?;
+            claim_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut typed, id, "step_product_typed_claims")
+            })?;
         }
     }
     for (&usage_id, source_ids) in ctx.admit_iter(&ambiguous_placements, "STEP decode traversal")? {
@@ -857,10 +1029,15 @@ pub(super) fn decode(
         }
     }
     Ok(StageOutcome {
-        value: ProductData {
-            product_definition_ids_by_source,
-            product_definition_ids_by_shape,
-        },
+        value: (
+            ProductData {
+                _storage: index_storage,
+                product_definition_ids_by_source,
+                product_definition_ids_by_shape,
+            },
+            claim_storage,
+            slot_storage.into_inner(),
+        ),
         claims: typed,
         losses,
         notes: Vec::new(),
@@ -890,9 +1067,13 @@ fn apply_body_placements(
     exchange: &Exchange,
     sources: BodyPlacementSources<'_>,
     ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (
+        &mut Vec<LossNote>,
+        &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
+    ),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    let mut scratch_storage = ctx.reserve_scoped(0, "STEP apply_body_placements scratch")?;
     let BodyPlacementSources {
         geometry,
         topology,
@@ -900,24 +1081,37 @@ fn apply_body_placements(
     } = sources;
     let mut pds = BTreeMap::new();
     for (id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
-        if let Some(definition) = named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?
+        if let Some(definition) = record
+            .partial(ctx, "PRODUCT_DEFINITION_SHAPE")?
+            .and_then(|partial| partial.parameters.get(2))
             .and_then(ValueExt::reference)
         {
-            ctx.insert_btree_map(&mut pds, id, definition, "step_body_placement_shapes")?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(&mut pds, id, definition, "step_body_placement_shapes")
+            })?;
         }
     }
-    let definition_representations = definition_representations(exchange, &pds, ctx)?;
+    let (definition_representations, _representation_storage) = ctx
+        .with_scoped_storage("STEP definition representation scratch", || {
+            definition_representations(exchange, &pds, ctx)
+        })?;
     let mut assembly_representations = BTreeSet::new();
     for (_, usage) in ctx.admit_iter(usages, "STEP assembly usage traversal")? {
-        if let Some(representations) = definition_representations.get(&usage.child_definition) {
+        if let Some(representations) = ctx.get_btree_map(
+            &definition_representations,
+            &usage.child_definition,
+            "STEP product definition_representations get",
+        )? {
             for representation in
                 ctx.admit_iter(representations, "STEP assembly representation traversal")?
             {
-                ctx.insert_btree_set(
-                    &mut assembly_representations,
-                    *representation,
-                    "step_assembly_representations",
-                )?;
+                scratch_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut assembly_representations,
+                        *representation,
+                        "step_assembly_representations",
+                    )
+                })?;
             }
         }
     }
@@ -930,51 +1124,70 @@ fn apply_body_placements(
         )?
         .enumerate()
     {
-        ctx.admit_btree_entry(&body_indices, &body.id, "step_body_placement_indices")?;
-        body_indices.insert(
-            body_index_copy_storage.with_storage(|| {
-                body.id
-                    .try_clone_for_decode(ctx, "step_body_placement_identity_copy")
-            })?,
-            index,
-        );
+        scratch_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut body_indices,
+                body_index_copy_storage.with_storage(|| {
+                    body.id
+                        .try_clone_for_decode(ctx, "step_body_placement_identity_copy")
+                })?,
+                index,
+                "step_body_placement_indices",
+            )
+        })?;
     }
     let mut representation_cache = BTreeMap::new();
-    let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();
-    let drawing_owned_items = drawing_owned_items(exchange, ctx)?;
+    let mut placements_by_body = BTreeMap::<&BodyId, Vec<(u64, Transform)>>::new();
+    let (mut placement_sources, mut placement_source_storage) =
+        ctx.temporary_vec(0, "STEP mapped body placement sources")?;
+    let (drawing_owned_items, _drawing_storage) = ctx
+        .with_scoped_storage("STEP drawing owned item scratch", || {
+            drawing_owned_items(exchange, ctx)
+        })?;
     for (id, item) in exchange.entities(ctx, "MAPPED_ITEM")? {
         if item.partial(ctx, "MAPPED_ITEM")?.is_none() {
             continue;
         }
-        if drawing_owned_items.contains(&id) {
+        if ctx.contains_btree_set(
+            &drawing_owned_items,
+            &id,
+            "STEP product drawing_owned_items contains",
+        )? {
             continue;
         }
         let Some((representation, origin, target)) = mapped_item_definition(ctx, item, exchange)?
         else {
             continue;
         };
-        if assembly_representations.contains(&representation) {
+        if ctx.contains_btree_set(
+            &assembly_representations,
+            &representation,
+            "STEP product assembly_representations contains",
+        )? {
             continue;
         }
         if is_two_dimensional_mapping(ctx, origin, target, exchange)? {
             continue;
         }
-        let bodies = super::topology::representation_bodies(
-            representation,
-            exchange,
-            topology,
-            &mut representation_cache,
-            &mut BTreeSet::new(),
-            ctx,
-        )?;
+        let bodies = scratch_storage.with_storage(|| {
+            super::topology::representation_bodies(
+                representation,
+                exchange,
+                topology,
+                &mut representation_cache,
+                &mut BTreeSet::new(),
+                ctx,
+            )
+        })?;
         if bodies.is_empty() {
             continue;
         }
-        let (body_ids, _body_bytes) = bodies.into_parts();
-        let transform = match mapped_item_transform(origin, target, geometry) {
+        let transform = match mapped_item_transform(ctx, origin, target, geometry)? {
             Ok(Some(transform)) => transform,
             Ok(None) | Err(TransformError::Singular) => {
-                ctx.reserve_vec(losses, 1, "step_product_losses")?;
+                slot_storage
+                    .borrow_mut()
+                    .with_storage(|| ctx.reserve_vec(losses, 1, "step_product_losses"))?;
                 losses.push(
                     StepLossCode::DecodeWarning
                         .note(format!("MAPPED_ITEM #{id} has no resolved body placement")),
@@ -983,35 +1196,71 @@ fn apply_body_placements(
             }
             Err(error) => return Err(placement_error(error)),
         };
-        for body in body_ids {
-            ctx.admit_btree_entry(&placements_by_body, &body, "step_body_placement_groups")?;
-            let grouped = placements_by_body.entry(body).or_default();
-            ctx.reserve_vec(grouped, 1, "step_body_placement_group_members")?;
-            grouped.push((id, transform));
+        ctx.push_scoped_vec(
+            &mut placement_source_storage,
+            &mut placement_sources,
+            (id, bodies.into_parts(), transform),
+            "STEP mapped body placement sources",
+        )?;
+    }
+    for (id, (bodies, _body_storage), transform) in ctx.admit_iter(
+        &placement_sources,
+        "STEP mapped body placement source traversal",
+    )? {
+        for body in ctx.admit_iter(&bodies[..], "STEP product body_ids traversal")? {
+            let grouped = scratch_storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(&mut placements_by_body, body, "step_body_placement_groups")
+                })?
+                .or_default();
+            scratch_storage.with_storage(|| {
+                ctx.reserve_vec(grouped, 1, "step_body_placement_group_members")
+            })?;
+            grouped.push((*id, *transform));
         }
     }
-    for (body, placements) in placements_by_body {
+    for (body, placements) in ctx.admit_iter(
+        placements_by_body,
+        "STEP product placements_by_body traversal",
+    )? {
+        let mut seen_transforms = BTreeSet::new();
+        let mut transform_storage = ctx.reserve_scoped(0, "STEP body transform index")?;
         let mut unique = Vec::<(u64, Transform)>::new();
-        for placement in placements {
-            if unique.iter().all(|(_, existing)| *existing != placement.1) {
-                ctx.reserve_vec(&mut unique, 1, "step_unique_body_placements")?;
+        for placement in ctx.admit_iter(placements, "STEP product placements traversal")? {
+            if transform_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut seen_transforms,
+                    transform_key(placement.1),
+                    "STEP body transform index",
+                )
+            })? {
+                scratch_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut unique, 1, "step_unique_body_placements")
+                })?;
                 unique.push(placement);
             }
         }
         match unique.as_slice() {
             [(_, transform)] => {
-                if let Some(index) = body_indices.get(&body) {
+                if let Some(index) =
+                    ctx.get_btree_map(&body_indices, body, "STEP product body_indices get")?
+                {
                     ir.model.bodies[*index].transform = Some(*transform);
                 }
             }
             [] => {}
             _ => {
-                let mapped_items = join_product_references(
-                    unique.iter().map(|(id, _)| *id),
-                    ctx,
-                    "step_body_conflict_source_text",
-                )?;
-                ctx.reserve_vec(losses, 1, "step_product_losses")?;
+                let (mapped_items, _mapped_item_storage) =
+                    ctx.with_scoped_storage("STEP body placement conflict detail scratch", || {
+                        join_product_references(
+                            unique.iter().map(|(id, _)| *id),
+                            ctx,
+                            "step_body_conflict_source_text",
+                        )
+                    })?;
+                slot_storage
+                    .borrow_mut()
+                    .with_storage(|| ctx.reserve_vec(losses, 1, "step_product_losses"))?;
                 losses.push(StepLossCode::BodyConflictingMappedPlacements.note(ctx.format_retained(format_args!("body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"), "step_body_conflict_loss_text")?));
             }
         }
@@ -1049,11 +1298,13 @@ fn drawing_owned_items(
     let mut items = BTreeSet::new();
     let mut visited = BTreeSet::new();
     while let Some(id) = pending.pop() {
-        if visited.contains(&id) {
+        ctx.charge_work(1, "STEP product worklist step")?;
+        if ctx.contains_btree_set(&visited, &id, "STEP product visited contains")? {
             continue;
         }
         ctx.insert_btree_set(&mut visited, id, "step_drawing_owned_visited")?;
-        let Some(record) = exchange.records().get(&id) else {
+        let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP product record get")?
+        else {
             continue;
         };
         if record.partial(ctx, "MAPPED_ITEM")?.is_some() {
@@ -1087,7 +1338,7 @@ fn drawing_owned_items(
             else {
                 continue;
             };
-            for value in values {
+            for value in ctx.admit_iter(values, "STEP product values traversal")? {
                 collect_references(value, &mut pending, ctx)?;
             }
         }
@@ -1112,7 +1363,10 @@ fn collect_references(
                 collect_references(value, references, ctx)?;
             }
         }
-        Value::Typed(_, value) => collect_references(value, references, ctx)?,
+        Value::Typed(_, value) => {
+            ctx.charge_work(1, "STEP typed reference descent")?;
+            collect_references(value, references, ctx)?;
+        }
         _ => {}
     }
     Ok(())
@@ -1124,21 +1378,23 @@ struct Usage {
     name: Option<String>,
 }
 
-fn shape_bindings(
+fn shape_bindings<'ctx>(
     exchange: &Exchange,
     definitions: &BTreeMap<u64, u64>,
     topology: &TopologyData,
-    ctx: &DecodeContext<'_>,
-) -> Result<BTreeMap<u64, Vec<BodyId>>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<BTreeMap<u64, Vec<super::topology::AdmittedRepresentationBodies<'ctx>>>, CodecError> {
     let mut pds = BTreeMap::new();
     for (id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
-        if let Some(definition) = named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?
+        if let Some(definition) = record
+            .partial(ctx, "PRODUCT_DEFINITION_SHAPE")?
+            .and_then(|partial| partial.parameters.get(2))
             .and_then(ValueExt::reference)
         {
             ctx.insert_btree_map(&mut pds, id, definition, "step_shape_binding_shapes")?;
         }
     }
-    let mut result = BTreeMap::<u64, Vec<BodyId>>::new();
+    let mut result = BTreeMap::new();
     let mut representation_cache = BTreeMap::new();
     for (_, record) in ctx.admit_iter(exchange.records(), "STEP shape bindings map traversal")? {
         if record
@@ -1156,11 +1412,10 @@ fn shape_bindings(
             &mut representation_cache,
             ctx,
         )? {
-            let (body_ids, _body_bytes) = bodies.into_parts();
-            ctx.admit_btree_entry(&result, &definition, "step_shape_binding_groups")?;
-            let grouped = result.entry(definition).or_default();
-            ctx.reserve_vec(grouped, body_ids.len(), "step_shape_binding_bodies")?;
-            grouped.extend(body_ids);
+            let grouped = ctx
+                .entry_btree_map(&mut result, definition, "step_shape_binding_groups")?
+                .or_default();
+            ctx.push_vec(grouped, bodies, "step_shape_binding_bodies")?;
         }
     }
     Ok(result)
@@ -1175,18 +1430,26 @@ fn shape_binding<'a>(
     representation_cache: &mut BTreeMap<u64, super::topology::AdmittedRepresentationBodies<'a>>,
     ctx: &'a DecodeContext<'_>,
 ) -> Result<Option<(u64, super::topology::AdmittedRepresentationBodies<'a>)>, CodecError> {
-    let Some(shape) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 0)?
+    let Some(shape) = record
+        .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
+        .and_then(|partial| partial.parameters.first())
         .and_then(ValueExt::reference)
     else {
         return Ok(None);
     };
-    let Some(&definition) = pds.get(&shape) else {
+    let Some(&definition) = ctx.get_btree_map(pds, &shape, "STEP product pds get")? else {
         return Ok(None);
     };
-    if !definitions.contains_key(&definition) {
+    if !ctx.contains_key_btree_map(
+        definitions,
+        &definition,
+        "STEP product definitions contains_key",
+    )? {
         return Ok(None);
     }
-    let Some(representation) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 1)?
+    let Some(representation) = record
+        .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
+        .and_then(|partial| partial.parameters.get(1))
         .and_then(ValueExt::reference)
     else {
         return Ok(None);
@@ -1209,26 +1472,31 @@ fn definition_representations(
 ) -> Result<BTreeMap<u64, BTreeSet<u64>>, CodecError> {
     let mut result = BTreeMap::<u64, BTreeSet<u64>>::new();
     for (_, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
-        let Some(shape) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 0)?
+        let Some(shape) = record
+            .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
+            .and_then(|partial| partial.parameters.first())
             .and_then(ValueExt::reference)
         else {
             continue;
         };
-        let Some(&definition) = pds.get(&shape) else {
+        let Some(&definition) = ctx.get_btree_map(pds, &shape, "STEP product pds get")? else {
             continue;
         };
-        let Some(representation) =
-            named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 1)?
-                .and_then(ValueExt::reference)
+        let Some(representation) = record
+            .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
+            .and_then(|partial| partial.parameters.get(1))
+            .and_then(ValueExt::reference)
         else {
             continue;
         };
-        ctx.admit_btree_entry(
-            &result,
-            &definition,
-            "step_definition_representation_groups",
-        )?;
-        let representations = result.entry(definition).or_default();
+
+        let representations = ctx
+            .entry_btree_map(
+                &mut result,
+                definition,
+                "step_definition_representation_groups",
+            )?
+            .or_default();
         ctx.insert_btree_set(
             representations,
             representation,
@@ -1238,45 +1506,62 @@ fn definition_representations(
     Ok(result)
 }
 
+type PlacementSourceIds = BTreeMap<u64, Vec<u64>>;
+
 fn occurrence_placements(
     exchange: &Exchange,
     geometry: &GeometryData,
     usages: &BTreeMap<u64, Usage>,
-    losses: &mut Vec<LossNote>,
-    ambiguous: &mut BTreeMap<u64, Vec<u64>>,
-    competing: &mut BTreeMap<u64, Vec<u64>>,
+    (losses, slot_storage): (
+        &mut Vec<LossNote>,
+        &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
+    ),
+    (ambiguous, competing): (&mut PlacementSourceIds, &mut PlacementSourceIds),
+    scratch_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
     let mut pds = BTreeMap::new();
     for (&id, record) in
         ctx.admit_iter(exchange.records(), "STEP occurrence placements traversal")?
     {
-        if let Some(definition) = named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?
+        if let Some(definition) = record
+            .partial(ctx, "PRODUCT_DEFINITION_SHAPE")?
+            .and_then(|partial| partial.parameters.get(2))
             .and_then(ValueExt::reference)
         {
-            ctx.insert_btree_map(&mut pds, id, definition, "step_occurrence_placement_shapes")?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(&mut pds, id, definition, "step_occurrence_placement_shapes")
+            })?;
         }
     }
-    let definition_representations = definition_representations(exchange, &pds, ctx)?;
+    let (definition_representations, _representation_storage) = ctx
+        .with_scoped_storage("STEP definition representation scratch", || {
+            definition_representations(exchange, &pds, ctx)
+        })?;
     let mut definitions_by_representation = BTreeMap::<u64, BTreeSet<u64>>::new();
     for (&definition, representations) in ctx.admit_iter(
         &definition_representations,
         "STEP occurrence placements traversal",
     )? {
-        for &representation in representations {
-            ctx.admit_btree_entry(
-                &definitions_by_representation,
-                &representation,
-                "step_represented_definition_groups",
-            )?;
-            let definitions = definitions_by_representation
-                .entry(representation)
+        for &representation in
+            ctx.admit_iter(representations, "STEP product representations traversal")?
+        {
+            let definitions = scratch_storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut definitions_by_representation,
+                        representation,
+                        "step_represented_definition_groups",
+                    )
+                })?
                 .or_default();
-            ctx.insert_btree_set(
-                definitions,
-                definition,
-                "step_represented_definition_members",
-            )?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    definitions,
+                    definition,
+                    "step_represented_definition_members",
+                )
+            })?;
         }
     }
     let mut result = BTreeMap::new();
@@ -1292,26 +1577,35 @@ fn occurrence_placements(
             &definition_representations,
         )? {
             Ok(Some((usage, transform))) => {
-                if usages.contains_key(&usage) {
-                    ctx.admit_btree_entry(
-                        &context_candidates,
-                        &usage,
-                        "step_context_candidate_groups",
-                    )?;
-                    let grouped = context_candidates.entry(usage).or_default();
-                    ctx.reserve_vec(grouped, 1, "step_context_candidate_members")?;
+                if ctx.contains_key_btree_map(usages, &usage, "STEP product usages contains_key")? {
+                    let grouped = scratch_storage
+                        .with_storage(|| {
+                            ctx.entry_btree_map(
+                                &mut context_candidates,
+                                usage,
+                                "step_context_candidate_groups",
+                            )
+                        })?
+                        .or_default();
+                    scratch_storage.with_storage(|| {
+                        ctx.reserve_vec(grouped, 1, "step_context_candidate_members")
+                    })?;
                     grouped.push(record_id);
-                    ctx.insert_btree_map(
-                        &mut result,
-                        usage,
-                        transform,
-                        "step_occurrence_placement_results",
-                    )?;
+                    scratch_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut result,
+                            usage,
+                            transform,
+                            "step_occurrence_placement_results",
+                        )
+                    })?;
                 }
             }
             Ok(None) => {}
             Err(TransformError::Singular) => {
-                ctx.reserve_vec(losses, 1, "step_product_losses")?;
+                slot_storage
+                    .borrow_mut()
+                    .with_storage(|| ctx.reserve_vec(losses, 1, "step_product_losses"))?;
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION #{record_id} has a singular placement"
                 )));
@@ -1323,13 +1617,9 @@ fn occurrence_placements(
         ctx.admit_iter(&context_candidates, "STEP occurrence placements traversal")?
     {
         if source_ids.len() > 1 {
-            let mut copied = Vec::new();
-            ctx.reserve_vec(
-                &mut copied,
-                source_ids.len(),
-                "step_ambiguous_context_source_copy",
-            )?;
-            copied.extend_from_slice(source_ids);
+            let copied = scratch_storage.with_storage(|| {
+                ctx.copy_slice(source_ids, "step_ambiguous_context_source_copy")
+            })?;
             let mut source_ids = copied;
             ctx.sort_unstable_by(
                 &mut source_ids,
@@ -1337,64 +1627,88 @@ fn occurrence_placements(
                 Ord::cmp,
                 "step_ambiguous_context_source_sort",
             )?;
-            source_ids.dedup();
-            ctx.insert_btree_map(
-                ambiguous,
-                usage,
-                source_ids,
-                "step_ambiguous_placement_groups",
-            )?;
+            ctx.dedup_vec(&mut source_ids, "STEP placement source deduplication")?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    ambiguous,
+                    usage,
+                    source_ids,
+                    "step_ambiguous_placement_groups",
+                )
+            })?;
         }
     }
     let mut occurrence_representations = BTreeMap::<u64, Vec<(u64, u64)>>::new();
     for (record_id, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
-        let Some(shape) = named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 0)?
+        let Some(shape) = record
+            .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
+            .and_then(|partial| partial.parameters.first())
             .and_then(ValueExt::reference)
         else {
             continue;
         };
-        let Some(&usage) = pds.get(&shape) else {
+        let Some(&usage) = ctx.get_btree_map(&pds, &shape, "STEP product pds get")? else {
             continue;
         };
-        if !usages.contains_key(&usage) {
+        if !ctx.contains_key_btree_map(usages, &usage, "STEP product usages contains_key")? {
             continue;
         }
-        let Some(representation) =
-            named_parameter(ctx, record, "SHAPE_DEFINITION_REPRESENTATION", 1)?
-                .and_then(ValueExt::reference)
+        let Some(representation) = record
+            .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
+            .and_then(|partial| partial.parameters.get(1))
+            .and_then(ValueExt::reference)
         else {
             continue;
         };
-        ctx.admit_btree_entry(
-            &occurrence_representations,
-            &usage,
-            "step_occurrence_representation_groups",
-        )?;
-        let grouped = occurrence_representations.entry(usage).or_default();
-        ctx.reserve_vec(grouped, 1, "step_occurrence_representation_members")?;
+
+        let grouped = scratch_storage
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut occurrence_representations,
+                    usage,
+                    "step_occurrence_representation_groups",
+                )
+            })?
+            .or_default();
+        scratch_storage.with_storage(|| {
+            ctx.reserve_vec(grouped, 1, "step_occurrence_representation_members")
+        })?;
         grouped.push((record_id, representation));
     }
     for (&usage_id, representations) in ctx.admit_iter(
         &occurrence_representations,
         "STEP occurrence placements traversal",
     )? {
-        let Some(usage) = usages.get(&usage_id) else {
+        let Some(usage) = ctx.get_btree_map(usages, &usage_id, "STEP product usages get")? else {
             continue;
         };
-        let Some(child_representations) = definition_representations.get(&usage.child_definition)
+        let Some(child_representations) = ctx.get_btree_map(
+            &definition_representations,
+            &usage.child_definition,
+            "STEP product definition_representations get",
+        )?
         else {
             continue;
         };
         let mut candidates = Vec::new();
-        for &(source_id, representation) in representations {
-            let Some(record) = exchange.records().get(&representation) else {
+        for &(source_id, representation) in
+            ctx.admit_iter(representations, "STEP product representations traversal")?
+        {
+            let Some(record) = ctx.get_btree_map(
+                exchange.records(),
+                &representation,
+                "STEP product record get",
+            )?
+            else {
                 continue;
             };
             let Some(items) = super::representation::items(ctx, record)? else {
                 continue;
             };
             for item_id in items {
-                let Some(item) = exchange.records().get(&item_id) else {
+                let Some(item) =
+                    ctx.get_btree_map(exchange.records(), &item_id, "STEP product record get")?
+                else {
                     continue;
                 };
                 if item.partial(ctx, "MAPPED_ITEM")?.is_none() {
@@ -1405,7 +1719,9 @@ fn occurrence_placements(
                         Ok(Some(placement)) => placement,
                         Ok(None) => continue,
                         Err(TransformError::Singular) => {
-                            ctx.reserve_vec(losses, 1, "step_product_losses")?;
+                            slot_storage.borrow_mut().with_storage(|| {
+                                ctx.reserve_vec(losses, 1, "step_product_losses")
+                            })?;
                             losses.push(
                                 StepLossCode::DecodeWarning.note(format!(
                                     "MAPPED_ITEM #{item_id} has a singular placement"
@@ -1415,88 +1731,116 @@ fn occurrence_placements(
                         }
                         Err(error) => return Err(placement_error(error)),
                     };
-                if child_representations.contains(&mapped_representation) {
-                    ctx.reserve_vec(&mut candidates, 1, "step_occurrence_placement_candidates")?;
+                if ctx.contains_btree_set(
+                    child_representations,
+                    &mapped_representation,
+                    "STEP product child_representations contains",
+                )? {
+                    scratch_storage.with_storage(|| {
+                        ctx.reserve_vec(&mut candidates, 1, "step_occurrence_placement_candidates")
+                    })?;
                     candidates.push((source_id, transform));
                 }
             }
         }
-        if result.contains_key(&usage_id)
-            && context_candidates
-                .get(&usage_id)
+        if ctx.contains_key_btree_map(&result, &usage_id, "STEP product result contains_key")?
+            && ctx
+                .get_btree_map(
+                    &context_candidates,
+                    &usage_id,
+                    "STEP product context_candidates get",
+                )?
                 .is_some_and(|source_ids| !source_ids.is_empty())
             && !candidates.is_empty()
         {
-            let original = &context_candidates[&usage_id];
-            let mut source_ids = Vec::new();
-            ctx.reserve_vec(
-                &mut source_ids,
-                original.len(),
-                "step_competing_context_source_copy",
-            )?;
-            source_ids.extend_from_slice(original);
-            ctx.reserve_vec(
-                &mut source_ids,
-                candidates.len(),
-                "step_competing_mapped_sources",
-            )?;
-            source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
+            let original = ctx
+                .get_btree_map(
+                    &context_candidates,
+                    &usage_id,
+                    "STEP context placement source lookup",
+                )?
+                .ok_or_else(|| CodecError::malformed("STEP context placement was not indexed"))?;
+            let mut source_ids = scratch_storage
+                .with_storage(|| ctx.copy_slice(original, "step_competing_context_source_copy"))?;
+            scratch_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut source_ids,
+                    candidates.len(),
+                    "step_competing_mapped_sources",
+                )
+            })?;
+            source_ids.extend(
+                ctx.admit_iter(&candidates, "STEP mapped placement source traversal")?
+                    .map(|(source_id, _)| *source_id),
+            );
             ctx.sort_unstable_by(
                 &mut source_ids,
                 |value| value,
                 Ord::cmp,
                 "step_competing_mapped_source_sort",
             )?;
-            source_ids.dedup();
-            result.remove(&usage_id);
-            let mut copied = Vec::new();
-            ctx.reserve_vec(&mut copied, source_ids.len(), "step_competing_source_copy")?;
-            copied.extend_from_slice(&source_ids);
-            ctx.insert_btree_map(
-                ambiguous,
-                usage_id,
-                copied,
-                "step_ambiguous_placement_groups",
-            )?;
-            ctx.insert_btree_map(
-                competing,
-                usage_id,
-                source_ids,
-                "step_competing_placement_groups",
-            )?;
+            ctx.dedup_vec(&mut source_ids, "STEP placement source deduplication")?;
+            ctx.remove_btree_map(&mut result, &usage_id, "STEP product result remove")?;
+            let copied = scratch_storage
+                .with_storage(|| ctx.copy_slice(&source_ids, "step_competing_source_copy"))?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    ambiguous,
+                    usage_id,
+                    copied,
+                    "step_ambiguous_placement_groups",
+                )
+            })?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    competing,
+                    usage_id,
+                    source_ids,
+                    "step_competing_placement_groups",
+                )
+            })?;
             continue;
         }
         match candidates.as_slice() {
             [(_, transform)] => {
-                ctx.insert_btree_map(
-                    &mut result,
-                    usage_id,
-                    *transform,
-                    "step_occurrence_placement_results",
-                )?;
+                scratch_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut result,
+                        usage_id,
+                        *transform,
+                        "step_occurrence_placement_results",
+                    )
+                })?;
             }
             [] => {}
             _ => {
                 let mut source_ids = Vec::new();
-                ctx.reserve_vec(
-                    &mut source_ids,
-                    candidates.len(),
-                    "step_ambiguous_mapped_sources",
-                )?;
-                source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
+                scratch_storage.with_storage(|| {
+                    ctx.reserve_vec(
+                        &mut source_ids,
+                        candidates.len(),
+                        "step_ambiguous_mapped_sources",
+                    )
+                })?;
+                source_ids.extend(
+                    ctx.admit_iter(&candidates, "STEP mapped placement source traversal")?
+                        .map(|(source_id, _)| *source_id),
+                );
                 ctx.sort_unstable_by(
                     &mut source_ids,
                     |value| value,
                     Ord::cmp,
                     "step_ambiguous_mapped_source_sort",
                 )?;
-                source_ids.dedup();
-                ctx.insert_btree_map(
-                    ambiguous,
-                    usage_id,
-                    source_ids,
-                    "step_ambiguous_placement_groups",
-                )?;
+                ctx.dedup_vec(&mut source_ids, "STEP placement source deduplication")?;
+                scratch_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        ambiguous,
+                        usage_id,
+                        source_ids,
+                        "step_ambiguous_placement_groups",
+                    )
+                })?;
             }
         }
     }
@@ -1506,82 +1850,201 @@ fn occurrence_placements(
         .map(|(_, value)| value)
     {
         let pair = (usage.parent_definition, usage.child_definition);
-        ctx.admit_btree_entry(&sibling_usage_counts, &pair, "step_sibling_usage_counts")?;
-        *sibling_usage_counts.entry(pair).or_default() += 1;
+
+        *scratch_storage
+            .with_storage(|| {
+                ctx.entry_btree_map(&mut sibling_usage_counts, pair, "step_sibling_usage_counts")
+            })?
+            .or_default() += 1;
     }
+    let mut fallback_mappings = BTreeMap::new();
     for (&usage_id, usage) in ctx.admit_iter(usages, "STEP occurrence placements traversal")? {
-        if result.contains_key(&usage_id) || ambiguous.contains_key(&usage_id) {
+        if ctx.contains_key_btree_map(&result, &usage_id, "STEP product result contains_key")?
+            || ctx.contains_key_btree_map(
+                ambiguous,
+                &usage_id,
+                "STEP ambiguous placement lookup",
+            )?
+        {
             continue;
         }
         // A parent representation's MAPPED_ITEM identifies its child through
         // the mapping source's mapped representation and that representation's
         // SHAPE_DEFINITION_REPRESENTATION. `representation.items` is a SET,
         // so admission cannot depend on member or record order.
-        let Some(parent_representations) = definition_representations.get(&usage.parent_definition)
+        let Some(parent_representations) = ctx.get_btree_map(
+            &definition_representations,
+            &usage.parent_definition,
+            "STEP product definition_representations get",
+        )?
         else {
             continue;
         };
-        let mut placements = Vec::new();
-        for &parent_representation in parent_representations {
-            let Some(record) = exchange.records().get(&parent_representation) else {
-                continue;
-            };
-            let Some(items) = super::representation::items(ctx, record)? else {
-                continue;
-            };
-            for item_id in items {
-                let Some(item) = exchange.records().get(&item_id) else {
-                    continue;
-                };
-                if item.partial(ctx, "MAPPED_ITEM")?.is_none() {
-                    continue;
-                }
-                let (mapped_representation, transform) =
-                    match mapped_item_placement(ctx, item, exchange, geometry)? {
-                        Ok(Some(placement)) => placement,
-                        Ok(None) => continue,
-                        Err(TransformError::Singular) => {
-                            ctx.reserve_vec(losses, 1, "step_product_losses")?;
-                            losses.push(
-                                StepLossCode::DecodeWarning.note(format!(
-                                    "MAPPED_ITEM #{item_id} has a singular placement"
-                                )),
-                            );
-                            continue;
-                        }
-                        Err(error) => return Err(placement_error(error)),
-                    };
-                let Some(mapped_definitions) =
-                    definitions_by_representation.get(&mapped_representation)
-                else {
-                    continue;
-                };
-                if mapped_definitions.len() == 1
-                    && mapped_definitions.contains(&usage.child_definition)
-                    && !placements.contains(&transform)
-                {
-                    ctx.reserve_vec(&mut placements, 1, "step_fallback_occurrence_placements")?;
-                    placements.push(transform);
-                }
-            }
+        if !ctx.contains_key_btree_map(
+            &fallback_mappings,
+            &usage.parent_definition,
+            "STEP fallback parent lookup",
+        )? {
+            let mappings = scratch_storage.with_storage(|| {
+                fallback_parent_mappings(
+                    parent_representations,
+                    exchange,
+                    geometry,
+                    &definitions_by_representation,
+                    ctx,
+                )
+            })?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut fallback_mappings,
+                    usage.parent_definition,
+                    mappings,
+                    "step_fallback_parent_mappings",
+                )
+            })?;
         }
-        let sibling_usage_count =
-            sibling_usage_counts[&(usage.parent_definition, usage.child_definition)];
-        if sibling_usage_count == 1 && placements.len() == 1 {
-            ctx.insert_btree_map(
-                &mut result,
-                usage_id,
-                placements[0],
-                "step_occurrence_placement_results",
+        let mappings = ctx
+            .get_btree_map(
+                &fallback_mappings,
+                &usage.parent_definition,
+                "STEP fallback parent lookup",
+            )?
+            .ok_or_else(|| CodecError::malformed("STEP fallback parent was not indexed"))?;
+        // Singular mappings produce warnings for every unresolved usage,
+        // including unrelated children. Replay their source order here.
+        for item_id in ctx.admit_iter(&mappings.singular, "STEP fallback singular sources")? {
+            let message = ctx.format_retained(
+                format_args!("MAPPED_ITEM #{item_id} has a singular placement"),
+                "step_fallback_singular_text",
             )?;
-        } else if !placements.is_empty() {
-            ctx.reserve_vec(losses, 1, "step_product_losses")?;
+            ctx.push_scoped_vec(
+                &mut slot_storage.borrow_mut(),
+                losses,
+                StepLossCode::DecodeWarning.note(message),
+                "step_product_losses",
+            )?;
+        }
+        let placements = ctx.get_btree_map(
+            &mappings.by_child,
+            &usage.child_definition,
+            "STEP fallback child lookup",
+        )?;
+        let sibling_usage_count = *ctx
+            .get_btree_map(
+                &sibling_usage_counts,
+                &(usage.parent_definition, usage.child_definition),
+                "STEP sibling usage count lookup",
+            )?
+            .ok_or_else(|| CodecError::malformed("STEP sibling usage count was not indexed"))?;
+        if sibling_usage_count == 1 && placements.is_some_and(|values| values.len() == 1) {
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut result,
+                    usage_id,
+                    *placements
+                        .and_then(|values| values.first_key_value())
+                        .map(|(_, value)| value)
+                        .ok_or_else(|| {
+                            CodecError::malformed("STEP fallback placement was not indexed")
+                        })?,
+                    "step_occurrence_placement_results",
+                )
+            })?;
+        } else if placements.is_some_and(|values| !values.is_empty()) {
+            slot_storage
+                .borrow_mut()
+                .with_storage(|| ctx.reserve_vec(losses, 1, "step_product_losses"))?;
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "NAUO #{usage_id} has an ambiguous mapped-item placement"
             )));
         }
     }
     Ok(result)
+}
+
+struct FallbackMappings {
+    by_child: BTreeMap<u64, BTreeMap<[[u64; 4]; 4], Transform>>,
+    singular: Vec<u64>,
+}
+
+fn fallback_parent_mappings(
+    parent_representations: &BTreeSet<u64>,
+    exchange: &Exchange,
+    geometry: &GeometryData,
+    definitions_by_representation: &BTreeMap<u64, BTreeSet<u64>>,
+    ctx: &DecodeContext<'_>,
+) -> Result<FallbackMappings, CodecError> {
+    let mut mappings = FallbackMappings {
+        by_child: BTreeMap::new(),
+        singular: Vec::new(),
+    };
+    for &parent_representation in ctx.admit_iter(
+        parent_representations,
+        "STEP product parent_representations traversal",
+    )? {
+        let Some(record) = ctx.get_btree_map(
+            exchange.records(),
+            &parent_representation,
+            "STEP product record get",
+        )?
+        else {
+            continue;
+        };
+        let Some(items) = super::representation::items(ctx, record)? else {
+            continue;
+        };
+        for item_id in items {
+            let Some(item) =
+                ctx.get_btree_map(exchange.records(), &item_id, "STEP product record get")?
+            else {
+                continue;
+            };
+            if item.partial(ctx, "MAPPED_ITEM")?.is_none() {
+                continue;
+            }
+            let (representation, transform) =
+                match mapped_item_placement(ctx, item, exchange, geometry)? {
+                    Ok(Some(placement)) => placement,
+                    Ok(None) => continue,
+                    Err(TransformError::Singular) => {
+                        ctx.push_vec(
+                            &mut mappings.singular,
+                            item_id,
+                            "step_fallback_singular_sources",
+                        )?;
+                        continue;
+                    }
+                    Err(error) => return Err(placement_error(error)),
+                };
+            let Some(definitions) = ctx.get_btree_map(
+                definitions_by_representation,
+                &representation,
+                "STEP product definitions_by_representation get",
+            )?
+            else {
+                continue;
+            };
+            if definitions.len() != 1 {
+                continue;
+            }
+            let Some(&child) = definitions.first() else {
+                continue;
+            };
+            let placements = ctx
+                .entry_btree_map(&mut mappings.by_child, child, "step_fallback_child_groups")?
+                .or_default();
+            let key = transform_key(transform);
+            if !ctx.contains_key_btree_map(placements, &key, "STEP fallback transform lookup")? {
+                ctx.insert_btree_map(
+                    placements,
+                    key,
+                    transform,
+                    "step_fallback_occurrence_placements",
+                )?;
+            }
+        }
+    }
+    Ok(mappings)
 }
 
 fn placement_error(error: TransformError) -> CodecError {
@@ -1598,22 +2061,26 @@ fn mapped_item_placement(
     else {
         return Ok(Ok(None));
     };
-    Ok(mapped_item_transform(origin, target, geometry)
+    Ok(mapped_item_transform(ctx, origin, target, geometry)?
         .map(|transform| transform.map(|transform| (representation, transform))))
 }
 
 fn mapped_item_transform(
+    ctx: &DecodeContext<'_>,
     origin: u64,
     target: u64,
     geometry: &GeometryData,
-) -> Result<Option<Transform>, TransformError> {
-    let Some(from) = transformation_item(origin, geometry) else {
-        return Ok(None);
+) -> Result<Result<Option<Transform>, TransformError>, CodecError> {
+    let Some(from) = transformation_item(ctx, origin, geometry)? else {
+        return Ok(Ok(None));
     };
-    let Some(to) = transformation_item(target, geometry) else {
-        return Ok(None);
+    let Some(to) = transformation_item(ctx, target, geometry)? else {
+        return Ok(Ok(None));
     };
-    to.compose(from.try_inverse_affine()?).map(Some)
+    Ok(from
+        .try_inverse_affine()
+        .and_then(|from| to.compose(from))
+        .map(Some))
 }
 
 fn is_two_dimensional_mapping(
@@ -1623,14 +2090,15 @@ fn is_two_dimensional_mapping(
     exchange: &Exchange,
 ) -> Result<bool, CodecError> {
     for id in [origin, target] {
-        let Some(record) = exchange.records().get(&id) else {
+        let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP product record get")?
+        else {
             return Ok(false);
         };
         let placement = record.partial(ctx, "AXIS2_PLACEMENT_2D")?.is_some();
         if !placement
-            && !record
+            && record
                 .partial(ctx, "CARTESIAN_TRANSFORMATION_OPERATOR_2D")?
-                .is_some()
+                .is_none()
         {
             return Ok(false);
         }
@@ -1643,23 +2111,34 @@ fn mapped_item_definition(
     item: &RawRecord,
     exchange: &Exchange,
 ) -> Result<Option<(u64, u64, u64)>, CodecError> {
-    let Some(map) = named_parameter(ctx, item, "MAPPED_ITEM", 1)?
+    let Some(map) = item
+        .partial(ctx, "MAPPED_ITEM")?
+        .and_then(|partial| partial.parameters.get(1))
         .and_then(ValueExt::reference)
-        .and_then(|map| exchange.records().get(&map))
+        .map(|map| ctx.get_btree_map(exchange.records(), &map, "STEP product record get"))
+        .transpose()?
+        .flatten()
     else {
         return Ok(None);
     };
-    let Some(origin) =
-        named_parameter(ctx, map, "REPRESENTATION_MAP", 0)?.and_then(ValueExt::reference)
+    let Some(origin) = map
+        .partial(ctx, "REPRESENTATION_MAP")?
+        .and_then(|partial| partial.parameters.first())
+        .and_then(ValueExt::reference)
     else {
         return Ok(None);
     };
-    let Some(representation) =
-        named_parameter(ctx, map, "REPRESENTATION_MAP", 1)?.and_then(ValueExt::reference)
+    let Some(representation) = map
+        .partial(ctx, "REPRESENTATION_MAP")?
+        .and_then(|partial| partial.parameters.get(1))
+        .and_then(ValueExt::reference)
     else {
         return Ok(None);
     };
-    let Some(target) = named_parameter(ctx, item, "MAPPED_ITEM", 2)?.and_then(ValueExt::reference)
+    let Some(target) = item
+        .partial(ctx, "MAPPED_ITEM")?
+        .and_then(|partial| partial.parameters.get(2))
+        .and_then(ValueExt::reference)
     else {
         return Ok(None);
     };
@@ -1686,7 +2165,7 @@ fn occurrence_placement(
     else {
         return Ok(Ok(None));
     };
-    Ok(mapped_item_transform(from_id, to_id, geometry)
+    Ok(mapped_item_transform(ctx, from_id, to_id, geometry)?
         .map(|transform| transform.map(|transform| (usage, transform))))
 }
 
@@ -1698,28 +2177,43 @@ fn occurrence_placement_definition(
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
 ) -> Result<Option<(u64, u64, u64)>, CodecError> {
-    let Some(relation) = named_parameter(ctx, record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)?
+    let Some(relation) = record
+        .partial(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")?
+        .and_then(|partial| partial.parameters.first())
         .and_then(ValueExt::reference)
-        .and_then(|id| exchange.records().get(&id))
+        .map(|id| ctx.get_btree_map(exchange.records(), &id, "STEP product record get"))
+        .transpose()?
+        .flatten()
     else {
         return Ok(None);
     };
-    let Some(usage) = named_parameter(ctx, record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1)?
+    let Some(usage) = record
+        .partial(ctx, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")?
+        .and_then(|partial| partial.parameters.get(1))
         .and_then(ValueExt::reference)
-        .and_then(|id| pds.get(&id))
+        .map(|id| ctx.get_btree_map(pds, &id, "STEP product pds get"))
+        .transpose()?
+        .flatten()
         .copied()
     else {
         return Ok(None);
     };
-    let Some(usage_data) = usages.get(&usage) else {
+    let Some(usage_data) = ctx.get_btree_map(usages, &usage, "STEP product usages get")? else {
         return Ok(None);
     };
-    let Some(child_representations) = definition_representations.get(&usage_data.child_definition)
+    let Some(child_representations) = ctx.get_btree_map(
+        definition_representations,
+        &usage_data.child_definition,
+        "STEP product definition_representations get",
+    )?
     else {
         return Ok(None);
     };
-    let Some(parent_representations) =
-        definition_representations.get(&usage_data.parent_definition)
+    let Some(parent_representations) = ctx.get_btree_map(
+        definition_representations,
+        &usage_data.parent_definition,
+        "STEP product definition_representations get",
+    )?
     else {
         return Ok(None);
     };
@@ -1734,23 +2228,43 @@ fn occurrence_placement_definition(
     else {
         return Ok(None);
     };
-    let Some(transform) = exchange.records().get(&transform_id) else {
+    let Some(transform) =
+        ctx.get_btree_map(exchange.records(), &transform_id, "STEP product record get")?
+    else {
         return Ok(None);
     };
-    let Some(item_one) = named_parameter(ctx, transform, "ITEM_DEFINED_TRANSFORMATION", 2)?
+    let Some(item_one) = transform
+        .partial(ctx, "ITEM_DEFINED_TRANSFORMATION")?
+        .and_then(|partial| partial.parameters.get(2))
         .and_then(ValueExt::reference)
     else {
         return Ok(None);
     };
-    let Some(item_two) = named_parameter(ctx, transform, "ITEM_DEFINED_TRANSFORMATION", 3)?
+    let Some(item_two) = transform
+        .partial(ctx, "ITEM_DEFINED_TRANSFORMATION")?
+        .and_then(|partial| partial.parameters.get(3))
         .and_then(ValueExt::reference)
     else {
         return Ok(None);
     };
-    let child_to_parent = child_representations.contains(&relation_representations.0)
-        && parent_representations.contains(&relation_representations.1);
-    let parent_to_child = parent_representations.contains(&relation_representations.0)
-        && child_representations.contains(&relation_representations.1);
+    let child_to_parent = ctx.contains_btree_set(
+        child_representations,
+        &relation_representations.0,
+        "STEP product child_representations contains",
+    )? && ctx.contains_btree_set(
+        parent_representations,
+        &relation_representations.1,
+        "STEP product parent_representations contains",
+    )?;
+    let parent_to_child = ctx.contains_btree_set(
+        parent_representations,
+        &relation_representations.0,
+        "STEP product parent_representations contains",
+    )? && ctx.contains_btree_set(
+        child_representations,
+        &relation_representations.1,
+        "STEP product child_representations contains",
+    )?;
     let (from_id, to_id) = match (child_to_parent, parent_to_child) {
         (true, false) => (item_one, item_two),
         (false, true) => (item_two, item_one),
@@ -1759,13 +2273,31 @@ fn occurrence_placement_definition(
     Ok(Some((usage, from_id, to_id)))
 }
 
-fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
-    geometry
-        .placements
-        .get(&id)
+fn transform_key(transform: Transform) -> [[u64; 4]; 4] {
+    transform
+        .rows()
+        .map(|row| row.map(|value| if value == 0.0 { 0 } else { value.to_bits() }))
+}
+
+fn transformation_item(
+    ctx: &DecodeContext<'_>,
+    id: u64,
+    geometry: &GeometryData,
+) -> Result<Option<Transform>, CodecError> {
+    if let Some(transform) = ctx
+        .get_btree_map(&geometry.placements, &id, "STEP placement transform lookup")?
         .copied()
         .and_then(super::geometry::placement_transform)
-        .or_else(|| geometry.transformation_operators.get(&id).copied())
+    {
+        return Ok(Some(transform));
+    }
+    Ok(ctx
+        .get_btree_map(
+            &geometry.transformation_operators,
+            &id,
+            "STEP transformation operator lookup",
+        )?
+        .copied())
 }
 
 fn representation_relationship_endpoints(
@@ -1779,16 +2311,22 @@ fn representation_relationship_endpoints(
     let Some(relationship) = relationship else {
         return Ok(None);
     };
-    let mut references = ctx
-        .admit_iter(
-            relationship.parameters.as_slice(),
-            "STEP representation relationship endpoint traversal",
-        )?
-        .filter_map(ValueExt::reference);
-    let Some(first) = references.next() else {
+    let values = relationship.parameters.as_slice();
+    let Some(first) = ctx.position_by(
+        values,
+        |value| Ok(value.reference().is_some()),
+        "STEP representation relationship first endpoint",
+    )?
+    else {
         return Ok(None);
     };
-    Ok(references.next().map(|second| (first, second)))
+    let first_id = values[first].reference();
+    let second = ctx.find_map(
+        &values[first + 1..],
+        |value| Ok(value.reference()),
+        "STEP representation relationship second endpoint",
+    )?;
+    Ok(first_id.zip(second))
 }
 
 fn product_ir_id(id: u64) -> ProductDefinitionId {

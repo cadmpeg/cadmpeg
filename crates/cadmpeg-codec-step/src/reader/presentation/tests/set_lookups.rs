@@ -31,17 +31,26 @@ fn pmi_presentation_predicate_preserves_lookup_refusal() {
         faces: &faces,
         bodies: &bodies,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // The occurrence test visits the one partial and probes the end; the PMI
-    // test visits it again; the PMI key lookup then refuses.
-    policy.limits.max_work_units = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
-    let error = presentation_item_one(1, &exchange, &entity_ids, indices, &ctx).unwrap_err();
+    // The boundary includes keyed record lookup, partial visits, identity
+    // construction and membership lookup. The ladder admits the preceding work.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP pmi membership",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+            let result = presentation_item_one(1, &exchange, &entity_ids, indices, &ctx);
+            if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
+            }
+            result
+        },
+    );
     let CodecError::ResourceLimit(refusal) = error else {
         panic!("PMI selection must preserve its lookup resource refusal");
     };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(refusal.operation, "STEP pmi membership");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
