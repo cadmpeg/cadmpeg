@@ -187,7 +187,7 @@ fn split_patch_table_is_counterbore(
     Ok(cylinder_ids_by_source.len() == 2 && plane_ids.len() == 1
         && !ctx.contains_key_btree_map(&cylinder_ids_by_source, plane_source, "creo split-patch plane source lookup")?
         && ctx.get_btree_map(&rowless_counts_by_source, plane_source, "creo split-patch rowless source lookup")? == Some(&1)
-        && ctx.all_by(&cylinder_ids_by_source, |(_, ids)| Ok(ids.len() == 2), "creo split-patch cylinder group agreement")?)
+        && cylinder_ids_by_source.values().all(|ids| ids.len() == 2))
 }
 
 struct ReplaySurfacePair {

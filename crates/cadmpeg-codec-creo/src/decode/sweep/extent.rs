@@ -29,14 +29,14 @@ pub(in super::super) struct ExtrusionCarrierSpan {
     pub(in super::super) vector: [f64; 3],
 }
 
-enum SourceSurfaceGeometry<'a> {
+pub(super) enum SourceSurfaceGeometry<'a> {
     Missing,
     Present(&'a SurfaceGeometry),
 }
 
-type SourceSurfaceIndex<'a> = std::collections::HashMap<u32, Option<&'a SurfaceGeometry>>;
+pub(super) type SourceSurfaceIndex<'a> = std::collections::HashMap<u32, Option<&'a SurfaceGeometry>>;
 
-fn source_surface_geometries<'a>(
+pub(super) fn source_surface_geometries<'a>(
     ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     source_carriers: &'a crate::decode::source_carriers::SourceUnitCarriers,
@@ -55,7 +55,7 @@ fn source_surface_geometries<'a>(
     Ok(geometries)
 }
 
-fn unique_source_surface_geometry<'a>(
+pub(super) fn unique_source_surface_geometry<'a>(
     geometries: &SourceSurfaceIndex<'a>,
     surface_id: u32,
 ) -> Option<SourceSurfaceGeometry<'a>> {

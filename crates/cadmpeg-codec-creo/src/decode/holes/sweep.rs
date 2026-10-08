@@ -67,8 +67,8 @@ fn cap_outline(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>, plane: Feature
     Ok(Some(CapOutline { surface_id: plane.0, origin: plane.1, normal: plane.2, corners }))
 }
 
-fn has_exact_materialized_surface_roster(
-    ctx: &DecodeContext<'_>, table: &crate::feature::entity::FeatureEntityTable, expected_ids: &[u32],
+fn has_exact_materialized_surface_roster<const N: usize>(
+    ctx: &DecodeContext<'_>, table: &crate::feature::entity::FeatureEntityTable, expected_ids: &[u32; N],
 ) -> Result<bool, CodecError> {
     let expected_count = expected_ids.len();
     if table.unique_surface_ids().len() != expected_count { return Ok(false); }
@@ -81,9 +81,12 @@ fn has_exact_materialized_surface_roster(
         }
     }
     if actual_count != expected_count { return Ok(false); }
-    ctx.all_by(expected_ids.iter().enumerate(), |(index, id)| {
-        Ok(ctx.contains_btree_set(table.unique_surface_ids(), id, "creo surface roster membership")? && !ctx.any_by(&expected_ids[..index], |previous| Ok(previous == id), "creo surface roster duplicate scan")?)
-    }, "creo expected surface roster scan")
+    for (index, id) in expected_ids.iter().enumerate() {
+        if !ctx.contains_btree_set(table.unique_surface_ids(), id, "creo surface roster membership")? || expected_ids[..index].contains(id) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 pub(in crate::decode) fn compact_simple_hole_cylinder_id(
