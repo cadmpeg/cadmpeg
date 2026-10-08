@@ -33,8 +33,16 @@ fn orthogonal_planes() -> [CarrierEquation; 3] {
 }
 
 fn limit_error(carriers: &[CarrierEquation], operation: &'static str) {
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation, |ctx| solve_carriers_with_diagnostics(ctx, carriers));
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| solve_carriers_with_diagnostics(ctx, carriers),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.operation == operation),
+        "{error:?}"
+    );
 }
 
 #[test]

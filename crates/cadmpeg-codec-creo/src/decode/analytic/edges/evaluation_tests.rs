@@ -34,14 +34,20 @@ fn context_test(test: impl FnOnce(&DecodeContext<'_>), cap: u64) {
 }
 
 fn basis_refusal<T>(run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>) {
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems, "IR B-spline basis", run);
-    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "IR B-spline basis"));
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "IR B-spline basis",
+        run,
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "IR B-spline basis")
+    );
 }
 
 #[test]
 fn nonperiodic_endpoint_recovery_propagates_evaluator_refusal() {
-
-        basis_refusal(|ctx| super::nonperiodic_nurbs_endpoint_points(ctx, &line(false)));
+    basis_refusal(|ctx| super::nonperiodic_nurbs_endpoint_points(ctx, &line(false)));
 
     context_test(
         |ctx| {
@@ -56,30 +62,31 @@ fn nonperiodic_endpoint_recovery_propagates_evaluator_refusal() {
 
 #[test]
 fn nonperiodic_range_recovery_propagates_evaluator_refusal() {
-    basis_refusal(|ctx| super::nonperiodic_nurbs_edge_parameter_range(
-                ctx,
-                &line(false),
-                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-            ));
+    basis_refusal(|ctx| {
+        super::nonperiodic_nurbs_edge_parameter_range(
+            ctx,
+            &line(false),
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        )
+    });
 }
 
 #[test]
 fn nonperiodic_orientation_propagates_evaluator_refusal() {
-    basis_refusal(|ctx| super::orient_nonperiodic_nurbs_edge_carrier(
-                ctx,
-                &mut line(false),
-                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
-            ));
+    basis_refusal(|ctx| {
+        super::orient_nonperiodic_nurbs_edge_carrier(
+            ctx,
+            &mut line(false),
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        )
+    });
 }
 
 #[test]
 fn periodic_range_recovery_propagates_evaluator_refusal() {
-
-        basis_refusal(|ctx| super::full_periodic_nurbs_edge_parameter_range(
-                    ctx,
-                    &line(true),
-                    [0.0, 0.0, 0.0],
-                ));
+    basis_refusal(|ctx| {
+        super::full_periodic_nurbs_edge_parameter_range(ctx, &line(true), [0.0, 0.0, 0.0])
+    });
 
     context_test(
         |ctx| {
@@ -138,11 +145,7 @@ fn degree_one_parameter_search_propagates_evaluator_refusal() {
 
 #[test]
 fn point_pair_alignment_needs_no_input_sized_work() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]].map(|point| super::super::vertices::finite_model_point(point).expect("finite fixture"));
-    assert_eq!(super::point_pair_alignments(&ctx, points, points).expect("fixed geometry"), [true, false]);
+    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+        .map(|point| super::super::vertices::finite_model_point(point).expect("finite fixture"));
+    assert_eq!(super::point_pair_alignments(points, points), [true, false]);
 }

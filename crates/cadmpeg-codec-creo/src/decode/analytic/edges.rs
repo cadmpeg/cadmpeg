@@ -83,10 +83,9 @@ pub(in crate::decode) fn exact_line_edge_parameter_range(
 /// in reverse order, within a tolerance relative to the largest coordinate.
 /// Every point is finite, so the tolerance is finite.
 pub(super) fn point_pair_alignments(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mapped: [FinitePoint3; 2],
     target: [FinitePoint3; 2],
-) -> Result<[bool; 2], cadmpeg_core::CodecError> {
+) -> [bool; 2] {
     let coordinates = |point: FinitePoint3| <[f64; 3]>::from(point.get());
     let (mapped, target) = (mapped.map(coordinates), target.map(coordinates));
     let mismatch = |left: [f64; 3], right: [f64; 3]| {
@@ -96,12 +95,17 @@ pub(super) fn point_pair_alignments(
         )
         .sqrt()
     };
-    let scale = mapped.into_iter().chain(target).flatten().map(f64::abs).fold(1.0, f64::max);
+    let scale = mapped
+        .into_iter()
+        .chain(target)
+        .flatten()
+        .map(f64::abs)
+        .fold(1.0, f64::max);
     let tolerance = EPS_AGREE * scale;
-    Ok([
+    [
         mismatch(mapped[0], target[0]).max(mismatch(mapped[1], target[1])) <= tolerance,
         mismatch(mapped[0], target[1]).max(mismatch(mapped[1], target[0])) <= tolerance,
-    ])
+    ]
 }
 
 pub(super) fn try_fold_nurbs_points<T>(
@@ -252,12 +256,10 @@ fn nonperiodic_nurbs_edge_parameter_range(
     else {
         return Ok(None);
     };
-    Ok(
-        match point_pair_alignments(ctx, [first, second], [start, end])? {
-            [true, false] | [false, true] => Some(range),
-            _ => None,
-        },
-    )
+    Ok(match point_pair_alignments([first, second], [start, end]) {
+        [true, false] | [false, true] => Some(range),
+        _ => None,
+    })
 }
 
 /// Orient a non-periodic NURBS carrier to the topological edge direction.
@@ -340,23 +342,21 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
     else {
         return Ok(None);
     };
-    Ok(
-        match point_pair_alignments(ctx, [first, second], [start, end])? {
-            [true, false] => Some(range),
-            [false, true] => {
-                let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
-                    return Ok(None);
-                };
-                require_some!(nurbs.reverse_parameterization_in_range(
-                    ctx,
-                    intrinsic_range[0],
-                    intrinsic_range[1]
-                )?);
-                Some(range)
-            }
-            _ => None,
-        },
-    )
+    Ok(match point_pair_alignments([first, second], [start, end]) {
+        [true, false] => Some(range),
+        [false, true] => {
+            let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+                return Ok(None);
+            };
+            require_some!(nurbs.reverse_parameterization_in_range(
+                ctx,
+                intrinsic_range[0],
+                intrinsic_range[1]
+            )?);
+            Some(range)
+        }
+        _ => None,
+    })
 }
 
 pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
@@ -408,14 +408,24 @@ fn degree_one_nurbs_point_parameter(
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             let mut previous = None;
             let mut traversal = (points).iter().enumerate();
-    while let Some((span, second)) = ctx.next_charged(&mut traversal, "creo degree-one polynomial NURBS spans")? {
+            while let Some((span, second)) =
+                ctx.next_charged(&mut traversal, "creo degree-one polynomial NURBS spans")?
+            {
                 let second = *second;
                 let Some(first) = previous.replace(second) else {
                     continue;
                 };
                 match degree_one_nurbs_span_parameter(
-                    ctx, geometry, nurbs,
-                    DegreeOneSpan { point, tolerance, index: span, endpoints: [first, second], weights: [1.0, 1.0] },
+                    ctx,
+                    geometry,
+                    nurbs,
+                    DegreeOneSpan {
+                        point,
+                        tolerance,
+                        index: span,
+                        endpoints: [first, second],
+                        weights: [1.0, 1.0],
+                    },
                 )? {
                     DegreeOneSpanParameter::Ambiguous => return Ok(None),
                     DegreeOneSpanParameter::Skipped => {}
@@ -434,7 +444,9 @@ fn degree_one_nurbs_point_parameter(
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             let mut previous = None;
             let mut traversal = (points).iter().enumerate();
-    while let Some((span, second)) = ctx.next_charged(&mut traversal, "creo degree-one rational NURBS spans")? {
+            while let Some((span, second)) =
+                ctx.next_charged(&mut traversal, "creo degree-one rational NURBS spans")?
+            {
                 let Some((first, first_weight)) =
                     previous.replace((second.point, second.weight.get()))
                 else {
@@ -492,6 +504,7 @@ fn retain_degree_one_parameter(
     }
 }
 
+#[derive(Clone, Copy)]
 struct DegreeOneSpan {
     point: [f64; 3],
     tolerance: f64,

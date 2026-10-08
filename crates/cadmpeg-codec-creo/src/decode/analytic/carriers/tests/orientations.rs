@@ -15,11 +15,12 @@ fn limited_native(
     ir: &CadIr,
     operation: &'static str,
 ) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
-
-
-    native_face_orientations(ctx, scan, ir)
-    })
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| native_face_orientations(ctx, scan, ir),
+    )
 }
 
 fn assert_refusal(error: &CodecError, operation: &'static str) {
@@ -52,16 +53,6 @@ fn one_round_feature() -> crate::feature::rows::FeatureRow {
         body_offset: 0,
         offset: 0,
     }
-}
-
-#[test]
-fn native_face_source_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.surfaces.rows.push(one_surface_row());
-    assert_refusal(
-        &limited_native(&scan, &CadIr::empty(), "creo native face source ID nodes"),
-        "creo native face source ID nodes",
-    );
 }
 
 #[test]
@@ -244,13 +235,20 @@ fn rowless_round_pairs_refuse_collection_limit() {
 #[test]
 fn rowless_face_orientation_nodes_refuse_collection_limit() {
     let (table, rows) = rowless_fixture();
-    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo rowless face orientation nodes", |ctx| { rowless_round_face_orientations(
-        ctx,
-        &BTreeSet::from([23]),
-        std::slice::from_ref(&table),
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-        &BTreeSet::from([12]),
-    ) });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo rowless face orientation nodes",
+        |ctx| {
+            rowless_round_face_orientations(
+                ctx,
+                &BTreeSet::from([23]),
+                std::slice::from_ref(&table),
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
+                &BTreeSet::from([12]),
+            )
+        },
+    );
     assert_refusal(&error, "creo rowless face orientation nodes");
 }
 

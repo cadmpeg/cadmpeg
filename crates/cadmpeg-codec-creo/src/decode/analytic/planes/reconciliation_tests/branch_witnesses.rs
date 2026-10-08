@@ -109,22 +109,26 @@ fn fc05_witness_scan() -> crate::container::ContainerScan<'static> {
 }
 
 fn fc05_witness_limit_error(operation: &'static str) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let scan = fc05_witness_scan();
 
-    let scan = fc05_witness_scan();
-
-    fc05_cylinder_model_witness(
-        ctx,
-        &scan,
-        2,
-        CylinderEquation {
-            origin: [0.0, 0.0, 0.0],
-            axis: [0.0, 1.0, 0.0],
-            ref_direction: [1.0, 0.0, 0.0],
-            radius: 1.0,
+            fc05_cylinder_model_witness(
+                ctx,
+                &scan,
+                2,
+                CylinderEquation {
+                    origin: [0.0, 0.0, 0.0],
+                    axis: [0.0, 1.0, 0.0],
+                    ref_direction: [1.0, 0.0, 0.0],
+                    radius: 1.0,
+                },
+            )
         },
     )
-    })
 }
 
 #[test]
@@ -134,8 +138,6 @@ fn fc05_witness_curve_id_node_refuses_collection_limit() {
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo FC05 witness curve ID nodes"));
 }
-
-
 
 #[test]
 fn fc05_tangent_plane_id_node_refuses_collection_limit() {
@@ -158,12 +160,16 @@ fn fc05_branch_scan() -> crate::container::ContainerScan<'static> {
 }
 
 fn fc05_branch_limit_error(operation: &'static str) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let scan = fc05_branch_scan();
 
-    let scan = fc05_branch_scan();
-
-    fc05_cylinder_branch_witnesses(ctx, &scan)
-    })
+            fc05_cylinder_branch_witnesses(ctx, &scan)
+        },
+    )
 }
 
 #[test]
@@ -202,13 +208,17 @@ fn fc05_branch_witnesses_keep_plane_and_cylinder_identity() {
 }
 
 fn fc05_branch_selection_limit_error(operation: &'static str) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let scan = fc05_branch_scan();
+            let mut candidates = std::collections::BTreeMap::new();
 
-    let scan = fc05_branch_scan();
-    let mut candidates = std::collections::BTreeMap::new();
-
-    select_stored_frame_branches(ctx, &scan, &mut candidates)
-    })
+            select_stored_frame_branches(ctx, &scan, &mut candidates)
+        },
+    )
 }
 
 #[test]
@@ -315,31 +325,35 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
 }
 
 fn stored_branch_limit_error(operation: &'static str, with_pcurve: bool) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let scan = stored_frame_branch_scan(with_pcurve);
+            let mut candidates = std::collections::BTreeMap::new();
+            if with_pcurve {
+                let frame = scan.planes.local_systems[1].frame();
+                let origin = frame.origin.expect("complete fixed frame origin");
+                let normal = frame.normal().expect("complete fixed frame normal");
+                let u_axis = frame.u_axis().expect("complete fixed frame U axis");
+                candidates.insert(
+                    2,
+                    vec![PlaneCandidate {
+                        equation: PlaneEquation { origin, normal },
+                        chart: Some(PlaneChart {
+                            origin,
+                            normal,
+                            u_axis,
+                        }),
+                        offset: 20,
+                    }],
+                );
+            }
 
-    let scan = stored_frame_branch_scan(with_pcurve);
-    let mut candidates = std::collections::BTreeMap::new();
-    if with_pcurve {
-        let frame = scan.planes.local_systems[1].frame();
-        let origin = frame.origin.expect("complete fixed frame origin");
-        let normal = frame.normal().expect("complete fixed frame normal");
-        let u_axis = frame.u_axis().expect("complete fixed frame U axis");
-        candidates.insert(
-            2,
-            vec![PlaneCandidate {
-                equation: PlaneEquation { origin, normal },
-                chart: Some(PlaneChart {
-                    origin,
-                    normal,
-                    u_axis,
-                }),
-                offset: 20,
-            }],
-        );
-    }
-
-    select_stored_frame_branches(ctx, &scan, &mut candidates)
-    })
+            select_stored_frame_branches(ctx, &scan, &mut candidates)
+        },
+    )
 }
 
 #[test]
@@ -372,22 +386,6 @@ fn copied_plane_domain_node_refuses_collection_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo copied plane domain nodes"));
-}
-
-#[test]
-fn plane_branch_surface_count_node_refuses_collection_limit() {
-    let error = stored_branch_limit_error("creo unique-row count nodes", false);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo unique-row count nodes"));
-}
-
-#[test]
-fn plane_branch_surface_projection_refuses_collection_limit() {
-    let error = stored_branch_limit_error("creo unique-row projection", false);
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo unique-row projection"));
 }
 
 #[test]
@@ -526,7 +524,12 @@ fn carrier_branch_domains() -> std::collections::BTreeMap<u32, Vec<PlaneCandidat
 #[test]
 fn plane_branch_cylinder_carrier_node_refuses_collection_limit() {
     let scan = carrier_pcurve_branch_scan();
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo plane branch cylinder carrier nodes", |ctx| { native_positional_cylinder_carriers(ctx, &scan) });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo plane branch cylinder carrier nodes",
+        |ctx| native_positional_cylinder_carriers(ctx, &scan),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo plane branch cylinder carrier nodes"));
@@ -537,7 +540,15 @@ fn carrier_pcurve_plane_branch_refuses_collection_limit() {
     let scan = carrier_pcurve_branch_scan();
     let domains = carrier_branch_domains();
     let selected = domains.clone();
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo carrier pcurve plane branch", |ctx| { let mut selected = selected.clone(); select_stored_frame_carrier_pcurve_branches(ctx, &scan, &domains, &mut selected) });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo carrier pcurve plane branch",
+        |ctx| {
+            let mut selected = selected.clone();
+            select_stored_frame_carrier_pcurve_branches(ctx, &scan, &domains, &mut selected)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo carrier pcurve plane branch"));
@@ -581,7 +592,15 @@ fn two_variable_plane_branches_keep_mirror_ambiguity() {
 fn filtered_second_plane_candidate_refuses_collection_limit() {
     let scan = two_variable_plane_branch_scan();
     let candidates = std::collections::BTreeMap::new();
-    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo filtered second plane candidates", |ctx| { let mut candidates = candidates.clone(); select_stored_frame_branches(ctx, &scan, &mut candidates) });
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "creo filtered second plane candidates",
+        |ctx| {
+            let mut candidates = candidates.clone();
+            select_stored_frame_branches(ctx, &scan, &mut candidates)
+        },
+    );
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -594,9 +613,7 @@ fn filtered_second_plane_candidate_refuses_collection_limit() {
 fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
     let scan = stored_frame_branch_scan(false);
     let frame = &scan.planes.local_systems[0];
-    let (candidates, count) =
-        stored_parameter_normal_candidates(frame)
-            .expect("ambiguous frame");
+    let (candidates, count) = stored_parameter_normal_candidates(frame).expect("ambiguous frame");
     assert_eq!(count, 2);
     assert!(candidates[..count].iter().any(|candidate| {
         candidate.equation.normal == [0.8, 0.0, 0.6]
@@ -609,8 +626,8 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
 
     let mut nonzero_origin = frame.clone();
     nonzero_origin.slots[11] = Some(2.0);
-    let (candidates, count) = stored_parameter_normal_candidates(&nonzero_origin)
-    .expect("ambiguous frame");
+    let (candidates, count) =
+        stored_parameter_normal_candidates(&nonzero_origin).expect("ambiguous frame");
     assert_eq!(count, 2);
     assert!(candidates[..count]
         .iter()
@@ -618,13 +635,11 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
 
     let mut invalid = frame.clone();
     invalid.slots[4] = Some(1.0);
-    assert!(stored_parameter_normal_candidates(&invalid)
-    .is_none());
+    assert!(stored_parameter_normal_candidates(&invalid).is_none());
 
     let mut compact = frame.clone();
     compact.classification = LocalSystemClassification::Simple;
-    assert!(stored_parameter_normal_candidates(&compact)
-    .is_none());
+    assert!(stored_parameter_normal_candidates(&compact).is_none());
 }
 
 #[test]
@@ -830,30 +845,16 @@ fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
 }
 
 fn round_edge_envelope_limit_error(operation: &'static str) -> CodecError {
-    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            let scan = round_edge_envelope_scan();
 
-    let scan = round_edge_envelope_scan();
-
-    round_edge_envelopes_for_plane(ctx, &scan, 1)
-    })
-}
-
-
-
-#[test]
-fn round_edge_surface_count_node_refuses_collection_limit() {
-    let error = round_edge_envelope_limit_error("creo unique-row count nodes");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo unique-row count nodes"));
-}
-
-#[test]
-fn round_edge_surface_projection_refuses_collection_limit() {
-    let error = round_edge_envelope_limit_error("creo unique-row projection");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo unique-row projection"));
+            round_edge_envelopes_for_plane(ctx, &scan, 1)
+        },
+    )
 }
 
 #[test]
@@ -951,12 +952,6 @@ fn numerical_followup_fc05_tangency_is_relative_to_radius() {
         }
     }
 }
-
-
-
-
-
-
 
 #[test]
 fn stored_plane_origin_sign_mask_traversal_refuses_work_and_preserves_candidates() {

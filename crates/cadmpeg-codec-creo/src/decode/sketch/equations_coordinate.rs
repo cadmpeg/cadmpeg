@@ -1290,7 +1290,7 @@ fn quadratic_roots(
     linear: Coefficient,
     constant: Coefficient,
 ) -> Result<crate::decode::quadratic::QuadraticRoots, CodecError> {
-    let mut roots = crate::decode::quadratic::real_roots(ctx, quadratic, linear, constant)?;
+    let mut roots = crate::decode::quadratic::real_roots(quadratic, linear, constant);
     let quadratic = quadratic.stated();
     let linear = linear.stated();
     let constant = constant.stated();

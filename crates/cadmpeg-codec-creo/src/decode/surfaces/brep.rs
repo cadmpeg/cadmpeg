@@ -2322,7 +2322,8 @@ pub(in super::super) fn transfer_native_brep(
     for candidate in ctx
         .admit_iter(&scan.curves.pcurves, "creo B-rep native pcurve traversal")?
         .map(|pcurve| -> Result<_, cadmpeg_core::CodecError> {
-            let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(ctx,
+            let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(
+                ctx,
                 scan,
                 pcurve.faces,
                 pcurve.face_0_endpoints,
@@ -2342,7 +2343,8 @@ pub(in super::super) fn transfer_native_brep(
                 "creo B-rep bound prototype pcurve traversal",
             )?
             .map(|pcurve| -> Result<_, cadmpeg_core::CodecError> {
-                let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(ctx,
+                let [face_0_endpoints, face_1_endpoints] = canonicalized_pcurve_endpoints(
+                    ctx,
                     scan,
                     pcurve.faces,
                     pcurve.face_0_endpoints,
@@ -2405,7 +2407,8 @@ pub(in super::super) fn transfer_native_brep(
         &scan.curves.topology_rows,
     )?;
     for pcurve in ctx.admit_iter(&short_pcurves, "creo B-rep short pcurve traversal")? {
-        let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(ctx,
+        let [face_0_endpoints, _] = canonicalized_pcurve_endpoints(
+            ctx,
             scan,
             pcurve.faces.map(std::num::NonZeroU32::new),
             pcurve.face_0_endpoints,

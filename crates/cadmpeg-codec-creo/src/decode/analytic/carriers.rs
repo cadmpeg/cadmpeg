@@ -21,7 +21,7 @@ use crate::topology::HalfEdgeId;
 
 use super::super::native::annotate;
 use super::super::surfaces::cylinders::rowless_round_cylinder_pairs;
-use super::model_index::{CurveIndex, SurfaceIndex};
+use super::model_index::{CurveIndex, ModelPosition, SurfaceIndex};
 
 use super::equations::{
     CarrierEquation, ConeEquation, CylinderEquation, PlaneEquation, SphereEquation, TorusEquation,
@@ -45,7 +45,10 @@ fn existing_plane_agrees_with_topology(
             let normal = plane_surface.frame().axis().as_raw();
             Some(
                 agreed_plane_pair(
-                    PlaneEquation { origin: [origin.x, origin.y, origin.z], normal: [normal.x, normal.y, normal.z] },
+                    PlaneEquation {
+                        origin: [origin.x, origin.y, origin.z],
+                        normal: [normal.x, normal.y, normal.z],
+                    },
                     topology,
                 )
                 .is_some(),
@@ -66,39 +69,51 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo transfer topology bound planes scratch")?;
     let carriers = scratch.with_storage(|| placed_carriers(ctx, scan, ir, source_carriers))?;
-    let solved_vertices = scratch.with_storage(|| solved_topological_vertices(
-        ctx,
-        scan,
-        ir,
-        &carriers,
-        nurbs_endpoint_witnesses,
-        source_carriers,
-    ))?;
-    let vertex_faces = scratch.with_storage(|| crate::topology::vertex_incident_faces(
-        ctx,
-        &scan.topology.vertices,
-        &scan.topology.half_edges,
-    ))?;
-    let unique_rows =
-        scratch.with_storage(|| crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id))?;
+    let solved_vertices = scratch.with_storage(|| {
+        solved_topological_vertices(
+            ctx,
+            scan,
+            ir,
+            &carriers,
+            nurbs_endpoint_witnesses,
+            source_carriers,
+        )
+    })?;
+    let vertex_faces = scratch.with_storage(|| {
+        crate::topology::vertex_incident_faces(
+            ctx,
+            &scan.topology.vertices,
+            &scan.topology.half_edges,
+        )
+    })?;
     let mut unique_curve_ids = BTreeSet::new();
-    let unique_curve_rows = scratch.with_storage(|| crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.curves.topology_rows,
-        |row| row.id,
-    ))?;
+    let unique_curve_rows = scratch.with_storage(|| {
+        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+            row.id
+        })
+    })?;
     for row in ctx.admit_iter(&unique_curve_rows, "creo topology-bound unique curve rows")? {
-        scratch.with_storage(|| ctx.insert_btree_set(
-            &mut unique_curve_ids,
-            row.id,
-            "creo topology-bound unique curve IDs",
-        ))?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut unique_curve_ids,
+                row.id,
+                "creo topology-bound unique curve IDs",
+            )
+        })?;
     }
     let curve_index = CurveIndex::new(ctx, &ir.model.curves)?;
     let surface_index = SurfaceIndex::new(ctx, &ir.model.surfaces)?;
     let mut transferred = 0;
-    for row in ctx.admit_iter(&unique_rows, "creo topology-bound unique surface rows")? {
-        if row.kind != crate::surface::SurfaceKind::Plane { continue; }
+    for row in ctx
+        .admit_iter(
+            &*scan.surfaces.rows,
+            "creo topology-bound unique surface rows",
+        )?
+        .filter(|row| scan.surfaces.rows.unique(row.id).is_some())
+    {
+        if row.kind != crate::surface::SurfaceKind::Plane {
+            continue;
+        }
         let id = crate::identity::compose_checked::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
@@ -106,7 +121,9 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             "creo decoded model identity",
         )?;
         let mut face_storage = ctx.reserve_scoped(0, "creo topology face scratch")?;
-        let points = face_storage.with_storage(|| topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, row.id))?;
+        let points = face_storage.with_storage(|| {
+            topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, row.id)
+        })?;
         let mut boundary_curves = Vec::new();
         let face_id = std::num::NonZeroU32::new(row.id);
         for lp in ctx.admit_iter(&scan.topology.loops, "creo topology-bound face loops")? {
@@ -116,14 +133,22 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             for half_edge in
                 ctx.admit_iter(lp.half_edges(), "creo topology-bound face half edges")?
             {
-                if ctx.contains_btree_set(&unique_curve_ids, &half_edge.curve_id, "creo analytic unique curve ids lookup")? {
-                    let matching_curve = curve_index.unique(half_edge.curve_id).map(|position| &ir.model.curves[position]);
+                if ctx.contains_btree_set(
+                    &unique_curve_ids,
+                    &half_edge.curve_id,
+                    "creo analytic unique curve ids lookup",
+                )? {
+                    let matching_curve = curve_index
+                        .unique(half_edge.curve_id)
+                        .map(|position| &ir.model.curves[position]);
                     if let Some(curve) = matching_curve {
-                        face_storage.with_storage(|| ctx.reserve_vec(
-                            &mut boundary_curves,
-                            1,
-                            "creo topology-bound boundary curves",
-                        ))?;
+                        face_storage.with_storage(|| {
+                            ctx.reserve_vec(
+                                &mut boundary_curves,
+                                1,
+                                "creo topology-bound boundary curves",
+                            )
+                        })?;
                         boundary_curves.push(source_carriers.curve_geometry(curve));
                     }
                 }
@@ -132,7 +157,9 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         let mut curve_planes = Vec::new();
         for geometry in ctx.admit_iter(&boundary_curves, "creo topology-bound boundary curves")? {
             if let Some(plane) = analytic_curve_plane(ctx, geometry)? {
-                face_storage.with_storage(|| ctx.reserve_vec(&mut curve_planes, 1, "creo topology-bound curve planes"))?;
+                face_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut curve_planes, 1, "creo topology-bound curve planes")
+                })?;
                 curve_planes.push(plane);
             }
         }
@@ -151,16 +178,23 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             continue;
         };
         if let Some(existing) = surface_index.entry(0, row.id) {
-            let existing_count = usize::from(existing.is_some());
             let conflict = match existing {
-                Some(position) => existing_plane_agrees_with_topology(source_carriers.surface_geometry(&ir.model.surfaces[position]), plane) == Some(false),
-                None => true,
+                ModelPosition::Unique(position) => {
+                    existing_plane_agrees_with_topology(
+                        source_carriers.surface_geometry(&ir.model.surfaces[position]),
+                        plane,
+                    ) == Some(false)
+                }
+                ModelPosition::Duplicate => true,
             };
             if !conflict {
                 continue;
             }
             source_carriers.remove_surface(&id);
-            for surface in ctx.admit_iter(&mut ir.model.surfaces, "creo topology-bound mutable surfaces")? {
+            for surface in ctx.admit_iter(
+                &mut ir.model.surfaces,
+                "creo topology-bound mutable surfaces",
+            )? {
                 if ctx.equal(
                     &surface.id,
                     &id,
@@ -177,7 +211,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 &id,
                 "VisibGeom",
                 cadmpeg_core::decode::u64_from_index(row.offset),
-                if existing_count == 1 {
+                if matches!(existing, ModelPosition::Unique(_)) {
                     "conflicting_topology_plane_carrier"
                 } else {
                     "duplicate_topology_plane_carrier"
@@ -246,7 +280,11 @@ fn topology_bound_face_points(
             None
         };
         let incident = match incident_faces {
-            Some(faces) => ctx.contains_btree_set(faces, &face_id, "creo topology-bound incident face membership")?,
+            Some(faces) => ctx.contains_btree_set(
+                faces,
+                &face_id,
+                "creo topology-bound incident face membership",
+            )?,
             None => false,
         };
         if incident {
@@ -275,10 +313,11 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             LegacySurfaceNamespace::NonVisible,
         ),
     ] {
-        let unique_rows =
-            scratch.with_storage(|| crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id))?;
-        let mut traversal = (&unique_rows).iter();
-    while let Some(row) = ctx.next_charged(&mut traversal, "creo unresolved surface rows")? {
+        let mut traversal = rows.iter();
+        while let Some(row) = ctx.next_charged(&mut traversal, "creo unresolved surface rows")? {
+            if rows.unique(row.id).is_none() {
+                continue;
+            }
             let identity_namespace = match namespace {
                 LegacySurfaceNamespace::Visible => &crate::identity::VISIBGEOM_SURFACE,
                 LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
@@ -341,12 +380,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             )?;
         }
     }
-    let unique_curve_rows = scratch.with_storage(|| crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.curves.topology_rows,
-        |row| row.id,
-    ))?;
-    let mut traversal = (&unique_curve_rows).iter();
+    let unique_curve_rows = scratch.with_storage(|| {
+        crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
+            row.id
+        })
+    })?;
+    let mut traversal = unique_curve_rows.iter();
     while let Some(row) = ctx.next_charged(&mut traversal, "creo unresolved curve rows")? {
         let id = crate::identity::compose_checked::<CurveId>(
             ctx,
@@ -420,21 +459,35 @@ pub(in crate::decode) fn placed_carriers(
             &scan.surfaces.nonvisible_parameters,
         ),
     ] {
-        let mut traversal = (&**namespace_rows).iter();
-    while let Some(row) = ctx.next_charged(&mut traversal, "creo placed carrier namespace rows")? {
+        let mut traversal = namespace_rows.iter();
+        while let Some(row) =
+            ctx.next_charged(&mut traversal, "creo placed carrier namespace rows")?
+        {
             if crate::decode::surfaces::unique_native_surface_row(scan, row.id).is_none() {
                 continue;
             }
             let namespace = usize::from(!scan.surfaces.rows.contains_id(row.id));
-            let model_surface = surface_index.unique(namespace, row.id).map(|index| &ir.model.surfaces[index]);
-            if let Some(carrier) = positional_cylinder_carrier(ctx, scan, row, parameters, model_surface, source_carriers)? {
+            let model_surface = surface_index
+                .unique(namespace, row.id)
+                .map(|index| &ir.model.surfaces[index]);
+            if let Some(carrier) = positional_cylinder_carrier(
+                ctx,
+                scan,
+                row,
+                parameters,
+                model_surface,
+                source_carriers,
+            )? {
                 ctx.insert_btree_map(&mut carriers, row.id, carrier, "creo placed carrier nodes")?;
                 continue;
             }
             let surface = match surface_index.entry(namespace, row.id) {
                 None => continue,
-                Some(None) => { ctx.remove_btree_map(&mut carriers, &row.id, "creo analytic carriers lookup")?; continue; }
-                Some(Some(index)) => &ir.model.surfaces[index],
+                Some(ModelPosition::Duplicate) => {
+                    ctx.remove_btree_map(&mut carriers, &row.id, "creo analytic carriers lookup")?;
+                    continue;
+                }
+                Some(ModelPosition::Unique(index)) => &ir.model.surfaces[index],
             };
             if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
                 source_carriers.surface_geometry(surface)
@@ -445,13 +498,14 @@ pub(in crate::decode) fn placed_carriers(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                let agreed = match ctx.get_btree_map(&carriers, &row.id, "creo analytic carriers lookup")? {
-                    Some(CarrierEquation::Plane(existing)) => {
-                        agreed_plane_pair(*existing, plane)
-                    }
-                    Some(_) => None,
-                    None => Some(plane),
-                };
+                let agreed =
+                    match ctx.get_btree_map(&carriers, &row.id, "creo analytic carriers lookup")? {
+                        Some(CarrierEquation::Plane(existing)) => {
+                            agreed_plane_pair(*existing, plane)
+                        }
+                        Some(_) => None,
+                        None => Some(plane),
+                    };
                 if let Some(plane) = agreed {
                     ctx.insert_btree_map(
                         &mut carriers,
@@ -468,10 +522,21 @@ pub(in crate::decode) fn placed_carriers(
             }
         }
     }
-    let mut traversal = (&scan.planes.datum_cylinders).iter();
-    while let Some(datum) = ctx.next_charged(&mut traversal, "creo placed carrier datum cylinders")? {
-        let namespace = if scan.surfaces.rows.contains_id(datum.id) { 0 } else if scan.surfaces.nonvisible_rows.contains_id(datum.id) { 1 } else { 2 };
-        let Some(surface) = surface_index.unique(namespace, datum.id).map(|index| &ir.model.surfaces[index]) else {
+    let mut traversal = scan.planes.datum_cylinders.iter();
+    while let Some(datum) =
+        ctx.next_charged(&mut traversal, "creo placed carrier datum cylinders")?
+    {
+        let namespace = if scan.surfaces.rows.contains_id(datum.id) {
+            0
+        } else if scan.surfaces.nonvisible_rows.contains_id(datum.id) {
+            1
+        } else {
+            2
+        };
+        let Some(surface) = surface_index
+            .unique(namespace, datum.id)
+            .map(|index| &ir.model.surfaces[index])
+        else {
             ctx.remove_btree_map(&mut carriers, &datum.id, "creo analytic carriers lookup")?;
             continue;
         };
@@ -488,12 +553,21 @@ pub(in crate::decode) fn placed_carriers(
     }
     let mut model_surfaces_by_id = BTreeMap::<u32, Vec<&Surface>>::new();
     for surface in ctx.admit_iter(&ir.model.surfaces, "creo rowless model surfaces")? {
-        let suffix = surface.id.as_str().strip_prefix("creo:visibgeom:surface#")
+        let suffix = surface
+            .id
+            .as_str()
+            .strip_prefix("creo:visibgeom:surface#")
             .or_else(|| surface.id.as_str().strip_prefix("creo:novisgeom:surface#"));
-        let Some(suffix) = suffix else { continue; };
-        let Ok(id) = ctx.parse_text::<u32>(suffix, "creo rowless surface identity suffix")? else { continue; };
-        let surfaces = scratch.with_storage(|| ctx
-            .entry_btree_map(&mut model_surfaces_by_id, id, "creo rowless carrier groups"))?
+        let Some(suffix) = suffix else {
+            continue;
+        };
+        let Ok(id) = ctx.parse_text::<u32>(suffix, "creo rowless surface identity suffix")? else {
+            continue;
+        };
+        let surfaces = scratch
+            .with_storage(|| {
+                ctx.entry_btree_map(&mut model_surfaces_by_id, id, "creo rowless carrier groups")
+            })?
             .or_default();
         scratch.with_storage(|| ctx.reserve_vec(surfaces, 1, "creo rowless carrier members"))?;
         surfaces.push(surface);
@@ -532,15 +606,13 @@ fn positional_cylinder_carrier(
     let inline = record.has_inline_non_plane_envelope()
         || record.has_inline_non_plane_local_system_suffix(ctx)?
         || record.selector_corner_interval_cylinder_frame().is_some();
-    let round_feature = crate::decode::sketch_transfer::recipe::feature_schema_class(ctx, scan, row.feature_id)? == Some(SchemaClass::Round);
-    if round_feature
-        && !inline
-    {
+    let round_feature =
+        crate::decode::sketch_transfer::recipe::feature_schema_class(ctx, scan, row.feature_id)?
+            == Some(SchemaClass::Round);
+    if round_feature && !inline {
         return Ok(None);
     }
-    if round_feature
-        && inline
-    {
+    if round_feature && inline {
         if let Some(surface) = model_surface {
             if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
                 return Ok(Some(carrier));
@@ -668,11 +740,20 @@ fn projected_loop_polygon(
     };
     let mut polygon = Vec::new();
     let mut half_edges = lp.half_edges().iter();
-    while let Some(half_edge) = ctx.next_charged(&mut half_edges, "creo projected loop half edges")? {
-        let Some(binding) = ctx.get_btree_map(incidence, half_edge, "creo projected loop incidence lookup")? else {
+    while let Some(half_edge) =
+        ctx.next_charged(&mut half_edges, "creo projected loop half edges")?
+    {
+        let Some(binding) =
+            ctx.get_btree_map(incidence, half_edge, "creo projected loop incidence lookup")?
+        else {
             return Ok(None);
         };
-        let Some(point) = ctx.get_btree_map(solved_vertices, &binding.start_vertex_id.get(), "creo projected loop vertex lookup")? else {
+        let Some(point) = ctx.get_btree_map(
+            solved_vertices,
+            &binding.start_vertex_id.get(),
+            "creo projected loop vertex lookup",
+        )?
+        else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut polygon, 1, "creo projected loop polygon points")?;
@@ -703,7 +784,9 @@ fn polygon_strictly_contains(
     let finite_point = FinitePoint2::new(point);
     let mut inside = false;
     let mut traversal = (polygon).iter().enumerate();
-    while let Some((index, first)) = ctx.next_charged(&mut traversal, "creo polygon containment points")? {
+    while let Some((index, first)) =
+        ctx.next_charged(&mut traversal, "creo polygon containment points")?
+    {
         let first = *first;
         let second = polygon[(index + 1) % polygon.len()];
         let first = Point2::new(first[0], first[1]);
@@ -737,10 +820,7 @@ fn polygon_strictly_contains(
     Ok(inside)
 }
 
-fn segments_intersect(
-    first: [[f64; 2]; 2],
-    second: [[f64; 2]; 2],
-) -> bool {
+fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> bool {
     use cadmpeg_ir::math::Point2;
     let points = [first[0], first[1], second[0], second[1]];
     let mut scale = 0.0_f64;
@@ -750,13 +830,7 @@ fn segments_intersect(
         }
     }
     let [a, b, c, d] = points.map(|point| Point2::new(point[0], point[1]));
-    cadmpeg_ir::math::planar::segments_intersect(
-        a,
-        b,
-        c,
-        d,
-        EPS_AGREE * scale,
-    )
+    cadmpeg_ir::math::planar::segments_intersect(a, b, c, d, EPS_AGREE * scale)
 }
 
 fn polygon_strictly_contains_polygon(
@@ -771,10 +845,14 @@ fn polygon_strictly_contains_polygon(
         }
     }
     let mut traversal = (inner).iter().enumerate();
-    while let Some((index, first)) = ctx.next_charged(&mut traversal, "creo contained polygon edges")? {
+    while let Some((index, first)) =
+        ctx.next_charged(&mut traversal, "creo contained polygon edges")?
+    {
         let inner_edge = [*first, inner[(index + 1) % inner.len()]];
         let mut traversal = (outer).iter().enumerate();
-    while let Some((outer_index, first)) = ctx.next_charged(&mut traversal, "creo containing polygon edges")? {
+        while let Some((outer_index, first)) =
+            ctx.next_charged(&mut traversal, "creo containing polygon edges")?
+        {
             let outer_edge = [*first, outer[(outer_index + 1) % outer.len()]];
             if segments_intersect(inner_edge, outer_edge) {
                 return Ok(false);
@@ -790,50 +868,51 @@ fn valid_parameter_polygon(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo valid parameter polygon scratch")?;
     scratch.with_storage(|| {
-    let Some(origin) = polygon.first() else {
-        return Ok(false);
-    };
-    if polygon.len() < 3 {
-        return Ok(false);
-    }
-    let mut has_non_finite_coordinate = false;
-    let mut traversal = (polygon).iter();
-    'points: while let Some(point) = ctx.next_charged(&mut traversal, "creo parameter polygon finite-coordinate scan")? {
-        for value in point {
-            if !value.is_finite() {
-                has_non_finite_coordinate = true;
-                break 'points;
+        let Some(origin) = polygon.first() else {
+            return Ok(false);
+        };
+        if polygon.len() < 3 {
+            return Ok(false);
+        }
+        let mut has_non_finite_coordinate = false;
+        let mut traversal = (polygon).iter();
+        'points: while let Some(point) = ctx.next_charged(
+            &mut traversal,
+            "creo parameter polygon finite-coordinate scan",
+        )? {
+            for value in point {
+                if !value.is_finite() {
+                    has_non_finite_coordinate = true;
+                    break 'points;
+                }
             }
         }
-    }
-    if has_non_finite_coordinate {
-        return Ok(false);
-    }
-    let mut scale = 0.0_f64;
-    for point in ctx.admit_iter(polygon, "creo parameter polygon scale")? {
-        for (axis, value) in point.iter().enumerate()
-        {
-            scale = scale.max((value - origin[axis]).abs());
+        if has_non_finite_coordinate {
+            return Ok(false);
         }
-    }
-    if scale == 0.0 || !scale.is_finite() {
-        return Ok(false);
-    }
-    let mut local = Vec::new();
-    for point in ctx.admit_iter(polygon, "creo parameter polygon normalization")? {
-        ctx.reserve_vec(&mut local, 1, "creo normalized polygon points")?;
-        local.push(cadmpeg_ir::math::Point2::new(
-            (point[0] - origin[0]) / scale,
-            (point[1] - origin[1]) / scale,
-        ));
-    }
-    // The math helper performs this admitted pass; the iterator has no reader.
-    let _ = ctx.admit_iter(&local, "creo polygon area finite points")?;
-    // The math helper performs this admitted pass; the iterator has no reader.
-    let _ = ctx.admit_iter(&local, "creo polygon area edge products")?;
-    Ok(cadmpeg_ir::math::planar::polygon_area_twice(&local)
-        .is_some_and(|area| area.get().abs() > EPS_NEAR_ZERO))
-
+        let mut scale = 0.0_f64;
+        for point in ctx.admit_iter(polygon, "creo parameter polygon scale")? {
+            for (axis, value) in point.iter().enumerate() {
+                scale = scale.max((value - origin[axis]).abs());
+            }
+        }
+        if scale == 0.0 || !scale.is_finite() {
+            return Ok(false);
+        }
+        let mut local = Vec::new();
+        for point in ctx.admit_iter(polygon, "creo parameter polygon normalization")? {
+            ctx.reserve_vec(&mut local, 1, "creo normalized polygon points")?;
+            local.push(cadmpeg_ir::math::Point2::new(
+                (point[0] - origin[0]) / scale,
+                (point[1] - origin[1]) / scale,
+            ));
+        }
+        // discarded-value: the math helper performs this pass; the iterator has no reader.
+        let _ = ctx.admit_iter(&local, "creo polygon area finite points")?;
+        // discarded-value: the math helper performs this pass; the iterator has no reader.
+        let _ = ctx.admit_iter(&local, "creo polygon area edge products")?;
+        Ok(cadmpeg_ir::math::planar::polygon_area_twice(&local)
+            .is_some_and(|area| area.get().abs() > EPS_NEAR_ZERO))
     })
 }
 
@@ -853,10 +932,16 @@ fn ordered_contained_face_loops<'a>(
     }
     let mut outer = None;
     let mut traversal = (polygons).iter().enumerate();
-    while let Some((candidate, polygon)) = ctx.next_charged(&mut traversal, "creo outer face parameter polygon candidates")? {
+    while let Some((candidate, polygon)) = ctx.next_charged(
+        &mut traversal,
+        "creo outer face parameter polygon candidates",
+    )? {
         let mut contains_all = true;
         let mut traversal = (polygons).iter().enumerate();
-    while let Some((index, inner)) = ctx.next_charged(&mut traversal, "creo nested face parameter polygon candidates")? {
+        while let Some((index, inner)) = ctx.next_charged(
+            &mut traversal,
+            "creo nested face parameter polygon candidates",
+        )? {
             if index != candidate && !polygon_strictly_contains_polygon(ctx, polygon, inner)? {
                 contains_all = false;
                 break;
@@ -887,13 +972,18 @@ pub(in crate::decode) fn ordered_planar_face_loops<'a>(
         return Ok(Some(loops));
     }
     let mut polygons = Vec::new();
-    let mut traversal = (&loops).iter();
-    while let Some(lp) = ctx.next_charged(&mut traversal, "creo ordered planar face loops loops traversal")? {
-        let Some(polygon) = scratch.with_storage(|| projected_loop_polygon(ctx, lp, plane, incidence, solved_vertices))?
+    let mut traversal = loops.iter();
+    while let Some(lp) = ctx.next_charged(
+        &mut traversal,
+        "creo ordered planar face loops loops traversal",
+    )? {
+        let Some(polygon) = scratch
+            .with_storage(|| projected_loop_polygon(ctx, lp, plane, incidence, solved_vertices))?
         else {
             return Ok(None);
         };
-        scratch.with_storage(|| ctx.reserve_vec(&mut polygons, 1, "creo projected loop polygons"))?;
+        scratch
+            .with_storage(|| ctx.reserve_vec(&mut polygons, 1, "creo projected loop polygons"))?;
         polygons.push(polygon);
     }
     ordered_contained_face_loops(ctx, loops, &polygons)
@@ -919,10 +1009,18 @@ fn face_boundary_plane(
     topology_bound_plane(ctx, |points| {
         for lp in ctx.admit_iter(loops, "creo face boundary loops")? {
             for half_edge in ctx.admit_iter(lp.half_edges(), "creo face boundary half edges")? {
-                let Some(binding) = ctx.get_btree_map(&incidence, half_edge, "creo analytic incidence lookup")? else {
+                let Some(binding) =
+                    ctx.get_btree_map(incidence, half_edge, "creo analytic incidence lookup")?
+                else {
                     continue;
                 };
-                let Some(point) = ctx.get_btree_map(&solved_vertices, &binding.start_vertex_id.get(), "creo analytic solved vertices lookup")?.copied()
+                let Some(point) = ctx
+                    .get_btree_map(
+                        solved_vertices,
+                        &binding.start_vertex_id.get(),
+                        "creo analytic solved vertices lookup",
+                    )?
+                    .copied()
                 else {
                     continue;
                 };
@@ -942,7 +1040,11 @@ pub(in crate::decode) fn ordered_face_loops<'a>(
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
 ) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
     let mut ordered_input = Vec::new();
-    ctx.extend_from_slice(&mut ordered_input, &loops, "creo native face ordering loop references")?;
+    ctx.extend_from_slice(
+        &mut ordered_input,
+        loops,
+        "creo native face ordering loop references",
+    )?;
     let plane = match plane {
         Some(plane) => Some(plane),
         None => face_boundary_plane(ctx, &ordered_input, incidence, solved_vertices)?,
@@ -963,11 +1065,16 @@ pub(in crate::decode) fn rowless_round_face_orientations(
 ) -> Result<BTreeMap<u32, bool>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo rowless round face orientations scratch")?;
     let mut orientations = BTreeMap::new();
-    let rowless_pairs = scratch.with_storage(|| rowless_round_cylinder_pairs(ctx, round_feature_ids, tables, rows))?;
+    let rowless_pairs = scratch
+        .with_storage(|| rowless_round_cylinder_pairs(ctx, round_feature_ids, tables, rows))?;
     for (rowless_id, sibling_id, _) in
         ctx.admit_iter(&rowless_pairs, "creo rowless round cylinder pairs")?
     {
-        if !ctx.contains_btree_set(&available_surfaces, rowless_id, "creo analytic available surfaces lookup")? {
+        if !ctx.contains_btree_set(
+            available_surfaces,
+            rowless_id,
+            "creo analytic available surfaces lookup",
+        )? {
             continue;
         }
         let Some(reversed) =
@@ -991,22 +1098,18 @@ pub(in crate::decode) fn native_face_orientations(
     ir: &CadIr,
 ) -> Result<BTreeMap<u32, bool>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo native face orientations scratch")?;
-    let mut source_ids = BTreeSet::new();
-    for row in ctx
+    let mut orientations = BTreeMap::new();
+    for source in ctx
         .admit_iter(&*scan.surfaces.rows, "creo native face visible rows")?
         .chain(ctx.admit_iter(
             &*scan.surfaces.nonvisible_rows,
             "creo native face nonvisible rows",
         )?)
     {
-        scratch.with_storage(|| ctx.insert_btree_set(&mut source_ids, row.id, "creo native face source ID nodes"))?;
-    }
-    let mut orientations = BTreeMap::new();
-    for id in ctx.admit_iter(&source_ids, "creo native face source IDs")? {
-        if let Some(row) = crate::decode::surfaces::unique_native_surface_row(scan, *id) {
+        if let Some(row) = crate::decode::surfaces::unique_native_surface_row(scan, source.id) {
             ctx.insert_btree_map(
                 &mut orientations,
-                *id,
+                source.id,
                 row.reversed,
                 "creo native face orientation nodes",
             )?;
@@ -1028,30 +1131,38 @@ pub(in crate::decode) fn native_face_orientations(
         .admit_iter(&scan.features.rows, "creo native face feature rows")?
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        scratch.with_storage(|| ctx.insert_btree_set(
-            &mut round_feature_ids,
-            row.feature_id,
-            "creo native round feature ID nodes",
-        ))?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut round_feature_ids,
+                row.feature_id,
+                "creo native round feature ID nodes",
+            )
+        })?;
     }
     let mut available_surfaces = BTreeSet::new();
     for surface in ctx.admit_iter(&ir.model.surfaces, "creo native face model surfaces")? {
-        let Some(suffix) = surface.id.as_str().strip_prefix("creo:visibgeom:surface#") else { continue; };
+        let Some(suffix) = surface.id.as_str().strip_prefix("creo:visibgeom:surface#") else {
+            continue;
+        };
         if let Ok(id) = ctx.parse_text::<u32>(suffix, "creo native face identity suffix")? {
-            scratch.with_storage(|| ctx.insert_btree_set(
-                &mut available_surfaces,
-                id,
-                "creo available surface ID nodes",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut available_surfaces,
+                    id,
+                    "creo available surface ID nodes",
+                )
+            })?;
         }
     }
-    let rowless_orientations = rowless_round_face_orientations(
-        ctx,
-        &round_feature_ids,
-        &scan.features.entity_tables,
-        &scan.surfaces.rows,
-        &available_surfaces,
-    )?;
+    let rowless_orientations = scratch.with_storage(|| {
+        rowless_round_face_orientations(
+            ctx,
+            &round_feature_ids,
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+            &available_surfaces,
+        )
+    })?;
     for (id, reversed) in ctx.admit_iter(
         &rowless_orientations,
         "creo rowless round face orientations",
