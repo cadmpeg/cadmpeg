@@ -146,3 +146,23 @@ fn quotient_change_detection_visits_a_shared_class_linearly() {
     .expect("linear comparison budget");
     assert!(changed.is_empty());
 }
+
+#[test]
+fn quotient_merge_releases_child_members_and_unused_domain() {
+    catia_test_context!(ctx);
+    let mut quotient = MeshQuotient::new_charged(&ctx, 2, |_| {
+        crate::solve::mesh_quotient::point_domain(&ctx, [0], "test singleton domain")
+    })
+    .expect("quotient storage");
+    let child_domain = std::rc::Rc::downgrade(&quotient.domains[1]);
+    let root = quotient
+        .merge_charged(&ctx, 0, 1)
+        .expect("merge budget")
+        .expect("joined class");
+    let child = usize::from(root == 0);
+    assert_eq!(quotient.members(root).len(), 2);
+    assert!(quotient.members[child].is_empty());
+    assert!(quotient.members[child].storage.is_none());
+    assert!(quotient.domains[child].is_empty());
+    assert!(child_domain.upgrade().is_none());
+}
