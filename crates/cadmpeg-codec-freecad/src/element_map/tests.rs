@@ -979,3 +979,5 @@ fn legacy_string_id_count_is_bounded_before_vector_allocation() {
 }
 
 mod repairs;
+
+mod exhaustion;

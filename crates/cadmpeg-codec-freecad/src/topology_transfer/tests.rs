@@ -1991,3 +1991,5 @@ fn numerical_seventh_pcurve_snapping_preserves_distinct_endpoints() {
         );
     }
 }
+
+mod exhaustion;

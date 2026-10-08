@@ -135,7 +135,13 @@ pub(crate) fn transfer<'ctx>(
 ) -> Result<TopologyOccurrences<'ctx>, CodecError> {
     let mut payloads = payloads.iter();
     let first = loop {
-        let Some(payload) = ctx.next_charged(&mut payloads, "FreeCAD topology payloads")? else {
+        if payloads.len() == 0 {
+            break None;
+        }
+        let Some(payload) = ctx.next_charged(
+            &mut payloads,
+            "FreeCAD topology payloads",
+        )? else {
             break None;
         };
         if let Some(tables) = Tables::from_payload(payload) {
@@ -169,6 +175,9 @@ pub(crate) fn transfer<'ctx>(
                 Some(first)
             } else {
                 loop {
+                    if payloads.len() == 0 {
+                        break None;
+                    }
                     let Some(payload) =
                         ctx.next_charged(&mut payloads, "FreeCAD topology payloads")?
                     else {
@@ -221,9 +230,13 @@ pub(crate) fn transfer<'ctx>(
                 _storage: storage,
             };
             let mut root_iter = roots.values.iter().copied();
-            while let Some(root) =
-                ctx.next_charged(&mut root_iter, "FreeCAD topology body root scan")?
-            {
+            while root_iter.len() != 0 {
+                let Some(root) = ctx.next_charged(
+                    &mut root_iter,
+                    "FreeCAD topology body root scan",
+                )? else {
+                    break;
+                };
                 builder.append_body(ctx, ir, root)?;
             }
             builder.emit_unowned_triangulations(ir)?;
@@ -255,9 +268,13 @@ pub(crate) fn transfer<'ctx>(
         "FreeCAD pcurve retention",
     )?;
     let mut candidates = std::mem::take(&mut pcurves.values).into_iter();
-    while let Some(candidate) =
-        ctx.next_charged(&mut candidates, "FreeCAD pcurve candidate scan")?
-    {
+    while candidates.len() != 0 {
+        let Some(candidate) = ctx.next_charged(
+            &mut candidates,
+            "FreeCAD pcurve candidate scan",
+        )? else {
+            break;
+        };
         if ctx.contains_hash_set(
             &referenced_pcurves.data,
             &candidate.0.id,
@@ -275,13 +292,26 @@ fn referenced_pcurve_ids<'a>(
     ctx: &DecodeContext<'_>,
     coedges: &'a [Coedge],
 ) -> Result<HashSet<&'a PcurveId>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut referenced = HashSet::new();
     let mut coedges = coedges.iter();
-    while let Some(coedge) = ctx.next_charged(&mut coedges, "FreeCAD referenced coedge scan")? {
+    while coedges.len() != 0 {
+        let Some(coedge) = ctx.next_charged(
+            &mut coedges,
+            "FreeCAD referenced coedge scan",
+        )? else {
+            break;
+        };
         let mut pcurves = coedge.pcurves.iter();
-        while let Some(pcurve) =
-            ctx.next_charged(&mut pcurves, "FreeCAD referenced pcurve scan")?
-        {
+        while pcurves.len() != 0 {
+            let Some(pcurve) = ctx.next_charged(
+                &mut pcurves,
+                "FreeCAD referenced pcurve scan",
+            )? else {
+                break;
+            };
             ctx.insert_hash_set(
                 &mut referenced,
                 &pcurve.pcurve,
@@ -405,9 +435,13 @@ impl<'c> GeometryIndexes<'c> {
         if self.curves.is_none() {
             self.curves = Some(BTreeMap::new());
             let mut curves = ir.model.curves.iter().enumerate();
-            while let Some((position, curve)) =
-                ctx.next_charged(&mut curves, "FreeCAD curve index scan")?
-            {
+            while curves.len() != 0 {
+                let Some((position, curve)) = ctx.next_charged(
+                    &mut curves,
+                    "FreeCAD curve index scan",
+                )? else {
+                    break;
+                };
                 self.index_curve(ctx, &curve.id, position)?;
             }
         }
@@ -427,9 +461,13 @@ impl<'c> GeometryIndexes<'c> {
         if self.surfaces.is_none() {
             self.surfaces = Some(BTreeMap::new());
             let mut surfaces = ir.model.surfaces.iter().enumerate();
-            while let Some((position, surface)) =
-                ctx.next_charged(&mut surfaces, "FreeCAD surface index scan")?
-            {
+            while surfaces.len() != 0 {
+                let Some((position, surface)) = ctx.next_charged(
+                    &mut surfaces,
+                    "FreeCAD surface index scan",
+                )? else {
+                    break;
+                };
                 self.index_surface(ctx, &surface.id, position)?;
             }
         }
@@ -445,6 +483,9 @@ impl<'c> GeometryIndexes<'c> {
         ctx: &'c DecodeContext<'_>,
         ir: &CadIr,
     ) -> Result<(), CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         if self.procedural.is_some() {
             return Ok(());
         }
@@ -454,9 +495,13 @@ impl<'c> GeometryIndexes<'c> {
             storage: ctx.reserve_scoped(0, "FreeCAD procedural indexes")?,
         };
         let mut surfaces = ir.model.surfaces.iter().enumerate();
-        while let Some((position, surface)) =
-            ctx.next_charged(&mut surfaces, "FreeCAD procedural owner scan")?
-        {
+        while surfaces.len() != 0 {
+            let Some((position, surface)) = ctx.next_charged(
+                &mut surfaces,
+                "FreeCAD procedural owner scan",
+            )? else {
+                break;
+            };
             if let Some(construction) = surface.geometry.procedural_construction() {
                 if let Some(owner) = ctx.get_mut_btree_map(
                     &mut indexes.construction_owners,
@@ -478,9 +523,13 @@ impl<'c> GeometryIndexes<'c> {
             }
         }
         let mut surfaces = ir.model.procedural_surfaces.iter();
-        while let Some(surface) =
-            ctx.next_charged(&mut surfaces, "FreeCAD procedural surface index scan")?
-        {
+        while surfaces.len() != 0 {
+            let Some(surface) = ctx.next_charged(
+                &mut surfaces,
+                "FreeCAD procedural surface index scan",
+            )? else {
+                break;
+            };
             indexes.storage.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut indexes.procedural_surfaces,
@@ -690,11 +739,18 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
     }
 
     fn emit_pcurves(&mut self) -> Result<(), CodecError> {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let tables = self.tables;
         let mut shapes = tables.tshapes.iter().enumerate();
-        while let Some((position, shape)) =
-            self.ctx.next_charged(&mut shapes, "FreeCAD pcurve shape scan")?
-        {
+        while shapes.len() != 0 {
+            let Some((position, shape)) = self.ctx.next_charged(
+                &mut shapes,
+                "FreeCAD pcurve shape scan",
+            )? else {
+                break;
+            };
             let TextTShapeGeometry::Edge {
                 representations, ..
             } = &shape.geometry
@@ -702,10 +758,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 continue;
             };
             let mut representations = representations.iter().enumerate();
-            while let Some((representation_index, representation)) = self
-                .ctx
-                .next_charged(&mut representations, "FreeCAD pcurve representation scan")?
-            {
+            while representations.len() != 0 {
+                let Some((representation_index, representation)) = self.ctx.next_charged(
+                    &mut representations,
+                    "FreeCAD pcurve representation scan",
+                )? else {
+                    break;
+                };
                 let (primary, secondary, surface, parameter_range) = match representation {
                     TextEdgeRepresentation::Pcurve {
                         curve,
@@ -852,11 +911,17 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
     }
 
     fn emit_unowned_triangulations(&self, ir: &mut CadIr) -> Result<(), CodecError> {
+        if let Some(refusal) = self.ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
         let mut triangulations = self.tables.triangulations.iter().enumerate();
-        while let Some((offset, triangulation)) = self
-            .ctx
-            .next_charged(&mut triangulations, "FreeCAD unowned triangulation scan")?
-        {
+        while triangulations.len() != 0 {
+            let Some((offset, triangulation)) = self.ctx.next_charged(
+                &mut triangulations,
+                "FreeCAD unowned triangulation scan",
+            )? else {
+                break;
+            };
             let index = offset + 1;
             if self.ctx.contains_hash_set(
                 &self.emitted_triangulations,
@@ -964,9 +1029,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             .ctx
             .collection_vec(self.tables.roots.len(), "FreeCAD topology body roots")?;
         let mut source_roots = self.tables.roots.iter().enumerate();
-        while let Some((index, root)) =
-            self.ctx.next_charged(&mut source_roots, "FreeCAD body root scan")?
-        {
+        while source_roots.len() != 0 {
+            let Some((index, root)) = self.ctx.next_charged(
+                &mut source_roots,
+                "FreeCAD body root scan",
+            )? else {
+                break;
+            };
             self.shape(root.shape)?;
             let transform = self.tables.location(root.location)?;
             roots.push(BodyRoot {
@@ -1117,9 +1186,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             TextShapeKind::Compound | TextShapeKind::CompSolid
         ) {
             let mut children = shape.children.iter();
-            while let Some(child) =
-                ctx.next_charged(&mut children, "FreeCAD topology child scan")?
-            {
+            while children.len() != 0 {
+                let Some(child) = ctx.next_charged(
+                    &mut children,
+                    "FreeCAD topology child scan",
+                )? else {
+                    break;
+                };
                 self.append_shape_regions(
                     ctx,
                     ir,
@@ -1155,9 +1228,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         let mut shells = Vec::new();
         if shape.kind() == TextShapeKind::Solid {
             let mut children = shape.children.iter();
-            while let Some(child) =
-                ctx.next_charged(&mut children, "FreeCAD region shell scan")?
-            {
+            while children.len() != 0 {
+                let Some(child) = ctx.next_charged(
+                    &mut children,
+                    "FreeCAD region shell scan",
+                )? else {
+                    break;
+                };
                 if self.tables.tshapes[child.shape - 1].kind() != TextShapeKind::Shell {
                     continue;
                 }
@@ -1238,9 +1315,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 ctx.with_scoped_storage("FreeCAD shell face uses", || {
                     let mut face_uses = Vec::new();
                     let mut children = shape.children.iter();
-                    while let Some(child) =
-                        ctx.next_charged(&mut children, "FreeCAD shell face scan")?
-                    {
+                    while children.len() != 0 {
+                        let Some(child) = ctx.next_charged(
+                            &mut children,
+                            "FreeCAD shell face scan",
+                        )? else {
+                            break;
+                        };
                         if self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face {
                             ctx.push_vec(
                                 &mut face_uses,
@@ -1265,9 +1346,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             };
             ctx.reserve_vec(output, components.values.len(), "FreeCAD shell components")?;
             let mut components = components.values.iter().enumerate();
-            while let Some((component_index, component)) =
-                ctx.next_charged(&mut components, "FreeCAD component scan")?
-            {
+            while components.len() != 0 {
+                let Some((component_index, component)) = ctx.next_charged(
+                    &mut components,
+                    "FreeCAD component scan",
+                )? else {
+                    break;
+                };
                 let component_id = if component_index == 0 {
                     shell_id
                         .data
@@ -1279,9 +1364,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                     .ctx
                     .collection_vec(component.len(), "FreeCAD component faces")?;
                 let mut component_faces = component.iter();
-                while let Some(&face_index) = ctx
-                    .next_charged(&mut component_faces, "FreeCAD component face scan")?
-                {
+                while component_faces.len() != 0 {
+                    let Some(&face_index) = ctx.next_charged(
+                        &mut component_faces,
+                        "FreeCAD component face scan",
+                    )? else {
+                        break;
+                    };
                     if let Some(face) = self.append_face(
                         ir,
                         &component_id,
@@ -1338,9 +1427,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             }
             TextShapeKind::Wire => {
                 let mut children = shape.children.iter();
-                while let Some(child) =
-                    ctx.next_charged(&mut children, "FreeCAD topology child scan")?
-                {
+                while children.len() != 0 {
+                    let Some(child) = ctx.next_charged(
+                        &mut children,
+                        "FreeCAD topology child scan",
+                    )? else {
+                        break;
+                    };
                     if self.shape(child.shape)?.kind() == TextShapeKind::Edge {
                         let edge = self.ensure_edge(ir, child, transform)?;
                         self.ctx
@@ -1435,18 +1528,26 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         }
         let mut connectivity = ctx.collection_vec(face_uses.len(), "FreeCAD face connectivity")?;
         let mut face_uses = face_uses.iter();
-        while let Some(&face_use) =
-            ctx.next_charged(&mut face_uses, "FreeCAD connectivity face scan")?
-        {
+        while face_uses.len() != 0 {
+            let Some(&face_use) = ctx.next_charged(
+                &mut face_uses,
+                "FreeCAD connectivity face scan",
+            )? else {
+                break;
+            };
             let face_transform = parent
                 .compose(self.tables.location(face_use.location)?)
                 .map_err(location_transform_error)?;
             let face = self.shape(face_use.shape)?;
             let mut keys = BTreeSet::new();
             let mut face_children = face.children.iter();
-            while let Some(wire_use) =
-                ctx.next_charged(&mut face_children, "FreeCAD connectivity wire scan")?
-            {
+            while face_children.len() != 0 {
+                let Some(wire_use) = ctx.next_charged(
+                    &mut face_children,
+                    "FreeCAD connectivity wire scan",
+                )? else {
+                    break;
+                };
                 if self.tables.tshapes[wire_use.shape - 1].kind() != TextShapeKind::Wire {
                     continue;
                 }
@@ -1455,9 +1556,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                     .map_err(location_transform_error)?;
                 let wire = self.shape(wire_use.shape)?;
                 let mut wire_children = wire.children.iter();
-                while let Some(edge_use) =
-                    ctx.next_charged(&mut wire_children, "FreeCAD connectivity edge scan")?
-                {
+                while wire_children.len() != 0 {
+                    let Some(edge_use) = ctx.next_charged(
+                        &mut wire_children,
+                        "FreeCAD connectivity edge scan",
+                    )? else {
+                        break;
+                    };
                     if self.tables.tshapes[edge_use.shape - 1].kind() != TextShapeKind::Edge {
                         continue;
                     }
@@ -1502,9 +1607,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                     }
                     let edge = self.shape(edge_use.shape)?;
                     let mut edge_children = edge.children.iter();
-                    while let Some(vertex_use) = ctx
-                        .next_charged(&mut edge_children, "FreeCAD connectivity vertex scan")?
-                    {
+                    while edge_children.len() != 0 {
+                        let Some(vertex_use) = ctx.next_charged(
+                            &mut edge_children,
+                            "FreeCAD connectivity vertex scan",
+                        )? else {
+                            break;
+                        };
                         if self.tables.tshapes[vertex_use.shape - 1].kind()
                             != TextShapeKind::Vertex
                         {
@@ -1601,7 +1710,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 let index = index.index();
                 let mut vertices = self.ctx.collection_vec(triangulation.nodes().len(), "FreeCAD placed triangulation nodes")?;
                 let mut nodes = triangulation.nodes().iter();
-                while let Some(point) = self.ctx.next_charged(&mut nodes, "FreeCAD placed triangulation node scan")? {
+                while nodes.len() != 0 {
+                    let Some(point) = self.ctx.next_charged(
+                        &mut nodes,
+                        "FreeCAD placed triangulation node scan",
+                    )? else {
+                        break;
+                    };
                     vertices.push(face_transform.apply_point(point.get()).ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "placed triangulation node for face {} contains a non-finite coordinate",
@@ -1712,10 +1827,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                     .ctx
                     .collection_vec(native_normals.len(), "FreeCAD placed triangulation normals")?;
                 let mut native_normals = native_normals.iter();
-                while let Some(normal) = self.ctx.next_charged(
-                    &mut native_normals,
-                    "FreeCAD placed triangulation normal scan",
-                )? {
+                while native_normals.len() != 0 {
+                    let Some(normal) = self.ctx.next_charged(
+                        &mut native_normals,
+                        "FreeCAD placed triangulation normal scan",
+                    )? else {
+                        break;
+                    };
                     normals.push(transform_normalized_vector(face_transform, normal.get()).ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "placed triangulation normal for face {} contains a non-finite component",
@@ -1765,9 +1883,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
         let mut loops = Vec::new();
         let mut loop_index = 0;
         let mut face_children = shape.children.iter();
-        while let Some(wire_use) =
-            self.ctx.next_charged(&mut face_children, "FreeCAD face wire scan")?
-        {
+        while face_children.len() != 0 {
+            let Some(wire_use) = self.ctx.next_charged(
+                &mut face_children,
+                "FreeCAD face wire scan",
+            )? else {
+                break;
+            };
             if self.tables.tshapes[wire_use.shape - 1].kind() != TextShapeKind::Wire {
                 continue;
             }
@@ -1781,10 +1903,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 self.ctx.with_scoped_storage("FreeCAD wire edge uses", || {
                     let mut edge_uses = Vec::new();
                     let mut wire_children = wire.children.iter();
-                    while let Some(child) = self
-                        .ctx
-                        .next_charged(&mut wire_children, "FreeCAD wire edge scan")?
-                    {
+                    while wire_children.len() != 0 {
+                        let Some(child) = self.ctx.next_charged(
+                            &mut wire_children,
+                            "FreeCAD wire edge scan",
+                        )? else {
+                            break;
+                        };
                         if self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Edge {
                             self.ctx.push_vec(
                                 &mut edge_uses,
@@ -1827,10 +1952,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 .ctx
                 .collection_vec(edge_uses.values.len(), "FreeCAD loop coedge IDs")?;
             let mut coedge_indices = (0..edge_uses.values.len()).enumerate();
-            while let Some((index, _)) = self
-                .ctx
-                .next_charged(&mut coedge_indices, "FreeCAD coedge identity scan")?
-            {
+            while coedge_indices.len() != 0 {
+                let Some((index, _)) = self.ctx.next_charged(
+                    &mut coedge_indices,
+                    "FreeCAD coedge identity scan",
+                )? else {
+                    break;
+                };
                 let (data, storage) = self.ctx.format_scoped(
                     format_args!("{}:{}:{}", face_key.data, current_loop_index + 1, index + 1),
                     "FreeCAD face coedge key",
@@ -1851,9 +1979,13 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
                 );
             }
             let mut edge_use_iter = edge_uses.values.iter().enumerate();
-            while let Some((index, edge_use)) =
-                self.ctx.next_charged(&mut edge_use_iter, "FreeCAD edge use scan")?
-            {
+            while edge_use_iter.len() != 0 {
+                let Some((index, edge_use)) = self.ctx.next_charged(
+                    &mut edge_use_iter,
+                    "FreeCAD edge use scan",
+                )? else {
+                    break;
+                };
                 let edge_transform = wire_transform
                     .compose(self.tables.location(edge_use.location)?)
                     .map_err(location_transform_error)?;
@@ -2206,10 +2338,11 @@ impl<'a, 'c, 'r, 'occ> Builder<'a, 'c, 'r, 'occ> {
             self.ctx
                 .collection_vec(polygon.nodes.len(), "FreeCAD indexed polygon points")?
         };
-        for node in self
-            .ctx
-            .admit_iter(&polygon.nodes, "FreeCAD indexed polygon node scan")?
-        {
+        let mut nodes = polygon.nodes.iter();
+        while nodes.len() != 0 {
+            let Some(node) = self.ctx.next_charged(&mut nodes, "FreeCAD indexed polygon node scan")? else {
+                break;
+            };
             let point = usize::try_from(*node)
                 .ok()
                 .and_then(|node| node.checked_sub(1))
@@ -2886,11 +3019,21 @@ fn connected_components(
     let mut key_storage = ctx.reserve_scoped(0, "FreeCAD connected-component key index")?;
     let mut by_key: BTreeMap<&String, ScopedVec<'_, usize>> = BTreeMap::new();
     let mut faces = connectivity.iter().enumerate();
-    while let Some((face, keys)) =
-        ctx.next_charged(&mut faces, "FreeCAD connected-component face keys")?
-    {
+    while faces.len() != 0 {
+        let Some((face, keys)) = ctx.next_charged(
+            &mut faces,
+            "FreeCAD connected-component face keys",
+        )? else {
+            break;
+        };
         let mut keys = keys.iter();
-        while let Some(key) = ctx.next_charged(&mut keys, "FreeCAD connected-component key scan")? {
+        while keys.len() != 0 {
+            let Some(key) = ctx.next_charged(
+                &mut keys,
+                "FreeCAD connected-component key scan",
+            )? else {
+                break;
+            };
             if let Some(candidates) = ctx.get_mut_btree_map(
                 &mut by_key,
                 &key,
@@ -2924,7 +3067,13 @@ fn connected_components(
     }
     let mut components = Vec::new();
     let mut seeds = 0..connectivity.len();
-    while let Some(seed) = ctx.next_charged(&mut seeds, "FreeCAD connected-component seeds")? {
+    while seeds.len() != 0 {
+        let Some(seed) = ctx.next_charged(
+            &mut seeds,
+            "FreeCAD connected-component seeds",
+        )? else {
+            break;
+        };
         if assigned.values[seed] {
             continue;
         }
@@ -2945,10 +3094,13 @@ fn connected_components(
             ctx.reserve_vec(&mut component, 1, "FreeCAD connected-component members")?;
             component.push(current);
             let mut member_keys = connectivity[current].iter();
-            while let Some(key) = ctx.next_charged(
-                &mut member_keys,
-                "FreeCAD connected-component member keys",
-            )? {
+            while member_keys.len() != 0 {
+                let Some(key) = ctx.next_charged(
+                    &mut member_keys,
+                    "FreeCAD connected-component member keys",
+                )? else {
+                    break;
+                };
                 let Some(mut candidates) = ctx.remove_btree_map(
                     &mut by_key,
                     &key,
@@ -2958,9 +3110,13 @@ fn connected_components(
                     continue;
                 };
                 let mut candidate_iter = std::mem::take(&mut candidates.values).into_iter();
-                while let Some(candidate) =
-                    ctx.next_charged(&mut candidate_iter, "FreeCAD connected-component candidates")?
-                {
+                while candidate_iter.len() != 0 {
+                    let Some(candidate) = ctx.next_charged(
+                        &mut candidate_iter,
+                        "FreeCAD connected-component candidates",
+                    )? else {
+                        break;
+                    };
                     if assigned.values[candidate] {
                         continue;
                     }
@@ -3181,9 +3337,13 @@ pub(crate) fn pcurve_geometry(
                 let mut rows = ctx
                     .collection_vec(nurbs.control_points.len(), "FreeCAD pcurve rational poles")?;
                 let mut poles = nurbs.control_points.iter().zip(weights).enumerate();
-                while let Some((index, (point, weight))) =
-                    ctx.next_charged(&mut poles, "FreeCAD pcurve rational pole scan")?
-                {
+                while poles.len() != 0 {
+                    let Some((index, (point, weight))) = ctx.next_charged(
+                        &mut poles,
+                        "FreeCAD pcurve rational pole scan",
+                    )? else {
+                        break;
+                    };
                     let Some(weight) = NonZeroReal::from_finite(*weight) else {
                         return Err(NurbsError::UnusableWeight {
                             field: "pcurve poles".into(),
@@ -3365,6 +3525,9 @@ fn source_topology_indices(
     ctx: &DecodeContext<'_>,
     tables: Tables<'_>,
 ) -> Result<HashMap<(TextShapeKind, SourceOccurrenceKey), usize>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut indices = HashMap::new();
     for target in [
         TextShapeKind::Vertex,
@@ -3378,7 +3541,13 @@ fn source_topology_indices(
     ] {
         let mut next_index = 1;
         let mut roots = tables.roots.iter();
-        while let Some(root) = ctx.next_charged(&mut roots, "FreeCAD source topology roots")? {
+        while roots.len() != 0 {
+            let Some(root) = ctx.next_charged(
+                &mut roots,
+                "FreeCAD source topology roots",
+            )? else {
+                break;
+            };
             let (values, storage) =
                 ctx.temporary_vec(1, "FreeCAD source topology stack")?;
             let mut stack = ScopedVec {
@@ -3530,7 +3699,13 @@ fn close_radial_rings(ctx: &DecodeContext<'_>, coedges: &mut [Coedge]) -> Result
         _storage: storage,
     };
     let mut groups = by_edge.data.iter();
-    while let Some((_, indices)) = ctx.next_charged(&mut groups, "FreeCAD radial groups")? {
+    while groups.len() != 0 {
+        let Some((_, indices)) = ctx.next_charged(
+            &mut groups,
+            "FreeCAD radial groups",
+        )? else {
+            break;
+        };
         if let [first, second] = indices.as_slice() {
             pairs._storage.with_storage(|| {
                 ctx.push_vec(&mut pairs.values, (*first, *second), "FreeCAD radial pairs")
@@ -3539,7 +3714,13 @@ fn close_radial_rings(ctx: &DecodeContext<'_>, coedges: &mut [Coedge]) -> Result
     }
     drop(by_edge);
     let mut pair_iter = pairs.values.iter().copied();
-    while let Some((first, second)) = ctx.next_charged(&mut pair_iter, "FreeCAD radial pairs")? {
+    while pair_iter.len() != 0 {
+        let Some((first, second)) = ctx.next_charged(
+            &mut pair_iter,
+            "FreeCAD radial pairs",
+        )? else {
+            break;
+        };
         coedges[first].radial_next = coedges[second]
             .id
             .try_clone_for_decode(ctx, "FreeCAD radial coedge identity")?;
@@ -3555,10 +3736,19 @@ fn edge_endpoint_uses<'a>(
     edge: usize,
     children: &'a [TextShapeUse],
 ) -> Result<(&'a TextShapeUse, &'a TextShapeUse), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut start = None;
     let mut end = None;
     let mut children = children.iter();
-    while let Some(child) = ctx.next_charged(&mut children, "FreeCAD edge endpoint search")? {
+    while children.len() != 0 {
+        let Some(child) = ctx.next_charged(
+            &mut children,
+            "FreeCAD edge endpoint search",
+        )? else {
+            break;
+        };
         match child.orientation {
             TextOrientation::Forward => {
                 if start.replace(child).is_some() {
@@ -3592,11 +3782,18 @@ fn select_pcurve_representation<'a>(
     surface: usize,
     surface_transform: Transform,
 ) -> Result<Option<(usize, &'a TextEdgeRepresentation)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut matched = None;
     let mut representations = representations.iter().enumerate();
-    while let Some((index, representation)) =
-        ctx.next_charged(&mut representations, "FreeCAD pcurve representation search")?
-    {
+    while representations.len() != 0 {
+        let Some((index, representation)) = ctx.next_charged(
+            &mut representations,
+            "FreeCAD pcurve representation search",
+        )? else {
+            break;
+        };
         match representation {
             TextEdgeRepresentation::Pcurve {
                 surface: candidate_surface,
