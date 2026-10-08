@@ -7,16 +7,28 @@ use super::super::AdjacencyRow;
 
 #[test]
 fn brep_ordered_graph_callbacks_admit_actual_bytes_and_keep_refusals() {
-    // Each total counts one search visit, one comparison gate, and compared bytes.
-    for (stored, query, work, found) in [
-        ("alpha", "z-long-unread-tail", 3, false),
-        ("alpha", "al", 4, false),
-        ("alpha", "alpha", 7, true),
-        ("é", "ê", 4, false),
-        ("", "", 2, true),
-        ("", "unread", 2, false),
+    for (stored, query, found) in [
+        ("alpha", "z-long-unread-tail", false),
+        ("alpha", "al", false),
+        ("alpha", "alpha", true),
+        ("é", "ê", false),
+        ("", "", true),
+        ("", "unread", false),
     ] {
-        for allowance in 0..=work {
+        let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "compare F3D BREP graph ID",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::super::contains(&ctx, &[stored.to_owned()], query, "find graph fixture ID")
+            },
+        );
+        assert!(matches!(refusal, CodecError::ResourceLimit(limit) if limit.additional == 1));
+        let mut allowance = 0;
+        loop {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = allowance;
@@ -27,19 +39,18 @@ fn brep_ordered_graph_callbacks_admit_actual_bytes_and_keep_refusals() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let values = vec![stored.to_owned()];
             let result = super::super::contains(&ctx, &values, query, "find graph fixture ID");
-            if allowance < work {
-                let CodecError::ResourceLimit(original) = result.unwrap_err() else {
-                    panic!("comparison must refuse");
-                };
+            if let Err(CodecError::ResourceLimit(original)) = result {
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(original.operation, "compare F3D BREP graph ID");
                 assert_eq!(original.additional, 1);
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
                 );
+                allowance = original.used.checked_add(original.additional).unwrap();
             } else {
                 assert_eq!(result.unwrap(), found);
                 ctx.finish_session().unwrap();
+                break;
             }
         }
     }
@@ -58,7 +69,7 @@ fn brep_graph_searches_keep_original_fused_capsule() {
         matches!(super::super::contains(&ctx, &[], "absent", "empty graph lookup"), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
     assert!(
-        matches!(super::super::insert_id(&ctx, &mut Vec::new(), "candidate".to_owned(), "empty graph insert"), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        matches!(super::super::insert_id(&ctx, &mut Vec::new(), "candidate", "copy graph candidate", "empty graph insert"), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
     assert!(
         matches!(super::super::insert_brep_adjacency(&ctx, &mut Vec::new(), "source", "target"), Err(CodecError::ResourceLimit(limit)) if limit == original)
@@ -69,39 +80,20 @@ fn brep_graph_searches_keep_original_fused_capsule() {
 }
 
 #[test]
-fn brep_adjacency_query_storage_is_scoped() {
-    for allowance in 0..=6 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = allowance;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut adjacency = vec![AdjacencyRow {
-            source: "source".to_owned(),
-            targets: vec!["target".to_owned()],
-        }];
-        let result = super::super::insert_brep_adjacency(&ctx, &mut adjacency, "source", "target");
-        if allowance < 6 {
-            let CodecError::ResourceLimit(original) = result.unwrap_err() else {
-                panic!("query copy must refuse");
-            };
-            assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
-            assert_eq!(original.operation, "copy F3D BREP adjacency query");
-            assert_eq!(original.additional, 6);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-            );
-        } else {
-            result.unwrap();
-            assert_eq!(adjacency.len(), 1);
-            assert_eq!(adjacency.first().unwrap().targets.len(), 1);
-            drop(
-                ctx.reserve_scoped_limit(6, "query scratch released")
-                    .unwrap(),
-            );
-            ctx.finish_session().unwrap();
-        }
-    }
+fn brep_duplicate_adjacency_needs_no_storage() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut adjacency = vec![AdjacencyRow {
+        source: "source".to_owned(),
+        targets: vec!["target".to_owned()],
+    }];
+    super::super::insert_brep_adjacency(&ctx, &mut adjacency, "source", "target").unwrap();
+    assert_eq!(adjacency.len(), 1);
+    assert_eq!(adjacency.first().unwrap().targets.len(), 1);
+    ctx.finish_session().unwrap();
 }

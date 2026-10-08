@@ -20,12 +20,35 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod graph_ops;
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum BodySelectorKey {
+    Native(u64),
+    Ordinal(u32),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for BodySelectorKey {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 fn merge_brep_counts(
     ctx: &DecodeContext<'_>,
     target: &mut BTreeMap<String, usize>,
     source: BTreeMap<String, usize>,
 ) -> Result<(), CodecError> {
-    for (kind, count) in source {
+    for (kind, count) in ctx.admit_iter(source, "scan F3D BREP statistic kinds")? {
         if let Some(total) =
             ctx.get_mut_btree_map(target, kind.as_str(), "merge F3D BREP statistic kinds")?
         {
@@ -130,10 +153,17 @@ impl Brep {
     }
 
     /// Map solved bodies to the selector used by this blob's Design body map.
-    pub(crate) fn body_selectors(
+    pub(crate) fn body_selectors<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<BTreeMap<BodyId, u64>, CodecError> {
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<
+        (
+            BTreeMap<BodyId, u64>,
+            cadmpeg_core::decode::ScopedReservation<'ctx>,
+        ),
+        CodecError,
+    > {
+        let mut storage = ctx.reserve_scoped(0, "stage F3D BREP body selectors")?;
         let ordinal_mode = ctx.all_by(
             &self.asm.body_native_keys,
             |body| Ok(body.asm_body_key.is_none()),
@@ -149,50 +179,106 @@ impl Brep {
             let Some(selector) = selector else {
                 continue;
             };
-            let id = body
-                .body
-                .try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
+            let id = storage
+                .with_storage(|| body.body.try_clone_for_decode(ctx, "copy F3D BREP body ID"))?;
 
-            ctx.insert_btree_map(
-                &mut selectors,
-                id,
-                selector,
-                "index F3D BREP body selectors",
-            )?;
+            storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut selectors,
+                    id,
+                    selector,
+                    "index F3D BREP body selectors",
+                )
+            })?;
         }
-        Ok(selectors)
+        Ok((selectors, storage))
     }
 
     /// Resolve the Design selectors present for this blob. An exact native
     /// body key has precedence. A selector absent from the native-key domain
     /// selects the body with the same zero-based ordinal.
-    pub(crate) fn body_selectors_for(
+    pub(crate) fn body_selectors_for<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         selectors: &BTreeSet<u64>,
-    ) -> Result<BTreeMap<BodyId, u64>, cadmpeg_core::CodecError> {
+    ) -> Result<
+        (
+            BTreeMap<BodyId, u64>,
+            cadmpeg_core::decode::ScopedReservation<'ctx>,
+        ),
+        cadmpeg_core::CodecError,
+    > {
+        let mut storage = ctx.reserve_scoped(0, "stage F3D selected BREP bodies")?;
         let mut resolved = BTreeMap::new();
+        ctx.charge_work(0, "scan F3D body selectors")?;
+        if selectors.is_empty() {
+            return Ok((resolved, storage));
+        }
+        let (body_keys, _body_keys_storage) = ctx.unique_index(
+            ctx.admit_iter(&self.asm.body_native_keys, "scan F3D indexed body keys")?
+                .flat_map(|body| {
+                    [
+                        body.asm_body_key
+                            .map(|key| (BodySelectorKey::Native(key), &body.body)),
+                        Some((BodySelectorKey::Ordinal(body.body_ordinal), &body.body)),
+                    ]
+                    .into_iter()
+                    .flatten()
+                }),
+            "index F3D native body selectors",
+        )?;
         for selector in ctx.admit_iter(selectors, "scan F3D body selectors")? {
-            let Some(body) =
-                resolve_body_selector(ctx, self.asm.body_native_keys.iter(), *selector)?
-            else {
+            let native = ctx.get_hash_map(
+                &body_keys,
+                &BodySelectorKey::Native(*selector),
+                "match F3D native body selector",
+            )?;
+            let (body, domain) = match native {
+                Some(body) => (Some(body), "native body keys"),
+                None => {
+                    let Ok(ordinal) = u32::try_from(*selector) else {
+                        continue;
+                    };
+                    (
+                        ctx.get_hash_map(
+                            &body_keys,
+                            &BodySelectorKey::Ordinal(ordinal),
+                            "match F3D ordinal body selector",
+                        )?,
+                        "body ordinals",
+                    )
+                }
+            };
+            let Some(body) = body else {
                 continue;
             };
-            let id = (body).try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
+            let Some(body) = *body else {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("F3D body selector {selector} matches multiple {domain}"),
+                    "describe ambiguous F3D body selector",
+                )?));
+            };
+            let id =
+                storage.with_storage(|| body.try_clone_for_decode(ctx, "copy F3D BREP body ID"))?;
 
-            if let Some(previous) = ctx.insert_btree_map(
-                &mut resolved,
-                id,
-                *selector,
-                "index F3D selected BREP bodies",
-            )? {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                    "F3D body {} is selected by both {previous} and {selector}",
-                    body.as_str()
-                )));
+            if let Some(previous) = storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut resolved,
+                    id,
+                    *selector,
+                    "index F3D selected BREP bodies",
+                )
+            })? {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!(
+                        "F3D body {} is selected by both {previous} and {selector}",
+                        body.as_str()
+                    ),
+                    "describe conflicting F3D body selectors",
+                )?));
             }
         }
-        Ok(resolved)
+        Ok((resolved, storage))
     }
 
     /// Append a disjoint, already-qualified BREP graph.
@@ -403,24 +489,28 @@ fn sketch_link_payload(
     };
     Ok(match (*form, payload) {
         (3, [AttributeValue::String(field)]) => {
-            let mut fields = field.split_ascii_whitespace();
-            let (
-                Some(sketch_curve_id),
-                Some(ref_b),
-                Some(sense),
-                Some("0"),
-                Some(role),
-                Some(closure),
-                None,
-            ) = (
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-            )
+            let mut bytes = field.as_bytes().iter().enumerate();
+            let mut fields = [None; 7];
+            for member in &mut fields {
+                let Some((start, _)) = ctx.find_by(
+                    &mut bytes,
+                    |(_, byte)| Ok(!byte.is_ascii_whitespace()),
+                    "scan F3D sketch link fields",
+                )?
+                else {
+                    continue;
+                };
+                let end = ctx
+                    .find_by(
+                        &mut bytes,
+                        |(_, byte)| Ok(byte.is_ascii_whitespace()),
+                        "scan F3D sketch link fields",
+                    )?
+                    .map_or(field.len(), |(end, _)| end);
+                *member = Some(&field[start..end]);
+            }
+            let [Some(sketch_curve_id), Some(ref_b), Some(sense), Some("0"), Some(role), Some(closure), None] =
+                fields
             else {
                 return Ok(None);
             };
@@ -478,21 +568,16 @@ fn attribute_family(
     attribute: &SourceAttribute,
     family: &str,
 ) -> Result<Option<usize>, CodecError> {
-    for (index, value) in attribute.values.iter().enumerate() {
-        ctx.charge_work(1, "scan Fusion attribute family")?;
-        if let AttributeValue::String(name) = value {
-            let work = cadmpeg_core::decode::u64_from_index(name.len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(family.len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("compare Fusion attribute family", 0, u64::MAX)
-                })?;
-            ctx.charge_work(work, "compare Fusion attribute family")?;
-            if name == family {
-                return Ok(Some(index));
+    ctx.position_by(
+        &attribute.values,
+        |value| match value {
+            AttributeValue::String(name) => {
+                ctx.equal(name.as_str(), family, "compare Fusion attribute family")
             }
-        }
-    }
-    Ok(None)
+            _ => Ok(false),
+        },
+        "scan Fusion attribute family",
+    )
 }
 
 fn sketch_curve_link(
@@ -542,7 +627,8 @@ fn persistent_design_links(
         return Ok(Vec::new());
     }
     let mut links = Vec::new();
-    for values in rest.chunks_exact(group_width) {
+    let mut groups = rest.chunks_exact(group_width);
+    while let Some(values) = ctx.next_charged(&mut groups, "scan F3D persistent design groups")? {
         let (entity_kind, design_id, design_reference) = match values {
             [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0)]
             | [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0), AttributeValue::Integer(0)] => {
@@ -636,7 +722,10 @@ fn persistent_subentity_tags(
             return Ok(Vec::new());
         };
         let mut design_references = Vec::new();
-        for value in reference_values {
+        let mut references = reference_values.iter();
+        while let Some(value) =
+            ctx.next_charged(&mut references, "scan F3D persistent subentity references")?
+        {
             let AttributeValue::Integer(value) = value else {
                 return Ok(Vec::new());
             };
@@ -712,11 +801,14 @@ fn generic_tag_payload<'a>(
     else {
         return Ok(None);
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(marker.len()),
-        "compare Fusion generic-tag marker",
-    )?;
-    if left_version != right_version || marker != "generic_tag_attrib_def " || *group_count < 0 {
+    if left_version != right_version
+        || !ctx.equal(
+            marker.as_str(),
+            "generic_tag_attrib_def ",
+            "compare Fusion generic-tag marker",
+        )?
+        || *group_count < 0
+    {
         return Ok(None);
     }
     let version = match *left_version {

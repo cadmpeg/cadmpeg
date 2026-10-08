@@ -201,7 +201,7 @@ fn container_only_dimension_search_preserves_work_refusal() {
     for operation in [
         "find F3D container-only dimension companion",
         "find F3D container-only dimension parameter",
-        "compare F3D dimension parameter streams",
+        "index F3D dimension parameters",
     ] {
         let error = crate::test_support::resource_refusal_at(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,

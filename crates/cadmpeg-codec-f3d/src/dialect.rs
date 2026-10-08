@@ -306,7 +306,11 @@ fn archive_loss_text(
     body: impl fmt::Display,
 ) -> Result<String, CodecError> {
     let operation = "retain F3D dialect recovery loss";
-    match matched.declared().get(DECLARED_ARCHIVE_MEMBER) {
+    match ctx.get_btree_map(
+        matched.declared(),
+        DECLARED_ARCHIVE_MEMBER,
+        "find F3D dialect archive member",
+    )? {
         Some(member) => {
             ctx.format_retained(format_args!("archive member {member}: {body}"), operation)
         }
@@ -314,15 +318,15 @@ fn archive_loss_text(
     }
 }
 
-struct ManifestRecovery<'a>(&'a DialectMatch);
+struct ManifestRecovery<'a> {
+    matched: &'a DialectMatch,
+    version: &'a str,
+}
 
 impl fmt::Display for ManifestRecovery<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let matched = self.0;
-        let version = matched
-            .declared()
-            .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
-            .map_or("(none)", String::as_str);
+        let matched = self.matched;
+        let version = self.version;
         write!(
             formatter,
             "the top-level manifest declares version {version:?}, which no dialect row of \
@@ -359,27 +363,29 @@ fn dialect_loss(
     ) {
         return Ok(None);
     }
-    let message = archive_loss_text(ctx, matched, ManifestRecovery(matched))?;
+    let version = ctx
+        .get_btree_map(
+            matched.declared(),
+            DECLARED_TOP_LEVEL_MANIFEST_VERSION,
+            "find F3D manifest recovery version",
+        )?
+        .map_or("(none)", String::as_str);
+    let message = archive_loss_text(ctx, matched, ManifestRecovery { matched, version })?;
     Ok(Some(F3dLossCode::SourceDialectUnverified.note(message)))
 }
 
 struct KernelRecovery<'a> {
     matched: &'a DialectMatch,
     carrier: &'a str,
+    major: Option<&'a String>,
+    minor: Option<&'a String>,
 }
 
 impl fmt::Display for KernelRecovery<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let matched = self.matched;
         write!(formatter, "the kernel carrier {} declares ", self.carrier)?;
-        match (
-            matched
-                .declared()
-                .get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR),
-            matched
-                .declared()
-                .get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR),
-        ) {
+        match (self.major, self.minor) {
             (Some(major), Some(minor)) => write!(formatter, "save format {major}.{minor}")?,
             (Some(major), None) => write!(formatter, "save format major {major}")?,
             (None, _) => formatter.write_str("no save format")?,
@@ -406,9 +412,12 @@ fn kernel_dialect_loss(
 ) -> Result<Option<LossNote>, CodecError> {
     match matched.admission() {
         Admission::Refused => {
-            let carrier = matched
-                .declared()
-                .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
+            let carrier = ctx
+                .get_btree_map(
+                    matched.declared(),
+                    cadmpeg_asm::dialect::DECLARED_CARRIER,
+                    "find F3D kernel recovery carrier",
+                )?
                 .map_or("an unnamed carrier", String::as_str);
             let message = archive_loss_text(
                 ctx,
@@ -427,11 +436,33 @@ fn kernel_dialect_loss(
     {
         return Ok(None);
     }
-    let carrier = matched
-        .declared()
-        .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
+    let carrier = ctx
+        .get_btree_map(
+            matched.declared(),
+            cadmpeg_asm::dialect::DECLARED_CARRIER,
+            "find F3D kernel recovery carrier",
+        )?
         .map_or("an unnamed carrier", String::as_str);
-    let message = archive_loss_text(ctx, matched, KernelRecovery { matched, carrier })?;
+    let major = ctx.get_btree_map(
+        matched.declared(),
+        cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR,
+        "find F3D kernel recovery major",
+    )?;
+    let minor = ctx.get_btree_map(
+        matched.declared(),
+        cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR,
+        "find F3D kernel recovery minor",
+    )?;
+    let message = archive_loss_text(
+        ctx,
+        matched,
+        KernelRecovery {
+            matched,
+            carrier,
+            major,
+            minor,
+        },
+    )?;
     Ok(Some(F3dLossCode::KernelDialectUnverified.note(message)))
 }
 
