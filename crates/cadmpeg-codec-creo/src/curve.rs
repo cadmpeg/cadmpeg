@@ -3068,13 +3068,20 @@ fn evaluate_expression_program_details(
                             .map(Option::flatten)
                         },
                     )?;
-                    if let Some(CurveExpressionValue::String(text)) = &value {
-                        let bytes = cadmpeg_core::decode::u64_from_index(text.len());
+                    let evaluated_string_bytes = match &value {
+                        Some(CurveExpressionValue::String(text)) => {
+                            Some(cadmpeg_core::decode::u64_from_index(text.len()))
+                        }
+                        _ => None,
+                    };
+                    // The parser reservation includes discarded intermediates and this result.
+                    // Release it before accounting the escaping string at its destination.
+                    drop(storage);
+                    if let Some(bytes) = evaluated_string_bytes {
                         solution_storage.with_storage(|| {
                             ctx.charge_retained(bytes, "creo evaluated assignment string")
                         })?;
                     }
-                    drop(storage);
                     value
                 } else {
                     None
