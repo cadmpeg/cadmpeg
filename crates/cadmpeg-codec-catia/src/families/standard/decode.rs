@@ -4433,7 +4433,7 @@ fn standard_object_evidence(
 ) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let streams = container::logical_record_streams(ctx, scan)?;
     let mut evidence =
-        standard_object_evidence_from_streams(ctx, &streams, tags, edge_tags, refusal)?;
+        standard_object_evidence_from_streams(ctx, &streams.streams, tags, edge_tags, refusal)?;
     merge_standard_limit_curves_from_records(
         ctx,
         &mut evidence.limit_curves,

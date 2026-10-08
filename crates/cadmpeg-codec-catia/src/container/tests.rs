@@ -250,16 +250,17 @@ fn logical_stream_roster_refuses_collection_limit() {
     })
     .expect("service budget");
     let limited = crate::test_support::with_collection_limit(first_len, |ctx| {
-        super::logical_record_streams(ctx, &scan)
+        super::logical_record_streams(ctx, &scan).map(|streams| streams.streams.len())
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_logical_record_streams")
     );
-    let streams =
-        crate::test_support::with_service_context(|ctx| super::logical_record_streams(ctx, &scan))
-            .expect("service budget admits logical streams");
-    assert_eq!(streams.len(), 1);
+    let streams = crate::test_support::with_service_context(|ctx| {
+        super::logical_record_streams(ctx, &scan).map(|streams| streams.streams.len())
+    })
+    .expect("service budget admits logical streams");
+    assert_eq!(streams, 1);
 }
 
 #[test]
@@ -1789,3 +1790,5 @@ fn container_scan_rejects_wrong_magic_and_truncated_header() {
 }
 
 mod budget_repairs;
+
+mod index_tests;
