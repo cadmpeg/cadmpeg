@@ -117,6 +117,9 @@ fn nurbs_surface_boundaries<'ctx>(
     surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<[NurbsSurfaceBoundary<'ctx>; 4]>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let u_count = nurbs.u_count();
     let v_count = nurbs.v_count();
     let (Some(last_u), Some(last_v)) = (u_count.checked_sub(1), v_count.checked_sub(1)) else {
@@ -151,9 +154,12 @@ fn nurbs_surface_boundaries<'ctx>(
                 let mut points = Vec::new();
                 ctx.reserve_vec(&mut points, count, "creo NURBS boundary paired poles")?;
                 let mut positions = 0..count;
-                while let Some(position) =
-                    ctx.next_charged(&mut positions, "creo NURBS boundary rational poles")?
-                {
+                while !positions.is_empty() {
+                    let Some(position) =
+                        ctx.next_charged(&mut positions, "creo NURBS boundary rational poles")?
+                    else {
+                        break;
+                    };
                     let (u, v) = if along_u {
                         (position, fixed_index)
                     } else {
@@ -169,9 +175,12 @@ fn nurbs_surface_boundaries<'ctx>(
                 let mut points = Vec::new();
                 ctx.reserve_vec(&mut points, count, "creo NURBS boundary control points")?;
                 let mut positions = 0..count;
-                while let Some(position) =
-                    ctx.next_charged(&mut positions, "creo NURBS boundary polynomial poles")?
-                {
+                while !positions.is_empty() {
+                    let Some(position) =
+                        ctx.next_charged(&mut positions, "creo NURBS boundary polynomial poles")?
+                    else {
+                        break;
+                    };
                     let (u, v) = if along_u {
                         (position, fixed_index)
                     } else {
@@ -230,17 +239,26 @@ fn visit_surface_poles(
     nurbs: &NurbsSurface,
     mut visit: impl FnMut(usize, FinitePoint3) -> Result<bool, CodecError>,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut index = 0;
     match nurbs.pole_grid() {
         NurbsPoleGrid::Polynomial { rows } => {
             let mut row_iter = rows.iter();
-            while let Some(row) =
-                ctx.next_charged(&mut row_iter, "creo NURBS polynomial grid rows")?
-            {
+            while row_iter.len() != 0 {
+                let Some(row) =
+                    ctx.next_charged(&mut row_iter, "creo NURBS polynomial grid rows")?
+                else {
+                    break;
+                };
                 let mut point_iter = row.iter();
-                while let Some(point) =
-                    ctx.next_charged(&mut point_iter, "creo NURBS polynomial grid poles")?
-                {
+                while point_iter.len() != 0 {
+                    let Some(point) =
+                        ctx.next_charged(&mut point_iter, "creo NURBS polynomial grid poles")?
+                    else {
+                        break;
+                    };
                     if !visit(index, *point)? {
                         return Ok(());
                     }
@@ -256,13 +274,19 @@ fn visit_surface_poles(
         }
         NurbsPoleGrid::Rational { rows } => {
             let mut row_iter = rows.iter();
-            while let Some(row) =
-                ctx.next_charged(&mut row_iter, "creo NURBS rational grid rows")?
-            {
+            while row_iter.len() != 0 {
+                let Some(row) =
+                    ctx.next_charged(&mut row_iter, "creo NURBS rational grid rows")?
+                else {
+                    break;
+                };
                 let mut pole_iter = row.iter();
-                while let Some(pole) =
-                    ctx.next_charged(&mut pole_iter, "creo NURBS rational grid poles")?
-                {
+                while pole_iter.len() != 0 {
+                    let Some(pole) =
+                        ctx.next_charged(&mut pole_iter, "creo NURBS rational grid poles")?
+                    else {
+                        break;
+                    };
                     if !visit(index, pole.point)? {
                         return Ok(());
                     }
@@ -436,6 +460,9 @@ fn nurbs_curves_match(
     reversed: bool,
     point_tolerance: f64,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if left.degree() != right.degree()
         || left.periodic() != right.periodic()
         || left.pole_count() != right.pole_count()
@@ -581,6 +608,9 @@ fn generator_separates_control_nets(
     second: &NurbsSurface,
     second_boundary: &NurbsSurfaceBoundary,
 ) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let (Some(origin), Some(end)) = (
         curve_point(&first_boundary.curve, 0),
         curve_point(&first_boundary.curve, 1),
@@ -659,9 +689,12 @@ fn generator_separates_control_nets(
     })?
     .unwrap_or(f64::INFINITY);
     let mut angles = boundary_angles.iter().enumerate();
-    while let Some((index, _)) =
-        ctx.next_charged(&mut angles, "creo generator separation angle evaluations")?
-    {
+    while angles.len() != 0 {
+        let Some((index, _)) =
+            ctx.next_charged(&mut angles, "creo generator separation angle evaluations")?
+        else {
+            break;
+        };
         let start = boundary_angles[index];
         let end = if index + 1 == boundary_angles.len() {
             boundary_angles[0] + std::f64::consts::TAU
@@ -1254,6 +1287,90 @@ mod tests {
 
     const EPS_TEST_VALUE: f64 = 1.0e-11;
     const EPS_TEST_ROOT: f64 = 1.0e-12;
+
+    #[test]
+    fn nurbs_grid_visits_admit_only_present_rows_and_poles() {
+        for rational in [false, true] {
+            let surface = NurbsSurface::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new(
+                    vec![
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                    ],
+                    rational.then(|| vec![vec![1.0; 2]; 2]),
+                ),
+                false,
+            ).expect("fixture admission").expect("two-by-two grid");
+            let row_operation = if rational { "creo NURBS rational grid rows" }
+                else { "creo NURBS polynomial grid rows" };
+            let pole_operation = if rational { "creo NURBS rational grid poles" }
+                else { "creo NURBS polynomial grid poles" };
+            // One row visit precedes its two pole visits; there are two rows.
+            const GRID_VISITS: u64 = 2 + 2 * 2;
+            for (allowed, stop_first) in [(0, false), (1, false), (GRID_VISITS - 1, false),
+                (GRID_VISITS, false), (2, true)] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = allowed;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                let mut indices = Vec::new();
+                let result = super::visit_surface_poles(&ctx, &surface, |index, _| {
+                    indices.push(index);
+                    Ok(!stop_first)
+                });
+                if allowed < GRID_VISITS && !stop_first {
+                    let cadmpeg_core::CodecError::ResourceLimit(original) = result
+                        .expect_err("next present grid visit exceeds cap") else {
+                            panic!("expected resource refusal");
+                        };
+                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(original.operation, if allowed == 0 { row_operation } else { pole_operation });
+                    assert_eq!((original.used, original.additional), (allowed, 1));
+                    assert_eq!(indices, match allowed { 0 | 1 => vec![], _ => vec![0, 1, 2] });
+                    let mut visited = false;
+                    assert!(matches!(super::visit_surface_poles(&ctx, &surface, |_, _| {
+                        visited = true;
+                        Ok(true)
+                    }), Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+                    assert!(!visited);
+                } else {
+                    result.expect("only executed rows and poles are admitted");
+                    assert_eq!(indices, if stop_first { vec![0] } else { vec![0, 1, 2, 3] });
+                    let original = ctx.charge_work_limit(1, "after exact grid visits")
+                        .expect_err("all allowed visits were consumed");
+                    assert_eq!((original.used, original.additional), (allowed, 1));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_nurbs_curve_mismatch_is_free_and_preserves_refusal() {
+        let fixture_ctx = cadmpeg_test_support::service_decode_context();
+        let make_curve = |weights| super::NurbsCurve::from_lanes(
+            &fixture_ctx, 1, vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights, false,
+        ).expect("fixture admission").expect("valid degree-one curve");
+        let polynomial = make_curve(None);
+        let rational = make_curve(Some(vec![1.0, 1.0]));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        assert!(!super::nurbs_curves_match(&ctx, &polynomial, &rational, false, EPS_TEST_VALUE)
+            .expect("fixed pole-kind mismatch"));
+        let original = ctx.charge_work_limit(1, "seed curve mismatch refusal")
+            .expect_err("zero work cap");
+        assert!(matches!(super::nurbs_curves_match(&ctx, &polynomial, &rational, false, EPS_TEST_VALUE),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+    }
 
     #[test]
     fn nurbs_pole_visitor_refuses_before_grid_traversal() {
