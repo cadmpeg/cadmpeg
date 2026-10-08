@@ -803,13 +803,13 @@ fn legacy_spline(
         stored_knots[0] = -stored_knots[0];
         stored_knots[1] = -stored_knots[1];
     }
-    let (knots, _knots_storage) =
-        ctx.with_scoped_storage("Rhino V1 reconstructed spline knots", || {
-            crate::surfaces::reconstruct_knots(ctx, &stored_knots, order, cv_count)
-                .or_else(|error| Err(geometry_error(ctx, error)?))
-        })?;
-    let (mut control_points, _poles_storage) =
-        ctx.temporary_vec::<Point3>(cv_count, "Rhino V1 spline poles")?;
+    // A spline segment can move into the decoded output, so its knots are
+    // retained, and so are its poles unless pairing with weights copies them.
+    let knots = crate::surfaces::reconstruct_knots(ctx, &stored_knots, order, cv_count)
+        .or_else(|error| Err(geometry_error(ctx, error)?))?;
+    let mut pole_storage = ctx.reserve_scoped(0, "Rhino V1 spline pole workspace")?;
+    let mut control_points = pole_storage
+        .with_storage(|| ctx.collection_vec::<Point3>(cv_count, "Rhino V1 spline poles"))?;
     let mut weights_storage = ctx.reserve_scoped(0, "Rhino V1 spline weight workspace")?;
     let mut weights = if rational != 0 {
         Some(weights_storage.with_storage(|| {
@@ -845,6 +845,9 @@ fn legacy_spline(
                 z * scale.value(),
             ));
         }
+    }
+    if weights.is_none() {
+        pole_storage.commit()?;
     }
     NurbsCurve::from_checked_lanes(
         ctx,
@@ -1627,16 +1630,12 @@ fn legacy_surface(
         ctx.charge_work(1, "Rhino V1 counted record traversal")?;
         stored_v.push(reader.f64().or_else(|error| Err(malformed(ctx, &error)?))?);
     }
-    let (u_knots, _u_storage) =
-        ctx.with_scoped_storage("Rhino V1 reconstructed U knots", || {
-            crate::surfaces::reconstruct_knots(ctx, &stored_u, orders[0], counts[0])
-                .or_else(|error| Err(geometry_error(ctx, error)?))
-        })?;
-    let (v_knots, _v_storage) =
-        ctx.with_scoped_storage("Rhino V1 reconstructed V knots", || {
-            crate::surfaces::reconstruct_knots(ctx, &stored_v, orders[1], counts[1])
-                .or_else(|error| Err(geometry_error(ctx, error)?))
-        })?;
+    // The reconstructed knots move into the surface the decode keeps.
+    let u_knots = crate::surfaces::reconstruct_knots(ctx, &stored_u, orders[0], counts[0])
+        .or_else(|error| Err(geometry_error(ctx, error)?))?;
+    // The reconstructed knots move into the surface the decode keeps.
+    let v_knots = crate::surfaces::reconstruct_knots(ctx, &stored_v, orders[1], counts[1])
+        .or_else(|error| Err(geometry_error(ctx, error)?))?;
     let pole_count = counts[0].checked_mul(counts[1]).ok_or_else(|| {
         CodecError::NotImplemented("V1 surface pole count exceeds address space".to_string())
     })?;
@@ -2609,12 +2608,11 @@ fn append_legacy_brep(
                     )?)?,
                 );
                 let pcurve_domain = curve_domain(&trim.pcurve)?;
-                let (pcurve_knots, _knots_storage) =
-                    ctx.with_scoped_storage("Rhino V1 pcurve knot workspace", || {
-                        trim.pcurve
-                            .knots()
-                            .try_clone_for_decode(ctx, "Rhino V1 pcurve knots")
-                    })?;
+                // The copied knots move into the pcurve the decode keeps.
+                let pcurve_knots = trim
+                    .pcurve
+                    .knots()
+                    .try_clone_for_decode(ctx, "Rhino V1 pcurve knots")?;
                 let mut pole_storage = ctx.reserve_scoped(0, "Rhino V1 pcurve pole workspace")?;
                 let mut weight_storage =
                     ctx.reserve_scoped(0, "Rhino V1 pcurve weight workspace")?;
