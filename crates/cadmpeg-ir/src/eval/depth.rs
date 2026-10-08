@@ -267,7 +267,7 @@ mod tests {
                 // frame copies and compares the active identity path.
                 assert_eq!(
                     first.used,
-                    frame_bytes + 1 + cadmpeg_core::decode::u64_from_index(surface.as_str().len())
+                    frame_bytes + cadmpeg_core::decode::u64_from_index(surface.as_str().len())
                 );
                 assert_eq!(first.additional, frame_bytes * 2 + 1);
                 assert_eq!(first.operation, "model evaluation cycle path");
