@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 const EPS_NONLINEAR_VALUE: f64 = 1.0e-9;
 
-use crate::curve::curve_expression_solve_program;
+use crate::curve::tests::compile_solve_program as curve_expression_solve_program;
 use crate::curve::expression_records;
 use crate::curve::quantity_value;
 use crate::curve::solve_unique_affine_system;
@@ -294,7 +294,7 @@ fn evaluate_expression_program_details(
     external_symbols: &ExternalRelationSymbols,
 ) -> crate::curve::CurveExpressionEvaluation {
     crate::decode::with_test_decode_ctx(|ctx| {
-        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; crate::curve::evaluate_expression_program_details(ctx, lines, model_name, external_symbols, &mut solution_storage) }
+        crate::curve::tests::evaluate_program_details(ctx, lines, model_name, external_symbols)
     })
     .expect("test curve expression evaluation")
 }
