@@ -10255,7 +10255,7 @@ where
                     edge_faces,
                     global_handle_ports,
                 )?;
-                let Some(boundary_context) = boundary_context else {
+                let Some((boundary_context, _boundary_context_storage)) = boundary_context else {
                     return Ok(None);
                 };
                 let mesh_domains = standard_mesh_boundary_domains_from_context(

@@ -500,57 +500,68 @@ fn is_coordinate_automorphism(
     edge_identity_evidence: &[bool],
     permutation: &[usize],
 ) -> Result<bool, CodecError> {
-    for (edges, original_unbound) in ctx.admit_iter(groups, "catia_gauge_automorphism_groups")? {
-        let mut group_storage = ctx.reserve_scoped(0, "catia_gauge_mapped_rows")?;
-        let mut mapped_unbound = Vec::new();
-        for &edge in ctx.admit_iter(*edges, "catia_gauge_automorphism_rows")? {
-            let (mapped, mapped_storage) = ctx
-                .with_scoped_storage("catia_gauge_mapped_options", || {
-                    mapped_normalized_endpoint_options(ctx, &normalized_options[edge], permutation)
-                })?;
-            let Some(mapped) = mapped else {
+    ctx.all_by(
+        groups,
+        |(edges, original_unbound)| {
+            let mut group_storage = ctx.reserve_scoped(0, "catia_gauge_mapped_rows")?;
+            let mut mapped_unbound = Vec::new();
+            if !ctx.all_by(
+                *edges,
+                |&edge| {
+                    let (mapped, mapped_storage) =
+                        ctx.with_scoped_storage("catia_gauge_mapped_options", || {
+                            mapped_normalized_endpoint_options(
+                                ctx,
+                                &normalized_options[edge],
+                                permutation,
+                            )
+                        })?;
+                    let Some(mapped) = mapped else {
+                        return Ok(false);
+                    };
+                    if edge_identity_evidence[edge] {
+                        if !ctx.equal(
+                            &mapped,
+                            &normalized_options[edge],
+                            "catia_gauge_identity_row_compare",
+                        )? {
+                            return Ok(false);
+                        }
+                    } else {
+                        group_storage.with_storage(|| {
+                            ctx.push_vec(
+                                &mut mapped_unbound,
+                                (mapped, mapped_storage),
+                                "catia_gauge_mapped_rows",
+                            )
+                        })?;
+                    }
+                    Ok(true)
+                },
+                "catia_gauge_automorphism_rows",
+            )? {
                 return Ok(false);
-            };
-            if edge_identity_evidence[edge] {
-                if !ctx.equal(
-                    &mapped,
-                    &normalized_options[edge],
-                    "catia_gauge_identity_row_compare",
-                )? {
-                    return Ok(false);
-                }
-            } else {
-                group_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut mapped_unbound,
-                        (mapped, mapped_storage),
-                        "catia_gauge_mapped_rows",
-                    )
-                })?;
             }
-        }
-        ctx.sort_unstable_by(
-            &mut mapped_unbound,
-            |value| &value.0,
-            Ord::cmp,
-            "catia_gauge_mapped_rows_sort",
-        )?;
-        let preserved = ctx.all_by(
-            original_unbound.iter().zip(&mapped_unbound),
-            |(original, mapped)| {
-                ctx.equal(
-                    *original,
-                    mapped.0.as_slice(),
-                    "catia_gauge_automorphism_rows_compare",
-                )
-            },
-            "catia_gauge_automorphism_rows_compare",
-        )?;
-        if !preserved {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+            ctx.sort_unstable_by(
+                &mut mapped_unbound,
+                |value| &value.0,
+                Ord::cmp,
+                "catia_gauge_mapped_rows_sort",
+            )?;
+            ctx.all_by(
+                original_unbound.iter().zip(&mapped_unbound),
+                |(original, mapped)| {
+                    ctx.equal(
+                        *original,
+                        mapped.0.as_slice(),
+                        "catia_gauge_automorphism_rows_compare",
+                    )
+                },
+                "catia_gauge_automorphism_rows_compare",
+            )
+        },
+        "catia_gauge_automorphism_groups",
+    )
 }
 
 pub(super) fn build_mesh_coordinate_gauge<'storage>(

@@ -748,7 +748,7 @@ fn candidate_contexts_share_edge_row_storage() {
     catia_test_context!(ctx);
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     let faces = [[0, 0]; 4];
-    let base = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
+    let (base, _base_storage) = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
         .expect("service resource budget")
         .expect("quad boundary context");
     let mut candidates = Vec::with_capacity(CANDIDATES);
@@ -761,7 +761,7 @@ fn candidate_contexts_share_edge_row_storage() {
         );
         assert_eq!(Arc::strong_count(&base.analysis), candidates.len() + 1);
     }
-    for candidate in &candidates {
+    for (candidate, _candidate_storage) in &candidates {
         let StandardMeshBoundaryContext {
             analysis,
             coverage,
@@ -919,4 +919,60 @@ fn duplicate_face_search_refuses_recursive_depth() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
             && limit.operation == "catia_duplicate_face_search_depth")
     );
+}
+
+#[test]
+fn ambiguous_duplicate_face_search_keeps_no_retained_solution() {
+    let serialized = [[0, 0]];
+    let allowed = [vec![0, 1]];
+    let mut visited = 0;
+    let outcome = crate::test_support::with_retained_limit(0, |ctx| {
+        unique_duplicate_face_assignment(ctx, &serialized, &allowed, 2, |_| {
+            visited += 1;
+            Ok(true)
+        })
+    })
+    .expect("ambiguous trials are temporary");
+    assert_eq!(outcome, None);
+    assert_eq!(visited, 2);
+}
+
+#[test]
+fn parsed_boundary_context_keeps_no_retained_workspace() {
+    let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
+    crate::test_support::with_retained_limit(0, |ctx| {
+        let (base, _base_storage) = StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
+            .expect("temporary parse")
+            .expect("quad context");
+        let (candidate, _candidate_storage) = base
+            .with_edge_faces(ctx, &[[0, 0]; 4])
+            .expect("temporary candidate")
+            .expect("quad candidate");
+        assert!(Arc::ptr_eq(&base.analysis, &candidate.analysis));
+        assert!(Arc::ptr_eq(&base.edge_ports, &candidate.edge_ports));
+        assert!(Arc::ptr_eq(&base.edge_runs, &candidate.edge_runs));
+        assert!(Arc::ptr_eq(&base.cycle_lengths, &candidate.cycle_lengths));
+        assert_eq!(base.coverage, candidate.coverage);
+    });
+}
+
+#[test]
+fn rejected_oriented_orders_keep_no_retained_prefix() {
+    let trails = [vec![0, 1]];
+    let orders = crate::test_support::with_retained_limit(0, |ctx| {
+        super::bounded_oriented_trail_orders(ctx, &trails, 1)
+    })
+    .expect("both orientations exceed the result cap without retained storage");
+    assert_eq!(orders, None);
+}
+
+#[test]
+fn ambiguous_mesh_port_trials_keep_no_retained_solution() {
+    let ports = [[0, 1]];
+    let candidates = [vec![[0, 1], [0, 2]]];
+    let pairs = crate::test_support::with_retained_limit(0, |ctx| {
+        super::unique_mesh_edge_port_candidate_pairs(ctx, &ports, &candidates)
+    })
+    .expect("ambiguous port candidates stay temporary");
+    assert_eq!(pairs, None);
 }
