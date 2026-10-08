@@ -52,7 +52,12 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     let parameter_references = dimensions
         .dimensions
         .iter()
-        .filter_map(|dimension| expression_parameter_id(&dimension.expression))
+        .filter_map(|dimension| {
+            crate::test_support::with_decode_context(|ctx| {
+                expression_parameter_id(ctx, &dimension.expression)
+            })
+            .unwrap()
+        })
         .collect::<Vec<_>>();
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| parameter_owner_dependencies(

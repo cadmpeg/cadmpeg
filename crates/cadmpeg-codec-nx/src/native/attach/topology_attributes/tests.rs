@@ -237,17 +237,17 @@ fn fallback_attribute_name_keeps_class_prefix() {
 }
 
 #[test]
-fn topology_attribute_class_separator_refusal_propagates() {
+fn topology_attribute_class_name_refusal_propagates() {
     let error = crate::test_support::resource_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "NX Parasolid attribute class separator",
+        "NX Parasolid attribute class name",
         |ctx| topology_attribute_name(ctx, None, Some("CLASS"), "84", 7),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "NX Parasolid attribute class separator" && limit.additional == 1)
+            && limit.operation == "NX Parasolid attribute class name" && limit.additional == 5)
     );
 }
 
@@ -278,10 +278,10 @@ enum AttributeRoute {
     Structured,
 }
 
-fn attribute_output_route(
+fn attribute_output_with_context(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     route: AttributeRoute,
     with_reference: bool,
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<usize, cadmpeg_core::CodecError> {
     use crate::native::parasolid::structured_value_kind::StructuredValueKind;
     use crate::native::parasolid::{
@@ -323,119 +323,116 @@ fn attribute_output_route(
             assert!(index.contexts.is_empty());
         }
 
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                configure(policy);
-            },
-            |ctx| {
-                let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-                match route {
-                    AttributeRoute::String => {
-                        let value_use: ParasolidEntity51StringUse = serde_json::from_value(serde_json::json!({
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        match route {
+            AttributeRoute::String => {
+                let value_use: ParasolidEntity51StringUse = serde_json::from_value(serde_json::json!({
                 "id": "string-use", "stream_ordinal": 3, "entity_51_record": "entity",
                 "reference_ordinal": 5, "referenced_xmt": 70, "string_record": "string-value",
                 "inflated_offset": 200
             }))
             .unwrap();
-                        let value: ParasolidEntity54StringRecord =
-                            serde_json::from_value(serde_json::json!({
-                                "id": "string-value", "stream_ordinal": 3, "xmt": 70,
-                                "value": "TEXT", "byte_len": 18, "inflated_offset": 400
-                            }))
-                            .unwrap();
-                        attach_parasolid_topology_string_attributes(
-                            ctx,
-                            &mut ir,
-                            &ParasolidStringAttributeSources {
-                                string_uses: &[value_use],
-                                strings: &[value],
-                            },
-                            &index,
-                            &mut annotations,
-                        )?;
-                    }
-                    AttributeRoute::Numeric => {
-                        let value_use = ParasolidEntity51NumericUse {
-                            id: "numeric-use".into(),
-                            stream_ordinal: 3,
-                            entity_51_record: "entity".into(),
-                            position: crate::parasolid::entity_references::FieldPosition::try_from(
-                                5,
-                            )
-                            .unwrap(),
-                            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70)
-                                .unwrap(),
-                            kind: ParasolidEntity51NumericKind::UnsignedIntegers,
-                            value_record: "numeric-value".into(),
-                            inflated_offset: 200,
-                        };
-                        let value = ParasolidEntity52IntegerRecord {
-                            id: "numeric-value".into(),
-                            stream_ordinal: 3,
-                            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
-                            values: crate::parasolid::counted_values::CountedValues::new(vec![7])
-                                .unwrap(),
-                            byte_len: 14,
-                            inflated_offset: 400,
-                        };
-                        attach_parasolid_topology_numeric_attributes(
-                            ctx,
-                            &mut ir,
-                            &ParasolidNumericAttributeSources {
-                                numeric_uses: &[value_use],
-                                integers: &[value],
-                                doubles: &[],
-                            },
-                            &index,
-                            &mut annotations,
-                        )?;
-                    }
-                    AttributeRoute::Structured => {
-                        let value_use = ParasolidEntity51StructuredUse {
-                            id: "structured-use".into(),
-                            stream_ordinal: 3,
-                            entity_51_record: "entity".into(),
-                            position: crate::parasolid::entity_references::FieldPosition::try_from(
-                                5,
-                            )
-                            .unwrap(),
-                            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70)
-                                .unwrap(),
-                            kind: StructuredValueKind::Points,
-                            value_record: "structured-value".into(),
-                            inflated_offset: 200,
-                        };
-                        let value = ParasolidEntityVectorRecord {
-                            id: "structured-value".into(),
-                            stream_ordinal: 3,
-                            kind: ParasolidVectorValueKind::Points,
-                            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
-                            values: crate::parasolid::counted_values::CountedValues::new(vec![[
-                                1.0, 2.0, 3.0,
-                            ]])
-                            .unwrap(),
-                            byte_len: 36,
-                            inflated_offset: 400,
-                        };
-                        attach_parasolid_topology_structured_attributes(
-                            ctx,
-                            &mut ir,
-                            &ParasolidStructuredAttributeSources {
-                                structured_uses: &[value_use],
-                                vectors: &[value],
-                                axes: &[],
-                                tags: &[],
-                                unicode: &[],
-                            },
-                            &index,
-                            &mut annotations,
-                        )?;
-                    }
-                }
-                Ok(ir.model.attributes.len())
-            },
-        )
+                let value: ParasolidEntity54StringRecord =
+                    serde_json::from_value(serde_json::json!({
+                        "id": "string-value", "stream_ordinal": 3, "xmt": 70,
+                        "value": "TEXT", "byte_len": 18, "inflated_offset": 400
+                    }))
+                    .unwrap();
+                attach_parasolid_topology_string_attributes(
+                    ctx,
+                    &mut ir,
+                    &ParasolidStringAttributeSources {
+                        string_uses: &[value_use],
+                        strings: &[value],
+                    },
+                    &index,
+                    &mut annotations,
+                )?;
+            }
+            AttributeRoute::Numeric => {
+                let value_use = ParasolidEntity51NumericUse {
+                    id: "numeric-use".into(),
+                    stream_ordinal: 3,
+                    entity_51_record: "entity".into(),
+                    position: crate::parasolid::entity_references::FieldPosition::try_from(5)
+                        .unwrap(),
+                    referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70)
+                        .unwrap(),
+                    kind: ParasolidEntity51NumericKind::UnsignedIntegers,
+                    value_record: "numeric-value".into(),
+                    inflated_offset: 200,
+                };
+                let value = ParasolidEntity52IntegerRecord {
+                    id: "numeric-value".into(),
+                    stream_ordinal: 3,
+                    xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                    values: crate::parasolid::counted_values::CountedValues::new(vec![7]).unwrap(),
+                    byte_len: 14,
+                    inflated_offset: 400,
+                };
+                attach_parasolid_topology_numeric_attributes(
+                    ctx,
+                    &mut ir,
+                    &ParasolidNumericAttributeSources {
+                        numeric_uses: &[value_use],
+                        integers: &[value],
+                        doubles: &[],
+                    },
+                    &index,
+                    &mut annotations,
+                )?;
+            }
+            AttributeRoute::Structured => {
+                let value_use = ParasolidEntity51StructuredUse {
+                    id: "structured-use".into(),
+                    stream_ordinal: 3,
+                    entity_51_record: "entity".into(),
+                    position: crate::parasolid::entity_references::FieldPosition::try_from(5)
+                        .unwrap(),
+                    referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70)
+                        .unwrap(),
+                    kind: StructuredValueKind::Points,
+                    value_record: "structured-value".into(),
+                    inflated_offset: 200,
+                };
+                let value = ParasolidEntityVectorRecord {
+                    id: "structured-value".into(),
+                    stream_ordinal: 3,
+                    kind: ParasolidVectorValueKind::Points,
+                    xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                    values: crate::parasolid::counted_values::CountedValues::new(vec![[
+                        1.0, 2.0, 3.0,
+                    ]])
+                    .unwrap(),
+                    byte_len: 36,
+                    inflated_offset: 400,
+                };
+                attach_parasolid_topology_structured_attributes(
+                    ctx,
+                    &mut ir,
+                    &ParasolidStructuredAttributeSources {
+                        structured_uses: &[value_use],
+                        vectors: &[value],
+                        axes: &[],
+                        tags: &[],
+                        unicode: &[],
+                    },
+                    &index,
+                    &mut annotations,
+                )?;
+            }
+        }
+        Ok(ir.model.attributes.len())
+    })
+}
+
+fn attribute_output_route(
+    route: AttributeRoute,
+    with_reference: bool,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<usize, cadmpeg_core::CodecError> {
+    crate::test_support::with_decode_context_over(&[], configure, |ctx| {
+        attribute_output_with_context(ctx, route, with_reference)
     })
 }
 
@@ -448,12 +445,29 @@ fn string_attribute_output_preserves_value() {
 }
 
 macro_rules! attribute_output_limit_test {
-    ($name:ident, $route:expr, $field:ident, $dimension:ident) => {
+    ($name:ident, $route:expr, $dimension:ident) => {
         #[test]
         fn $name() {
-            let error = attribute_output_route($route, true, |policy| policy.limits.$field = 0).unwrap_err();
+            use cadmpeg_core::decode::ResourceDimension;
+            let dimension = ResourceDimension::$dimension;
+            let operation = if dimension == ResourceDimension::MaterializedBytes {
+                match $route {
+                    AttributeRoute::String => "NX Parasolid string record index",
+                    AttributeRoute::Numeric => "NX Parasolid integer record index",
+                    AttributeRoute::Structured => "NX Parasolid vector record index",
+                }
+            } else {
+                "NX Parasolid attribute output"
+            };
+            crate::test_support::with_decode_context(|ctx| {
+                assert_eq!(attribute_output_with_context(ctx, $route, true).unwrap(), 1);
+            });
+            let error = crate::test_support::resource_refusal_at(
+                &[], dimension, operation,
+                |ctx| attribute_output_with_context(ctx, $route, true),
+            );
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::$dimension));
+                if limit.dimension == dimension && limit.operation == operation));
         }
     };
 }
@@ -461,73 +475,61 @@ macro_rules! attribute_output_limit_test {
 attribute_output_limit_test!(
     string_attribute_route_refuses_collection_limit,
     AttributeRoute::String,
-    max_collection_items,
     CollectionItems
 );
 attribute_output_limit_test!(
     string_attribute_route_refuses_retained_limit,
     AttributeRoute::String,
-    max_retained_bytes,
     RetainedBytes
 );
 attribute_output_limit_test!(
-    string_attribute_route_refuses_scoped_limit,
+    string_attribute_record_index_refuses_scoped_limit,
     AttributeRoute::String,
-    max_materialized_bytes,
     MaterializedBytes
 );
 attribute_output_limit_test!(
     string_attribute_route_refuses_work_limit,
     AttributeRoute::String,
-    max_work_units,
     WorkUnits
 );
 attribute_output_limit_test!(
     numeric_attribute_route_refuses_collection_limit,
     AttributeRoute::Numeric,
-    max_collection_items,
     CollectionItems
 );
 attribute_output_limit_test!(
     numeric_attribute_route_refuses_retained_limit,
     AttributeRoute::Numeric,
-    max_retained_bytes,
     RetainedBytes
 );
 attribute_output_limit_test!(
-    numeric_attribute_route_refuses_scoped_limit,
+    numeric_attribute_record_index_refuses_scoped_limit,
     AttributeRoute::Numeric,
-    max_materialized_bytes,
     MaterializedBytes
 );
 attribute_output_limit_test!(
     numeric_attribute_route_refuses_work_limit,
     AttributeRoute::Numeric,
-    max_work_units,
     WorkUnits
 );
 attribute_output_limit_test!(
     structured_attribute_route_refuses_collection_limit,
     AttributeRoute::Structured,
-    max_collection_items,
     CollectionItems
 );
 attribute_output_limit_test!(
     structured_attribute_route_refuses_retained_limit,
     AttributeRoute::Structured,
-    max_retained_bytes,
     RetainedBytes
 );
 attribute_output_limit_test!(
-    structured_attribute_route_refuses_scoped_limit,
+    structured_attribute_record_index_refuses_scoped_limit,
     AttributeRoute::Structured,
-    max_materialized_bytes,
     MaterializedBytes
 );
 attribute_output_limit_test!(
     structured_attribute_route_refuses_work_limit,
     AttributeRoute::Structured,
-    max_work_units,
     WorkUnits
 );
 
@@ -769,7 +771,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     let error = crate::test_support::resource_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "NX Parasolid attribute field separator",
+        "NX field name field name append",
         |ctx| {
             let mut reservation = ctx.reserve_scoped(0, "test Parasolid attribute names")?;
             ParasolidAttributeNameIndex::new(
@@ -786,7 +788,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "NX Parasolid attribute field separator" && limit.additional == 1)
+            && limit.operation == "NX field name field name append" && limit.additional == 7)
     );
 
     assert_eq!(
@@ -1430,4 +1432,98 @@ fn attribute_records_without_contexts_need_no_output_index_budget() {
             0,
         );
     }
+}
+
+#[test]
+fn topology_attribute_identity_retains_exact_text_once() {
+    let reference = crate::native::parasolid::ParasolidTopologyAttributeListReference {
+        id: "reference".into(),
+        stream_ordinal: 3,
+        topology_type: TopologyAttributeKind::Face,
+        topology_xmt: 60,
+        attribute_list_xmt: 50,
+        attribute_list_record: Some("entity".into()),
+        inflated_offset: 300,
+    };
+    for (suffix, expected) in [
+        (None, "nx:s3:topology-numeric-attribute#14-60-5"),
+        (
+            Some(cadmpeg_ir::identity_key!("child")),
+            "nx:s3:topology-numeric-attribute#14-60-5-child",
+        ),
+    ] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(expected.len());
+            },
+            |ctx| {
+                let id = super::topology_attribute_id(
+                    ctx,
+                    &reference,
+                    &cadmpeg_ir::identity_component!("topology-numeric-attribute"),
+                    5,
+                    suffix.as_ref(),
+                )
+                .unwrap();
+                assert_eq!(id.as_str(), expected);
+                let error = ctx
+                    .charge_retained(1, "test complete attribute identity storage")
+                    .unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.used == cadmpeg_core::decode::u64_from_index(expected.len()) && limit.additional == 1)
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn topology_context_releases_temporary_maps_before_returning_index() {
+    const LIMIT: u64 = 1_000_000;
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let face = cadmpeg_ir::ids::FaceId::mint("nx:s3:face#60").unwrap();
+    ir.model.faces[0].id = face.clone();
+    let reference = crate::native::parasolid::ParasolidTopologyAttributeListReference {
+        id: "reference".into(),
+        stream_ordinal: 3,
+        topology_type: TopologyAttributeKind::Face,
+        topology_xmt: 60,
+        attribute_list_xmt: 50,
+        attribute_list_record: Some("entity".into()),
+        inflated_offset: 300,
+    };
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_materialized_bytes = LIMIT,
+        |ctx| {
+            let index = ParasolidTopologyAttributeIndex::new(
+                ctx,
+                &ir,
+                std::slice::from_ref(&reference),
+                &[],
+                &[],
+                &[],
+                &[],
+            )
+            .unwrap();
+            assert_eq!(index.contexts.len(), 1);
+            assert!(index.class_names.is_empty());
+            assert!(index.attribute_names.classes_by_entity.is_empty());
+            assert!(index.attribute_names.fields_by_value_use.is_empty());
+            assert!(index.attribute_names.definitions_by_id.is_empty());
+            assert!(index.attribute_names.field_names_by_definition.is_empty());
+            let live_bytes = index.contexts.capacity()
+                * std::mem::size_of::<super::ParasolidTopologyAttributeContext<'_>>()
+                + face.as_str().len();
+            let _remaining = ctx
+                .reserve_scoped(
+                    LIMIT - cadmpeg_core::decode::u64_from_index(live_bytes),
+                    "test released topology context maps",
+                )
+                .unwrap();
+        },
+    );
 }

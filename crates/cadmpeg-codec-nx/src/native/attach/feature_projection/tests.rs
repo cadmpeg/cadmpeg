@@ -281,3 +281,38 @@ fn loop_edge_sets_preserve_empty_and_duplicate_membership() {
         assert!(!super::same_loop_edges(ctx, &ir, &first, &second).unwrap());
     });
 }
+
+#[test]
+fn rejected_history_lanes_do_not_scan_properties() {
+    let properties =
+        std::collections::BTreeMap::from([("operation_record".repeat(128), "record".into())]);
+    let body = cadmpeg_ir::ids::BodyId::mint("nx:test:body#1").unwrap();
+    for (kind, objects, outputs, relations) in [
+        ("BLOCK", [None; 4], Vec::new(), [0; 3]),
+        (
+            "EXTRACT_STRING",
+            [Some(1), None, None, None],
+            Vec::new(),
+            [0; 3],
+        ),
+        ("EXTRACT_STRING", [None; 4], vec![body], [0; 3]),
+        ("EXTRACT_STRING", [None; 4], Vec::new(), [1, 0, 0]),
+    ] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                assert!(super::non_modeling_history_definition(
+                    ctx,
+                    kind,
+                    &objects,
+                    &outputs,
+                    relations,
+                    &properties
+                )
+                .unwrap()
+                .is_none());
+            },
+        );
+    }
+}
