@@ -1737,15 +1737,6 @@ pub(crate) fn scan_surface_carriers(
         })? {
             continue;
         }
-        let (Some(u_knots), Some(v_knots)) = (
-            expanded_knots(ctx, &u_unique, &u_mult, u_expected)?,
-            expanded_knots(ctx, &v_unique, &v_mult, v_expected)?,
-        ) else {
-            continue;
-        };
-        if u_knots.len() != u_expected || v_knots.len() != v_expected {
-            continue;
-        }
         // The control array holds `u_count` rows of `v_count` poles.
         let dimension = if descriptor.rational {
             descriptor.dimension
@@ -1829,6 +1820,15 @@ pub(crate) fn scan_surface_carriers(
             Ok::<_, cadmpeg_core::CodecError>((pole_rows, weight_rows, valid))
         })?;
         if !valid || pole_rows.len() != descriptor.u_count {
+            continue;
+        }
+        let (Some(u_knots), Some(v_knots)) = (
+            expanded_knots(ctx, &u_unique, &u_mult, u_expected)?,
+            expanded_knots(ctx, &v_unique, &v_mult, v_expected)?,
+        ) else {
+            continue;
+        };
+        if u_knots.len() != u_expected || v_knots.len() != v_expected {
             continue;
         }
         let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
@@ -2790,6 +2790,9 @@ mod tests {
 
 #[cfg(test)]
 mod patch_tests;
+
+#[cfg(test)]
+mod candidate_tests;
 
 #[cfg(test)]
 mod knot_work_tests {
