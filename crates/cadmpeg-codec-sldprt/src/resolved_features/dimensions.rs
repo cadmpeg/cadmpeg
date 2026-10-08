@@ -114,10 +114,9 @@ pub(super) struct LaneMarkerIndex<'a, 'ctx> {
     lane_markers: Vec<OnceCell<LaneMarkers<'a, 'ctx>>>,
     /// Declared slot references keyed by lane position, created on first slot-handle query.
     slot_references: RefCell<HashMap<usize, SlotReferences<'a, 'ctx>>>,
-    slot_reference_storage: RefCell<ScopedReservation<'ctx>>,
     /// Each lane's radial circle records in offset order, decoded on first use.
     radial_records: Vec<OnceCell<(Vec<RadialCircleRecord>, ScopedReservation<'ctx>)>>,
-    _storage: ScopedReservation<'ctx>,
+    storage: RefCell<ScopedReservation<'ctx>>,
 }
 
 impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
@@ -177,7 +176,6 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
         let lane_markers = storage.with_storage(|| {
             ctx.collect_indexed_vec(lanes.len(), OPERATION, |_| Ok(OnceCell::new()))
         })?;
-        let slot_reference_storage = RefCell::new(ctx.reserve_scoped(0, OPERATION)?);
         let radial_records = storage.with_storage(|| {
             ctx.collect_indexed_vec(lanes.len(), OPERATION, |_| Ok(OnceCell::new()))
         })?;
@@ -190,9 +188,8 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
             located_by_feature,
             lane_markers,
             slot_references: RefCell::new(HashMap::new()),
-            slot_reference_storage,
             radial_records,
-            _storage: storage,
+            storage: RefCell::new(storage),
         })
     }
 
@@ -234,7 +231,7 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
             return Ok(None);
         };
         let mut cache = self.slot_references.borrow_mut();
-        self.slot_reference_storage.borrow_mut().with_storage(|| {
+        self.storage.borrow_mut().with_storage(|| {
             let slots = match ctx.entry_hash_map(&mut cache, position, OPERATION)? {
                 std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::hash_map::Entry::Vacant(entry) => {
