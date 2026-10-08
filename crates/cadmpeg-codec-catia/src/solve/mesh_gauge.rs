@@ -120,7 +120,14 @@ fn least_rotation<K: Ord>(
     operation: &'static str,
 ) -> Result<usize, CodecError> {
     let (mut first, mut second, mut matched) = (0, 1, 0);
-    let mut steps = 0..len.saturating_mul(3);
+    let step_bound = len.checked_mul(3).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            operation,
+            cadmpeg_core::decode::u64_from_index(usize::MAX / 3),
+            cadmpeg_core::decode::u64_from_index(len),
+        )
+    })?;
+    let mut steps = 0..step_bound;
     while first < len && second < len && matched < len {
         if ctx.next_charged(&mut steps, operation)?.is_none() {
             return Err(CodecError::malformed(
@@ -396,7 +403,7 @@ fn bounded_factorial(
     limit: usize,
 ) -> Result<usize, CodecError> {
     let mut result = 1usize;
-    let mut factors = 2..value.saturating_add(1);
+    let mut factors = 2..=value;
     while let Some(factor) = ctx.next_charged(&mut factors, "catia_gauge_permutation_count")? {
         result = result.checked_mul(factor).ok_or_else(|| {
             ctx.refuse_codec_limit(
