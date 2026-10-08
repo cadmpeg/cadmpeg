@@ -312,11 +312,18 @@ fn curve_parameter_records_refuse_before_vector_growth() {
             .expect("root input is admitted");
         crate::curve::parameter_records_with_face_ids(&ctx, payload, None)
     };
-    let admitted = (1..100)
-        .find(|&limit| run(limit).is_ok())
-        .expect("service profile admits one row");
-    assert_eq!(run(admitted).expect("row is admitted").len(), 1);
-    let error = run(admitted - 1).expect_err("last collection item is the record");
+    let admitted = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &["creo curve parameter records"],
+        run,
+    );
+    assert_eq!(admitted.len(), 1);
+    let error = run(crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo curve parameter records"),
+        run,
+    ))
+    .expect_err("last collection item is the record");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo curve parameter records"));
