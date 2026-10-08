@@ -2887,7 +2887,9 @@ fn parse_text(
     let text = ctx
         .validate_utf8(bytes, "FreeCAD text B-rep UTF-8")?
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
-    let (tokens, _token_storage) = text_tokens(ctx, text)?;
+    let tokens = text_tokens(ctx, text)?;
+    let _token_storage = tokens.1;
+    let tokens = tokens.0;
     // One pass finds the topology header and every section marker; each
     // comparison is against a literal.
     let mut header_counts = [0_usize; 3];

@@ -17,10 +17,12 @@ pub(crate) fn install(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<(), NativeConvertError> {
-    let (records, _storage) = ctx
+    let records = ctx
         .with_scoped_storage("FreeCAD application wire records", || {
             wire_records(ctx, objects, properties, entries)
         })?;
+    let _storage = records.1;
+    let records = records.0;
     namespace.set_arena(ctx, "applications", &records)
 }
 
@@ -32,10 +34,12 @@ pub(crate) fn matches_native(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<bool, NativeConvertError> {
-    let (mut expected, _expected_storage) = ctx
+    let expected = ctx
         .with_scoped_storage("FreeCAD expected application records", || {
             wire_records(ctx, objects, properties, entries)
         })?;
+    let _expected_storage = expected.1;
+    let mut expected = expected.0;
     ctx.stable_sort_by(
         &mut expected,
         |value| &value.id,
@@ -44,12 +48,17 @@ pub(crate) fn matches_native(
     )?;
     let mut actual = namespace.arena_iter_as_for_decode::<serde_json::Value>(ctx, "applications");
     let mut expected = expected.into_iter();
-    while let Some(record) = ctx.next_charged(&mut expected, "FreeCAD expected applications")? {
-        let (actual, _actual_storage) =
+    while expected.len() != 0 {
+        let Some(record) = ctx.next_charged(&mut expected, "FreeCAD expected applications")? else {
+            break;
+        };
+        let record_result =
             ctx.with_scoped_storage("FreeCAD actual application record", || {
                 ctx.next_charged(&mut actual, "FreeCAD actual application record")?
                     .transpose()
             })?;
+        let _actual_storage = record_result.1;
+        let actual = record_result.0;
         let Some(actual) = actual else {
             return Ok(false);
         };
@@ -57,11 +66,13 @@ pub(crate) fn matches_native(
             return Ok(false);
         }
     }
-    let (tail, _tail_storage) =
+    let tail =
         ctx.with_scoped_storage("FreeCAD actual application tail", || {
             ctx.next_charged(&mut actual, "FreeCAD actual application tail")?
                 .transpose()
         })?;
+    let _tail_storage = tail.1;
+    let tail = tail.0;
     Ok(tail.is_none())
 }
 
