@@ -627,44 +627,34 @@ fn section_owner_binding_refuses_each_collection_boundary() {
         owner_feature_id: Some(247),
     };
     let arena = DecodeArena::new();
-    for (definitions, operations, operation) in [
+    // One eligibility flag and one distinct plane entry precede operation rows.
+    const ELIGIBILITY_AND_PLANE_ITEMS: u64 = 1 + 1;
+    for (limit, definitions, operations, operation) in [
         (
+            0,
             vec![claimed],
             Vec::new(),
             "creo section claimed owner nodes",
         ),
         (
+            1,
             vec![candidate.clone()],
             operations.to_vec(),
             "creo section plane count nodes",
         ),
         (
+            ELIGIBILITY_AND_PLANE_ITEMS,
             vec![candidate.clone()],
             operations.to_vec(),
             "creo section ordered operations",
         ),
         (
+            ELIGIBILITY_AND_PLANE_ITEMS + 1,
             vec![candidate.clone()],
             operations.to_vec(),
             "creo section ordered operations",
         ),
     ] {
-        let limit = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            Some(operation),
-            |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) =
-                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root admitted");
-                super::bind_section_owners(
-                    &ctx,
-                    definitions.clone(),
-                    &operations,
-                    &[(0, usize::MAX)],
-                )
-            },
-        );
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
         let (ctx, _) =
@@ -673,7 +663,9 @@ fn section_owner_binding_refuses_each_collection_boundary() {
             .expect_err("collection limit refuses owner binding");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && resource.operation == operation
+                && (resource.used, resource.additional) == (limit, 1)),
             "{error:?}"
         );
     }
