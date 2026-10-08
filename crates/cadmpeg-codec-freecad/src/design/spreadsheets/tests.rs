@@ -2,6 +2,7 @@
 //! Spreadsheet value, cell, dimension, and address admission tests.
 
 use super::{cell_address, merged_range, offset_cell_address, range_contains_address};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::spreadsheets::{CellAddress, SpreadsheetRange};
 use std::collections::BTreeMap;
 
@@ -183,4 +184,39 @@ fn spreadsheet_cells_refuse_at_caller_limit() {
     crate::test_support::assert_collection_refusal_at(&[], "FreeCAD spreadsheet cells", |ctx| {
         super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property])
     });
+}
+
+#[test]
+fn spreadsheet_value_visits_exact_descendants_without_end_probe() {
+    let document = roxmltree::Document::parse("<Property><Cells/></Property>")
+        .expect("valid spreadsheet XML");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 27;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+
+    let value = super::direct_spreadsheet_value(&ctx, &document, "Cells", "cells-property")
+        .expect("the exact descendant visits fit the work cap");
+    assert_eq!(value.tag_name().name(), "Cells");
+}
+
+#[test]
+fn spreadsheet_cell_address_visits_only_exact_column_bytes() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert_eq!(
+        cell_address(&ctx, "A1").expect("cell address fits the exact work cap"),
+        Some((1, 1))
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert_eq!(
+        cell_address(&ctx, "1").expect("empty column scan fits the exact work cap"),
+        None
+    );
 }

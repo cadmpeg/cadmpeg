@@ -123,7 +123,11 @@ pub(crate) fn scan<'a, 'c>(
     }
     let (document, schema_version, document_xml) = parse_document(ctx, document_bytes)?;
     let mut data = BTreeMap::new();
-    for file in ctx.admit_iter(archive.entries(), "FCStd archive entries")? {
+    let mut files = archive.entries().iter();
+    while files.len() != 0 {
+        let Some(file) = ctx.next_charged(&mut files, "FCStd archive entries")? else {
+            break;
+        };
         if !crate::native::is_safe_entry_name_charged(ctx, &file.name)? {
             return Err(crate::resource::malformed_charged(
                 ctx,
@@ -142,10 +146,12 @@ pub(crate) fn scan<'a, 'c>(
     }
     let physical_ledger = archive.physical_ledger(ctx)?;
     let mut ledger = ctx.collection_vec(physical_ledger.len(), "FCStd archive ledger records")?;
-    for (index, span) in ctx
-        .admit_iter(physical_ledger, "FCStd archive ledger records")?
-        .enumerate()
-    {
+    let mut spans = physical_ledger.into_iter().enumerate();
+    while spans.len() != 0 {
+        let Some((index, span)) = ctx.next_charged(&mut spans, "FCStd archive ledger records")?
+        else {
+            break;
+        };
         ledger.push(ArchiveSpan {
             id: crate::native::native_id_charged(ctx, "archive-span", &index.to_string())?,
             span: crate::native::ByteSpan::try_new(span.start, span.end)
@@ -173,8 +179,19 @@ pub(crate) fn entry_records(
     // listed once, and it is the last owner pushed when it repeats.
     let mut index_storage = ctx.reserve_scoped(0, "FCStd entry reference index")?;
     let mut referencing = HashMap::<&str, Vec<&str>>::new();
-    for property in ctx.admit_iter(properties, "FCStd entry reference index")? {
-        for entry in ctx.admit_iter(property.side_entries(), "FCStd entry reference index")? {
+    let mut input_properties = properties.iter();
+    while input_properties.len() != 0 {
+        let Some(property) =
+            ctx.next_charged(&mut input_properties, "FCStd entry reference index")?
+        else {
+            break;
+        };
+        let mut side_entries = property.side_entries().iter();
+        while side_entries.len() != 0 {
+            let Some(entry) = ctx.next_charged(&mut side_entries, "FCStd entry reference index")?
+            else {
+                break;
+            };
             index_storage.with_storage(|| {
                 let owners = ctx
                     .entry_hash_map(
@@ -197,7 +214,11 @@ pub(crate) fn entry_records(
         }
     }
     let mut records = ctx.collection_vec(scan.entries.len(), "FCStd entry records")?;
-    for entry in ctx.admit_iter(&scan.entries, "FCStd entry records")? {
+    let mut entries = scan.entries.iter();
+    while entries.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut entries, "FCStd entry records")? else {
+            break;
+        };
         let Some(bytes) = ctx
             .get_btree_map(&scan.data, entry.name.as_str(), "FCStd archive entry map")?
             .map(|view| view.window())
@@ -216,7 +237,13 @@ pub(crate) fn entry_records(
             .map_or(&[][..], Vec::as_slice);
         let mut referenced_by =
             ctx.collection_vec(owners.len(), "FCStd entry referencing properties")?;
-        for &owner in ctx.admit_iter(owners, "FCStd entry referencing properties")? {
+        let mut owners_iter = owners.iter();
+        while owners_iter.len() != 0 {
+            let Some(&owner) =
+                ctx.next_charged(&mut owners_iter, "FCStd entry referencing properties")?
+            else {
+                break;
+            };
             referenced_by.push(ctx.copy_retained_text(owner, "FCStd entry referencing identity")?);
         }
         records.push(EntryRecord::new(
@@ -688,25 +715,49 @@ pub(crate) fn logical_ledger(
 ) -> Result<Vec<LogicalSpan>, CodecError> {
     let mut typed_storage = ctx.reserve_scoped(0, "FCStd typed entry identities")?;
     let mut typed_entries = HashSet::new();
-    let typed_names = ctx
-        .admit_iter(shape_payloads, "FCStd typed entry identities")?
-        .map(|payload| Some(payload.entry.as_str()))
-        .chain(
-            ctx.admit_iter(string_tables, "FCStd typed entry identities")?
-                .map(|table| table.source_entry.as_deref()),
-        )
-        .chain(
-            ctx.admit_iter(element_maps, "FCStd typed entry identities")?
-                .map(|map| map.source_entry.as_deref()),
-        )
-        .flatten();
-    for name in typed_names {
+    let mut payloads = shape_payloads.iter();
+    while payloads.len() != 0 {
+        let Some(payload) = ctx.next_charged(&mut payloads, "FCStd typed entry identities")?
+        else {
+            break;
+        };
         typed_storage.with_storage(|| {
-            ctx.insert_hash_set(&mut typed_entries, name, "FCStd typed entry identities")
+            ctx.insert_hash_set(
+                &mut typed_entries,
+                payload.entry.as_str(),
+                "FCStd typed entry identities",
+            )
         })?;
     }
+    let mut tables = string_tables.iter();
+    while tables.len() != 0 {
+        let Some(table) = ctx.next_charged(&mut tables, "FCStd typed entry identities")? else {
+            break;
+        };
+        if let Some(name) = table.source_entry.as_deref() {
+            typed_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut typed_entries, name, "FCStd typed entry identities")
+            })?;
+        }
+    }
+    let mut maps = element_maps.iter();
+    while maps.len() != 0 {
+        let Some(map) = ctx.next_charged(&mut maps, "FCStd typed entry identities")? else {
+            break;
+        };
+        if let Some(name) = map.source_entry.as_deref() {
+            typed_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut typed_entries, name, "FCStd typed entry identities")
+            })?;
+        }
+    }
     let mut output = Vec::new();
-    for entry in ctx.admit_iter(entries, "FCStd logical ledger entries")? {
+    let mut entries_iter = entries.iter();
+    while entries_iter.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut entries_iter, "FCStd logical ledger entries")?
+        else {
+            break;
+        };
         if ctx.contains_hash_set(&typed_entries, entry.id(), "FCStd typed entry identities")?
             || ctx.contains_hash_set(
                 &typed_entries,
@@ -745,7 +796,13 @@ pub(crate) fn logical_ledger(
         let mut ranges_storage = ctx.reserve_scoped(0, "FCStd logical ranges")?;
         let mut ranges: Vec<(u64, u64, bool, &str)> = Vec::new();
         if is_document {
-            for property in ctx.admit_iter(properties, "FCStd logical property ranges")? {
+            let mut properties_iter = properties.iter();
+            while properties_iter.len() != 0 {
+                let Some(property) =
+                    ctx.next_charged(&mut properties_iter, "FCStd logical property ranges")?
+                else {
+                    break;
+                };
                 ctx.push_scoped_vec(
                     &mut ranges_storage,
                     &mut ranges,
@@ -759,7 +816,13 @@ pub(crate) fn logical_ledger(
                 )?;
             }
         } else {
-            for property in ctx.admit_iter(&gui.properties, "FCStd logical GUI ranges")? {
+            let mut properties_iter = gui.properties.iter();
+            while properties_iter.len() != 0 {
+                let Some(property) =
+                    ctx.next_charged(&mut properties_iter, "FCStd logical GUI ranges")?
+                else {
+                    break;
+                };
                 ctx.push_scoped_vec(
                     &mut ranges_storage,
                     &mut ranges,
@@ -772,8 +835,19 @@ pub(crate) fn logical_ledger(
                     "FCStd logical ranges",
                 )?;
             }
-            for document in ctx.admit_iter(&gui.documents, "FCStd logical GUI ranges")? {
-                for state in ctx.admit_iter(&document.states, "FCStd logical GUI ranges")? {
+            let mut documents = gui.documents.iter();
+            while documents.len() != 0 {
+                let Some(document) =
+                    ctx.next_charged(&mut documents, "FCStd logical GUI ranges")?
+                else {
+                    break;
+                };
+                let mut states = document.states.iter();
+                while states.len() != 0 {
+                    let Some(state) = ctx.next_charged(&mut states, "FCStd logical GUI ranges")?
+                    else {
+                        break;
+                    };
                     ctx.push_scoped_vec(
                         &mut ranges_storage,
                         &mut ranges,
@@ -790,7 +864,13 @@ pub(crate) fn logical_ledger(
             "FCStd logical GUI range sort",
         )?;
         let mut cursor = 0_u64;
-        for &(start, end, typed, owner) in ctx.admit_iter(&ranges, "FCStd logical ranges")? {
+        let mut ranges_iter = ranges.iter();
+        while ranges_iter.len() != 0 {
+            let Some(&(start, end, typed, owner)) =
+                ctx.next_charged(&mut ranges_iter, "FCStd logical ranges")?
+            else {
+                break;
+            };
             if start < cursor || end < start || end > entry.byte_len() {
                 return Err(CodecError::Malformed(ctx.format_retained(
                     format_args!("overlapping or invalid {} record spans", entry.name()),
@@ -840,7 +920,12 @@ pub(crate) fn byte_coverage(
     let mut opaque_names = BTreeSet::new();
     // Byte totals of the classifications present, by the wire order of their names.
     let mut totals: [Option<u64>; 3] = [None; 3];
-    for span in ctx.admit_iter(logical, "FCStd entry logical spans")? {
+    let mut logical_spans = logical.iter();
+    while logical_spans.len() != 0 {
+        let Some(span) = ctx.next_charged(&mut logical_spans, "FCStd entry logical spans")?
+        else {
+            break;
+        };
         let bytes = span.span.end() - span.span.start();
         let total = &mut totals[match span.classification {
             LogicalClassification::NamedOpaque { .. } => 0,
@@ -892,7 +977,12 @@ pub(crate) fn byte_coverage(
     )?;
     let mut logical_exact = true;
     let mut logical_byte_len = 0_u64;
-    for entry in ctx.admit_iter(entries, "FCStd entry logical spans")? {
+    let mut entries_iter = entries.iter();
+    while entries_iter.len() != 0 {
+        let Some(entry) = ctx.next_charged(&mut entries_iter, "FCStd entry logical spans")?
+        else {
+            break;
+        };
         logical_byte_len = logical_byte_len
             .checked_add(entry.byte_len())
             .ok_or_else(overflow)?;
@@ -927,7 +1017,11 @@ pub(crate) fn byte_coverage(
     logical_exact &= spans_by_entry.is_empty();
     let mut opaque_entries =
         ctx.collection_vec(opaque_names.len(), "FCStd opaque coverage list")?;
-    for name in ctx.admit_iter(opaque_names, "FCStd opaque coverage list")? {
+    let mut names = opaque_names.iter();
+    while names.len() != 0 {
+        let Some(name) = ctx.next_charged(&mut names, "FCStd opaque coverage list")? else {
+            break;
+        };
         opaque_entries.push(ctx.copy_retained_text(name, "FCStd opaque entry name")?);
     }
     Ok(ByteCoverageRecord {
@@ -953,7 +1047,14 @@ pub(crate) fn chain_is_exact<'a>(
 ) -> Result<bool, CodecError> {
     let mut cursor = 0_u64;
     let mut empty = true;
-    while let Some(span) = ctx.next_charged(&mut spans, operation)? {
+    loop {
+        if spans.size_hint().1 == Some(0) {
+            ctx.charge_work(0, operation)?;
+            break;
+        }
+        let Some(span) = ctx.next_charged(&mut spans, operation)? else {
+            break;
+        };
         if span.start() != cursor {
             return Ok(false);
         }

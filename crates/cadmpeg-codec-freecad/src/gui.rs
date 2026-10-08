@@ -428,13 +428,22 @@ struct TopologyIndex<'source, 'ctx> {
     edge_built: bool,
     vertices: BTreeMap<&'source str, &'source cadmpeg_ir::ids::VertexId>,
     vertex_built: bool,
-    bodies: BTreeMap<&'source str, Vec<&'source cadmpeg_ir::ids::BodyId>>,
-    body_built: bool,
+    bodies: BTreeMap<&'source str, Vec<(usize, &'source cadmpeg_ir::ids::BodyId)>>,
+    body_candidates: Vec<BodyCandidate<'source>>,
+    body_candidates_built: bool,
     existing_bindings: usize,
     face_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     edge_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     vertex_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     body_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    body_candidate_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+}
+
+#[derive(Clone, Copy)]
+struct BodyCandidate<'source> {
+    key: &'source str,
+    ordinal: usize,
+    id: &'source cadmpeg_ir::ids::BodyId,
 }
 
 impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
@@ -448,12 +457,14 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
             vertices: BTreeMap::new(),
             vertex_built: false,
             bodies: BTreeMap::new(),
-            body_built: false,
+            body_candidates: Vec::new(),
+            body_candidates_built: false,
             existing_bindings: ir.model.appearance_bindings.len(),
             face_storage: None,
             edge_storage: None,
             vertex_storage: None,
             body_storage: None,
+            body_candidate_storage: None,
         }
     }
 
@@ -523,44 +534,170 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
         Ok(())
     }
 
-    fn ensure_bodies(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
+    fn ensure_bodies<'payload, I>(
+        &mut self,
+        ctx: &'ctx DecodeContext<'_>,
+        payload_ids: I,
+    ) -> Result<(), CodecError>
+    where
+        I: IntoIterator<Item = &'payload str>,
+        I::IntoIter: std::iter::ExactSizeIterator,
+    {
         if let Some(refusal) = ctx.resource_refusal() {
             return Err(refusal.into());
         }
-        if self.body_built {
+        let mut payload_sources = payload_ids.into_iter();
+        if payload_sources.len() == 0 {
             return Ok(());
         }
-        let mut body_storage = ctx.reserve_scoped(0, "FCStd GUI body payload keys")?;
-        let mut bodies = BTreeMap::new();
-        let mut sources = self.ir.model.bodies.iter();
+        self.build_body_candidates(ctx)?;
+        while payload_sources.len() != 0 {
+            let Some(payload_id) =
+                ctx.next_charged(&mut payload_sources, "FCStd GUI body payload requests")?
+            else {
+                break;
+            };
+            let payload_key = ctx
+                .split_once(payload_id, "#", "FCStd GUI identity key")?
+                .map_or(payload_id, |(_, key)| key);
+            if ctx
+                .get_btree_map(
+                    &self.bodies,
+                    payload_key,
+                    "FCStd GUI body payload group lookup",
+                )?
+                .is_some()
+            {
+                continue;
+            }
+
+            let first = ctx.partition_point(
+                &self.body_candidates,
+                |candidate| {
+                    if ctx.starts_with(
+                        candidate.key,
+                        payload_key,
+                        "FCStd GUI body payload prefix lower bound",
+                    )? {
+                        let suffix = &candidate.key[payload_key.len()..];
+                        Ok(ctx.compare(
+                            suffix,
+                            ":",
+                            "FCStd GUI body payload prefix lower bound",
+                        )? == std::cmp::Ordering::Less)
+                    } else {
+                        Ok(ctx.compare(
+                            candidate.key,
+                            payload_key,
+                            "FCStd GUI body payload prefix lower bound",
+                        )? == std::cmp::Ordering::Less)
+                    }
+                },
+                "FCStd GUI body payload prefix lower bound",
+            )?;
+            let candidates = &self.body_candidates[first..];
+            let count = ctx.partition_point(
+                candidates,
+                |candidate| {
+                    if !ctx.starts_with(
+                        candidate.key,
+                        payload_key,
+                        "FCStd GUI body payload prefix range",
+                    )? {
+                        return Ok(false);
+                    }
+                    ctx.starts_with(
+                        &candidate.key[payload_key.len()..],
+                        ":",
+                        "FCStd GUI body payload prefix range",
+                    )
+                },
+                "FCStd GUI body payload prefix range",
+            )?;
+            if count == 0 {
+                continue;
+            }
+            let candidates = &candidates[..count];
+            let key = &candidates[0].key[..payload_key.len()];
+            if self.body_storage.is_none() {
+                self.body_storage = Some(ctx.reserve_scoped(0, "FCStd GUI body payload groups")?);
+            }
+            let storage = self
+                .body_storage
+                .as_mut()
+                .expect("body payload storage initialized for a matching group");
+            let mut matches = candidates.iter();
+            while matches.len() != 0 {
+                let Some(candidate) =
+                    ctx.next_charged(&mut matches, "FCStd GUI body payload matches")?
+                else {
+                    break;
+                };
+                ctx.push_scoped_btree_group(
+                    storage,
+                    &mut self.bodies,
+                    key,
+                    || (candidate.ordinal, candidate.id),
+                    0,
+                    "FCStd GUI body payload groups",
+                )?;
+            }
+            if let Some(bodies) = ctx.get_mut_btree_map(
+                &mut self.bodies,
+                key,
+                "FCStd GUI body payload source-order group",
+            )? {
+                ctx.stable_sort_by_key(
+                    bodies,
+                    |(ordinal, _)| *ordinal,
+                    usize::cmp,
+                    "FCStd GUI body payload source order",
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn build_body_candidates(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
+        if self.body_candidates_built {
+            return Ok(());
+        }
+        let mut candidate_storage = ctx.reserve_scoped(0, "FCStd GUI body candidates")?;
+        let mut candidates = Vec::new();
+        let mut sources = self.ir.model.bodies.iter().enumerate();
         while sources.len() != 0 {
-            let Some(body) =
-                ctx.next_charged(&mut sources, "FCStd GUI body payload key sources")?
+            let Some((ordinal, body)) =
+                ctx.next_charged(&mut sources, "FCStd GUI body candidate sources")?
             else {
                 break;
             };
             let key = ctx
                 .split_once(body.id.as_str(), "#", "FCStd GUI body identity key")?
                 .map_or(body.id.as_str(), |(_, key)| key);
-            let mut suffix = key;
-            while let Some((_, rest)) =
-                ctx.split_once(suffix, ":", "FCStd GUI body payload key separator")?
+            if ctx
+                .split_once(key, ":", "FCStd GUI body payload key separator")?
+                .is_none()
             {
-                let prefix = &key[..key.len() - rest.len() - 1];
-                ctx.push_scoped_btree_group(
-                    &mut body_storage,
-                    &mut bodies,
-                    prefix,
-                    || &body.id,
-                    0,
-                    "FCStd GUI body payload keys",
-                )?;
-                suffix = rest;
+                continue;
             }
+            candidate_storage.with_storage(|| {
+                ctx.reserve_vec(&mut candidates, 1, "FCStd GUI body candidates")
+            })?;
+            candidates.push(BodyCandidate {
+                key,
+                ordinal,
+                id: &body.id,
+            });
         }
-        self.bodies = bodies;
-        self.body_storage = Some(body_storage);
-        self.body_built = true;
+        ctx.stable_sort_by(
+            &mut candidates,
+            |candidate| candidate.key,
+            str::cmp,
+            "FCStd GUI body candidate key order",
+        )?;
+        self.body_candidates = candidates;
+        self.body_candidate_storage = Some(candidate_storage);
+        self.body_candidates_built = true;
         Ok(())
     }
 }
@@ -651,10 +788,11 @@ fn transfer_schema_one<'ctx>(
     let requires_alpha_conversion = sources.requires_alpha_conversion;
     let root = ctx.xml_root_element(xml, "FCStd GUI document root")?;
     let mut plan = AppearancePlan::new(ctx)?;
-    let (children, _child_storage) = ctx
+    let (_child_storage, children) = ctx
         .with_scoped_storage("FCStd GUI document children", || {
             ctx.collect_vec(root.children(), "FCStd GUI document children")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let mut camera_count = 0;
     let mut camera_candidates = children.iter();
     while camera_candidates.len() != 0 {
@@ -846,10 +984,11 @@ fn transfer_schema_one<'ctx>(
             )?;
             continue;
         };
-        let (provider_key, _key_storage) = ctx
+        let (_key_storage, provider_key) = ctx
             .with_scoped_storage("FCStd GUI provider key storage", || {
                 provider_identity_key(ctx, name)
-            })?;
+            })
+            .map(|(key, storage)| (storage, key))?;
         append_native_provider(
             ctx,
             text,
@@ -1027,7 +1166,7 @@ fn transfer_schema_one<'ctx>(
                         Some(index) => index,
                         slot @ None => slot.insert(TopologyIndex::new(ir)),
                     };
-                    topology_index.ensure_bodies(ctx)?;
+                    topology_index.ensure_bodies(ctx, owned_payloads.iter().copied())?;
                     select_shape_bodies(ctx, &topology_index.bodies, owned_payloads.iter().copied())
                 } else {
                     Ok(Vec::new())
@@ -1205,10 +1344,11 @@ fn transfer_schema_one<'ctx>(
             drop(_body_storage);
             continue;
         };
-        let (appearance_id, _id_storage) = ctx
+        let (_id_storage, appearance_id) = ctx
             .with_scoped_storage("FCStd GUI appearance identity storage", || {
                 object_appearance_id(ctx, &provider_key)
-            })?;
+            })
+            .map(|(id, storage)| (storage, id))?;
         let mut material_properties = BTreeMap::new();
         if let Some(material) = material {
             for (source, target) in [
@@ -1903,10 +2043,12 @@ fn parse_camera_settings(
         });
     }
 
-    let (mut tokens, _token_storage) = ctx.temporary_vec(
-        settings.split_whitespace().count(),
-        "FCStd GUI camera tokens",
-    )?;
+    let (_token_storage, mut tokens) = ctx
+        .temporary_vec(
+            settings.split_whitespace().count(),
+            "FCStd GUI camera tokens",
+        )
+        .map(|(tokens, storage)| (storage, tokens))?;
     tokens.extend(settings.split_whitespace());
     let valid_shape = tokens.len() >= 3
         && tokens[1] == "{"
@@ -2338,12 +2480,16 @@ fn transfer_primitive_appearance(
         drop(target_storage);
         return Ok(());
     }
-    let (provider_key, _key_storage) = ctx
+    let (_key_storage, provider_key) = ctx
         .with_scoped_storage("FCStd GUI provider key storage", || {
             provider_identity_key(ctx, provider_name)
-        })?;
-    let ((appearance_id, label, property, size, binding_key, object_type, precedence), _id_storage) =
-        ctx.with_scoped_storage("FCStd GUI primitive identity storage", || {
+        })
+        .map(|(key, storage)| (storage, key))?;
+    let (
+        _id_storage,
+        (appearance_id, label, property, size, binding_key, object_type, precedence),
+    ) = ctx
+        .with_scoped_storage("FCStd GUI primitive identity storage", || {
             Ok::<_, CodecError>(match style {
                 PrimitiveStyle::Line(width) => (
                     edge_appearance_id(ctx, &provider_key)?,
@@ -2364,7 +2510,8 @@ fn transfer_primitive_appearance(
                     "vertex_over_object",
                 ),
             })
-        })?;
+        })
+        .map(|(identity, storage)| (storage, identity))?;
     let admitted_size = match size {
         PrimitiveSize::Admitted(value) if value.get() >= 0.0 => Some(value),
         PrimitiveSize::Absent | PrimitiveSize::Admitted(_) | PrimitiveSize::NonFinite => None,
@@ -2549,14 +2696,15 @@ fn gui_state(
         "FCStd GUI state XML",
     )?;
     let order = order.to_string();
-    let (key, _key_storage) =
+    let (_key_storage, key) =
         ctx.with_scoped_storage("FCStd GUI state identity storage", || {
             ctx.join_retained(
                 &[kind.as_str(), order.as_str()],
                 ":",
                 "FCStd GUI state identity key",
             )
-        })?;
+        })
+        .map(|(key, storage)| (storage, key))?;
     Ok(GuiStateRecord {
         id: crate::native::native_id_charged(ctx, "gui-state", &key)?,
         kind,
@@ -2606,10 +2754,11 @@ fn append_native_provider(
     let name = ctx
         .xml_attribute(provider, "name", "FCStd GUI provider attribute")?
         .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
-    let (id, _id_storage) = ctx
+    let (_id_storage, id) = ctx
         .with_scoped_storage("FCStd GUI provider identity storage", || {
             crate::native::native_id_charged(ctx, "gui-view-provider", name)
-        })?;
+        })
+        .map(|(id, storage)| (storage, id))?;
     ctx.reserve_vec(providers, 1, "FCStd GUI provider records")?;
     providers.push(GuiViewProviderRecord {
         id: ctx.copy_retained_text(&id, "FCStd GUI provider record identity")?,
@@ -3189,10 +3338,11 @@ fn validate_gui_string_list(
     property_name: &str,
 ) -> Result<(), CodecError> {
     let count = gui_list_count(ctx, root, property_name, "StringList")?;
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI StringList child nodes", || {
             ctx.collect_vec(root.children(), "FCStd GUI StringList child nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let element_count = ctx
         .admit_iter(&children, "FCStd GUI StringList element count")?
         .filter(|value| value.is_element())
@@ -3251,10 +3401,11 @@ fn validate_gui_integer_list(
         "IntegerList"
     };
     let count = gui_list_count(ctx, root, property_name, tag)?;
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI integer-list child nodes", || {
             ctx.collect_vec(root.children(), "FCStd GUI integer-list child nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let element_count = ctx
         .admit_iter(&children, "FCStd GUI integer-list element count")?
         .filter(|value| value.is_element())
@@ -3329,10 +3480,11 @@ fn validate_gui_map(
     property_name: &str,
 ) -> Result<(), CodecError> {
     let count = gui_list_count(ctx, root, property_name, "Map")?;
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI Map child nodes", || {
             ctx.collect_vec(root.children(), "FCStd GUI Map child nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let element_count = ctx
         .admit_iter(&children, "FCStd GUI Map element count")?
         .filter(|value| value.is_element())
@@ -3621,10 +3773,11 @@ fn validate_gui_enumeration(
             ));
         }
     };
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI custom enumeration nodes", || {
             ctx.collect_vec(custom_list.children(), "FCStd GUI custom enumeration nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let element_count = ctx
         .admit_iter(&children, "FCStd GUI custom enumeration element count")?
         .filter(|value| value.is_element())
@@ -4043,10 +4196,11 @@ fn validate_gui_techdraw_list(
             format_args!("{list_tag} has an invalid count"),
         ));
     };
-    let (record_nodes, _record_node_storage) = ctx
+    let (_record_node_storage, record_nodes) = ctx
         .with_scoped_storage("FCStd GUI TechDraw child nodes", || {
             ctx.collect_vec(root.children(), "FCStd GUI TechDraw child nodes")
-        })?;
+        })
+        .map(|(nodes, storage)| (storage, nodes))?;
     let record_count = ctx
         .admit_iter(&record_nodes, "FCStd GUI TechDraw record count")?
         .filter(|record| record.is_element())
@@ -4366,13 +4520,14 @@ fn validate_gui_center_line_string_collection(
             "CenterLine collection has an invalid count",
         ));
     };
-    let (children, _children_storage) =
+    let (_children_storage, children) =
         ctx.with_scoped_storage("FCStd GUI CenterLine collection child nodes", || {
             ctx.collect_vec(
                 field.children(),
                 "FCStd GUI CenterLine collection child nodes",
             )
-    })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let item_count = ctx
         .admit_iter(&children, "FCStd GUI CenterLine collection item count")?
         .filter(|item| item.is_element())
@@ -4768,10 +4923,11 @@ fn validate_gui_techdraw_points(
             "TechDraw Points has an invalid count",
         ));
     };
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI TechDraw Points child nodes", || {
             ctx.collect_vec(field.children(), "FCStd GUI TechDraw Points child nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let point_count = ctx
         .admit_iter(&children, "FCStd GUI TechDraw point count")?
         .filter(|point| point.is_element())
@@ -5146,10 +5302,11 @@ fn validate_visual_layer_list(
                 format_args!("GUI property {property_name} VisualLayerList has an invalid count"),
             )
         })?;
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI VisualLayerList child nodes", || {
             ctx.collect_vec(root.children(), "FCStd GUI VisualLayerList child nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let element_count = ctx
         .admit_iter(&children, "FCStd GUI VisualLayerList element count")?
         .filter(|layer| layer.is_element())
@@ -5315,10 +5472,11 @@ fn validate_gui_expression_engine(
         ));
     }
     let count = gui_list_count(ctx, root, property_name, "ExpressionEngine")?;
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI ExpressionEngine child nodes", || {
             ctx.collect_vec(root.children(), "FCStd GUI ExpressionEngine child nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let mut expression_count = 0_usize;
     let mut expression_children = children.iter();
     while expression_children.len() != 0 {
@@ -5439,10 +5597,11 @@ fn validate_gui_geometry_list(
         ));
     }
     let count = gui_list_count(ctx, root, property_name, "GeometryList")?;
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI GeometryList child nodes", || {
             ctx.collect_vec(root.children(), "FCStd GUI GeometryList child nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let element_count = ctx
         .admit_iter(&children, "FCStd GUI GeometryList element count")?
         .filter(|geometry| geometry.is_element())
@@ -5512,10 +5671,11 @@ fn validate_gui_shape_list(
         ));
     }
     let count = gui_list_count(ctx, root, property_name, "ShapeList")?;
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI ShapeList child nodes", || {
             ctx.collect_vec(root.children(), "FCStd GUI ShapeList child nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let element_count = ctx
         .admit_iter(&children, "FCStd GUI ShapeList element count")?
         .filter(|shape| shape.is_element())
@@ -5571,10 +5731,11 @@ fn validate_gui_constraint_list(
         ));
     }
     let count = gui_list_count(ctx, root, property_name, "ConstraintList")?;
-    let (children, _children_storage) = ctx
+    let (_children_storage, children) = ctx
         .with_scoped_storage("FCStd GUI ConstraintList child nodes", || {
             ctx.collect_vec(root.children(), "FCStd GUI ConstraintList child nodes")
-        })?;
+        })
+        .map(|(children, storage)| (storage, children))?;
     let element_count = ctx
         .admit_iter(&children, "FCStd GUI ConstraintList element count")?
         .filter(|constraint| constraint.is_element())
@@ -5848,7 +6009,7 @@ fn parse_float_list(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let (values, _value_storage) =
+    let (_value_storage, values) =
         ctx.with_scoped_storage("FCStd GUI list validation storage", || {
             read_gui_counted(
                 ctx,
@@ -5858,7 +6019,8 @@ fn parse_float_list(
                 View::f64_le,
                 "FCStd GUI float-list entries",
             )
-        })?;
+        })
+        .map(|(values, storage)| (storage, values))?;
     let values = values.ok_or_else(|| {
         gui_malformed(
             ctx,
@@ -5890,7 +6052,7 @@ fn parse_vector_list(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let (values, _value_storage) =
+    let (_value_storage, values) =
         ctx.with_scoped_storage("FCStd GUI list validation storage", || {
             read_gui_counted(
                 ctx,
@@ -5900,7 +6062,8 @@ fn parse_vector_list(
                 |view| Some((view.f64_le()?, view.f64_le()?, view.f64_le()?)),
                 "FCStd GUI vector-list entries",
             )
-        })?;
+        })
+        .map(|(values, storage)| (storage, values))?;
     let values = values.ok_or_else(|| {
         gui_malformed(
             ctx,
@@ -5932,7 +6095,7 @@ fn parse_placement_list(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let (values, _value_storage) =
+    let (_value_storage, values) =
         ctx.with_scoped_storage("FCStd GUI list validation storage", || {
             read_gui_counted(
                 ctx,
@@ -5952,7 +6115,8 @@ fn parse_placement_list(
                 },
                 "FCStd GUI placement-list entries",
             )
-        })?;
+        })
+        .map(|(values, storage)| (storage, values))?;
     let values = values.ok_or_else(|| {
         gui_malformed(
             ctx,
@@ -5984,7 +6148,7 @@ fn parse_fillet_edges(
     entry_name: &str,
 ) -> Result<(), CodecError> {
     let count = view.req_u32_le()?;
-    let (values, _value_storage) =
+    let (_value_storage, values) =
         ctx.with_scoped_storage("FCStd GUI list validation storage", || {
             read_gui_counted(
                 ctx,
@@ -5994,7 +6158,8 @@ fn parse_fillet_edges(
                 |view| Some((view.i32_le()?, view.f64_le()?, view.f64_le()?)),
                 "FCStd GUI fillet-edge entries",
             )
-        })?;
+        })
+        .map(|(values, storage)| (storage, values))?;
     let values = values.ok_or_else(|| {
         gui_malformed(
             ctx,
@@ -6274,10 +6439,11 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
                 if materials.len() != 1 {
                     continue;
                 }
-                let (provider_key, _key_storage) =
+                let (_key_storage, provider_key) =
                     ctx.with_scoped_storage("FCStd GUI provider key storage", || {
                         provider_identity_key(ctx, &provider.name)
-                    })?;
+                    })
+                    .map(|(key, storage)| (storage, key))?;
                 let appearance = object_appearance_id(ctx, &provider_key)?;
                 ctx.insert_hash_map(
                     &mut ids,
@@ -6370,10 +6536,11 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
                 sources.element_maps,
             )?),
         };
-        let (provider_key, _key_storage) = ctx
+        let (_key_storage, provider_key) = ctx
             .with_scoped_storage("FCStd GUI provider key storage", || {
                 provider_identity_key(ctx, &provider.name)
-            })?;
+            })
+            .map(|(key, storage)| (storage, key))?;
         let (_body_storage, body_ids) = ctx
             .with_scoped_storage("FCStd GUI displayed bodies", || {
                 if materials.len() == 1 {
@@ -6466,10 +6633,11 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
             else {
                 break;
             };
-            let (appearance_id, _id_storage) = ctx
+            let (_id_storage, appearance_id) = ctx
                 .with_scoped_storage("FCStd GUI appearance identity storage", || {
                     shape_material_appearance_id(ctx, &provider_key, index)
-                })?;
+                })
+                .map(|(id, storage)| (storage, id))?;
             plan.appearance_storage.with_storage(|| {
                 ctx.reserve_vec(&mut plan.appearances, 1, "FCStd GUI planned appearances")
             })?;
@@ -6549,13 +6717,13 @@ fn displayed_shape_bodies<'ctx>(
     let Some(payload) = displayed_shape_payload(ctx, object_id, shape_index)? else {
         return Ok(Vec::new());
     };
-    topology_index.ensure_bodies(ctx)?;
+    topology_index.ensure_bodies(ctx, std::iter::once(payload.id.as_str()))?;
     select_shape_bodies(ctx, &topology_index.bodies, std::iter::once(payload.id.as_str()))
 }
 
 fn select_shape_bodies<'a, I>(
     ctx: &DecodeContext<'_>,
-    bodies: &BTreeMap<&str, Vec<&cadmpeg_ir::ids::BodyId>>,
+    bodies: &BTreeMap<&str, Vec<(usize, &cadmpeg_ir::ids::BodyId)>>,
     payload_ids: I,
 ) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError>
 where
@@ -6586,7 +6754,7 @@ where
             .unwrap_or_default();
         let mut body_candidates = owned.iter();
         while body_candidates.len() != 0 {
-            let Some(body) = ctx.next_charged(
+            let Some((_, body)) = ctx.next_charged(
                 &mut body_candidates,
                 "FCStd GUI displayed body candidates",
             )? else {
@@ -6964,9 +7132,11 @@ fn transfer_topology_colors<'source, 'ir, 'ctx>(
         TopologyColorKind::Edge => topology_index.ensure_edges(ctx)?,
         TopologyColorKind::Vertex => topology_index.ensure_vertices(ctx)?,
     }
-    let (colors, color_storage) = ctx.with_scoped_storage("FCStd GUI topology color lookup", || {
-        parse_color_list(ctx, view, entry_name, requires_alpha_conversion)
-    })?;
+    let (color_storage, colors) = ctx
+        .with_scoped_storage("FCStd GUI topology color lookup", || {
+            parse_color_list(ctx, view, entry_name, requires_alpha_conversion)
+        })
+        .map(|(colors, storage)| (storage, colors))?;
     let mut colors = colors.into_iter().enumerate();
     while colors.len() != 0 {
         let Some((index, packed)) =
@@ -6974,10 +7144,11 @@ fn transfer_topology_colors<'source, 'ir, 'ctx>(
         else {
             break;
         };
-        let (appearance_id, _id_storage) = ctx
+        let (_id_storage, appearance_id) = ctx
             .with_scoped_storage("FCStd GUI appearance identity storage", || {
                 topology_appearance_id(ctx, kind, provider_key, index)
-            })?;
+            })
+            .map(|(id, storage)| (storage, id))?;
         let name_groups = if count == 1 {
             group.names.as_slice()
         } else {
@@ -7380,12 +7551,12 @@ mod shape_association_tests {
             assert!(!topology.face_built);
             assert!(!topology.edge_built);
             assert!(!topology.vertex_built);
-            assert!(!topology.body_built);
+            assert!(!topology.body_candidates_built);
             topology.ensure_edges(ctx).expect("edge index");
             assert!(!topology.face_built);
             assert!(topology.edge_built);
             assert!(!topology.vertex_built);
-            assert!(!topology.body_built);
+            assert!(!topology.body_candidates_built);
             assert_eq!(
                 ctx.get_btree_map(
                     &topology.edges,
@@ -7479,7 +7650,9 @@ mod shape_association_tests {
             topology
                 .ensure_vertices(ctx)
                 .expect("empty vertex index");
-            topology.ensure_bodies(ctx).expect("empty body index");
+            topology
+                .ensure_bodies(ctx, std::iter::empty::<&str>())
+                .expect("empty body index");
 
             let style = PrimitiveStyle::Line(PrimitiveSize::Absent);
             let mut primitives =
@@ -7504,7 +7677,7 @@ mod shape_association_tests {
                 Err(cadmpeg_core::CodecError::ResourceLimit(_))
             ));
             assert!(matches!(
-                topology.ensure_bodies(ctx),
+                topology.ensure_bodies(ctx, std::iter::empty::<&str>()),
                 Err(cadmpeg_core::CodecError::ResourceLimit(_))
             ));
             assert!(matches!(
@@ -7566,7 +7739,7 @@ mod shape_association_tests {
                 .expect("index fixture context");
         let mut index = TopologyIndex::new(&ir);
         index
-            .ensure_bodies(&index_ctx)
+            .ensure_bodies(&index_ctx, std::iter::once("payload"))
             .expect("body index is admitted");
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 1;

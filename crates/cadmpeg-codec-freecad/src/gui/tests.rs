@@ -4,6 +4,7 @@
 #![allow(clippy::doc_markdown)]
 
 mod admission_paths;
+mod body_demand;
 mod decode_budget;
 mod primitive_index;
 mod resource_admission;

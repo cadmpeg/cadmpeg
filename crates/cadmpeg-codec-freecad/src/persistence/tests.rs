@@ -334,6 +334,71 @@ fn parse_document_work_refusal(document: &str, operation: &str) -> cadmpeg_core:
     )
 }
 
+fn successful_work_cap<T>(
+    input: &[u8],
+    mut parse: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> u64 {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+        .expect("work-oracle input is within root limits");
+    parse(&ctx).expect("short-prefix Work oracle succeeds under the service policy");
+    let error = ctx
+        .charge_work(u64::MAX, "short-prefix successful Work oracle")
+        .expect_err("the oracle reads the successful parse's Work usage");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("successful Work oracle did not produce a resource refusal");
+    };
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "short-prefix successful Work oracle");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    limit.used
+}
+
+fn work_before_operation<T>(
+    input: &[u8],
+    operation: &str,
+    mut parse: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> u64 {
+    let mut run = |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+                .expect("work-oracle input is within root limits");
+        let result = parse(&ctx);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
+        }
+        result
+    };
+    // Framing can move Vec<Node> storage under the same label. Those charges
+    // are whole node sizes; only the semantic source visit charges one unit.
+    assert!(std::mem::size_of::<roxmltree::Node<'_, '_>>() > 1);
+    let error = {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            Some(1),
+        );
+        run(u64::MAX)
+    };
+    let error = error.err().expect("named source visit must be reached");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("named Work boundary was not found: {operation}");
+    };
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, operation);
+    assert_eq!(limit.additional, 1);
+    assert!(matches!(run(limit.used), Err(cadmpeg_core::CodecError::ResourceLimit(replay))
+        if replay.dimension == limit.dimension
+            && replay.operation == limit.operation
+            && replay.used == limit.used
+            && replay.additional == 1));
+    limit.used
+}
+
 #[test]
 fn dependency_lookup_refuses_on_collection_limit() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#;
@@ -488,6 +553,76 @@ fn link_carrier_search_charges_each_attribute_step() {
 fn extension_name_set_refuses_on_collection_limit() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
     assert_persistence_collection_at_operation(document, "FCStd extension name set");
+}
+
+#[test]
+fn extension_duplicate_name_visit_stops_before_long_suffix() {
+    const OPERATION: &str = "FCStd extension nodes";
+    let short = b"<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"2\"><Extension name=\"E\" type=\"T\"/><Extension name=\"F\" type=\"U\"/></Extensions><Properties Count=\"0\"/></Object></ObjectData></Document>";
+    let short_parse = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let graph = super::parse_with_context(short, "4", ctx)?;
+        let _duplicate_diagnostic = ctx.format_retained(
+            format_args!("duplicate extension name E for fcstd:native:object#A"),
+            "FCStd persistence diagnostic",
+        )?;
+        Ok(graph)
+    };
+    let short_cap = successful_work_cap(short, short_parse);
+    let short_start = work_before_operation(short, OPERATION, short_parse);
+    let after_visit_allowance = short_cap
+        .checked_sub(short_start)
+        .expect("successful short parse reaches the extension visit");
+
+    crate::test_support::with_service_context(short, |ctx| {
+        let graph = super::parse_with_context(short, "4", ctx).expect("short extension graph");
+        assert_eq!(graph.extensions.len(), 2);
+        assert_eq!(graph.extensions[0].name, "E");
+        assert_eq!(graph.extensions[0].order, 0);
+        assert_eq!(graph.extensions[1].name, "F");
+        assert_eq!(graph.extensions[1].order, 1);
+    });
+
+    let suffix_extensions = usize::try_from(after_visit_allowance)
+        .expect("short-prefix Work allowance fits usize")
+        .checked_add(1)
+        .expect("extension suffix length fits usize");
+    let declared_extensions = suffix_extensions
+        .checked_add(2)
+        .expect("extension count fits usize");
+    assert!(
+        cadmpeg_core::decode::u64_from_index(declared_extensions) > after_visit_allowance
+    );
+    let suffix = (0..suffix_extensions)
+        .map(|index| format!("<Extension name=\"Suffix{index}\" type=\"T\"/>"))
+        .collect::<String>();
+    let long = format!(
+        "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"{}\"><Extension name=\"E\" type=\"T\"/><Extension name=\"E\" type=\"U\"/>{suffix}</Extensions><Properties Count=\"0\"/></Object></ObjectData></Document>",
+        declared_extensions
+    );
+    let long_start = work_before_operation(long.as_bytes(), OPERATION, |ctx| {
+        super::parse_with_context(long.as_bytes(), "4", ctx).map(|_| ())
+    });
+    let cap = long_start
+        .checked_add(after_visit_allowance)
+        .expect("long-prefix Work cap fits");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        long.as_bytes(),
+        &arena,
+        &policy,
+    )
+    .expect("long extension list is within root limits");
+    let error = super::parse_with_context(long.as_bytes(), "4", &ctx)
+        .err()
+        .expect("second extension with a duplicate name is malformed");
+    assert!(matches!(
+        &error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("duplicate extension name E for fcstd:native:object#A")
+    ));
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
@@ -1349,6 +1484,134 @@ fn link_child_scan_propagates_work_refusal() {
         assert_eq!(error.to_string(), refusal.to_string());
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     });
+}
+
+#[test]
+fn empty_link_target_list_preserves_fused_refusal_after_successful_output() {
+    let markup = "<Property><LinkList count=\"0\"/></Property>";
+    let xml = roxmltree::Document::parse(markup).expect("empty LinkList XML");
+    crate::test_support::with_service_context(markup.as_bytes(), |ctx| {
+        let targets =
+            super::parse_link_targets(xml.root_element(), "App::PropertyLinkList", ctx)
+                .expect("empty LinkList has no targets");
+        assert!(targets.is_empty());
+        assert_eq!(ctx.resource_refusal(), None);
+
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) =
+            ctx.refuse_codec_limit("empty LinkList fuse control", 0, 1)
+        else {
+            panic!("fuse control must be a resource refusal");
+        };
+        let error = super::parse_link_targets(
+            xml.root_element(),
+            "App::PropertyLinkList",
+            ctx,
+        )
+        .err()
+        .expect("reentry must preserve the original refusal");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit == refusal
+        ));
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+    });
+}
+
+#[test]
+fn empty_graph_preserves_fused_refusal_after_successful_output() {
+    let document = b"<Document SchemaVersion=\"4\"><Objects Count=\"0\"/><ObjectData Count=\"0\"/></Document>";
+    crate::test_support::with_service_context(document, |ctx| {
+        let graph = super::parse_with_context(document, "4", ctx).expect("empty graph");
+        assert!(graph.objects.is_empty());
+        assert!(graph.extensions.is_empty());
+        assert!(graph.properties.is_empty());
+        assert_eq!(ctx.resource_refusal(), None);
+
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) =
+            ctx.refuse_codec_limit("empty graph fuse control", 0, 1)
+        else {
+            panic!("fuse control must be a resource refusal");
+        };
+        let error = super::parse_with_context(document, "4", ctx)
+            .err()
+            .expect("reentry must preserve the original refusal");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit == refusal
+        ));
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+    });
+}
+
+#[test]
+fn link_target_visits_stop_at_first_nested_value_before_long_suffix() {
+    const OPERATION: &str = "FCStd link target nodes";
+    let short = b"<Property><LinkList count=\"1\"><Link value=\"Target\"/></LinkList></Property>";
+    let short_xml = roxmltree::Document::parse(std::str::from_utf8(short).expect("UTF-8"))
+        .expect("valid short link list");
+    let short_parse = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::parse_link_targets(short_xml.root_element(), "App::PropertyLinkList", ctx)
+            .map(|_| ())
+    };
+    let short_cap = successful_work_cap(short, short_parse);
+    let short_start = work_before_operation(short, OPERATION, short_parse);
+    let after_visit_allowance = short_cap
+        .checked_sub(short_start)
+        .expect("successful short parse reaches the target visit");
+    crate::test_support::with_service_context(short, |ctx| {
+        let targets = super::parse_link_targets(
+            short_xml.root_element(),
+            "App::PropertyLinkList",
+            ctx,
+        )
+        .expect("short LinkList");
+        assert_eq!(targets.len(), 1);
+        assert_eq!(
+            targets[0].as_ref().and_then(|target| target.object()),
+            Some("Target")
+        );
+    });
+
+    let suffix_links = usize::try_from(after_visit_allowance)
+        .expect("short-prefix Work allowance fits usize")
+        .checked_add(1)
+        .expect("link suffix length fits usize");
+    let declared_links = suffix_links.checked_add(1).expect("link count fits usize");
+    assert!(cadmpeg_core::decode::u64_from_index(declared_links) > after_visit_allowance);
+    let suffix = "<Link value=\"Target\"/>".repeat(suffix_links);
+    let long = format!(
+        "<Property><LinkList count=\"{}\"><Link><Nested/></Link>{suffix}</LinkList></Property>",
+        declared_links
+    );
+    let long_xml = roxmltree::Document::parse(&long).expect("valid long link list");
+    let long_start = work_before_operation(long.as_bytes(), OPERATION, |ctx| {
+        super::parse_link_targets(long_xml.root_element(), "App::PropertyLinkList", ctx).map(|_| ())
+    });
+    let cap = long_start
+        .checked_add(after_visit_allowance)
+        .expect("long-prefix Work cap fits");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        long.as_bytes(),
+        &arena,
+        &policy,
+    )
+    .expect("long link list is within root limits");
+    let error = super::parse_link_targets(
+        long_xml.root_element(),
+        "App::PropertyLinkList",
+        &ctx,
+    )
+    .err()
+    .expect("first nested link value is malformed");
+    assert!(matches!(
+        &error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("link carrier contains nested element values")
+    ));
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]

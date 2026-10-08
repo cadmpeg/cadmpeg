@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design-history unit tests over synthesized `FCStd` archives.
 
+mod actual_visits;
+mod admission_paths;
 pub(crate) mod booleans_patterns;
 pub(crate) mod construction;
 mod history;
@@ -423,7 +425,7 @@ fn draft_face_identities_refuse_at_retained_limits() {
             super::draft_definition(
                 ctx,
                 &[&faces, &neutral, &angle],
-                &std::collections::BTreeMap::new(),
+                &super::ObjectIndex::new(ctx, &[])?,
                 &std::collections::BTreeMap::new(),
             )
         });
@@ -1365,6 +1367,18 @@ fn design_body_output_prefix_refuses_at_materialized_limit() {
         crate::test_support::materialized_refusal_at("fcstd design body output prefix", |ctx| {
             super::BodyOutputPrefix::new(ctx, &payload).map(drop)
         });
+    let _error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "fcstd design body output prefix",
+        |ctx| {
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            super::transfer(
+                ctx, &mut ir, std::slice::from_ref(&object),
+                std::slice::from_ref(&property), std::slice::from_ref(&payload), &[], None,
+            ).map(drop)
+        },
+    );
 }
 
 #[test]
@@ -1429,7 +1443,7 @@ fn design_ordered_objects_refuse_at_caller_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::feature_ordinals(
+    assert!(matches!(super::ordering::feature_ordinals(
         &ctx, &[object], &std::collections::BTreeMap::default(), &std::collections::HashMap::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "fcstd design ordered objects"));

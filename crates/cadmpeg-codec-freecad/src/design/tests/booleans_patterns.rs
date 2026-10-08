@@ -33,27 +33,41 @@ fn pattern_scalar(name: &str, value: f64) -> PropertyRecord {
     }
 }
 
+fn with_empty_reference_indexes<T>(
+    ctx: &DecodeContext<'_>,
+    properties_by_owner: &std::collections::BTreeMap<&str, Vec<&PropertyRecord>>,
+    entries: &[crate::native::EntryRecord],
+    use_sources: impl FnOnce(crate::design::PatternSources<'_, '_, '_, '_>)
+        -> Result<T, cadmpeg_core::CodecError>,
+) -> Result<T, cadmpeg_core::CodecError> {
+    let objects = crate::design::ObjectIndex::new(ctx, &[])?;
+    let features = std::collections::HashMap::new();
+    let predecessors = crate::design::BodyPredecessors::new(ctx, &[], &features, properties_by_owner)?;
+    use_sources(crate::design::PatternSources {
+        objects: &[],
+        object_by_id: &objects,
+        predecessors: &predecessors,
+        properties_by_owner,
+        entries,
+    })
+}
+
 #[test]
 fn mirrored_pattern_plane_identity_refuses_at_retained_limit() {
     let plane = super::linked_property("mirror", "MirrorPlane", "mirror-plane-property");
     let properties_by_owner = std::collections::BTreeMap::new();
-    let sources = crate::design::PatternSources {
-        objects: &[],
-        object_by_id: &std::collections::BTreeMap::new(),
-        predecessors: &std::collections::BTreeMap::new(),
-        properties_by_owner: &properties_by_owner,
-        entries: &[],
-    };
     crate::test_support::assert_retained_refusal_at(
         &[],
         "fcstd mirrored pattern plane identity",
         |ctx| {
-            crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
-                ctx,
-                "PartDesign::Mirrored",
-                &[&plane],
-                sources,
-            )
+            with_empty_reference_indexes(ctx, &properties_by_owner, &[], |sources| {
+                crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
+                    ctx,
+                    "PartDesign::Mirrored",
+                    &[&plane],
+                    sources,
+                )
+            })
         },
     );
 }
@@ -69,15 +83,22 @@ fn pattern_seed_vectors_and_identities_refuse_at_matching_limits() {
             .expect("valid feature id"),
     );
     let properties_by_owner = std::collections::BTreeMap::new();
-    let sources = crate::design::PatternSources {
-        objects: &[],
-        object_by_id: &std::collections::BTreeMap::new(),
-        predecessors: &std::collections::BTreeMap::new(),
-        properties_by_owner: &properties_by_owner,
-        entries: &[],
-    };
     for operation in ["fcstd pattern source seeds", "fcstd pattern seed variants"] {
         crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+            with_empty_reference_indexes(ctx, &properties_by_owner, &[], |sources| {
+                crate::design::pattern_definition(
+                    ctx,
+                    "PartDesign::Scaled",
+                    "pattern",
+                    &[&originals, &factor],
+                    &features,
+                    sources,
+                )
+            })
+        });
+    }
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd pattern seed identity", |ctx| {
+        with_empty_reference_indexes(ctx, &properties_by_owner, &[], |sources| {
             crate::design::pattern_definition(
                 ctx,
                 "PartDesign::Scaled",
@@ -86,17 +107,7 @@ fn pattern_seed_vectors_and_identities_refuse_at_matching_limits() {
                 &features,
                 sources,
             )
-        });
-    }
-    crate::test_support::assert_retained_refusal_at(&[], "fcstd pattern seed identity", |ctx| {
-        crate::design::pattern_definition(
-            ctx,
-            "PartDesign::Scaled",
-            "pattern",
-            &[&originals, &factor],
-            &features,
-            sources,
-        )
+        })
     });
 }
 
@@ -211,9 +222,8 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
     );
     let factor = super::scalar_property("stage", "Factor", "2");
     crate::test_support::assert_collection_refusal_at(&[], "fcstd implicit pattern seed", |ctx| {
-        let (object_by_id, _object_storage) = ctx
-            .collect_scoped_btree_map([(body.id().as_str(), &body)], "test pattern object index")?;
-        let (predecessors, _predecessor_storage) = crate::design::body_predecessors(
+        let object_by_id = crate::design::ObjectIndex::new(ctx, std::slice::from_ref(&body))?;
+        let predecessors = crate::design::BodyPredecessors::new(
             ctx,
             std::slice::from_ref(&body),
             &features,
@@ -239,11 +249,8 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
         &[],
         "fcstd implicit pattern seed identity",
         |ctx| {
-            let (object_by_id, _object_storage) = ctx.collect_scoped_btree_map(
-                [(body.id().as_str(), &body)],
-                "test pattern object index",
-            )?;
-            let (predecessors, _predecessor_storage) = crate::design::body_predecessors(
+            let object_by_id = crate::design::ObjectIndex::new(ctx, std::slice::from_ref(&body))?;
+            let predecessors = crate::design::BodyPredecessors::new(
                 ctx,
                 std::slice::from_ref(&body),
                 &features,
@@ -278,15 +285,10 @@ fn pattern_irregular_vectors_refuse_at_exact_collection_limits() {
         crate::design::pattern_locations(ctx, &properties, "", 3, 1, ("Length", "Offset"), &entries)
     });
     let properties_by_owner = std::collections::BTreeMap::new();
-    let sources = crate::design::PatternSources {
-        objects: &[],
-        object_by_id: &std::collections::BTreeMap::new(),
-        predecessors: &std::collections::BTreeMap::new(),
-        properties_by_owner: &properties_by_owner,
-        entries: &entries,
-    };
     crate::test_support::assert_collection_refusal_at(&[], "fcstd linear pattern offsets", |ctx| {
-        crate::design::linear_pattern_axis(ctx, &properties, "", 3, 1, sources)
+        with_empty_reference_indexes(ctx, &properties_by_owner, &entries, |sources| {
+            crate::design::linear_pattern_axis(ctx, &properties, "", 3, 1, sources)
+        })
     });
     let axis = super::vector_property("pattern", "Axis", 0.0, 0.0, 1.0);
     let mode = PropertyRecord {
@@ -305,12 +307,14 @@ fn pattern_irregular_vectors_refuse_at_exact_collection_limits() {
         &[],
         "fcstd circular pattern angles",
         |ctx| {
-            crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
-                ctx,
-                "PartDesign::PolarPattern",
-                &[&offset, &spacings, &axis, &mode],
-                sources,
-            )
+            with_empty_reference_indexes(ctx, &properties_by_owner, &entries, |sources| {
+                crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
+                    ctx,
+                    "PartDesign::PolarPattern",
+                    &[&offset, &spacings, &axis, &mode],
+                    sources,
+                )
+            })
         },
     );
 }

@@ -22,10 +22,12 @@ pub(super) fn build_profiles(
     let mut profile_storage = ctx.reserve_scoped(0, "FCStd profile entity ordinals")?;
     let mut profile_entities = BTreeSet::new();
     profile_storage.with_storage(|| {
-        for (index, entity) in ctx
-            .admit_iter(entities, "FCStd profile entity scan")?
-            .enumerate()
-        {
+        let mut source = entities.iter();
+        while source.len() != 0 {
+            let index = entities.len() - source.len();
+            let Some(entity) = ctx.next_charged(&mut source, "FCStd profile entity scan")? else {
+                break;
+            };
             if !entity.construction {
                 ctx.insert_btree_set(&mut profile_entities, index, "FCStd profile ordinals")?;
             }
@@ -39,14 +41,23 @@ pub(super) fn build_profiles(
             "FCStd remaining profile ordinals",
         )
     })?;
-    let (explicit_storage, explicit_relations) =
+    let (explicit_storage, explicit_relations);
+    (explicit_relations, explicit_storage) =
         explicit_endpoint_relations(ctx, &profile_entities, entities, constraints)?;
-    let (index_storage, index) = EndpointIndex::new(ctx, &profile_entities, entities)?;
+    let (index_storage, index);
+    (index, index_storage) = EndpointIndex::new(ctx, &profile_entities, entities)?;
     let mut ambiguous_storage = ctx.reserve_scoped(0, "FCStd ambiguous profile ordinals")?;
     let mut ambiguous = BTreeSet::new();
-    for entity in ctx.admit_iter(&unused, "FCStd profile ambiguity scan")? {
+    let mut entity_sources = unused.iter();
+    while entity_sources.len() != 0 {
+        let Some(entity) =
+            ctx.next_charged(&mut entity_sources, "FCStd profile ambiguity scan")?
+        else {
+            break;
+        };
         for start in [true, false] {
-            let (matches_storage, matches) = endpoint_candidates(
+            let (matches_storage, matches);
+            (matches, matches_storage) = endpoint_candidates(
                 ctx,
                 EndpointLocus {
                     entity: *entity,
@@ -65,7 +76,14 @@ pub(super) fn build_profiles(
                         "FCStd ambiguous profile ordinals",
                     )
                 })?;
-                for candidate in ctx.admit_iter(&matches, "FCStd ambiguous profile matches")? {
+                let mut candidates = matches.iter();
+                while candidates.len() != 0 {
+                    let Some(candidate) = ctx.next_charged(
+                        &mut candidates,
+                        "FCStd ambiguous profile matches",
+                    )? else {
+                        break;
+                    };
                     ambiguous_storage.with_storage(|| {
                         ctx.insert_btree_set(
                             &mut ambiguous,
@@ -85,14 +103,14 @@ pub(super) fn build_profiles(
         unused_storage.with_storage(|| {
             ctx.remove_btree_set(&mut unused, &first, "FCStd remaining profile ordinals")
         })?;
-        let mut chain = VecDeque::new();
         let mut chain_storage = ctx.reserve_scoped(0, "FCStd profile uses")?;
+        let mut chain = VecDeque::new();
         chain_storage
             .with_storage(|| ctx.push_back(&mut chain, (first, false), "FCStd profile uses"))?;
         if ctx.contains_btree_set(&ambiguous, &first, "FCStd ambiguous profile lookup")? {
             ctx.push_vec(
                 &mut profiles,
-                finish_profile_chain(ctx, chain, entities, chain_storage)?,
+                finish_profile_chain(ctx, chain_storage, chain, entities)?,
                 "FCStd profile chains",
             )?;
             continue;
@@ -100,7 +118,7 @@ pub(super) fn build_profiles(
         if endpoints(&entities[first]).is_none() {
             ctx.push_vec(
                 &mut profiles,
-                finish_profile_chain(ctx, chain, entities, chain_storage)?,
+                finish_profile_chain(ctx, chain_storage, chain, entities)?,
                 "FCStd profile chains",
             )?;
             continue;
@@ -114,7 +132,8 @@ pub(super) fn build_profiles(
             start: false,
         };
         loop {
-            let (_candidate_storage, mut candidates) =
+            let (_candidate_storage, mut candidates);
+            (candidates, _candidate_storage) =
                 endpoint_candidates(ctx, tail, &unused, &explicit_relations, entities, &index)?;
             ctx.retain_vec(
                 &mut candidates,
@@ -165,7 +184,8 @@ pub(super) fn build_profiles(
             tail = next_tail;
         }
         loop {
-            let (_candidate_storage, mut candidates) =
+            let (_candidate_storage, mut candidates);
+            (candidates, _candidate_storage) =
                 endpoint_candidates(ctx, head, &unused, &explicit_relations, entities, &index)?;
             ctx.retain_vec(
                 &mut candidates,
@@ -217,7 +237,7 @@ pub(super) fn build_profiles(
         }
         ctx.push_vec(
             &mut profiles,
-            finish_profile_chain(ctx, chain, entities, chain_storage)?,
+            finish_profile_chain(ctx, chain_storage, chain, entities)?,
             "FCStd profile chains",
         )?;
     }
@@ -236,12 +256,18 @@ pub(super) fn build_profiles(
 
 fn finish_profile_chain(
     ctx: &DecodeContext<'_>,
+    _chain_storage: ScopedReservation<'_>,
     chain: VecDeque<(usize, bool)>,
     entities: &[SketchEntity],
-    _chain_storage: ScopedReservation<'_>,
 ) -> Result<Vec<SketchEntityUse>, CodecError> {
     let mut profile = ctx.vector_storage(chain.len(), "FCStd profile chain extraction")?;
-    for &(index, reversed) in ctx.admit_iter(&chain, "FCStd profile chain extraction")? {
+    let mut source = chain.iter();
+    while source.len() != 0 {
+        let Some(&(index, reversed)) =
+            ctx.next_charged(&mut source, "FCStd profile chain extraction")?
+        else {
+            break;
+        };
         ctx.push_vec(
             &mut profile,
             SketchEntityUse {
@@ -292,11 +318,18 @@ impl EndpointIndex {
         ctx: &'ctx DecodeContext<'_>,
         profile_entities: &BTreeSet<usize>,
         entities: &[SketchEntity],
-    ) -> Result<(ScopedReservation<'ctx>, Self), CodecError> {
+    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
         let mut storage = ctx.reserve_scoped(0, "FCStd profile endpoint index")?;
         let by_scale = storage.with_storage(|| {
             let mut by_scale = BTreeMap::<u64, Vec<IndexedEndpoint>>::new();
-            for index in ctx.admit_iter(profile_entities, "FCStd profile endpoint extraction")? {
+            let mut source = profile_entities.iter();
+            while source.len() != 0 {
+                let Some(index) = ctx.next_charged(
+                    &mut source,
+                    "FCStd profile endpoint extraction",
+                )? else {
+                    break;
+                };
                 if let Some((start, end)) = endpoints(&entities[*index]) {
                     for (at_start, point) in [(true, start), (false, end)] {
                         let scale = endpoint_scale_bucket(point);
@@ -316,9 +349,13 @@ impl EndpointIndex {
                     }
                 }
             }
-            for (_, bucket) in
-                ctx.admit_iter(&mut by_scale, "FCStd profile endpoint bucket sort")?
-            {
+            let mut buckets = by_scale.iter_mut();
+            while buckets.len() != 0 {
+                let Some((_, bucket)) =
+                    ctx.next_charged(&mut buckets, "FCStd profile endpoint bucket sort")?
+                else {
+                    break;
+                };
                 ctx.stable_sort_by(
                     bucket,
                     |value| &value.point.u,
@@ -328,7 +365,7 @@ impl EndpointIndex {
             }
             Ok::<_, CodecError>(by_scale)
         })?;
-        Ok((storage, Self { by_scale }))
+        Ok((Self { by_scale }, storage))
     }
 }
 
@@ -343,7 +380,7 @@ fn endpoint_candidates<'ctx>(
     explicit_relations: &BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>,
     entities: &[SketchEntity],
     index: &EndpointIndex,
-) -> Result<(ScopedReservation<'ctx>, Vec<EndpointLocus>), CodecError> {
+) -> Result<(Vec<EndpointLocus>, ScopedReservation<'ctx>), CodecError> {
     // Active explicit coincident loci override coordinates. Coordinate matching below is the
     // decoder-owned CADIR boundary, not a producer tolerance.
     let mut storage = ctx.reserve_scoped(0, "FCStd profile candidates")?;
@@ -354,7 +391,14 @@ fn endpoint_candidates<'ctx>(
             "FCStd explicit profile relation lookup",
         )? {
             let mut matches = Vec::new();
-            for candidate in ctx.admit_iter(explicit, "FCStd explicit profile matches")? {
+            let mut candidates = explicit.iter();
+            while candidates.len() != 0 {
+                let Some(candidate) = ctx.next_charged(
+                    &mut candidates,
+                    "FCStd explicit profile matches",
+                )? else {
+                    break;
+                };
                 if ctx.contains_btree_set(
                     available,
                     &candidate.entity,
@@ -425,7 +469,7 @@ fn endpoint_candidates<'ctx>(
         )?;
         Ok(matches)
     })?;
-    Ok((storage, matches))
+    Ok((matches, storage))
 }
 
 fn explicit_endpoint_relations<'ctx>(
@@ -435,14 +479,15 @@ fn explicit_endpoint_relations<'ctx>(
     constraints: &[SketchConstraint],
 ) -> Result<
     (
-        ScopedReservation<'ctx>,
         BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>,
+        ScopedReservation<'ctx>,
     ),
     CodecError,
 > {
     let mut storage = ctx.reserve_scoped(0, "FCStd explicit profile relations")?;
     let relations = storage.with_storage(|| {
-        let (entity_indices, _entity_index_storage) =
+        let (_entity_index_storage, entity_indices);
+        (entity_indices, _entity_index_storage) =
             ctx.with_scoped_storage("FCStd profile entity lookup storage", || {
                 ctx.collect_hash_map(
                     entities
@@ -453,7 +498,13 @@ fn explicit_endpoint_relations<'ctx>(
                 )
             })?;
         let mut relations = BTreeMap::new();
-        for constraint in ctx.admit_iter(constraints, "FCStd profile constraint scan")? {
+        let mut source = constraints.iter();
+        while source.len() != 0 {
+            let Some(constraint) =
+                ctx.next_charged(&mut source, "FCStd profile constraint scan")?
+            else {
+                break;
+            };
             if constraint.active == Some(false) {
                 continue;
             }
@@ -465,7 +516,13 @@ fn explicit_endpoint_relations<'ctx>(
             let mut endpoint_storage = ctx.reserve_scoped(0, "FCStd explicit profile loci")?;
             let mut endpoints = BTreeSet::new();
             endpoint_storage.with_storage(|| {
-                for locus in ctx.admit_iter(loci, "FCStd explicit profile loci")? {
+                let mut loci_source = loci.iter();
+                while loci_source.len() != 0 {
+                    let Some(locus) =
+                        ctx.next_charged(&mut loci_source, "FCStd explicit profile loci")?
+                    else {
+                        break;
+                    };
                     let (entity, start) = match locus {
                         SketchLocus::Start(entity) => (entity, true),
                         SketchLocus::End(entity) => (entity, false),
@@ -498,10 +555,22 @@ fn explicit_endpoint_relations<'ctx>(
                 }
                 Ok::<_, CodecError>(())
             })?;
-            for first in ctx.admit_iter(&endpoints, "FCStd explicit profile relation sources")? {
-                for candidate in
-                    ctx.admit_iter(&endpoints, "FCStd explicit profile relation targets")?
-                {
+            let mut sources = endpoints.iter();
+            while sources.len() != 0 {
+                let Some(first) = ctx.next_charged(
+                    &mut sources,
+                    "FCStd explicit profile relation sources",
+                )? else {
+                    break;
+                };
+                let mut targets = endpoints.iter();
+                while targets.len() != 0 {
+                    let Some(candidate) = ctx.next_charged(
+                        &mut targets,
+                        "FCStd explicit profile relation targets",
+                    )? else {
+                        break;
+                    };
                     if first == candidate {
                         continue;
                     }
@@ -519,7 +588,7 @@ fn explicit_endpoint_relations<'ctx>(
         }
         Ok::<_, CodecError>(relations)
     })?;
-    Ok((storage, relations))
+    Ok((relations, storage))
 }
 
 fn endpoint_point(endpoint: EndpointLocus, entities: &[SketchEntity]) -> Option<Point2> {

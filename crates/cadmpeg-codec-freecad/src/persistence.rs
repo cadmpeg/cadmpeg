@@ -156,11 +156,13 @@ pub(crate) fn parse_document(
     // Names borrow the document text; the tables hold no copies.
     let mut dependency_storage = ctx.reserve_scoped(0, "FCStd dependency lookup")?;
     let mut dependency_map = HashMap::<&str, DependencyInfo<'_>>::new();
-    for (order, node) in ctx
-        .admit_iter(&dependency_records, "FCStd object dependency records")?
-        .copied()
-        .enumerate()
-    {
+    let mut dependency_record_visits = dependency_records.iter().copied().enumerate();
+    while dependency_record_visits.len() != 0 {
+        let Some((order, node)) =
+            ctx.next_charged(&mut dependency_record_visits, "FCStd object dependency records")?
+        else {
+            break;
+        };
         let name = required_attr(ctx, node, "Name")?;
         let mut dependencies = Vec::new();
         let mut children = node.children();
@@ -320,10 +322,14 @@ pub(crate) fn parse_document(
                     dependency.dependencies.len(),
                     "FCStd object dependency identities",
                 )?;
-                for &target in ctx.admit_iter(
-                    &dependency.dependencies,
-                    "FCStd object dependency identities",
-                )? {
+                let mut dependency_visits = dependency.dependencies.iter();
+                while dependency_visits.len() != 0 {
+                    let Some(&target) = ctx.next_charged(
+                        &mut dependency_visits,
+                        "FCStd object dependency identities",
+                    )? else {
+                        break;
+                    };
                     if !ctx.contains_key_hash_map(
                         &data_by_name,
                         target,
@@ -418,7 +424,12 @@ pub(crate) fn parse_document(
             ctx,
         )?;
     }
-    for object in ctx.admit_iter(&objects, "FCStd object data association")? {
+    let mut object_visits = objects.iter();
+    while object_visits.len() != 0 {
+        let Some(object) = ctx.next_charged(&mut object_visits, "FCStd object data association")?
+        else {
+            break;
+        };
         let data = ctx
             .get_hash_map(
                 &data_by_name,
@@ -501,11 +512,13 @@ pub(crate) fn parse_document(
             let mut extension_sets_storage = ctx.reserve_scoped(0, "FCStd extension sets")?;
             let mut extension_names = HashSet::new();
             let mut extension_types = HashSet::new();
-            for (order, node) in ctx
-                .admit_iter(&extension_nodes, "FCStd extension nodes")?
-                .copied()
-                .enumerate()
-            {
+            let mut extension_visits = extension_nodes.iter().copied().enumerate();
+            while extension_visits.len() != 0 {
+                let Some((order, node)) =
+                    ctx.next_charged(&mut extension_visits, "FCStd extension nodes")?
+                else {
+                    break;
+                };
                 let name = required_attr(ctx, node, "name")?;
                 let type_name = required_attr(ctx, node, "type")?;
                 if !extension_sets_storage.with_storage(|| {
@@ -544,10 +557,15 @@ pub(crate) fn parse_document(
         if let Some(container) = property_container {
             parse_properties(text, container, object.id(), &mut properties, ctx)?;
         }
-        for (&extension, record) in ctx
-            .admit_iter(&extension_nodes, "FCStd extension property search")?
-            .zip(&extensions[first_extension..])
-        {
+        let mut extension_property_visits =
+            extension_nodes.iter().zip(&extensions[first_extension..]);
+        while extension_property_visits.len() != 0 {
+            let Some((&extension, record)) = ctx.next_charged(
+                &mut extension_property_visits,
+                "FCStd extension property search",
+            )? else {
+                break;
+            };
             let mut children = extension.children();
             while let Some(container) =
                 ctx.next_charged(&mut children, "FCStd extension Properties search")?
@@ -558,11 +576,21 @@ pub(crate) fn parse_document(
             }
         }
     }
-    for property in ctx.admit_iter(&mut properties, "FCStd mutable property visits")? {
+    let mut property_visits = properties.iter_mut();
+    while property_visits.len() != 0 {
+        let Some(property) = ctx.next_charged(&mut property_visits, "FCStd mutable property visits")?
+        else {
+            break;
+        };
         let crate::native::PropertyBody::Persisted { links, .. } = &mut property.body else {
             continue;
         };
-        for link in ctx.admit_iter(links, "FCStd mutable link visits")? {
+        let mut link_visits = links.iter_mut();
+        while link_visits.len() != 0 {
+            let Some(link) = ctx.next_charged(&mut link_visits, "FCStd mutable link visits")?
+            else {
+                break;
+            };
             let Some(link) = link.as_mut() else {
                 continue;
             };
@@ -655,11 +683,14 @@ fn parse_properties(
             transient_property_nodes.len()
         ), "FCStd persistence diagnostic"));
     }
-    for (order, node) in ctx
-        .admit_iter(&transient_property_nodes, "FCStd transient property nodes")?
-        .copied()
-        .enumerate()
-    {
+    let mut transient_property_visits = transient_property_nodes.iter().copied().enumerate();
+    while transient_property_visits.len() != 0 {
+        let Some((order, node)) = ctx.next_charged(
+            &mut transient_property_visits,
+            "FCStd transient property nodes",
+        )? else {
+            break;
+        };
         let name = retained_attr(ctx, node, "name", "FCStd transient property name")?;
         let type_name = retained_attr(ctx, node, "type", "FCStd transient property type")?;
         ctx.push_vec(
@@ -683,11 +714,14 @@ fn parse_properties(
             "FCStd transient property records",
         )?;
     }
-    for (order, node) in ctx
-        .admit_iter(&property_nodes, "FCStd persisted property nodes")?
-        .copied()
-        .enumerate()
-    {
+    let mut persisted_property_visits = property_nodes.iter().copied().enumerate();
+    while persisted_property_visits.len() != 0 {
+        let Some((order, node)) = ctx.next_charged(
+            &mut persisted_property_visits,
+            "FCStd persisted property nodes",
+        )? else {
+            break;
+        };
         let name = retained_attr(ctx, node, "name", "FCStd persisted property name")?;
         let type_name = retained_attr(ctx, node, "type", "FCStd persisted property type")?;
         let family = property_family(&type_name);
@@ -737,9 +771,14 @@ fn parse_properties(
             }
             // The side-entry carriers of this property's family, in attribute
             // name order.
-            for (name, entry_name) in
-                ctx.admit_iter(&attributes, "FCStd value attribute references")?
-            {
+            let mut attribute_reference_visits = attributes.iter();
+            while attribute_reference_visits.len() != 0 {
+                let Some((name, entry_name)) = ctx.next_charged(
+                    &mut attribute_reference_visits,
+                    "FCStd value attribute references",
+                )? else {
+                    break;
+                };
                 let selected = (file_carrier_by_file && matches!(name.as_str(), "file" | "File"))
                     || (file_carrier_by_name && matches!(name.as_str(), "name" | "Name"));
                 if selected && !entry_name.is_empty() {
@@ -852,13 +891,17 @@ fn parse_link_targets(
             Ok(targets)
         }
         LinkGrammar::LinkList => {
-            let (children, _children_storage) = counted_children(root, "Link", type_name, ctx)?;
+            let children_result = counted_children(root, "Link", type_name, ctx)?;
+            let _children_storage = children_result.1;
+            let children = children_result.0;
             let mut targets =
                 ctx.vector_storage(children.len(), "FCStd link target or subelement records")?;
-            for node in ctx
-                .admit_iter(&children, "FCStd link target nodes")?
-                .copied()
-            {
+            let mut target_visits = children.iter().copied();
+            while target_visits.len() != 0 {
+                let Some(node) = ctx.next_charged(&mut target_visits, "FCStd link target nodes")?
+                else {
+                    break;
+                };
                 reject_nested_link_value(node, ctx)?;
                 ctx.push_vec(
                     &mut targets,
@@ -869,13 +912,19 @@ fn parse_link_targets(
             Ok(targets)
         }
         LinkGrammar::LinkSub => {
-            let (children, _children_storage) = counted_children(root, "Sub", type_name, ctx)?;
+            let children_result = counted_children(root, "Sub", type_name, ctx)?;
+            let _children_storage = children_result.1;
+            let children = children_result.0;
             let mut subelements =
                 ctx.vector_storage(children.len(), "FCStd link target or subelement records")?;
-            for node in ctx
-                .admit_iter(&children, "FCStd link subelement nodes")?
-                .copied()
-            {
+            let mut subelement_visits = children.iter().copied();
+            while subelement_visits.len() != 0 {
+                let Some(node) = ctx.next_charged(
+                    &mut subelement_visits,
+                    "FCStd link subelement nodes",
+                )? else {
+                    break;
+                };
                 reject_nested_link_value(node, ctx)?;
                 ctx.push_vec(
                     &mut subelements,
@@ -892,13 +941,17 @@ fn parse_link_targets(
             Ok(targets)
         }
         LinkGrammar::LinkSubList => {
-            let (children, _children_storage) = counted_children(root, "Link", type_name, ctx)?;
+            let children_result = counted_children(root, "Link", type_name, ctx)?;
+            let _children_storage = children_result.1;
+            let children = children_result.0;
             let mut targets =
                 ctx.vector_storage(children.len(), "FCStd link target or subelement records")?;
-            for node in ctx
-                .admit_iter(&children, "FCStd link target nodes")?
-                .copied()
-            {
+            let mut target_visits = children.iter().copied();
+            while target_visits.len() != 0 {
+                let Some(node) = ctx.next_charged(&mut target_visits, "FCStd link target nodes")?
+                else {
+                    break;
+                };
                 reject_nested_link_value(node, ctx)?;
                 let sub = restored_subelement(node, "sub", ctx)?;
                 let mut subelements = ctx.vector_storage(1, "FCStd link subelements")?;
@@ -915,7 +968,9 @@ fn parse_link_targets(
             ctx.collect_indexed_vec(1, "FCStd link target records", |_| xlink(root, ctx))
         }
         LinkGrammar::XLinkSubList => {
-            let (children, _children_storage) = counted_children(root, "XLink", type_name, ctx)?;
+            let children_result = counted_children(root, "XLink", type_name, ctx)?;
+            let _children_storage = children_result.1;
+            let children = children_result.0;
             ctx.collect_indexed_vec(
                 children.len(),
                 "FCStd link target or subelement records",
@@ -1149,14 +1204,20 @@ fn xlink(
                     "App::PropertyXLink uses count only for one or more Sub values".into(),
                 ));
             }
-            let (children, _children_storage) =
+            let children_result =
                 counted_children(node, "Sub", "App::PropertyXLink", ctx)?;
+            let _children_storage = children_result.1;
+            let children = children_result.0;
             let mut subelements =
                 ctx.vector_storage(children.len(), "FCStd link target or subelement records")?;
-            for child in ctx
-                .admit_iter(&children, "FCStd XLink subelement nodes")?
-                .copied()
-            {
+            let mut subelement_visits = children.iter().copied();
+            while subelement_visits.len() != 0 {
+                let Some(child) = ctx.next_charged(
+                    &mut subelement_visits,
+                    "FCStd XLink subelement nodes",
+                )? else {
+                    break;
+                };
                 if has_element_child(child, "FCStd XLink Sub nested search", ctx)? {
                     return Err(CodecError::Malformed(
                         "App::PropertyXLink Sub carrier has nested values".into(),
@@ -1353,12 +1414,14 @@ fn extension_id(
     name: &str,
     order: usize,
 ) -> Result<String, CodecError> {
-    let (order, _order_storage) =
-        ctx.format_scoped(format_args!("{order}"), "FCStd extension order text")?;
-    let (child, _child_storage) = ctx
-        .with_scoped_storage("FCStd extension identity key", || {
-            ctx.join_retained(&[order.as_str(), name], ":", "FCStd extension identity key")
-        })?;
+    let order_result = ctx.format_scoped(format_args!("{order}"), "FCStd extension order text")?;
+    let _order_storage = order_result.1;
+    let order = order_result.0;
+    let child_result = ctx.with_scoped_storage("FCStd extension identity key", || {
+        ctx.join_retained(&[order.as_str(), name], ":", "FCStd extension identity key")
+    })?;
+    let _child_storage = child_result.1;
+    let child = child_result.0;
     crate::native::native_child_id_charged(ctx, "extension", owner, &child)
 }
 
