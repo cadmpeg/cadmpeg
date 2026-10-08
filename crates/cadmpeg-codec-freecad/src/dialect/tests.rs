@@ -205,3 +205,60 @@ fn the_declared_keys_are_pinned_and_verbatim() {
         ["file_version", "schema_version"]
     );
 }
+
+#[test]
+fn dialect_declarations_refuse_before_copy_and_insertion() {
+    let facts = document();
+    for operation in [
+        "FreeCAD dialect schema declaration",
+        "FreeCAD dialect file declaration",
+        "FreeCAD dialect program declaration",
+    ] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            FcstdDialect::classify(ctx, &facts, "04")
+        });
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            operation,
+            |ctx| FcstdDialect::classify(ctx, &facts, "04"),
+        );
+    }
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "FreeCAD dialect declaration entries",
+        |ctx| FcstdDialect::classify(ctx, &facts, "04"),
+    );
+}
+
+#[test]
+fn dialect_loss_lookup_and_message_refuse_at_work_and_storage_boundaries() {
+    let matched = FcstdDialect::classify(
+        &cadmpeg_test_support::service_decode_context(),
+        &document(),
+        "04",
+    )
+    .unwrap();
+    let charged = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        FcstdDialect::dialect_loss_with(
+            &matched,
+            |declared, key| ctx.get_btree_map(declared, key, "FreeCAD dialect loss declaration"),
+            |message| ctx.format_retained(message, "FreeCAD dialect loss message"),
+        )
+    };
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert_eq!(charged(ctx).unwrap(), FcstdDialect::dialect_loss(&matched));
+    });
+    for operation in [
+        "FreeCAD dialect loss declaration",
+        "FreeCAD dialect loss message",
+    ] {
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            operation,
+            charged,
+        );
+    }
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD dialect loss message", charged);
+}

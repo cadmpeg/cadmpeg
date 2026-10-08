@@ -222,9 +222,11 @@ fn support_links(
         .values()
         .first()
         .is_none_or(|value| value.tag != "LinkSubList")
-        || ctx
-            .admit_iter(&property.values()[1..], "FreeCAD attachment support values")?
-            .any(|value| value.tag != "Link")
+        || ctx.any_by(
+            &property.values()[1..],
+            |value| Ok(value.tag != "Link"),
+            "FreeCAD attachment support values",
+        )?
     {
         return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
@@ -279,25 +281,35 @@ fn map_mode_value(
             "FreeCAD attachment map-mode tag error",
         )?));
     }
-    let Some(index) = value.attributes.get("value") else {
+    let Some(index) = ctx.get_btree_map(
+        &value.attributes,
+        "value",
+        "FreeCAD attachment map-mode lookup",
+    )?
+    else {
         return Err(CodecError::Malformed(ctx.format_retained(
             format_args!("attachment property {} has no enum index", property.id),
             "FreeCAD attachment missing map-mode index",
         )?));
     };
-    let mode = match ctx.parse_text::<usize>(index, "FreeCAD attachment map-mode parse")? {
-        Ok(index) => MapModeIndex::try_new(index),
-        Err(_) => Err(ctx.format_retained(
-            format_args!("map_mode {index:?} is not an index"),
-            "FreeCAD attachment invalid map-mode index",
-        )?),
-    };
-    mode.or_else(|error| {
-        Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("attachment property {}: {error}", property.id),
-            "FreeCAD attachment map-mode error",
-        )?))
-    })
+    match ctx.parse_text::<usize>(index, "FreeCAD attachment map-mode parse")? {
+        Ok(index) => MapModeIndex::try_new(index).or_else(|error| {
+            Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("attachment property {}: {error}", property.id),
+                "FreeCAD attachment map-mode error",
+            )?))
+        }),
+        Err(_) => {
+            let (error, _storage) = ctx.format_scoped(
+                format_args!("map_mode {index:?} is not an index"),
+                "FreeCAD attachment invalid map-mode index",
+            )?;
+            Err(CodecError::Malformed(ctx.format_retained(
+                format_args!("attachment property {}: {error}", property.id),
+                "FreeCAD attachment map-mode error",
+            )?))
+        }
+    }
 }
 
 const IDENTITY: [[f64; 4]; 4] = [
