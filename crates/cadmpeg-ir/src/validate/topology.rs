@@ -4840,8 +4840,10 @@ fn regeneration_references<'ctx, 'a>(
         }
     }
     drop(profiles);
-    let mut ordered =
-        Scratch::filter_map(ctx, references.values(), |reference| Ok(Some(*reference)))?;
+    let mut ordered = Scratch::new(ctx)?;
+    for reference in references.values("validation filter scan")? {
+        ordered.push(*reference)?;
+    }
     ordered.stable_sort_by(|reference| *reference, Ord::cmp)?;
     Ok(ordered)
 }

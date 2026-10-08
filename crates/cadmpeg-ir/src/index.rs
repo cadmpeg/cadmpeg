@@ -22,13 +22,15 @@ use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vert
 
 /// Borrowed text keys with explicit hashing and collision comparisons.
 struct BorrowedIdentityIndex<'ir, V> {
-    slots: HashMap<u64, Vec<(&'ir str, V)>>,
+    slots: IdentityIndex,
+    values: Vec<(&'ir str, V)>,
 }
 
 impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
     fn new<S: IndexStorage>(storage: &S, operation: &'static str) -> Result<Self, S::Error> {
         Ok(Self {
             slots: storage.map(0, operation)?,
+            values: Vec::new(),
         })
     }
 
@@ -44,19 +46,21 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
             |count| storage.work(count, operation),
             |first, second| storage.equal(first, second, operation),
         )?;
-        storage.work(1, operation)?;
+        if let Some(position) = found {
+            return Ok(&mut self.values[position].1);
+        }
         storage.entry(&mut self.slots, &hash, operation)?;
-        let entries = self.slots.entry(hash).or_default();
-        let position = match found {
-            Some(position) => position,
-            None => {
-                let position = entries.len();
-                storage.work(std::mem::size_of::<(&str, V)>(), operation)?;
-                storage.push(entries, (identity, value()), operation)?;
-                position
+        let position = self.values.len();
+        storage.push(&mut self.values, (identity, value()), operation)?;
+        match self.slots.entry(hash) {
+            Entry::Vacant(entry) => {
+                entry.insert(IdentityEntry::One(position));
             }
-        };
-        Ok(&mut entries[position].1)
+            Entry::Occupied(entry) => {
+                entry.into_mut().push(position, storage, operation)?;
+            }
+        }
+        Ok(&mut self.values[position].1)
     }
 
     fn get<P: IndexQuery>(
@@ -65,12 +69,12 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
         query: &P,
         operation: &'static str,
     ) -> Result<Option<&V>, P::Error> {
-        let (hash, found) = self.position(
+        let (_, found) = self.position(
             identity,
             |count| query.work(count, operation),
             |first, second| query.equal(first, second, operation),
         )?;
-        Ok(found.map(|position| &self.slots[&hash][position].1))
+        Ok(found.map(|position| &self.values[position].1))
     }
 
     fn position<E>(
@@ -81,27 +85,24 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
     ) -> Result<(u64, Option<usize>), E> {
         work(identity.len())?;
         let hash = identity_hash(identity);
-        work(1)?;
-        let Some(entries) = self.slots.get(&hash) else {
+        let Some(entry) = self.slots.get(&hash) else {
             return Ok((hash, None));
         };
-        for (position, (candidate, _)) in entries.iter().enumerate() {
+        let slots = match entry {
+            IdentityEntry::One(slot) => std::slice::from_ref(slot),
+            IdentityEntry::Many(slots) => slots.as_slice(),
+        };
+        for &position in slots {
             work(1)?;
-            if equal(candidate, identity)? {
+            if equal(self.values[position].0, identity)? {
                 return Ok((hash, Some(position)));
             }
         }
         Ok((hash, None))
     }
-
-    fn identities(&self) -> impl Iterator<Item = &'ir str> + '_ {
-        self.slots
-            .values()
-            .flat_map(|entries| entries.iter().map(|(identity, _)| *identity))
-    }
 }
 
-/// Collision-safe, allocation-free identity slots for one typed arena.
+/// Collision-safe identity slots with inline storage for one arena position.
 ///
 /// The index stores arena positions rather than borrowed keys. This keeps a
 /// lazy index covariant over the document lifetime and avoids copying every
@@ -114,12 +115,46 @@ enum IdentityEntry {
     Many(Vec<usize>),
 }
 
+impl IdentityEntry {
+    fn push<S: IndexStorage>(
+        &mut self,
+        slot: usize,
+        storage: &S,
+        operation: &'static str,
+    ) -> Result<(), S::Error> {
+        match self {
+            Self::One(previous) => {
+                let mut slots = Vec::new();
+                storage.push(&mut slots, *previous, operation)?;
+                storage.push(&mut slots, slot, operation)?;
+                *self = Self::Many(slots);
+            }
+            Self::Many(slots) => storage.push(slots, slot, operation)?,
+        }
+        Ok(())
+    }
+}
+
 type IdentityIndex = HashMap<u64, IdentityEntry>;
 
 /// Allocation policy for infallible public indexes and fallible decode indexes.
 pub(crate) trait IndexStorage {
     type Error;
     const EAGER_LOOKUPS: bool;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource>: Iterator<
+        Item = <S::Iter as Iterator>::Item,
+    >;
+    fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> Result<Self::Iter<S>, Self::Error>;
+    fn compare(
+        &self,
+        first: &str,
+        second: &str,
+        operation: &'static str,
+    ) -> Result<std::cmp::Ordering, Self::Error>;
     fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error>;
     fn map<K: Eq + Hash, V>(
         &self,
@@ -170,6 +205,22 @@ pub(crate) struct PublicStorage;
 impl IndexStorage for PublicStorage {
     type Error = std::convert::Infallible;
     const EAGER_LOOKUPS: bool = false;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> = S::Iter;
+    fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
+        &self,
+        source: S,
+        _operation: &'static str,
+    ) -> Result<Self::Iter<S>, Self::Error> {
+        Ok(source.source_iter())
+    }
+    fn compare(
+        &self,
+        first: &str,
+        second: &str,
+        operation: &'static str,
+    ) -> Result<std::cmp::Ordering, Self::Error> {
+        crate::ids::comparison::compare(&StandardIndex, first, second, operation)
+    }
     fn enter_nested(
         &self,
         _operation: &'static str,
@@ -228,6 +279,23 @@ pub(crate) struct DecodeStorage<'ctx, 'arena>(pub(crate) &'ctx DecodeContext<'ar
 impl IndexStorage for DecodeStorage<'_, '_> {
     type Error = ResourceLimit;
     const EAGER_LOOKUPS: bool = true;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> =
+        cadmpeg_core::decode::scan::AdmittedIter<S::Iter>;
+    fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> Result<Self::Iter<S>, Self::Error> {
+        self.0.admit_iter(source, operation)
+    }
+    fn compare(
+        &self,
+        first: &str,
+        second: &str,
+        operation: &'static str,
+    ) -> Result<std::cmp::Ordering, Self::Error> {
+        crate::ids::comparison::compare(self.0, first, second, operation)
+    }
     fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error> {
         self.0.enter_nested_limit(operation).map(Some)
     }
@@ -376,26 +444,22 @@ fn build_identity_index<T: EntitySchema, S: IndexStorage>(
     entities: &[T],
     storage: &S,
 ) -> Result<IdentityIndex, S::Error> {
-    let mut index = storage.map(entities.len(), "model identity index slots")?;
-    for (slot, entity) in entities.iter().enumerate() {
+    let mut index = storage.map(0, "model identity index slots")?;
+    for (slot, entity) in storage
+        .admit_iter(entities, "model identity index scan")?
+        .enumerate()
+    {
         storage.work(entity.identity().len(), "model identity hash")?;
-        match index.entry(identity_hash(entity.identity())) {
+        let hash = identity_hash(entity.identity());
+        storage.entry(&mut index, &hash, "model identity index slots")?;
+        match index.entry(hash) {
             Entry::Vacant(entry) => {
                 entry.insert(IdentityEntry::One(slot));
             }
             Entry::Occupied(entry) => {
-                let value = entry.into_mut();
-                match value {
-                    IdentityEntry::One(previous) => {
-                        let mut slots = Vec::new();
-                        storage.push(&mut slots, *previous, "model identity collision slots")?;
-                        storage.push(&mut slots, slot, "model identity collision slots")?;
-                        *value = IdentityEntry::Many(slots);
-                    }
-                    IdentityEntry::Many(slots) => {
-                        storage.push(slots, slot, "model identity collision slots")?;
-                    }
-                }
+                entry
+                    .into_mut()
+                    .push(slot, storage, "model identity collision slots")?;
             }
         }
     }
@@ -428,7 +492,6 @@ fn lookup_identity<'a, T: EntitySchema, S: IndexQuery>(
     };
     storage.work(identity.len(), "model identity lookup hash")?;
     let hash = identity_hash(identity);
-    storage.work(1, "model identity lookup slot")?;
     let Some(entry) = index.get(&hash) else {
         return Ok(None);
     };
@@ -493,6 +556,16 @@ pub trait IndexQuery: sealed::IndexQuery {
     /// An infallible value or a value carrying the resource refusal.
     type Output<T>;
     #[doc(hidden)]
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource>: Iterator<
+        Item = <S::Iter as Iterator>::Item,
+    >;
+    #[doc(hidden)]
+    fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> Result<Self::Iter<S>, Self::Error>;
+    #[doc(hidden)]
     fn finish<T>(&self, result: Result<T, Self::Error>) -> Self::Output<T>;
     #[doc(hidden)]
     fn lazy(&self) -> bool;
@@ -510,6 +583,14 @@ pub trait IndexQuery: sealed::IndexQuery {
 impl IndexQuery for StandardIndex {
     type Error = std::convert::Infallible;
     type Output<T> = T;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> = S::Iter;
+    fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> Result<Self::Iter<S>, Self::Error> {
+        PublicStorage.admit_iter(source, operation)
+    }
     fn finish<T>(&self, result: Result<T, Self::Error>) -> T {
         public_result(result)
     }
@@ -532,6 +613,15 @@ impl IndexQuery for StandardIndex {
 impl IndexQuery for &DecodeContext<'_> {
     type Error = ResourceLimit;
     type Output<T> = Result<T, ResourceLimit>;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> =
+        cadmpeg_core::decode::scan::AdmittedIter<S::Iter>;
+    fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> Result<Self::Iter<S>, Self::Error> {
+        DecodeContext::admit_iter(self, source, operation)
+    }
     fn finish<T>(&self, result: Result<T, ResourceLimit>) -> Self::Output<T> {
         result
     }
@@ -649,8 +739,6 @@ macro_rules! define_model_index {
             procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
             identities: BorrowedIdentityIndex<'a, ()>,
-            include_native: bool,
-            additional_native_identities: Vec<&'a str>,
             native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>,
         }
 
@@ -700,60 +788,52 @@ macro_rules! define_model_index {
                 let mut procedural_curves_by_curve = BorrowedIdentityIndex::new(storage, "model procedural curve carriers")?;
                 let procedural_surfaces_by_id = storage.temporary("model procedural surface IDs", || {
                     let mut index = BorrowedIdentityIndex::new(storage, "model procedural surface IDs")?;
-                    for procedural in &ir.model.procedural_surfaces {
-                        storage.work(1, "model procedural surface scan")?;
+                    for procedural in storage.admit_iter(&ir.model.procedural_surfaces, "model procedural surface scan")? {
                         index.entry(procedural.id.as_str(), || procedural, storage, "model procedural surface IDs")?;
                     }
                     Ok(index)
                 })?;
-                let procedural_curves_by_id = storage.temporary("model procedural curve IDs", || {
-                    let mut index = BorrowedIdentityIndex::new(storage, "model procedural curve IDs")?;
-                    for procedural in &ir.model.procedural_curves {
-                        storage.work(1, "model procedural curve scan")?;
-                        index.entry(procedural.id.as_str(), || procedural, storage, "model procedural curve IDs")?;
-                    }
-                    Ok(index)
-                })?;
-                for carrier in &ir.model.surfaces {
-                    storage.work(1, "model surface carrier scan")?;
+                for carrier in storage.admit_iter(&ir.model.surfaces, "model surface carrier scan")? {
                     if let Some(construction) = carrier.geometry.procedural_construction() {
-                        let (hash, found) = procedural_surfaces_by_id.position(construction.as_str(),
+                        let (_, found) = procedural_surfaces_by_id.position(construction.as_str(),
                             |count| storage.work(count, "model procedural surface ID query"),
                             |first, second| storage.equal(first, second, "model procedural surface ID query"))?;
                         if let Some(position) = found {
-                            let procedural = procedural_surfaces_by_id.slots[&hash][position].1;
-                            storage.work(std::mem::size_of::<&ProceduralSurface>(), "model procedural surface carrier copy")?;
+                            let procedural = procedural_surfaces_by_id.values[position].1;
                             *procedural_surface_by_surface.entry(carrier.id.as_str(), || procedural, storage, "model procedural surface carriers")? = procedural;
                         }
                     }
                 }
-                for carrier in &ir.model.curves {
-                    storage.work(1, "model curve carrier scan")?;
+                drop(procedural_surfaces_by_id);
+                let procedural_curves_by_id = storage.temporary("model procedural curve IDs", || {
+                    let mut index = BorrowedIdentityIndex::new(storage, "model procedural curve IDs")?;
+                    for procedural in storage.admit_iter(&ir.model.procedural_curves, "model procedural curve scan")? {
+                        index.entry(procedural.id.as_str(), || procedural, storage, "model procedural curve IDs")?;
+                    }
+                    Ok(index)
+                })?;
+                for carrier in storage.admit_iter(&ir.model.curves, "model curve carrier scan")? {
                     if let Some(construction) = carrier.geometry.procedural_construction() {
-                        let (hash, found) = procedural_curves_by_id.position(construction.as_str(),
+                        let (_, found) = procedural_curves_by_id.position(construction.as_str(),
                             |count| storage.work(count, "model procedural curve ID query"),
                             |first, second| storage.equal(first, second, "model procedural curve ID query"))?;
                         if let Some(position) = found {
-                            let procedural = procedural_curves_by_id.slots[&hash][position].1;
+                            let procedural = procedural_curves_by_id.values[position].1;
                             let members = procedural_curves_by_curve.entry(carrier.id.as_str(), Vec::new, storage, "model procedural curve carriers")?;
-                            storage.work(std::mem::size_of::<&ProceduralCurve>(), "model procedural curve carrier copy")?;
                             storage.push(members, procedural, "model procedural curve carrier members")?;
                         }
                     }
                 }
-                let mut additional_native_identities = Vec::new();
-                for identity in additional { storage.push(&mut additional_native_identities, identity, "model additional identities")?; }
+                drop(procedural_curves_by_id);
                 let mut index = Self {
                     ir,
                     $($lookup: OnceLock::new(),)*
                     procedural_surface_by_surface,
                     procedural_curves_by_curve,
-                    identities: BorrowedIdentityIndex { slots: HashMap::new() },
-                    include_native,
-                    additional_native_identities,
+                    identities: BorrowedIdentityIndex { slots: HashMap::new(), values: Vec::new() },
                     native_unknowns,
                 };
-                index.identities = index.build_identity_set(storage)?;
+                index.identities = index.build_identity_set(include_native, additional, storage)?;
                 if S::EAGER_LOOKUPS {
                     $(index.$lookup = OnceLock::from(build_identity_index(&ir.model.$lookup, storage)?);)*
                 }
@@ -764,18 +844,17 @@ macro_rules! define_model_index {
                 &self.identities
             }
 
-            fn build_identity_set<S: IndexStorage>(&self, storage: &S) -> Result<BorrowedIdentityIndex<'a, ()>, S::Error> {
+            fn build_identity_set<S: IndexStorage>(&self, include_native: bool, additional: impl IntoIterator<Item = &'a str>, storage: &S) -> Result<BorrowedIdentityIndex<'a, ()>, S::Error> {
                 let mut identities = BorrowedIdentityIndex::new(storage, "model identity universe slots")?;
-                $(for entity in &self.ir.model.$field { storage.work(1, "model identity universe scan")?; identities.entry(entity.identity(), || (), storage, "model identity universe slots")?; })*
-                if self.include_native {
-                    self.native_view().visit(|count| storage.work(count, "model native arena scan"), |_, _, records| {
-                        for record in records.records() {
-                            storage.work(1, "model native identity scan")?;
+                $(for entity in storage.admit_iter(&self.ir.model.$field, "model identity universe scan")? { identities.entry(entity.identity(), || (), storage, "model identity universe slots")?; })*
+                if include_native {
+                    self.native_view().visit(storage, "model native arena scan", |_, _, records| {
+                        for record in records.records(storage, "model native identity scan")? {
                             identities.entry(record.id(), || (), storage, "model identity universe slots")?;
                         }
                         Ok(())
                     })?;
-                    for identity in &self.additional_native_identities { storage.work(1, "model additional identity scan")?; identities.entry(identity, || (), storage, "model identity universe slots")?; }
+                    for identity in additional { storage.work(1, "model additional identity scan")?; identities.entry(identity, || (), storage, "model identity universe slots")?; }
                 }
                 Ok(identities)
             }
@@ -794,19 +873,12 @@ macro_rules! define_model_index {
             pub fn identities<'index, P: IndexQuery + 'index>(
                 &'index self, query: P,
             ) -> impl Iterator<Item = P::Output<&'a str>> + 'index {
-                let mut identities = self.identity_set().identities();
-                let mut finished = false;
-                std::iter::from_fn(move || {
-                    if finished { return None; }
-                    if let Err(error) = query.work(1, "model identity universe iteration") {
-                        finished = true;
-                        return Some(query.finish(Err(error)));
-                    }
-                    match identities.next() {
-                        Some(identity) => Some(query.finish(Ok(identity))),
-                        None => { finished = true; None }
-                    }
-                })
+                let identities = query.admit_iter(&self.identity_set().values, "model identity universe iteration");
+                match identities {
+                    Ok(identities) => Some(identities.map(move |identity| query.finish(Ok(identity.0))))
+                        .into_iter().flatten().chain(None.into_iter()),
+                    Err(error) => None.into_iter().flatten().chain(Some(query.finish(Err(error))).into_iter()),
+                }
             }
 
             /// Looks up the procedural construction that owns a surface.
@@ -946,38 +1018,46 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut identities = index.identities(&ctx);
         assert_eq!(identities.next(), Some(Ok(id.as_str())));
-        let first = identities.next().unwrap().unwrap_err();
-        assert_eq!((first.limit, first.used, first.additional), (1, 1, 1));
+        assert!(identities.next().is_none());
         assert!(identities.next().is_none());
         drop(identities);
-        assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
-        );
+        ctx.finish_session().unwrap();
     }
 
     #[test]
     fn identity_universe_lookup_preserves_collision_and_resource_results() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let query = "abcd";
-        let hash_work = cadmpeg_core::decode::u64_from_index(query.len());
         let index = super::BorrowedIdentityIndex {
             slots: std::collections::HashMap::from([(
                 super::identity_hash(query),
-                vec![("abce", ())],
+                super::IdentityEntry::One(0),
             )]),
+            values: vec![("abce", ())],
         };
         assert!(index
             .get(query, &crate::index::StandardIndex, "test universe query")
             .unwrap()
             .is_none());
-        for cap in [
-            0,
-            hash_work,
-            hash_work + 1,
-            hash_work + 2,
-            hash_work + 3,
-            hash_work + 5,
-        ] {
+        let boundary = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "universe lookup complete",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_collection_items = 0;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                assert!(index.get(query, &&ctx, "test universe query")?.is_none());
+                ctx.charge_work(1, "universe lookup complete")
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(boundary) = boundary else {
+            panic!("work refusal");
+        };
+        for cap in 0..boundary.used {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             policy.limits.max_collection_items = 0;
@@ -987,9 +1067,12 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let first = index.get(query, &&ctx, "test universe query").unwrap_err();
             assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(first.limit, cap);
+            let hash_work = cadmpeg_core::decode::u64_from_index(query.len());
+            assert_eq!(first.used, if cap < hash_work { 0 } else { cap });
             assert_eq!(
-                (first.limit, first.used, first.additional),
-                (cap, cap, if cap == 0 { hash_work } else { 1 })
+                first.additional,
+                if cap < hash_work { hash_work } else { 1 }
             );
             assert_eq!(
                 index.get("missing", &&ctx, "test universe query"),
@@ -1132,26 +1215,69 @@ mod tests {
             super::identity_hash(query),
             super::IdentityEntry::Many(vec![0, 0]),
         )]));
-        let hash_work = cadmpeg_core::decode::u64_from_index(query.len());
-        for (cap, operation) in [
-            (0, "model identity lookup hash"),
-            (hash_work + 1, "model identity lookup collision"),
-            (hash_work + 2, "model identity lookup comparison"),
-            (hash_work + 3, "model identity lookup comparison"),
+        for operation in [
+            "model identity lookup hash",
+            "model identity lookup collision",
+            "model identity lookup comparison",
         ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let first = super::lookup_identity(&ir.model.points, &cache, query, &&ctx).unwrap_err();
-            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(first.operation, operation);
-            assert_eq!(first.limit, cap);
-            assert_eq!(first.used, cap);
-            assert_eq!(first.additional, if cap == 0 { hash_work } else { 1 });
-            assert!(
-                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+            let boundary = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    let result = super::lookup_identity(&ir.model.points, &cache, query, &&ctx);
+                    if let Err(first) = result {
+                        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                        assert_eq!(first.operation, operation);
+                        assert_eq!(
+                            super::lookup_identity(&ir.model.points, &cache, query, &&ctx),
+                            Err(first)
+                        );
+                        assert!(
+                            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+                        );
+                        return Err(first.into());
+                    }
+                    Ok(())
+                },
             );
+            let cadmpeg_core::CodecError::ResourceLimit(first) = boundary else {
+                panic!("work refusal");
+            };
+            assert_eq!(
+                first.used,
+                if operation == "model identity lookup hash" {
+                    0
+                } else {
+                    first.limit
+                }
+            );
+            assert_eq!(
+                first.additional,
+                if operation == "model identity lookup hash" {
+                    cadmpeg_core::decode::u64_from_index(query.len())
+                } else {
+                    1
+                }
+            );
+            if operation == "model identity lookup comparison" {
+                let cap = first.used + first.additional;
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let first =
+                    super::lookup_identity(&ir.model.points, &cache, query, &&ctx).unwrap_err();
+                assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(first.operation, operation);
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+                );
+            }
         }
     }
 
@@ -1241,6 +1367,35 @@ mod tests {
                 .map(|point| &point.id),
             Some(&point_id)
         );
+    }
+
+    #[test]
+    fn identity_iteration_admits_only_stored_values_in_insertion_order() {
+        use super::{BorrowedIdentityIndex, PublicStorage};
+        let storage = PublicStorage;
+        let mut values =
+            BorrowedIdentityIndex::new(&storage, "identity iteration fixture").unwrap();
+        for id in ["beta", "alpha", "beta", "gamma"] {
+            values
+                .entry(id, || (), &storage, "identity iteration fixture")
+                .unwrap();
+        }
+        assert_eq!(
+            values
+                .values
+                .iter()
+                .map(|value| value.0)
+                .collect::<Vec<_>>(),
+            ["beta", "alpha", "gamma"]
+        );
+        let ir = CadIr::empty();
+        let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(index.identities(&ctx).next().is_none());
+        ctx.finish_session().unwrap();
     }
 
     macro_rules! procedural_surface {
