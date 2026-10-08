@@ -211,13 +211,16 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if !self.closed_local_trait(trait_id) {
             return false;
         }
+        let Some(method_name) = self.tcx.opt_item_name(definition) else {
+            return false;
+        };
         let mut implementations = self.tcx.all_impls(trait_id).peekable();
         implementations.peek().is_some()
             && implementations.all(|id| {
                 self.tcx
                     .associated_items(id)
                     .in_definition_order()
-                    .find(|item| item.name() == self.tcx.item_name(definition))
+                    .find(|item| item.opt_name() == Some(method_name))
                     .map_or_else(
                         || self.checked_body(definition),
                         |item| self.checked_body(item.def_id),
