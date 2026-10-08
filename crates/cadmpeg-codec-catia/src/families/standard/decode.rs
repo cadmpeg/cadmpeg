@@ -2085,30 +2085,34 @@ fn associate_standard_freeform_e5_surfaces(
     carrier_ids: &HashMap<u32, u32>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<BTreeMap<u32, SurfaceGeometry>, CodecError> {
-    let mut surfaces = HashMap::<u32, Option<SurfaceGeometry>>::new();
-    let e5_surfaces = crate::families::e5::records::e5_surfaces(ctx, data, refusal)?;
-    for surface in ctx.admit_iter(e5_surfaces, "catia_e5_surface_carriers")? {
-        if let Some(stored) = ctx.get_mut_hash_map(
-            &mut surfaces,
-            &surface.record_id,
-            "catia_e5_surface_carriers",
-        )? {
-            // Surface geometry has no decode cost: this comparison is unpriced.
-            if stored
-                .as_ref()
-                .is_some_and(|geometry| geometry != &surface.geometry)
-            {
-                *stored = None;
-            }
-        } else {
-            ctx.insert_hash_map(
+    let mut storage = ctx.reserve_scoped(0, "catia_e5_surface_carrier_scratch")?;
+    let surfaces = storage.with_storage(|| {
+        let mut surfaces = HashMap::<u32, Option<SurfaceGeometry>>::new();
+        let e5_surfaces = crate::families::e5::records::e5_surfaces(ctx, data, refusal)?;
+        for surface in ctx.admit_iter(e5_surfaces, "catia_e5_surface_carriers")? {
+            if let Some(stored) = ctx.get_mut_hash_map(
                 &mut surfaces,
-                surface.record_id,
-                Some(surface.geometry),
+                &surface.record_id,
                 "catia_e5_surface_carriers",
-            )?;
+            )? {
+                // Surface geometry has no decode cost: this comparison is unpriced.
+                if stored
+                    .as_ref()
+                    .is_some_and(|geometry| geometry != &surface.geometry)
+                {
+                    *stored = None;
+                }
+            } else {
+                ctx.insert_hash_map(
+                    &mut surfaces,
+                    surface.record_id,
+                    Some(surface.geometry),
+                    "catia_e5_surface_carriers",
+                )?;
+            }
         }
-    }
+        Ok::<_, CodecError>(surfaces)
+    })?;
     let mut associated = BTreeMap::new();
     for record in ctx.admit_iter(records, "catia_standard_e5_surface_records")? {
         let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } =
@@ -2368,13 +2372,18 @@ pub(in crate::families) fn try_decode_standard(
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
-    let surface_alias_tags = if matches!(scan.variant, Variant::StandardNested) {
-        crate::object_graph::surface_alias_tag_map(ctx, &scan.data)?
-    } else {
-        HashMap::new()
-    };
-    let e5_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, &scan.data)?;
-    match standard_population_selections(ctx, scan)? {
+    let mut metadata_storage = ctx.reserve_scoped(0, "catia_standard_route_metadata")?;
+    let (surface_alias_tags, e5_jets, selections) = metadata_storage.with_storage(|| {
+        let surface_alias_tags = if matches!(scan.variant, Variant::StandardNested) {
+            crate::object_graph::surface_alias_tag_map(ctx, &scan.data)?
+        } else {
+            HashMap::new()
+        };
+        let e5_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, &scan.data)?;
+        let selections = standard_population_selections(ctx, scan)?;
+        Ok::<_, CodecError>((surface_alias_tags, e5_jets, selections))
+    })?;
+    match selections {
         None => {
             try_decode_standard_population(ctx, scan, None, refusal, &e5_jets, &surface_alias_tags)
         }
@@ -2570,8 +2579,8 @@ fn try_decode_standard_populations(
     let merged_output = [&merged];
     let coverage_total = |key: &str| -> Result<usize, CodecError> {
         let mut total = 0usize;
-        for output in ctx
-            .admit_iter(&merged_output, "catia_standard_population_coverage")?
+        for output in merged_output
+            .iter()
             .copied()
             .chain(ctx.admit_iter(&outputs, "catia_standard_population_coverage")?)
         {
@@ -2772,6 +2781,9 @@ fn try_decode_standard_population(
     if !work_budget.charge() {
         return None;
     }
+    let mut setup_storage = admitted!(ctx.reserve_scoped(0, "catia_standard_population_setup"));
+    let Some((consolidated_records, points, vertex_roster, face_count, records, analytic_record_count, curve_supports, object_evidence, standard_limit_curve_count, revolution_record_count, curved_surfaces, refined_analytic_surfaces, planes, face_bounds, freeform_geometries, e5_freeform_tags, freeform_procedural_surfaces, unresolved_freeform_record_count)) = admitted!(setup_storage.with_storage(|| {
+        (|| -> Option<Result<_, CodecError>> {
     let sources = match container::consolidated_record_sources(ctx, scan) {
         Ok(sources) => sources,
         Err(error) => return Some(Err(error)),
@@ -3008,6 +3020,10 @@ fn try_decode_standard_population(
     if points.is_empty() && records.is_empty() {
         return None;
     }
+
+            Some(Ok((consolidated_records, points, vertex_roster, face_count, records, analytic_record_count, curve_supports, object_evidence, standard_limit_curve_count, revolution_record_count, curved_surfaces, refined_analytic_surfaces, planes, face_bounds, freeform_geometries, e5_freeform_tags, freeform_procedural_surfaces, unresolved_freeform_record_count)))
+        })().transpose()
+    })) else { return None; };
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -3045,14 +3061,14 @@ fn try_decode_standard_population(
                     .unwrap_or(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: None,
                     }));
-                admitted!(ctx.push_vec(&mut face_bindings, (admitted!(id.try_clone_for_decode(ctx, "catia_standard_face_binding_surface_id")), *forward, *pos), "catia_standard_face_bindings"));
-                admitted!(ctx.push_vec(&mut surface_annotations, (
-                    admitted!(id.try_clone_for_decode(ctx, "catia_standard_annotation_surface_id")),
+                admitted!(setup_storage.with_storage(|| ctx.push_vec(&mut face_bindings, ((id.try_clone_for_decode(ctx, "catia_standard_face_binding_surface_id"))?, *forward, *pos), "catia_standard_face_bindings")));
+                admitted!(setup_storage.with_storage(|| ctx.push_vec(&mut surface_annotations, (
+                    (id.try_clone_for_decode(ctx, "catia_standard_annotation_surface_id"))?,
                     "MainDataStream+SurfacicReps",
                     *pos,
-                    admitted!(ctx.copy_retained_text("surfacic_reps_freeform_alias", "catia_standard_surface_annotation_tag")),
-                    if admitted!(ctx.contains_key_hash_map(&freeform_procedural_surfaces, tag, "catia_standard_freeform_procedure_lookup"))
-                        || admitted!(ctx.contains_hash_set(&e5_freeform_tags, tag, "catia_standard_e5_freeform_tags"))
+                    (ctx.copy_retained_text("surfacic_reps_freeform_alias", "catia_standard_surface_annotation_tag"))?,
+                    if (ctx.contains_key_hash_map(&freeform_procedural_surfaces, tag, "catia_standard_freeform_procedure_lookup"))?
+                        || (ctx.contains_hash_set(&e5_freeform_tags, tag, "catia_standard_e5_freeform_tags"))?
                     {
                         Exactness::ByteExact
                     } else if matches!(
@@ -3063,7 +3079,7 @@ fn try_decode_standard_population(
                     } else {
                         Exactness::ByteExact
                     },
-                ), "catia_standard_surface_annotations"));
+                ), "catia_standard_surface_annotations")));
                 if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
@@ -3083,7 +3099,7 @@ fn try_decode_standard_population(
         // A bridged plane parameter record contains the same `00 33 32`
         // marker as its SurfacicReps carrier.  One carrier exists per tag.
         if prefix.kind == AnalyticSurfaceKind::Plane
-            && !admitted!(ctx.insert_hash_set(&mut decoded_plane_targets, prefix.target, "catia_standard_decoded_plane_targets"))
+            && !admitted!(setup_storage.with_storage(|| ctx.insert_hash_set(&mut decoded_plane_targets, prefix.target, "catia_standard_decoded_plane_targets")))
         {
             continue;
         }
@@ -3101,23 +3117,23 @@ fn try_decode_standard_population(
                     i, SurfaceId::mint, "catia_standard_surface_id"));
                 if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
                 {
-                    admitted!(ctx.push_vec(&mut face_bindings, (admitted!(id.try_clone_for_decode(ctx, "catia_standard_face_binding_surface_id")), forward, prefix.pos), "catia_standard_face_bindings"));
+                    admitted!(setup_storage.with_storage(|| ctx.push_vec(&mut face_bindings, ((id.try_clone_for_decode(ctx, "catia_standard_face_binding_surface_id"))?, forward, prefix.pos), "catia_standard_face_bindings")));
                 }
                 let (annotation_stream, annotation_offset, annotation_tag) =
                     if let Some(source_pos) = admitted!(ctx.get_hash_map(&refined_analytic_surfaces, &i, "catia_standard_refined_surface_lookup")) {
                         ("consolidated_b2_03", *source_pos,
-                            admitted!(ctx.copy_retained_text("consolidated_exact_analytic_surface", "catia_standard_surface_annotation_tag")))
+                            admitted!(setup_storage.with_storage(|| ctx.copy_retained_text("consolidated_exact_analytic_surface", "catia_standard_surface_annotation_tag"))))
                     } else {
                         ("MainDataStream+SurfacicReps", prefix.pos,
-                            admitted!(ctx.format_retained(format_args!("surfacic_reps_{:02x}", prefix.kind.marker()), "catia_standard_surface_annotation_tag")))
+                            admitted!(setup_storage.with_storage(|| ctx.format_retained(format_args!("surfacic_reps_{:02x}", prefix.kind.marker()), "catia_standard_surface_annotation_tag"))))
                     };
-                admitted!(ctx.push_vec(&mut surface_annotations, (
-                    admitted!(id.try_clone_for_decode(ctx, "catia_standard_annotation_surface_id")),
+                admitted!(setup_storage.with_storage(|| ctx.push_vec(&mut surface_annotations, (
+                    (id.try_clone_for_decode(ctx, "catia_standard_annotation_surface_id"))?,
                     annotation_stream,
                     annotation_offset,
                     annotation_tag,
                     Exactness::ByteExact,
-                ), "catia_standard_surface_annotations"));
+                ), "catia_standard_surface_annotations")));
                 if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
@@ -3136,15 +3152,15 @@ fn try_decode_standard_population(
                     i, SurfaceId::mint, "catia_standard_surface_id"));
                 if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
                 {
-                    admitted!(ctx.push_vec(&mut face_bindings, (admitted!(id.try_clone_for_decode(ctx, "catia_standard_face_binding_surface_id")), forward, prefix.pos), "catia_standard_face_bindings"));
+                    admitted!(setup_storage.with_storage(|| ctx.push_vec(&mut face_bindings, ((id.try_clone_for_decode(ctx, "catia_standard_face_binding_surface_id"))?, forward, prefix.pos), "catia_standard_face_bindings")));
                 }
-                admitted!(ctx.push_vec(&mut surface_annotations, (
-                    admitted!(id.try_clone_for_decode(ctx, "catia_standard_annotation_surface_id")),
+                admitted!(setup_storage.with_storage(|| ctx.push_vec(&mut surface_annotations, (
+                    (id.try_clone_for_decode(ctx, "catia_standard_annotation_surface_id"))?,
                     "MainDataStream+SurfacicReps",
                     prefix.pos,
-                    admitted!(ctx.format_retained(format_args!("surfacic_reps_{:02x}", prefix.kind.marker()), "catia_standard_surface_annotation_tag")),
+                    (ctx.format_retained(format_args!("surfacic_reps_{:02x}", prefix.kind.marker()), "catia_standard_surface_annotation_tag"))?,
                     Exactness::Unknown,
-                ), "catia_standard_surface_annotations"));
+                ), "catia_standard_surface_annotations")));
                 if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
