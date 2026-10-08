@@ -607,7 +607,7 @@ pub(crate) fn transfer_neutral(
             else {
                 continue;
             };
-            let prefix = &body.id.as_str()[..parent.len() + 1];
+            let prefix = &body.id.as_str()[..=parent.len()];
             if let Some(&owner) =
                 ctx.get_btree_map(&body_owners, prefix, "fcstd product body owner lookup")?
             {

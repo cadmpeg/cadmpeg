@@ -144,3 +144,97 @@ fn primitive_prefix_index_admits_lookup_and_storage() {
         },
     );
 }
+
+#[test]
+fn providers_without_payloads_add_no_primitive_arena_work() {
+    let source = topology();
+    let mut larger = topology();
+    larger.model.edges.extend(source.model.edges.clone());
+    larger.model.vertices.extend(source.model.vertices.clone());
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#P".into(),
+            "P".into(),
+        )
+        .expect("object identity"),
+        type_name: "Part::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let texts = [
+        r#"<Document><Camera settings=""/><ViewProviderData Count="1"><ViewProvider name="P"><Properties Count="0"/></ViewProvider></ViewProviderData></Document>"#,
+        r#"<Document><Camera settings=""/><ViewProviderData Count="1"><ViewProvider name="P"><Properties Count="4">
+<Property name="LineColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property>
+<Property name="PointColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property>
+<Property name="LineWidth" type="App::PropertyFloatConstraint"><Float value="2"/></Property>
+<Property name="PointSize" type="App::PropertyFloatConstraint"><Float value="3"/></Property>
+</Properties></ViewProvider></ViewProviderData></Document>"#,
+    ];
+    let entries = std::collections::BTreeMap::new();
+    let sources = super::super::GuiSources {
+        entries: &entries,
+        objects: std::slice::from_ref(&object),
+        properties: &[],
+        payloads: &[],
+        element_maps: &[],
+        requires_alpha_conversion: false,
+    };
+    let mut first_added_work = None;
+    for ir in [source, larger] {
+        let mut used = [0; 2];
+        for (index, text) in texts.iter().enumerate() {
+            let xml = roxmltree::Document::parse(text).expect("GUI XML");
+            let error = crate::test_support::refusal_at(
+                ResourceDimension::WorkUnits,
+                text.as_bytes(),
+                "FCStd presentation provider sources",
+                |ctx| {
+                    super::super::transfer_schema_one(ctx, &ir, text, &xml, None, None, &sources)
+                        .map(|_| ())
+                },
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("work refusal");
+            };
+            used[index] = limit.used;
+            if index == 1 {
+                crate::test_support::with_service_context(text.as_bytes(), |ctx| {
+                    let (graph, plan) = super::super::transfer_schema_one(
+                        ctx, &ir, text, &xml, None, None, &sources,
+                    )
+                    .expect("provider without shape payloads");
+                    assert_eq!(graph.providers.len(), 1);
+                    assert_eq!(graph.properties.len(), 4);
+                    assert!(plan.bindings.is_empty());
+                    assert_eq!(plan.view_presentations.len(), 1);
+                    let view = &plan.view_presentations[0];
+                    assert_eq!(
+                        view.line_width
+                            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+                        Some(2.0)
+                    );
+                    assert_eq!(
+                        view.point_size
+                            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+                        Some(3.0)
+                    );
+                });
+            }
+        }
+        let added_work = used[1].checked_sub(used[0]).expect("colored property work");
+        assert!(added_work > 0);
+        if let Some(expected) = first_added_work {
+            assert_eq!(
+                added_work, expected,
+                "primitive arena growth adds no color work"
+            );
+        } else {
+            first_added_work = Some(added_work);
+        }
+    }
+}
