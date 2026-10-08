@@ -323,8 +323,7 @@ fn numerical_followup_revolution_refuses_skew_line_specialization() {
     }
 }
 
-#[test]
-fn saved_spline_extrusion_refuses_construction_identity_copies() {
+fn saved_spline_extrusion_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::test_support::empty_container_scan();
     let mut definition = saved_spline_definition();
     let Some(crate::feature::definitions::FeatureSavedEntity::Spline(spline)) = definition
@@ -409,6 +408,12 @@ fn saved_spline_extrusion_refuses_construction_identity_copies() {
             offset: 0,
         });
     }
+    scan
+}
+
+#[test]
+fn saved_spline_extrusion_refuses_construction_identity_copies() {
+    let scan = saved_spline_extrusion_scan();
     let count = crate::test_support::assert_retained_boundaries(
         &[
             "creo construction curve identity copy",
@@ -426,4 +431,52 @@ fn saved_spline_extrusion_refuses_construction_identity_copies() {
         },
     );
     assert_eq!(count, 1);
+}
+
+#[test]
+fn saved_spline_translated_curve_promotes_only_on_new_curve_transfer() {
+    let scan = saved_spline_extrusion_scan();
+    let (count, mut ir) = crate::test_support::assert_retained_boundaries(
+        &["creo saved extrusion translated curve"],
+        |ctx| {
+            let mut ir = CadIr::empty();
+            let count = super::transfer_feature_extrusion_surfaces(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )?;
+            Ok((count, ir))
+        },
+    );
+    assert_eq!(count, 1);
+    assert_eq!(ir.model.curves.len(), 1);
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve),
+    ) = &ir.model.curves[0].geometry else {
+        panic!("translated spline directrix");
+    };
+    assert_eq!(curve.pole_rows().point_at(0).expect("first pole").get(),
+        cadmpeg_ir::math::Point3::new(2.0, 0.0, -1.0));
+    assert_eq!(curve.pole_rows().point_at(curve.pole_count() - 1).expect("last pole").get(),
+        cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0));
+    let ids = ir.model.curves.iter().map(|curve| curve.id.clone()).collect::<Vec<_>>();
+    let mut losses = Vec::new();
+    let repeated = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_feature_extrusion_surfaces(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut losses,
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    }).expect("duplicate spline route");
+    assert_eq!(repeated, 0);
+    assert_eq!(ir.model.curves.iter().map(|curve| curve.id.clone()).collect::<Vec<_>>(), ids);
+    assert_eq!(ir.model.surfaces.len(), 1);
+    assert_eq!(ir.model.procedural_surfaces.len(), 1);
+    assert!(losses.is_empty());
 }
