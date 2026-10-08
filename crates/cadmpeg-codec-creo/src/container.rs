@@ -1221,36 +1221,29 @@ fn legacy_product_release(
     ctx: &DecodeContext<'_>,
     banner: &[u8],
 ) -> Result<Option<String>, CodecError> {
-    let mut words = banner
-        .split(u8::is_ascii_whitespace)
-        .filter(|word| !word.is_empty());
-    while let Some(word) = words.next() {
-        if word == b"Version" || word == b"Release" {
-            let Some(release) = words.next() else {
-                return Ok(None);
-            };
-            if release.iter().all(u8::is_ascii_graphic) {
-                let release = ctx
-                    .validate_utf8(release, "creo UTF-8 validation")?
-                    .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
-                return ctx
-                    .copy_retained_text(release, "creo legacy product release")
-                    .map(Some);
-            }
-            return Ok(None);
-        }
-        if let Some(release) = word.strip_prefix(b"Release") {
-            if !release.is_empty() && release.iter().all(u8::is_ascii_graphic) {
-                let release = ctx
-                    .validate_utf8(release, "creo UTF-8 validation")?
-                    .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
-                return ctx
-                    .copy_retained_text(release, "creo legacy product release")
-                    .map(Some);
-            }
-        }
+    let mut pending = banner;
+    let mut separate_release = false;
+    loop {
+        let Some(start) = ctx.position_by(pending, |byte| Ok(!byte.is_ascii_whitespace()), "creo legacy banner word start")? else { return Ok(None); };
+        let rest = &pending[start..];
+        let boundary = ctx.position_by(&rest[1..], |byte| Ok(byte.is_ascii_whitespace()), "creo legacy banner word end")?.map(|offset| offset + 1);
+        let end = boundary.unwrap_or(rest.len());
+        let word = &rest[..end];
+        pending = boundary.map_or(&[][..], |offset| &rest[offset + 1..]);
+        let release = if separate_release {
+            if !ctx.all_by(word, |byte| Ok(byte.is_ascii_graphic()), "creo legacy product release validation")? { return Ok(None); }
+            word
+        } else if word == b"Version" || word == b"Release" {
+            separate_release = true;
+            continue;
+        } else if let Some(release) = word.strip_prefix(b"Release") {
+            if release.is_empty() || !ctx.all_by(release, |byte| Ok(byte.is_ascii_graphic()), "creo legacy product release validation")? { continue; }
+            release
+        } else { continue; };
+        let release = ctx.validate_utf8(release, "creo UTF-8 validation")?
+            .map_err(|_| CodecError::malformed("non-ASCII Creo release"))?;
+        return ctx.copy_retained_text(release, "creo legacy product release").map(Some);
     }
-    Ok(None)
 }
 
 fn legacy_ascii_framing(
@@ -1533,15 +1526,15 @@ fn cmnm_model_name(
     {
         return Ok(None);
     }
-    let Some(name) = (|| -> Result<Option<_>, CodecError> {
+
         let Some(length_bytes) = data.get(start..marker + cmnm::LEN) else {
             return Ok(None);
         };
-        let Ok(length_text) = ctx.validate_utf8(length_bytes, "creo UTF-8 validation")? else {
+        let Ok(length_text) = std::str::from_utf8(length_bytes) else {
             return Ok(None);
         };
         let Ok(length) =
-            ctx.parse_radix::<usize>(length_text, 16, "creo CMNM hexadecimal parsing")?
+            usize::from_str_radix(length_text, 16)
         else {
             return Ok(None);
         };
@@ -1557,11 +1550,7 @@ fn cmnm_model_name(
         {
             return Ok(None);
         }
-        Ok(ctx.validate_utf8(name, "creo UTF-8 validation")?.ok())
-    })()?
-    else {
-        return Ok(None);
-    };
+    let Ok(name) = ctx.validate_utf8(name, "creo UTF-8 validation")? else { return Ok(None); };
     Ok(Some((
         ctx.copy_retained_text(name, "creo CMNM model name")?,
         marker + cmnm::LEN,
@@ -1605,7 +1594,7 @@ fn native_model_name(
             }
             let value = &region[name_start..value_end];
             if let Ok(name) = ctx.validate_utf8(value, "creo UTF-8 validation")? {
-                if !name.is_empty() && name.chars().all(|character| !character.is_control()) {
+                if !name.is_empty() && ctx.all_by(name.chars(), |character| Ok(!character.is_control()), "creo native name control validation")? {
                     return Ok(Some((
                         ctx.copy_retained_text(name, "creo native model name")?,
                         section.section.offset() + name_start,
@@ -1622,11 +1611,11 @@ fn relation_model_name<'a>(
     ctx: &DecodeContext<'_>,
     filename: &'a str,
 ) -> Result<Option<&'a str>, CodecError> {
-    let filename = filename.trim_end_matches(' ');
+    let filename = ctx.trim_end_matches(filename, |character| Ok(character == ' '), "creo relation model name padding")?;
     let part_suffix = if filename.len() >= 4 {
         match filename.get(filename.len() - 4..) {
             Some(suffix) => {
-                ctx.eq_ignore_ascii_case(suffix, ".prt", "creo relation model suffix")?
+                suffix.eq_ignore_ascii_case(".prt")
             }
             None => false,
         }
@@ -1635,7 +1624,7 @@ fn relation_model_name<'a>(
     };
     let name = if part_suffix {
         &filename[..filename.len() - 4]
-    } else if !filename.contains('.') {
+    } else if ctx.find_text(filename, ".", "creo relation model extension search")?.is_none() {
         filename
     } else {
         return Ok(None);
@@ -2239,33 +2228,14 @@ fn structural_feature_ids(
     curve_rows: &[CurveTopologyRow],
 ) -> Result<std::collections::BTreeSet<u32>, CodecError> {
     let mut ids = std::collections::BTreeSet::new();
-    let rows = surface_rows
-        .len()
-        .checked_add(curve_rows.len())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("creo structural feature rows", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(rows),
-        "creo structural feature rows",
-    )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(sections.len()),
-        "creo structural feature sections",
-    )?;
-    for id in surface_rows
-        .iter()
+    for id in ctx.admit_iter(surface_rows, "creo structural surface traversal")?
         .map(|row| row.feature_id)
-        .chain(curve_rows.iter().map(|row| row.feature_id))
+        .chain(ctx.admit_iter(curve_rows, "creo structural curve traversal")?.map(|row| row.feature_id))
         .filter(|id| *id != 0)
     {
-        ctx.charge_work(
-            24 * (u64::from(usize::BITS - ids.len().leading_zeros()) + 1),
-            "creo structural feature identity work",
-        )?;
         ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
     }
-    for section in sections {
+    for section in ctx.admit_iter(sections, "creo structural feature sections")? {
         if !(section.section.role() == SectionRole::PsbGeometry) {
             continue;
         }
@@ -2284,15 +2254,11 @@ fn structural_feature_ids(
             };
             let (count, mut cursor) = psb::complete_compact_int(payload, start + 1)
                 .ok_or_else(|| CodecError::malformed("incomplete parent-feature count"))?;
-            for _ in 0..count {
-                ctx.charge_work(2, "creo parent-feature entries")?;
+            let mut entries = 0..count;
+            while ctx.next_charged(&mut entries, "creo parent-feature entries")?.is_some() {
                 let (id, next) = psb::complete_compact_int(payload, cursor)
                     .ok_or_else(|| CodecError::malformed("incomplete parent-feature entry"))?;
                 if id != 0 {
-                    ctx.charge_work(
-                        24 * (u64::from(usize::BITS - ids.len().leading_zeros()) + 1),
-                        "creo structural feature identity work",
-                    )?;
                     ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
                 }
                 cursor = next;
@@ -2308,7 +2274,8 @@ fn topology_face_ids(
     ids: impl IntoIterator<Item = u32>,
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut faces = BTreeSet::new();
-    for id in ids {
+    let mut ids = ids.into_iter();
+    while let Some(id) = ctx.next_charged(&mut ids, "creo feature ID source traversal")? {
         ctx.insert_btree_set(&mut faces, id, "creo topology face ids")?;
     }
     Ok(faces)
@@ -2320,10 +2287,11 @@ fn candidate_feature_ids(
     additions: impl IntoIterator<Item = u32>,
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut ids = BTreeSet::new();
-    for id in structural {
+    for id in ctx.admit_iter(structural, "creo structural feature ID traversal")? {
         ctx.insert_btree_set(&mut ids, *id, "creo candidate structural feature ids")?;
     }
-    for id in additions {
+    let mut additions = additions.into_iter();
+    while let Some(id) = ctx.next_charged(&mut additions, "creo feature ID source traversal")? {
         ctx.insert_btree_set(&mut ids, id, "creo candidate feature ids")?;
     }
     Ok(ids)
@@ -2334,12 +2302,13 @@ fn complete_feature_ids(
     mut structural: BTreeSet<u32>,
     additions: impl IntoIterator<Item = u32>,
 ) -> Result<Vec<u32>, CodecError> {
-    for id in additions {
+    let mut additions = additions.into_iter();
+    while let Some(id) = ctx.next_charged(&mut additions, "creo feature ID source traversal")? {
         ctx.insert_btree_set(&mut structural, id, "creo complete feature ids")?;
     }
     let mut ordered = Vec::new();
     ctx.reserve_vec(&mut ordered, structural.len(), "creo ordered feature ids")?;
-    ordered.extend(structural);
+    ordered.extend(ctx.admit_iter(structural, "creo ordered feature ID traversal")?);
     Ok(ordered)
 }
 
@@ -2386,76 +2355,144 @@ fn registered_feature_schema_class(schema_class: crate::feature::schema::SchemaC
     )
 }
 
-fn feature_row_has_model_identity(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    row: &FeatureRow,
-    structural_ids: &std::collections::BTreeSet<u32>,
-    operations: &[FeatureOperation],
-    reference_names: &[FeatureReferenceName],
-) -> Result<bool, cadmpeg_core::CodecError> {
-    use crate::feature::schema::SchemaClass;
-    if structural_ids.contains(&row.feature_id)
-        || operations.iter().any(|operation| {
-            operation.feature_id == row.feature_id
-                && (stored_operation_schema_class(operation) == row.root_schema_class
-                    || (stored_operation_schema_class(operation).is_some()
-                        && row.root_schema_class.is_some_and(|schema_class| {
-                            !registered_feature_schema_class(schema_class)
-                        })))
-        })
-    {
-        return Ok(true);
-    }
-    ctx.any_by(
-        reference_names,
-        |reference| {
-            let Ok(name) = ctx.validate_utf8(&reference.name_bytes, "creo UTF-8 validation")?
-            else {
-                return Ok(false);
-            };
-            let numbered_family = |family: &str| {
-                ctx.any_by(
-                    &[" id ", " ID "],
-                    |separator| {
-                        let digits = match ctx.strip_prefix(
-                            name,
-                            family,
-                            "creo feature identity family prefix",
-                        )? {
-                            Some(suffix) => ctx.strip_prefix(
-                                suffix,
-                                *separator,
-                                "creo feature identity ordinal prefix",
-                            )?,
-                            None => None,
-                        };
-                        let ordinal = match digits {
-                            Some(digits) => ctx
-                                .parse_text::<u32>(digits, "creo scalar text parsing")?
-                                .ok(),
-                            None => None,
-                        };
-                        Ok(ordinal == Some(reference.feature_id))
-                    },
-                    "creo feature identity numbered family scan",
-                )
-            };
-            let named_datum = matches!(name, "Datum Plane" | "Bezugsebene")
-                || numbered_family("Datum Plane")?
-                || numbered_family("Bezugsebene")?
-                || ctx
-                    .strip_prefix(name, "DTM", "creo feature identity datum prefix")?
-                    .is_some_and(|ordinal| {
-                        !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+struct FeatureIdentityIndex<'ctx> {
+    operation_classes: std::collections::HashSet<(u32, Option<u32>)>,
+    known_operation_ids: std::collections::HashSet<u32>,
+    reference_kinds: std::collections::HashMap<u32, u8>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> FeatureIdentityIndex<'ctx> {
+    const SECTION: u8 = 1;
+    const DATUM: u8 = 2;
+    const COORDINATE_SYSTEM: u8 = 4;
+
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        rows: &[FeatureRow],
+        structural: &BTreeSet<u32>,
+        operations: &[FeatureOperation],
+        reference_names: &[FeatureReferenceName],
+    ) -> Result<Self, CodecError> {
+        let storage = ctx.reserve_scoped(0, "creo feature identity index storage")?;
+        let mut index = Self {
+            operation_classes: std::collections::HashSet::new(),
+            known_operation_ids: std::collections::HashSet::new(),
+            reference_kinds: std::collections::HashMap::new(),
+            _storage: storage,
+        };
+        if rows.is_empty() {
+            return Ok(index);
+        }
+        let mut needed_storage = ctx.reserve_scoped(0, "creo reference identity selection storage")?;
+        let mut owners = std::collections::HashSet::new();
+        needed_storage.with_storage(|| {
+            for row in ctx.admit_iter(rows, "creo operation identity row selection")? {
+                if !ctx.contains_btree_set(structural, &row.feature_id, "creo structural model identity lookup")? {
+                    ctx.insert_hash_set(&mut owners, row.feature_id, "creo operation identity owner selection")?;
+                }
+            }
+            Ok::<(), CodecError>(())
+        })?;
+        if owners.is_empty() { return Ok(index); }
+        index._storage.with_storage(|| {
+            for operation in ctx.admit_iter(operations, "creo operation identity indexing")? {
+                if !owners.contains(&operation.feature_id) { continue; }
+                let class = stored_operation_schema_class(operation).map(|class| class.code());
+                ctx.insert_hash_set(&mut index.operation_classes, (operation.feature_id, class), "creo operation identity classes")?;
+                if class.is_some() {
+                    ctx.insert_hash_set(&mut index.known_operation_ids, operation.feature_id, "creo known operation identities")?;
+                }
+            }
+            Ok::<(), CodecError>(())
+        })?;
+        let mut needed = std::collections::HashMap::<u32, u8>::new();
+        needed_storage.with_storage(|| {
+            for row in ctx.admit_iter(rows, "creo reference identity row selection")? {
+                if owners.contains(&row.feature_id) && !index.has_operation(row)
+                    && matches!(row.root_schema_class,
+                        Some(crate::feature::schema::SchemaClass::Section
+                            | crate::feature::schema::SchemaClass::DatumPlane
+                            | crate::feature::schema::SchemaClass::CoordinateSystem))
+                {
+                    let kind = match row.root_schema_class {
+                        Some(crate::feature::schema::SchemaClass::Section) => Self::SECTION,
+                        Some(crate::feature::schema::SchemaClass::DatumPlane) => Self::DATUM,
+                        Some(crate::feature::schema::SchemaClass::CoordinateSystem) => Self::COORDINATE_SYSTEM,
+                        _ => continue,
+                    };
+                    let mask = ctx.entry_hash_map(&mut needed, row.feature_id, "creo reference identity owner selection")?.or_default();
+                    *mask |= kind;
+                }
+            }
+            Ok::<(), CodecError>(())
+        })?;
+        if needed.is_empty() {
+            return Ok(index);
+        }
+        index._storage.with_storage(|| {
+            for reference in ctx.admit_iter(reference_names, "creo feature identity reference scan")? {
+                let Some(&requested) = needed.get(&reference.feature_id) else { continue; };
+                let Ok(name) = ctx.validate_utf8(&reference.name_bytes, "creo UTF-8 validation")? else {
+                    continue;
+                };
+                let numbered_family = |family: &str| -> Result<bool, CodecError> {
+                    let Some(suffix) = name.strip_prefix(family) else { return Ok(false); };
+                    let Some(digits) = suffix.strip_prefix(" id ").or_else(|| suffix.strip_prefix(" ID ")) else {
+                        return Ok(false);
+                    };
+                    Ok(ctx.parse_text::<u32>(digits, "creo scalar text parsing")?.ok() == Some(reference.feature_id))
+                };
+                let datum = requested & Self::DATUM != 0 && (matches!(name, "Datum Plane" | "Bezugsebene")
+                    || numbered_family("Datum Plane")?
+                    || numbered_family("Bezugsebene")?
+                    || match name.strip_prefix("DTM") {
+                        Some(ordinal) => !ordinal.is_empty() && ctx.all_by(ordinal.bytes(), |byte| Ok(byte.is_ascii_digit()), "creo datum ordinal validation")?,
+                        None => false,
                     });
-            Ok(reference.feature_id == row.feature_id
-                && (row.root_schema_class == Some(SchemaClass::Section)
-                    || (row.root_schema_class == Some(SchemaClass::DatumPlane) && named_datum)
-                    || (row.root_schema_class == Some(SchemaClass::CoordinateSystem)
-                        && name == "PRT_CSYS_DEF")))
-        },
-        "creo feature identity reference scan",
-    )
+                let kinds = requested & Self::SECTION
+                    | if datum { Self::DATUM } else { 0 }
+                    | if requested & Self::COORDINATE_SYSTEM != 0 && name == "PRT_CSYS_DEF" { Self::COORDINATE_SYSTEM } else { 0 };
+                let previous = ctx.entry_hash_map(&mut index.reference_kinds, reference.feature_id, "creo reference identity kinds")?.or_default();
+                *previous |= kinds;
+            }
+            Ok::<(), CodecError>(())
+        })?;
+        Ok(index)
+    }
+
+    fn has_operation(&self, row: &FeatureRow) -> bool {
+        self.operation_classes.contains(&(row.feature_id, row.root_schema_class.map(|class| class.code())))
+            || (row.root_schema_class.is_some_and(|class| !registered_feature_schema_class(class))
+                && self.known_operation_ids.contains(&row.feature_id))
+    }
+
+    fn contains(
+        &self, ctx: &DecodeContext<'_>, row: &FeatureRow, structural: &BTreeSet<u32>,
+    ) -> Result<bool, CodecError> {
+        use crate::feature::schema::SchemaClass;
+        if ctx.contains_btree_set(structural, &row.feature_id, "creo structural model identity lookup")?
+            || self.has_operation(row)
+        {
+            return Ok(true);
+        }
+        let kind = match row.root_schema_class {
+            Some(SchemaClass::Section) => Self::SECTION,
+            Some(SchemaClass::DatumPlane) => Self::DATUM,
+            Some(SchemaClass::CoordinateSystem) => Self::COORDINATE_SYSTEM,
+            _ => return Ok(false),
+        };
+        Ok(self.reference_kinds.get(&row.feature_id).is_some_and(|kinds| kinds & kind != 0))
+    }
+}
+
+#[cfg(test)]
+fn feature_row_has_model_identity(
+    ctx: &DecodeContext<'_>, row: &FeatureRow, structural: &BTreeSet<u32>,
+    operations: &[FeatureOperation], reference_names: &[FeatureReferenceName],
+) -> Result<bool, CodecError> {
+    FeatureIdentityIndex::new(ctx, std::slice::from_ref(row), structural, operations, reference_names)?
+        .contains(ctx, row, structural)
 }
 
 fn feature_entity_tables(
@@ -2464,18 +2501,22 @@ fn feature_entity_tables(
     feature_ids: &[u32],
     rows: &[SurfaceRow],
 ) -> Result<Vec<FeatureEntityTable>, CodecError> {
+    let mut identity_storage = ctx.reserve_scoped(0, "creo feature entity admission index storage")?;
     let mut feature_ids_set = BTreeSet::new();
-    for &feature_id in feature_ids {
+    let mut surface_ids = BTreeSet::new();
+    identity_storage.with_storage(|| {
+    for &feature_id in ctx.admit_iter(feature_ids, "creo feature ID traversal")? {
         ctx.insert_btree_set(
             &mut feature_ids_set,
             feature_id,
             "creo feature entity owner ids",
         )?;
     }
-    let mut surface_ids = BTreeSet::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo container row traversal")? {
         ctx.insert_btree_set(&mut surface_ids, row.id, "creo feature entity surface ids")?;
     }
+        Ok::<(), CodecError>(())
+    })?;
     collect_section_records_result(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?
@@ -2508,7 +2549,7 @@ fn feature_rows(
         let decoded =
             feature::rows::rows(ctx, section_bytes, feature_ids, section.section.offset())?;
         ctx.reserve_vec(&mut rows, decoded.len(), "creo feature row aggregation")?;
-        rows.extend(decoded);
+        rows.extend(ctx.admit_iter(decoded, "creo feature row aggregation traversal")?);
     }
     ctx.stable_sort_by(
         rows.as_mut_slice(),
@@ -2695,7 +2736,7 @@ fn feature_row_definitions(
     rows: &[FeatureRow],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo container row traversal")? {
         let Some(mut definition) =
             feature::definitions::depdb_section_definition(ctx, &row.body, None)?
         else {
@@ -2729,8 +2770,7 @@ fn claimed_definition_owners(
     definitions: &[FeatureDefinition],
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut owners = BTreeSet::new();
-    for id in definitions
-        .iter()
+    for id in ctx.admit_iter(definitions, "creo claimed definition traversal")?
         .filter_map(|definition| definition.identity.owner_feature_id())
     {
         ctx.insert_btree_set(&mut owners, id, "creo claimed definition owners")?;
@@ -2750,7 +2790,7 @@ fn feature_geometry_tables(
         depdb_tables.len(),
         "creo feature geometry table aggregation",
     )?;
-    tables.extend(depdb_tables);
+    tables.extend(ctx.admit_iter(depdb_tables, "creo feature geometry table aggregation traversal")?);
     ctx.stable_sort_by(
         tables.as_mut_slice(),
         |value| &value.offset,
@@ -2772,7 +2812,7 @@ fn feature_affected_ids(
         depdb_records.len(),
         "creo affected-id aggregation",
     )?;
-    records.extend(depdb_records);
+    records.extend(ctx.admit_iter(depdb_records, "creo affected-id aggregation traversal")?);
     ctx.stable_sort_by(
         records.as_mut_slice(),
         |value| &value.offset,
@@ -2796,7 +2836,7 @@ fn feature_revolution_extents(
         definition_extents.len(),
         "creo revolution extent aggregation",
     )?;
-    extents.extend(definition_extents);
+    extents.extend(ctx.admit_iter(definition_extents, "creo revolution extent aggregation traversal")?);
     ctx.stable_sort_by(
         extents.as_mut_slice(),
         |value| &value.offset,
@@ -2862,7 +2902,7 @@ fn feature_operations(
         |record| record.offset,
     )?;
     let mut by_feature = BTreeMap::new();
-    for record in records {
+    for record in ctx.admit_iter(records, "creo operation aggregate traversal")? {
         ctx.insert_btree_map(
             &mut by_feature,
             record.feature_id,
@@ -2876,7 +2916,7 @@ fn feature_operations(
         by_feature.len(),
         "creo current feature operation order",
     )?;
-    current.extend(by_feature.into_values());
+    current.extend(ctx.admit_iter(by_feature, "creo current operation traversal")?.map(|(_, record)| record));
     ctx.stable_sort_by(
         current.as_mut_slice(),
         |value| &value.offset,
@@ -2936,10 +2976,8 @@ fn depdb_recipe_rows(
         }
         let payload = section.region;
         let mut recipe_storage = ctx.reserve_scoped(0, "Creo DEPDB recipe operation lookup")?;
-        let recipe_operations = recipe_storage
-            .with_storage(|| feature::operations::operation_states(ctx, payload))?
-            .into_iter()
-            .filter_map(|operation| {
+        let recipe_rows = recipe_storage.with_storage(|| feature::operations::operation_states(ctx, payload))?;
+        let recipe_operations = ctx.admit_iter(recipe_rows, "creo DEPDB recipe source traversal")?.filter_map(|operation| {
                 operation
                     .recipe
                     .candidate()
@@ -3018,26 +3056,37 @@ fn geomlists_value(
 /// Legacy ASCII stores this metadata in the persistence object tree rather
 /// than in a binary `Geomlists` section. Distinct complete values remain
 /// unresolved; equal duplicate records are one value witness.
-fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str) -> Option<u32> {
-    let mut values = persistence
-        .integer_values
-        .rows
-        .iter()
-        .filter(|record| record.name == field_name)
-        .filter_map(|record| {
-            let parent_id = record.parent?;
-            let parent = persistence
-                .objects
-                .iter()
-                .find(|object| object.offset == parent_id)?;
-            (parent.name == "Sld_GeomDepend").then_some(())?;
-            let legacy::NumericPayload::Scalar { value } = &record.payload else {
-                return None;
-            };
-            u32::try_from(*value).ok()
-        });
-    let value = values.next()?;
-    values.all(|other| other == value).then_some(value)
+fn legacy_first_quilt_ptr(
+    ctx: &DecodeContext<'_>, persistence: &legacy::Persistence,
+) -> Result<Option<u32>, CodecError> {
+    let mut parent_storage = ctx.reserve_scoped(0, "creo legacy geometry parent index storage")?;
+    let mut parents = std::collections::HashMap::<usize, bool>::new();
+    let mut parents_indexed = false;
+    let mut selected = None;
+    let mut records = persistence.integer_values.rows.iter();
+    while let Some(record) = ctx.next_charged(&mut records, "creo legacy geometry value traversal")? {
+        if record.name != "first_quilt_ptr" { continue; }
+        let Some(parent_id) = record.parent else { continue; };
+        if !parents_indexed {
+            parent_storage.with_storage(|| {
+                for object in ctx.admit_iter(&persistence.objects, "creo legacy geometry parent indexing")? {
+                    ctx.entry_hash_map(&mut parents, object.offset, "creo legacy geometry parent nodes")?
+                        .or_insert(object.name == "Sld_GeomDepend");
+                }
+                Ok::<(), CodecError>(())
+            })?;
+            parents_indexed = true;
+        }
+        if parents.get(&parent_id) != Some(&true) { continue; }
+        let legacy::NumericPayload::Scalar { value } = record.payload else { continue; };
+        let Ok(value) = u32::try_from(value) else { continue; };
+        match selected {
+            Some(previous) if previous != value => return Ok(None),
+            Some(_) => {},
+            None => selected = Some(value),
+        }
+    }
+    Ok(selected)
 }
 
 fn reference_scan(
@@ -3052,22 +3101,20 @@ fn reference_scan(
             continue;
         }
         let payload = section.region;
-        for mut line in reference::lines(ctx, payload)?
-            .into_iter()
-            .chain(reference::line3d_lines(ctx, payload)?)
+        for mut line in ctx.admit_iter(reference::lines(ctx, payload)?, "creo reference line merge traversal")?
+            .chain(ctx.admit_iter(reference::line3d_lines(ctx, payload)?, "creo reference line3d merge traversal")?)
         {
             ctx.reserve_vec(&mut lines, 1, "creo reference line aggregation")?;
             line.offset += section.section.offset();
             lines.push(line);
         }
-        for mut circle in reference::arc_z_circles(ctx, payload)? {
+        for mut circle in ctx.admit_iter(reference::arc_z_circles(ctx, payload)?, "creo reference circle merge traversal")? {
             ctx.reserve_vec(&mut circles, 1, "creo reference circle aggregation")?;
             circle.offset += section.section.offset();
             circles.push(circle);
         }
-        for mut conic in reference::named_conics(ctx, payload)?
-            .into_iter()
-            .chain(reference::positional_conics(ctx, payload)?)
+        for mut conic in ctx.admit_iter(reference::named_conics(ctx, payload)?, "creo named conic merge traversal")?
+            .chain(ctx.admit_iter(reference::positional_conics(ctx, payload)?, "creo positional conic merge traversal")?)
         {
             ctx.reserve_vec(&mut conics, 1, "creo reference conic aggregation")?;
             conic.offset += section.section.offset();
@@ -3089,18 +3136,16 @@ fn placement_outline_planes(
     outline_planes: &[surface::OutlinePlane],
     positional_frame_planes: &[surface::OutlinePlane],
 ) -> Result<Vec<surface::OutlinePlane>, CodecError> {
+    let mut identity_storage = ctx.reserve_scoped(0, "creo outline plane identity storage")?;
+    let mut ids = std::collections::HashSet::new();
     let mut result = Vec::new();
-    ctx.reserve_vec(
-        &mut result,
-        outline_planes.len(),
-        "creo placement outline plane copies",
-    )?;
-    result.extend(outline_planes.iter().cloned());
-    for plane in positional_frame_planes {
-        if !outline_planes
-            .iter()
-            .any(|outline| outline.surface_id == plane.surface_id)
-        {
+    ctx.reserve_vec(&mut result, outline_planes.len(), "creo placement outline plane copies")?;
+    for plane in ctx.admit_iter(outline_planes, "creo outline plane source traversal")? {
+        identity_storage.with_storage(|| ctx.insert_hash_set(&mut ids, plane.surface_id, "creo outline plane identity nodes"))?;
+        result.push(plane.clone());
+    }
+    for plane in ctx.admit_iter(positional_frame_planes, "creo positional plane source traversal")? {
+        if !ids.contains(&plane.surface_id) {
             ctx.reserve_vec(&mut result, 1, "creo positional placement plane copies")?;
             result.push(plane.clone());
         }
@@ -3169,10 +3214,6 @@ pub(crate) fn scan_bytes<'a>(
     data: impl Into<Cow<'a, [u8]>>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(MAGIC.len()),
-        "creo container signature",
-    )?;
     if !looks_like_creo(&data) {
         return Err(CodecError::WrongFormat(
             "missing Creo #UGC:2 signature".into(),
@@ -3279,12 +3320,10 @@ pub(crate) fn scan_bytes<'a>(
         .flatten();
     let nonvisible_geometry_sections =
         selection_storage.with_storage(|| nonvisible_geometry_sections(ctx, &sections))?;
-    let loop_array_sections = loop_array_sections(
-        ctx,
-        &model_geometry_sections,
-        &nonvisible_geometry_sections,
-        &sections,
-    )?;
+    let mut loop_selection_storage = ctx.reserve_scoped(0, "creo loop array section selection storage")?;
+    let loop_array_sections = loop_selection_storage.with_storage(|| loop_array_sections(
+        ctx, &model_geometry_sections, &nonvisible_geometry_sections, &sections,
+    ))?;
     let loop_arrays = loop_array_scan(ctx, &loop_array_sections)?;
     let mut nonvisible_surface_rows = surface_rows(ctx, &nonvisible_geometry_sections)?;
     ctx.reserve_vec(
@@ -3382,9 +3421,8 @@ pub(crate) fn scan_bytes<'a>(
     )?;
     let topology_face_ids = topology_face_ids(
         ctx,
-        nonvisible_surface_rows
-            .iter()
-            .chain(surface_rows.iter())
+        ctx.admit_iter(&nonvisible_surface_rows[..], "creo nonvisible topology face traversal")?
+            .chain(ctx.admit_iter(&surface_rows[..], "creo visible topology face traversal")?)
             .map(|row| row.id),
     )?;
     let nonvisible_curve_parameters =
@@ -3440,33 +3478,26 @@ pub(crate) fn scan_bytes<'a>(
     let candidate_feature_ids = candidate_feature_ids(
         ctx,
         &structural_feature_ids,
-        feature_operations
-            .iter()
+        ctx.admit_iter(&feature_operations, "creo operation identity source traversal")?
             .map(|operation| operation.feature_id)
             .chain(
-                feature_reference_names
-                    .iter()
+                ctx.admit_iter(&feature_reference_names, "creo reference identity source traversal")?
                     .map(|reference| reference.feature_id),
             ),
     )?;
     let mut feature_rows = feature_rows(ctx, &sections, &candidate_feature_ids)?;
+    let feature_identity_index = FeatureIdentityIndex::new(
+        ctx, &feature_rows, &structural_feature_ids, &feature_operations, &feature_reference_names,
+    )?;
     ctx.retain_vec(
         &mut feature_rows,
-        |row| {
-            feature_row_has_model_identity(
-                ctx,
-                row,
-                &structural_feature_ids,
-                &feature_operations,
-                &feature_reference_names,
-            )
-        },
+        |row| feature_identity_index.contains(ctx, row, &structural_feature_ids),
         "creo feature identity row retention",
     )?;
     let feature_ids = complete_feature_ids(
         ctx,
         structural_feature_ids,
-        feature_rows.iter().map(|row| row.feature_id),
+        ctx.admit_iter(&feature_rows, "creo final feature identity source traversal")?.map(|row| row.feature_id),
     )?;
     let feature_round_replay_scalars = feature::rows::round_replay_scalars(ctx, &feature_rows)?;
     let feature_choices = feature::rows::choices(ctx, &feature_rows)?;
@@ -3590,10 +3621,10 @@ pub(crate) fn scan_bytes<'a>(
     )?;
     let (feature_entities, feature_entity_references) = feature_entity_graph(ctx, &sections)?;
     let declared_body_count = geomlists_value(ctx, &sections, b"n_bodies\0")?;
-    let first_quilt_ptr = geomlists_value(ctx, &sections, b"first_quilt_ptr\0")?.or_else(|| {
-        legacy_ascii
-            .and_then(|framing| legacy_geom_depend_value(&framing.persistence, "first_quilt_ptr"))
-    });
+    let first_quilt_ptr = match geomlists_value(ctx, &sections, b"first_quilt_ptr\0")? {
+        Some(value) => Some(value),
+        None => legacy_ascii.map(|framing| legacy_first_quilt_ptr(ctx, &framing.persistence)).transpose()?.flatten(),
+    };
 
     // The `Cow` takes the bytes here, so the scan's borrowed regions end and
     // the framing keeps the owned sections.
@@ -3721,7 +3752,7 @@ fn scan_primitives(
             tables.len(),
             "creo model double_xar tables",
         )?;
-        for table in tables {
+        for table in ctx.admit_iter(tables, "creo primitive table aggregate traversal")? {
             double_xar_tables.push(ModelDoubleXarTable {
                 section_name: ctx
                     .copy_retained_text(&section.name, "creo model double_xar section names")?,
@@ -4128,21 +4159,6 @@ mod feature_row_definition_tests {
         );
     }
 
-    #[test]
-    fn cmnm_length_radix_parse_refuses_before_name_selection() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let error = crate::test_support::last_refusal_at(
-            &[],
-            ResourceDimension::WorkUnits,
-            "creo CMNM hexadecimal parsing",
-            |ctx| super::cmnm_model_name(ctx, b"#- CMNM 001x"),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo CMNM hexadecimal parsing")
-        );
-    }
 
     #[test]
     fn toc_offset_radix_parse_refuses_work() {

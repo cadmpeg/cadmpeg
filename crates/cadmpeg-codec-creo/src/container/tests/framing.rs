@@ -487,7 +487,7 @@ fn legacy_geom_depend_discriminator_withholds_distinct_values() {
     };
 
     assert_eq!(
-        super::super::legacy_geom_depend_value(&persistence, "first_quilt_ptr"),
+        crate::decode::with_test_decode_ctx(|ctx| super::super::legacy_first_quilt_ptr(ctx, &persistence)).expect("legacy value selection admitted"),
         None
     );
 }
