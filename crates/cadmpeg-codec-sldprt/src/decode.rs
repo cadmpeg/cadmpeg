@@ -32,6 +32,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod digest_partition;
+mod opaque_links;
 
 use crate::container::configuration_index;
 
@@ -2216,13 +2217,6 @@ fn unbound_feature_input_operation_objects(
     use crate::records::FeatureInputClassRole;
     const OPERATION: &str = "count SLDPRT unbound feature-input operation objects";
     const CONSUMER: &str = "find SLDPRT feature-input operation consumer";
-    if !ctx.any_by(
-        &native.feature_input_lanes,
-        |lane| ctx.any_by(&lane.classes, |class| Ok(class.role() == FeatureInputClassRole::Feature), CONSUMER),
-        CONSUMER,
-    )? {
-        return Ok(0);
-    }
     fn increment<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
         ctx: &DecodeContext<'_>,
         counts: &mut BTreeMap<K, usize>,
@@ -2235,6 +2229,13 @@ fn unbound_feature_input_operation_objects(
         Ok(())
     }
 
+    if !ctx.any_by(
+        &native.feature_input_lanes,
+        |lane| ctx.any_by(&lane.classes, |class| Ok(class.role() == FeatureInputClassRole::Feature), CONSUMER),
+        CONSUMER,
+    )? {
+        return Ok(0);
+    }
     let mut workspace = ctx.reserve_scoped(0, OPERATION)?;
     // One pass over the history records: how often each source and each
     // source-class pair occurs, and the operation class of each classless
@@ -3158,25 +3159,6 @@ fn build_geometry_ir(
 ) -> Result<BuiltIr, CodecError> {
     const BLOCKS: &str = "retain SLDPRT source blocks";
     const FACE_COLORS: &str = "admit SLDPRT face appearance";
-    fn add_opaque_link<'a>(
-        ctx: &DecodeContext<'_>,
-        opaque_links: &mut BTreeMap<&'a str, Vec<String>>,
-        workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-        record: &'a str,
-        entity: &str,
-    ) -> Result<(), CodecError> {
-        const OPERATION: &str = "index SLDPRT opaque geometry record";
-        let link = ctx.copy_retained_text(entity, "retain SLDPRT opaque geometry link")?;
-        workspace.with_storage(|| {
-            ctx.push_btree_group(
-                opaque_links,
-                record,
-                link,
-                OPERATION,
-                "index SLDPRT opaque geometry link",
-            )
-        })
-    }
 
     let DecodedBrep {
         _workspace,
@@ -4201,20 +4183,13 @@ fn build_geometry_ir(
             "collect SLDPRT decoded vector items",
         )?;
     }
-    let mut opaque_storage = ctx.reserve_scoped(0, "SLDPRT opaque geometry index workspace")?;
-    let mut opaque_links = BTreeMap::<&str, Vec<String>>::new();
+    let mut opaque_links = opaque_links::OpaqueGeometryLinks::new(ctx)?;
     for surface in ctx.admit_iter(&ir.model.surfaces, "scan SLDPRT build_geometry_ir values")? {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
             record: Some(record),
         }) = &surface.geometry
         {
-            add_opaque_link(
-                ctx,
-                &mut opaque_links,
-                &mut opaque_storage,
-                record.as_str(),
-                surface.id.as_str(),
-            )?;
+            opaque_links.push(record.as_str(), surface.id.as_str())?;
         }
     }
     for curve in ctx.admit_iter(&ir.model.curves, "scan SLDPRT build_geometry_ir values")? {
@@ -4222,60 +4197,10 @@ fn build_geometry_ir(
             record: Some(record),
         }) = &curve.geometry
         {
-            add_opaque_link(
-                ctx,
-                &mut opaque_links,
-                &mut opaque_storage,
-                record.as_str(),
-                curve.id.as_str(),
-            )?;
+            opaque_links.push(record.as_str(), curve.id.as_str())?;
         }
     }
-    if !opaque_links.is_empty() {
-        let (unknown_positions, unknown_position_storage) = ctx.collect_scoped_string_map(
-            unknowns.len(),
-            unknowns
-                .iter()
-                .enumerate()
-                .rev()
-                .map(|(position, record)| (record.id().as_str(), position)),
-            "index SLDPRT opaque geometry records",
-        )?;
-        let (mut linked_positions, mut position_storage) =
-            ctx.scoped_vector_storage(0, "SLDPRT opaque geometry link positions")?;
-        for (record_id, links) in
-            ctx.admit_iter(opaque_links, "append SLDPRT opaque geometry links")?
-        {
-            let Some(&position) = ctx.get_hash_map(
-                &unknown_positions,
-                record_id,
-                "append SLDPRT opaque geometry links",
-            )?
-            else {
-                return Err(CodecError::malformed(format_args!(
-                    "opaque geometry record {record_id} was not retained"
-                )));
-            };
-            position_storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut linked_positions,
-                    (position, links),
-                    "SLDPRT opaque geometry link positions",
-                )
-            })?;
-        }
-        drop((unknown_positions, unknown_position_storage));
-        for (position, links) in
-            ctx.admit_iter(linked_positions, "append SLDPRT opaque geometry links")?
-        {
-            ctx.extend_vec(
-                unknowns[position].links_mut(),
-                links,
-                "append SLDPRT opaque geometry links",
-            )?;
-        }
-    }
-    drop(opaque_storage);
+    opaque_links.attach(&mut unknowns)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown

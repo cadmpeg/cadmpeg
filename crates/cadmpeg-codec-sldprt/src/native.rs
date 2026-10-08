@@ -881,77 +881,77 @@ impl SldprtNative {
                     "index SLDPRT native lanes",
                 )
             })?;
-        let mut lane_classes = attach_to_owners(
+        let (mut lane_classes, lane_classes_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             classes,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_names = attach_to_owners(
+        let (mut lane_names, lane_names_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             names,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_scalars = attach_to_owners(
+        let (mut lane_scalars, lane_scalars_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             scalars,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_references = attach_to_owners(
+        let (mut lane_references, lane_references_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             references,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_relation_bindings = attach_to_owners(
+        let (mut lane_relation_bindings, lane_relation_bindings_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             relation_bindings,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_relation_instances = attach_to_owners(
+        let (mut lane_relation_instances, lane_relation_instances_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             relation_instances,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_body_selections = attach_to_owners(
+        let (mut lane_body_selections, lane_body_selections_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             body_selections,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_edge_selections = attach_to_owners(
+        let (mut lane_edge_selections, lane_edge_selections_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             edge_selections,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_surface_selections = attach_to_owners(
+        let (mut lane_surface_selections, lane_surface_selections_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             surface_selections,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_generated_surfaces = attach_to_owners(
+        let (mut lane_generated_surfaces, lane_generated_surfaces_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             generated_surface_identities,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut lane_entities = attach_to_owners(
+        let (mut lane_entities, lane_entities_storage) = attach_to_owners(
             ctx,
             &lane_ids,
             entities,
@@ -1009,6 +1009,30 @@ impl SldprtNative {
             }
             lane.sketch_entities = std::mem::take(&mut lane_entities[index]);
         }
+        drop((
+            lane_classes,
+            lane_classes_storage,
+            lane_names,
+            lane_names_storage,
+            lane_scalars,
+            lane_scalars_storage,
+            lane_references,
+            lane_references_storage,
+            lane_relation_bindings,
+            lane_relation_bindings_storage,
+            lane_relation_instances,
+            lane_relation_instances_storage,
+            lane_body_selections,
+            lane_body_selections_storage,
+            lane_edge_selections,
+            lane_edge_selections_storage,
+            lane_surface_selections,
+            lane_surface_selections_storage,
+            lane_generated_surfaces,
+            lane_generated_surfaces_storage,
+            lane_entities,
+            lane_entities_storage,
+        ));
         let (history_ids, history_ids_storage) =
             ctx.with_scoped_storage("index SLDPRT native histories", || {
                 ctx.collect_vec(
@@ -1019,14 +1043,14 @@ impl SldprtNative {
                     "index SLDPRT native histories",
                 )
             })?;
-        let mut history_configurations = attach_to_owners(
+        let (mut history_configurations, history_configurations_storage) = attach_to_owners(
             ctx,
             &history_ids,
             configurations,
             |record| &record.parent,
             |record| record.ordinal,
         )?;
-        let mut history_features = attach_to_owners(
+        let (mut history_features, history_features_storage) = attach_to_owners(
             ctx,
             &history_ids,
             features,
@@ -1071,6 +1095,7 @@ impl SldprtNative {
                 ));
             }
         }
+        drop((history_configurations, history_configurations_storage, history_features, history_features_storage));
         lanes::admit(&native, ctx)?;
         Ok(native)
     }
@@ -1962,13 +1987,13 @@ impl RelationInstanceOwners<'_, '_> {
 /// Owner identities need not be unique: every owner with a record's owner
 /// identity receives the record, the last by move and the others by copy.
 /// A record whose owner is unknown was refused before this call.
-fn attach_to_owners<T: CloneCharged>(
-    ctx: &DecodeContext<'_>,
+fn attach_to_owners<'ctx, T: CloneCharged>(
+    ctx: &'ctx DecodeContext<'_>,
     owner_ids: &[&str],
     records: Vec<T>,
     owner: impl Fn(&T) -> &str,
     ordinal: impl Fn(&T) -> u32,
-) -> Result<Vec<Vec<T>>, cadmpeg_core::CodecError> {
+) -> Result<(Vec<Vec<T>>, cadmpeg_core::decode::ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
     const OPERATION: &str = "attach SLDPRT native records to owners";
     let mut workspace = ctx.reserve_scoped(0, OPERATION)?;
     let mut positions = std::collections::HashMap::<&str, Vec<usize>>::new();
@@ -1977,7 +2002,9 @@ fn attach_to_owners<T: CloneCharged>(
             ctx.push_hash_group(&mut positions, *id, position, OPERATION, OPERATION)
         })?;
     }
-    let mut owned = ctx.collect_indexed_vec(owner_ids.len(), OPERATION, |_| Ok(Vec::new()))?;
+    let (mut owned, outer_storage) = ctx.with_scoped_storage(OPERATION, || {
+        ctx.collect_indexed_vec(owner_ids.len(), OPERATION, |_| Ok(Vec::new()))
+    })?;
     for record in ctx.admit_iter(records, OPERATION)? {
         let Some((&last, others)) = ctx
             .get_hash_map(&positions, owner(&record), OPERATION)?
@@ -1991,10 +2018,11 @@ fn attach_to_owners<T: CloneCharged>(
         }
         ctx.push_vec(&mut owned[last], record, OPERATION)?;
     }
+    drop((positions, workspace));
     for records in ctx.admit_iter(&mut owned, OPERATION)? {
         ctx.stable_sort_by_key(records, &ordinal, Ord::cmp, "sort SLDPRT native records")?;
     }
-    Ok(owned)
+    Ok((owned, outer_storage))
 }
 
 /// The first ordinal two adjacent records of an ordinal-sorted sequence share.
