@@ -855,14 +855,14 @@ impl Native {
     }
 
     /// Sort every arena into canonical identity order.
-    pub(crate) fn finalize(
+    pub(crate) fn finalize_with<A: cadmpeg_core::decode::admission::Admission>(
         &mut self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        admission: &A,
+    ) -> Result<(), A::Error> {
         for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
                 crate::ids::comparison::stable_sort_by_identity(
-                    ctx,
+                    admission,
                     records,
                     NativeRecord::id,
                     "finalize native arena",
