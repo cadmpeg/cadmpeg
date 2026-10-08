@@ -571,16 +571,23 @@ impl SourceFidelity {
             if let Some(prior) =
                 ctx.get_btree_map(namespace.arenas(), "unknowns", "find native unknown arena")?
             {
-                for record in ctx.admit_iter(prior, "copy native unknown records")? {
+                ctx.admit_iter(prior, "copy native unknown records")?;
+                let mut wires = namespace
+                    .arena_iter_as_for_decode::<crate::unknown::NativeUnknownWire>(ctx, "unknowns");
+                loop {
                     let mut storage = ctx.reserve_scoped(0, "read native unknown product")?;
-                    let product = storage.with_storage(|| {
-                        crate::NativeUnknownRecord::from_native_for_decode(
-                            ctx,
-                            record,
-                            "unknowns",
-                            "read native unknown product",
-                        )
-                    });
+                    let Some(product) = storage.with_storage(|| {
+                        Ok::<_, CodecError>(wires.next().map(|record| {
+                            crate::NativeUnknownRecord::from_native_for_decode(
+                                ctx,
+                                record,
+                                "unknowns",
+                                "read native unknown product",
+                            )
+                        }))
+                    })? else {
+                        break;
+                    };
                     let product = match product {
                         Ok(product) => product,
                         Err(CodecError::Malformed(message)) => {
