@@ -1333,7 +1333,7 @@ mod tests {
     }
 
     #[test]
-    fn text_dot_install_propagates_retained_refusal() {
+    fn text_dot_install_propagates_materialized_refusal() {
         let mut payload = vec![0x10];
         for value in [1.0_f64, 2.0, 3.0] {
             payload.extend(value.to_le_bytes());
@@ -1345,14 +1345,54 @@ mod tests {
             V2_TEXT_DOT.to_wire(),
             &payload,
         )]);
-        let error = with_retained_limit(scan.data, 0, |ctx| {
-            install(ctx, &scan, &mut CadIr::empty())
-                .expect_err("dot text refusal must leave the installer")
-        });
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            scan.data, &arena, &policy,
+        )
+        .expect("annotation source fits the root limit");
+        let error = install(&ctx, &scan, &mut CadIr::empty())
+            .expect_err("dot staging refusal must leave the installer");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino V2 text dot primary text"
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                    && limit.operation == "Rhino V2 text dot primary text"
+                    && Some(limit) == ctx.resource_refusal()
+        ));
+    }
+
+    #[test]
+    fn text_dot_install_propagates_retained_output_refusal() {
+        let mut payload = vec![0x10];
+        for value in [1.0_f64, 2.0, 3.0] {
+            payload.extend(value.to_le_bytes());
+        }
+        payload.extend(utf16_bytes("V2 dot"));
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            V2_TEXT_DOT.to_wire(),
+            &payload,
+        )]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            scan.data, &arena, &policy,
+        )
+        .expect("annotation source fits the root limit");
+        let error = install(&ctx, &scan, &mut CadIr::empty())
+            .expect_err("the first native output arena name needs retained storage");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.operation == "retain native arena name"
+                    && limit.used == 0
+                    && limit.additional == "annotations".len() as u64
+                    && Some(limit) == ctx.resource_refusal()
         ));
     }
 

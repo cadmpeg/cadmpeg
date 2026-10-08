@@ -567,8 +567,9 @@ impl DecodeContext<'_> {
         )
     }
 
-    /// Compares equal-length byte slices after admitting the complete scan.
-    /// Unequal lengths need no input-sized comparison.
+    /// Compares byte slices. Unequal lengths need no input-sized comparison;
+    /// equal lengths admit each byte pair before comparing it and stop at the
+    /// first pair that differs.
     pub fn equal_bytes(
         &self,
         left: &[u8],
@@ -585,11 +586,17 @@ impl DecodeContext<'_> {
         right: &[u8],
         operation: &'static str,
     ) -> Result<bool, super::ResourceLimit> {
+        self.charge_work_limit(0, operation)?;
         if left.len() != right.len() {
             return Ok(false);
         }
-        self.charge_work_limit(u64_from_index(left.len()), operation)?;
-        Ok(left == right)
+        for (left, right) in left.iter().zip(right) {
+            self.charge_work_limit(1, operation)?;
+            if left != right {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// Tests every slice value until a resource-only predicate fails, charging
@@ -1398,6 +1405,37 @@ mod tests {
             .equal_bytes(b"", b"", "compare")
             .expect("test operation is admitted"));
     }
+
+    #[test]
+    fn scan_byte_equality_checks_fused_refusal_without_work() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test operation is admitted");
+
+        assert!(!ctx
+            .equal_bytes_limit(b"a", b"ab", "compare")
+            .expect("different lengths need no work"));
+        assert!(ctx
+            .equal_bytes_limit(b"", b"", "compare")
+            .expect("empty slices need no work"));
+
+        let first = ctx
+            .charge_work_limit(1, "refusal")
+            .expect_err("the work limit fuses the session");
+        assert_eq!(
+            ctx.equal_bytes_limit(b"a", b"ab", "compare")
+                .expect_err("different lengths still check the fused session"),
+            first
+        );
+        assert_eq!(
+            ctx.equal_bytes_limit(b"", b"", "compare")
+                .expect_err("empty slices still check the fused session"),
+            first
+        );
+    }
+
     #[test]
     fn charged_sorted_searches_keep_insertion_points_and_first_equal() {
         let arena = DecodeArena::new();
