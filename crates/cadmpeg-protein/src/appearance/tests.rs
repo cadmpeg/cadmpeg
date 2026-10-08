@@ -344,3 +344,26 @@ fn admitted_texture_equality_skips_unvisited_paths() {
     other.paths.clear();
     assert!(!texture.equal_for_decode(&ctx, &other, "unequal path counts").expect("collection lengths are constant work"));
 }
+
+#[test]
+fn texture_projection_preserves_first_named_and_first_usable_fields() {
+    use crate::property::{DecodedProperty, PropertyContent, PropertyValue};
+    let mut record = float_record("UnifiedBitmapSchema", "UScale", 7.0);
+    let field = |value| DecodedProperty {
+        value_offset: 0,
+        content: PropertyContent::Value { value, connections: Vec::new() },
+    };
+    record.properties.insert("a_UScale".into(), field(PropertyValue::Boolean(false)));
+    record.properties.insert("a_Bitmap".into(), field(PropertyValue::String("wrong carrier".into())));
+    record.properties.insert("b_Bitmap".into(), field(PropertyValue::TextureUri(vec!["first path".into()])));
+    record.properties.insert("c_Bitmap".into(), field(PropertyValue::TextureUri(vec!["later path".into()])));
+    record.properties.insert("a_Bitmap_urn".into(), field(PropertyValue::String(String::new())));
+    record.properties.insert("b_Bitmap_urn".into(), field(PropertyValue::String("first urn".into())));
+    record.properties.insert("c_Bitmap_urn".into(), field(PropertyValue::String("later urn".into())));
+    let super::TextureAssetResult::Usable(texture) = texture_for_test(&record).expect("projection") else {
+        panic!("usable texture");
+    };
+    assert_eq!(texture.mapping.u_scale, cadmpeg_ir::scalar::FiniteReal::ONE);
+    assert_eq!(texture.paths, ["first path"]);
+    assert_eq!(texture.urn.as_deref(), Some("first urn"));
+}
