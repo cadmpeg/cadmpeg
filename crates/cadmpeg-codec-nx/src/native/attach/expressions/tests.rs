@@ -104,6 +104,68 @@ fn expression_parameter_identity_retains_exact_text_before_return() {
 }
 
 #[test]
+fn rejected_expression_parameter_identities_do_not_retain_text() {
+    for source in [
+        "other:test:expression#1",
+        "nx:test:expression#",
+        "nx:bad scope:expression#1",
+        "nx:test:extra:expression#1",
+        "nx:test:expression#bad key",
+        "nx:test:expression#bad#key",
+        "nx::expression#1",
+    ] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                assert!(expression_parameter_id(ctx, source).unwrap().is_none());
+                assert_eq!(ctx.resource_refusal(), None);
+                ctx.charge_retained(0, "test rejected parameter identity storage")
+                    .unwrap();
+            },
+        );
+    }
+}
+
+#[test]
+fn expression_parameter_identity_keeps_only_output_in_caller_scratch() {
+    let expected = "nx:test:parameter#μ";
+    let temporary_bytes = "test".len() + "μ".len();
+    let limit = cadmpeg_core::decode::u64_from_index(expected.len() + temporary_bytes);
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = limit;
+        },
+        |ctx| {
+            let mut storage = ctx
+                .reserve_scoped(0, "test parameter identity index")
+                .unwrap();
+            let id = storage
+                .with_storage(|| expression_parameter_id(ctx, "nx:test:expression#μ"))
+                .unwrap()
+                .unwrap();
+            assert_eq!(id.as_str(), expected);
+            let remaining = ctx
+                .reserve_scoped(
+                    cadmpeg_core::decode::u64_from_index(temporary_bytes),
+                    "test released parameter identity intermediates",
+                )
+                .unwrap();
+            drop(remaining);
+            drop(id);
+            drop(storage);
+            let _reused = ctx
+                .reserve_scoped(limit, "test released parameter identity index")
+                .unwrap();
+            ctx.charge_retained(0, "test parameter identity remains scratch")
+                .unwrap();
+        },
+    );
+}
+
+#[test]
 fn expression_dependency_order_releases_index_and_flags() {
     const LIMIT: u64 = 1_000_000;
     let formula = ParameterFormula {
