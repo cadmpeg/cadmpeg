@@ -247,86 +247,90 @@ fn standard_surface_record_table(
     ctx: &DecodeContext<'_>,
     brep: &[u8],
 ) -> Result<StandardSurfaceRecordTable, CodecError> {
-    let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
-    let prefixes = surface_prefixes(ctx, brep)?;
-    for prefix in ctx.admit_iter(&prefixes, "catia_standard_iteration")? {
-        if face_sense(brep, &prefix).is_some() {
-            ctx.insert_btree_map(
-                &mut records,
-                prefix.pos - analytic_plane::MARKER,
-                StandardSurfaceRecord::Analytic(*prefix),
-                "catia_surface_record_tree",
-            )?;
+    let mut table_storage = ctx.reserve_scoped(0, "catia_surface_record_table_scratch")?;
+    let records = table_storage.with_storage(|| -> Result<_, CodecError> {
+        let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
+        let prefixes = surface_prefixes(ctx, brep)?;
+        for prefix in ctx.admit_iter(&prefixes, "catia_standard_iteration")? {
+            if face_sense(brep, &prefix).is_some() {
+                ctx.insert_btree_map(
+                    &mut records,
+                    prefix.pos - analytic_plane::MARKER,
+                    StandardSurfaceRecord::Analytic(*prefix),
+                    "catia_surface_record_tree",
+                )?;
+            }
         }
-    }
-    let mut analytic_ranges = Vec::new();
-    for record in ctx
-        .admit_iter(&records, "catia_standard_iteration")?
-        .map(|(_, value)| value)
-    {
-        if let StandardSurfaceRecord::Analytic(prefix) = record {
-            ctx.push_vec(
-                &mut analytic_ranges,
-                (prefix.pos - analytic_plane::MARKER, record.end()),
-                "catia_surface_analytic_ranges",
-            )?;
-        }
-    }
-    let mut next_analytic = ctx
-        .admit_iter(&analytic_ranges, "catia_surface_analytic_ranges")?
-        .copied()
-        .peekable();
-    if let Some(last) = brep.len().checked_sub(freeform_core::SIGN) {
-        let candidate_bytes = brep.get(..last).ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX)
-        })?;
-        for (pos, _) in ctx
-            .admit_iter(candidate_bytes, "catia_standard_iteration")?
-            .enumerate()
+        let mut analytic_ranges = Vec::new();
+        for record in ctx
+            .admit_iter(&records, "catia_standard_iteration")?
+            .map(|(_, value)| value)
         {
-            if brep.get(pos + freeform_core::ZERO_RUN..pos + freeform_core::BOUNDS)
-                != Some(&[0, 0, 0])
-            {
-                continue;
+            if let StandardSurfaceRecord::Analytic(prefix) = record {
+                ctx.push_vec(
+                    &mut analytic_ranges,
+                    (prefix.pos - analytic_plane::MARKER, record.end()),
+                    "catia_surface_analytic_ranges",
+                )?;
             }
-            while next_analytic
-                .peek()
-                .is_some_and(|(_, analytic_end)| *analytic_end <= pos)
-            {
-                next_analytic.next();
-            }
-            if next_analytic
-                .peek()
-                .is_some_and(|(analytic_start, _)| *analytic_start < pos + freeform_core::LEN)
-            {
-                continue;
-            }
-            let tag = u24_le(brep, pos);
-            let forward = match brep[pos + freeform_core::SIGN] {
-                0x01 => true,
-                0xff => false,
-                _ => continue,
-            };
-            let Some(bounds) = face_bounds_at(brep, pos + freeform_core::BOUNDS) else {
-                continue;
-            };
-            if tag == 0 {
-                continue;
-            }
-            ctx.insert_btree_map(
-                &mut records,
-                pos,
-                StandardSurfaceRecord::Freeform {
-                    pos,
-                    tag,
-                    bounds,
-                    forward,
-                },
-                "catia_surface_record_tree",
-            )?;
         }
-    }
+        let mut next_analytic = ctx
+            .admit_iter(&analytic_ranges, "catia_surface_analytic_ranges")?
+            .copied()
+            .peekable();
+        if let Some(last) = brep.len().checked_sub(freeform_core::SIGN) {
+            let candidate_bytes = brep.get(..last).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX)
+            })?;
+            for (pos, _) in ctx
+                .admit_iter(candidate_bytes, "catia_standard_iteration")?
+                .enumerate()
+            {
+                if brep.get(pos + freeform_core::ZERO_RUN..pos + freeform_core::BOUNDS)
+                    != Some(&[0, 0, 0])
+                {
+                    continue;
+                }
+                while next_analytic
+                    .peek()
+                    .is_some_and(|(_, analytic_end)| *analytic_end <= pos)
+                {
+                    next_analytic.next();
+                }
+                if next_analytic
+                    .peek()
+                    .is_some_and(|(analytic_start, _)| *analytic_start < pos + freeform_core::LEN)
+                {
+                    continue;
+                }
+                let tag = u24_le(brep, pos);
+                let forward = match brep[pos + freeform_core::SIGN] {
+                    0x01 => true,
+                    0xff => false,
+                    _ => continue,
+                };
+                let Some(bounds) = face_bounds_at(brep, pos + freeform_core::BOUNDS) else {
+                    continue;
+                };
+                if tag == 0 {
+                    continue;
+                }
+                ctx.insert_btree_map(
+                    &mut records,
+                    pos,
+                    StandardSurfaceRecord::Freeform {
+                        pos,
+                        tag,
+                        bounds,
+                        forward,
+                    },
+                    "catia_surface_record_tree",
+                )?;
+            }
+        }
 
+        Ok(records)
+    })?;
     let mut ordered_records = Vec::new();
     ctx.reserve_vec(
         &mut ordered_records,
@@ -507,7 +511,8 @@ pub(super) fn standard_surface_records(
     brep: &[u8],
     face_count: usize,
 ) -> Result<Option<Vec<StandardSurfaceRecord>>, CodecError> {
-    let table = standard_surface_record_table(ctx, brep)?;
+    let mut storage = ctx.reserve_scoped(0, "catia_surface_chain_working_state")?;
+    let table = storage.with_storage(|| standard_surface_record_table(ctx, brep))?;
     if face_count == 0 || face_count > table.records.len() {
         return Ok(None);
     }
@@ -515,22 +520,25 @@ pub(super) fn standard_surface_records(
     let successors = &table.successors;
     let remaining_steps = face_count - 1;
     let level_count = index_from_u32(usize::BITS) - index_from_u32(remaining_steps.leading_zeros());
-    let mut jumps = Vec::new();
-    ctx.reserve_vec(&mut jumps, level_count, "catia_surface_jump_levels")?;
-    if level_count > 0 {
-        let mut previous = ctx.copy_slice(successors, "catia_surface_jump_rows")?;
-        for _ in 1..level_count {
-            let mut next = Vec::new();
-            ctx.reserve_vec(&mut next, previous.len(), "catia_surface_jump_rows")?;
-            for successor in ctx.admit_iter(&previous, "catia_standard_iteration")? {
-                next.push(successor.and_then(|middle| previous[middle]));
+    let jumps = storage.with_storage(|| -> Result<_, CodecError> {
+        let mut jumps = Vec::new();
+        ctx.reserve_vec(&mut jumps, level_count, "catia_surface_jump_levels")?;
+        if level_count > 0 {
+            let mut previous = ctx.copy_slice(successors, "catia_surface_jump_rows")?;
+            for _ in 1..level_count {
+                let mut next = Vec::new();
+                ctx.reserve_vec(&mut next, previous.len(), "catia_surface_jump_rows")?;
+                for successor in ctx.admit_iter(&previous, "catia_standard_iteration")? {
+                    next.push(successor.and_then(|middle| previous[middle]));
+                }
+                jumps.push(previous);
+                previous = next;
             }
             jumps.push(previous);
-            previous = next;
         }
-        jumps.push(previous);
-    }
 
+        Ok(jumps)
+    })?;
     let mut solution_start = None;
     for (start, _) in ctx
         .admit_iter(ordered_records, "catia_standard_iteration")?
