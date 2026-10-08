@@ -115,7 +115,10 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
             cadmpeg_core::decode::u64_from_index(second)
         ])
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let cache = std::cell::OnceCell::new();
     assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(&ctx, &payload, &entities[1], &markers, &cache).unwrap(), None);
     assert!(cache.get().is_none());

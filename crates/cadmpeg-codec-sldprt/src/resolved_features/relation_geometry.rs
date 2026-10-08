@@ -143,7 +143,7 @@ fn ensure_spatial_relation_point(
         )
     };
     let first = next()?;
-    if next()?.is_some() {
+    if first.is_some() && next()?.is_some() {
         return Ok(None);
     }
     if first.is_some_and(|entity| {
@@ -201,79 +201,112 @@ fn copy_spatial_sketch_id(
     id.try_clone_for_decode(ctx, "copy SLDPRT spatial sketch identity")
 }
 
-#[derive(Default)]
-struct SpatialRelationMarkerRoster<'a> {
-    points: Vec<(&'a SketchInputEntity, Point3)>,
-    lines: Vec<(&'a SketchInputEntity, Point3)>,
+/// Sorted coordinate points for solved-line fallbacks of queried features.
+struct SolvedLinePoints<'a, 'ctx> {
+    by_feature: BTreeMap<&'a str, Vec<&'a SketchInputEntity>>,
+    storage: ScopedReservation<'ctx>,
 }
 
-/// Raw spatial carriers grouped by feature, with every occurrence retained.
-struct SpatialRelationMarkers<'a> {
-    by_feature: BTreeMap<&'a str, SpatialRelationMarkerRoster<'a>>,
-}
+impl<'a, 'ctx> SolvedLinePoints<'a, 'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self { by_feature: BTreeMap::new(), storage: ctx.reserve_scoped(0, "index SLDPRT solved-line point markers")? })
+    }
 
-impl<'a> SpatialRelationMarkers<'a> {
-    fn new<'ctx>(
-        ctx: &'ctx DecodeContext<'_>,
-        lane: &'a FeatureInputLane,
-    ) -> Result<(Self, ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
-        const OPERATION: &str = "index SLDPRT spatial relation markers";
-        ctx.with_scoped_storage(OPERATION, || {
-            let mut by_feature = BTreeMap::<_, SpatialRelationMarkerRoster<'_>>::new();
-            for marker in ctx.admit_iter(&lane.sketch_entities, OPERATION)? {
-                let (Some(feature), Ok(offset)) = (
-                    marker.feature_ref.as_deref(),
-                    usize::try_from(marker.offset()),
-                ) else {
-                    continue;
-                };
-                let Some(code) = marker_native_code(&lane.native_payload, offset) else {
-                    continue;
-                };
-                let point = matches!(code, 2..=5);
-                if !(point || code == 0 && marker.object_index().is_some()) {
-                    continue;
-                }
-                let Some(coordinates) =
-                    spatial_relation_marker_coordinates(&lane.native_payload, offset)
-                else {
-                    continue;
-                };
-                let roster = ctx
-                    .entry_btree_map(&mut by_feature, feature, OPERATION)?
-                    .or_default();
-                let candidates = if point {
-                    &mut roster.points
-                } else {
-                    &mut roster.lines
-                };
-                ctx.push_vec(candidates, (marker, coordinates), OPERATION)?;
+    fn roster(&mut self, ctx: &DecodeContext<'_>, lane: &'a FeatureInputLane, feature: &'a str)
+        -> Result<&[&'a SketchInputEntity], cadmpeg_core::CodecError> {
+        const OPERATION: &str = "index SLDPRT solved-line point markers";
+        let entry = self.storage.with_storage(|| ctx.entry_btree_map(&mut self.by_feature, feature, OPERATION))?;
+        Ok(match entry {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let points = self.storage.with_storage(|| {
+                    let mut points = Vec::new();
+                    for marker in ctx.admit_iter(&lane.sketch_entities, OPERATION)? {
+                        if marker.coordinates_m.is_some()
+                            && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
+                            && ctx.equal(&marker.feature_ref.as_deref(), &Some(feature), OPERATION)? {
+                            ctx.push_vec(&mut points, marker, OPERATION)?;
+                        }
+                    }
+                    ctx.stable_sort_by_key(&mut points, |marker| marker.offset(), Ord::cmp, OPERATION)?;
+                    Ok::<_, cadmpeg_core::CodecError>(points)
+                })?;
+                entry.insert(points)
             }
-            for (_, roster) in ctx.admit_iter(&mut by_feature, OPERATION)? {
-                ctx.sort_unstable_by_key(
-                    &mut roster.points,
-                    |(marker, _)| marker.offset(),
-                    Ord::cmp,
-                    OPERATION,
-                )?;
-                ctx.sort_unstable_by_key(
-                    &mut roster.lines,
-                    |(marker, _)| marker.offset(),
-                    Ord::cmp,
-                    OPERATION,
-                )?;
-            }
-            Ok(Self { by_feature })
         })
     }
 }
 
-fn spatial_relation_point_line_entities(
+enum SpatialCarrier {
+    Point,
+    Line,
+}
+
+/// Point and line rosters of queried features, built separately on first use.
+struct SpatialRelationMarkers<'a, 'ctx> {
+    lane: &'a FeatureInputLane,
+    points: BTreeMap<&'a str, Vec<(&'a SketchInputEntity, Point3)>>,
+    lines: BTreeMap<&'a str, Vec<(&'a SketchInputEntity, Point3)>>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'a, 'ctx> SpatialRelationMarkers<'a, 'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>, lane: &'a FeatureInputLane) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            lane,
+            points: BTreeMap::new(),
+            lines: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "index SLDPRT spatial relation markers")?,
+        })
+    }
+
+    fn roster(&mut self, ctx: &DecodeContext<'_>, feature: &'a str, carrier: SpatialCarrier)
+        -> Result<&[(&'a SketchInputEntity, Point3)], cadmpeg_core::CodecError> {
+        let lane = self.lane;
+        let operation = match carrier {
+            SpatialCarrier::Point => "index SLDPRT spatial relation point markers",
+            SpatialCarrier::Line => "index SLDPRT spatial relation line markers",
+        };
+        let rosters = match carrier {
+            SpatialCarrier::Point => &mut self.points,
+            SpatialCarrier::Line => &mut self.lines,
+        };
+        let entry = self.storage.with_storage(|| ctx.entry_btree_map(rosters, feature, operation))?;
+        let roster = match entry {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let roster = self.storage.with_storage(|| {
+                    let mut roster = Vec::new();
+                    for marker in ctx.admit_iter(&lane.sketch_entities, operation)? {
+                        if !ctx.equal(&marker.feature_ref.as_deref(), &Some(feature), operation)? {
+                            continue;
+                        }
+                        let Ok(offset) = usize::try_from(marker.offset()) else { continue; };
+                        let Some(code) = marker_native_code(&lane.native_payload, offset) else { continue; };
+                        let qualifies = match carrier {
+                            SpatialCarrier::Point => matches!(code, 2..=5),
+                            SpatialCarrier::Line => code == 0 && marker.object_index().is_some(),
+                        };
+                        if !qualifies { continue; }
+                        let Some(coordinates) = spatial_relation_marker_coordinates(&lane.native_payload, offset) else { continue; };
+                        ctx.push_vec(&mut roster, (marker, coordinates), operation)?;
+                    }
+                    ctx.sort_unstable_by_key(&mut roster, |(marker, _)| marker.offset(), Ord::cmp, operation)?;
+                    Ok::<_, cadmpeg_core::CodecError>(roster)
+                })?;
+                entry.insert(roster)
+            }
+        };
+        Ok(roster)
+    }
+}
+
+fn spatial_relation_point_line_entities<'a>(
     ctx: &DecodeContext<'_>,
-    relation: &FeatureInputRelationInstance,
+    relation: &'a FeatureInputRelationInstance,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
-    markers: &SpatialRelationMarkers<'_>,
+    markers: &mut SpatialRelationMarkers<'a, '_>,
     entities: &mut Vec<SpatialSketchEntity>,
 ) -> Result<Option<(SpatialSketchEntityId, SpatialSketchEntityId)>, cadmpeg_core::CodecError> {
     let Some(value) = parameter.value.as_ref() else {
@@ -283,18 +316,10 @@ fn spatial_relation_point_line_entities(
         cadmpeg_ir::features::ParameterValue::Length(length) => length.get().abs(),
         _ => return Ok(None),
     };
-    let Some(roster) = ctx.get_btree_map(
-        &markers.by_feature,
-        relation.feature_ref.as_str(),
-        "resolve SLDPRT spatial relation markers",
-    )?
-    else {
-        return Ok(None);
-    };
-    let point_markers = &roster.points;
     let Some(point_operand) = relation.operands.first() else {
         return Ok(None);
     };
+    let point_markers = markers.roster(ctx, &relation.feature_ref, SpatialCarrier::Point)?;
     let point_marker_by_reference = if let Some(entity_ref) = point_operand.entity_ref.as_deref() {
         let mut found_index = None;
         let mut steps = point_markers.iter().enumerate();
@@ -321,7 +346,7 @@ fn spatial_relation_point_line_entities(
     };
     let (point_marker, point) = *point_marker;
 
-    let line_markers = &roster.lines;
+    let line_markers = markers.roster(ctx, &relation.feature_ref, SpatialCarrier::Line)?;
     let mut pairs = line_markers.chunks_exact(2);
     let mut next_match = || {
         ctx.find_map(
@@ -336,10 +361,12 @@ fn spatial_relation_point_line_entities(
             "select SLDPRT spatial relation line pair",
         )
     };
-    let (Some((start_marker, start, end_marker, end)), None) = (next_match()?, next_match()?)
-    else {
+    let Some((start_marker, start, end_marker, end)) = next_match()? else {
         return Ok(None);
     };
+    if next_match()?.is_some() {
+        return Ok(None);
+    }
 
     let Some(start_id) = ensure_spatial_relation_point(ctx, entities, sketch, start_marker, start)?
     else {
@@ -521,7 +548,7 @@ pub(crate) fn project_spatial_relation_bindings(
         }
     }
     for lane in ctx.admit_iter(lanes, "scan SLDPRT spatial relation lanes")? {
-        let spatial_markers = std::cell::OnceCell::new();
+        let mut spatial_markers = SpatialRelationMarkers::new(ctx, lane)?;
         let lane_key = ctx
             .rsplit_once(&lane.id, "#", "split SLDPRT spatial relation lane identity")?
             .map_or(lane.id.as_str(), |(_, key)| key);
@@ -561,15 +588,8 @@ pub(crate) fn project_spatial_relation_bindings(
                             parameter.value.as_ref(),
                             Some(cadmpeg_ir::features::ParameterValue::Length(_))
                         ) {
-                            let (markers, _) = match spatial_markers.get() {
-                                Some(markers) => markers,
-                                None => {
-                                    let built = SpatialRelationMarkers::new(ctx, lane)?;
-                                    spatial_markers.get_or_init(|| built)
-                                }
-                            };
                             spatial_relation_point_line_entities(
-                                ctx, relation, sketch, parameter, markers, entities,
+                                ctx, relation, sketch, parameter, &mut spatial_markers, entities,
                             )?
                         } else {
                             None
@@ -738,6 +758,7 @@ pub(crate) fn project_relation_point_geometry(
             })?;
         }
     }
+    let mut operand_storage = ctx.reserve_scoped(0, "SLDPRT relation operand workspace")?;
     let mut point_operands = HashSet::new();
     let mut curve_operands = HashSet::new();
     let mut referenced = HashSet::new();
@@ -756,17 +777,16 @@ pub(crate) fn project_relation_point_geometry(
                 _ => 0,
             };
             for operand in ctx
-                .admit_iter(&relation.operands, "index SLDPRT relation-point operands")?
-                .take(count)
+                .admit_iter(&relation.operands[..count.min(relation.operands.len())], "index SLDPRT relation-point operands")?
             {
                 let Some(id) = operand.entity_ref.as_deref() else {
                     continue;
                 };
-                ctx.insert_hash_set(
+                operand_storage.with_storage(|| ctx.insert_hash_set(
                     &mut point_operands,
                     id,
                     "index SLDPRT relation-point operands",
-                )?;
+                ))?;
             }
             let first = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance
@@ -775,17 +795,16 @@ pub(crate) fn project_relation_point_geometry(
                 _ => relation.operands.len(),
             };
             for operand in ctx
-                .admit_iter(&relation.operands, "index SLDPRT relation-curve operands")?
-                .skip(first)
+                .admit_iter(&relation.operands[first.min(relation.operands.len())..], "index SLDPRT relation-curve operands")?
             {
                 let Some(id) = operand.entity_ref.as_deref() else {
                     continue;
                 };
-                ctx.insert_hash_set(
+                operand_storage.with_storage(|| ctx.insert_hash_set(
                     &mut curve_operands,
                     id,
                     "index SLDPRT relation-curve operands",
-                )?;
+                ))?;
             }
             for operand in ctx.admit_iter(
                 &relation.operands,
@@ -794,11 +813,11 @@ pub(crate) fn project_relation_point_geometry(
                 let Some(id) = operand.entity_ref.as_deref() else {
                     continue;
                 };
-                if ctx.insert_hash_set(
+                if operand_storage.with_storage(|| ctx.insert_hash_set(
                     &mut referenced,
                     id,
                     "index SLDPRT referenced relation markers",
-                )? {
+                ))? {
                     link_storage.with_storage(|| {
                         ctx.push_vec(&mut pending, id, "index SLDPRT referenced relation markers")
                     })?;
@@ -812,11 +831,11 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             }
             let id = marker.id();
-            if ctx.insert_hash_set(
+            if operand_storage.with_storage(|| ctx.insert_hash_set(
                 &mut referenced,
                 id,
                 "index SLDPRT referenced relation markers",
-            )? {
+            ))? {
                 link_storage.with_storage(|| {
                     ctx.push_vec(&mut pending, id, "index SLDPRT referenced relation markers")
                 })?;
@@ -871,11 +890,11 @@ pub(crate) fn project_relation_point_geometry(
             continue;
         };
         for &adjacent in ctx.admit_iter(adjacent, "expand SLDPRT referenced relation markers")? {
-            if ctx.insert_hash_set(
+            if operand_storage.with_storage(|| ctx.insert_hash_set(
                 &mut referenced,
                 adjacent,
                 "index SLDPRT referenced relation markers",
-            )? {
+            ))? {
                 link_storage.with_storage(|| {
                     ctx.push_vec(
                         &mut pending,
@@ -1215,7 +1234,7 @@ pub(crate) fn project_relation_point_geometry(
             else {
                 continue;
             };
-            let (curve_index, _) = match curve_markers.get() {
+            let curve_index = match curve_markers.get() {
                 Some(index) => index,
                 None => {
                     let built = CurveMarkers::new(ctx, &marker_roster)?;
@@ -1624,7 +1643,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 Ok::<_, cadmpeg_core::CodecError>((roster, by_id))
             })?;
         let curve_markers = std::cell::OnceCell::new();
-        let point_rosters = std::cell::OnceCell::new();
+        let point_rosters = std::cell::RefCell::new(SolvedLinePoints::new(ctx)?);
         let geometry =
             crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                 ctx,
@@ -1764,48 +1783,6 @@ pub(crate) fn project_relation_solved_line_geometry(
             if !expected.is_finite() || expected < 0.0 {
                 continue;
             }
-            let (point_rosters, _) = match point_rosters.get() {
-                Some(rosters) => rosters,
-                None => {
-                    const OPERATION: &str = "index SLDPRT solved-line point markers";
-                    let built = ctx.with_scoped_storage(OPERATION, || {
-                        let mut rosters = BTreeMap::new();
-                        for marker in ctx.admit_iter(&lane.sketch_entities, OPERATION)? {
-                            if marker.coordinates_m.is_some()
-                                && matches!(
-                                    marker.kind(),
-                                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                                )
-                            {
-                                ctx.push_btree_group(
-                                    &mut rosters,
-                                    marker.feature_ref.as_deref(),
-                                    marker,
-                                    OPERATION,
-                                    OPERATION,
-                                )?;
-                            }
-                        }
-                        for (_, points) in ctx.admit_iter(&mut rosters, OPERATION)? {
-                            ctx.stable_sort_by_key(
-                                points,
-                                |marker| marker.offset(),
-                                Ord::cmp,
-                                OPERATION,
-                            )?;
-                        }
-                        Ok::<_, cadmpeg_core::CodecError>(rosters)
-                    })?;
-                    point_rosters.get_or_init(|| built)
-                }
-            };
-            let points = ctx
-                .get_btree_map(
-                    point_rosters,
-                    &Some(relation.feature_ref.as_str()),
-                    "resolve SLDPRT solved-line point markers",
-                )?
-                .map_or(&[][..], Vec::as_slice);
             let endpoint_line_markers = |operand_index: usize| -> Result<
                 Option<[&SketchInputEntity; 2]>,
                 cadmpeg_core::CodecError,
@@ -1825,7 +1802,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let Some(marker) = marker else {
                     return Ok(None);
                 };
-                let (curve_index, _) = match curve_markers.get() {
+                let curve_index = match curve_markers.get() {
                     Some(index) => index,
                     None => {
                         let built = CurveMarkers::new(ctx, &marker_roster)?;
@@ -1848,9 +1825,11 @@ pub(crate) fn project_relation_solved_line_geometry(
                 };
                 Ok(Some([*first, *second]))
             };
-            let fallback_line_markers = |index: u16| {
-                let pair = usize::from(index).checked_mul(2)?;
-                Some([*points.get(pair)?, *points.get(pair + 1)?])
+            let fallback_line_markers = |index: u16| -> Result<Option<[&SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
+                let mut rosters = point_rosters.borrow_mut();
+                let points = rosters.roster(ctx, lane, &relation.feature_ref)?;
+                let Some(pair) = usize::from(index).checked_mul(2) else { return Ok(None); };
+                Ok(points.get(pair).copied().zip(points.get(pair + 1).copied()).map(|(first, second)| [first, second]))
             };
             let point_marker = if relation.family == FeatureInputRelationFamily::PointLineDistance {
                 let explicit = if let Some(id) = first_operand.entity_ref.as_deref() {
@@ -1880,12 +1859,12 @@ pub(crate) fn project_relation_solved_line_geometry(
                         }
                     }
                 };
-                resolved.or_else(|| {
-                    (first_operand.kind
-                        == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD))
-                    .then(|| points.get(usize::from(first_operand.entity_index)).copied())
-                    .flatten()
-                })
+                if resolved.is_none() && first_operand.kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD) {
+                    let mut rosters = point_rosters.borrow_mut();
+                    rosters.roster(ctx, lane, &relation.feature_ref)?.get(usize::from(first_operand.entity_index)).copied()
+                } else {
+                    resolved
+                }
             } else {
                 None
             };
@@ -2163,10 +2142,12 @@ pub(crate) fn project_relation_solved_line_geometry(
                     ctx.admit_iter(&line_operands, "build SLDPRT relation operand lines")?
                 {
                     let markers = if prefer_marker_endpoints {
-                        endpoint_line_markers(operand_index)?
-                            .or_else(|| fallback_line_markers(operand.entity_index))
+                        match endpoint_line_markers(operand_index)? {
+                            Some(markers) => Some(markers),
+                            None => fallback_line_markers(operand.entity_index)?,
+                        }
                     } else {
-                        fallback_line_markers(operand.entity_index)
+                        fallback_line_markers(operand.entity_index)?
                     };
                     let Some(markers) = markers else {
                         return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?));
@@ -3361,12 +3342,8 @@ pub(super) fn implicit_circle_marker<'a>(
     sort_handle_markers(ctx, &mut markers)?;
 
     let pair = if markers.len() % 2 == 0 {
-        let pair_width = std::num::NonZeroUsize::new(2).ok_or_else(|| {
-            ctx.refuse_codec_limit("select SLDPRT ordered circle-marker pair", 1, 0)
-        })?;
-        ctx.admit_iter(&markers, "select SLDPRT ordered circle-marker pair")?
-            .chunks(pair_width)
-            .nth(usize::from(index))
+        usize::from(index).checked_mul(2)
+            .and_then(|start| start.checked_add(2).and_then(|end| markers.get(start..end)))
     } else {
         None
     };
@@ -3532,9 +3509,12 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
                 DIMENSIONED_HANDLE_OPERATION,
             )
         };
-        let (Some(slot_class), None) = (next_slot()?, next_slot()?) else {
+        let Some(slot_class) = next_slot()? else {
             return Ok(None);
         };
+        if next_slot()?.is_some() {
+            return Ok(None);
+        }
         let next_class = ctx.min_by_key(
             &lane.classes,
             |class| Ok((class.offset > slot_class.offset, class.offset)),
@@ -3587,11 +3567,15 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
             DIMENSIONED_HANDLE_OPERATION,
         )
     };
-    let (Some(slot_index), Some(center_index), None) =
-        (next_reference()?, next_reference()?, next_reference()?)
-    else {
+    let Some(slot_index) = next_reference()? else {
         return Ok(None);
     };
+    let Some(center_index) = next_reference()? else {
+        return Ok(None);
+    };
+    if next_reference()?.is_some() {
+        return Ok(None);
+    }
     let (Ok(slot_index), Ok(center_index)) =
         (u32::try_from(slot_index), u32::try_from(center_index))
     else {
@@ -3703,12 +3687,8 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     )? {
         return Ok(None);
     }
-    let pair_width = std::num::NonZeroUsize::new(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("select SLDPRT indexed circle-marker pair", 1, 0))?;
-    let selected_pair = ctx
-        .admit_iter(&markers, "select SLDPRT indexed circle-marker pair")?
-        .chunks(pair_width)
-        .nth(usize::from(operand.entity_index));
+    let selected_pair = usize::from(operand.entity_index).checked_mul(2)
+        .and_then(|start| start.checked_add(2).and_then(|end| markers.get(start..end)));
     Ok((|| {
         let pair = selected_pair?;
         let [center, radial] = pair else {
@@ -4440,28 +4420,6 @@ pub(crate) fn project_relation_bindings(
                 .transpose()?
                 .unwrap_or(false);
             let native_kind = relation_native_kind(relation.family);
-            let mut entities = Vec::new();
-            for marker in ctx
-                .admit_iter(
-                    &relation.operands,
-                    "resolve SLDPRT planar relation operands",
-                )?
-                .filter_map(|operand| operand.entity_ref.as_deref())
-            {
-                ctx.extend_vec(
-                    &mut entities,
-                    marker_entities(
-                        ctx,
-                        marker,
-                        markers_by_id,
-                        &loci_by_marker,
-                        MarkerEntityFilter::All,
-                    )?,
-                    "collect SLDPRT planar relation entities",
-                )?;
-            }
-            ctx.sort_unstable_by(&mut entities, |value| value.as_str(), Ord::cmp, ENTITY_SORT)?;
-            ctx.dedup_vec(&mut entities, ENTITY_SORT)?;
             let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance
                 | FeatureInputRelationFamily::PointPointVerticalDistance => {
@@ -4507,6 +4465,28 @@ pub(crate) fn project_relation_bindings(
             let definition = if let Some(definition) = typed_definition {
                 definition
             } else {
+                let mut entities = Vec::new();
+                for marker in ctx
+                    .admit_iter(
+                        &relation.operands,
+                        "resolve SLDPRT planar relation operands",
+                    )?
+                    .filter_map(|operand| operand.entity_ref.as_deref())
+                {
+                    ctx.extend_vec(
+                        &mut entities,
+                        marker_entities(
+                            ctx,
+                            marker,
+                            markers_by_id,
+                            &loci_by_marker,
+                            MarkerEntityFilter::All,
+                        )?,
+                        "collect SLDPRT planar relation entities",
+                    )?;
+                }
+                ctx.sort_unstable_by(&mut entities, |value| value.as_str(), Ord::cmp, ENTITY_SORT)?;
+                ctx.dedup_vec(&mut entities, ENTITY_SORT)?;
                 let mut operands = Vec::new();
                 for operand in ctx.admit_iter(
                     &relation.operands,
@@ -5055,11 +5035,6 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
                 || operand.kind != first_kind
                 || operand.kind != relation.operands[0].kind
                 || !ctx.equal(name, first_name, "compare SLDPRT display scalar names")?
-                || ctx.contains_btree_set(
-                    &entity_indices,
-                    &operand.entity_index,
-                    "match SLDPRT display relation entities",
-                )?
             {
                 return Ok(false);
             }
@@ -5069,9 +5044,7 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
                     operand.entity_index,
                     "index SLDPRT display relation entities",
                 )
-            })?;
-
-            Ok(true)
+            })
         },
         "scan SLDPRT display relation scalars",
     )? {
@@ -5106,7 +5079,7 @@ fn relation_parameter_by_relation_id<'a>(
         )
     };
     let first = next()?;
-    if next()?.is_some() {
+    if first.is_some() && next()?.is_some() {
         return Ok(None);
     }
     Ok(first)

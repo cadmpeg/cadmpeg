@@ -537,24 +537,57 @@ fn assert_owned_loci_refusal(
     dimension: ResourceDimension,
     project: impl Fn(&DecodePolicy) -> Result<(), CodecError>,
 ) {
+    let set_limit = |policy: &mut DecodePolicy, limit: u64| match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
+        ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = limit,
+        _ => panic!("unexpected owned locus budget dimension"),
+    };
     project(&DecodePolicy::service()).unwrap();
-    let operation = match dimension {
-        ResourceDimension::CollectionItems | ResourceDimension::WorkUnits => {
-            "index SLDPRT planar relation sketches"
+    let mut upper = 1u64;
+    loop {
+        let mut policy = DecodePolicy::service();
+        set_limit(&mut policy, upper);
+        match project(&policy) {
+            Ok(()) => break,
+            Err(CodecError::ResourceLimit(limit)) => assert_eq!(limit.dimension, dimension),
+            Err(error) => panic!("unexpected projection error: {error}"),
         }
+        upper = upper.checked_mul(2).unwrap();
+    }
+    let mut lower = 0;
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        let mut policy = DecodePolicy::service();
+        set_limit(&mut policy, middle);
+        match project(&policy) {
+            Ok(()) => upper = middle,
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, dimension);
+                lower = middle + 1;
+            }
+            Err(error) => panic!("unexpected projection error: {error}"),
+        }
+    }
+    assert!(upper > 0);
+    let mut policy = DecodePolicy::service();
+    set_limit(&mut policy, upper);
+    project(&policy).unwrap();
+    set_limit(&mut policy, upper - 1);
+    let CodecError::ResourceLimit(limit) = project(&policy).unwrap_err() else {
+        panic!("one unit below the complete route must refuse its resource limit");
+    };
+    assert_eq!(limit.dimension, dimension);
+    let operation = match dimension {
+        ResourceDimension::CollectionItems | ResourceDimension::WorkUnits => "index SLDPRT planar relation sketches",
         ResourceDimension::RetainedBytes => "copy SLDPRT planar sketch identity",
-        ResourceDimension::RecursionDepth => "resolve SLDPRT linked marker entities",
+        ResourceDimension::RecursionDepth => limit.operation,
         _ => panic!("unexpected owned locus budget dimension"),
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            _ => panic!("unexpected owned locus budget dimension"),
-        }
+        set_limit(&mut policy, cap);
         project(&policy)
     });
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
@@ -1227,3 +1260,55 @@ mod address_markers;
 mod axis_markers;
 
 mod native_markers;
+
+#[test]
+fn relation_point_operand_workspace_is_scoped_without_output() {
+    use crate::records::FeatureInputRelationFamily;
+    let mut lane = relation_lane();
+    lane.relation_instances[0].family = FeatureInputRelationFamily::PointLineDistance;
+    lane.relation_instances[0].operands = (0u16..2).map(|index| FeatureInputOperand {
+        offset: u64::from(index), reference_ref: format!("reference-{index}"),
+        kind: FeatureInputOperandKind::D6, entity_index: index,
+        entity_ref: Some(format!("marker-{index}")),
+    }).collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut entities = Vec::new();
+    project_relation_point_geometry(&ctx, &mut entities, &[], &[], &[lane]).unwrap();
+    assert!(entities.is_empty());
+    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released operand workspace").unwrap();
+}
+
+#[test]
+fn relation_without_point_operands_does_not_admit_the_operand_roster() {
+    use crate::records::FeatureInputRelationFamily;
+    let mut lane = relation_lane();
+    lane.relation_instances[0].family = FeatureInputRelationFamily::CircleDiameter;
+    lane.relation_instances[0].operands = (0u16..20).map(|index| FeatureInputOperand {
+        offset: u64::from(index), reference_ref: format!("reference-{index}"),
+        kind: FeatureInputOperandKind::D6, entity_index: index,
+        entity_ref: Some(format!("marker-{index}")),
+    }).collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits,
+        "index SLDPRT relation-point operands", None);
+    let mut entities = Vec::new();
+    project_relation_point_geometry(&ctx, &mut entities, &[], &[], &[lane]).unwrap();
+    assert!(entities.is_empty());
+}
+
+#[test]
+fn relation_parameter_lookup_does_not_retry_an_empty_roster() {
+    let lane = relation_lane();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(super::relation_parameter_by_relation_id(&ctx, &lane.relation_instances[0], &[]).unwrap().is_none());
+}
