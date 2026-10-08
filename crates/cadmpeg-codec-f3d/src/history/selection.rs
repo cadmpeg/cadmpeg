@@ -369,20 +369,10 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
                 }
                 return Ok(false);
             }
-            let Some(group) = index.groups.get(ctx, native.as_str())? else {
+            let Some(group) = super::scope_group(ctx, &index.groups, scope, native, |_| true)? else {
                 return Ok(false);
             };
-            if group.scope_record_index != scope.record_index {
-                return Ok(false);
-            }
             let stream = super::native_stream_of(ctx, &scope.id)?;
-            if !ctx.equal(
-                &super::native_stream_of(ctx, &group.id)?,
-                &stream,
-                "compare F3D face selection group stream",
-            )? {
-                return Ok(false);
-            }
             if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
             ctx,
@@ -472,21 +462,11 @@ pub(super) fn bind_body_recipe_face_selection<'a, 'ctx>(
             let FaceSelection::Native(native) = selection else {
                 return Ok(false);
             };
-            let Some(group) = index.groups.get(ctx, native.as_str())? else {
+            let Some(group) = super::scope_group(ctx, &index.groups, scope, native, |group| group.role() == DesignOperandRole::ROLE_0X5)? else {
                 return Ok(false);
             };
-            if group.scope_record_index != scope.record_index
-                || group.role() != DesignOperandRole::ROLE_0X5
-            {
-                return Ok(false);
-            }
             let stream = super::native_stream_of(ctx, &scope.id)?;
-            if !ctx.equal(
-                &super::native_stream_of(ctx, &group.id)?,
-                &stream,
-                "compare F3D body recipe face selection group stream",
-            )? || group.members().is_empty()
-            {
+            if group.members().is_empty() {
                 return Ok(false);
             }
             let mut slots_storage = ctx.reserve_scoped(0, "collect F3D body recipe face slots")?;

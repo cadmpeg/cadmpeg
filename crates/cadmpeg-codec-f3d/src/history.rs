@@ -505,7 +505,15 @@ pub(crate) fn bind_feature_outputs(
             .map(|_| ())
         })?;
     }
-    let scopes = scope_index(scopes);
+    let mut scope_storage = ctx.reserve_scoped(0, "index F3D feature scopes")?;
+    let mut first_scopes = HashMap::new();
+    for scope in ctx.admit_iter(scopes, "index F3D feature scopes")? {
+        scope_storage.with_storage(|| {
+            ctx.entry_hash_map(&mut first_scopes, scope.id.as_str(), "index F3D feature scopes")?
+                .or_insert(scope);
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })?;
+    }
     // Affected bodies per state, computed only for states a feature names.
     let mut outputs_storage = ctx.reserve_scoped(0, "collect F3D feature output states")?;
     let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
@@ -513,7 +521,7 @@ pub(crate) fn bind_feature_outputs(
         let Some(id) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some(scope) = scopes.get(ctx, id)? else {
+        let Some(&scope) = ctx.get_hash_map(&first_scopes, id, "index F3D feature scopes")? else {
             continue;
         };
         let (Some(state_id), Some(previous_state_id)) =
@@ -905,38 +913,64 @@ pub(crate) fn scope_index<'ctx>(scopes: &[DesignScope]) -> ScopeIndex<'_, 'ctx> 
     )
 }
 
-/// Operand groups by native ID. Each group ID names one native record.
-pub(crate) type GroupIndex<'a, 'ctx> = UniqueIndex<'a, 'ctx, &'a str, OperandGroup>;
+/// Operand groups by native ID and owning scope record. Eligibility is
+/// applied within a bucket before requiring a unique group.
+type GroupsById<'a> = HashMap<(&'a str, u32), Vec<&'a OperandGroup>>;
 
-pub(crate) fn group_index<'ctx>(groups: &[OperandGroup]) -> GroupIndex<'_, 'ctx> {
-    UniqueIndex::new(
-        groups,
-        |_, group| Ok(Some(group.id.as_str())),
-        "index F3D operand groups",
-    )
+pub(crate) struct GroupIndex<'a, 'ctx> {
+    values: &'a [OperandGroup],
+    table: std::cell::OnceCell<(
+        GroupsById<'a>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
 }
 
-/// Returns the group named `id` when it belongs to `scope`'s stream and record
-/// and passes `accept`.
+pub(crate) fn group_index<'ctx>(groups: &[OperandGroup]) -> GroupIndex<'_, 'ctx> {
+    GroupIndex { values: groups, table: std::cell::OnceCell::new() }
+}
+
+/// Returns the only group named `id` that belongs to `scope`'s stream and
+/// record and passes `accept`.
 fn scope_group<'a, 'ctx>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     groups: &GroupIndex<'a, 'ctx>,
     scope: &DesignScope,
     id: &str,
-    accept: impl FnOnce(&OperandGroup) -> bool,
+    mut accept: impl FnMut(&OperandGroup) -> bool,
 ) -> Result<Option<&'a OperandGroup>, cadmpeg_core::CodecError> {
-    let Some(group) = groups.get(ctx, id)? else {
+    let operation = "index F3D operand groups";
+    let (table, _) = match groups.table.get() {
+        Some(table) => table,
+        None => {
+            let mut storage = ctx.reserve_scoped(0, operation)?;
+            let mut table = HashMap::new();
+            for group in ctx.admit_iter(groups.values, operation)? {
+                storage.with_storage(|| ctx.push_hash_group(
+                    &mut table, (group.id.as_str(), group.scope_record_index), group,
+                    operation, operation,
+                ))?;
+            }
+            groups.table.get_or_init(|| (table, storage))
+        }
+    };
+    let Some(bucket) = ctx.get_hash_map(table, &(id, scope.record_index), operation)? else {
         return Ok(None);
     };
-    if group.scope_record_index != scope.record_index || !accept(group) {
+    let stream = native_stream_of(ctx, &scope.id)?;
+    let mut eligible = |group: &&OperandGroup| {
+        if !accept(group) { return Ok(false); }
+        ctx.equal(
+            &native_stream_of(ctx, &group.id)?, &stream,
+            "compare F3D operand group stream",
+        )
+    };
+    let Some(position) = ctx.position_by(bucket, &mut eligible, "find F3D eligible operand group")? else {
+        return Ok(None);
+    };
+    if ctx.any_by(&bucket[position + 1..], eligible, "find F3D eligible operand group")? {
         return Ok(None);
     }
-    let same_stream = ctx.equal(
-        &native_stream_of(ctx, &group.id)?,
-        &native_stream_of(ctx, &scope.id)?,
-        "compare F3D operand group stream",
-    )?;
-    Ok(same_stream.then_some(group))
+    Ok(Some(bucket[position]))
 }
 
 /// Stream, owning group record, member ordinal and record of a group-owned

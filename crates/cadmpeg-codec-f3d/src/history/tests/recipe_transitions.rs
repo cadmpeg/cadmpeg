@@ -1611,3 +1611,54 @@ fn missing_face_member_releases_copied_identity_prefix() {
         .unwrap();
     assert_eq!(selection, FaceSelection::Native(group_id.into()));
 }
+
+#[test]
+fn scope_group_keeps_same_id_in_distinct_scopes() {
+    let scope = face_selection_scope();
+    let id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let group = face_selection_group(id, DesignOperandRole::ROLE_0X5, Vec::new());
+    let mut other = group.clone();
+    other.scope_record_index = 43;
+    let groups = [other, group];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::group_index(&groups);
+    let found = crate::history::scope_group(&ctx, &index, &scope, id, |_| true).unwrap();
+    assert!(std::ptr::eq(found.unwrap(), &raw const groups[1]));
+}
+
+#[test]
+fn scope_group_filters_roles_before_uniqueness() {
+    let scope = face_selection_scope();
+    let id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let groups = [
+        face_selection_group(id, DesignOperandRole::ROLE_0X10, Vec::new()),
+        face_selection_group(id, DesignOperandRole::ROLE_0X5, Vec::new()),
+    ];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::group_index(&groups);
+    let found = crate::history::scope_group(&ctx, &index, &scope, id, |group| {
+        group.role() == DesignOperandRole::ROLE_0X5
+    }).unwrap();
+    assert!(std::ptr::eq(found.unwrap(), &raw const groups[1]));
+}
+
+#[test]
+fn scope_group_rejects_repeated_eligible_groups() {
+    let scope = face_selection_scope();
+    let id = "f3d:Design/BulkStream.dat:operand-group#100";
+    let group = face_selection_group(id, DesignOperandRole::ROLE_0X5, Vec::new());
+    let groups = [group.clone(), group];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::group_index(&groups);
+    assert!(crate::history::scope_group(&ctx, &index, &scope, id, |_| true).unwrap().is_none());
+}
+
+#[test]
+fn scope_group_rejects_other_stream() {
+    let scope = face_selection_scope();
+    let id = "f3d:Design/OtherStream.dat:operand-group#100";
+    let groups = [face_selection_group(id, DesignOperandRole::ROLE_0X5, Vec::new())];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::group_index(&groups);
+    assert!(crate::history::scope_group(&ctx, &index, &scope, id, |_| true).unwrap().is_none());
+}

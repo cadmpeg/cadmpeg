@@ -220,3 +220,22 @@ fn affected_history_body_scan_refuses_work() {
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
 }
+
+#[test]
+fn feature_output_binding_uses_first_scope_with_repeated_id() {
+    let (mut feature, scope, history, body) = output_binding_inputs();
+    let other = crate::records::feature::scope::DesignParameterScope::empty(
+        &scope.id,
+        crate::records::feature::scope::DesignFeatureKind::Combine,
+        scope.record_index + 1,
+    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    crate::history::bind_feature_outputs(
+        &ctx,
+        std::slice::from_mut(&mut feature),
+        &[scope, other],
+        &[history],
+        std::slice::from_ref(&body),
+    ).unwrap();
+    assert_eq!(feature.evaluation.outputs().as_slice(), &[body.id]);
+}
