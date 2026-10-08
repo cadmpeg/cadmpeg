@@ -1567,25 +1567,27 @@ fn extended_geometry_json(
     if crate::mesh::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
         let mesh = optional_geometry(
-            geometry_workspace.with_storage(|| crate::mesh::decode(
-                expand,
-                data,
-                value.class_data_range.clone(),
-                archive,
-                crate::mesh::MeshDecodeOptions {
-                    writer_version,
-                    association: None,
-                    id: crate::mesh::MeshId::Ready(
-                        cadmpeg_ir::tessellation::TessellationId::compose(
-                            &cadmpeg_ir::identity_namespace!("rhino", "history", "mesh"),
-                            cadmpeg_ir::identity_key!("embedded"),
+            geometry_workspace.with_storage(|| {
+                crate::mesh::decode(
+                    expand,
+                    data,
+                    value.class_data_range.clone(),
+                    archive,
+                    crate::mesh::MeshDecodeOptions {
+                        writer_version,
+                        association: None,
+                        id: crate::mesh::MeshId::Ready(
+                            cadmpeg_ir::tessellation::TessellationId::compose(
+                                &cadmpeg_ir::identity_namespace!("rhino", "history", "mesh"),
+                                cadmpeg_ir::identity_key!("embedded"),
+                            ),
                         ),
-                    ),
-                    scale,
-                    userdata: &value.userdata,
-                },
-                &mut budget,
-            )),
+                        scale,
+                        userdata: &value.userdata,
+                    },
+                    &mut budget,
+                )
+            }),
             refusal,
         )?;
         embedded_json(expand.ctx(), &MeshJson(&mesh), refusal)
@@ -1638,18 +1640,20 @@ fn extended_geometry_json(
     } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
         let extrusion = optional_geometry(
-            geometry_workspace.with_storage(|| crate::extrusion::decode(
-                expand,
-                data,
-                value.class_data_range.clone(),
-                crate::extrusion::ExtrusionFormat {
-                    archive,
-                    writer_version,
-                    scale,
-                },
-                &value.userdata,
-                &mut budget,
-            )),
+            geometry_workspace.with_storage(|| {
+                crate::extrusion::decode(
+                    expand,
+                    data,
+                    value.class_data_range.clone(),
+                    crate::extrusion::ExtrusionFormat {
+                        archive,
+                        writer_version,
+                        scale,
+                    },
+                    &value.userdata,
+                    &mut budget,
+                )
+            }),
             refusal,
         )?;
         embedded_json(expand.ctx(), &ExtrusionJson(&extrusion), refusal)

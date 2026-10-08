@@ -234,83 +234,84 @@ pub(crate) fn install(
     let mut definitions = Vec::new();
     let mut external = Vec::new();
     staging.with_storage(|| -> Result<(), CodecError> {
-    for definition in ctx.admit_iter(
-        scan.definitions.definitions(),
-        "Rhino install borrowed traversal",
-    )? {
-        let external_reference = external_record(ctx, definition.id(), &definition.link)?;
-        let external_id = external_reference
-            .as_ref()
-            .map(|value| ctx.copy_retained_text(&value.id, "Rhino definition external ID"))
-            .transpose()?;
-        if let Some(value) = external_reference {
-            ctx.reserve_vec(&mut external, 1, "Rhino external references")?;
-            external.push(value);
-        }
-        let mut links = Vec::new();
-        let mut member_seen = HashSet::new();
-        let mut member_workspace = ctx.reserve_scoped(0, "Rhino definition member workspace")?;
-        for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
-            if let Some(Some(source_order)) =
-                ctx.get_hash_map(&object_records, member, "Rhino definition member lookup")?
-            {
-                if !member_workspace.with_storage(|| {
-                    ctx.insert_hash_set(
-                        &mut member_seen,
-                        *source_order,
-                        "Rhino definition member identities",
-                    )
-                })? {
-                    continue;
-                }
-                ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
-                links.push(ctx.format_retained(
-                    format_args!("rhino:object:record#{source_order:06}"),
-                    "Rhino definition member link",
-                )?);
+        for definition in ctx.admit_iter(
+            scan.definitions.definitions(),
+            "Rhino install borrowed traversal",
+        )? {
+            let external_reference = external_record(ctx, definition.id(), &definition.link)?;
+            let external_id = external_reference
+                .as_ref()
+                .map(|value| ctx.copy_retained_text(&value.id, "Rhino definition external ID"))
+                .transpose()?;
+            if let Some(value) = external_reference {
+                ctx.reserve_vec(&mut external, 1, "Rhino external references")?;
+                external.push(value);
             }
+            let mut links = Vec::new();
+            let mut member_seen = HashSet::new();
+            let mut member_workspace =
+                ctx.reserve_scoped(0, "Rhino definition member workspace")?;
+            for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
+                if let Some(Some(source_order)) =
+                    ctx.get_hash_map(&object_records, member, "Rhino definition member lookup")?
+                {
+                    if !member_workspace.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut member_seen,
+                            *source_order,
+                            "Rhino definition member identities",
+                        )
+                    })? {
+                        continue;
+                    }
+                    ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
+                    links.push(ctx.format_retained(
+                        format_args!("rhino:object:record#{source_order:06}"),
+                        "Rhino definition member link",
+                    )?);
+                }
+            }
+            if let Some(id) = &external_id {
+                ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
+                links.push(ctx.copy_retained_text(id, "Rhino definition external link")?);
+            }
+            ctx.stable_sort_by(
+                &mut links,
+                |value| value,
+                Ord::cmp,
+                "Rhino definition links sort",
+            )?;
+            let mut member_object_ids = Vec::new();
+            for id in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
+                ctx.reserve_vec(&mut member_object_ids, 1, "Rhino definition member UUIDs")?;
+                member_object_ids.push(
+                    ctx.format_retained(format_args!("{id}"), "Rhino definition member UUID text")?,
+                );
+            }
+            ctx.reserve_vec(&mut definitions, 1, "Rhino product definitions")?;
+            definitions.push(DefinitionRecord {
+                id: definition_id(ctx, definition.id())?,
+                source_offset: cadmpeg_core::decode::u64_from_index(definition.source_range.start),
+                source_uuid: ctx.format_retained(
+                    format_args!("{}", definition.id()),
+                    "Rhino definition source UUID",
+                )?,
+                archive_index: definition.index,
+                name: &definition.name,
+                description: &definition.description,
+                url: &definition.url,
+                url_tag: &definition.url_tag,
+                kind: definition.kind,
+                member_object_ids,
+                units: &definition.units,
+                linked_depth: definition.linked_depth,
+                linked_component_appearance: definition.linked_appearance,
+                external_reference: external_id,
+                links,
+            });
         }
-        if let Some(id) = &external_id {
-            ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
-            links.push(ctx.copy_retained_text(id, "Rhino definition external link")?);
-        }
-        ctx.stable_sort_by(
-            &mut links,
-            |value| value,
-            Ord::cmp,
-            "Rhino definition links sort",
-        )?;
-        let mut member_object_ids = Vec::new();
-        for id in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
-            ctx.reserve_vec(&mut member_object_ids, 1, "Rhino definition member UUIDs")?;
-            member_object_ids.push(
-                ctx.format_retained(format_args!("{id}"), "Rhino definition member UUID text")?,
-            );
-        }
-        ctx.reserve_vec(&mut definitions, 1, "Rhino product definitions")?;
-        definitions.push(DefinitionRecord {
-            id: definition_id(ctx, definition.id())?,
-            source_offset: cadmpeg_core::decode::u64_from_index(definition.source_range.start),
-            source_uuid: ctx.format_retained(
-                format_args!("{}", definition.id()),
-                "Rhino definition source UUID",
-            )?,
-            archive_index: definition.index,
-            name: &definition.name,
-            description: &definition.description,
-            url: &definition.url,
-            url_tag: &definition.url_tag,
-            kind: definition.kind,
-            member_object_ids,
-            units: &definition.units,
-            linked_depth: definition.linked_depth,
-            linked_component_appearance: definition.linked_appearance,
-            external_reference: external_id,
-            links,
-        });
-    }
 
-    Ok(())
+        Ok(())
     })?;
 
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
@@ -394,85 +395,86 @@ pub(crate) fn install(
             }
         };
         staging.with_storage(|| -> Result<(), CodecError> {
-        let transform = OccurrenceTransform::from_source(reference.transform(), binding);
-        let object_record = ctx.format_retained(
-            format_args!("rhino:object:record#{source_order:06}"),
-            "Rhino occurrence object ID",
-        )?;
-        let mut parents = Vec::new();
-        if let Some(source_parents) = ctx.get_hash_map(
-            &member_definitions,
-            &identity.object_id,
-            "Rhino occurrence parent lookup",
-        )? {
-            ctx.reserve_vec(
-                &mut parents,
-                source_parents.len(),
-                "Rhino occurrence parents",
+            let transform = OccurrenceTransform::from_source(reference.transform(), binding);
+            let object_record = ctx.format_retained(
+                format_args!("rhino:object:record#{source_order:06}"),
+                "Rhino occurrence object ID",
             )?;
-            for parent in ctx.admit_iter(source_parents, "Rhino install borrowed traversal")? {
-                parents.push(
-                    ctx.format_retained(format_args!("{parent}"), "Rhino occurrence parent UUID")?,
-                );
+            let mut parents = Vec::new();
+            if let Some(source_parents) = ctx.get_hash_map(
+                &member_definitions,
+                &identity.object_id,
+                "Rhino occurrence parent lookup",
+            )? {
+                ctx.reserve_vec(
+                    &mut parents,
+                    source_parents.len(),
+                    "Rhino occurrence parents",
+                )?;
+                for parent in ctx.admit_iter(source_parents, "Rhino install borrowed traversal")? {
+                    parents.push(ctx.format_retained(
+                        format_args!("{parent}"),
+                        "Rhino occurrence parent UUID",
+                    )?);
+                }
             }
-        }
-        let (key, _key_workspace) = if identity.object_id.is_nil()
-            || ctx
-                .get_hash_map(
-                    &object_records,
-                    &identity.object_id,
-                    "Rhino occurrence identity lookup",
+            let (key, _key_workspace) = if identity.object_id.is_nil()
+                || ctx
+                    .get_hash_map(
+                        &object_records,
+                        &identity.object_id,
+                        "Rhino occurrence identity lookup",
+                    )?
+                    .is_some_and(Option::is_none)
+            {
+                ctx.format_scoped(
+                    format_args!("record-{source_order:06}"),
+                    "Rhino occurrence key",
                 )?
-                .is_some_and(Option::is_none)
-        {
-            ctx.format_scoped(
-                format_args!("record-{source_order:06}"),
-                "Rhino occurrence key",
-            )?
-        } else {
-            ctx.format_scoped(
-                format_args!("{}", identity.object_id),
-                "Rhino occurrence key",
-            )?
-        };
-        let mut links = ctx.collection_vec(1, "Rhino occurrence links")?;
-        links.push(object_record);
-        if ctx.contains_hash_set(
-            &definition_ids,
-            &reference.definition_id(),
-            "Rhino occurrence definition lookup",
-        )? {
-            ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
-            links.push(definition_id(ctx, reference.definition_id())?);
-        }
-        ctx.stable_sort_by(
-            &mut links,
-            |value| value,
-            Ord::cmp,
-            "Rhino occurrence links sort",
-        )?;
-        ctx.reserve_vec(&mut occurrences, 1, "Rhino product occurrences")?;
-        occurrences.push(OccurrenceRecord {
-            id: ctx.format_retained(
-                format_args!("rhino:product:occurrence#{key}"),
-                "Rhino product occurrence ID",
-            )?,
-            source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
-            source_uuid: ctx.format_retained(
-                format_args!("{}", identity.object_id),
-                "Rhino occurrence source UUID",
-            )?,
-            definition_uuid: ctx.format_retained(
-                format_args!("{}", reference.definition_id()),
-                "Rhino occurrence definition UUID",
-            )?,
-            transform,
-            parent_definition_uuids: parents,
-            name: &identity.name,
-            visible: identity.effective_visible,
-            links,
-        });
-        Ok(())
+            } else {
+                ctx.format_scoped(
+                    format_args!("{}", identity.object_id),
+                    "Rhino occurrence key",
+                )?
+            };
+            let mut links = ctx.collection_vec(1, "Rhino occurrence links")?;
+            links.push(object_record);
+            if ctx.contains_hash_set(
+                &definition_ids,
+                &reference.definition_id(),
+                "Rhino occurrence definition lookup",
+            )? {
+                ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
+                links.push(definition_id(ctx, reference.definition_id())?);
+            }
+            ctx.stable_sort_by(
+                &mut links,
+                |value| value,
+                Ord::cmp,
+                "Rhino occurrence links sort",
+            )?;
+            ctx.reserve_vec(&mut occurrences, 1, "Rhino product occurrences")?;
+            occurrences.push(OccurrenceRecord {
+                id: ctx.format_retained(
+                    format_args!("rhino:product:occurrence#{key}"),
+                    "Rhino product occurrence ID",
+                )?,
+                source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
+                source_uuid: ctx.format_retained(
+                    format_args!("{}", identity.object_id),
+                    "Rhino occurrence source UUID",
+                )?,
+                definition_uuid: ctx.format_retained(
+                    format_args!("{}", reference.definition_id()),
+                    "Rhino occurrence definition UUID",
+                )?,
+                transform,
+                parent_definition_uuids: parents,
+                name: &identity.name,
+                visible: identity.effective_visible,
+                links,
+            });
+            Ok(())
         })?;
     }
 
