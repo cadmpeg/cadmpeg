@@ -1044,3 +1044,75 @@ fn intersection_selected_source_constructions_refuse_retention_at_the_named_boun
         |ctx| super::scan_with_graph(ctx, &stream, &crate::topology::Graph::default(), super::ChartPointLayout::Ext11),
     );
 }
+
+#[test]
+fn intersection_fixed_replacements_release_each_stream_map() {
+    let mut term = record(41, 34);
+    term[2..6].copy_from_slice(&2_u32.to_be_bytes());
+    put_ref(&mut term, 6, 2);
+    term[8..10].copy_from_slice(b"TF");
+    let mut bridge = record(59, 24);
+    put_ref(&mut bridge, 2, 14);
+    bridge[4..8].copy_from_slice(&9_u32.to_be_bytes());
+    for at in [8, 10, 12, 14, 16] { put_ref(&mut bridge, at, 1); }
+    bridge[18] = b'+';
+    put_ref(&mut bridge, 19, 0);
+    put_ref(&mut bridge, 21, 13);
+    term.extend(bridge);
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(super::term_records(ctx, &term).unwrap().len(), 1);
+        assert_eq!(super::blend_bound_records(ctx, &term).unwrap().len(), 1);
+    });
+    let replacements = vec![term.as_slice(); 1024];
+    crate::test_support::with_decode_context_over(&term, |policy| {
+        policy.limits.max_materialized_bytes = 65_536;
+        policy.limits.max_retained_bytes = 0;
+    }, |ctx| {
+        let result = super::scan_with_auxiliary_replacements_and_graph(
+            ctx, &[], &term, &replacements, &crate::topology::Graph::default(),
+        ).unwrap();
+        assert!(result.source_constructions.is_empty());
+        assert!(result.curves.is_empty());
+        assert_eq!(result.rejected.total(), 0);
+    });
+}
+
+#[test]
+fn intersection_owned_replacements_release_superseded_payloads() {
+    let base = charted_intersection_curve_topology_partition_stream();
+    let stream = ext11_charted_intersection_curve_stream();
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
+    let expected = crate::test_support::with_decode_context(|ctx| {
+        super::scan_with_graph(ctx, &stream, &graph, super::ChartPointLayout::Ext11)
+    }).unwrap();
+    assert_eq!(expected.curves.len(), 1);
+    assert_eq!(expected.source_constructions.len(), 1);
+    let replacements = vec![stream.as_slice(); 256];
+    crate::test_support::with_decode_context_over(&stream, |policy| {
+        policy.limits.max_materialized_bytes = 65_536;
+    }, |ctx| {
+        let actual = super::scan_with_auxiliary_replacements_and_graph(ctx, &stream, &base, &replacements, &graph).unwrap();
+        assert_eq!(actual.curves.len(), expected.curves.len());
+        assert_eq!(actual.source_constructions.len(), expected.source_constructions.len());
+        assert_eq!(actual.rejected, expected.rejected);
+        let actual = &actual.curves[0];
+        let expected = &expected.curves[0];
+        assert_eq!(actual.xmt, expected.xmt);
+        assert_eq!(actual.references, expected.references);
+        assert_eq!(actual.samples, expected.samples);
+        assert_eq!(actual.fit_tolerance, expected.fit_tolerance);
+        assert_eq!(actual.support_uv, expected.support_uv);
+        assert_eq!(actual.ext_support_uv, expected.ext_support_uv);
+    });
+}
+
+#[test]
+fn intersection_replacement_payload_copies_refuse_at_named_work_boundaries() {
+    let stream = ext11_charted_intersection_curve_stream();
+    for operation in ["NX replacement chart payload copy", "NX replacement UV payload copy"] {
+        crate::test_support::resource_refusal_at(
+            &stream, cadmpeg_core::decode::ResourceDimension::WorkUnits, operation,
+            |ctx| super::scan_with_auxiliary_replacements_and_graph(ctx, &[], &[], &[&stream], &crate::topology::Graph::default()),
+        );
+    }
+}
