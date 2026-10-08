@@ -794,6 +794,13 @@ pub(in crate::decode) fn counterbore_directed_placement(
     let [first, second] = sources.as_slice() else {
         return Ok(None);
     };
+    let ([first_start, first_end], [second_start, second_end]) =
+        (first.as_slice(), second.as_slice())
+    else {
+        return Ok(None);
+    };
+    let first_ids = [Some(*first_start), Some(*first_end)];
+    let second_ids = [Some(*second_start), Some(*second_end)];
     let bore_radius = 0.5 * bore_diameter;
     let counterbore_radius = 0.5 * counterbore_diameter;
     let boundaries = counterbore_source_boundary_circles(
@@ -803,10 +810,10 @@ pub(in crate::decode) fn counterbore_directed_placement(
         source_carriers,
         feature_id,
         [
-            (first.as_slice(), counterbore_radius),
-            (first.as_slice(), bore_radius),
-            (second.as_slice(), counterbore_radius),
-            (second.as_slice(), bore_radius),
+            (first_ids, counterbore_radius),
+            (first_ids, bore_radius),
+            (second_ids, counterbore_radius),
+            (second_ids, bore_radius),
         ],
     )?;
     let boundary_placement = match boundaries {
@@ -1100,7 +1107,7 @@ fn counterbore_source_boundary_circles<const N: usize>(
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-    queries: [(&[u32], f64); N],
+    queries: [([Option<u32>; 2], f64); N],
 ) -> Result<[Option<CounterboreBoundaryCircle>; N], CodecError> {
     let (local_planes, _local_plane_storage) =
         ctx.with_scoped_storage("creo boundary plane scratch", || placed_planes(ctx, scan))?;
@@ -1230,22 +1237,18 @@ fn counterbore_source_boundary_circles<const N: usize>(
         }
         Ok(boundary)
     };
-    let mut boundary = |cylinder_ids: &[u32],
+    let mut boundary = |cylinder_ids: [Option<u32>; 2],
                         radius: f64|
      -> Result<Option<CounterboreBoundaryCircle>, CodecError> {
-        let mut ids = cylinder_ids.iter();
-        let Some(first_id) =
-            ctx.next_charged(&mut ids, "creo counterbore boundary cylinder scan")?
-        else {
+        let mut ids = cylinder_ids.into_iter().flatten();
+        let Some(first_id) = ids.next() else {
             return Ok(None);
         };
-        let Some(first) = boundary_for(*first_id, radius)? else {
+        let Some(first) = boundary_for(first_id, radius)? else {
             return Ok(None);
         };
-        while let Some(id) =
-            ctx.next_charged(&mut ids, "creo counterbore boundary cylinder scan")?
-        {
-            let Some(candidate) = boundary_for(*id, radius)? else {
+        for id in ids {
+            let Some(candidate) = boundary_for(id, radius)? else {
                 return Ok(None);
             };
             if !(candidate.0 == first.0
