@@ -1460,3 +1460,5 @@ fn zip_reference_fragment_character_preserves_refusal() {
         },
     );
 }
+
+mod admission;

@@ -226,10 +226,8 @@ pub(crate) fn root_reference_notes(
     let mut binding_storage = ctx.reserve_scoped(0, "STEP ZIP anchor index storage")?;
     let mut bindings = BTreeMap::new();
     let mut indexed = false;
-    for reference in ctx.admit_iter(
-        exchange.references(),
-        "STEP root reference notes borrowed traversal",
-    )? {
+    let mut references = exchange.references().iter();
+    while let Some(reference) = ctx.next_charged(&mut references, "STEP root reference notes borrowed traversal")? {
         let name = reference.name;
         if !indexed && reference.uri.starts_with('#') && reference.uri.len() > 1 {
             for anchor in ctx.admit_iter(exchange.anchors(), "STEP ZIP anchor index traversal")? {
