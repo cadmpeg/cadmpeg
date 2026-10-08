@@ -474,7 +474,7 @@ fn drawing_ambiguous_identity_copy_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("root fits collection policy");
     assert!(matches!(
-        super::super::target_resolution(1, &targets, &HashSet::from([1]), &exchange, &BTreeMap::new(), &ctx),
+        super::super::target_resolution(1, &targets, &HashSet::from([1]), &exchange, &BTreeMap::new(), None, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_drawing_ambiguous_identity_copy"
@@ -508,7 +508,7 @@ fn drawing_ambiguous_identity_text_refuses_materialized_limit() {
                 &targets,
                 &HashSet::from([1]),
                 &exchange,
-                &BTreeMap::new(),
+                &BTreeMap::new(), None,
                 &ctx,
             )
             .map(|_| ())
@@ -532,7 +532,7 @@ fn drawing_local_target_text_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("root fits retained policy");
     assert!(matches!(
-        super::super::target_resolution(1, &targets, &HashSet::new(), &exchange, &BTreeMap::new(), &ctx),
+        super::super::target_resolution(1, &targets, &HashSet::new(), &exchange, &BTreeMap::new(), None, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_drawing_local_target_text"
@@ -552,7 +552,7 @@ fn drawing_external_target_text_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("root fits retained policy");
     assert!(matches!(
-        super::super::target_resolution(1, &BTreeMap::new(), &HashSet::new(), &exchange, &documents, &ctx),
+        super::super::target_resolution(1, &BTreeMap::new(), &HashSet::new(), &exchange, &documents, None, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_drawing_external_target_text"
@@ -583,6 +583,7 @@ fn drawing_untyped_relationship_loss_refuses_collection_limit() {
             known_typed: &typed,
             exchange: &exchange,
             external_documents: &documents,
+            wrappers: super::super::WrapperCache::new(&ctx).expect("wrapper cache"),
             ctx: &ctx,
         };
         let refused = matches!(
@@ -648,6 +649,7 @@ fn sheet_usage_loss_refuses(typed_id: u64) {
             known_typed: &typed,
             exchange: &exchange,
             external_documents: &documents,
+            wrappers: super::super::WrapperCache::new(&ctx).expect("wrapper cache"),
             ctx: &ctx,
         };
         let refused = matches!(
@@ -691,6 +693,7 @@ fn association_loss_refuses(typed_id: u64) {
             known_typed: &typed_records,
             exchange: &exchange,
             external_documents: &documents,
+            wrappers: super::super::WrapperCache::new(&ctx).expect("wrapper cache"),
             ctx: &ctx,
         };
         let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
