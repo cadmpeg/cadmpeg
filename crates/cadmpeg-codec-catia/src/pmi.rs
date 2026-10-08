@@ -32,6 +32,17 @@ pub(crate) fn transfer_dimensions(
     transferred_sketch_ranges: &HashSet<String>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
+    let mut identity_storage = ctx.reserve_scoped(0, "catia_pmi_identity_index")?;
+    let mut identities = HashSet::<String>::new();
+    for annotation in ctx.admit_iter(&ir.model.pmi, "catia_pmi_existing_identity_visits")? {
+        identity_storage.with_storage(|| {
+            ctx.insert_string_set(
+                &mut identities,
+                annotation.id.as_str(),
+                "catia_pmi_identity_index",
+            )
+        })?;
+    }
     for entity in ctx.admit_iter(&native.entity_records, "catia_pmi_entity_visits")? {
         if !graph_scope.contains(ctx, entity.object_graph.as_str())? {
             continue;
@@ -48,13 +59,12 @@ pub(crate) fn transfer_dimensions(
         };
         let (id, id_storage) =
             ctx.with_scoped_storage("catia_pmi_dimension_id", || pmi_id(ctx, entity.byte_offset))?;
-        if ctx.any_by(
-            &ir.model.pmi,
-            |annotation| ctx.equal(&annotation.id, &id, "catia_pmi_duplicate_identity"),
-            "catia_pmi_duplicate_search",
-        )? {
+        if ctx.contains_hash_set(&identities, id.as_str(), "catia_pmi_duplicate_identity")? {
             continue;
         }
+        identity_storage.with_storage(|| {
+            ctx.insert_string_set(&mut identities, id.as_str(), "catia_pmi_identity_index")
+        })?;
         id_storage.commit()?;
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
         ctx.push_vec(
@@ -371,21 +381,22 @@ mod tests {
             )
         })
         .expect("first dimension");
-        let refused = crate::test_support::with_work_refusal("catia_pmi_duplicate_search", |ctx| {
-            let result = transfer_dimensions(
-                ctx,
-                &mut ir,
-                &native,
-                &crate::decode::ModelingGraphScope::Unscoped,
-                &HashSet::new(),
-            );
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-            }
-            result
-        });
+        let refused =
+            crate::test_support::with_work_refusal("catia_pmi_duplicate_identity", |ctx| {
+                let result = transfer_dimensions(
+                    ctx,
+                    &mut ir,
+                    &native,
+                    &crate::decode::ModelingGraphScope::Unscoped,
+                    &HashSet::new(),
+                );
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            });
         assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_pmi_duplicate_search")
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_pmi_duplicate_identity")
         );
         assert_eq!(ir.model.pmi.len(), 1);
     }
@@ -438,6 +449,33 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(dimensions[0], (&DimensionKind::Diameter, 12.7, -0.1, 0.2));
         assert_eq!(dimensions[1], (&DimensionKind::Size, 12.7, -0.1, 0.2));
+    }
+
+    #[test]
+    fn pmi_identity_index_admits_many_distinct_dimensions() {
+        let mut ir = CadIr::empty();
+        let native = CatiaNative {
+            entity_records: (0..512)
+                .map(|offset| {
+                    let mut entity = range_only_entity("DiameterThread");
+                    entity.byte_offset = offset;
+                    entity
+                })
+                .collect(),
+            ..CatiaNative::default()
+        };
+        let transferred = crate::test_support::with_work_limit(1_000_000, |ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("indexed dimension transfer fits a linear allowance");
+        assert_eq!(transferred, 512);
+        assert_eq!(ir.model.pmi.len(), 512);
     }
 
     #[test]

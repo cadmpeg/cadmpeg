@@ -11,11 +11,11 @@ use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_
 #[cfg(test)]
 use crate::wire::records::{consolidated_records, ConsolidatedPcurve};
 use crate::wire::records::{ConsolidatedFamily, ConsolidatedFrame, ConsolidatedRecord};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_strictly_increasing, NurbsCurve, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsSurface},
     ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
 };
 use cadmpeg_ir::math::Point3;
@@ -409,10 +409,7 @@ fn object_stream_frames<'a>(
                 }
                 return None;
             }
-            let Some(frame) = object_stream_frame(data, pos).filter(|frame| frame.end <= limit)
-            else {
-                return None;
-            };
+            let frame = object_stream_frame(data, pos).filter(|frame| frame.end <= limit)?;
             match frame.family {
                 0xa8 if child_end.is_none() => {
                     child_end = Some(frame.end);
@@ -517,11 +514,9 @@ impl A8Pcurve {
             self.sites.len(),
             "catia A8 pcurve distinct knots",
         )?;
-        ctx.charge_work(
-            u64_from_index(self.sites.len()),
-            "catia_a8_pcurve_knot_projection",
-        )?;
-        knots.extend(self.sites.iter().map(|site| site.knot));
+        for site in ctx.admit_iter(&self.sites, "catia_a8_pcurve_knot_projection")? {
+            knots.push(site.knot);
+        }
         Ok(knots)
     }
 
@@ -533,36 +528,45 @@ impl A8Pcurve {
     pub(in crate::families) fn bspline(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        keep_full_knots: bool,
     ) -> A8BSplineOutput {
-        let mut knots = Vec::new();
-        let mut points = Vec::new();
-        let mut first = Vec::new();
-        let mut second = Vec::new();
-        ctx.reserve_vec(&mut knots, self.sites.len(), "catia A8 pcurve jet knots")?;
-        ctx.reserve_vec(&mut points, self.sites.len(), "catia A8 pcurve jet points")?;
-        ctx.reserve_vec(&mut first, self.sites.len(), "catia A8 pcurve first jets")?;
-        ctx.reserve_vec(&mut second, self.sites.len(), "catia A8 pcurve second jets")?;
-        let work = u64_from_index(self.sites.len())
-            .checked_mul(4)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("catia_a8_pcurve_jet_projection", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(work, "catia_a8_pcurve_jet_projection")?;
-        for site in &self.sites {
+        let mut input_storage = ctx.reserve_scoped(0, "catia A8 pcurve jet input")?;
+        let mut knots = input_storage
+            .with_storage(|| ctx.collection_vec(self.sites.len(), "catia A8 pcurve jet knots"))?;
+        let mut points = input_storage
+            .with_storage(|| ctx.collection_vec(self.sites.len(), "catia A8 pcurve jet points"))?;
+        let mut first = input_storage
+            .with_storage(|| ctx.collection_vec(self.sites.len(), "catia A8 pcurve first jets"))?;
+        let mut second = input_storage
+            .with_storage(|| ctx.collection_vec(self.sites.len(), "catia A8 pcurve second jets"))?;
+        for site in ctx.admit_iter(&self.sites, "catia_a8_pcurve_jet_projection")? {
             knots.push(site.knot.get());
             points.push(site.point.get());
             first.push(site.first_derivative.get());
             second.push(site.second_derivative.get());
         }
-        crate::nurbs::quintic_jet_bspline(
-            ctx,
-            Self::DEGREE,
-            &knots,
-            &points,
-            &first,
-            &second,
-            cadmpeg_ir::units::FiniteVector::new,
-        )
+        if keep_full_knots {
+            crate::nurbs::quintic_jet_bspline(
+                ctx,
+                Self::DEGREE,
+                &knots,
+                &points,
+                &first,
+                &second,
+                cadmpeg_ir::units::FiniteVector::new,
+            )
+        } else {
+            Ok(crate::nurbs::quintic_jet_controls(
+                ctx,
+                Self::DEGREE,
+                &knots,
+                &points,
+                &first,
+                &second,
+                cadmpeg_ir::units::FiniteVector::new,
+            )?
+            .map(|controls| (Vec::new(), controls)))
+        }
     }
 }
 
@@ -636,11 +640,9 @@ impl A5FreeformCurve {
     ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
         let mut knots = Vec::new();
         ctx.reserve_vec(&mut knots, self.sites.len(), "catia A5 rolling ball knots")?;
-        ctx.charge_work(
-            u64_from_index(self.sites.len()),
-            "catia_a5_jet_knot_projection",
-        )?;
-        knots.extend(self.sites.iter().map(|site| site.knot.get()));
+        for site in ctx.admit_iter(&self.sites, "catia_a5_jet_knot_projection")? {
+            knots.push(site.knot.get());
+        }
         Ok(knots)
     }
 }
@@ -654,31 +656,15 @@ pub(in crate::families) fn rolling_ball_limit_curve(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<NurbsCurve>, cadmpeg_core::CodecError> {
     let offset = usize::from(second_limit) * 3;
-    let mut positions = Vec::new();
-    let mut first = Vec::new();
-    let mut second = Vec::new();
-    ctx.reserve_vec(
-        &mut positions,
-        jet.sites.len(),
-        "catia A5 rolling ball positions",
-    )?;
-    ctx.reserve_vec(
-        &mut first,
-        jet.sites.len(),
-        "catia A5 rolling ball first jets",
-    )?;
-    ctx.reserve_vec(
-        &mut second,
-        jet.sites.len(),
-        "catia A5 rolling ball second jets",
-    )?;
-    let work = u64_from_index(jet.sites.len())
-        .checked_mul(3)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_a5_limit_jet_projection", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(work, "catia_a5_limit_jet_projection")?;
-    for sample in &jet.sites {
+    let mut input_storage = ctx.reserve_scoped(0, "catia A5 rolling ball input")?;
+    let mut positions = input_storage
+        .with_storage(|| ctx.collection_vec(jet.sites.len(), "catia A5 rolling ball positions"))?;
+    let mut first = input_storage
+        .with_storage(|| ctx.collection_vec(jet.sites.len(), "catia A5 rolling ball first jets"))?;
+    let mut second = input_storage.with_storage(|| {
+        ctx.collection_vec(jet.sites.len(), "catia A5 rolling ball second jets")
+    })?;
+    for sample in ctx.admit_iter(&jet.sites, "catia_a5_limit_jet_projection")? {
         let limit = if second_limit {
             sample.site.limit2
         } else {
@@ -690,7 +676,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         let values = FiniteReal::raw_array(sample.second_derivatives);
         second.push([values[offset], values[offset + 1], values[offset + 2]]);
     }
-    let knots = jet.knots(ctx)?;
+    let knots = input_storage.with_storage(|| jet.knots(ctx))?;
     let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline(
         ctx,
         A5FreeformCurve::DEGREE,
@@ -698,7 +684,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         &positions,
         &first,
         &second,
-        cadmpeg_ir::units::FiniteVector::new,
+        |point| cadmpeg_ir::features::FinitePoint3::new(Point3::new(point[0], point[1], point[2])),
     )?
     else {
         refusal.push_solver(
@@ -711,28 +697,13 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         )?;
         return Ok(None);
     };
-    let mut poles = Vec::new();
-    ctx.reserve_vec(
-        &mut poles,
-        control_points.len(),
-        "catia A5 rolling ball poles",
-    )?;
-    ctx.charge_work(
-        u64_from_index(control_points.len()),
-        "catia_a5_limit_pole_projection",
-    )?;
-    poles.extend(
-        control_points
-            .into_iter()
-            .map(|point| Point3::new(point[0], point[1], point[2])),
-    );
     crate::nurbs::note_refusal(
         ctx,
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             ctx,
             A5FreeformCurve::DEGREE,
             knots,
-            poles,
+            control_points,
             None,
             false,
         )?,
@@ -777,11 +748,9 @@ impl A5GuideCurve {
     ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
         let mut knots = Vec::new();
         ctx.reserve_vec(&mut knots, self.sites.len(), "catia A5 guide knots")?;
-        ctx.charge_work(
-            u64_from_index(self.sites.len()),
-            "catia_a5_guide_knot_projection",
-        )?;
-        knots.extend(self.sites.iter().map(|site| site.knot.get()));
+        for site in ctx.admit_iter(&self.sites, "catia_a5_guide_knot_projection")? {
+            knots.push(site.knot.get());
+        }
         Ok(knots)
     }
 }
@@ -837,190 +806,198 @@ fn parse_a5_nurbs_curve(
     frame: ConsolidatedFrame,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<A5NurbsCurve>, CodecError> {
-    let Some(payload_bytes) = data.get(frame.payload..frame.end) else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        u64_from_index(payload_bytes.len()),
-        "catia_a5_nurbs_preflight",
-    )?;
-    let Some((degree, knot_count, control_count, knot_start, control_start, repeated_end)) =
-        (|| {
-            let mut at = frame.payload;
-            let degree = compact_int(data, &mut at)?;
-            let knot_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-            if degree != 5 || knot_count < 2 || data.get(at) != Some(&0x0c) {
-                return None;
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia parse_a5_nurbs_curve candidate",
+        || -> Result<_, CodecError> {
+            if data.get(frame.payload..frame.end).is_none() {
+                return Ok(None);
             }
-            at += 1;
-            let control_count = 6usize.checked_add(knot_count.checked_sub(2)?.checked_mul(3)?)?;
-            let known_bytes = knot_count
-                .checked_mul(8)?
-                .checked_add(control_count.checked_mul(24)?)?
-                .checked_add(36)?;
-            if at.checked_add(known_bytes)? > frame.end {
-                return None;
-            }
-            let knot_start = at;
-            at = at.checked_add(knot_count.checked_mul(8)?)?;
-            if data.get(at) != Some(&0x01) {
-                return None;
-            }
-            at += 1;
-            let control_start = at;
-            at = at.checked_add(control_count.checked_mul(24)?)?;
-            if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 2 {
-                return None;
-            }
-            let range_origin = f64_le(data, at)?.get();
-            let repeated_end = f64_le(data, at + 8)?.get();
-            let scale = f64_le(data, at + 16)?.get();
-            let offset = f64_le(data, at + 24)?.get();
-            at += 32;
-            if range_origin.to_bits() != 0.0f64.to_bits()
-                || scale.to_bits() != 1.0f64.to_bits()
-                || offset.to_bits() != 0.0f64.to_bits()
-                || data.get(at..frame.end) != Some(&[0x00, 0x07])
+            let Some((degree, knot_count, control_count, knot_start, control_start, repeated_end)) =
+                (|| {
+                    let mut at = frame.payload;
+                    let degree = compact_int(data, &mut at)?;
+                    let knot_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+                    if degree != 5 || knot_count < 2 || data.get(at) != Some(&0x0c) {
+                        return None;
+                    }
+                    at += 1;
+                    let control_count =
+                        6usize.checked_add(knot_count.checked_sub(2)?.checked_mul(3)?)?;
+                    let known_bytes = knot_count
+                        .checked_mul(8)?
+                        .checked_add(control_count.checked_mul(24)?)?
+                        .checked_add(36)?;
+                    if at.checked_add(known_bytes)? > frame.end {
+                        return None;
+                    }
+                    let knot_start = at;
+                    at = at.checked_add(knot_count.checked_mul(8)?)?;
+                    if data.get(at) != Some(&0x01) {
+                        return None;
+                    }
+                    at += 1;
+                    let control_start = at;
+                    at = at.checked_add(control_count.checked_mul(24)?)?;
+                    if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 2 {
+                        return None;
+                    }
+                    let range_origin = f64_le(data, at)?.get();
+                    let repeated_end = f64_le(data, at + 8)?.get();
+                    let scale = f64_le(data, at + 16)?.get();
+                    let offset = f64_le(data, at + 24)?.get();
+                    at += 32;
+                    if range_origin.to_bits() != 0.0f64.to_bits()
+                        || scale.to_bits() != 1.0f64.to_bits()
+                        || offset.to_bits() != 0.0f64.to_bits()
+                        || data.get(at..frame.end) != Some(&[0x00, 0x07])
+                    {
+                        return None;
+                    }
+                    Some((
+                        degree,
+                        knot_count,
+                        control_count,
+                        knot_start,
+                        control_start,
+                        repeated_end,
+                    ))
+                })()
+            else {
+                return Ok(None);
+            };
+            let Some(knot_byte_count) = knot_count.checked_mul(8) else {
+                return Err(ctx.refuse_codec_limit("catia_a5_nurbs_preflight", u64::MAX, u64::MAX));
+            };
+            let Some(knot_end) = knot_start.checked_add(knot_byte_count) else {
+                return Err(ctx.refuse_codec_limit("catia_a5_nurbs_preflight", u64::MAX, u64::MAX));
+            };
+            let Some(knot_bytes) = data.get(knot_start..knot_end) else {
+                return Ok(None);
+            };
+            let Some(knot_width) = NonZeroUsize::MIN.checked_add(7) else {
+                return Err(CodecError::malformed("CATIA NURBS knot width is zero"));
+            };
+            let mut previous_knot = None;
+            for chunk in ctx
+                .admit_iter(knot_bytes, "catia_a5_nurbs_knot_preflight_scan")?
+                .chunks(knot_width)
             {
-                return None;
+                let Some(knot) = f64_le(chunk, 0) else {
+                    return Ok(None);
+                };
+                if previous_knot.is_some_and(|previous| knot.get() <= previous) {
+                    return Ok(None);
+                }
+                previous_knot = Some(knot.get());
             }
-            Some((
-                degree,
-                knot_count,
+            if previous_knot.is_none_or(|last| repeated_end.to_bits() != last.to_bits()) {
+                return Ok(None);
+            }
+            let Some(control_byte_count) = control_count.checked_mul(24) else {
+                return Err(ctx.refuse_codec_limit("catia_a5_nurbs_preflight", u64::MAX, u64::MAX));
+            };
+            let Some(control_end) = control_start.checked_add(control_byte_count) else {
+                return Err(ctx.refuse_codec_limit("catia_a5_nurbs_preflight", u64::MAX, u64::MAX));
+            };
+            let Some(control_bytes) = data.get(control_start..control_end) else {
+                return Ok(None);
+            };
+            let Some(control_width) = NonZeroUsize::MIN.checked_add(23) else {
+                return Err(CodecError::malformed(
+                    "CATIA NURBS control-point width is zero",
+                ));
+            };
+            for chunk in ctx
+                .admit_iter(control_bytes, "catia_a5_nurbs_control_preflight_scan")?
+                .chunks(control_width)
+            {
+                if f64_point(chunk, 0).is_none() {
+                    return Ok(None);
+                }
+            }
+            let mut distinct_knots = Vec::new();
+            let knot_chunks = ctx
+                .admit_iter(knot_bytes, "catia_a5_nurbs_knot_materialization")?
+                .chunks(knot_width);
+            let mut distinct_storage = ctx.reserve_scoped(0, "catia_a5_nurbs_distinct_knots")?;
+            distinct_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut distinct_knots,
+                    knot_count,
+                    "catia_a5_nurbs_distinct_knots",
+                )
+            })?;
+            for chunk in knot_chunks {
+                let Some(knot) = f64_le(chunk, 0) else {
+                    return Ok(None);
+                };
+                distinct_knots.push(knot.get());
+            }
+            let mut control_points = Vec::new();
+            let control_chunks = ctx
+                .admit_iter(control_bytes, "catia_a5_nurbs_pole_materialization")?
+                .chunks(control_width);
+            ctx.reserve_vec(
+                &mut control_points,
                 control_count,
-                knot_start,
-                control_start,
-                repeated_end,
+                "catia_a5_nurbs_control_points",
+            )?;
+            for chunk in control_chunks {
+                let Some(point) = f64_point(chunk, 0) else {
+                    return Ok(None);
+                };
+                control_points.push(point);
+            }
+            let Some(expanded_count) = usize::try_from(degree)
+                .ok()
+                .and_then(|degree| control_count.checked_add(degree))
+                .and_then(|count| count.checked_add(1))
+            else {
+                return Ok(None);
+            };
+            let mut knots = Vec::new();
+
+            ctx.reserve_vec(&mut knots, expanded_count, "catia_a5_nurbs_expanded_knots")?;
+            for (index, knot) in ctx
+                .admit_iter(&distinct_knots, "catia_a5_nurbs_knot_expansion_scan")?
+                .copied()
+                .enumerate()
+            {
+                if index == 0 || index + 1 == knot_count {
+                    knots.extend([knot; 6]);
+                } else {
+                    knots.extend([knot; 3]);
+                }
+            }
+            Ok(Some(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    ctx,
+                    degree,
+                    knots,
+                    control_points,
+                    None,
+                    false,
+                )?
+                .map(|geometry| A5NurbsCurve {
+                    pos: frame.pos,
+                    header_token: frame.header_token,
+                    geometry,
+                }),
             ))
-        })()
-    else {
-        return Ok(None);
-    };
-    let Some(knot_byte_count) = knot_count.checked_mul(8) else {
-        return Err(ctx.refuse_codec_limit("catia_a5_nurbs_preflight", u64::MAX, u64::MAX));
-    };
-    let Some(knot_end) = knot_start.checked_add(knot_byte_count) else {
-        return Err(ctx.refuse_codec_limit("catia_a5_nurbs_preflight", u64::MAX, u64::MAX));
-    };
-    let Some(knot_bytes) = data.get(knot_start..knot_end) else {
-        return Ok(None);
-    };
-    let Some(knot_width) = NonZeroUsize::MIN.checked_add(7) else {
-        return Err(CodecError::malformed("CATIA NURBS knot width is zero"));
-    };
-    let mut previous_knot = None;
-    for chunk in ctx
-        .admit_iter(knot_bytes, "catia_a5_nurbs_knot_preflight_scan")?
-        .chunks(knot_width)
-    {
-        let Some(knot) = f64_le(chunk, 0) else {
-            return Ok(None);
-        };
-        if previous_knot.is_some_and(|previous| knot.get() <= previous) {
-            return Ok(None);
-        }
-        previous_knot = Some(knot.get());
-    }
-    if previous_knot.is_none_or(|last| repeated_end.to_bits() != last.to_bits()) {
-        return Ok(None);
-    }
-    let Some(control_byte_count) = control_count.checked_mul(24) else {
-        return Err(ctx.refuse_codec_limit("catia_a5_nurbs_preflight", u64::MAX, u64::MAX));
-    };
-    let Some(control_end) = control_start.checked_add(control_byte_count) else {
-        return Err(ctx.refuse_codec_limit("catia_a5_nurbs_preflight", u64::MAX, u64::MAX));
-    };
-    let Some(control_bytes) = data.get(control_start..control_end) else {
-        return Ok(None);
-    };
-    let Some(control_width) = NonZeroUsize::MIN.checked_add(23) else {
-        return Err(CodecError::malformed(
-            "CATIA NURBS control-point width is zero",
-        ));
-    };
-    for chunk in ctx
-        .admit_iter(control_bytes, "catia_a5_nurbs_control_preflight_scan")?
-        .chunks(control_width)
-    {
-        if f64_point(chunk, 0).is_none() {
-            return Ok(None);
-        }
-    }
-    let mut distinct_knots = Vec::new();
-    let knot_chunks = ctx
-        .admit_iter(knot_bytes, "catia_a5_nurbs_knot_materialization")?
-        .chunks(knot_width);
-    ctx.reserve_vec(
-        &mut distinct_knots,
-        knot_count,
-        "catia_a5_nurbs_distinct_knots",
+        },
     )?;
-    for chunk in knot_chunks {
-        let Some(knot) = f64_le(chunk, 0) else {
-            return Ok(None);
-        };
-        distinct_knots.push(knot.get());
+    if candidate.as_ref().is_some_and(Result::is_ok) {
+        storage.commit()?;
     }
-    let mut control_points = Vec::new();
-    let control_chunks = ctx
-        .admit_iter(control_bytes, "catia_a5_nurbs_pole_materialization")?
-        .chunks(control_width);
-    ctx.reserve_vec(
-        &mut control_points,
-        control_count,
-        "catia_a5_nurbs_control_points",
-    )?;
-    for chunk in control_chunks {
-        let Some(point) = f64_point(chunk, 0) else {
-            return Ok(None);
-        };
-        control_points.push(point);
-    }
-    let Some(expanded_count) = usize::try_from(degree)
-        .ok()
-        .and_then(|degree| control_count.checked_add(degree))
-        .and_then(|count| count.checked_add(1))
-    else {
-        return Ok(None);
-    };
-    let mut knots = Vec::new();
-    ctx.charge_work(
-        u64_from_index(expanded_count),
-        "catia_a5_nurbs_knot_expansion_emit",
-    )?;
-    ctx.reserve_vec(&mut knots, expanded_count, "catia_a5_nurbs_expanded_knots")?;
-    for (index, knot) in ctx
-        .admit_iter(&distinct_knots, "catia_a5_nurbs_knot_expansion_scan")?
-        .copied()
-        .enumerate()
-    {
-        let multiplicity = if index == 0 || index + 1 == knot_count {
-            6
-        } else {
-            3
-        };
-        knots.extend(std::iter::repeat_with(|| knot).take(multiplicity));
-    }
-    crate::nurbs::note_refusal(
-        ctx,
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+    match candidate {
+        Some(result) => crate::nurbs::note_refusal(
             ctx,
-            degree,
-            knots,
-            control_points,
-            None,
-            false,
-        )?,
-        refusal,
-        format_args!("a5 NURBS curve record at byte {}", frame.pos),
-    )
-    .map(|geometry| {
-        geometry.map(|geometry| A5NurbsCurve {
-            pos: frame.pos,
-            header_token: frame.header_token,
-            geometry,
-        })
-    })
+            result,
+            refusal,
+            format_args!("a5 NURBS curve record at byte {}", frame.pos),
+        ),
+        None => Ok(None),
+    }
 }
 
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
@@ -1246,11 +1223,9 @@ impl A8FreeformCurve {
             self.sites.len(),
             "catia_a8_jet_multiplicities",
         )?;
-        ctx.charge_work(
-            u64_from_index(self.sites.len()),
-            "catia_a8_jet_multiplicity_projection",
-        )?;
-        multiplicities.extend(self.sites.iter().map(|site| site.multiplicity));
+        for site in ctx.admit_iter(&self.sites, "catia_a8_jet_multiplicity_projection")? {
+            multiplicities.push(site.multiplicity);
+        }
         Ok(multiplicities)
     }
 }
@@ -1261,35 +1236,38 @@ pub(in crate::families) fn rolling_ball_jet_definition(
     ctx: &DecodeContext<'_>,
     jet: &A8FreeformCurve,
 ) -> Result<Option<ProceduralSurfaceDefinition>, CodecError> {
-    if jet.sites.is_empty() {
-        return Ok(None);
-    }
-    let mut stations = Vec::new();
-    ctx.reserve_vec(&mut stations, jet.sites.len(), "catia_a8_jet_stations")?;
-    ctx.charge_work(
-        u64_from_index(jet.sites.len()),
-        "catia_a8_jet_station_projection",
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia rolling_ball_jet_definition candidate",
+        || -> Result<_, CodecError> {
+            if jet.sites.is_empty() {
+                return Ok(None);
+            }
+            let mut stations = Vec::new();
+            ctx.reserve_vec(&mut stations, jet.sites.len(), "catia_a8_jet_stations")?;
+            for sample in ctx.admit_iter(&jet.sites, "catia_a8_jet_station_projection")? {
+                stations.push(cadmpeg_ir::geometry::RollingBallJetStation {
+                    knot: sample.knot,
+                    multiplicity: sample.multiplicity,
+                    site: rolling_ball_jet_site(
+                        &sample.site,
+                        sample.first_derivatives,
+                        sample.second_derivatives,
+                    ),
+                });
+            }
+            Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
+                A8FreeformCurve::DEGREE,
+                stations,
+                ctx,
+            )?
+            .ok()
+            .map(ProceduralSurfaceDefinition::RollingBallJet))
+        },
     )?;
-    stations.extend(
-        jet.sites
-            .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot: sample.knot,
-                multiplicity: sample.multiplicity,
-                site: rolling_ball_jet_site(
-                    &sample.site,
-                    sample.first_derivatives,
-                    sample.second_derivatives,
-                ),
-            }),
-    );
-    Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_parts(
-        A8FreeformCurve::DEGREE,
-        stations,
-        ctx,
-    )?
-    .ok()
-    .map(ProceduralSurfaceDefinition::RollingBallJet))
+    if candidate.is_some() {
+        storage.commit()?;
+    }
+    Ok(candidate)
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two
@@ -1339,164 +1317,192 @@ fn parse_a8_curve(
     data: &[u8],
     frame: A8Frame,
 ) -> Result<Option<A8FreeformCurve>, CodecError> {
-    let A8Frame {
-        pos,
-        payload,
-        end,
-        object_id,
-    } = frame;
-    let Some(payload_bytes) = data.get(frame.payload..frame.end) else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        u64_from_index(payload_bytes.len()),
-        "catia_a8_jet_preflight",
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia parse_a8_curve candidate",
+        || -> Result<_, CodecError> {
+            let A8Frame {
+                pos,
+                payload,
+                end,
+                object_id,
+            } = frame;
+            if data.get(frame.payload..frame.end).is_none() {
+                return Ok(None);
+            }
+            let Some((count, knot_start, multiplicity_start, block_bytes)) = (|| {
+                let mut at = payload.checked_add(1)?;
+                let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+                let degree = compact_int(data, &mut at)?;
+                at = at.checked_add(2)?;
+                if usize::try_from(compact_int(data, &mut at)?).ok()? != count
+                    || count < 2
+                    || degree != 5
+                {
+                    return None;
+                }
+                at = at.checked_add(if data.get(at) == Some(&0x08) { 2 } else { 1 })?;
+                let knot_bytes = count.checked_mul(8)?;
+                let block_bytes = count.checked_mul(80)?;
+                let known_bytes = knot_bytes
+                    .checked_add(count)?
+                    .checked_add(block_bytes.checked_mul(3)?)?
+                    .checked_add(59)?;
+                if at.checked_add(known_bytes)? > end {
+                    return None;
+                }
+                let knot_start = at;
+                at = at.checked_add(count.checked_mul(8)?)?;
+                Some((count, knot_start, at, block_bytes))
+            })() else {
+                return Ok(None);
+            };
+            let multiplicity_indices = 0..count;
+            let mut at = multiplicity_start;
+            for index in ctx.admit_iter(
+                &multiplicity_indices,
+                "catia_a8_jet_multiplicity_preflight_scan",
+            )? {
+                let Some(multiplicity) = compact_int(data, &mut at) else {
+                    return Ok(None);
+                };
+                if (index == 0 || index + 1 == count) && multiplicity != 6 {
+                    return Ok(None);
+                }
+                if index != 0 && index + 1 != count && !matches!(multiplicity, 1 | 3) {
+                    return Ok(None);
+                }
+            }
+            let Some(block_start) = (|| {
+                let blocks_end = at.checked_add(block_bytes.checked_mul(3)?)?;
+                if blocks_end > end || end - blocks_end != 59 {
+                    return None;
+                }
+                Some(at)
+            })() else {
+                return Ok(None);
+            };
+            let Some(knot_byte_count) = count.checked_mul(8) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a8_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(knot_end) = knot_start.checked_add(knot_byte_count) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a8_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(knot_bytes) = data.get(knot_start..knot_end) else {
+                return Ok(None);
+            };
+            let Some(knot_width) = NonZeroUsize::MIN.checked_add(7) else {
+                return Err(CodecError::malformed("CATIA A8 jet knot width is zero"));
+            };
+            let mut previous_knot = None;
+            for chunk in ctx
+                .admit_iter(knot_bytes, "catia_a8_jet_knot_preflight_scan")?
+                .chunks(knot_width)
+            {
+                let Some(knot) = f64_le(chunk, 0) else {
+                    return Ok(None);
+                };
+                if previous_knot.is_some_and(|previous| knot.get() <= previous) {
+                    return Ok(None);
+                }
+                previous_knot = Some(knot.get());
+            }
+            let Some(first_block_end) = block_start.checked_add(block_bytes) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a8_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(second_block_end) = first_block_end.checked_add(block_bytes) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a8_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(third_block_end) = second_block_end.checked_add(block_bytes) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a8_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let (Some(first_block), Some(second_block), Some(third_block)) = (
+                data.get(block_start..first_block_end),
+                data.get(first_block_end..second_block_end),
+                data.get(second_block_end..third_block_end),
+            ) else {
+                return Ok(None);
+            };
+            let Some(block_width) = NonZeroUsize::MIN.checked_add(79) else {
+                return Err(CodecError::malformed("CATIA A8 jet block width is zero"));
+            };
+            let knots = ctx
+                .admit_iter(knot_bytes, "catia_a8_jet_materialization")?
+                .chunks(knot_width);
+            let positions = ctx
+                .admit_iter(first_block, "catia_a8_jet_materialization")?
+                .chunks(block_width);
+            let first_derivatives = ctx
+                .admit_iter(second_block, "catia_a8_jet_materialization")?
+                .chunks(block_width);
+            let second_derivatives = ctx
+                .admit_iter(third_block, "catia_a8_jet_materialization")?
+                .chunks(block_width);
+            let mut sites = Vec::new();
+            ctx.reserve_vec(&mut sites, count, "catia_a8_freeform_sites")?;
+            let mut multiplicity_at = multiplicity_start;
+            for (((knot_chunk, positions_chunk), first_chunk), second_chunk) in knots
+                .zip(positions)
+                .zip(first_derivatives)
+                .zip(second_derivatives)
+            {
+                let (
+                    Some(knot),
+                    Some(multiplicity),
+                    Some(positions),
+                    Some(first_derivatives),
+                    Some(second_derivatives),
+                ) = (
+                    f64_le(knot_chunk, 0),
+                    compact_int(data, &mut multiplicity_at),
+                    read_f64_array::<10>(positions_chunk, 0),
+                    read_f64_array::<10>(first_chunk, 0),
+                    read_f64_array::<10>(second_chunk, 0),
+                )
+                else {
+                    return Ok(None);
+                };
+                let Some(site) = rolling_ball_site(positions) else {
+                    return Ok(None);
+                };
+                sites.push(A8FreeformJet {
+                    knot,
+                    multiplicity,
+                    site,
+                    first_derivatives,
+                    second_derivatives,
+                });
+            }
+            Ok(Some(A8FreeformCurve {
+                pos,
+                object_id,
+                sites,
+            }))
+        },
     )?;
-    let Some((count, knot_start, multiplicity_start, block_bytes)) = (|| {
-        let mut at = payload.checked_add(1)?;
-        let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-        let degree = compact_int(data, &mut at)?;
-        at = at.checked_add(2)?;
-        if usize::try_from(compact_int(data, &mut at)?).ok()? != count || count < 2 || degree != 5 {
-            return None;
-        }
-        at = at.checked_add(if data.get(at) == Some(&0x08) { 2 } else { 1 })?;
-        let knot_bytes = count.checked_mul(8)?;
-        let block_bytes = count.checked_mul(80)?;
-        let known_bytes = knot_bytes
-            .checked_add(count)?
-            .checked_add(block_bytes.checked_mul(3)?)?
-            .checked_add(59)?;
-        if at.checked_add(known_bytes)? > end {
-            return None;
-        }
-        let knot_start = at;
-        at = at.checked_add(count.checked_mul(8)?)?;
-        Some((count, knot_start, at, block_bytes))
-    })() else {
-        return Ok(None);
-    };
-    let multiplicity_indices = 0..count;
-    let mut at = multiplicity_start;
-    for index in ctx.admit_iter(
-        &multiplicity_indices,
-        "catia_a8_jet_multiplicity_preflight_scan",
-    )? {
-        let Some(multiplicity) = compact_int(data, &mut at) else {
-            return Ok(None);
-        };
-        if (index == 0 || index + 1 == count) && multiplicity != 6 {
-            return Ok(None);
-        }
-        if index != 0 && index + 1 != count && !matches!(multiplicity, 1 | 3) {
-            return Ok(None);
-        }
+    if candidate.is_some() {
+        storage.commit()?;
     }
-    let Some(block_start) = (|| {
-        let blocks_end = at.checked_add(block_bytes.checked_mul(3)?)?;
-        if blocks_end > end || end - blocks_end != 59 {
-            return None;
-        }
-        Some(at)
-    })() else {
-        return Ok(None);
-    };
-    let Some(knot_byte_count) = count.checked_mul(8) else {
-        return Err(ctx.refuse_codec_limit("catia_a8_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let Some(knot_end) = knot_start.checked_add(knot_byte_count) else {
-        return Err(ctx.refuse_codec_limit("catia_a8_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let Some(knot_bytes) = data.get(knot_start..knot_end) else {
-        return Ok(None);
-    };
-    let Some(knot_width) = NonZeroUsize::MIN.checked_add(7) else {
-        return Err(CodecError::malformed("CATIA A8 jet knot width is zero"));
-    };
-    let mut previous_knot = None;
-    for chunk in ctx
-        .admit_iter(knot_bytes, "catia_a8_jet_knot_preflight_scan")?
-        .chunks(knot_width)
-    {
-        let Some(knot) = f64_le(chunk, 0) else {
-            return Ok(None);
-        };
-        if previous_knot.is_some_and(|previous| knot.get() <= previous) {
-            return Ok(None);
-        }
-        previous_knot = Some(knot.get());
-    }
-    let Some(first_block_end) = block_start.checked_add(block_bytes) else {
-        return Err(ctx.refuse_codec_limit("catia_a8_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let Some(second_block_end) = first_block_end.checked_add(block_bytes) else {
-        return Err(ctx.refuse_codec_limit("catia_a8_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let Some(third_block_end) = second_block_end.checked_add(block_bytes) else {
-        return Err(ctx.refuse_codec_limit("catia_a8_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let (Some(first_block), Some(second_block), Some(third_block)) = (
-        data.get(block_start..first_block_end),
-        data.get(first_block_end..second_block_end),
-        data.get(second_block_end..third_block_end),
-    ) else {
-        return Ok(None);
-    };
-    let Some(block_width) = NonZeroUsize::MIN.checked_add(79) else {
-        return Err(CodecError::malformed("CATIA A8 jet block width is zero"));
-    };
-    let knots = ctx
-        .admit_iter(knot_bytes, "catia_a8_jet_materialization")?
-        .chunks(knot_width);
-    let positions = ctx
-        .admit_iter(first_block, "catia_a8_jet_materialization")?
-        .chunks(block_width);
-    let first_derivatives = ctx
-        .admit_iter(second_block, "catia_a8_jet_materialization")?
-        .chunks(block_width);
-    let second_derivatives = ctx
-        .admit_iter(third_block, "catia_a8_jet_materialization")?
-        .chunks(block_width);
-    let mut sites = Vec::new();
-    ctx.reserve_vec(&mut sites, count, "catia_a8_freeform_sites")?;
-    let mut multiplicity_at = multiplicity_start;
-    for (((knot_chunk, positions_chunk), first_chunk), second_chunk) in knots
-        .zip(positions)
-        .zip(first_derivatives)
-        .zip(second_derivatives)
-    {
-        let (
-            Some(knot),
-            Some(multiplicity),
-            Some(positions),
-            Some(first_derivatives),
-            Some(second_derivatives),
-        ) = (
-            f64_le(knot_chunk, 0),
-            compact_int(data, &mut multiplicity_at),
-            read_f64_array::<10>(positions_chunk, 0),
-            read_f64_array::<10>(first_chunk, 0),
-            read_f64_array::<10>(second_chunk, 0),
-        )
-        else {
-            return Ok(None);
-        };
-        let Some(site) = rolling_ball_site(positions) else {
-            return Ok(None);
-        };
-        sites.push(A8FreeformJet {
-            knot,
-            multiplicity,
-            site,
-            first_derivatives,
-            second_derivatives,
-        });
-    }
-    Ok(Some(A8FreeformCurve {
-        pos,
-        object_id,
-        sites,
-    }))
+    Ok(candidate)
 }
 
 /// Decode framed `a5 03 32` rolling-ball jet records.
@@ -1540,133 +1546,167 @@ fn parse_a5_curve(
     data: &[u8],
     frame: ConsolidatedFrame,
 ) -> Result<Option<A5FreeformCurve>, CodecError> {
-    let ConsolidatedFrame {
-        pos,
-        payload,
-        end,
-        header_token,
-    } = frame;
-    let Some(payload_bytes) = data.get(frame.payload..frame.end) else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        u64_from_index(payload_bytes.len()),
-        "catia_a5_jet_preflight",
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia parse_a5_curve candidate",
+        || -> Result<_, CodecError> {
+            let ConsolidatedFrame {
+                pos,
+                payload,
+                end,
+                header_token,
+            } = frame;
+            if data.get(frame.payload..frame.end).is_none() {
+                return Ok(None);
+            }
+            let Some((count, knot_start, block_start, block_bytes)) = (|| {
+                if data.get(pos) == Some(&0xa5) {
+                    let header_byte = u8::try_from(header_token).ok()?;
+                    a5_int(header_byte)?;
+                }
+                let mut at = payload;
+                let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
+                let degree = compact_int(data, &mut at)?;
+                if usize::try_from(compact_int(data, &mut at)?).ok()? != count
+                    || count < 2
+                    || degree != 5
+                {
+                    return None;
+                }
+                match data.get(at..at + 2) {
+                    Some([0x0c, _]) => at += 1,
+                    Some([0x08, marker]) if a5_int(*marker).is_some() => at += 2,
+                    _ => return None,
+                }
+                let knot_bytes = count.checked_mul(8)?;
+                let block_bytes = count.checked_mul(80)?;
+                let known_bytes = knot_bytes.checked_add(block_bytes.checked_mul(3)?)?;
+                if at.checked_add(known_bytes)? > end {
+                    return None;
+                }
+                let knot_start = at;
+                at = at.checked_add(count.checked_mul(8)?)?;
+                Some((count, knot_start, at, block_bytes))
+            })() else {
+                return Ok(None);
+            };
+            let Some(knot_byte_count) = count.checked_mul(8) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a5_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(knot_end) = knot_start.checked_add(knot_byte_count) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a5_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(knot_bytes) = data.get(knot_start..knot_end) else {
+                return Ok(None);
+            };
+            let Some(knot_width) = NonZeroUsize::MIN.checked_add(7) else {
+                return Err(CodecError::malformed("CATIA A5 jet knot width is zero"));
+            };
+            let mut previous_knot = None;
+            for chunk in ctx
+                .admit_iter(knot_bytes, "catia_a5_jet_knot_preflight_scan")?
+                .chunks(knot_width)
+            {
+                let Some(knot) = f64_le(chunk, 0) else {
+                    return Ok(None);
+                };
+                if previous_knot.is_some_and(|previous| knot.get() <= previous) {
+                    return Ok(None);
+                }
+                previous_knot = Some(knot.get());
+            }
+            let Some(first_block_end) = block_start.checked_add(block_bytes) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a5_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(second_block_end) = first_block_end.checked_add(block_bytes) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a5_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(third_block_end) = second_block_end.checked_add(block_bytes) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a5_jet_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let (Some(first_block), Some(second_block), Some(third_block)) = (
+                data.get(block_start..first_block_end),
+                data.get(first_block_end..second_block_end),
+                data.get(second_block_end..third_block_end),
+            ) else {
+                return Ok(None);
+            };
+            let Some(block_width) = NonZeroUsize::MIN.checked_add(79) else {
+                return Err(CodecError::malformed("CATIA A5 jet block width is zero"));
+            };
+            let knots = ctx
+                .admit_iter(knot_bytes, "catia_a5_jet_materialization")?
+                .chunks(knot_width);
+            let positions = ctx
+                .admit_iter(first_block, "catia_a5_jet_materialization")?
+                .chunks(block_width);
+            let first_derivatives = ctx
+                .admit_iter(second_block, "catia_a5_jet_materialization")?
+                .chunks(block_width);
+            let second_derivatives = ctx
+                .admit_iter(third_block, "catia_a5_jet_materialization")?
+                .chunks(block_width);
+            let mut sites = Vec::new();
+            ctx.reserve_vec(&mut sites, count, "catia_a5_freeform_sites")?;
+            for (((knot_chunk, positions_chunk), first_chunk), second_chunk) in knots
+                .zip(positions)
+                .zip(first_derivatives)
+                .zip(second_derivatives)
+            {
+                let (
+                    Some(knot),
+                    Some(positions),
+                    Some(first_derivatives),
+                    Some(second_derivatives),
+                ) = (
+                    f64_le(knot_chunk, 0),
+                    read_f64_array::<10>(positions_chunk, 0),
+                    read_f64_array::<10>(first_chunk, 0),
+                    read_f64_array::<10>(second_chunk, 0),
+                )
+                else {
+                    return Ok(None);
+                };
+                let Some(site) = rolling_ball_site(positions) else {
+                    return Ok(None);
+                };
+                sites.push(A5FreeformJet {
+                    knot,
+                    site,
+                    first_derivatives,
+                    second_derivatives,
+                });
+            }
+            Ok(Some(A5FreeformCurve {
+                pos,
+                header_token,
+                sites,
+            }))
+        },
     )?;
-    let Some((count, knot_start, block_start, block_bytes)) = (|| {
-        if data.get(pos) == Some(&0xa5) {
-            let header_byte = u8::try_from(header_token).ok()?;
-            a5_int(header_byte)?;
-        }
-        let mut at = payload;
-        let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-        let degree = compact_int(data, &mut at)?;
-        if usize::try_from(compact_int(data, &mut at)?).ok()? != count || count < 2 || degree != 5 {
-            return None;
-        }
-        match data.get(at..at + 2) {
-            Some([0x0c, _]) => at += 1,
-            Some([0x08, marker]) if a5_int(*marker).is_some() => at += 2,
-            _ => return None,
-        }
-        let knot_bytes = count.checked_mul(8)?;
-        let block_bytes = count.checked_mul(80)?;
-        let known_bytes = knot_bytes.checked_add(block_bytes.checked_mul(3)?)?;
-        if at.checked_add(known_bytes)? > end {
-            return None;
-        }
-        let knot_start = at;
-        at = at.checked_add(count.checked_mul(8)?)?;
-        Some((count, knot_start, at, block_bytes))
-    })() else {
-        return Ok(None);
-    };
-    let Some(knot_byte_count) = count.checked_mul(8) else {
-        return Err(ctx.refuse_codec_limit("catia_a5_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let Some(knot_end) = knot_start.checked_add(knot_byte_count) else {
-        return Err(ctx.refuse_codec_limit("catia_a5_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let Some(knot_bytes) = data.get(knot_start..knot_end) else {
-        return Ok(None);
-    };
-    let Some(knot_width) = NonZeroUsize::MIN.checked_add(7) else {
-        return Err(CodecError::malformed("CATIA A5 jet knot width is zero"));
-    };
-    let mut previous_knot = None;
-    for chunk in ctx
-        .admit_iter(knot_bytes, "catia_a5_jet_knot_preflight_scan")?
-        .chunks(knot_width)
-    {
-        let Some(knot) = f64_le(chunk, 0) else {
-            return Ok(None);
-        };
-        if previous_knot.is_some_and(|previous| knot.get() <= previous) {
-            return Ok(None);
-        }
-        previous_knot = Some(knot.get());
+    if candidate.is_some() {
+        storage.commit()?;
     }
-    let Some(first_block_end) = block_start.checked_add(block_bytes) else {
-        return Err(ctx.refuse_codec_limit("catia_a5_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let Some(second_block_end) = first_block_end.checked_add(block_bytes) else {
-        return Err(ctx.refuse_codec_limit("catia_a5_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let Some(third_block_end) = second_block_end.checked_add(block_bytes) else {
-        return Err(ctx.refuse_codec_limit("catia_a5_jet_materialization", u64::MAX, u64::MAX));
-    };
-    let (Some(first_block), Some(second_block), Some(third_block)) = (
-        data.get(block_start..first_block_end),
-        data.get(first_block_end..second_block_end),
-        data.get(second_block_end..third_block_end),
-    ) else {
-        return Ok(None);
-    };
-    let Some(block_width) = NonZeroUsize::MIN.checked_add(79) else {
-        return Err(CodecError::malformed("CATIA A5 jet block width is zero"));
-    };
-    let knots = ctx
-        .admit_iter(knot_bytes, "catia_a5_jet_materialization")?
-        .chunks(knot_width);
-    let positions = ctx
-        .admit_iter(first_block, "catia_a5_jet_materialization")?
-        .chunks(block_width);
-    let first_derivatives = ctx
-        .admit_iter(second_block, "catia_a5_jet_materialization")?
-        .chunks(block_width);
-    let second_derivatives = ctx
-        .admit_iter(third_block, "catia_a5_jet_materialization")?
-        .chunks(block_width);
-    let mut sites = Vec::new();
-    ctx.reserve_vec(&mut sites, count, "catia_a5_freeform_sites")?;
-    for (((knot_chunk, positions_chunk), first_chunk), second_chunk) in knots
-        .zip(positions)
-        .zip(first_derivatives)
-        .zip(second_derivatives)
-    {
-        let (Some(knot), Some(positions), Some(first_derivatives), Some(second_derivatives)) = (
-            f64_le(knot_chunk, 0),
-            read_f64_array::<10>(positions_chunk, 0),
-            read_f64_array::<10>(first_chunk, 0),
-            read_f64_array::<10>(second_chunk, 0),
-        ) else {
-            return Ok(None);
-        };
-        let Some(site) = rolling_ball_site(positions) else {
-            return Ok(None);
-        };
-        sites.push(A5FreeformJet {
-            knot,
-            site,
-            first_derivatives,
-            second_derivatives,
-        });
-    }
-    Ok(Some(A5FreeformCurve {
-        pos,
-        header_token,
-        sites,
-    }))
+    Ok(candidate)
 }
 
 fn rolling_ball_site(values: [FiniteReal; 10]) -> Option<RollingBallSite> {
@@ -1735,13 +1775,10 @@ fn parse_object_stream_pcurve(
     end: usize,
     object_id: u32,
 ) -> Result<Option<A8Pcurve>, CodecError> {
-    let Some(payload_bytes) = data.get(payload..end) else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        u64_from_index(payload_bytes.len()),
-        "catia_object_stream_pcurve_preflight",
-    )?;
+    let (candidate, storage) = ctx.with_scoped_storage("catia parse_object_stream_pcurve candidate", || -> Result<_, CodecError> {
+    if data.get(payload..end).is_none() {
+    return Ok(None);
+}
     let Some((support_id, count, knot_start, array_bytes, mut at)) = (|| {
         let mut at = payload + 1;
         let support_id = object_stream_reference(data, &mut at)?;
@@ -1959,6 +1996,12 @@ fn parse_object_stream_pcurve(
         sites,
         range,
     }))
+
+    })?;
+    if candidate.is_some() {
+        storage.commit()?;
+    }
+    Ok(candidate)
 }
 
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
@@ -1971,7 +2014,11 @@ pub(crate) fn a8_surfaces(
 ) -> Result<Vec<FreeformSurface>, CodecError> {
     let mut surfaces = Vec::new();
     for frame in a8_frames(ctx, data, 0x34)? {
-        let Some(parsed) = parse_a8_surface_header(ctx, data, frame)? else {
+        let (parsed, _header_storage) = ctx.with_scoped_storage(
+            "catia A8 surface header scratch",
+            || -> Result<_, CodecError> { parse_a8_surface_header(ctx, data, frame) },
+        )?;
+        let Some(parsed) = parsed else {
             continue;
         };
         if let Some(surface) = a8_surface_from_parsed(ctx, data, parsed, refusal)? {
@@ -2050,7 +2097,13 @@ pub(in crate::families) fn resolved_a8_surface_from_object_frame(
     object_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FreeformSurface>, CodecError> {
-    let Some(parsed) = parse_selected_a8_surface_header(ctx, data, start, end, object_id)? else {
+    let (parsed, _header_storage) = ctx.with_scoped_storage(
+        "catia A8 selected header scratch",
+        || -> Result<_, CodecError> {
+            parse_selected_a8_surface_header(ctx, data, start, end, object_id)
+        },
+    )?;
+    let Some(parsed) = parsed else {
         return Ok(None);
     };
     if parsed.header.pole_storage == PoleStorage::Elided {
@@ -2070,58 +2123,94 @@ fn a8_surface_from_external_grid(
     header: &A8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FreeformSurface>, CodecError> {
-    let Some(need) = ExternalGridNeed::from_header(ctx, header)? else {
-        return Ok(None);
-    };
-    let mut ranges = a8_external_grid_candidate_ranges(ctx, data, need)?;
-    let Some(range) = ranges.next().transpose()? else {
-        return Ok(None);
-    };
-    if ranges.next().transpose()?.is_some() {
-        return Ok(None);
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia a8_surface_from_external_grid candidate",
+        || -> Result<_, CodecError> {
+            let Some(need) = ExternalGridNeed::from_header(ctx, header)? else {
+                return Ok(None);
+            };
+            let mut ranges = a8_external_grid_candidate_ranges(ctx, data, need)?;
+            let Some(range) = ranges.next().transpose()? else {
+                return Ok(None);
+            };
+            if ranges.next().transpose()?.is_some() {
+                return Ok(None);
+            }
+            let mut grid_storage = ctx.reserve_scoped(0, "catia external flat grid")?;
+            let Some(ExternalGridCandidate {
+                control_points,
+                weights,
+                ..
+            }) = grid_storage
+                .with_storage(|| parse_external_grid_candidate(ctx, data, header, range))?
+            else {
+                return Ok(None);
+            };
+            let Some(row_len) = header
+                .v_count(ctx)?
+                .and_then(|count| usize::try_from(count).ok())
+            else {
+                return Ok(None);
+            };
+            let u_knots = header.u_knots.expanded(ctx)?;
+            let v_knots = header.v_knots.expanded(ctx)?;
+            let (control_points, weights) = if let Some(weights) = weights {
+                grid_storage.with_storage(|| -> Result<_, CodecError> {
+                    Ok((
+                        grid_rows(ctx, control_points, row_len, "catia_a8_external_pole_rows")?,
+                        Some(grid_rows(
+                            ctx,
+                            weights,
+                            row_len,
+                            "catia_a8_external_weight_rows",
+                        )?),
+                    ))
+                })?
+            } else {
+                (
+                    grid_rows(ctx, control_points, row_len, "catia_a8_external_pole_rows")?,
+                    None,
+                )
+            };
+            Ok(Some(
+                NurbsSurface::from_checked_lanes(
+                    ctx,
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        header.u_degree,
+                        u_knots,
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        header.v_degree,
+                        v_knots,
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+                    false,
+                )?
+                .map(|geometry| FreeformSurface {
+                    pos: header.pos,
+                    identity: Some(header.object_id),
+                    geometry,
+                }),
+            ))
+        },
+    )?;
+    if candidate.as_ref().is_some_and(Result::is_ok) {
+        storage.commit()?;
     }
-    let Some(ExternalGridCandidate {
-        control_points,
-        weights,
-        ..
-    }) = parse_external_grid_candidate(ctx, data, header, range)?
-    else {
-        return Ok(None);
-    };
-    let Some(row_len) = header
-        .v_count(ctx)?
-        .and_then(|count| usize::try_from(count).ok())
-    else {
-        return Ok(None);
-    };
-    let u_knots = header.u_knots.expanded(ctx)?;
-    let v_knots = header.v_knots.expanded(ctx)?;
-    let control_points = grid_rows(ctx, control_points, row_len, "catia_a8_external_pole_rows")?;
-    let weights = weights
-        .map(|values| grid_rows(ctx, values, row_len, "catia_a8_external_weight_rows"))
-        .transpose()?;
-    crate::nurbs::note_refusal(
-        ctx,
-        NurbsSurface::from_checked_lanes(
+    match candidate {
+        Some(result) => crate::nurbs::note_refusal(
             ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.u_degree, u_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.v_degree, v_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
-            false,
-        )?,
-        refusal,
-        format_args!(
-            "a8 NURBS surface record #{} at byte {}",
-            header.object_id, header.pos
+            result,
+            refusal,
+            format_args!(
+                "a8 NURBS surface record #{} at byte {}",
+                header.object_id, header.pos
+            ),
         ),
-    )
-    .map(|geometry| {
-        geometry.map(|geometry| FreeformSurface {
-            pos: header.pos,
-            identity: Some(header.object_id),
-            geometry,
-        })
-    })
+        None => Ok(None),
+    }
 }
 
 /// Return every complete support-bound external A8 pole allocation.
@@ -2131,13 +2220,9 @@ pub(in crate::families) fn a8_external_grid_ranges(
 ) -> Result<Vec<Range<usize>>, CodecError> {
     let mut ranges = Vec::new();
     for frame in a8_frames(ctx, data, 0x34)? {
-        let Some(payload_bytes) = data.get(frame.payload..frame.end) else {
+        if data.get(frame.payload..frame.end).is_none() {
             continue;
-        };
-        ctx.charge_work(
-            u64_from_index(payload_bytes.len()),
-            "catia_a8_lane_preflight",
-        )?;
+        }
         let Some(layout) = scan_a8_surface_layout(ctx, data, frame)? else {
             continue;
         };
@@ -2149,13 +2234,24 @@ pub(in crate::families) fn a8_external_grid_ranges(
             ctx.push_vec(&mut ranges, range?, "catia_a8_external_grid_ranges")?;
         }
     }
-    ctx.sort_unstable_by_key(
-        &mut ranges,
-        |value| (value.start, value.end),
-        Ord::cmp,
-        "catia_a8_external_grid_ranges_sort",
-    )?;
-    ranges.dedup();
+    match ranges.len() {
+        0 | 1 => {}
+        2 => {
+            if (ranges[0].start, ranges[0].end) > (ranges[1].start, ranges[1].end) {
+                ranges.swap(0, 1);
+            }
+        }
+        _ => ctx.sort_unstable_by_key(
+            &mut ranges,
+            |value| (value.start, value.end),
+            Ord::cmp,
+            "catia_a8_external_grid_ranges_sort",
+        )?,
+    }
+    if ranges.len() > 1 {
+        ctx.admit_iter(&ranges, "catia_a8_external_grid_range_dedup")?;
+        ranges.dedup();
+    }
     Ok(ranges)
 }
 
@@ -2206,10 +2302,6 @@ fn a8_external_grid_candidate_ranges<'a>(
     data: &'a [u8],
     need: ExternalGridNeed,
 ) -> Result<impl Iterator<Item = Result<Range<usize>, CodecError>> + 'a, CodecError> {
-    let scan_work = u64_from_index(data.len()).checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("catia_external_grid_frame_scan", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_work(scan_work, "catia_external_grid_frame_scan")?;
     let layout = (|| {
         if need.pole_storage != PoleStorage::Elided {
             return None;
@@ -2326,95 +2418,108 @@ fn parse_external_grid_candidate(
     header: &A8SurfaceHeader,
     range: Range<usize>,
 ) -> Result<Option<ExternalGridCandidate>, CodecError> {
-    let Some(poles) = header
-        .u_count(ctx)?
-        .zip(header.v_count(ctx)?)
-        .and_then(|(u, v)| {
-            crate::nurbs_surface_control_count(usize::try_from(u).ok()?, usize::try_from(v).ok()?)
-        })
-    else {
-        return Ok(None);
-    };
-    let Some(pole_bytes) = poles.checked_mul(24) else {
-        return Err(ctx.refuse_codec_limit(
-            "catia_a8_external_pole_materialization",
-            u64::MAX,
-            u64::MAX,
-        ));
-    };
-    let Some(pole_end) = range.start.checked_add(pole_bytes) else {
-        return Err(ctx.refuse_codec_limit(
-            "catia_a8_external_pole_materialization",
-            u64::MAX,
-            u64::MAX,
-        ));
-    };
-    if pole_end > range.end {
-        return Ok(None);
-    }
-    let Some(pole_lane) = data.get(range.start..pole_end) else {
-        return Ok(None);
-    };
-    let Some(pole_width) = NonZeroUsize::MIN.checked_add(23) else {
-        return Err(CodecError::malformed("CATIA external pole width is zero"));
-    };
-    let mut control_points = Vec::new();
-    let pole_chunks = ctx
-        .admit_iter(pole_lane, "catia_a8_external_pole_materialization")?
-        .chunks(pole_width);
-    ctx.reserve_vec(&mut control_points, poles, "catia_a8_external_poles")?;
-    for chunk in pole_chunks {
-        let Some(point) = f64_point(chunk, 0) else {
-            return Ok(None);
-        };
-        control_points.push(point);
-    }
-    let mut at = pole_end;
-    let weights = if header.rational {
-        let Some(weight_bytes) = poles.checked_mul(8) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_a8_external_pole_materialization",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        let Some(weight_end) = at.checked_add(weight_bytes) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_a8_external_pole_materialization",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        if weight_end > range.end {
-            return Ok(None);
-        }
-        let Some(weight_lane) = data.get(at..weight_end) else {
-            return Ok(None);
-        };
-        let Some(weight_width) = NonZeroUsize::MIN.checked_add(7) else {
-            return Err(CodecError::malformed("CATIA external weight width is zero"));
-        };
-        let mut weights = Vec::new();
-        let weight_chunks = ctx
-            .admit_iter(weight_lane, "catia_a8_external_weight_materialization")?
-            .chunks(weight_width);
-        ctx.reserve_vec(&mut weights, poles, "catia_a8_external_weights")?;
-        for chunk in weight_chunks {
-            let Some(weight) = f64_le(chunk, 0).and_then(|value| NonZeroReal::new(value.get()))
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia parse_external_grid_candidate candidate",
+        || -> Result<_, CodecError> {
+            let Some(poles) = header
+                .u_count(ctx)?
+                .zip(header.v_count(ctx)?)
+                .and_then(|(u, v)| {
+                    crate::nurbs_surface_control_count(
+                        usize::try_from(u).ok()?,
+                        usize::try_from(v).ok()?,
+                    )
+                })
             else {
                 return Ok(None);
             };
-            weights.push(weight);
-        }
-        at = weight_end;
-        Some(weights)
-    } else {
-        None
-    };
-    Ok((at == range.end).then_some(ExternalGridCandidate {
-        control_points,
-        weights,
-    }))
+            let Some(pole_bytes) = poles.checked_mul(24) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a8_external_pole_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(pole_end) = range.start.checked_add(pole_bytes) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a8_external_pole_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            if pole_end > range.end {
+                return Ok(None);
+            }
+            let Some(pole_lane) = data.get(range.start..pole_end) else {
+                return Ok(None);
+            };
+            let Some(pole_width) = NonZeroUsize::MIN.checked_add(23) else {
+                return Err(CodecError::malformed("CATIA external pole width is zero"));
+            };
+            let mut control_points = Vec::new();
+            let pole_chunks = ctx
+                .admit_iter(pole_lane, "catia_a8_external_pole_materialization")?
+                .chunks(pole_width);
+            ctx.reserve_vec(&mut control_points, poles, "catia_a8_external_poles")?;
+            for chunk in pole_chunks {
+                let Some(point) = f64_point(chunk, 0) else {
+                    return Ok(None);
+                };
+                control_points.push(point);
+            }
+            let mut at = pole_end;
+            let weights = if header.rational {
+                let Some(weight_bytes) = poles.checked_mul(8) else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_a8_external_pole_materialization",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                let Some(weight_end) = at.checked_add(weight_bytes) else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_a8_external_pole_materialization",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                if weight_end > range.end {
+                    return Ok(None);
+                }
+                let Some(weight_lane) = data.get(at..weight_end) else {
+                    return Ok(None);
+                };
+                let Some(weight_width) = NonZeroUsize::MIN.checked_add(7) else {
+                    return Err(CodecError::malformed("CATIA external weight width is zero"));
+                };
+                let mut weights = Vec::new();
+                let weight_chunks = ctx
+                    .admit_iter(weight_lane, "catia_a8_external_weight_materialization")?
+                    .chunks(weight_width);
+                ctx.reserve_vec(&mut weights, poles, "catia_a8_external_weights")?;
+                for chunk in weight_chunks {
+                    let Some(weight) =
+                        f64_le(chunk, 0).and_then(|value| NonZeroReal::new(value.get()))
+                    else {
+                        return Ok(None);
+                    };
+                    weights.push(weight);
+                }
+                at = weight_end;
+                Some(weights)
+            } else {
+                None
+            };
+            Ok((at == range.end).then_some(ExternalGridCandidate {
+                control_points,
+                weights,
+            }))
+        },
+    )?;
+    if candidate.is_some() {
+        storage.commit()?;
+    }
+    Ok(candidate)
 }
 
 fn grid_rows<T>(
@@ -2429,10 +2534,10 @@ fn grid_rows<T>(
     let rows = values.len() / row_len;
     let row_indices = 0..rows;
     let admitted_rows = ctx.admit_iter(&row_indices, operation)?;
-    ctx.charge_work(u64_from_index(values.len()), operation)?;
+
     let mut result = Vec::new();
     ctx.reserve_vec(&mut result, rows, operation)?;
-    let mut values = values.into_iter();
+    let mut values = ctx.admit_iter(values, operation)?;
     for _ in admitted_rows {
         let mut row = Vec::new();
         ctx.reserve_vec(&mut row, row_len, operation)?;
@@ -2492,142 +2597,180 @@ fn a5_surface(
     frame: ConsolidatedFrame,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FreeformSurface>, CodecError> {
-    let ConsolidatedFrame {
-        pos, payload, end, ..
-    } = frame;
-    let mut at = payload;
-    let Some(u_degree) = data.get(at).and_then(|&byte| a5_int(byte)) else {
-        return Ok(None);
-    };
-    at += 1;
-    let Some(u_distinct_count) = data
-        .get(at)
-        .and_then(|&byte| a5_int(byte))
-        .and_then(|count| usize::try_from(count).ok())
-    else {
-        return Ok(None);
-    };
-    let Some(next) = a5_array_marker(data, at + 1) else {
-        return Ok(None);
-    };
-    at = next;
-    let Some(u_distinct) = a5_distinct_values(ctx, data, &mut at, u_distinct_count, end)? else {
-        return Ok(None);
-    };
-    let Some(v_degree) = data.get(at).and_then(|&byte| a5_int(byte)) else {
-        return Ok(None);
-    };
-    at += 1;
-    let Some(v_distinct_count) = data
-        .get(at)
-        .and_then(|&byte| a5_int(byte))
-        .and_then(|count| usize::try_from(count).ok())
-    else {
-        return Ok(None);
-    };
-    let Some(next) = a5_array_marker(data, at + 1) else {
-        return Ok(None);
-    };
-    at = next;
-    let Some(v_distinct) = a5_distinct_values(ctx, data, &mut at, v_distinct_count, end)? else {
-        return Ok(None);
-    };
-    let Some(&mode) = data.get(at) else {
-        return Ok(None);
-    };
-    at += 1;
-    if !knots_strictly_increasing(&u_distinct, |count| {
-        ctx.charge_work(count, "catia_a5_surface_knot_order_scan")
-    })? || !knots_strictly_increasing(&v_distinct, |count| {
-        ctx.charge_work(count, "catia_a5_surface_knot_order_scan")
-    })? {
-        return Ok(None);
-    }
-    let Some((u_knots, u_count)) = a5_knots(ctx, &u_distinct, u_degree)? else {
-        return Ok(None);
-    };
-    let Some((v_knots, v_count)) = a5_knots(ctx, &v_distinct, v_degree)? else {
-        return Ok(None);
-    };
-    let (Some(u_count), Some(v_count)) =
-        (usize::try_from(u_count).ok(), usize::try_from(v_count).ok())
-    else {
-        return Ok(None);
-    };
-    let Some(poles) = crate::nurbs_surface_control_count(u_count, v_count) else {
-        return Ok(None);
-    };
-    let Some(pole_byte_count) = poles.checked_mul(24) else {
-        return Err(ctx.refuse_codec_limit(
-            "catia_a5_surface_pole_materialization",
-            u64::MAX,
-            u64::MAX,
-        ));
-    };
-    let Some(end_poles) = at.checked_add(pole_byte_count) else {
-        return Err(ctx.refuse_codec_limit(
-            "catia_a5_surface_pole_materialization",
-            u64::MAX,
-            u64::MAX,
-        ));
-    };
-    if end_poles > end {
-        return Ok(None);
-    }
-    let Some(pole_bytes) = data.get(at..end_poles) else {
-        return Ok(None);
-    };
-    let Some(pole_width) = NonZeroUsize::MIN.checked_add(23) else {
-        return Err(CodecError::malformed("CATIA A5 surface pole width is zero"));
-    };
-    let mut control_points = Vec::new();
-    let pole_chunks = ctx
-        .admit_iter(pole_bytes, "catia_a5_surface_pole_materialization")?
-        .chunks(pole_width);
-    ctx.reserve_vec(&mut control_points, poles, "catia_a5_surface_poles")?;
-    for chunk in pole_chunks {
-        let Some(point) = f64_point(chunk, 0) else {
-            return Ok(None);
-        };
-        control_points.push(point);
-    }
-    at = end_poles;
-    let weights = match mode {
-        0x01 => None,
-        0x05 => {
-            let Some(weights) = a5_weights(ctx, data, &mut at, u_count, v_count, end)? else {
+    let (candidate, storage) =
+        ctx.with_scoped_storage("catia a5_surface candidate", || -> Result<_, CodecError> {
+            let ConsolidatedFrame {
+                pos, payload, end, ..
+            } = frame;
+            let mut knot_storage = ctx.reserve_scoped(0, "catia A5 distinct surface knots")?;
+            let mut at = payload;
+            let Some(u_degree) = data.get(at).and_then(|&byte| a5_int(byte)) else {
                 return Ok(None);
             };
-            Some(weights)
-        }
-        _ => return Ok(None),
-    };
-    if parse_surface_tail(ctx, data, at, end)?.is_none() {
-        return Ok(None);
+            at += 1;
+            let Some(u_distinct_count) = data
+                .get(at)
+                .and_then(|&byte| a5_int(byte))
+                .and_then(|count| usize::try_from(count).ok())
+            else {
+                return Ok(None);
+            };
+            let Some(next) = a5_array_marker(data, at + 1) else {
+                return Ok(None);
+            };
+            at = next;
+            let Some(u_distinct) = knot_storage
+                .with_storage(|| a5_distinct_values(ctx, data, &mut at, u_distinct_count, end))?
+            else {
+                return Ok(None);
+            };
+            let Some(v_degree) = data.get(at).and_then(|&byte| a5_int(byte)) else {
+                return Ok(None);
+            };
+            at += 1;
+            let Some(v_distinct_count) = data
+                .get(at)
+                .and_then(|&byte| a5_int(byte))
+                .and_then(|count| usize::try_from(count).ok())
+            else {
+                return Ok(None);
+            };
+            let Some(next) = a5_array_marker(data, at + 1) else {
+                return Ok(None);
+            };
+            at = next;
+            let Some(v_distinct) = knot_storage
+                .with_storage(|| a5_distinct_values(ctx, data, &mut at, v_distinct_count, end))?
+            else {
+                return Ok(None);
+            };
+            let Some(&mode) = data.get(at) else {
+                return Ok(None);
+            };
+            at += 1;
+            if !ctx.all_by(
+                1..u_distinct.len(),
+                |index| Ok(u_distinct[index - 1] < u_distinct[index]),
+                "catia_a5_surface_knot_order_scan",
+            )? || !ctx.all_by(
+                1..v_distinct.len(),
+                |index| Ok(v_distinct[index - 1] < v_distinct[index]),
+                "catia_a5_surface_knot_order_scan",
+            )? {
+                return Ok(None);
+            }
+            let Some((u_knots, u_count)) = a5_knots(ctx, &u_distinct, u_degree)? else {
+                return Ok(None);
+            };
+            let Some((v_knots, v_count)) = a5_knots(ctx, &v_distinct, v_degree)? else {
+                return Ok(None);
+            };
+            let (Some(u_count), Some(v_count)) =
+                (usize::try_from(u_count).ok(), usize::try_from(v_count).ok())
+            else {
+                return Ok(None);
+            };
+            let Some(poles) = crate::nurbs_surface_control_count(u_count, v_count) else {
+                return Ok(None);
+            };
+            let Some(pole_byte_count) = poles.checked_mul(24) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a5_surface_pole_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(end_poles) = at.checked_add(pole_byte_count) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a5_surface_pole_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            if end_poles > end {
+                return Ok(None);
+            }
+            let Some(pole_bytes) = data.get(at..end_poles) else {
+                return Ok(None);
+            };
+            let Some(pole_width) = NonZeroUsize::MIN.checked_add(23) else {
+                return Err(CodecError::malformed("CATIA A5 surface pole width is zero"));
+            };
+            let mut grid_storage = ctx.reserve_scoped(0, "catia surface flat grid")?;
+            let mut control_points = Vec::new();
+            let pole_chunks = ctx
+                .admit_iter(pole_bytes, "catia_a5_surface_pole_materialization")?
+                .chunks(pole_width);
+            grid_storage.with_storage(|| {
+                ctx.reserve_vec(&mut control_points, poles, "catia_a5_surface_poles")
+            })?;
+            for chunk in pole_chunks {
+                let Some(point) = f64_point(chunk, 0) else {
+                    return Ok(None);
+                };
+                control_points.push(point);
+            }
+            at = end_poles;
+            let weights = match mode {
+                0x01 => None,
+                0x05 => {
+                    let Some(weights) = grid_storage
+                        .with_storage(|| a5_weights(ctx, data, &mut at, u_count, v_count, end))?
+                    else {
+                        return Ok(None);
+                    };
+                    Some(weights)
+                }
+                _ => return Ok(None),
+            };
+            if parse_surface_tail(ctx, data, at, end)?.is_none() {
+                return Ok(None);
+            }
+            let (control_points, weights) = if let Some(weights) = weights {
+                grid_storage.with_storage(|| -> Result<_, CodecError> {
+                    Ok((
+                        grid_rows(ctx, control_points, v_count, "catia_a5_surface_pole_rows")?,
+                        Some(grid_rows(
+                            ctx,
+                            weights,
+                            v_count,
+                            "catia_a5_surface_weight_rows",
+                        )?),
+                    ))
+                })?
+            } else {
+                (
+                    grid_rows(ctx, control_points, v_count, "catia_a5_surface_pole_rows")?,
+                    None,
+                )
+            };
+            Ok(Some(
+                NurbsSurface::from_checked_lanes(
+                    ctx,
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+                    false,
+                )?
+                .map(|geometry| FreeformSurface {
+                    pos,
+                    identity: None,
+                    geometry,
+                }),
+            ))
+        })?;
+    if candidate.as_ref().is_some_and(Result::is_ok) {
+        storage.commit()?;
     }
-    let control_points = grid_rows(ctx, control_points, v_count, "catia_a5_surface_pole_rows")?;
-    let weights = weights
-        .map(|values| grid_rows(ctx, values, v_count, "catia_a5_surface_weight_rows"))
-        .transpose()?;
-    crate::nurbs::note_refusal(
-        ctx,
-        NurbsSurface::from_checked_lanes(
+    match candidate {
+        Some(result) => crate::nurbs::note_refusal(
             ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
-            false,
-        )?,
-        refusal,
-        format_args!("a5 NURBS surface record at byte {pos}"),
-    )
-    .map(|geometry| {
-        geometry.map(|geometry| FreeformSurface {
-            pos,
-            identity: None,
-            geometry,
-        })
-    })
+            result,
+            refusal,
+            format_args!("a5 NURBS surface record at byte {}", frame.pos),
+        ),
+        None => Ok(None),
+    }
 }
 
 struct ParsedA8SurfaceHeader {
@@ -2876,34 +3019,37 @@ fn materialize_a8_lane(
     data: &[u8],
     layout: A8LaneLayout,
 ) -> Result<Option<A8KnotLane>, CodecError> {
-    let mut distinct = Vec::new();
-    ctx.charge_work(
-        u64_from_index(layout.count),
-        "catia_a8_distinct_materialization",
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia materialize_a8_lane candidate",
+        || -> Result<_, CodecError> {
+            let mut distinct = Vec::new();
+
+            ctx.reserve_vec(&mut distinct, layout.count, "catia_a8_distinct_knots")?;
+            let mut at = layout.distinct_start;
+            for _ in ctx.admit_iter(0..layout.count, "catia_a8_distinct_materialization")? {
+                let Some(value) = f64_le(data, at) else {
+                    return Ok(None);
+                };
+                distinct.push(value);
+                at += 8;
+            }
+            let mut multiplicities = Vec::new();
+
+            ctx.reserve_vec(&mut multiplicities, layout.count, "catia_a8_multiplicities")?;
+            at = layout.multiplicity_start;
+            for _ in ctx.admit_iter(0..layout.count, "catia_a8_multiplicity_materialization")? {
+                let Some(value) = compact_int(data, &mut at) else {
+                    return Ok(None);
+                };
+                multiplicities.push(value);
+            }
+            A8KnotLane::try_new(ctx, distinct, multiplicities)
+        },
     )?;
-    ctx.reserve_vec(&mut distinct, layout.count, "catia_a8_distinct_knots")?;
-    let mut at = layout.distinct_start;
-    for _ in 0..layout.count {
-        let Some(value) = f64_le(data, at) else {
-            return Ok(None);
-        };
-        distinct.push(value);
-        at += 8;
+    if candidate.is_some() {
+        storage.commit()?;
     }
-    let mut multiplicities = Vec::new();
-    ctx.charge_work(
-        u64_from_index(layout.count),
-        "catia_a8_multiplicity_materialization",
-    )?;
-    ctx.reserve_vec(&mut multiplicities, layout.count, "catia_a8_multiplicities")?;
-    at = layout.multiplicity_start;
-    for _ in 0..layout.count {
-        let Some(value) = compact_int(data, &mut at) else {
-            return Ok(None);
-        };
-        multiplicities.push(value);
-    }
-    A8KnotLane::try_new(ctx, distinct, multiplicities)
+    Ok(candidate)
 }
 
 fn parse_a8_surface_header(
@@ -2911,36 +3057,41 @@ fn parse_a8_surface_header(
     data: &[u8],
     frame: A8Frame,
 ) -> Result<Option<ParsedA8SurfaceHeader>, CodecError> {
-    let Some(payload_bytes) = data.get(frame.payload..frame.end) else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        u64_from_index(payload_bytes.len()),
-        "catia_a8_lane_preflight",
-    )?;
-    let Some(layout) = scan_a8_surface_layout(ctx, data, frame)? else {
-        return Ok(None);
-    };
-    let Some(u_knots) = materialize_a8_lane(ctx, data, layout.u)? else {
-        return Ok(None);
-    };
-    let Some(v_knots) = materialize_a8_lane(ctx, data, layout.v)? else {
-        return Ok(None);
-    };
-    Ok(Some(ParsedA8SurfaceHeader {
-        header: A8SurfaceHeader {
-            pos: frame.pos,
-            object_id: frame.object_id,
-            u_degree: layout.u_degree,
-            v_degree: layout.v_degree,
-            u_knots,
-            v_knots,
-            rational: layout.rational,
-            pole_storage: layout.pole_storage,
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia parse_a8_surface_header candidate",
+        || -> Result<_, CodecError> {
+            if data.get(frame.payload..frame.end).is_none() {
+                return Ok(None);
+            }
+            let Some(layout) = scan_a8_surface_layout(ctx, data, frame)? else {
+                return Ok(None);
+            };
+            let Some(u_knots) = materialize_a8_lane(ctx, data, layout.u)? else {
+                return Ok(None);
+            };
+            let Some(v_knots) = materialize_a8_lane(ctx, data, layout.v)? else {
+                return Ok(None);
+            };
+            Ok(Some(ParsedA8SurfaceHeader {
+                header: A8SurfaceHeader {
+                    pos: frame.pos,
+                    object_id: frame.object_id,
+                    u_degree: layout.u_degree,
+                    v_degree: layout.v_degree,
+                    u_knots,
+                    v_knots,
+                    rational: layout.rational,
+                    pole_storage: layout.pole_storage,
+                },
+                pole_start: layout.pole_start,
+                end: frame.end,
+            }))
         },
-        pole_start: layout.pole_start,
-        end: frame.end,
-    }))
+    )?;
+    if candidate.is_some() {
+        storage.commit()?;
+    }
+    Ok(candidate)
 }
 
 fn a8_surface_from_parsed(
@@ -2949,153 +3100,184 @@ fn a8_surface_from_parsed(
     parsed: ParsedA8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FreeformSurface>, CodecError> {
-    let ParsedA8SurfaceHeader {
-        header,
-        mut pole_start,
-        end,
-    } = parsed;
-    let Some(u_count) = header
-        .u_count(ctx)?
-        .and_then(|count| usize::try_from(count).ok())
-    else {
-        return Ok(None);
-    };
-    let Some(v_count) = header
-        .v_count(ctx)?
-        .and_then(|count| usize::try_from(count).ok())
-    else {
-        return Ok(None);
-    };
-    let A8SurfaceHeader {
-        pos,
-        object_id,
-        u_degree,
-        v_degree,
-        u_knots,
-        v_knots,
-        rational,
-        pole_storage,
-        ..
-    } = header;
-    if pole_storage == PoleStorage::Elided {
-        return Ok(None);
-    }
-    let Some(poles) = crate::nurbs_surface_control_count(u_count, v_count) else {
-        return Ok(None);
-    };
-    let Some(pole_bytes) = poles.checked_mul(24) else {
-        return Err(ctx.refuse_codec_limit(
-            "catia_a8_inline_pole_materialization",
-            u64::MAX,
-            u64::MAX,
-        ));
-    };
-    let Some(end_poles) = pole_start.checked_add(pole_bytes) else {
-        return Err(ctx.refuse_codec_limit(
-            "catia_a8_inline_pole_materialization",
-            u64::MAX,
-            u64::MAX,
-        ));
-    };
-    if end_poles > end {
-        return Ok(None);
-    }
-    let Some(pole_lane) = data.get(pole_start..end_poles) else {
-        return Ok(None);
-    };
-    let Some(pole_width) = NonZeroUsize::MIN.checked_add(23) else {
-        return Err(CodecError::malformed("CATIA A8 inline pole width is zero"));
-    };
-    let mut control_points = Vec::new();
-    let pole_chunks = ctx
-        .admit_iter(pole_lane, "catia_a8_inline_pole_materialization")?
-        .chunks(pole_width);
-    ctx.reserve_vec(&mut control_points, poles, "catia_a8_inline_poles")?;
-    for chunk in pole_chunks {
-        let Some(point) = f64_point(chunk, 0) else {
-            return Ok(None);
-        };
-        control_points.push(point);
-    }
-    pole_start = end_poles;
-    let weights = if rational {
-        let Some(weight_bytes) = poles.checked_mul(8) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_a8_inline_pole_materialization",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        let Some(end_weights) = pole_start.checked_add(weight_bytes) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_a8_inline_pole_materialization",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        if end_weights > end {
-            return Ok(None);
-        }
-        let Some(weight_lane) = data.get(pole_start..end_weights) else {
-            return Ok(None);
-        };
-        let Some(weight_width) = NonZeroUsize::MIN.checked_add(7) else {
-            return Err(CodecError::malformed(
-                "CATIA A8 inline weight width is zero",
-            ));
-        };
-        let mut weights = Vec::new();
-        let weight_chunks = ctx
-            .admit_iter(weight_lane, "catia_a8_inline_weight_materialization")?
-            .chunks(weight_width);
-        ctx.reserve_vec(&mut weights, poles, "catia_a8_inline_weights")?;
-        for chunk in weight_chunks {
-            let Some(weight) = f64_le(chunk, 0).and_then(|value| NonZeroReal::new(value.get()))
+    let pos = parsed.header.pos;
+    let object_id = parsed.header.object_id;
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia a8_surface_from_parsed candidate",
+        || -> Result<_, CodecError> {
+            let ParsedA8SurfaceHeader {
+                header,
+                mut pole_start,
+                end,
+            } = parsed;
+            let Some(u_count) = header
+                .u_count(ctx)?
+                .and_then(|count| usize::try_from(count).ok())
             else {
                 return Ok(None);
             };
-            weights.push(weight);
-        }
-        pole_start = end_weights;
-        weights
-    } else {
-        Vec::new()
-    };
-    let Some(suffix_bytes) = data.get(pole_start..end) else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        u64_from_index(suffix_bytes.len()),
-        "catia_a8_surface_suffix_scan",
+            let Some(v_count) = header
+                .v_count(ctx)?
+                .and_then(|count| usize::try_from(count).ok())
+            else {
+                return Ok(None);
+            };
+            let A8SurfaceHeader {
+                pos,
+                object_id,
+                u_degree,
+                v_degree,
+                u_knots,
+                v_knots,
+                rational,
+                pole_storage,
+                ..
+            } = header;
+            if pole_storage == PoleStorage::Elided {
+                return Ok(None);
+            }
+            let Some(poles) = crate::nurbs_surface_control_count(u_count, v_count) else {
+                return Ok(None);
+            };
+            let Some(pole_bytes) = poles.checked_mul(24) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a8_inline_pole_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            let Some(end_poles) = pole_start.checked_add(pole_bytes) else {
+                return Err(ctx.refuse_codec_limit(
+                    "catia_a8_inline_pole_materialization",
+                    u64::MAX,
+                    u64::MAX,
+                ));
+            };
+            if end_poles > end {
+                return Ok(None);
+            }
+            let Some(pole_lane) = data.get(pole_start..end_poles) else {
+                return Ok(None);
+            };
+            let Some(pole_width) = NonZeroUsize::MIN.checked_add(23) else {
+                return Err(CodecError::malformed("CATIA A8 inline pole width is zero"));
+            };
+            let mut grid_storage = ctx.reserve_scoped(0, "catia surface flat grid")?;
+            let mut control_points = Vec::new();
+            let pole_chunks = ctx
+                .admit_iter(pole_lane, "catia_a8_inline_pole_materialization")?
+                .chunks(pole_width);
+            grid_storage.with_storage(|| {
+                ctx.reserve_vec(&mut control_points, poles, "catia_a8_inline_poles")
+            })?;
+            for chunk in pole_chunks {
+                let Some(point) = f64_point(chunk, 0) else {
+                    return Ok(None);
+                };
+                control_points.push(point);
+            }
+            pole_start = end_poles;
+            let weights = if rational {
+                let Some(weight_bytes) = poles.checked_mul(8) else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_a8_inline_pole_materialization",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                let Some(end_weights) = pole_start.checked_add(weight_bytes) else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_a8_inline_pole_materialization",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                if end_weights > end {
+                    return Ok(None);
+                }
+                let Some(weight_lane) = data.get(pole_start..end_weights) else {
+                    return Ok(None);
+                };
+                let Some(weight_width) = NonZeroUsize::MIN.checked_add(7) else {
+                    return Err(CodecError::malformed(
+                        "CATIA A8 inline weight width is zero",
+                    ));
+                };
+                let mut weights = Vec::new();
+                let weight_chunks = ctx
+                    .admit_iter(weight_lane, "catia_a8_inline_weight_materialization")?
+                    .chunks(weight_width);
+                grid_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut weights, poles, "catia_a8_inline_weights")
+                })?;
+                for chunk in weight_chunks {
+                    let Some(weight) =
+                        f64_le(chunk, 0).and_then(|value| NonZeroReal::new(value.get()))
+                    else {
+                        return Ok(None);
+                    };
+                    weights.push(weight);
+                }
+                pole_start = end_weights;
+                weights
+            } else {
+                Vec::new()
+            };
+            if data.get(pole_start..end).is_none() {
+                return Ok(None);
+            }
+            if a8_surface_suffix_start(ctx, data, pole_start, end)?.is_none() {
+                return Ok(None);
+            }
+            let u_knots = u_knots.expanded(ctx)?;
+            let v_knots = v_knots.expanded(ctx)?;
+            let weights = rational.then_some(weights);
+            let (control_points, weights) = if let Some(weights) = weights {
+                grid_storage.with_storage(|| -> Result<_, CodecError> {
+                    Ok((
+                        grid_rows(ctx, control_points, v_count, "catia_a8_inline_pole_rows")?,
+                        Some(grid_rows(
+                            ctx,
+                            weights,
+                            v_count,
+                            "catia_a8_inline_weight_rows",
+                        )?),
+                    ))
+                })?
+            } else {
+                (
+                    grid_rows(ctx, control_points, v_count, "catia_a8_inline_pole_rows")?,
+                    None,
+                )
+            };
+            Ok(Some(
+                NurbsSurface::from_checked_lanes(
+                    ctx,
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+                    false,
+                )?
+                .map(|geometry| FreeformSurface {
+                    pos,
+                    identity: Some(object_id),
+                    geometry,
+                }),
+            ))
+        },
     )?;
-    if a8_surface_suffix_start(ctx, data, pole_start, end)?.is_none() {
-        return Ok(None);
+    if candidate.as_ref().is_some_and(Result::is_ok) {
+        storage.commit()?;
     }
-    let u_knots = u_knots.expanded(ctx)?;
-    let v_knots = v_knots.expanded(ctx)?;
-    let control_points = grid_rows(ctx, control_points, v_count, "catia_a8_inline_pole_rows")?;
-    let weights = rational
-        .then(|| grid_rows(ctx, weights, v_count, "catia_a8_inline_weight_rows"))
-        .transpose()?;
-    crate::nurbs::note_refusal(
-        ctx,
-        NurbsSurface::from_checked_lanes(
+    match candidate {
+        Some(result) => crate::nurbs::note_refusal(
             ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
-            false,
-        )?,
-        refusal,
-        format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
-    )
-    .map(|geometry| {
-        geometry.map(|geometry| FreeformSurface {
-            pos,
-            identity: Some(object_id),
-            geometry,
-        })
-    })
+            result,
+            refusal,
+            format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
+        ),
+        None => Ok(None),
+    }
 }
 
 fn object_stream_reference(bytes: &[u8], at: &mut usize) -> Option<u32> {
@@ -3145,24 +3327,33 @@ fn a5_distinct_values(
     count: usize,
     end: usize,
 ) -> Result<Option<Vec<f64>>, CodecError> {
-    if count
-        .checked_mul(8)
-        .and_then(|width| at.checked_add(width))
-        .is_none_or(|last| last > end)
-    {
-        return Ok(None);
+    let (candidate, storage) = ctx.with_scoped_storage(
+        "catia a5_distinct_values candidate",
+        || -> Result<_, CodecError> {
+            if count
+                .checked_mul(8)
+                .and_then(|width| at.checked_add(width))
+                .is_none_or(|last| last > end)
+            {
+                return Ok(None);
+            }
+            let mut values = Vec::new();
+
+            ctx.reserve_vec(&mut values, count, "catia_a5_distinct_knots")?;
+            for _ in ctx.admit_iter(0..count, "catia_a5_distinct_materialization")? {
+                let Some(value) = f64_le(bytes, *at) else {
+                    return Ok(None);
+                };
+                values.push(value.get());
+                *at += 8;
+            }
+            Ok(Some(values))
+        },
+    )?;
+    if candidate.is_some() {
+        storage.commit()?;
     }
-    let mut values = Vec::new();
-    ctx.charge_work(u64_from_index(count), "catia_a5_distinct_materialization")?;
-    ctx.reserve_vec(&mut values, count, "catia_a5_distinct_knots")?;
-    for _ in 0..count {
-        let Some(value) = f64_le(bytes, *at) else {
-            return Ok(None);
-        };
-        values.push(value.get());
-        *at += 8;
-    }
-    Ok(Some(values))
+    Ok(candidate)
 }
 
 fn a5_knots(
@@ -3175,46 +3366,41 @@ fn a5_knots(
         5 if distinct.len() >= 2 => (6u32, 3u32),
         _ => return Ok(None),
     };
-    let mut multiplicities = Vec::new();
-    ctx.reserve_vec(
-        &mut multiplicities,
-        distinct.len(),
-        "catia_a5_knot_multiplicities",
-    )?;
-    ctx.charge_work(u64_from_index(distinct.len()), "catia_a5_multiplicity_emit")?;
-    multiplicities.push(endpoint);
-    multiplicities.extend(std::iter::repeat_with(|| interior).take(distinct.len() - 2));
-    multiplicities.push(endpoint);
-    ctx.charge_work(
-        u64_from_index(multiplicities.len()),
-        "catia_a5_knot_expansion_scan",
-    )?;
-    let expanded_count = multiplicities.iter().try_fold(0usize, |sum, &value| {
-        let repeats = usize::try_from(value).map_err(|_| {
-            ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX)
-        })?;
-        sum.checked_add(repeats).ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX)
-        })
-    })?;
-    let degree = usize::try_from(degree)
-        .map_err(|_| ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX))?;
-    let Some(count) = expanded_count.checked_sub(degree + 1) else {
+    let (Ok(endpoint_width), Ok(interior_width), Ok(degree_width)) = (
+        usize::try_from(endpoint),
+        usize::try_from(interior),
+        usize::try_from(degree),
+    ) else {
+        return Err(ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX));
+    };
+    let expanded_count = distinct
+        .len()
+        .checked_sub(2)
+        .and_then(|middle| middle.checked_mul(interior_width))
+        .and_then(|middle| middle.checked_add(2 * endpoint_width))
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX))?;
+    let Some(count) = expanded_count.checked_sub(degree_width + 1) else {
         return Ok(None);
     };
     let count = u32::try_from(count)
         .map_err(|_| ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(
-        u64_from_index(expanded_count),
-        "catia_a5_knot_expansion_emit",
-    )?;
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, expanded_count, "catia_a5_expanded_knots")?;
-    for (&knot, &multiplicity) in distinct.iter().zip(&multiplicities) {
-        let repeats = usize::try_from(multiplicity).map_err(|_| {
-            ctx.refuse_codec_limit("catia_a5_expanded_knots", u64::MAX - 1, u64::MAX)
-        })?;
-        knots.extend(std::iter::repeat_with(|| knot).take(repeats));
+    for (index, &knot) in ctx
+        .admit_iter(distinct, "catia_a5_knot_expansion_scan")?
+        .enumerate()
+    {
+        if index == 0 || index + 1 == distinct.len() {
+            match endpoint {
+                2 => knots.extend([knot; 2]),
+                4 => knots.extend([knot; 4]),
+                _ => knots.extend([knot; 6]),
+            }
+        } else if interior == 3 {
+            knots.extend([knot; 3]);
+        } else {
+            knots.push(knot);
+        }
     }
     Ok(Some((knots, count)))
 }
@@ -3227,122 +3413,131 @@ fn a5_weights(
     cols: usize,
     end: usize,
 ) -> Result<Option<Vec<NonZeroReal>>, CodecError> {
-    let Some(count) = rows.checked_mul(cols) else {
-        return Ok(None);
-    };
-    if bytes.get(*at) == Some(&0x00) {
-        *at += 1;
-        let Some(weight_byte_count) = count.checked_mul(8) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_a5_explicit_weight_materialization",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        let Some(end_weights) = at.checked_add(weight_byte_count) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_a5_explicit_weight_materialization",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        if end_weights > end {
-            return Ok(None);
-        }
-        let Some(weight_lane) = bytes.get(*at..end_weights) else {
-            return Ok(None);
-        };
-        let Some(weight_width) = NonZeroUsize::MIN.checked_add(7) else {
-            return Err(CodecError::malformed("CATIA explicit weight width is zero"));
-        };
-        let mut weights = Vec::new();
-        let weight_chunks = ctx
-            .admit_iter(weight_lane, "catia_a5_explicit_weight_materialization")?
-            .chunks(weight_width);
-        ctx.reserve_vec(&mut weights, count, "catia_a5_explicit_weights")?;
-        for chunk in weight_chunks {
-            let Some(weight) = f64_le(chunk, 0).and_then(|value| NonZeroReal::new(value.get()))
-            else {
+    let (candidate, storage) =
+        ctx.with_scoped_storage("catia a5_weights candidate", || -> Result<_, CodecError> {
+            let Some(count) = rows.checked_mul(cols) else {
                 return Ok(None);
             };
-            weights.push(weight);
-        }
-        *at = end_weights;
-        return Ok(Some(weights));
-    }
-    if bytes.get(*at) != Some(&0x01) {
-        return Ok(None);
-    }
-    let seed_count = cols.div_ceil(2);
-    let mut weights = Vec::new();
-    ctx.reserve_vec(&mut weights, count, "catia_a5_mirrored_weights")?;
-    ctx.charge_work(u64_from_index(rows), "catia_a5_weight_row_scan")?;
-    for _ in 0..rows {
-        if bytes.get(*at) == Some(&0x02) {
-            *at += 1;
-            let Some(previous_start) = weights.len().checked_sub(cols) else {
-                return Ok(None);
-            };
-            ctx.charge_work(u64_from_index(cols), "catia_a5_weight_previous_row_copy")?;
-            for index in 0..cols {
-                let value = weights[previous_start + index];
-                weights.push(value);
+            if bytes.get(*at) == Some(&0x00) {
+                *at += 1;
+                let Some(weight_byte_count) = count.checked_mul(8) else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_a5_explicit_weight_materialization",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                let Some(end_weights) = at.checked_add(weight_byte_count) else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_a5_explicit_weight_materialization",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                if end_weights > end {
+                    return Ok(None);
+                }
+                let Some(weight_lane) = bytes.get(*at..end_weights) else {
+                    return Ok(None);
+                };
+                let Some(weight_width) = NonZeroUsize::MIN.checked_add(7) else {
+                    return Err(CodecError::malformed("CATIA explicit weight width is zero"));
+                };
+                let mut weights = Vec::new();
+                let weight_chunks = ctx
+                    .admit_iter(weight_lane, "catia_a5_explicit_weight_materialization")?
+                    .chunks(weight_width);
+                ctx.reserve_vec(&mut weights, count, "catia_a5_explicit_weights")?;
+                for chunk in weight_chunks {
+                    let Some(weight) =
+                        f64_le(chunk, 0).and_then(|value| NonZeroReal::new(value.get()))
+                    else {
+                        return Ok(None);
+                    };
+                    weights.push(weight);
+                }
+                *at = end_weights;
+                return Ok(Some(weights));
             }
-            continue;
-        }
-        if !matches!(bytes.get(*at..*at + 3), Some([0x01, 0x03 | 0x07, 0x00])) {
-            return Ok(None);
-        }
-        *at += 3;
-        let Some(seed_byte_count) = seed_count.checked_mul(8) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_a5_explicit_weight_materialization",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        let Some(end_seed) = at.checked_add(seed_byte_count) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_a5_explicit_weight_materialization",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        if end_seed > end {
-            return Ok(None);
-        }
-        let Some(seed_lane) = bytes.get(*at..end_seed) else {
-            return Ok(None);
-        };
-        let Some(seed_width) = NonZeroUsize::MIN.checked_add(7) else {
-            return Err(CodecError::malformed(
-                "CATIA mirrored weight seed width is zero",
-            ));
-        };
-        let row_start = weights.len();
-        for chunk in ctx
-            .admit_iter(seed_lane, "catia_a5_weight_seed_scan")?
-            .chunks(seed_width)
-        {
-            let Some(weight) = f64_le(chunk, 0).and_then(|value| NonZeroReal::new(value.get()))
-            else {
+            if bytes.get(*at) != Some(&0x01) {
                 return Ok(None);
-            };
-            weights.push(weight);
-        }
-        *at = end_seed;
-        let mirror_indices = 0..cols / 2;
-        for offset in ctx
-            .admit_iter(&mirror_indices, "catia_a5_weight_mirror_copy")?
-            .rev()
-        {
-            weights.push(weights[row_start + offset]);
-        }
-        if weights.len() != row_start + cols {
-            return Ok(None);
-        }
+            }
+            let seed_count = cols.div_ceil(2);
+            let mut weights = Vec::new();
+            ctx.reserve_vec(&mut weights, count, "catia_a5_mirrored_weights")?;
+
+            for _ in ctx.admit_iter(0..rows, "catia_a5_weight_row_scan")? {
+                if bytes.get(*at) == Some(&0x02) {
+                    *at += 1;
+                    let Some(previous_start) = weights.len().checked_sub(cols) else {
+                        return Ok(None);
+                    };
+
+                    for index in ctx.admit_iter(0..cols, "catia_a5_weight_previous_row_copy")? {
+                        let value = weights[previous_start + index];
+                        weights.push(value);
+                    }
+                    continue;
+                }
+                if !matches!(bytes.get(*at..*at + 3), Some([0x01, 0x03 | 0x07, 0x00])) {
+                    return Ok(None);
+                }
+                *at += 3;
+                let Some(seed_byte_count) = seed_count.checked_mul(8) else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_a5_explicit_weight_materialization",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                let Some(end_seed) = at.checked_add(seed_byte_count) else {
+                    return Err(ctx.refuse_codec_limit(
+                        "catia_a5_explicit_weight_materialization",
+                        u64::MAX,
+                        u64::MAX,
+                    ));
+                };
+                if end_seed > end {
+                    return Ok(None);
+                }
+                let Some(seed_lane) = bytes.get(*at..end_seed) else {
+                    return Ok(None);
+                };
+                let Some(seed_width) = NonZeroUsize::MIN.checked_add(7) else {
+                    return Err(CodecError::malformed(
+                        "CATIA mirrored weight seed width is zero",
+                    ));
+                };
+                let row_start = weights.len();
+                for chunk in ctx
+                    .admit_iter(seed_lane, "catia_a5_weight_seed_scan")?
+                    .chunks(seed_width)
+                {
+                    let Some(weight) =
+                        f64_le(chunk, 0).and_then(|value| NonZeroReal::new(value.get()))
+                    else {
+                        return Ok(None);
+                    };
+                    weights.push(weight);
+                }
+                *at = end_seed;
+                let mirror_indices = 0..cols / 2;
+                for offset in ctx
+                    .admit_iter(&mirror_indices, "catia_a5_weight_mirror_copy")?
+                    .rev()
+                {
+                    weights.push(weights[row_start + offset]);
+                }
+                if weights.len() != row_start + cols {
+                    return Ok(None);
+                }
+            }
+            Ok(Some(weights))
+        })?;
+    if candidate.is_some() {
+        storage.commit()?;
     }
-    Ok(Some(weights))
+    Ok(candidate)
 }
 
 #[cfg(test)]

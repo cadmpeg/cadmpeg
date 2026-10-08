@@ -381,64 +381,88 @@ impl ReferenceSignatureWire {
         let mut offset = value.signature_offset;
         for token in ctx.admit_iter(value.tokens, "catia_reference_signature_wire_token_visits")? {
             match &token {
-                ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::E) => ctx
-                    .push_retained_char(
+                ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::E) => {
+                    ctx.try_reserve_retained_text(
                         &mut signature,
-                        'E',
+                        1,
                         "catia_reference_signature_wire_text",
-                    )?,
-                ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::S) => ctx
-                    .push_retained_char(
+                    )?;
+                    signature.push('E');
+                }
+                ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::S) => {
+                    ctx.try_reserve_retained_text(
                         &mut signature,
-                        'S',
+                        1,
                         "catia_reference_signature_wire_text",
-                    )?,
-                ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::T) => ctx
-                    .push_retained_char(
+                    )?;
+                    signature.push('S');
+                }
+                ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::T) => {
+                    ctx.try_reserve_retained_text(
                         &mut signature,
-                        'T',
+                        1,
                         "catia_reference_signature_wire_text",
-                    )?,
+                    )?;
+                    signature.push('T');
+                }
                 ReferenceSignatureToken::Decimal(digits) => ctx.append_retained(
                     &mut signature,
                     digits,
                     "catia_reference_signature_wire_text",
                 )?,
-                ReferenceSignatureToken::OpenCall => ctx.push_retained_char(
-                    &mut signature,
-                    '(',
-                    "catia_reference_signature_wire_text",
-                )?,
-                ReferenceSignatureToken::Comma => ctx.push_retained_char(
-                    &mut signature,
-                    ',',
-                    "catia_reference_signature_wire_text",
-                )?,
-                ReferenceSignatureToken::CloseCall => ctx.push_retained_char(
-                    &mut signature,
-                    ')',
-                    "catia_reference_signature_wire_text",
-                )?,
-                ReferenceSignatureToken::Qualifier(selector) => {
-                    ctx.push_retained_char(
+                ReferenceSignatureToken::OpenCall => {
+                    ctx.try_reserve_retained_text(
                         &mut signature,
-                        '#',
+                        1,
                         "catia_reference_signature_wire_text",
                     )?;
+                    signature.push('(');
+                }
+                ReferenceSignatureToken::Comma => {
+                    ctx.try_reserve_retained_text(
+                        &mut signature,
+                        1,
+                        "catia_reference_signature_wire_text",
+                    )?;
+                    signature.push(',');
+                }
+                ReferenceSignatureToken::CloseCall => {
+                    ctx.try_reserve_retained_text(
+                        &mut signature,
+                        1,
+                        "catia_reference_signature_wire_text",
+                    )?;
+                    signature.push(')');
+                }
+                ReferenceSignatureToken::Qualifier(selector) => {
+                    {
+                        ctx.try_reserve_retained_text(
+                            &mut signature,
+                            1,
+                            "catia_reference_signature_wire_text",
+                        )?;
+                        signature.push('#');
+                    };
                     let digit = char::from_digit(u32::from(*selector), 16).ok_or_else(|| {
                         CodecError::malformed("reference signature qualifier exceeds one digit")
                     })?;
-                    ctx.push_retained_char(
+                    {
+                        ctx.try_reserve_retained_text(
+                            &mut signature,
+                            1,
+                            "catia_reference_signature_wire_text",
+                        )?;
+                        signature.push(digit.to_ascii_uppercase());
+                    };
+                }
+                ReferenceSignatureToken::Difference => {
+                    ctx.try_reserve_retained_text(
                         &mut signature,
-                        digit.to_ascii_uppercase(),
+                        1,
                         "catia_reference_signature_wire_text",
                     )?;
+                    signature.push('-');
                 }
-                ReferenceSignatureToken::Difference => ctx.push_retained_char(
-                    &mut signature,
-                    '-',
-                    "catia_reference_signature_wire_text",
-                )?,
             }
 
             let token_len = match &token {
@@ -1748,12 +1772,22 @@ fn unique_monotone_run(
                 {
                     ordered_predecessors.push((index, state));
                 }
-                ctx.stable_sort_by(
-                    &mut ordered_predecessors,
-                    |value| &value.1.identity.entity_id,
-                    Ord::cmp,
-                    "sort CATIA 7C05 predecessor states",
-                )?;
+                match ordered_predecessors.as_mut_slice() {
+                    [] | [_] => {}
+                    [left, right] => {
+                        if left.1.identity.entity_id > right.1.identity.entity_id {
+                            std::mem::swap(left, right);
+                        }
+                    }
+                    _ => {
+                        ctx.stable_sort_by(
+                            &mut ordered_predecessors,
+                            |value| &value.1.identity.entity_id,
+                            Ord::cmp,
+                            "sort CATIA 7C05 predecessor states",
+                        )?;
+                    }
+                }
                 let mut cumulative = ctx.collection_vec(
                     ordered_predecessors.len(),
                     "collect CATIA 7C05 cumulative paths",
@@ -2461,11 +2495,29 @@ mod tests {
     fn entity_table_path_work_limit_refuses_before_sort() {
         let mut bytes = record(&[0x11], 37);
         bytes.extend(record(&[0x12], 38));
+        assert!(
+            crate::test_support::with_service_context(|ctx| super::parse_runs(ctx, &bytes)).is_ok()
+        );
+        let candidate = |ids: &[u32]| EntityRecordCandidates {
+            pos: 0,
+            total_len: 12,
+            lead: 0x01,
+            layout: EntityRecordLayout::Inline,
+            identities: ids
+                .iter()
+                .enumerate()
+                .map(|(delimiter, entity_id)| EntityIdentityCandidate {
+                    delimiter,
+                    entity_id: *entity_id,
+                })
+                .collect(),
+        };
+        let candidates = [candidate(&[39, 37, 38]), candidate(&[40])];
         let error =
             crate::test_support::with_work_refusal("sort CATIA 7C05 predecessor states", |ctx| {
-                super::parse_runs(ctx, &bytes)
+                super::unique_monotone_run(ctx, &candidates)
             })
-            .expect_err("sorting one predecessor needs work");
+            .expect_err("sorting three predecessors needs work");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits

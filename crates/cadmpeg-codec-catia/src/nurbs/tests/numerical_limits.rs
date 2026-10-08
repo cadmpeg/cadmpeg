@@ -503,8 +503,8 @@ fn quintic_jet_refuses_before_each_control_and_knot_allocation() {
         .is_some());
     for (cap, operation) in [
         (0, "catia quintic jet controls"),
-        (6, "catia quintic jet knots"),
-        (18, "catia quintic jet finite controls"),
+        (6, "catia quintic jet finite controls"),
+        (12, "catia quintic jet knots"),
     ] {
         assert!(matches!(
             crate::test_support::with_collection_limit(cap, run),

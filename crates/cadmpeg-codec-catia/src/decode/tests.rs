@@ -506,18 +506,18 @@ fn modeling_scope_search_stops_at_the_second_part_graph() {
         graph("second", "part", "CATPrtCont"),
         graph("unvisited", "part", "CATPrtCont"),
     ];
-    // Two visited graphs cost 2 units and two ten-byte class comparisons cost
-    // 20 units. The third graph and the end of the iterator are not visited.
+    // Two visited graphs cost two units. Fixed class comparisons cost none;
+    // the third graph and the end of the iterator are not visited.
     let scope =
-        crate::test_support::with_work_limit(22, |ctx| modeling_graph_scope(ctx, true, &graphs))
+        crate::test_support::with_work_limit(2, |ctx| modeling_graph_scope(ctx, true, &graphs))
             .expect("only the first two matching graphs are visited");
     assert_eq!(scope, super::ModelingGraphScope::Unresolved);
     let limited =
-        crate::test_support::with_work_limit(21, |ctx| modeling_graph_scope(ctx, true, &graphs));
+        crate::test_support::with_work_limit(1, |ctx| modeling_graph_scope(ctx, true, &graphs));
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_modeling_scope_class"
-            && limit.used == 12 && limit.additional == 10)
+        if limit.operation == "catia_modeling_scope_search"
+            && limit.used == 1 && limit.additional == 1)
     );
 }
 

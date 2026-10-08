@@ -7,7 +7,6 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::checked::extents_overlap;
 use crate::layout::outer_alias_row as alias_row;
 use crate::{catalog, entity_table, value_block};
 
@@ -923,105 +922,72 @@ pub(crate) fn surface_alias_tag_map(
         })?;
     let (mut value_blocks, _value_storage) =
         ctx.with_scoped_storage("catia_alias_value_blocks", || value_block::parse(ctx, data))?;
+    let (all_graph_extents, _all_graph_extent_storage) =
+        ctx.with_scoped_storage("catia_alias_graph_extent_index", || {
+            ExtentIndex::new(
+                ctx,
+                object_graphs
+                    .iter()
+                    .map(|graph| (graph.pos, graph.total_len)),
+            )
+        })?;
     ctx.retain_vec(
         &mut value_blocks,
-        |block| {
-            Ok(!ctx.any_by(
-                &object_graphs,
-                |graph| {
-                    Ok(extent_contains(
-                        graph.pos,
-                        graph.total_len,
-                        block.pos,
-                        block.total_len(),
-                    ))
-                },
-                "catia_alias_graph_containment",
-            )?)
-        },
+        |block| Ok(!all_graph_extents.contains(ctx, block.pos, block.total_len())?),
         "catia_alias_value_exclusions",
     )?;
+    let (value_extents, _value_extent_storage) =
+        ctx.with_scoped_storage("catia_alias_value_extent_index", || {
+            ExtentIndex::new(
+                ctx,
+                value_blocks
+                    .iter()
+                    .map(|block| (block.pos, block.total_len())),
+            )
+        })?;
     ctx.retain_vec(
         &mut object_graphs,
-        |graph| {
-            Ok(!ctx.any_by(
-                &value_blocks,
-                |block| {
-                    Ok(extent_contains(
-                        block.pos,
-                        block.total_len(),
-                        graph.pos,
-                        graph.total_len,
-                    ))
-                },
-                "catia_alias_value_containment",
-            )?)
-        },
+        |graph| Ok(!value_extents.contains(ctx, graph.pos, graph.total_len)?),
         "catia_alias_graph_exclusions",
     )?;
+    let (graph_extents, _graph_extent_storage) =
+        ctx.with_scoped_storage("catia_alias_graph_extent_index", || {
+            ExtentIndex::new(
+                ctx,
+                object_graphs
+                    .iter()
+                    .map(|graph| (graph.pos, graph.total_len)),
+            )
+        })?;
     let (mut catalogs, _catalog_storage) =
         ctx.with_scoped_storage("catia_alias_catalogs", || catalog::parse(ctx, data))?;
     ctx.retain_vec(
         &mut catalogs,
         |catalog| {
-            Ok(!ctx.any_by(
-                &object_graphs,
-                |graph| {
-                    Ok(extent_contains(
-                        graph.pos,
-                        graph.total_len,
-                        catalog.pos,
-                        catalog.total_len,
-                    ))
-                },
-                "catia_alias_catalog_graph_containment",
-            )? && !ctx.any_by(
-                &value_blocks,
-                |block| {
-                    Ok(extent_contains(
-                        block.pos,
-                        block.total_len(),
-                        catalog.pos,
-                        catalog.total_len,
-                    ))
-                },
-                "catia_alias_catalog_value_containment",
-            )?)
+            Ok(
+                !graph_extents.contains(ctx, catalog.pos, catalog.total_len)?
+                    && !value_extents.contains(ctx, catalog.pos, catalog.total_len)?,
+            )
         },
         "catia_alias_filtered_catalogs",
     )?;
+    let (catalog_extents, _catalog_extent_storage) =
+        ctx.with_scoped_storage("catia_alias_catalog_extent_index", || {
+            ExtentIndex::new(
+                ctx,
+                catalogs
+                    .iter()
+                    .map(|catalog| (catalog.pos, catalog.total_len)),
+            )
+        })?;
     let (mut rows, _row_storage) =
         ctx.with_scoped_storage("catia_alias_rows", || surface_aliases(ctx, data))?;
     ctx.retain_vec(
         &mut rows,
         |row| {
-            Ok(!ctx.any_by(
-                &object_graphs,
-                |graph| Ok(extents_overlap(row.row_pos, 24, graph.pos, graph.total_len)),
-                "catia_alias_row_graph_overlap",
-            )? && !ctx.any_by(
-                &value_blocks,
-                |block| {
-                    Ok(extents_overlap(
-                        row.row_pos,
-                        24,
-                        block.pos,
-                        block.total_len(),
-                    ))
-                },
-                "catia_alias_row_value_overlap",
-            )? && !ctx.any_by(
-                &catalogs,
-                |catalog| {
-                    Ok(extents_overlap(
-                        row.row_pos,
-                        24,
-                        catalog.pos,
-                        catalog.total_len,
-                    ))
-                },
-                "catia_alias_row_catalog_overlap",
-            )?)
+            Ok(!graph_extents.overlaps(ctx, row.row_pos, 24)?
+                && !value_extents.overlaps(ctx, row.row_pos, 24)?
+                && !catalog_extents.overlaps(ctx, row.row_pos, 24)?)
         },
         "catia_alias_row_exclusions",
     )?;
@@ -1068,6 +1034,89 @@ pub(crate) fn surface_alias_tag_map(
             .or_insert(canonical);
     }
     Ok(tags)
+}
+
+/// Sorted starts and prefix maximum ends answer strict containment and overlap.
+struct ExtentIndex {
+    prefix_ends: Vec<(usize, usize)>,
+}
+
+impl ExtentIndex {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        extents: impl IntoIterator<Item = (usize, usize)>,
+    ) -> Result<Self, CodecError> {
+        let mut prefix_ends = Vec::new();
+        let mut input = extents.into_iter();
+        while let Some((start, length)) =
+            ctx.next_charged(&mut input, "catia_alias_extent_index_visits")?
+        {
+            if let Some(end) = start.checked_add(length) {
+                ctx.push_vec(&mut prefix_ends, (start, end), "catia_alias_extent_index")?;
+            }
+        }
+        if prefix_ends.len() == 2 {
+            if prefix_ends[0].0 > prefix_ends[1].0 {
+                prefix_ends.swap(0, 1);
+            }
+        } else if prefix_ends.len() > 2
+            && !ctx.is_sorted_by(
+                &prefix_ends,
+                |extent| &extent.0,
+                Ord::cmp,
+                "catia_alias_extent_index_order",
+            )?
+        {
+            ctx.stable_sort_by(
+                &mut prefix_ends,
+                |extent| &extent.0,
+                Ord::cmp,
+                "catia_alias_extent_index_sort",
+            )?;
+        }
+        let mut max_end = 0;
+        for (_, end) in ctx.admit_iter(&mut prefix_ends, "catia_alias_extent_index_prefix")? {
+            max_end = max_end.max(*end);
+            *end = max_end;
+        }
+        Ok(Self { prefix_ends })
+    }
+    fn contains(
+        &self,
+        ctx: &DecodeContext<'_>,
+        start: usize,
+        length: usize,
+    ) -> Result<bool, CodecError> {
+        let Some(end) = start.checked_add(length) else {
+            return Ok(false);
+        };
+        let count = ctx.partition_point(
+            &self.prefix_ends,
+            |extent| Ok(extent.0 < start),
+            "catia_alias_extent_containment",
+        )?;
+        Ok(count
+            .checked_sub(1)
+            .is_some_and(|index| self.prefix_ends[index].1 >= end))
+    }
+    fn overlaps(
+        &self,
+        ctx: &DecodeContext<'_>,
+        start: usize,
+        length: usize,
+    ) -> Result<bool, CodecError> {
+        let Some(end) = start.checked_add(length) else {
+            return Ok(false);
+        };
+        let count = ctx.partition_point(
+            &self.prefix_ends,
+            |extent| Ok(extent.0 < end),
+            "catia_alias_extent_overlap",
+        )?;
+        Ok(count
+            .checked_sub(1)
+            .is_some_and(|index| self.prefix_ends[index].1 > start))
+    }
 }
 
 pub(crate) fn extent_contains(
@@ -2123,25 +2172,17 @@ fn tagged_value(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     atom(bytes, at)
 }
 
-fn is_final_terminator_run(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    at: usize,
-) -> Result<bool, CodecError> {
-    if bytes.get(at) != Some(&0xfe) {
-        return Ok(false);
-    }
-    ctx.all_by(
-        &bytes[at..],
-        |byte| Ok(*byte == 0xfe),
-        "catia_object_final_terminator_scan",
-    )
-}
-
 fn decode_payload(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<ObjectPayload>, CodecError> {
+    let final_terminator_start = ctx
+        .rposition_by(
+            bytes,
+            |byte| Ok(*byte != 0xfe),
+            "catia_object_final_terminator_scan",
+        )?
+        .map_or(0, |offset| offset + 1);
     let mut storage = ctx.reserve_scoped(0, "catia_object_payload_output")?;
     let parsed = storage.with_storage(|| {
         (|| -> Option<Result<ObjectPayload, CodecError>> {
@@ -2156,8 +2197,7 @@ fn decode_payload(
             let mut fields = Vec::new();
             let mut at = 0;
             while at < bytes.len() {
-                let final_terminators =
-                    bytes[at] == 0xfe && admitted!(is_final_terminator_run(ctx, bytes, at));
+                let final_terminators = at >= final_terminator_start;
                 if !final_terminators {
                     admitted!(ctx.charge_work(1, "catia_object_graph_iteration"));
                 }
@@ -2271,7 +2311,7 @@ fn decode_payload(
                         at += 1;
                     }
                     0x3b => {
-                        if admitted!(is_final_terminator_run(ctx, bytes, at + 1)) {
+                        if at + 1 >= final_terminator_start && at + 1 < bytes.len() {
                             admitted!(ctx.push_vec(
                                 &mut fields,
                                 PayloadField::Atom {
@@ -2304,7 +2344,7 @@ fn decode_payload(
                         .is_some()
                         {
                             if at >= bytes.len()
-                                || admitted!(is_final_terminator_run(ctx, bytes, at))
+                                || (at >= final_terminator_start && at < bytes.len())
                             {
                                 break;
                             }
@@ -2320,7 +2360,8 @@ fn decode_payload(
                                 at + usize::from(tagged_reference || (tagged_atom && !fixed_atom));
                             if (tagged_reference || tagged_atom)
                                 && (value_at >= bytes.len()
-                                    || admitted!(is_final_terminator_run(ctx, bytes, value_at)))
+                                    || (value_at >= final_terminator_start
+                                        && value_at < bytes.len()))
                             {
                                 at = value_at;
                                 break;
@@ -2357,7 +2398,7 @@ fn decode_payload(
                     }
                     0x81 | 0x3a | 0x39 | 0x7a => {
                         let tag = bytes[at];
-                        if admitted!(is_final_terminator_run(ctx, bytes, at + 1)) {
+                        if at + 1 >= final_terminator_start && at + 1 < bytes.len() {
                             admitted!(ctx.push_vec(
                                 &mut fields,
                                 PayloadField::Atom {
@@ -2507,6 +2548,55 @@ fn blob_end(bytes: &[u8], at: usize) -> Option<usize> {
 fn blob_declared_end(bytes: &[u8], at: usize) -> Option<usize> {
     let declared_len = usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?;
     at.checked_add(5)?.checked_add(declared_len)
+}
+
+/// Classify payload fields in one admitted walk, preserving subtype precedence.
+pub(crate) fn classify_charged(
+    ctx: &DecodeContext<'_>,
+    fields: &[PayloadField],
+) -> Result<PayloadSubtype, CodecError> {
+    let mut triplets = 0usize;
+    let mut atoms = 0usize;
+    let mut lists = 0usize;
+    let mut aggregator = false;
+    let mut blob = false;
+    let mut empty = true;
+    for (index, field) in ctx
+        .admit_iter(fields, "catia_object_payload_classification")?
+        .enumerate()
+    {
+        match field {
+            PayloadField::BulkTable { .. } => return Ok(PayloadSubtype::BulkTable),
+            PayloadField::Atom { .. } => atoms += 1,
+            PayloadField::List { declared_count, .. } => {
+                lists += 1;
+                aggregator |= *declared_count >= 3;
+            }
+            PayloadField::Blob { .. } => blob = true,
+            _ => {}
+        }
+        empty &= matches!(field, PayloadField::Terminator);
+        if index >= 2
+            && matches!(fields[index - 2], PayloadField::Scalar { .. })
+            && matches!(fields[index - 1], PayloadField::Atom { .. })
+            && matches!(field, PayloadField::Atom { .. })
+        {
+            triplets += 1;
+        }
+    }
+    Ok(if triplets >= 2 {
+        PayloadSubtype::TripletChain
+    } else if aggregator {
+        PayloadSubtype::ListAggregator
+    } else if blob {
+        PayloadSubtype::Blob
+    } else if atoms >= 2 && triplets == 0 && lists == 0 {
+        PayloadSubtype::AtomVector
+    } else if empty {
+        PayloadSubtype::Empty
+    } else {
+        PayloadSubtype::Mixed
+    })
 }
 
 /// Structural classification of decoded payload fields.

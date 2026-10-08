@@ -770,7 +770,7 @@ pub(crate) fn transfer_parameters<'ctx>(
                 continue;
             }
             if entity.formula_relation().is_some()
-                || object.subtype() == crate::object_graph::PayloadSubtype::Empty
+                || object.subtype_charged(ctx)? == crate::object_graph::PayloadSubtype::Empty
                     && object.references.is_empty()
             {
                 consumed_storage.with_storage(|| {
@@ -1708,34 +1708,17 @@ fn legacy_relation_evaluation<'a>(
                 .with_storage(|| crate::native::relation_symbols(ctx, &relation.expression))?,
         )
     };
-    let mut symbol_parameters = HashSet::new();
-    if let Some(symbols) = &symbols {
-        for (_, symbol) in ctx.admit_iter(symbols, "catia_legacy_formula_symbol_visits")? {
-            let Some(parameter) = crate::native::relation_symbol_parameter(ctx, symbol)? else {
-                continue;
-            };
-            if legacy_symbol_matches_input(ctx, symbol, parameter)? {
-                relation_scratch.with_storage(|| {
-                    ctx.insert_hash_set(
-                        &mut symbol_parameters,
-                        parameter,
-                        "catia_legacy_formula_symbol_index",
-                    )
-                })?;
-            }
-        }
-    }
     let mut bindings = BTreeMap::new();
     let mut bound = HashSet::new();
     let mut dependencies = Vec::new();
-    let mut input_rows = relation.inputs.iter();
-    while let Some(input) =
-        ctx.next_charged(&mut input_rows, "catia_formula_legacy_input_visits")?
-    {
-        if !ctx.contains_hash_set(
-            &symbol_parameters,
-            input.parameter.as_str(),
-            "catia_legacy_formula_symbol_index",
+    for input in ctx.admit_iter(&relation.inputs, "catia_formula_legacy_input_visits")? {
+        let Some(symbols) = symbols.as_ref() else {
+            return Ok(None);
+        };
+        if !ctx.any_by(
+            symbols,
+            |(_, symbol)| legacy_symbol_matches_input(ctx, symbol, &input.parameter),
+            "catia_legacy_formula_symbol_visits",
         )? {
             return Ok(None);
         }
@@ -2192,13 +2175,7 @@ fn merge_formula_parameter_candidate<'ctx>(
         match (existing_output, candidate_output) {
             (true, true) => {}
             (_, false) => {
-                let conflict = scratch.with_storage(|| {
-                    candidate
-                        .parameter
-                        .id
-                        .try_clone_for_decode(ctx, "catia_formula_conflict_id")
-                })?;
-                insert_formula_conflict(ctx, scratch, conflicting_inputs, conflict)?;
+                insert_formula_conflict(ctx, scratch, conflicting_inputs, candidate.parameter.id)?;
             }
             (false, true) => {
                 let conflict = scratch.with_storage(|| {
@@ -3191,6 +3168,85 @@ impl ComparisonOperator {
     }
 }
 
+/// Replace non-overlapping matches through one admitted byte searcher.
+fn replaced_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+    from: &str,
+    to: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let match_count = if from.is_empty() {
+        ctx.admit_iter(source, operation)?
+            .count()
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+    } else {
+        ctx.find_bytes_iter(source.as_bytes(), from.as_bytes(), operation)?
+            .count()
+    };
+    let length = match_count
+        .checked_mul(from.len())
+        .and_then(|removed| source.len().checked_sub(removed))
+        .and_then(|kept| {
+            match_count
+                .checked_mul(to.len())
+                .and_then(|added| kept.checked_add(added))
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let mut output = ctx.retained_string(length, operation)?;
+    if from.is_empty() {
+        ctx.append_retained(&mut output, to, operation)?;
+        for character in ctx.admit_iter(source, operation)? {
+            output.push(character);
+            ctx.append_retained(&mut output, to, operation)?;
+        }
+        return Ok(output);
+    }
+    let mut copied_until = 0;
+    for start in ctx.find_bytes_iter(source.as_bytes(), from.as_bytes(), operation)? {
+        ctx.append_retained(&mut output, &source[copied_until..start], operation)?;
+        ctx.append_retained(&mut output, to, operation)?;
+        copied_until = start + from.len();
+    }
+    ctx.append_retained(&mut output, &source[copied_until..], operation)?;
+    Ok(output)
+}
+
+/// Convert each Unicode scalar independently, preserving the formula's case rules.
+fn cased_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+    upper: bool,
+) -> Result<String, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "catia_formula_string_case";
+    let mut length = 0usize;
+    for character in ctx.admit_iter(source, OPERATION)? {
+        let mapped_length = if upper {
+            character.to_uppercase().map(char::len_utf8).sum::<usize>()
+        } else {
+            character.to_lowercase().map(char::len_utf8).sum::<usize>()
+        };
+        // One scalar maps to at most three scalars.
+        length = length
+            .checked_add(mapped_length)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, u64::MAX))?;
+    }
+    let mut output = ctx.retained_string(length, OPERATION)?;
+    for character in ctx.admit_iter(source, OPERATION)? {
+        if upper {
+            for mapped in character.to_uppercase() {
+                output.push(mapped);
+            }
+        } else {
+            for mapped in character.to_lowercase() {
+                output.push(mapped);
+            }
+        }
+    }
+    Ok(output)
+}
+
 struct FormulaExpressionParser<'a, 'b, 'c, 'd> {
     source: &'a str,
     at: usize,
@@ -3564,16 +3620,13 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                     }
                     let known = left.is_known() && right.is_known() && !right.value().is_empty();
                     let string_value = if known {
-                        if left.value().is_empty() {
-                            String::new()
-                        } else {
-                            self.ctx.replace_text(
-                                left.value(),
-                                right.value(),
-                                "",
-                                "catia_formula_string_subtract",
-                            )?
-                        }
+                        replaced_text(
+                            self.ctx,
+                            left.value(),
+                            right.value(),
+                            "",
+                            "catia_formula_string_subtract",
+                        )?
                     } else {
                         String::new()
                     };
@@ -4034,7 +4087,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                         if self.evaluate || (self.static_check && value.is_known()) {
                             formula_value!(finite_scalar(formula_value!(self
                                 .ctx
-                                .parse_text::<f64>(value.value(), "catia_formula_string_real")?
+                                .parse_text::<f64>(value.value(), "catia_formula_string_real",)?
                                 .ok())))
                         } else {
                             static_unknown_result(0.0, FormulaDimension::SCALAR)
@@ -4181,16 +4234,13 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             let known =
                 source.is_known() && from.is_known() && to.is_known() && !from.value().is_empty();
             let value = if self.evaluate || (self.static_check && known) {
-                if source.value().is_empty() && !from.value().is_empty() {
-                    String::new()
-                } else {
-                    self.ctx.replace_text(
-                        source.value(),
-                        from.value(),
-                        to.value(),
-                        "catia_formula_replace_subtext",
-                    )?
-                }
+                replaced_text(
+                    self.ctx,
+                    source.value(),
+                    from.value(),
+                    to.value(),
+                    "catia_formula_replace_subtext",
+                )?
             } else {
                 String::new()
             };
@@ -4235,26 +4285,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             };
             let known = value.is_known();
             let string_value = if self.evaluate || (self.static_check && known) {
-                if function == "ToUpper" {
-                    self.ctx
-                        .to_uppercase(value.value(), "catia_formula_string_case")?
-                } else {
-                    let mut result = String::new();
-                    let mut characters = value.value().chars();
-                    while let Some(character) = self
-                        .ctx
-                        .next_charged(&mut characters, "catia_formula_case_work")?
-                    {
-                        for mapped in character.to_lowercase() {
-                            self.ctx.push_retained_char(
-                                &mut result,
-                                mapped,
-                                "catia_formula_string_case",
-                            )?;
-                        }
-                    }
-                    result
-                }
+                cased_text(self.ctx, value.value(), function == "ToUpper")?
             } else {
                 String::new()
             };
@@ -4744,7 +4775,7 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         let value = formula_value!(self.ctx.get_btree_map(
             self.bindings,
             &self.source[start..name_end],
-            "catia_formula_binding_lookup"
+            "catia_formula_symbol_lookup"
         )?);
         if self.evaluate
             && matches!(value, EvaluatedFormulaValue::Scalar(scalar) if scalar.known_value().is_none())
@@ -5324,6 +5355,51 @@ mod parser_tests {
             );
         }
         assert!(evaluate_formula_expression("min(1,2)", &BTreeMap::new()).is_some());
+    }
+
+    #[test]
+    fn formula_replacement_matches_standard_results_with_linear_work() {
+        for source in ["", "aaaa", "ababababa", "ééé😀é", "aaabaaaaab", "abc"] {
+            for from in ["", "a", "aa", "aba", "aaaaab", "é", "😀", "absent"] {
+                for to in ["", "x", "😀"] {
+                    assert_eq!(
+                        crate::test_support::with_service_context(|ctx| {
+                            super::replaced_text(ctx, source, from, to, "test replacement")
+                        })
+                        .expect("replacement admission"),
+                        source.replace(from, to)
+                    );
+                }
+            }
+        }
+        let source = "a".repeat(4096);
+        let result = crate::test_support::with_work_limit(4096 * 8, |ctx| {
+            super::replaced_text(ctx, &source, "a", "b", "test replacement")
+        })
+        .expect("one byte searcher and linear output copying");
+        assert_eq!(result, "b".repeat(4096));
+    }
+
+    #[test]
+    fn formula_case_conversion_preserves_scalar_rules_and_exact_storage() {
+        for (source, upper, expected) in [
+            ("ΟΣ", false, "οσ"),
+            ("İ", false, "i\u{0307}"),
+            ("ß", true, "SS"),
+        ] {
+            let result = crate::test_support::with_retained_limit(
+                cadmpeg_core::decode::u64_from_index(expected.len()),
+                |ctx| super::cased_text(ctx, source, upper),
+            )
+            .expect("only final case bytes are retained");
+            assert_eq!(result, expected);
+            assert!(
+                crate::test_support::with_work_refusal("catia_formula_string_case", |ctx| {
+                    super::cased_text(ctx, source, upper)
+                })
+                .is_err()
+            );
+        }
     }
 
     #[test]
