@@ -17,7 +17,6 @@ fn e5_invalid_first_pole_does_not_charge_unvisited_rows_or_columns() {
     }
 }
 
-
 #[test]
 fn e5_analytic_surfaces_do_not_read_past_declared_payloads() {
     use crate::test_support::test_e5::{e5_circle_stream, e5_torus_stream};
@@ -41,9 +40,12 @@ fn e5_analytic_surfaces_do_not_read_past_declared_payloads() {
         assert_eq!(complete.len(), 1);
         for payload_size in 0..size {
             bytes[5..7].copy_from_slice(
-                &u16::try_from(payload_size).expect("fixture payload size").to_le_bytes(),
+                &u16::try_from(payload_size)
+                    .expect("fixture payload size")
+                    .to_le_bytes(),
             );
-            let frame = super::E5Frame::at(&bytes, 0).expect("short frame is structurally readable");
+            let frame =
+                super::E5Frame::at(&bytes, 0).expect("short frame is structurally readable");
             // The carrier may omit an opaque suffix, but it cannot read a
             // scalar which is only present beyond the declared payload.
             let standalone = &bytes[..frame.end()];
@@ -55,7 +57,12 @@ fn e5_analytic_surfaces_do_not_read_past_declared_payloads() {
                 super::e5_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
             })
             .expect("trailing source budget");
-            assert_eq!(with_trailing_bytes.len(), bounded.len(), "class {} size {payload_size}", bytes[3]);
+            assert_eq!(
+                with_trailing_bytes.len(),
+                bounded.len(),
+                "class {} size {payload_size}",
+                bytes[3]
+            );
         }
     }
 }

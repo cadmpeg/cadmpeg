@@ -1254,11 +1254,25 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
     ];
     // The endpoint lane has exactly eight entries.
     for (left, right) in [
-        (0, 1), (2, 3), (4, 5), (6, 7),
-        (0, 2), (1, 3), (4, 6), (5, 7),
-        (1, 2), (5, 6), (0, 4), (3, 7),
-        (1, 5), (2, 6), (1, 4), (3, 6),
-        (2, 4), (3, 5), (3, 4),
+        (0, 1),
+        (2, 3),
+        (4, 5),
+        (6, 7),
+        (0, 2),
+        (1, 3),
+        (4, 6),
+        (5, 7),
+        (1, 2),
+        (5, 6),
+        (0, 4),
+        (3, 7),
+        (1, 5),
+        (2, 6),
+        (1, 4),
+        (3, 6),
+        (2, 4),
+        (3, 5),
+        (3, 4),
     ] {
         if vertices[left] > vertices[right] {
             vertices.swap(left, right);

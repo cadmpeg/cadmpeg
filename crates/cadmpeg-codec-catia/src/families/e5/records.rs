@@ -405,15 +405,17 @@ pub(in crate::families) fn e5_surfaces(
                     ],
                 ))
             }),
-            0xcc => e5_torus(carrier_bytes, 0).and_then(|(geometry, major_radius, minor_radius)| {
-                Some((
-                    geometry,
-                    [
-                        FiniteReal::new(1.0 / major_radius.get())?,
-                        FiniteReal::new(1.0 / minor_radius.get())?,
-                    ],
-                ))
-            }),
+            0xcc => {
+                e5_torus(carrier_bytes, 0).and_then(|(geometry, major_radius, minor_radius)| {
+                    Some((
+                        geometry,
+                        [
+                            FiniteReal::new(1.0 / major_radius.get())?,
+                            FiniteReal::new(1.0 / minor_radius.get())?,
+                        ],
+                    ))
+                })
+            }
             0xe7 => e5_nurbs_surface(ctx, data, record, refusal)?
                 .map(|geometry| (geometry, [FiniteReal::ONE, FiniteReal::ONE])),
             _ => None,
