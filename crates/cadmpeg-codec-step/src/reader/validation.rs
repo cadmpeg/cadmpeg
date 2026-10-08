@@ -12,7 +12,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text_charged;
+use super::decode_text_scoped;
 use super::geometry::GeometryData;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
@@ -24,17 +24,26 @@ enum Expected {
     Centroid(Point3),
 }
 
-pub(super) fn decode(
+pub(super) fn decode<'ctx>(
     exchange: &Exchange,
     geometry: &GeometryData,
     ir: &mut CadIr,
-    ctx: &DecodeContext<'_>,
-) -> Result<StageOutcome<()>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<
+    StageOutcome<(
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
+    CodecError,
+> {
+    let slot_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP stage report buffers")?);
+    let mut claim_storage = ctx.reserve_scoped(0, "STEP stage claim storage")?;
+    let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     if !exchange.has_entity(ctx, "PROPERTY_DEFINITION")?
         || !exchange.has_entity(ctx, "PROPERTY_DEFINITION_REPRESENTATION")?
     {
         return Ok(StageOutcome {
-            value: (),
+            value: (claim_storage, slot_storage.into_inner()),
             claims: BTreeSet::new(),
             notes: Vec::new(),
             losses: Vec::new(),
@@ -48,15 +57,19 @@ pub(super) fn decode(
         };
         let mut items = BTreeSet::new();
         for item in representation_items {
-            ctx.insert_btree_set(&mut items, item, "step_validation_representation_items")?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_set(&mut items, item, "step_validation_representation_items")
+            })?;
         }
         if !items.is_empty() {
-            ctx.insert_btree_map(
-                &mut representations,
-                id,
-                items,
-                "step_validation_representations",
-            )?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut representations,
+                    id,
+                    items,
+                    "step_validation_representations",
+                )
+            })?;
         }
     }
     let mut properties = BTreeMap::new();
@@ -64,18 +77,22 @@ pub(super) fn decode(
         let Some(property) = record.partial(ctx, "PROPERTY_DEFINITION")? else {
             continue;
         };
+        let mut name_storage = ctx.reserve_scoped(0, "STEP validation property name scratch")?;
         let name = property
             .parameters
             .first()
             .map(|value| {
-                decode_text_charged(
+                decode_text_scoped(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     id,
-                    "validation property name",
-                    StepLossCode::MetadataStringInvalid,
+                    (
+                        "validation property name",
+                        StepLossCode::MetadataStringInvalid,
+                    ),
                     ctx,
+                    &mut name_storage,
                 )
             })
             .transpose()?
@@ -83,34 +100,38 @@ pub(super) fn decode(
         let Some(name) = name else {
             continue;
         };
-        if ctx.eq_ignore_ascii_case(
-            name.as_str(),
-            "geometric validation property",
-            "STEP validation property name case equality",
-        )? {
+        if name
+            .as_str()
+            .eq_ignore_ascii_case("geometric validation property")
+        {
             let description = property
                 .parameters
                 .get(1)
                 .map(|value| {
-                    decode_text_charged(
+                    decode_text_scoped(
                         exchange,
                         value,
-                        &mut losses,
+                        (&mut losses, &slot_storage),
                         id,
-                        "validation property description",
-                        StepLossCode::MetadataStringInvalid,
+                        (
+                            "validation property description",
+                            StepLossCode::MetadataStringInvalid,
+                        ),
                         ctx,
+                        &mut scratch_storage,
                     )
                 })
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            ctx.insert_btree_map(
-                &mut properties,
-                id,
-                description,
-                "step_validation_properties",
-            )?;
+            scratch_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut properties,
+                    id,
+                    description,
+                    "step_validation_properties",
+                )
+            })?;
         }
     }
     let computed = mesh_properties(ir, ctx)?;
@@ -126,33 +147,51 @@ pub(super) fn decode(
         let Some(property_id) = relation.parameters.first().and_then(ValueExt::reference) else {
             continue;
         };
-        let Some(description) = properties.get(&property_id) else {
+        let Some(description) =
+            ctx.get_btree_map(&properties, &property_id, "STEP validation properties get")?
+        else {
             continue;
         };
         let Some(representation_id) = relation.parameters.get(1).and_then(ValueExt::reference)
         else {
             continue;
         };
-        let Some(item_ids) = representations.get(&representation_id) else {
+        let Some(item_ids) = ctx.get_btree_map(
+            &representations,
+            &representation_id,
+            "STEP validation representations get",
+        )?
+        else {
             continue;
         };
-        ctx.insert_btree_set(
-            &mut validation_representations,
-            representation_id,
-            "step_validation_used_representations",
-        )?;
+        scratch_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut validation_representations,
+                representation_id,
+                "step_validation_used_representations",
+            )
+        })?;
         for &item_id in ctx.admit_iter(item_ids, "STEP validation item traversal")? {
-            let Some(item) = exchange.records().get(&item_id) else {
+            let Some(item) =
+                ctx.get_btree_map(exchange.records(), &item_id, "STEP validation record get")?
+            else {
                 continue;
             };
             let scale = geometry
                 .units
                 .length([item_id, representation_id], ctx)?
                 .get();
-            let expected = expected_value(item_id, item, exchange, scale, &mut losses, ctx)?;
+            let expected = expected_value(
+                item_id,
+                item,
+                exchange,
+                scale,
+                (&mut losses, &slot_storage),
+                ctx,
+            )?;
             let Some(expected) = expected else {
                 push_validation_loss(
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     StepLossCode::DecodeWarning,
                     format!(
                         "geometric validation property #{property_id} has unsupported item #{item_id}"
@@ -162,13 +201,18 @@ pub(super) fn decode(
                 continue;
             };
             if matches!(expected, Expected::Centroid(_)) {
-                ctx.insert_btree_set(&mut validation_points, item_id, "step_validation_points")?;
+                scratch_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut validation_points, item_id, "step_validation_points")
+                })?;
             }
             for id in [property_id, relation_id, representation_id, item_id] {
-                ctx.insert_btree_set(&mut typed, id, "step_validation_claims")?;
+                claim_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut typed, id, "step_validation_claims")
+                })?;
             }
             if let Some(unit) = measure_unit(ctx, item)? {
-                collect_unit_records(unit, exchange, &mut typed, ctx)?;
+                claim_storage
+                    .with_storage(|| collect_unit_records(unit, exchange, &mut typed, ctx))?;
             }
             let (kind, expected_text, actual) = match expected {
                 Expected::Area(value) => {
@@ -188,17 +232,20 @@ pub(super) fn decode(
                     Expected::Centroid(_) => format!("distance {actual}"),
                     _ => actual.to_string(),
                 };
-                ctx.push_formatted_retained(&mut notes, format_args!(
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut notes, ctx.format_retained(format_args!(
                         "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
-                    ), "step_validation_notes", "step_validation_note_text")?;
+                    ), "step_validation_note_text")?, "step_validation_notes")?;
             } else {
-                ctx.push_formatted_retained(
+                ctx.push_scoped_vec(
+                    &mut slot_storage.borrow_mut(),
                     &mut notes,
-                    format_args!(
-                        "geometric validation {kind} {description}: expected {expected_text}"
-                    ),
+                    ctx.format_retained(
+                        format_args!(
+                            "geometric validation {kind} {description}: expected {expected_text}"
+                        ),
+                        "step_validation_note_text",
+                    )?,
                     "step_validation_notes",
-                    "step_validation_note_text",
                 )?;
             }
         }
@@ -206,7 +253,11 @@ pub(super) fn decode(
     let mut referenced_validation_points = BTreeSet::new();
     if !validation_points.is_empty() {
         for (&record_id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
-            if validation_representations.contains(&record_id) {
+            if ctx.contains_btree_set(
+                &validation_representations,
+                &record_id,
+                "STEP validation validation_representations contains",
+            )? {
                 continue;
             }
             for partial in ctx.admit_iter(
@@ -217,12 +268,14 @@ pub(super) fn decode(
                     partial.parameters.as_slice(),
                     "STEP validation reference parameter traversal",
                 )? {
-                    collect_validation_references(
-                        value,
-                        &validation_points,
-                        &mut referenced_validation_points,
-                        ctx,
-                    )?;
+                    scratch_storage.with_storage(|| {
+                        collect_validation_references(
+                            value,
+                            &validation_points,
+                            &mut referenced_validation_points,
+                            ctx,
+                        )
+                    })?;
                 }
             }
         }
@@ -234,12 +287,20 @@ pub(super) fn decode(
             let Some(id) = step_id(ctx, point.id.as_str())? else {
                 return Ok(true);
             };
-            Ok(!validation_points.contains(&id) || referenced_validation_points.contains(&id))
+            Ok(!ctx.contains_btree_set(
+                &validation_points,
+                &id,
+                "STEP validation validation_points contains",
+            )? || ctx.contains_btree_set(
+                &referenced_validation_points,
+                &id,
+                "STEP validation referenced_validation_points contains",
+            )?)
         },
         "STEP validation point retention",
     )?;
     Ok(StageOutcome {
-        value: (),
+        value: (claim_storage, slot_storage.into_inner()),
         claims: typed,
         notes,
         losses,
@@ -251,7 +312,10 @@ fn expected_value(
     record: &RawRecord,
     exchange: &Exchange,
     scale: f64,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (
+        &mut Vec<LossNote>,
+        &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
+    ),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Expected>, CodecError> {
     if let Some(point) = record.partial(ctx, "CARTESIAN_POINT")? {
@@ -278,25 +342,20 @@ fn expected_value(
     {
         return Ok(None);
     }
-    let mut measure = None;
-    'measure: for partial in ctx.admit_iter(
-        &record.partials[..],
-        "STEP validation measure partial traversal",
-    )? {
-        for value in ctx.admit_iter(
-            partial.parameters.as_slice(),
-            "STEP validation measure parameter traversal",
-        )? {
-            if let Some(value) = area_or_volume_measure(ctx, value)? {
-                measure = Some(value);
-                break 'measure;
-            }
-        }
-    }
+    let measure =
+        super::find_record_value(record, ctx, |value| area_or_volume_measure(ctx, value))?;
     let Some((kind, value)) = measure else {
         return Ok(None);
     };
-    let scale = measure_scale(id, record, exchange, scale, kind, losses, ctx)?;
+    let scale = measure_scale(
+        id,
+        record,
+        exchange,
+        scale,
+        kind,
+        (losses, slot_storage),
+        ctx,
+    )?;
     Ok(Some(match kind {
         "AREA_MEASURE" => Expected::Area(value * scale),
         "VOLUME_MEASURE" => Expected::Volume(value * scale),
@@ -310,43 +369,59 @@ fn measure_scale(
     exchange: &Exchange,
     fallback: f64,
     kind: &str,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (
+        &mut Vec<LossNote>,
+        &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
+    ),
     ctx: &DecodeContext<'_>,
 ) -> Result<f64, CodecError> {
     let resolved = measure_unit(ctx, record)?
-        .and_then(|unit| exchange.records().get(&unit))
+        .map(|unit| ctx.get_btree_map(exchange.records(), &unit, "STEP validation record get"))
+        .transpose()?
+        .flatten()
         .map(|record| derived_unit_elements(ctx, record))
         .transpose()?
         .flatten()
         .and_then(ValueExt::list);
     let resolved = if let Some(elements) = resolved {
         let mut scale = Some(1.0);
-        for element in elements {
-            let element = element
-                .reference()
-                .and_then(|id| exchange.records().get(&id));
-            let partial = element
-                .map(|element| element.partial(ctx, "DERIVED_UNIT_ELEMENT"))
-                .transpose()?
-                .flatten();
-            let fields = partial.and_then(|element| {
-                Some((
-                    element.parameters.first()?.reference()?,
-                    element.parameters.get(1)?.number()?,
-                ))
-            });
-            let Some((base, exponent)) = fields else {
-                scale = None;
-                break;
-            };
-            let Some(base) =
-                super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), ctx)?
-            else {
-                scale = None;
-                break;
-            };
-            scale = scale.map(|scale| scale * base.get().powf(exponent));
-        }
+        ctx.all_by(
+            elements,
+            |element| {
+                let element = element
+                    .reference()
+                    .map(|id| {
+                        ctx.get_btree_map(exchange.records(), &id, "STEP validation record get")
+                    })
+                    .transpose()?
+                    .flatten();
+                let partial = element
+                    .map(|element| element.partial(ctx, "DERIVED_UNIT_ELEMENT"))
+                    .transpose()?
+                    .flatten();
+                let fields = partial.and_then(|element| {
+                    Some((
+                        element.parameters.first()?.reference()?,
+                        element.parameters.get(1)?.number()?,
+                    ))
+                });
+                let Some((base, exponent)) = fields else {
+                    scale = None;
+                    return Ok(false);
+                };
+                let (base, _unit_storage) = ctx
+                    .with_scoped_storage("STEP validation unit resolver scratch", || {
+                        super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), ctx)
+                    })?;
+                let Some(base) = base else {
+                    scale = None;
+                    return Ok(false);
+                };
+                scale = scale.map(|scale| scale * base.get().powf(exponent));
+                Ok(true)
+            },
+            "STEP validation elements traversal",
+        )?;
         scale
     } else {
         None
@@ -355,7 +430,7 @@ fn measure_scale(
         Some(scale) => Ok(scale),
         None => {
             push_validation_loss(
-                losses,
+                (losses, slot_storage),
                 StepLossCode::ValidationMeasureUnitUnresolved,
                 ctx.format_retained(format_args!(
                     "geometric validation {kind} measure #{id} unit scale did not resolve; the document length scale was used",
@@ -368,36 +443,48 @@ fn measure_scale(
 }
 
 fn push_validation_loss(
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (
+        &mut Vec<LossNote>,
+        &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
+    ),
     code: StepLossCode,
     message: String,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(losses, 1, "step_validation_losses")?;
+    slot_storage
+        .borrow_mut()
+        .with_storage(|| ctx.reserve_vec(losses, 1, "step_validation_losses"))?;
     losses.push(code.note(message));
     Ok(())
 }
 
-fn area_or_volume_measure<'a>(
+fn area_or_volume_measure(
     ctx: &DecodeContext<'_>,
-    value: &'a Value,
-) -> Result<Option<(&'a str, f64)>, CodecError> {
+    value: &Value,
+) -> Result<Option<(&'static str, f64)>, CodecError> {
     let _depth = ctx.enter_nested("STEP validation measure nesting")?;
     match value {
         Value::Typed(kind, value) if matches!(kind.as_str(), "AREA_MEASURE" | "VOLUME_MEASURE") => {
-            Ok(value.number().map(|value| (kind.as_str(), value)))
+            Ok(value.number().map(|value| {
+                (
+                    if kind == "AREA_MEASURE" {
+                        "AREA_MEASURE"
+                    } else {
+                        "VOLUME_MEASURE"
+                    },
+                    value,
+                )
+            }))
         }
-        Value::Typed(_, value) => area_or_volume_measure(ctx, value),
-        Value::List(values) => {
-            for value in
-                ctx.admit_iter(values.as_slice(), "STEP validation measure list traversal")?
-            {
-                if let Some(measure) = area_or_volume_measure(ctx, value)? {
-                    return Ok(Some(measure));
-                }
-            }
-            Ok(None)
+        Value::Typed(_, value) => {
+            ctx.charge_work(1, "STEP typed validation measure descent")?;
+            area_or_volume_measure(ctx, value)
         }
+        Value::List(values) => ctx.find_map(
+            values.as_slice(),
+            |value| area_or_volume_measure(ctx, value),
+            "STEP validation measure list traversal",
+        ),
         _ => Ok(None),
     }
 }
@@ -438,17 +525,20 @@ fn collect_unit_records(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     ctx.insert_btree_set(typed, id, "step_validation_claims")?;
-    let Some(record) = exchange.records().get(&id) else {
+    let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP validation record get")?
+    else {
         return Ok(());
     };
     let Some(elements) = derived_unit_elements(ctx, record)?.and_then(ValueExt::list) else {
         return Ok(());
     };
-    for element in elements.iter().filter_map(ValueExt::reference) {
+    for element in ctx
+        .admit_iter(elements, "STEP derived unit element traversal")?
+        .filter_map(ValueExt::reference)
+    {
         ctx.insert_btree_set(typed, element, "step_validation_claims")?;
-        if let Some(base) = exchange
-            .records()
-            .get(&element)
+        if let Some(base) = ctx
+            .get_btree_map(exchange.records(), &element, "STEP validation record get")?
             .map(|record| record.partial(ctx, "DERIVED_UNIT_ELEMENT"))
             .transpose()?
             .flatten()
@@ -483,45 +573,38 @@ fn mesh_properties(
     let Some(body) = (ir.model.bodies.len() == 1).then(|| &ir.model.bodies[0].id) else {
         return Ok(None);
     };
-    let origin = ctx.find_map(
-        ir.model.tessellations.as_slice(),
-        |mesh| {
-            if !ctx.equal(
-                &mesh.body.as_ref(),
-                &Some(body),
-                "STEP validation mesh body equality",
-            )? {
-                return Ok(None);
-            }
-            Ok(mesh.triangles().first().and_then(|triangle| {
+    let (mut meshes, mut mesh_storage) = ctx.temporary_vec(0, "STEP validation selected meshes")?;
+    let mut origin = None;
+    for mesh in ctx.admit_iter(
+        &ir.model.tessellations,
+        "STEP validation mesh selection traversal",
+    )? {
+        if !ctx.equal(
+            &mesh.body.as_ref(),
+            &Some(body),
+            "STEP validation mesh body equality",
+        )? {
+            continue;
+        }
+        ctx.push_scoped_vec(
+            &mut mesh_storage,
+            &mut meshes,
+            mesh,
+            "STEP validation selected meshes",
+        )?;
+        if origin.is_none() {
+            origin = mesh.triangles().first().and_then(|triangle| {
                 mesh.vertices()
                     .get(cadmpeg_core::decode::index_from_u32(triangle[0]))
                     .copied()
-            }))
-        },
-        "STEP validation mesh origin traversal",
-    )?;
+            });
+        }
+    }
     let Some(origin) = origin else {
         return Ok(None);
     };
     let mut extent = 0.0_f64;
-    for mesh in ctx
-        .admit_iter(
-            ir.model.tessellations.as_slice(),
-            "STEP validation mesh extent traversal",
-        )?
-        .map(|mesh| -> Result<Option<_>, CodecError> {
-            Ok(ctx
-                .equal(
-                    &mesh.body.as_ref(),
-                    &Some(body),
-                    "STEP validation mesh body equality",
-                )?
-                .then_some(mesh))
-        })
-        .filter_map(Result::transpose)
-    {
-        let mesh = mesh?;
+    for mesh in ctx.admit_iter(&meshes, "STEP validation mesh extent traversal")? {
         extent = ctx
             .admit_iter(&mesh.vertices(), "STEP validation vertex extent traversal")?
             .fold(extent, |scale, point| {
@@ -541,26 +624,10 @@ fn mesh_properties(
     let mut triangles = 0usize;
     let mut watertight = true;
     let mut coordinate_scale = 0.0_f64;
-    for mesh in ctx
-        .admit_iter(
-            ir.model.tessellations.as_slice(),
-            "STEP validation mesh property traversal",
-        )?
-        .map(|mesh| -> Result<Option<_>, CodecError> {
-            Ok(ctx
-                .equal(
-                    &mesh.body.as_ref(),
-                    &Some(body),
-                    "STEP validation mesh body equality",
-                )?
-                .then_some(mesh))
-        })
-        .filter_map(Result::transpose)
-    {
-        let mesh = mesh?;
+    for mesh in ctx.admit_iter(&meshes, "STEP validation mesh property traversal")? {
+        let mut edge_storage = ctx.reserve_scoped(0, "STEP mesh edge scratch")?;
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
-        for triangle in mesh.triangles() {
-            ctx.charge_work(1, "step_validation_mesh_triangles")?;
+        for triangle in ctx.admit_iter(mesh.triangles(), "step_validation_mesh_triangles")? {
             let [a, b, c] = triangle.map(|index| {
                 mesh.vertices()
                     .get(cadmpeg_core::decode::index_from_u32(index))
@@ -575,8 +642,10 @@ fn mesh_properties(
                 [triangle[2], triangle[0]],
             ] {
                 let edge = (first.min(second), first.max(second));
-                ctx.admit_btree_entry(&edge_uses, &edge, "step_validation_mesh_edges")?;
-                match edge_uses.entry(edge) {
+
+                match edge_storage.with_storage(|| {
+                    ctx.entry_btree_map(&mut edge_uses, edge, "step_validation_mesh_edges")
+                })? {
                     Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                     Entry::Vacant(entry) => {
                         entry.insert(1);
@@ -685,11 +754,12 @@ fn mesh_properties(
 /// The numeric entity identifier an IR identity ends with, or `None` when it
 /// names none.
 fn step_id(ctx: &DecodeContext<'_>, id: &str) -> Result<Option<u64>, CodecError> {
-    id.rsplit('#')
-        .next()
-        .map(|number| ctx.parse_text::<u64>(number, "STEP validation point number parse"))
-        .transpose()
-        .map(|number| number.and_then(Result::ok))
+    let number = ctx
+        .rsplit_once(id, "#", "STEP validation point identity split")?
+        .map_or(id, |(_, number)| number);
+    Ok(ctx
+        .parse_text::<u64>(number, "STEP validation point number parse")?
+        .ok())
 }
 
 fn collect_validation_references(
@@ -700,7 +770,13 @@ fn collect_validation_references(
 ) -> Result<(), CodecError> {
     let _nested = ctx.enter_nested("step_validation_reference_walk")?;
     match value {
-        Value::Reference(id) if validation_points.contains(id) => {
+        Value::Reference(id)
+            if ctx.contains_btree_set(
+                validation_points,
+                id,
+                "STEP validation validation_points contains",
+            )? =>
+        {
             ctx.insert_btree_set(referenced, *id, "step_validation_referenced_points")?;
         }
         Value::List(values) => {
@@ -712,6 +788,7 @@ fn collect_validation_references(
             }
         }
         Value::Typed(_, value) => {
+            ctx.charge_work(1, "STEP typed validation reference descent")?;
             collect_validation_references(value, validation_points, referenced, ctx)?;
         }
         _ => {}

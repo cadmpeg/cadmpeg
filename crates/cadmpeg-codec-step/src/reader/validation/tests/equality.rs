@@ -51,33 +51,3 @@ fn validation_mesh_body_option_equality_preserves_refusal() {
     assert_eq!(refusal.operation, "STEP validation mesh body equality");
     assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
-
-#[test]
-fn validation_property_name_case_equality_preserves_refusal() {
-    let source = super::VALIDATION_LIMIT_SOURCE;
-    let (exchange, _) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner).unwrap();
-    let setup_arena = DecodeArena::new();
-    let setup_policy = DecodePolicy::service();
-    let (setup_ctx, _) =
-        DecodeContext::from_root_bytes(source, &setup_arena, &setup_policy).unwrap();
-    let mut setup_ir = CadIr::empty();
-    let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx).unwrap();
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "STEP validation property name case equality",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
-            let result =
-                super::super::decode(&exchange, &geometry.value, &mut setup_ir.clone(), &ctx)
-                    .map(|_| ());
-            if let Err(CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-}

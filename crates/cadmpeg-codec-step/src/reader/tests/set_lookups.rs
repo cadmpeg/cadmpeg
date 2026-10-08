@@ -45,7 +45,10 @@ fn protected_pcurve_root_filter_preserves_lookup_refusal() {
             &exchange,
             &mut model.clone(),
             &mut HashSet::new(),
-            &mut Vec::new(),
+            (
+                &mut Vec::new(),
+                &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope")),
+            ),
             &ctx,
         );
         match result {
