@@ -1080,12 +1080,7 @@ fn model_typed_nonlinear_curve_ids(
         &ir.model.curves,
         "creo model typed nonlinear curve ids curves traversal",
     )? {
-        let Some(suffix) = ctx.strip_prefix(
-            curve.id.as_str(),
-            "creo:visibgeom:curve#",
-            "creo nonlinear curve namespace",
-        )?
-        else {
+        let Some(suffix) = curve.id.as_str().strip_prefix("creo:visibgeom:curve#") else {
             continue;
         };
         let Ok(id) = ctx.parse_text::<u32>(suffix, "creo nonlinear curve number")? else {
