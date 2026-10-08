@@ -110,10 +110,6 @@ fn parse_stream<'a>(
     for entry in ctx.admit_iter(archive.entries(), "validate Inventor Protein entry names")? {
         validate_entry_name(ctx, &entry.name)?;
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(archive.entries().len()),
-        "admit Inventor Protein package entries",
-    )?;
     Ok(ParsedProtein::Package {
         declared_len,
         archive,
@@ -218,13 +214,10 @@ fn validate_entry_name(ctx: &DecodeContext<'_>, name: &str) -> Result<(), CodecE
         )?;
         has_unsafe_byte || component != 3
     } {
-        ctx.charge_formatted_retained(
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!("Inventor Protein package has unsafe entry name {name:?}"),
             "retain Inventor unsafe Protein entry diagnostic",
-        )?;
-        return Err(CodecError::malformed(format_args!(
-            "Inventor Protein package has unsafe entry name {name:?}"
-        )));
+        )?));
     }
     Ok(())
 }
@@ -245,6 +238,34 @@ mod tests {
         ParsedProtein, ProteinEnvelope,
     };
     use cadmpeg_core::decode::DecodeContext;
+
+    #[test]
+    fn protein_package_validation_does_not_add_archive_slots() {
+        let zip = zip_fixture("Schemas/ExampleSchema.xml");
+        let mut bytes = u32::try_from(zip.len())
+            .expect("fixture length")
+            .to_le_bytes()
+            .to_vec();
+        bytes.extend_from_slice(&zip);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One entry uses five slots: dependency index, raw-name set,
+        // entry vector, decoded-name set and name index. Validation stores none.
+        policy.limits.max_collection_items = 5;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let ParsedProtein::Package { archive, .. } =
+            parse_stream(&ctx, root).expect("five archive slots")
+        else {
+            panic!("package state");
+        };
+        assert_eq!(archive.entries().len(), 1);
+        assert!(matches!(
+            ctx.charge_collection_items(1, "probe archive slots"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == 5 && limit.additional == 1
+        ));
+    }
 
     #[test]
     fn unsafe_protein_entry_diagnostic_refuses_retained_limit_before_format() {
