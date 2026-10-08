@@ -230,7 +230,7 @@ fn binary_triangulation_normals_refuse_at_collection_limit() {
     );
 }
 
-fn shape_property(xml: &str) -> PropertyRecord {
+pub(super) fn shape_property(xml: &str) -> PropertyRecord {
     PropertyRecord {
         id: "fcstd:native:property#Owner:Shape".into(),
         owner: "fcstd:native:object#Owner".into(),
@@ -371,7 +371,7 @@ fn source_association() -> SourceObjectAssociation {
     }
 }
 
-fn shape_payload() -> ShapePayloadRecord {
+pub(super) fn shape_payload() -> ShapePayloadRecord {
     ShapePayloadRecord {
         id: "fcstd:native:shape-payload#Payload".into(),
         property: "fcstd:native:property#Owner:Shape".into(),
@@ -393,7 +393,7 @@ fn shape_payload() -> ShapePayloadRecord {
     }
 }
 
-fn trimmed_curve() -> TextCurve {
+pub(super) fn trimmed_curve() -> TextCurve {
     TextCurve::Trimmed {
         parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
         basis: NestedCurve::try_new(line_curve()).expect("nested line"),
@@ -409,7 +409,7 @@ fn offset_curve() -> TextCurve {
     }
 }
 
-fn extrusion_surface() -> TextSurface {
+pub(super) fn extrusion_surface() -> TextSurface {
     TextSurface::Extrusion {
         direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
             .expect("finite extrusion direction"),
@@ -426,7 +426,7 @@ fn revolution_surface() -> TextSurface {
     }
 }
 
-fn trimmed_surface() -> TextSurface {
+pub(super) fn trimmed_surface() -> TextSurface {
     TextSurface::Trimmed {
         parameter_ranges: [[FiniteReal::ZERO, FiniteReal::ONE]; 2],
         basis: NestedSurface::try_new(plane_surface()).expect("nested plane"),

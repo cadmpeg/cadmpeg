@@ -180,10 +180,11 @@ fn gui_body_payload_index_preserves_nested_keys_and_repeated_sources() {
             body("fcstd:model:body#ab:1"),
             body("fcstd:model:body#a:2"),
         ];
-        let index = super::super::TopologyIndex::new(ctx, &ir).expect("body index");
+        let mut index = super::super::TopologyIndex::new(&ir);
+        index.ensure_bodies(ctx).expect("body payload index");
         let selected = super::super::select_shape_bodies(
             ctx,
-            &index,
+            &index.bodies,
             [
                 "fcstd:payload#a:child",
                 "fcstd:payload#a",
@@ -213,7 +214,7 @@ fn gui_blank_property_values_need_no_retained_copy() {
     let (kept, refused, _storage) = super::super::gui_named_entries(
         &ctx,
         || ctx.copy_retained_text("record", "record name"),
-        [("   ", value.as_str())],
+        [("   ", value.as_str())].into_iter(),
     )
     .expect("blank values stay borrowed");
     assert!(kept.is_empty());
@@ -313,7 +314,7 @@ fn gui_deferred_removal_keeps_material_face_binding_identity() {
         ir.model
             .appearance_bindings
             .push(make_binding("existing", "fcstd:appearance:object#other"));
-        let topology = super::super::TopologyIndex::new(ctx, &ir).expect("topology index");
+        let topology = super::super::TopologyIndex::new(&ir);
         let shape = super::super::ShapeIndex::new(ctx, &[], &[], &[]).expect("shape index");
         let graph = super::super::Graph {
             providers: vec![crate::native::GuiViewProviderRecord {
@@ -358,13 +359,26 @@ fn gui_deferred_removal_keeps_material_face_binding_identity() {
             make_binding("keep", "fcstd:appearance:object#other"),
             make_binding("legacy-2", "fcstd:appearance:object#P"),
         ];
+        let entries = std::collections::BTreeMap::new();
+        let sources = super::super::GuiSources {
+            entries: &entries,
+            objects: &[],
+            properties: &[],
+            payloads: &[],
+            element_maps: &[],
+            requires_alpha_conversion: false,
+        };
+        let mut shape_index = Some(shape);
+        let mut topology_index = Some(topology);
         super::super::transfer_shape_appearances(
             ctx,
             &mut plan,
             &graph,
             &materials,
-            &shape,
-            &topology,
+            &sources,
+            &ir,
+            &mut shape_index,
+            &mut topology_index,
             &mut Vec::new(),
         )
         .expect("single material replacement");
@@ -384,9 +398,10 @@ fn gui_deferred_removal_keeps_material_face_binding_identity() {
         let key = cadmpeg_ir::identity_key!("Q");
         let appearance =
             AppearanceId::mint("fcstd:appearance:shape-material#Q:1").expect("appearance");
+        let topology = topology_index.as_mut().expect("topology index");
         super::super::bind_material_faces(
             ctx,
-            &topology,
+            topology,
             &mut plan,
             &group,
             0,
