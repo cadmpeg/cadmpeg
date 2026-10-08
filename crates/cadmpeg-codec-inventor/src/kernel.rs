@@ -80,10 +80,14 @@ fn parse_kernel_header(
     };
     match parsed {
         Some(header) => Ok(Ok(header)),
-        None => Ok(Err(ctx.copy_retained_text(
-            absent,
-            "retain Inventor absent kernel header detail",
-        )?)),
+        None => {
+            let mut detail = ctx.retained_string(
+                absent.len(),
+                "retain Inventor absent kernel header detail",
+            )?;
+            detail.push_str(absent);
+            Ok(Err(detail))
+        }
     }
 }
 
@@ -165,8 +169,10 @@ pub(crate) fn select_active_carrier<'a>(
     }
     let mut brep_count = 0_u64;
     let mut selected_segment = None;
-    for segment in segments {
-        ctx.charge_work(1, "scan Inventor kernel carrier segments")?;
+    let mut segments = segments.iter();
+    while let Some(segment) =
+        ctx.next_charged(&mut segments, "scan Inventor kernel carrier segments")?
+    {
         if matches!(segment.kind, SegmentKind::PmBRep) {
             brep_count = brep_count.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit(
@@ -185,18 +191,30 @@ pub(crate) fn select_active_carrier<'a>(
         );
     };
     let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-        return unavailable(ctx, format_args!("PmBRep bulk stream is unavailable"));
+        let detail_text = "PmBRep bulk stream is unavailable";
+        let mut detail =
+            ctx.retained_string(detail_text.len(), "retain Inventor carrier unavailable detail")?;
+        detail.push_str(detail_text);
+        return Ok(ActiveCarrierState::Unavailable(detail));
     };
     let table = match &bulk.records {
         RecordFrameState::Framed(table) => table,
         RecordFrameState::Unavailable(_) => {
-            return unavailable(ctx, format_args!("PmBRep record table is unavailable"));
+            let detail_text = "PmBRep record table is unavailable";
+            let mut detail = ctx.retained_string(
+                detail_text.len(),
+                "retain Inventor carrier unavailable detail",
+            )?;
+            detail.push_str(detail_text);
+            return Ok(ActiveCarrierState::Unavailable(detail));
         }
     };
     let mut carrier_count = 0_u64;
     let mut selected_record = None;
-    for record in &table.records {
-        ctx.charge_work(1, "scan Inventor typed kernel carrier records")?;
+    let mut records = table.records.iter();
+    while let Some(record) =
+        ctx.next_charged(&mut records, "scan Inventor typed kernel carrier records")?
+    {
         if record.type_id == KERNEL_RECORD_TYPE_ID {
             carrier_count = carrier_count.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit(
@@ -217,10 +235,11 @@ pub(crate) fn select_active_carrier<'a>(
         );
     };
     let Some(version) = segment.registry.map(|join| join.version_major) else {
-        return unavailable(
-            ctx,
-            format_args!("PmBRep segment version is unavailable from the registry"),
-        );
+        let detail_text = "PmBRep segment version is unavailable from the registry";
+        let mut detail =
+            ctx.retained_string(detail_text.len(), "retain Inventor carrier unavailable detail")?;
+        detail.push_str(detail_text);
+        return Ok(ActiveCarrierState::Unavailable(detail));
     };
     match parse_carrier(
         ctx,
@@ -551,9 +570,18 @@ mod tests {
             assert_eq!(header, original_header);
             ctx.charge_retained(retained, "retain remaining kernel header allowance")
                 .expect("decode leaves the full configured allowance available");
-            assert!(matches!(ctx.charge_retained(1, "probe kernel retained allowance"),
-                Err(CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::RetainedBytes && limit.used == retained));
+            let refusal = ctx
+                .charge_retained(1, "probe kernel retained allowance")
+                .expect_err("the retained probe exceeds the configured allowance");
+            let CodecError::ResourceLimit(refusal) = refusal else {
+                panic!("retained probe must hit its configured limit");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(refusal.used, retained);
+            assert!(matches!(
+                ctx.finish_session(),
+                Err(CodecError::ResourceLimit(limit)) if limit == refusal
+            ));
         }
     }
 
@@ -770,26 +798,118 @@ mod tests {
                 .expect("service admission"),
             ActiveCarrierState::Selected(_)
         ));
+        let record_count = inventory
+            .segments
+            .iter()
+            .find_map(|segment| {
+                if !matches!(&segment.kind, crate::rse::SegmentKind::PmBRep) {
+                    return None;
+                }
+                let crate::rse::SegmentBulkState::Framed(bulk) = &segment.bulk else {
+                    return None;
+                };
+                let crate::rse::RecordFrameState::Framed(table) = &bulk.records else {
+                    return None;
+                };
+                Some(table.records.len())
+            })
+            .expect("fixture has a framed PmBRep record table");
+        let segment_work = cadmpeg_core::decode::u64_from_index(inventory.segments.len());
+        let record_work = cadmpeg_core::decode::u64_from_index(record_count);
 
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        let refusal = select_active_carrier(
+            &limited_ctx,
+            &inventory.segments,
+            &DocumentKind::Part,
+        )
+        .err()
+        .expect("zero work refuses the first segment iterator step");
+        let CodecError::ResourceLimit(refusal) = refusal else {
+            panic!("segment scan refusal must be a resource limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, "scan Inventor kernel carrier segments");
+        assert_eq!(refusal.used, 0);
+        assert_eq!(refusal.additional, 1);
         assert!(matches!(
-            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Inventor kernel carrier segments"
+            limited_ctx.finish_session(),
+            Err(CodecError::ResourceLimit(limit)) if limit == refusal
         ));
-        policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(inventory.segments.len());
+
+        policy.limits.max_work_units = segment_work;
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        let refusal = select_active_carrier(
+            &limited_ctx,
+            &inventory.segments,
+            &DocumentKind::Part,
+        )
+        .err()
+        .expect("the segment iterator end probe exceeds the exact n-unit cap");
+        let CodecError::ResourceLimit(refusal) = refusal else {
+            panic!("segment end probe refusal must be a resource limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, "scan Inventor kernel carrier segments");
+        assert_eq!(refusal.used, segment_work);
+        assert_eq!(refusal.additional, 1);
         assert!(matches!(
-            select_active_carrier(&limited_ctx, &inventory.segments, &DocumentKind::Part),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Inventor typed kernel carrier records"
+            limited_ctx.finish_session(),
+            Err(CodecError::ResourceLimit(limit)) if limit == refusal
+        ));
+
+        let record_scan_limit = segment_work
+            .checked_add(1)
+            .expect("fixture segment count leaves room for the end probe");
+        policy.limits.max_work_units = record_scan_limit;
+        let (limited_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        let refusal = select_active_carrier(
+            &limited_ctx,
+            &inventory.segments,
+            &DocumentKind::Part,
+        )
+        .err()
+        .expect("record scan refuses before its first iterator step");
+        let CodecError::ResourceLimit(refusal) = refusal else {
+            panic!("record scan refusal must be a resource limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, "scan Inventor typed kernel carrier records");
+        assert_eq!(refusal.used, record_scan_limit);
+        assert_eq!(refusal.additional, 1);
+        assert!(matches!(
+            limited_ctx.finish_session(),
+            Err(CodecError::ResourceLimit(limit)) if limit == refusal
+        ));
+
+        let record_end_limit = record_scan_limit
+            .checked_add(record_work)
+            .expect("fixture record count fits the work budget");
+        policy.limits.max_work_units = record_end_limit;
+        let (limited_ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        let refusal = select_active_carrier(
+            &limited_ctx,
+            &inventory.segments,
+            &DocumentKind::Part,
+        )
+        .err()
+        .expect("the record iterator end probe exceeds its exact count cap");
+        let CodecError::ResourceLimit(refusal) = refusal else {
+            panic!("record end probe refusal must be a resource limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, "scan Inventor typed kernel carrier records");
+        assert_eq!(refusal.used, record_end_limit);
+        assert_eq!(refusal.additional, 1);
+        assert!(matches!(
+            limited_ctx.finish_session(),
+            Err(CodecError::ResourceLimit(limit)) if limit == refusal
         ));
     }
 

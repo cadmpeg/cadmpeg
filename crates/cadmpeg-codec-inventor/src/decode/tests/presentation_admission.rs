@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
 use cadmpeg_core::CodecError;
 
@@ -336,16 +337,19 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
     };
     let arena = DecodeArena::new();
     let issue = "rendering style extension disagrees with segment_version_major";
-    let id_len = "inventor:presentation:rendering-style#segment-1".len();
     let token_len = "segment".len();
+    let id_len = "inventor:presentation:rendering-style#segment-1".len();
+    let suffix_digest_bytes = cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes)
+        .as_str()
+        .len();
+    let issue_vector_bytes = 4 * std::mem::size_of::<crate::record_issue::RecordIssue>();
+    let issue_prefix =
+        u64::try_from(issue_vector_bytes + token_len).expect("issue prefix fits");
+    let issue_detail_bytes = u64::try_from(issue.len()).expect("issue detail fits");
     let mut policy = DecodePolicy::service();
-    // Retain wire ID, token and digest, four initial slots, then issue token and message.
-    let retained_needed = id_len
-        + token_len
-        + 64
-        + 4 * std::mem::size_of::<crate::record_issue::RecordIssue>()
-        + token_len
-        + issue.len();
+    // The rejected candidate retains only its issue: four initial slots, token, and detail.
+    let retained_needed = issue_vector_bytes + token_len + issue.len();
+    let retained_with_candidate = id_len + token_len + suffix_digest_bytes + retained_needed;
     policy.limits.max_retained_bytes =
         u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
@@ -354,6 +358,8 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor rendering issue detail"
+                && limit.used == issue_prefix
+                && limit.additional == issue_detail_bytes
     ));
     assert!(inventory.issues.is_empty());
     policy = DecodePolicy::service();
@@ -390,4 +396,56 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
     assert_eq!(inventory.issues[0].segment_token, token);
     assert_eq!(inventory.issues[0].record_ordinal, 1);
     assert_eq!(inventory.issues[0].detail, issue);
+    assert!(ctx.finish_session().is_ok());
+
+    inventory.issues = Vec::new();
+    let mut candidate_cap_policy = DecodePolicy::service();
+    candidate_cap_policy.limits.max_retained_bytes =
+        u64::try_from(retained_with_candidate - 1).expect("candidate-sized budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &candidate_cap_policy)
+        .expect("candidate-sized cap context");
+    let projection = presentation_native_projection::project(&ctx, &mut inventory)
+        .expect("issue fits when rejected candidates skip id and digest retention");
+    assert!(projection.rendering_styles.is_empty());
+    assert_eq!(inventory.issues.len(), 1);
+    assert_eq!(
+        inventory.issues[0].family,
+        crate::record_issue::RecordIssueFamily::Presentation
+    );
+    assert_eq!(inventory.issues[0].segment_token, token);
+    assert_eq!(inventory.issues[0].record_ordinal, 1);
+    assert_eq!(inventory.issues[0].detail, issue);
+    assert!(ctx.finish_session().is_ok());
+
+    for operation in [
+        "retain Inventor rendering style id",
+        "retain Inventor rendering style suffix digest",
+    ] {
+        inventory.issues = Vec::new();
+        let mut probe_policy = DecodePolicy::service();
+        probe_policy.limits.max_retained_bytes = u64::MAX;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &probe_policy).expect("probe context");
+        let probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+        let projection = presentation_native_projection::project(&ctx, &mut inventory)
+            .expect("a rejected candidate stores only its issue");
+        assert!(projection.rendering_styles.is_empty());
+        assert_eq!(inventory.issues.len(), 1);
+        let CodecError::ResourceLimit(refusal) = ctx
+            .charge_retained(u64::MAX, operation)
+            .expect_err("the armed probe has not seen candidate admission")
+        else {
+            panic!("candidate admission probe must refuse");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, operation);
+        assert_eq!(refusal.limit, u64::try_from(retained_needed).expect("issue budget fits"));
+        assert_eq!(refusal.used, refusal.limit);
+        assert_eq!(refusal.additional, u64::MAX);
+        drop(probe);
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(CodecError::ResourceLimit(limit)) if limit == refusal
+        ));
+    }
 }

@@ -119,6 +119,18 @@ impl ProteinRecord {
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
+        let state_count = ctx
+            .get_btree_map(
+                namespace.arenas(),
+                "protein",
+                "read Inventor Protein state cardinality",
+            )?
+            .map_or(0, |records| records.len());
+        if state_count != 1 {
+            return Err(NativeConvertError::ConversionMessage(format!(
+                "Inventor native data has {state_count} Protein state records"
+            )));
+        }
         let records = namespace.arena_as_for_decode::<ProteinRecordWire>(ctx, "protein")?;
         let wire = match <[_; 1]>::try_from(records) {
             Ok([wire]) => wire,
@@ -375,6 +387,72 @@ mod tests {
             Err(cadmpeg_ir::native::NativeConvertError::ConversionMessage(detail))
                 if detail == "Inventor native data has 0 Protein state records")
         );
+    }
+
+    #[test]
+    fn protein_cardinality_preflight_skips_large_wire_text_and_lookup_refusal_is_sticky() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::native::NativeConvertError;
+
+        let first_id = format!("inventor:protein:state#{}", "a".repeat(4_096));
+        let second_id = format!("inventor:protein:state#{}", "b".repeat(4_096));
+        let first_detail = "first detail ".repeat(1_024);
+        let second_detail = "second detail ".repeat(1_024);
+        let state_records = [
+            serde_json::json!({
+                "id": first_id,
+                "state": "malformed",
+                "directory_id": 3,
+                "declared_len": null,
+                "entry_count": 0,
+                "detail": first_detail,
+            }),
+            serde_json::json!({
+                "id": second_id,
+                "state": "malformed",
+                "directory_id": 4,
+                "declared_len": null,
+                "entry_count": 0,
+                "detail": second_detail,
+            }),
+        ];
+        let mut namespace = NativeNamespace::default();
+        namespace
+            .set_arena(&crate::native::test_ctx(), "protein", &state_records)
+            .expect("two valid state wires");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(matches!(
+            ProteinRecord::read(&ctx, &namespace),
+            Err(NativeConvertError::ConversionMessage(detail))
+                if detail == "Inventor native data has 2 Protein state records"
+        ));
+        assert_eq!(ctx.resource_refusal(), None);
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let first_refusal = match ProteinRecord::read(&ctx, &namespace) {
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
+            other => panic!("raw cardinality lookup should refuse work: {other:?}"),
+        };
+        assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(
+            first_refusal.operation,
+            "read Inventor Protein state cardinality"
+        );
+        assert_eq!(ctx.resource_refusal(), Some(first_refusal));
+        assert!(matches!(
+            ProteinRecord::read(&ctx, &namespace),
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit)))
+                if limit == first_refusal
+        ));
+        assert_eq!(ctx.resource_refusal(), Some(first_refusal));
     }
 
     #[test]

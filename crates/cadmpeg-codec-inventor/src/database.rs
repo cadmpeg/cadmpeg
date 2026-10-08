@@ -219,7 +219,8 @@ pub(crate) fn parse_registry(
     let count = cursor.count("segment count", 65_536)?;
     cursor.fits(count, SEGMENT_ENTRY_MIN_BYTES, "segment count")?;
     let mut entries = ctx.vector_storage(count, "admit Inventor segment registry entries")?;
-    for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
+    let mut steps = 0..count;
+    while ctx.next_charged(&mut steps, "visit Inventor database table records")?.is_some() {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
         let revision_id = cursor.array("segment revision id")?;
@@ -235,7 +236,8 @@ pub(crate) fn parse_registry(
         let mut objects =
             ctx.vector_storage(object_count, "admit Inventor segment registry objects")?;
         let mut node_count = None;
-        for _ in ctx.admit_iter(&(0..object_count), "visit Inventor segment objects")? {
+        let mut steps = 0..object_count;
+        while ctx.next_charged(&mut steps, "visit Inventor segment objects")?.is_some() {
             let object = SegmentObject {
                 revision_id: cursor.array("object revision id")?,
                 state: cursor.array("object state")?,
@@ -264,7 +266,8 @@ pub(crate) fn parse_registry(
         cursor.fits(node_count, SEGMENT_NODE_BYTES, "segment node count")?;
 
         let mut nodes = ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
-        for _ in ctx.admit_iter(&(0..node_count), "visit Inventor segment nodes")? {
+        let mut steps = 0..node_count;
+        while ctx.next_charged(&mut steps, "visit Inventor segment nodes")?.is_some() {
             ctx.push_vec(
                 &mut nodes,
                 SegmentNode {
@@ -322,7 +325,8 @@ pub(crate) fn parse_revisions(
     let count = cursor.count("revision count", 1_000_000)?;
     cursor.fits(count, REVISION_ENTRY_MIN_BYTES, "revision count")?;
     let mut entries = ctx.vector_storage(count, "admit Inventor revision entries")?;
-    for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
+    let mut steps = 0..count;
+    while ctx.next_charged(&mut steps, "visit Inventor database table records")?.is_some() {
         let id = cursor.array("revision id")?;
         let flags = cursor.u32("revision flags")?;
         let kind = cursor.u16("revision kind")?;
@@ -479,7 +483,8 @@ impl<'a> Cursor<'a> {
         let count = self.count(field, 1_000_000)?;
         self.fits(count, 16, field)?;
         let mut ids = ctx.vector_storage(count, "admit Inventor registry identifier list")?;
-        for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
+        let mut steps = 0..count;
+        while ctx.next_charged(&mut steps, "visit Inventor database table records")?.is_some() {
             ctx.push_vec(
                 &mut ids,
                 self.array(field)?,
@@ -514,6 +519,27 @@ mod tests {
     use super::{
         parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionPayload, RseSchema,
     };
+
+    #[test]
+    fn registry_rejection_does_not_precharge_unread_entries() {
+        for count in [1_u32, 512] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.extend_from_slice(&4_097_u32.to_le_bytes());
+            bytes.resize(4 + usize::try_from(count).expect("test count") * super::SEGMENT_ENTRY_MIN_BYTES, 0);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // The first range step runs. Its display-name count exceeds4096,
+            // so neither a string scan nor a second range step executes.
+            policy.limits.max_work_units = 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("registry rejection context");
+            assert!(matches!(super::parse_registry(&ctx, &bytes),
+                Err(cadmpeg_core::CodecError::Malformed(detail))
+                    if detail.contains("segment display name")));
+            ctx.finish_session().expect("unread registry entries use no work");
+        }
+    }
 
     #[test]
     fn revision_traversal_refuses_work_before_record_read() {

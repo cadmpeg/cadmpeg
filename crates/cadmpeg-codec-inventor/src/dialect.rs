@@ -394,9 +394,15 @@ impl DialectRecovery {
             ), "retain Inventor unframed schema reason")?, "collect Inventor dialect reasons")?;
         }
         if self.schemas.is_empty() {
+            let reason_text = "no RSe database stream declares a schema";
+            let mut reason = ctx.retained_string(
+                reason_text.len(),
+                "retain Inventor absent schema reason",
+            )?;
+            reason.push_str(reason_text);
             ctx.push_vec(
                 &mut reasons,
-                ctx.copy_retained_text("no RSe database stream declares a schema", "retain Inventor absent schema reason")?,
+                reason,
                 "collect Inventor dialect reasons",
             )?;
         } else if ctx.any_by(
@@ -461,9 +467,15 @@ impl DialectRecovery {
             ), "retain Inventor unframed metadata reason")?, "collect Inventor dialect reasons")?;
         }
         if self.meta_streams.is_empty() {
+            let reason_text = "no RSe segment metadata stream declares a marker and version";
+            let mut reason = ctx.retained_string(
+                reason_text.len(),
+                "retain Inventor absent metadata reason",
+            )?;
+            reason.push_str(reason_text);
             ctx.push_vec(
                 &mut reasons,
-                ctx.copy_retained_text("no RSe segment metadata stream declares a marker and version", "retain Inventor absent metadata reason")?,
+                reason,
                 "collect Inventor dialect reasons",
             )?;
         } else if ctx.any_by(

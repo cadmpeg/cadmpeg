@@ -838,6 +838,8 @@ fn decode_container<'a>(
         ))?;
     }
     let loss = dialect_loss(ctx, &matched, &recovery)?;
+    drop(recovery);
+    drop(recovery_storage);
     if let Some(loss) = loss {
         ctx.push_vec(&mut losses, loss, "collect Inventor dialect loss")?;
     }

@@ -152,7 +152,8 @@ pub(crate) fn inventory<'a>(
     snapshot: &CompoundSnapshot<'a>,
 ) -> Result<Vec<PropertySetDescriptor<'a>>, CodecError> {
     let mut property_sets = Vec::new();
-    for entry in ctx.admit_iter(snapshot.entries(), "scan Inventor property-set streams")? {
+    let mut entries = snapshot.entries().iter();
+    while let Some(entry) = ctx.next_charged(&mut entries, "scan Inventor property-set streams")? {
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
@@ -239,7 +240,8 @@ pub(crate) fn parse_property_set_stream<'a>(
     let mut directories_storage = ctx.reserve_scoped(0, "admit OLE section directories")?;
     let mut fmtids = BTreeSet::new();
     let mut fmtids_storage = ctx.reserve_scoped(0, "admit OLE section FMTIDs")?;
-    for _ in ctx.admit_iter(&(0..section_count), "admit OLE section directories")? {
+    let mut entries = 0..section_count;
+    while ctx.next_charged(&mut entries, "admit OLE section directories")?.is_some() {
         let fmtid = cursor.array("section FMTID")?;
         if !fmtids_storage
             .with_storage(|| ctx.insert_btree_set(&mut fmtids, fmtid, "admit OLE section FMTIDs"))?
@@ -266,7 +268,8 @@ pub(crate) fn parse_property_set_stream<'a>(
     )?;
     let mut previous_end = header_end;
     let mut sections = ctx.vector_storage(section_count, "admit OLE property-set sections")?;
-    for &(fmtid, offset) in ctx.admit_iter(&directories, "scan OLE section directories")? {
+    let mut entries = directories.iter();
+    while let Some(&(fmtid, offset)) = ctx.next_charged(&mut entries, "scan OLE section directories")? {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
                 "OLE property-set section ranges overlap or are not aligned".into(),
@@ -336,7 +339,8 @@ fn parse_section<'a>(
     let mut ids_storage = ctx.reserve_scoped(0, "admit OLE property IDs")?;
     let mut directory = Vec::new();
     let mut directory_storage = ctx.reserve_scoped(0, "admit OLE property directory")?;
-    for _ in ctx.admit_iter(&(0..property_count), "admit OLE property directory")? {
+    let mut entries = 0..property_count;
+    while ctx.next_charged(&mut entries, "admit OLE property directory")?.is_some() {
         let id = cursor.u32("property id")?;
         if !ids_storage
             .with_storage(|| ctx.insert_btree_set(&mut ids, id, "admit OLE property IDs"))?
@@ -372,7 +376,8 @@ fn parse_section<'a>(
         "OLE property directory sort",
     )?;
     let mut previous_offset = None;
-    for (offset, _) in ctx.admit_iter(&directory, "check OLE property offsets")? {
+    let mut entries = directory.iter();
+    while let Some((offset, _)) = ctx.next_charged(&mut entries, "check OLE property offsets")? {
         if previous_offset == Some(*offset) {
             return Err(CodecError::Malformed(
                 "OLE properties have duplicate offsets".into(),
@@ -431,7 +436,8 @@ fn parse_section<'a>(
         None => BTreeMap::new(),
     };
     let mut properties = ctx.vector_storage(property_count, "admit OLE properties")?;
-    for &(id, start, end) in ctx.admit_iter(&ranges, "parse OLE properties")? {
+    let mut entries = ranges.iter();
+    while let Some(&(id, start, end)) = ctx.next_charged(&mut entries, "parse OLE properties")? {
         let raw = source
             .child(source.start() + start, source.start() + end)
             .ok_or_else(|| CodecError::Malformed("OLE property view is invalid".into()))?;
@@ -440,7 +446,11 @@ fn parse_section<'a>(
         } else {
             parse_typed_value(ctx, raw, code_page)?
         };
-        let name = if let Some(name) = names.get(&id) {
+        let name = if let Some(name) = ctx.get_btree_map(
+            &names,
+            &id,
+            "find OLE property dictionary name",
+        )? {
             Some(ctx.copy_retained_text(name, "retain OLE property name")?)
         } else {
             None
@@ -515,7 +525,8 @@ fn parse_dictionary(
     }
     let mut names = BTreeMap::new();
     let mut folded_names = BTreeSet::new();
-    for _ in ctx.admit_iter(&(0..count), "admit OLE property dictionary entries")? {
+    let mut entries = 0..count;
+    while ctx.next_charged(&mut entries, "admit OLE property dictionary entries")?.is_some() {
         let id = cursor.u32("entry id")?;
         let size = cursor.count("entry string size", MAX_STREAM_SIZE)?;
         let name = names_storage
@@ -596,7 +607,8 @@ fn parse_vector<'a>(
 ) -> Result<PropertyValue<'a>, CodecError> {
     let count = cursor.count("vector element count", MAX_PROPERTIES)?;
     let mut values = ctx.vector_storage(count, "admit OLE property vector elements")?;
-    for _ in ctx.admit_iter(&(0..count), "admit OLE property vector elements")? {
+    let mut entries = 0..count;
+    while ctx.next_charged(&mut entries, "admit OLE property vector elements")?.is_some() {
         if element_type == VT_VARIANT {
             let nested_type = cursor.u16("variant type")?;
             if cursor.u16("variant type padding")? != 0 {
@@ -1117,6 +1129,7 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
@@ -1128,6 +1141,76 @@ mod tests {
     };
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn truncated_property_vector_does_not_precharge_unread_elements() {
+        for count in [1_u32, 512] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&(super::VT_VECTOR | 3).to_le_bytes());
+            bytes.extend_from_slice(&0_u16.to_le_bytes());
+            bytes.extend_from_slice(&count.to_le_bytes());
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // The first range step executes, then the first VT_I4 read fails.
+            // No other vector step or terminal probe executes.
+            policy.limits.max_work_units = 1;
+            let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("truncated vector context");
+            assert!(matches!(super::parse_typed_value(&ctx, view, None),
+                Err(CodecError::Truncated { .. })));
+            ctx.finish_session().expect("unread elements consume no work");
+        }
+    }
+
+    #[test]
+    fn property_dictionary_name_lookup_refuses_before_search() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&68_u32.to_le_bytes());
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        for (id, offset) in [(1_u32, 32_u32), (0, 40), (2, 60)] {
+            bytes.extend_from_slice(&id.to_le_bytes());
+            bytes.extend_from_slice(&offset.to_le_bytes());
+        }
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&0_u16.to_le_bytes());
+        bytes.extend_from_slice(&1200_u16.to_le_bytes());
+        bytes.extend_from_slice(&0_u16.to_le_bytes());
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&2_u32.to_le_bytes());
+        bytes.extend_from_slice(&4_u32.to_le_bytes());
+        for unit in [u16::from(b'a'), u16::from(b'b'), u16::from(b'c'), 0] {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(&3_u16.to_le_bytes());
+        bytes.extend_from_slice(&0_u16.to_le_bytes());
+        bytes.extend_from_slice(&42_i32.to_le_bytes());
+        let arena = DecodeArena::new();
+        let (service, view) = DecodeContext::from_root_bytes(
+            &bytes, &arena, &DecodePolicy::service(),
+        ).expect("property section context");
+        let section = super::parse_section(&service, view, [0; 16])
+            .expect("property dictionary section");
+        assert_eq!(section.dictionary_entries, 1);
+        assert_eq!(section.properties[2].id, 2);
+        assert_eq!(section.properties[2].name.as_deref(), Some("abc"));
+
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("lookup refusal context");
+        let probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "find OLE property dictionary name", None,
+        );
+        let Err(CodecError::ResourceLimit(limit)) = super::parse_section(&ctx, view, [0; 16]) else {
+            panic!("dictionary lookup must use the owning tree operation");
+        };
+        drop(probe);
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "find OLE property dictionary name");
+        assert!(limit.additional > 0);
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
 
     #[test]
     fn guid_scalar_text_admits_storage_without_fixed_work() {
