@@ -425,3 +425,63 @@ fn brep_typed_curve_ids_charge_distinct_nodes_and_preserve_order() {
     .expect("service typed curve nodes admitted");
     assert_eq!(ids, BTreeSet::from([10, 20]));
 }
+
+#[test]
+fn brep_fixed_curve_namespace_charges_only_the_record_visit() {
+    let mut ir = typed_curve_id_fixture();
+    ir.model.curves.truncate(1);
+    ir.model.curves[0].id = CurveId::mint("creo:other:curve#7").expect("fixture identity");
+    for cap in [0, 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = model_typed_nonlinear_curve_ids(
+            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
+        if cap == 1 {
+            assert!(result.expect("one existing record visit").is_empty());
+        } else {
+            let Err(CodecError::ResourceLimit(refusal)) = result else {
+                panic!("record visit must refuse");
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(refusal.operation, "creo model typed nonlinear curve ids curves traversal");
+            assert_eq!(refusal.used, 0);
+            assert_eq!(refusal.additional, 1);
+            assert!(matches!(model_typed_nonlinear_curve_ids(
+                &ctx, &CadIr::empty(), &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            ), Err(CodecError::ResourceLimit(original)) if original == refusal));
+        }
+    }
+}
+
+#[test]
+fn brep_fixed_curve_namespace_keeps_numeric_suffix_admission() {
+    let mut ir = typed_curve_id_fixture();
+    ir.model.curves.truncate(1);
+    ir.model.curves[0].id = CurveId::mint("creo:visibgeom:curve#x").expect("fixture identity");
+    for cap in [1, 2] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = model_typed_nonlinear_curve_ids(
+            &ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
+        if cap == 2 {
+            assert!(result.expect("record visit plus one suffix byte").is_empty());
+        } else {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::WorkUnits
+                    && refusal.operation == "creo nonlinear curve number"
+                    && refusal.used == 1 && refusal.additional == 1));
+        }
+    }
+}
