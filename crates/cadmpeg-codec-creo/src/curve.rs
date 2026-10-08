@@ -3068,13 +3068,20 @@ fn evaluate_expression_program_details(
                             .map(Option::flatten)
                         },
                     )?;
-                    if let Some(CurveExpressionValue::String(text)) = &value {
-                        let bytes = cadmpeg_core::decode::u64_from_index(text.len());
+                    let evaluated_string_bytes = match &value {
+                        Some(CurveExpressionValue::String(text)) => {
+                            Some(cadmpeg_core::decode::u64_from_index(text.len()))
+                        }
+                        _ => None,
+                    };
+                    // The parser reservation includes discarded intermediates and this result.
+                    // Release it before accounting the escaping string at its destination.
+                    drop(storage);
+                    if let Some(bytes) = evaluated_string_bytes {
                         solution_storage.with_storage(|| {
                             ctx.charge_retained(bytes, "creo evaluated assignment string")
                         })?;
                     }
-                    drop(storage);
                     value
                 } else {
                     None
@@ -4035,24 +4042,34 @@ impl SimultaneousAffineValue {
                 }
                 continue;
             }
-            match ctx.entry_btree_map(
-                &mut self.coefficients,
-                variable,
-                "creo affine combined coefficient nodes",
-            )? {
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let value = entry.get_mut();
-                    *value += sign * coefficient;
-                    if *value == 0.0 {
-                        entry.remove();
-                    }
+            let remove = {
+                let Some(existing) = ctx.get_mut_btree_map(
+                    &mut self.coefficients,
+                    &variable,
+                    "creo affine combined coefficient nodes",
+                )? else {
+                    ctx.insert_btree_map(
+                        &mut self.coefficients,
+                        variable,
+                        sign * coefficient,
+                        "creo affine combined coefficient nodes",
+                    )?;
+                    continue;
+                };
+                let value = *existing + sign * coefficient;
+                if value == 0.0 {
+                    true
+                } else {
+                    *existing = value;
+                    false
                 }
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    let value = sign * coefficient;
-                    if value != 0.0 {
-                        entry.insert(value);
-                    }
-                }
+            };
+            if remove {
+                ctx.remove_btree_map(
+                    &mut self.coefficients,
+                    &variable,
+                    "creo affine combined coefficient removal work",
+                )?;
             }
         }
         Ok(Some(self))
@@ -4698,30 +4715,43 @@ impl DimensionForm {
                 }
                 continue;
             }
-            match ctx.entry_btree_map(
-                &mut self.variables,
-                name,
-                "creo dimension difference variable nodes",
-            )? {
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let Some(value) = (*entry.get()).combine(coefficient, subtract) else {
-                        return Ok(None);
-                    };
-                    if value.is_zero() {
-                        entry.remove();
-                    } else {
-                        *entry.get_mut() = value;
-                    }
-                }
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    let Some(value) = DimensionRational::default().combine(coefficient, subtract)
+            let remove = {
+                let Some(existing) = ctx.get_mut_btree_map(
+                    &mut self.variables,
+                    &name,
+                    "creo dimension difference variable nodes",
+                )? else {
+                    let Some(value) =
+                        DimensionRational::default().combine(coefficient, subtract)
                     else {
                         return Ok(None);
                     };
                     if !value.is_zero() {
-                        entry.insert(value);
+                        ctx.insert_btree_map(
+                            &mut self.variables,
+                            name,
+                            value,
+                            "creo dimension difference variable nodes",
+                        )?;
                     }
+                    continue;
+                };
+                let Some(value) = (*existing).combine(coefficient, subtract) else {
+                    return Ok(None);
+                };
+                if value.is_zero() {
+                    true
+                } else {
+                    *existing = value;
+                    false
                 }
+            };
+            if remove {
+                ctx.remove_btree_map(
+                    &mut self.variables,
+                    &name,
+                    "creo dimension difference variable removal work",
+                )?;
             }
         }
         Ok(Some(self))
@@ -8627,6 +8657,7 @@ fn complete_two_chart_samples(
     body: &[u8],
     start: usize,
     count: Option<u32>,
+    sample_operation: &'static str,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<[[f64; 2]; 2]>>, cadmpeg_core::CodecError> {
     let Some(remaining) = body.len().checked_sub(start) else {
@@ -8659,7 +8690,7 @@ fn complete_two_chart_samples(
             *value = decoded;
             cursor = next;
         }
-        ctx.push_vec(&mut samples, sample, "creo two-chart sample points")?;
+        ctx.push_vec(&mut samples, sample, sample_operation)?;
     }
     Ok((cursor == body.len()
         && samples.len() >= 2
@@ -8695,9 +8726,19 @@ pub(crate) fn two_chart_pcurve_samples(
         if start <= 1 {
             continue;
         }
-        let (samples, storage) = ctx.with_scoped_storage("creo two-chart sample points", || {
-            complete_two_chart_samples(ctx, body, start, Some(count), &cache)
-        })?;
+        let (samples, storage) = ctx.with_scoped_storage(
+            "creo two-chart counted sample points",
+            || {
+                complete_two_chart_samples(
+                    ctx,
+                    body,
+                    start,
+                    Some(count),
+                    "creo two-chart counted sample points",
+                    &cache,
+                )
+            },
+        )?;
         let Some(samples) = samples else {
             continue;
         };
@@ -8744,9 +8785,19 @@ pub(crate) fn two_chart_pcurve_samples(
         else {
             continue;
         };
-        let (samples, storage) = ctx.with_scoped_storage("creo two-chart sample points", || {
-            complete_two_chart_samples(ctx, body, 0, None, &cache)
-        })?;
+        let (samples, storage) = ctx.with_scoped_storage(
+            "creo two-chart replay sample points",
+            || {
+                complete_two_chart_samples(
+                    ctx,
+                    body,
+                    0,
+                    None,
+                    "creo two-chart replay sample points",
+                    &cache,
+                )
+            },
+        )?;
         let Some(samples) = samples else {
             continue;
         };

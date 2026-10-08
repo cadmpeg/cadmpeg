@@ -325,3 +325,49 @@ fn disabled_expression_values_use_temporary_storage() {
     assert_eq!(records[0].assignments[0].value, None);
     assert_eq!(records[0].prohibited_constructs, ["itos"]);
 }
+
+#[test]
+fn evaluated_string_handoff_releases_parser_storage_before_destination_charge() {
+    const SOURCE_TEXT: &str = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let payload = |suffix: &str| {
+        let expression = format!("message=\"{SOURCE_TEXT}\"+\"{suffix}\"");
+        let mut payload =
+            b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x01"
+                .to_vec();
+        payload.extend_from_slice(expression.as_bytes());
+        payload.push(0);
+        payload
+    };
+    let minimum_materialized_limit = |suffix: &str| {
+        let payload = payload(suffix);
+        crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            None,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                parse(&payload, policy)
+            },
+        )
+    };
+
+    for suffix in ["x", "short"] {
+        let record = parse(&payload(suffix), DecodePolicy::service())
+            .expect("service expression evaluation")
+            .remove(0);
+        assert!(record.prohibited_constructs.is_empty());
+        assert_eq!(
+            record.assignments[0].value,
+            Some(crate::curve::CurveExpressionValue::String(format!(
+                "{SOURCE_TEXT}{suffix}"
+            )))
+        );
+    }
+
+    let short_limit = minimum_materialized_limit("x");
+    let long_limit = minimum_materialized_limit("short");
+    assert_eq!(
+        long_limit - short_limit,
+        cadmpeg_core::decode::u64_from_index(("short".len() - "x".len()) * 2)
+    );
+}
