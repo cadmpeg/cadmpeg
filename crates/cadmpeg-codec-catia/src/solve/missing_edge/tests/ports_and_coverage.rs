@@ -575,7 +575,6 @@ fn placement_corner_and_face_domain_copies_refuse_before_growth() {
     let operations = placement_missing_edge_limit_operations();
     for operation in [
         "catia_corner_point_constraint_round",
-        "catia_corner_point_copy",
         "catia_corner_point_entries",
         "catia_corner_run_constraints",
         "catia_placement_endpoint_face_rows",
@@ -1240,4 +1239,39 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
         .expect("independent endpoint-port gauge");
     let coedges = &topology.faces[0].boundaries[0].coedges;
     assert!(coedges.iter().all(|coedge| !coedge.reversed));
+}
+
+#[test]
+fn boundary_support_budget_counts_each_visited_state() {
+    use cadmpeg_core::decode::WorkBudget;
+    let boundary = std::array::from_fn::<_, 3, _>(|edge| super::super::MeshBoundaryEdgeCandidate {
+        edge,
+        start: edge,
+        end: (edge + 1) % 3,
+        reversed: None,
+    });
+    let candidates = [vec![[0, 1]], vec![[1, 2]], vec![[2, 0]]];
+    crate::test_support::with_service_context(|ctx| {
+        // Each start visits 10 forward and 10 backward states. Only start
+        // zero closes the cycle, adding six union states: 20 + 20 + 6.
+        let budget = WorkBudget::new(46);
+        let result = super::super::boundary_endpoint_support(ctx, &boundary, &candidates, &budget)
+            .expect("state allowance")
+            .expect("closed support");
+        assert_eq!(budget.consumed(), 46);
+        assert_eq!(result.by_edge.len(), 3);
+        for (edge, pair) in [[0, 1], [1, 2], [0, 2]].into_iter().enumerate() {
+            assert_eq!(
+                result.by_edge.get(&edge),
+                Some(&std::collections::BTreeSet::from([pair]))
+            );
+        }
+        let budget = WorkBudget::new(45);
+        assert!(
+            super::super::boundary_endpoint_support(ctx, &boundary, &candidates, &budget)
+                .expect("local exhaustion")
+                .is_none()
+        );
+        assert!(budget.exhausted());
+    });
 }

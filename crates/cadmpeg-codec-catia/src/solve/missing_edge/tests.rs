@@ -898,3 +898,25 @@ fn mesh_edge_run_materialization_refuses_before_occurrence_copy() {
 }
 
 mod ports_and_coverage;
+
+#[test]
+fn duplicate_face_search_refuses_recursive_depth() {
+    let faces = [[0, 0]; 2];
+    let allowed = [vec![1], vec![1]];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::unique_duplicate_face_assignment(ctx, &faces, &allowed, 2, |candidate| {
+            Ok(candidate == faces)
+        })
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service depth"),
+        Some(faces.to_vec())
+    );
+    let error =
+        crate::test_support::with_depth_limit(1, run).expect_err("second frame must refuse");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+            && limit.operation == "catia_duplicate_face_search_depth")
+    );
+}

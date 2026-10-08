@@ -21,6 +21,39 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 #[test]
+fn mask_undo_charges_only_when_restored() {
+    use crate::solve::incidence::MaskUndo;
+    use cadmpeg_core::{decode::ResourceDimension, CodecError};
+
+    crate::test_support::with_work_limit(0, |ctx| {
+        let mut undo = MaskUndo::new(ctx, "test mask storage").expect("empty storage");
+        undo.record(ctx, 0, 0, 3)
+            .expect("record has no restore work");
+        drop(undo);
+    });
+    for cap in [1, 2] {
+        crate::test_support::with_work_limit(cap, |ctx| {
+            let mut undo = MaskUndo::new(ctx, "test mask storage").expect("empty storage");
+            undo.record(ctx, 0, 0, 3).expect("first record");
+            undo.record(ctx, 0, 0, 2).expect("second record");
+            let mut active = vec![vec![0]];
+            let result = undo.restore(ctx, &mut active);
+            if cap == 2 {
+                result.expect("two visits restore newest first");
+                assert_eq!(active, vec![vec![3]]);
+            } else {
+                let Err(CodecError::ResourceLimit(limit)) = result else {
+                    panic!("two visits need two units")
+                };
+                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(limit.operation, "catia face configuration mask restore");
+                assert_eq!(active, vec![vec![0]]);
+            }
+        });
+    }
+}
+
+#[test]
 fn incidence_factor_refinement_restores_cleared_configurations() {
     use crate::solve::incidence::{FaceFactorRefinement, PreparedFaceFactors};
     use cadmpeg_core::CodecError;
@@ -30,7 +63,7 @@ fn incidence_factor_refinement_restores_cleared_configurations() {
         factor_faces: vec![0],
         factor_by_face: vec![Some(0)],
         factors_by_edge: vec![vec![0]],
-        active: Some(vec![vec![0b11]]),
+        active: vec![vec![0b11]],
     };
     crate::test_support::with_service_context(|ctx| {
         let mut refined = factors();
@@ -40,9 +73,9 @@ fn incidence_factor_refinement_restores_cleared_configurations() {
         else {
             panic!("one configuration agrees with the pair")
         };
-        assert_eq!(refined.active, Some(vec![vec![0b01]]));
-        refined.restore(Some(undo));
-        assert_eq!(refined.active, Some(vec![vec![0b11]]));
+        assert_eq!(refined.active, vec![vec![0b01]]);
+        refined.restore(ctx, Some(undo)).expect("service budget");
+        assert_eq!(refined.active, vec![vec![0b11]]);
 
         let mut rejected = factors();
         assert!(matches!(
@@ -51,7 +84,7 @@ fn incidence_factor_refinement_restores_cleared_configurations() {
                 .expect("service budget"),
             FaceFactorRefinement::Rejected
         ));
-        assert_eq!(rejected.active, Some(vec![vec![0b11]]));
+        assert_eq!(rejected.active, vec![vec![0b11]]);
     });
     crate::test_support::with_collection_limit(0, |ctx| {
         let mut refused = factors();
@@ -60,7 +93,7 @@ fn incidence_factor_refinement_restores_cleared_configurations() {
             panic!("the undo record refuses its first entry")
         };
         assert_eq!(limit.operation, "catia face configuration mask undo");
-        assert_eq!(refused.active, Some(vec![vec![0b11]]));
+        assert_eq!(refused.active, vec![vec![0b11]]);
     });
 }
 
@@ -214,7 +247,7 @@ fn endpoint_candidate_fallback_honors_caller_budget() {
 }
 
 #[test]
-fn endpoint_candidate_validation_charges_full_incidence_work() {
+fn endpoint_candidate_validation_charges_candidate_visit() {
     use crate::solve::incidence::{visit_incidence_endpoint_pair_solutions, IncidenceSolve};
     use std::ops::ControlFlow;
 
@@ -239,7 +272,8 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
     let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     let edge_faces = [[0, 0]; 3];
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    let budget = WorkBudget::new(2);
+    // One local unit visits the candidate; validation admits its own work.
+    let budget = WorkBudget::new(0);
     let mut visited = false;
     let outcome = visit_incidence_endpoint_pair_solutions(
         &ctx,
