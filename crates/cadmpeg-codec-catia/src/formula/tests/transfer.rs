@@ -972,6 +972,7 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
             &mut annotations,
             &crate::decode::ModelingGraphScope::Unresolved,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     })
     .expect("valid exactness fields");
     assert!(excluded_ir.model.parameters.is_empty());
@@ -1032,6 +1033,7 @@ fn formula_unscoped_entity_index_refuses_before_empty_transfer() {
             &mut cadmpeg_ir::Annotations::default(),
             &crate::decode::ModelingGraphScope::Unresolved,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1045,6 +1047,7 @@ fn formula_unscoped_entity_index_refuses_before_empty_transfer() {
             &mut cadmpeg_ir::Annotations::default(),
             &crate::decode::ModelingGraphScope::Unresolved,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     })
     .expect("service profile admits formula scan");
     assert!(admitted.consumed_object_records.is_empty());
@@ -1072,6 +1075,7 @@ fn formula_finalization_refuses_each_collection_boundary() {
                 &mut cadmpeg_ir::Annotations::default(),
                 &crate::decode::ModelingGraphScope::Unscoped,
             )
+            .map(crate::formula::FormulaTransfer::detached)
         });
         match result {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
@@ -1184,7 +1188,7 @@ fn definition_chain_history_id_refuses_retained_limit() {
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_neutral_history_source")
+        if limit.operation == "catia_neutral_history_derived")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::super::definition_chain_parameter_candidate(ctx, entity, chain)
@@ -1215,7 +1219,7 @@ fn typed_parameter_history_id_refuses_retained_limit() {
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_neutral_history_source")
+        if limit.operation == "catia_neutral_history_derived")
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
@@ -1246,18 +1250,11 @@ fn typed_parameter_name_and_native_ref_refuse_retained_limits() {
     })
     .expect("service profile admits typed candidate")
     .expect("typed candidate");
-    let before_name = entity.id.len() + admitted.parameter.id.as_str().len();
-    for (cap, operation) in [
-        (
-            cadmpeg_core::decode::u64_from_index(before_name),
-            "catia_formula_typed_parameter_name",
-        ),
-        (
-            cadmpeg_core::decode::u64_from_index(before_name + value.name.value.len()),
-            "catia_formula_typed_parameter_native_ref",
-        ),
+    for operation in [
+        "catia_formula_typed_parameter_name",
+        "catia_formula_typed_parameter_native_ref",
     ] {
-        let refused = crate::test_support::with_retained_limit(cap, |ctx| {
+        let refused = crate::test_support::with_retained_refusal(&[], operation, |ctx| {
             super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
         });
         assert!(
@@ -1650,7 +1647,7 @@ fn formula_entity_index_source_propagates_the_caller_work_refusal() {
         else {
             panic!("entity index source must refuse before scanning")
         };
-        assert_eq!(limit.operation, "catia_formula_entity_index_visits");
+        assert_eq!(limit.operation, "catia_formula_entity_index");
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(ir.model.parameters.is_empty());
     });

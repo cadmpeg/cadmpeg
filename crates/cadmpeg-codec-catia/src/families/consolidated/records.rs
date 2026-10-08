@@ -752,7 +752,7 @@ fn consolidated_edge_blocks_from_records(
         let [first_record, second_record, parameter_record] = window else {
             continue;
         };
-        if records_are_contiguous(window)
+        if records_are_contiguous(&[first_record, second_record, parameter_record])
             && first_record.class() == 0x20
             && second_record.class() == 0x20
             && first_record.family() == second_record.family()
@@ -834,7 +834,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
         let [pcurve0, pcurve1, parameters, use0, use1, node] = window else {
             continue;
         };
-        if records_are_contiguous(window)
+        if records_are_contiguous(&[pcurve0, pcurve1, parameters, use0, use1, node])
             && pcurve0.class() == 0x20
             && pcurve1.class() == 0x20
             && pcurve0.family() == pcurve1.family()
@@ -924,7 +924,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             let [parameter, circle, definition, use0, use1, node] = window else {
                 return Ok(None);
             };
-            if !records_are_contiguous(window) {
+            if !records_are_contiguous(&[parameter, circle, definition, use0, use1, node]) {
                 return Ok(None);
             }
             if parameter.family() != ConsolidatedFamily::B
@@ -1053,7 +1053,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             let [descriptor, definition, use0, use1, node] = window else {
                 return Ok(None);
             };
-            if !records_are_contiguous(window) {
+            if !records_are_contiguous(&[descriptor, definition, use0, use1, node]) {
                 return Ok(None);
             }
             if descriptor.family() != ConsolidatedFamily::B
@@ -1156,7 +1156,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             let [use0, use1, node] = window else {
                 return Ok(None);
             };
-            if !records_are_contiguous(window) {
+            if !records_are_contiguous(&[use0, use1, node]) {
                 return Ok(None);
             }
             if use0.family() != ConsolidatedFamily::B
@@ -1242,7 +1242,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             let [node_record, definition_record, use0, use1] = window else {
                 return Ok(None);
             };
-            if !records_are_contiguous(window)
+            if !records_are_contiguous(&[node_record, definition_record, use0, use1])
                 || node_record.family() != ConsolidatedFamily::B
                 || node_record.class() != 0x5e
                 || definition_record.family() != ConsolidatedFamily::B
@@ -1340,7 +1340,9 @@ fn contiguous_run_starts<'ctx>(
         let mut starts = ctx.collection_vec(records.len(), "catia_consolidated_run_starts")?;
         for index in ctx.admit_iter(0..records.len(), "catia_consolidated_run_starts")? {
             let start = match index.checked_sub(1) {
-                Some(previous) if records_are_contiguous(&records[previous..=index]) => {
+                Some(previous)
+                    if records_are_contiguous(&[&records[previous], &records[index]]) =>
+                {
                     starts[previous]
                 }
                 _ => index,

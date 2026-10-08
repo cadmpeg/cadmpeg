@@ -11,7 +11,7 @@ use crate::families::b5::graph::{
     typed_face_records_from_records, typed_loop_records_from_records, B5FaceRecord,
     B5IncidenceLane, B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension,
     B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization,
-    B5Record, B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
+    B5Record, B5RecordBuf, B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
 };
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
@@ -208,7 +208,8 @@ fn merge_pcurve_candidate(
     candidate: B5Pcurve,
 ) {
     crate::test_support::with_service_context(|ctx| {
-        super::super::merge_pcurve_candidate(ctx, pcurves, conflicts, candidate)
+        let mut scratch = ctx.reserve_scoped(0, "test_b5_conflicts")?;
+        super::super::merge_pcurve_candidate(ctx, pcurves, (conflicts, &mut scratch), candidate)
     })
     .expect("service budget");
 }
@@ -220,43 +221,92 @@ fn merge_surface_candidate(
     candidate: B5Surface,
 ) -> bool {
     crate::test_support::with_service_context(|ctx| {
-        super::super::merge_surface_candidate(ctx, surfaces, conflicts, object_id, candidate)
+        let mut scratch = ctx.reserve_scoped(0, "test_b5_conflicts")?;
+        super::super::merge_surface_candidate(
+            ctx,
+            surfaces,
+            (conflicts, &mut scratch),
+            object_id,
+            candidate,
+        )
     })
     .expect("service budget")
 }
 
+/// Borrow each owned record under the same identity map.
+fn record_views<'a>(by_id: &HashMap<u32, &'a B5RecordBuf>) -> HashMap<u32, B5Record<'a>> {
+    by_id
+        .iter()
+        .map(|(&object_id, record)| (object_id, record.record()))
+        .collect()
+}
+
 fn resolve_surface_aliases(
-    records: &[B5Record],
-    by_id: &HashMap<u32, &B5Record>,
+    records: &[B5RecordBuf],
+    by_id: &HashMap<u32, &B5RecordBuf>,
     surfaces: &mut BTreeMap<u32, B5Surface>,
     conflicts: &mut HashSet<u32>,
 ) -> bool {
+    let views = records.iter().map(B5RecordBuf::record).collect::<Vec<_>>();
+    let aliases = views
+        .iter()
+        .filter(|record| super::super::surface_alias_target(record).is_some())
+        .collect::<Vec<_>>();
+    let by_id_views = record_views(by_id);
+    let by_id = by_id_views
+        .iter()
+        .map(|(&object_id, record)| (object_id, record))
+        .collect::<HashMap<_, _>>();
     crate::test_support::with_service_context(|ctx| {
-        super::super::resolve_surface_aliases(ctx, records, by_id, surfaces, conflicts)
+        let mut scratch = ctx.reserve_scoped(0, "test_b5_conflicts")?;
+        super::super::resolve_surface_aliases(
+            ctx,
+            &aliases,
+            &by_id,
+            surfaces,
+            (conflicts, &mut scratch),
+        )
     })
     .expect("service budget")
 }
 
 fn surface_alias_carrier(
     object_id: u32,
-    by_id: &HashMap<u32, &B5Record>,
+    by_id: &HashMap<u32, &B5RecordBuf>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Surface> {
+    let by_id_views = record_views(by_id);
+    let by_id_refs = by_id_views
+        .iter()
+        .map(|(&object_id, record)| (object_id, record))
+        .collect::<HashMap<_, _>>();
     crate::test_support::with_service_context(|ctx| {
-        super::super::surface_alias_carrier(ctx, object_id, by_id, surfaces)
+        super::super::surface_alias_terminal(ctx, object_id, &by_id_refs, surfaces, by_id.len())
     })
     .expect("service budget")
+    .map(|terminal| surfaces[&terminal].clone())
+}
+
+/// Borrow each indexed owned record.
+fn targeted_record_views(
+    records: &HashMap<u32, Option<B5RecordBuf>>,
+) -> HashMap<u32, Option<B5Record<'_>>> {
+    records
+        .iter()
+        .map(|(&object_id, record)| (object_id, record.as_ref().map(B5RecordBuf::record)))
+        .collect()
 }
 
 fn resolve_targeted_surface(
     object_id: u32,
-    records: &HashMap<u32, Option<B5Record>>,
-    headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
+    records: &HashMap<u32, Option<B5RecordBuf>>,
+    headers: &BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
 ) -> Option<B5Surface> {
+    let records = targeted_record_views(records);
     crate::test_support::with_service_context(|ctx| {
-        super::super::resolve_targeted_surface(ctx, object_id, records, headers, resolved, rolling)
+        super::super::resolve_targeted_surface(ctx, object_id, &records, headers, resolved, rolling)
     })
     .expect("service budget")
 }
@@ -270,23 +320,27 @@ fn targeted_surface_records_and_resolution_refuse_caller_limits() {
     })
     .expect("service budget");
     let object_ids = std::collections::BTreeSet::from([9]);
-    for (limit, operation) in [
-        (1, "catia_b5_targeted_surface_records"),
-        (2, "catia_b5_targeted_surface_visited"),
+    let mut refused = std::collections::BTreeSet::new();
+    for limit in 0..16 {
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) =
+            crate::test_support::with_collection_limit(limit, |ctx| {
+                super::super::targeted_surfaces_from_frames(
+                    ctx,
+                    &bytes,
+                    &object_ids,
+                    &frames,
+                    &mut crate::nurbs::LaneRefusals::new(),
+                )
+            })
+        {
+            refused.insert(error.operation);
+        }
+    }
+    for operation in [
+        "catia_b5_targeted_surface_records",
+        "catia_b5_targeted_surface_visited",
     ] {
-        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::super::targeted_surfaces_from_frames(
-                ctx,
-                &bytes,
-                &object_ids,
-                &frames,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation)
-        );
+        assert!(refused.contains(operation), "no refusal at {operation}");
     }
     let surface = B5Surface::Unknown {
         family: 0xb5,
@@ -313,7 +367,7 @@ fn targeted_surface_records_and_resolution_refuse_caller_limits() {
             ctx,
             9,
             &HashMap::new(),
-            &HashMap::new(),
+            &BTreeMap::new(),
             &resolved,
             &HashMap::new(),
         )
@@ -328,7 +382,7 @@ fn targeted_surface_records_and_resolution_refuse_caller_limits() {
                 ctx,
                 9,
                 &HashMap::new(),
-                &HashMap::new(),
+                &BTreeMap::new(),
                 &resolved,
                 &HashMap::new(),
             )
@@ -401,7 +455,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
 
 #[test]
 fn loop_references_require_exact_matching_edge_count_and_metadata() {
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x62,
@@ -412,7 +466,7 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
         ],
     };
     let (references, _, edge_controls) = crate::test_support::with_service_context(|ctx| {
-        loop_references_and_metadata(ctx, &record).expect("service budget")
+        loop_references_and_metadata(ctx, &record.record()).expect("service budget")
     })
     .expect("exact loop payload");
     assert_eq!(references, [9, 10, 11]);
@@ -420,16 +474,16 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
 
     let mut mismatched = record.clone();
     mismatched.payload[4] = 0x82;
-    assert!(loop_references(&mismatched).is_none());
+    assert!(loop_references(&mismatched.record()).is_none());
 
     let mut residual = record;
     residual.payload.push(0);
-    assert!(loop_references(&residual).is_none());
+    assert!(loop_references(&residual.record()).is_none());
 }
 
 #[test]
 fn loop_record_nested_collections_refuse_each_limit() {
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x62,
@@ -445,7 +499,7 @@ fn loop_record_nested_collections_refuse_each_limit() {
         (4, "catia_b5_loop_members"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            parse_loop_record(ctx, &record)
+            parse_loop_record(ctx, &record.record())
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -453,14 +507,14 @@ fn loop_record_nested_collections_refuse_each_limit() {
         );
     }
     let limited_index = crate::test_support::with_collection_limit(5, |ctx| {
-        typed_loop_records_from_records(ctx, std::slice::from_ref(&record))
+        typed_loop_records_from_records(ctx, &[record.record()])
     });
     assert!(
         matches!(limited_index, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b5_typed_loop_records")
     );
     let parsed = crate::test_support::with_service_context(|ctx| {
-        typed_loop_records_from_records(ctx, &[record])
+        typed_loop_records_from_records(ctx, &[record.record()])
     })
     .expect("service budget");
     assert_eq!(parsed.get(&400).map(|loop_| loop_.members.len()), Some(1));
@@ -514,7 +568,7 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
         metadata: test_loop_metadata(),
         surface: 10,
     };
-    let edge = B5Record {
+    let edge = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x5e,
@@ -532,11 +586,16 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
         },
     )]);
 
+    let record_views = record_views(&records);
+    let record_refs = record_views
+        .iter()
+        .map(|(&object_id, record)| (object_id, record))
+        .collect::<HashMap<_, _>>();
     let parsed = crate::test_support::with_service_context(|ctx| {
         parse_loop(
             ctx,
-            &loop_,
-            &records,
+            loop_.clone(),
+            &record_refs,
             &pcurves,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -546,17 +605,18 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
     .expect("service budget");
     assert!(parsed.is_none());
 
-    let limited = crate::test_support::with_work_limit(0, |ctx| {
-        parse_loop(
-            ctx,
-            &loop_,
-            &records,
-            &pcurves,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &surfaces,
-        )
-    });
+    let limited =
+        crate::test_support::with_work_refusal("catia_b5_parse_loop_member_scan", |ctx| {
+            parse_loop(
+                ctx,
+                loop_.clone(),
+                &record_refs,
+                &pcurves,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &surfaces,
+            )
+        });
     assert!(matches!(
         limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -571,7 +631,10 @@ fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
         super::super::merge_pcurve_candidate(
             ctx,
             &mut BTreeMap::new(),
-            &mut HashSet::new(),
+            (
+                &mut HashSet::new(),
+                &mut ctx.reserve_scoped(0, "test_b5_conflicts")?,
+            ),
             pcurve.clone(),
         )
     });
@@ -583,7 +646,10 @@ fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
         super::super::merge_pcurve_candidate(
             ctx,
             &mut BTreeMap::from([(1, pcurve.clone())]),
-            &mut HashSet::new(),
+            (
+                &mut HashSet::new(),
+                &mut ctx.reserve_scoped(0, "test_b5_conflicts")?,
+            ),
             test_pcurve(1, 11),
         )
     });
@@ -602,7 +668,10 @@ fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
         super::super::merge_surface_candidate(
             ctx,
             &mut BTreeMap::new(),
-            &mut HashSet::new(),
+            (
+                &mut HashSet::new(),
+                &mut ctx.reserve_scoped(0, "test_b5_conflicts")?,
+            ),
             1,
             plane.clone(),
         )
@@ -619,7 +688,10 @@ fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
         super::super::merge_surface_candidate(
             ctx,
             &mut BTreeMap::from([(1, plane.clone())]),
-            &mut HashSet::new(),
+            (
+                &mut HashSet::new(),
+                &mut ctx.reserve_scoped(0, "test_b5_conflicts")?,
+            ),
             1,
             other.clone(),
         )
@@ -636,18 +708,21 @@ fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
             payload: vec![1, 2, 3],
         },
     )]);
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::surface_alias_carrier(ctx, 1, &HashMap::new(), &surfaces)
+    let limited = crate::test_support::with_work_refusal("catia_b5_surface_alias_step", |ctx| {
+        super::super::surface_alias_terminal(ctx, 1, &HashMap::new(), &surfaces, 0)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_surface_alias_visits")
+        if error.operation == "catia_b5_surface_alias_step")
     );
     assert!(crate::test_support::with_service_context(|ctx| {
         super::super::merge_surface_candidate(
             ctx,
             &mut BTreeMap::new(),
-            &mut HashSet::new(),
+            (
+                &mut HashSet::new(),
+                &mut ctx.reserve_scoped(0, "test_b5_conflicts")?,
+            ),
             1,
             plane,
         )
@@ -679,16 +754,18 @@ fn loop_edge_senses_refuse_the_caller_collection_limit() {
 #[test]
 fn pcurve_requires_one_complete_clamped_bezier_frame() {
     let payload = crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
-    let record = |payload| B5Record {
+    let record = |payload| B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x21,
         object_id: 2,
         payload,
     };
-    let parse_pcurve = |record: &B5Record| {
-        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, record))
-            .expect("service budget")
+    let parse_pcurve = |record: &B5RecordBuf| {
+        crate::test_support::with_service_context(|ctx| {
+            super::super::parse_pcurve(ctx, &record.record())
+        })
+        .expect("service budget")
     };
     assert_eq!(
         parse_pcurve(&record(payload.clone()))
@@ -744,7 +821,7 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
 
 #[test]
 fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x21,
@@ -758,7 +835,7 @@ fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
         (6, "catia_b5_typed_class21_pcurves"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::super::typed_class_21_pcurves_from_records(ctx, std::slice::from_ref(&record))
+            super::super::typed_class_21_pcurves_from_records(ctx, &[record.record()])
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -767,7 +844,7 @@ fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
     }
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            super::super::typed_class_21_pcurves_from_records(ctx, &[record])
+            super::super::typed_class_21_pcurves_from_records(ctx, &[record.record()])
         })
         .expect("service budget")
         .len(),
@@ -777,22 +854,23 @@ fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
 
 #[test]
 fn class21_pcurve_multiplicity_range_collector_preserves_work_refusal() {
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x21,
         object_id: 2,
         payload: crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]),
     };
-    let service =
-        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, &record))
-            .expect("service pcurve budget");
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::parse_pcurve(ctx, &record.record())
+    })
+    .expect("service pcurve budget");
     let pcurve = service.expect("service fixture produces a pcurve");
     assert_eq!(pcurve.multiplicities, [2, 2]);
 
     let refused =
         crate::test_support::with_work_refusal("catia_b5_class21_multiplicities", |ctx| {
-            let result = super::super::parse_pcurve(ctx, &record);
+            let result = super::super::parse_pcurve(ctx, &record.record());
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
@@ -807,38 +885,12 @@ fn class21_pcurve_multiplicity_range_collector_preserves_work_refusal() {
 }
 
 #[test]
-fn class21_pcurve_fixed_byte_lanes_refuse_work_before_scan() {
-    let record = B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x21,
-        object_id: 2,
-        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]),
-    };
-
-    let limited =
-        crate::test_support::with_work_limit(0, |ctx| super::super::parse_pcurve(ctx, &record));
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_b5_class21_knot_scalar_bytes"
-    ));
-
-    // Sixteen knot bytes, two order visits and three multiplicity source steps cost 21 units.
-    let limited =
-        crate::test_support::with_work_limit(21, |ctx| super::super::parse_pcurve(ctx, &record));
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_b5_class21_control_point_bytes"
-    ));
-}
-
-#[test]
 fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
-    let parse_pcurve = |record: &B5Record| {
-        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, record))
-            .expect("service budget")
+    let parse_pcurve = |record: &B5RecordBuf| {
+        crate::test_support::with_service_context(|ctx| {
+            super::super::parse_pcurve(ctx, &record.record())
+        })
+        .expect("service budget")
     };
     let payload = crate::test_support::test_b5::b5_linear_pcurve_payload_with_knots(
         7,
@@ -846,7 +898,7 @@ fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
         [0.0, 0.0],
         [1.0, 0.0],
     );
-    let pcurve = parse_pcurve(&B5Record {
+    let pcurve = parse_pcurve(&B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x21,
@@ -967,7 +1019,7 @@ fn surface_candidate_merge_refines_opaque_wrappers_and_rejects_exact_conflicts()
 
 #[test]
 fn full_surface_alias_closure_is_order_independent_unbounded_and_cycle_safe() {
-    let alias = |object_id: u32, target: u32| B5Record {
+    let alias = |object_id: u32, target: u32| B5RecordBuf {
         offset: usize::try_from(object_id).expect("small object id"),
         family: 0xb5,
         class: 0x2e,
@@ -1039,7 +1091,7 @@ fn canonical_surface_identity_follows_unbounded_aliases_and_rejects_cycles() {
 
 #[test]
 fn surface_alias_closes_after_its_terminal_construction_resolves() {
-    let records = vec![B5Record {
+    let records = vec![B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x2e,
@@ -1085,7 +1137,7 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
     payload.extend_from_slice(&[0x03, 0x04]);
     payload.extend_from_slice(&0.0f64.to_le_bytes());
     payload.extend_from_slice(&[0x05, 0x06]);
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x37,
@@ -1104,7 +1156,7 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
         }),
     )]);
     assert_eq!(
-        resolve_targeted_surface(10, &records, &HashMap::new(), &HashMap::new(), &rolling),
+        resolve_targeted_surface(10, &records, &BTreeMap::new(), &HashMap::new(), &rolling),
         rolling.get(&1).cloned().flatten()
     );
 }
@@ -1131,7 +1183,7 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
     for value in [-2.0f64, 3.0, -4.0, 5.0] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    let offset = B5Record {
+    let offset = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x30,
@@ -1142,17 +1194,18 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
     let resolved = HashMap::from([(2, Some(carrier.clone())), (3, Some(source))]);
 
     assert_eq!(
-        resolve_targeted_surface(9, &records, &HashMap::new(), &resolved, &HashMap::new(),),
+        resolve_targeted_surface(9, &records, &BTreeMap::new(), &resolved, &HashMap::new(),),
         Some(carrier)
     );
+    let record_views = targeted_record_views(&records);
     let mut refused = std::collections::BTreeSet::new();
     for limit in 0..20 {
         match crate::test_support::with_collection_limit(limit, |ctx| {
             super::super::resolve_targeted_surface(
                 ctx,
                 9,
-                &records,
-                &HashMap::new(),
+                &record_views,
+                &BTreeMap::new(),
                 &resolved,
                 &HashMap::new(),
             )
@@ -1167,8 +1220,7 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
     for operation in [
         "catia_b5_targeted_surface_visited",
         "catia_b5_targeted_visited_copy",
-        "catia_b5_targeted_offset_carrier",
-        "catia_b5_targeted_offset_source",
+        "catia_b5_targeted_offset_surfaces",
     ] {
         assert!(
             refused.contains(operation),
@@ -1181,7 +1233,7 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
     assert!(resolve_targeted_surface(
         9,
         &HashMap::from([(9, Some(wrong_distance))]),
-        &HashMap::new(),
+        &BTreeMap::new(),
         &resolved,
         &HashMap::new(),
     )
@@ -1191,7 +1243,7 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
     assert!(resolve_targeted_surface(
         9,
         &HashMap::from([(9, Some(wrong_kind))]),
-        &HashMap::new(),
+        &BTreeMap::new(),
         &resolved,
         &HashMap::new(),
     )
@@ -1204,7 +1256,7 @@ fn targeted_surface_resolution_has_no_alias_depth_limit() {
         .map(|object_id| {
             (
                 object_id,
-                Some(B5Record {
+                Some(B5RecordBuf {
                     offset: usize::try_from(object_id).expect("small object id"),
                     family: 0xb5,
                     class: 0x2e,
@@ -1228,7 +1280,7 @@ fn targeted_surface_resolution_has_no_alias_depth_limit() {
         }),
     )]);
     assert_eq!(
-        resolve_targeted_surface(1, &records, &HashMap::new(), &HashMap::new(), &rolling),
+        resolve_targeted_surface(1, &records, &BTreeMap::new(), &HashMap::new(), &rolling),
         rolling.get(&21).cloned().flatten()
     );
 }
@@ -1236,7 +1288,7 @@ fn targeted_surface_resolution_has_no_alias_depth_limit() {
 #[test]
 fn targeted_surface_resolution_rejects_alias_cycles() {
     let alias = |object_id, target| {
-        Some(B5Record {
+        Some(B5RecordBuf {
             offset: usize::try_from(object_id).expect("small object id"),
             family: 0xb5,
             class: 0x2e,
@@ -1248,7 +1300,7 @@ fn targeted_surface_resolution_rejects_alias_cycles() {
     assert!(resolve_targeted_surface(
         1,
         &records,
-        &HashMap::new(),
+        &BTreeMap::new(),
         &HashMap::new(),
         &HashMap::new(),
     )
@@ -1296,7 +1348,7 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
         )),
     )]);
     assert!(
-        resolve_targeted_surface(1, &HashMap::new(), &HashMap::new(), &resolved, &rolling,)
+        resolve_targeted_surface(1, &HashMap::new(), &BTreeMap::new(), &resolved, &rolling,)
             .is_none()
     );
 }
@@ -1355,7 +1407,7 @@ fn face_surface_references_do_not_require_resolved_loops() {
 #[test]
 fn counted_face_references_accept_both_exact_terminal_controls() {
     for terminal_control in [0x03, 0x05] {
-        let record = B5Record {
+        let record = B5RecordBuf {
             offset: 0,
             family: 0xb5,
             class: 0x5f,
@@ -1364,7 +1416,7 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
         };
         assert_eq!(
             crate::test_support::with_service_context(|ctx| {
-                parse_face_record(ctx, &record).expect("service budget")
+                parse_face_record(ctx, &record.record()).expect("service budget")
             }),
             Some(B5FaceRecord {
                 object_id: 3,
@@ -1380,7 +1432,7 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
         overlong.payload.push(terminal_control);
         assert_eq!(
             crate::test_support::with_service_context(|ctx| {
-                parse_face_record(ctx, &overlong).expect("service budget")
+                parse_face_record(ctx, &overlong.record()).expect("service budget")
             }),
             None
         );
@@ -1389,7 +1441,7 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
 
 #[test]
 fn counted_face_references_reject_unknown_terminal_controls() {
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x5f,
@@ -1398,7 +1450,7 @@ fn counted_face_references_reject_unknown_terminal_controls() {
     };
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            parse_face_record(ctx, &record).expect("service budget")
+            parse_face_record(ctx, &record.record()).expect("service budget")
         }),
         None
     );
@@ -1407,14 +1459,14 @@ fn counted_face_references_reject_unknown_terminal_controls() {
     empty.payload.clear();
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            parse_face_record(ctx, &empty).expect("service budget")
+            parse_face_record(ctx, &empty.record()).expect("service budget")
         }),
         None
     );
     empty.payload.extend_from_slice(&[0x80, 0x03]);
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            parse_face_record(ctx, &empty).expect("service budget")
+            parse_face_record(ctx, &empty.record()).expect("service budget")
         }),
         None
     );
@@ -1422,21 +1474,23 @@ fn counted_face_references_reject_unknown_terminal_controls() {
 
 #[test]
 fn counted_face_reference_list_refuses_collection_limit() {
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x5f,
         object_id: 3,
         payload: vec![0x82, 0x81, 0x82, 0x03],
     };
-    let limited =
-        crate::test_support::with_collection_limit(1, |ctx| parse_face_record(ctx, &record));
+    let limited = crate::test_support::with_collection_limit(1, |ctx| {
+        parse_face_record(ctx, &record.record())
+    });
     assert!(matches!(
         limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
-    let parsed = crate::test_support::with_service_context(|ctx| parse_face_record(ctx, &record))
-        .expect("service budget");
+    let parsed =
+        crate::test_support::with_service_context(|ctx| parse_face_record(ctx, &record.record()))
+            .expect("service budget");
     assert_eq!(
         parsed.as_ref().map(|face| face.references.as_slice()),
         Some([1, 2].as_slice())
@@ -1445,13 +1499,14 @@ fn counted_face_reference_list_refuses_collection_limit() {
 
 #[test]
 fn typed_face_record_index_refuses_collection_limit() {
-    let records = [B5Record {
+    let records = [B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x5f,
         object_id: 3,
         payload: vec![0x82, 0x81, 0x82, 0x03],
     }];
+    let records = records.each_ref().map(B5RecordBuf::record);
     let limited = crate::test_support::with_collection_limit(2, |ctx| {
         typed_face_records_from_records(ctx, &records)
     });

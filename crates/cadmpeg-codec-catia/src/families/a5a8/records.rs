@@ -528,7 +528,15 @@ impl A8Pcurve {
                 }
                 Ok::<_, CodecError>((knots, points, first, second))
             })?;
-        crate::nurbs::quintic_jet_bspline(ctx, Self::DEGREE, &knots, &points, &first, &second)
+        crate::nurbs::quintic_jet_bspline(
+            ctx,
+            Self::DEGREE,
+            &knots,
+            &points,
+            &first,
+            &second,
+            cadmpeg_ir::units::FiniteVector::new,
+        )
     }
 }
 
@@ -644,6 +652,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         &positions,
         &first,
         &second,
+        cadmpeg_ir::units::FiniteVector::new,
     )?
     else {
         refusal.push_solver(

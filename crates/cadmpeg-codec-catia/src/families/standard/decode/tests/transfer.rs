@@ -121,27 +121,19 @@ fn standard_population_identity_refuses_retained_limit() {
         color: None,
         visible: None,
     };
-    let mut found = false;
-    for cap in 0..=4096 {
-        let result = crate::test_support::with_retained_limit(cap, |ctx| {
-            StandardPopulationScope {
-                scope: "population-1",
-                ctx,
-            }
-            .rewrite(body.clone())
-        });
-        match result {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_standard_population_identity" =>
-            {
-                found = true;
-                break;
-            }
-            Ok(_) => break,
-            _ => {}
-        }
-    }
-    assert!(found, "retained sweep must reach the rewritten identity");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "catia_standard_population_identity",
+        |cap| {
+            crate::test_support::with_retained_limit(cap, |ctx| {
+                StandardPopulationScope {
+                    scope: "population-1",
+                    ctx,
+                }
+                .rewrite(body.clone())
+            })
+        },
+    );
 }
 
 #[test]
@@ -164,23 +156,10 @@ fn standard_initial_carrier_identity_refuses_retained_limit() {
     assert!(crate::test_support::with_service_context(decode)
         .expect("service budget")
         .is_some());
-    let mut found = false;
-    for cap in 0..32_768 {
-        match crate::test_support::with_retained_limit(cap, decode) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_standard_payload_id"
-                    || limit.operation == "catia_standard_surface_id" =>
-            {
-                found = true;
-                break;
-            }
-            Err(cadmpeg_core::CodecError::ResourceLimit(_)) => {}
-            _ => panic!("standard carrier passed without an identity refusal"),
-        }
-    }
-    assert!(
-        found,
-        "the retained sweep must reach initial carrier creation"
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "catia_standard_payload_id",
+        |cap| crate::test_support::with_retained_limit(cap, decode),
     );
 }
 

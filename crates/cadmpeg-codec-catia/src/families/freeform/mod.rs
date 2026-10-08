@@ -388,7 +388,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 run_count,
                 0,
                 true,
-                Vec::new(),
+                &[][..],
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
@@ -400,7 +400,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 run_count,
                 0,
                 false,
-                Vec::new(),
+                &[][..],
                 Vec::new(),
                 Vec::new(),
                 census_records,
@@ -429,7 +429,7 @@ pub(super) fn try_decode_freeform_surfaces(
         };
         let mut b5_graph = match crate::families::b5::graph::parse_from_records_budgeted(
             ctx,
-            &object_source,
+            object_source,
             &selected_object_records,
             &object_frames,
             true,
@@ -2148,6 +2148,7 @@ pub(super) fn append_freeform_surface_pools(
                 &points,
                 &first,
                 &second,
+                cadmpeg_ir::units::FiniteVector::new,
             )?
         };
         let Some((knots, control_points)) = solution else {
@@ -3755,7 +3756,6 @@ fn append_resolved_consolidated_surface_curves(
                             annotations,
                             &surface.id,
                             "geometry",
-                            "catia_annotation_field",
                         )?;
                         binding_counts.standard_face_surfaces += 1;
                         bound_new_standard_surface = true;
@@ -3873,7 +3873,6 @@ fn append_resolved_consolidated_surface_curves(
                         annotations,
                         &ir.model.coedges[coedge_index].id,
                         "pcurves",
-                        "catia_annotation_field",
                     )?;
                 }
             }
@@ -3896,14 +3895,12 @@ fn append_resolved_consolidated_surface_curves(
                 annotations,
                 &procedural.id,
                 "curve",
-                "catia_annotation_field",
             )?;
             crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 &procedural.id,
                 "definition",
-                "catia_annotation_field",
             )?;
         } else {
             let curve_id = crate::resource::compose_index_id(
@@ -3953,14 +3950,12 @@ fn append_resolved_consolidated_surface_curves(
                 annotations,
                 &procedural_id,
                 "curve",
-                "catia_annotation_field",
             )?;
             crate::resource::derived_annotation(
                 admission.context(),
                 annotations,
                 &procedural_id,
                 "definition",
-                "catia_annotation_field",
             )?;
             admission.charge()?;
             let _attached = ir.model.add_procedural_curve(
@@ -4955,7 +4950,7 @@ mod tests {
             family: 0xb5,
             class: 0x5f,
             object_id: 902,
-            payload: vec![0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
+            payload: &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         };
         assert!(
             crate::test_support::with_service_context(|ctx| parse_from_records(
@@ -4990,34 +4985,42 @@ mod tests {
         unrelated.extend_from_slice(&99u32.to_le_bytes());
         unrelated.push(0x00);
 
-        let selection = crate::test_support::with_service_context(|ctx| {
-            crate::families::b5::graph::select_object_stream_population(
-                ctx,
-                &[unrelated, topology.clone()],
-                None,
-            )
+        let streams = [unrelated, topology.clone()];
+        let (run_count, selected, source) = crate::test_support::with_service_context(|ctx| {
+            let selection =
+                crate::families::b5::graph::select_object_stream_population(ctx, &streams, None)?;
+            Ok::<_, cadmpeg_core::CodecError>((
+                selection.run_count(),
+                selection.selected(),
+                selection.source().to_vec(),
+            ))
         })
         .expect("service collection budget");
-        assert_eq!(selection.run_count(), 2);
-        assert!(selection.selected());
-        assert_eq!(selection.source(), topology);
+        assert_eq!(run_count, 2);
+        assert!(selected);
+        assert_eq!(source, topology);
     }
 
     #[test]
     fn object_stream_selection_refuses_multiple_topology_root_runs() {
         let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
-        let selection = crate::test_support::with_service_context(|ctx| {
-            crate::families::b5::graph::select_object_stream_population(
-                ctx,
-                &[topology.clone(), topology],
-                None,
-            )
-        })
-        .expect("service collection budget");
+        let streams = [topology.clone(), topology];
+        let (run_count, selected, source_empty) =
+            crate::test_support::with_service_context(|ctx| {
+                let selection = crate::families::b5::graph::select_object_stream_population(
+                    ctx, &streams, None,
+                )?;
+                Ok::<_, cadmpeg_core::CodecError>((
+                    selection.run_count(),
+                    selection.selected(),
+                    selection.source().is_empty(),
+                ))
+            })
+            .expect("service collection budget");
 
-        assert_eq!(selection.run_count(), 2);
-        assert!(!selection.selected());
-        assert!(selection.source().is_empty());
+        assert_eq!(run_count, 2);
+        assert!(!selected);
+        assert!(source_empty);
     }
 
     #[test]
@@ -5025,20 +5028,24 @@ mod tests {
         let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
         let budget = cadmpeg_core::decode::WorkBudget::new(1);
 
-        let selection = crate::test_support::with_service_context(|ctx| {
-            crate::families::b5::graph::select_object_stream_population(
+        let streams = [topology];
+        let observed = crate::test_support::with_service_context(|ctx| {
+            let selection = crate::families::b5::graph::select_object_stream_population(
                 ctx,
-                &[topology],
+                &streams,
                 Some(&budget),
-            )
+            )?;
+            Ok::<_, cadmpeg_core::CodecError>((
+                selection.run_count(),
+                selection.selected(),
+                selection.source().is_empty(),
+                selection.records().is_empty(),
+                selection.exhausted(),
+            ))
         })
         .expect("service collection budget");
 
-        assert_eq!(selection.run_count(), 1);
-        assert!(!selection.selected());
-        assert!(selection.source().is_empty());
-        assert!(selection.records().is_empty());
-        assert!(selection.exhausted());
+        assert_eq!(observed, (1, false, true, true, true));
         assert!(budget.exhausted());
     }
 

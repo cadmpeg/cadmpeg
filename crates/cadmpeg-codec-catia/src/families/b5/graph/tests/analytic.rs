@@ -1,14 +1,46 @@
 use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::{
     analytic_offset_magnitude_agrees, counted_cardinality, is_referenced_geometry_class,
-    parse_extrusion_surface, parse_offset_surface, parse_profile, parse_sphere_great_circle_pcurve,
-    parse_surface, surface_alias_target, B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface,
-    B5OpaquePcurve, B5Pcurve, B5PcurveParameterization, B5Profile, B5Record,
-    B5SphereGreatCirclePcurve, B5Surface,
+    parse_profile, parse_sphere_great_circle_pcurve, parse_surface, surface_alias_target,
+    B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface, B5OpaquePcurve, B5Pcurve,
+    B5PcurveParameterization, B5Profile, B5Record, B5RecordBuf, B5SphereGreatCirclePcurve,
+    B5Surface,
 };
 use crate::wire;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use std::collections::{BTreeMap, HashMap};
+
+/// Borrow each owned record under the same identity.
+fn record_views<'a>(records: &HashMap<u32, &'a B5RecordBuf>) -> HashMap<u32, B5Record<'a>> {
+    records
+        .iter()
+        .map(|(&object_id, record)| (object_id, record.record()))
+        .collect()
+}
+
+fn parse_offset_surface(
+    record: &B5Record<'_>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+    extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
+    records: &HashMap<u32, &B5RecordBuf>,
+) -> Option<B5OffsetSurface> {
+    let views = record_views(records);
+    let refs = views.iter().map(|(&id, record)| (id, record)).collect();
+    crate::test_support::with_service_context(|ctx| {
+        super::super::parse_offset_surface(ctx, record, surfaces, extrusion_surfaces, &refs)
+    })
+    .expect("service budget")
+}
+
+fn parse_extrusion_surface(
+    record: &B5Record<'_>,
+    records: &HashMap<u32, &B5RecordBuf>,
+    pcurves: &BTreeMap<u32, super::super::B5ObjectStreamPcurve>,
+) -> Option<B5ExtrusionSurface> {
+    let views = record_views(records);
+    let refs = views.iter().map(|(&id, record)| (id, record)).collect();
+    super::super::parse_extrusion_surface(record, &refs, pcurves)
+}
 
 fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
@@ -17,17 +49,17 @@ fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     .expect("service budget")
 }
 
-fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+fn parse_line_pcurve(record: &B5Record<'_>) -> Option<B5Pcurve> {
     crate::test_support::with_service_context(|ctx| super::super::parse_line_pcurve(ctx, record))
         .expect("service budget")
 }
 
-fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+fn parse_circle_pcurve(record: &B5Record<'_>) -> Option<B5Pcurve> {
     crate::test_support::with_service_context(|ctx| super::super::parse_circle_pcurve(ctx, record))
         .expect("service budget")
 }
 
-fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+fn parse_class_1a_pcurve(record: &B5Record<'_>) -> Option<B5Pcurve> {
     crate::test_support::with_service_context(|ctx| {
         super::super::parse_class_1a_pcurve(ctx, record)
     })
@@ -36,7 +68,7 @@ fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
 
 #[allow(clippy::too_many_arguments)]
 fn rational_arc_pcurve(
-    record: &B5Record,
+    record: &B5Record<'_>,
     surface: u32,
     center: [f64; 2],
     reference_x: [f64; 2],
@@ -63,9 +95,12 @@ fn rational_arc_pcurve(
     .expect("service budget")
 }
 
-fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
-    crate::test_support::with_service_context(|ctx| super::super::parse_opaque_pcurve(ctx, record))
-        .expect("service budget")
+fn parse_opaque_pcurve(record: &B5Record<'_>) -> Option<B5OpaquePcurve> {
+    crate::test_support::with_service_context(|ctx| {
+        let resolved = super::super::parse_class_1a_pcurve(ctx, record)?.is_some();
+        super::super::parse_opaque_pcurve(ctx, record, resolved)
+    })
+    .expect("service budget")
 }
 
 #[test]
@@ -74,7 +109,7 @@ fn opaque_pcurve_payload_refuses_the_caller_retained_limit() {
     payload.extend_from_slice(&[0; 16]);
     payload.extend_from_slice(&[0x05, 0x05]);
     payload.extend_from_slice(&[0; 56]);
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x1a,
@@ -82,13 +117,13 @@ fn opaque_pcurve_payload_refuses_the_caller_retained_limit() {
         payload,
     };
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::parse_opaque_pcurve(ctx, &record)
+        super::super::parse_opaque_pcurve(ctx, &record.record(), false)
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b5_opaque_pcurve_payload")
     );
-    assert!(parse_opaque_pcurve(&record).is_some());
+    assert!(parse_opaque_pcurve(&record.record()).is_some());
 }
 
 #[test]
@@ -97,7 +132,7 @@ fn analytic_pcurve_vectors_refuse_the_caller_collection_limit() {
     for value in [3.0_f64, -2.0, 7.0] {
         line_payload.extend_from_slice(&value.to_le_bytes());
     }
-    let line = B5Record {
+    let line = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x18,
@@ -105,7 +140,7 @@ fn analytic_pcurve_vectors_refuse_the_caller_collection_limit() {
         payload: line_payload,
     };
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::parse_line_pcurve(ctx, &line)
+        super::super::parse_line_pcurve(ctx, &line.record())
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
@@ -119,7 +154,7 @@ fn analytic_pcurve_vectors_refuse_the_caller_collection_limit() {
         }
         circle_payload.extend_from_slice(&value.to_le_bytes());
     }
-    let circle = B5Record {
+    let circle = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x19,
@@ -127,14 +162,14 @@ fn analytic_pcurve_vectors_refuse_the_caller_collection_limit() {
         payload: circle_payload,
     };
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::parse_circle_pcurve(ctx, &circle)
+        super::super::parse_circle_pcurve(ctx, &circle.record())
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b5_arc_control_points")
     );
-    assert!(parse_line_pcurve(&line).is_some());
-    assert!(parse_circle_pcurve(&circle).is_some());
+    assert!(parse_line_pcurve(&line.record()).is_some());
+    assert!(parse_circle_pcurve(&circle.record()).is_some());
 }
 
 #[test]
@@ -145,19 +180,19 @@ fn circle_pcurve_rejects_unbounded_subdivision_counts() {
     for value in [1.0e-300, 0.0, 1.0, 1.0, 0.0] {
         payload.extend_from_slice(&f64::to_le_bytes(value));
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x19,
         object_id: 0,
         payload,
     };
-    assert!(parse_circle_pcurve(&record).is_none());
+    assert!(parse_circle_pcurve(&record.record()).is_none());
 }
 
 #[test]
 fn rational_arc_pcurve_retains_an_interior_knot_in_a_wide_parameter_range() {
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x19,
@@ -165,7 +200,7 @@ fn rational_arc_pcurve_retains_an_interior_knot_in_a_wide_parameter_range() {
         payload: Vec::new(),
     };
     let pcurve = rational_arc_pcurve(
-        &record,
+        &record.record(),
         1,
         [0.0, 0.0],
         [1.0, 0.0],
@@ -187,7 +222,7 @@ fn rational_arc_pcurve_retains_an_interior_knot_in_a_wide_parameter_range() {
 
 #[test]
 fn rational_arc_span_generation_preserves_work_refusal() {
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x19,
@@ -195,7 +230,7 @@ fn rational_arc_span_generation_preserves_work_refusal() {
         payload: Vec::new(),
     };
     let inputs = crate::families::b5::graph::RationalArcPcurveInputs {
-        record: &record,
+        record: &record.record(),
         surface: 1,
         center: [0.0, 0.0],
         reference_x: [1.0, 0.0],
@@ -296,7 +331,7 @@ fn revolution_surface_requires_complete_sparse_reference_chart() {
     }
     payload[132..134].copy_from_slice(&[0x05, 0x05]);
     payload[166] = 0x01;
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x2d,
@@ -304,7 +339,7 @@ fn revolution_surface_requires_complete_sparse_reference_chart() {
         payload,
     };
     assert_eq!(
-        parse_surface(&record),
+        parse_surface(&record.record()),
         Some(B5Surface::Revolution {
             profile_curve: 0x16_8600,
             axis_origin: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
@@ -319,13 +354,13 @@ fn revolution_surface_requires_complete_sparse_reference_chart() {
     );
     let mut left_handed = record.clone();
     left_handed.payload[92..100].copy_from_slice(&(-1.0f64).to_le_bytes());
-    assert_eq!(parse_surface(&left_handed), None);
+    assert_eq!(parse_surface(&left_handed.record()), None);
     let mut wrong_lead = record.clone();
     wrong_lead.payload[0] = 0x80;
-    assert_eq!(parse_surface(&wrong_lead), None);
+    assert_eq!(parse_surface(&wrong_lead.record()), None);
     let mut wrong_half_period = record;
     wrong_half_period.payload[167..175].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&wrong_half_period), None);
+    assert_eq!(parse_surface(&wrong_half_period.record()), None);
 }
 
 #[test]
@@ -341,7 +376,7 @@ fn line_profile_requires_its_complete_unit_metric_chart() {
     payload[49..57].copy_from_slice(&1.0f64.to_le_bytes());
     payload[57..65].copy_from_slice(&(-2.0f64).to_le_bytes());
     payload[65..73].copy_from_slice(&4.0f64.to_le_bytes());
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x0e,
@@ -349,7 +384,7 @@ fn line_profile_requires_its_complete_unit_metric_chart() {
         payload,
     };
     assert_eq!(
-        parse_profile(&record),
+        parse_profile(&record.record()),
         Some(B5Profile::Line {
             point: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
             direction: crate::test_support::test_b5::exact_unit([0.0, 0.0, 1.0]),
@@ -359,16 +394,16 @@ fn line_profile_requires_its_complete_unit_metric_chart() {
 
     let mut nonunit = record.clone();
     nonunit.payload[41..49].copy_from_slice(&2.0f64.to_le_bytes());
-    assert_eq!(parse_profile(&nonunit), None);
+    assert_eq!(parse_profile(&nonunit.record()), None);
     let mut wrong_metric = record.clone();
     wrong_metric.payload[49..57].copy_from_slice(&2.0f64.to_le_bytes());
-    assert_eq!(parse_profile(&wrong_metric), None);
+    assert_eq!(parse_profile(&wrong_metric.record()), None);
     let mut unordered = record.clone();
     unordered.payload[65..73].copy_from_slice(&(-3.0f64).to_le_bytes());
-    assert_eq!(parse_profile(&unordered), None);
+    assert_eq!(parse_profile(&unordered.record()), None);
     let mut wrong_lead = record;
     wrong_lead.payload[0] = 0x81;
-    assert_eq!(parse_profile(&wrong_lead), None);
+    assert_eq!(parse_profile(&wrong_lead.record()), None);
 }
 
 #[test]
@@ -394,7 +429,7 @@ fn arc_profile_requires_its_complete_centered_periodic_chart() {
     payload[89..97].copy_from_slice(&parameter_range[1].to_le_bytes());
     payload[97..105].copy_from_slice(&1.0f64.to_le_bytes());
     payload[105..113].copy_from_slice(&chart_origin.to_le_bytes());
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x0f,
@@ -402,7 +437,7 @@ fn arc_profile_requires_its_complete_centered_periodic_chart() {
         payload,
     };
     assert_eq!(
-        parse_profile(&record),
+        parse_profile(&record.record()),
         Some(B5Profile::Arc {
             center: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
             direction_x: crate::test_support::test_b5::exact_unit([1.0, 0.0, 0.0]),
@@ -414,18 +449,18 @@ fn arc_profile_requires_its_complete_centered_periodic_chart() {
 
     let mut nonorthogonal = record.clone();
     nonorthogonal.payload[49..57].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(parse_profile(&nonorthogonal), None);
+    assert_eq!(parse_profile(&nonorthogonal.record()), None);
     let mut overlong = record.clone();
     overlong.payload[89..97].copy_from_slice(
         &(parameter_range[0] + std::f64::consts::TAU * radius + 1.0).to_le_bytes(),
     );
-    assert_eq!(parse_profile(&overlong), None);
+    assert_eq!(parse_profile(&overlong.record()), None);
     let mut wrong_fixed = record.clone();
     wrong_fixed.payload[97..105].copy_from_slice(&0.0f64.to_le_bytes());
-    assert_eq!(parse_profile(&wrong_fixed), None);
+    assert_eq!(parse_profile(&wrong_fixed.record()), None);
     let mut wrong_origin = record;
     wrong_origin.payload[105..113].copy_from_slice(&0.0f64.to_le_bytes());
-    assert_eq!(parse_profile(&wrong_origin), None);
+    assert_eq!(parse_profile(&wrong_origin.record()), None);
 }
 
 #[test]
@@ -457,7 +492,7 @@ fn cone_surface_reads_the_native_slant_chart() {
     ] {
         payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x29,
@@ -465,7 +500,7 @@ fn cone_surface_reads_the_native_slant_chart() {
         payload,
     };
     assert_eq!(
-        parse_surface(&record),
+        parse_surface(&record.record()),
         Some(B5Surface::Cone {
             apex: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
             frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
@@ -498,26 +533,26 @@ fn cone_surface_reads_the_native_slant_chart() {
 
     let mut opposite_handed = record.clone();
     opposite_handed.payload[89..97].copy_from_slice(&(-1.0f64).to_le_bytes());
-    assert!(parse_surface(&opposite_handed).is_some());
+    assert!(parse_surface(&opposite_handed.record()).is_some());
 
     let mut malformed = record.clone();
     malformed.payload[169..177].copy_from_slice(&0.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&malformed), None);
+    assert_eq!(parse_surface(&malformed.record()), None);
     let mut degenerate = record.clone();
     degenerate.payload[97..105].copy_from_slice(&0.0_f64.to_le_bytes());
-    assert_eq!(parse_surface(&degenerate), None);
+    assert_eq!(parse_surface(&degenerate.record()), None);
     let mut nonunit = record.clone();
     nonunit.payload[25..33].copy_from_slice(&2.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&nonunit), None);
+    assert_eq!(parse_surface(&nonunit.record()), None);
     let mut nonorthogonal = record.clone();
     nonorthogonal.payload[49..57].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&nonorthogonal), None);
+    assert_eq!(parse_surface(&nonorthogonal.record()), None);
     let mut invalid_axis = record.clone();
     invalid_axis.payload[73..81].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&invalid_axis), None);
+    assert_eq!(parse_surface(&invalid_axis.record()), None);
     let mut wrong_lead = record;
     wrong_lead.payload[0] = 0x81;
-    assert_eq!(parse_surface(&wrong_lead), None);
+    assert_eq!(parse_surface(&wrong_lead.record()), None);
 }
 
 #[test]
@@ -539,7 +574,7 @@ fn plane_surface_requires_complete_unit_chart_frame() {
     ] {
         payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x27,
@@ -547,7 +582,7 @@ fn plane_surface_requires_complete_unit_chart_frame() {
         payload,
     };
     assert_eq!(
-        parse_surface(&record),
+        parse_surface(&record.record()),
         Some(B5Surface::Plane {
             origin: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
             frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
@@ -558,18 +593,18 @@ fn plane_surface_requires_complete_unit_chart_frame() {
     );
     let mut wrong_family = record.clone();
     wrong_family.family = 0xa8;
-    assert_eq!(parse_surface(&wrong_family), None);
+    assert_eq!(parse_surface(&wrong_family.record()), None);
 
     let mut nonunit = record.clone();
     nonunit.payload[25..33].copy_from_slice(&2.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&nonunit), None);
+    assert_eq!(parse_surface(&nonunit.record()), None);
     let mut parallel = record.clone();
     parallel.payload[49..57].copy_from_slice(&1.0f64.to_le_bytes());
     parallel.payload[57..65].copy_from_slice(&0.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&parallel), None);
+    assert_eq!(parse_surface(&parallel.record()), None);
     let mut reversed_range = record;
     reversed_range.payload[97..105].copy_from_slice(&(-5.0f64).to_le_bytes());
-    assert_eq!(parse_surface(&reversed_range), None);
+    assert_eq!(parse_surface(&reversed_range.record()), None);
 }
 
 #[test]
@@ -597,7 +632,7 @@ fn cylinder_surface_retains_independent_angular_gauge_and_domain() {
     ] {
         payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x28,
@@ -605,7 +640,7 @@ fn cylinder_surface_retains_independent_angular_gauge_and_domain() {
         payload,
     };
     assert_eq!(
-        parse_surface(&record),
+        parse_surface(&record.record()),
         Some(B5Surface::Cylinder {
             origin: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
             frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
@@ -621,16 +656,16 @@ fn cylinder_surface_retains_independent_angular_gauge_and_domain() {
     outside_domain.payload[89..97].copy_from_slice(
         &(chart_origin + std::f64::consts::TAU * angular_scale + 1.0).to_le_bytes(),
     );
-    assert_eq!(parse_surface(&outside_domain), None);
+    assert_eq!(parse_surface(&outside_domain.record()), None);
 
     let mut overflowing_domain = record.clone();
     overflowing_domain.payload[73..81].copy_from_slice(&f64::MAX.to_le_bytes());
     overflowing_domain.payload[113..121].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&overflowing_domain), None);
+    assert_eq!(parse_surface(&overflowing_domain.record()), None);
 
     let mut wrong_fixed_scalar = record;
     wrong_fixed_scalar.payload[121..129].copy_from_slice(&2.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&wrong_fixed_scalar), None);
+    assert_eq!(parse_surface(&wrong_fixed_scalar.record()), None);
 }
 
 #[test]
@@ -658,7 +693,7 @@ fn sphere_surface_validates_radius_scaled_frame_and_chart() {
     ] {
         payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x2a,
@@ -666,7 +701,7 @@ fn sphere_surface_validates_radius_scaled_frame_and_chart() {
         payload,
     };
     assert_eq!(
-        parse_surface(&record),
+        parse_surface(&record.record()),
         Some(B5Surface::Sphere {
             center: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
             frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
@@ -689,7 +724,7 @@ fn sphere_surface_validates_radius_scaled_frame_and_chart() {
         tiny.payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     assert!(matches!(
-        parse_surface(&tiny),
+        parse_surface(&tiny.record()),
         Some(B5Surface::Sphere {
             frame,
             direction_y,
@@ -700,7 +735,7 @@ fn sphere_surface_validates_radius_scaled_frame_and_chart() {
             && radius.get() == tiny_radius
     ));
     tiny.payload[25..33].copy_from_slice(&(2.0 * tiny_radius).to_le_bytes());
-    assert_eq!(parse_surface(&tiny), None);
+    assert_eq!(parse_surface(&tiny.record()), None);
 
     let tiny_construction_radius = 1e-200_f64;
     let tiny_chart_origin = tiny_construction_radius
@@ -708,28 +743,28 @@ fn sphere_surface_validates_radius_scaled_frame_and_chart() {
     let mut tiny_chart = record.clone();
     tiny_chart.payload[137..145].copy_from_slice(&tiny_construction_radius.to_le_bytes());
     tiny_chart.payload[145..153].copy_from_slice(&tiny_chart_origin.to_le_bytes());
-    assert!(parse_surface(&tiny_chart).is_some());
+    assert!(parse_surface(&tiny_chart.record()).is_some());
     tiny_chart.payload[145..153].copy_from_slice(&(tiny_chart_origin + f64::EPSILON).to_le_bytes());
-    assert!(parse_surface(&tiny_chart).is_some());
+    assert!(parse_surface(&tiny_chart.record()).is_some());
     tiny_chart.payload[145..153].copy_from_slice(&1e-12_f64.to_le_bytes());
-    assert_eq!(parse_surface(&tiny_chart), None);
+    assert_eq!(parse_surface(&tiny_chart.record()), None);
 
     let mut left_handed = record.clone();
     left_handed.payload[89..97].copy_from_slice(&(-2.0f64).to_le_bytes());
-    assert_eq!(parse_surface(&left_handed), None);
+    assert_eq!(parse_surface(&left_handed.record()), None);
 
     let mut overlong_azimuth = record.clone();
     overlong_azimuth.payload[113..121]
         .copy_from_slice(&(std::f64::consts::TAU + 1.0).to_le_bytes());
-    assert_eq!(parse_surface(&overlong_azimuth), None);
+    assert_eq!(parse_surface(&overlong_azimuth.record()), None);
 
     let mut invalid_latitude = record.clone();
     invalid_latitude.payload[121..129].copy_from_slice(&(-std::f64::consts::PI).to_le_bytes());
-    assert_eq!(parse_surface(&invalid_latitude), None);
+    assert_eq!(parse_surface(&invalid_latitude.record()), None);
 
     let mut wrong_chart_origin = record;
     wrong_chart_origin.payload[145..153].copy_from_slice(&0.0f64.to_le_bytes());
-    assert_eq!(parse_surface(&wrong_chart_origin), None);
+    assert_eq!(parse_surface(&wrong_chart_origin.record()), None);
 }
 
 #[test]
@@ -763,7 +798,7 @@ fn torus_surface_separates_geometric_radii_from_chart_scales() {
     }
     payload[177..185].copy_from_slice(&4.0f64.to_le_bytes());
     payload[185..193].copy_from_slice(&3.0f64.to_le_bytes());
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x2b,
@@ -771,7 +806,7 @@ fn torus_surface_separates_geometric_radii_from_chart_scales() {
         payload,
     };
     assert_eq!(
-        parse_surface(&record),
+        parse_surface(&record.record()),
         Some(B5Surface::Torus {
             center: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
             frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
@@ -801,16 +836,16 @@ fn torus_surface_separates_geometric_radii_from_chart_scales() {
 
     let mut malformed = record.clone();
     malformed.payload[129..137].copy_from_slice(&0.5f64.to_le_bytes());
-    assert_eq!(parse_surface(&malformed), None);
+    assert_eq!(parse_surface(&malformed.record()), None);
     let mut left_handed = record.clone();
     left_handed.payload[89..97].copy_from_slice(&(-1.0f64).to_le_bytes());
-    assert_eq!(parse_surface(&left_handed), None);
+    assert_eq!(parse_surface(&left_handed.record()), None);
     let mut wrong_lead = record.clone();
     wrong_lead.payload[0] = 0x81;
-    assert_eq!(parse_surface(&wrong_lead), None);
+    assert_eq!(parse_surface(&wrong_lead.record()), None);
     let mut nonzero_tail = record;
     nonzero_tail.payload[200] = 1;
-    assert_eq!(parse_surface(&nonzero_tail), None);
+    assert_eq!(parse_surface(&nonzero_tail.record()), None);
 }
 
 #[test]
@@ -847,13 +882,16 @@ fn torus_frames_admit_the_native_1e12_distance_band() {
     let torus = |axis: [f64; 3]| {
         let mut payload = payload.clone();
         set(&mut payload, 73, &axis);
-        parse_surface(&B5Record {
-            offset: 0,
-            family: 0xb5,
-            class: 0x2b,
-            object_id: 7,
-            payload,
-        })
+        parse_surface(
+            &B5RecordBuf {
+                offset: 0,
+                family: 0xb5,
+                class: 0x2b,
+                object_id: 7,
+                payload,
+            }
+            .record(),
+        )
     };
     // One component 0.9e-12 from the cross product is inside the native
     // 1e-12 distance. The frame holds the stored axis and direction_x.
@@ -881,7 +919,7 @@ fn line_pcurve_decodes_every_complete_mode() {
         for value in values {
             payload.extend_from_slice(&value.to_le_bytes());
         }
-        B5Record {
+        B5RecordBuf {
             offset: 0,
             family: 0xb5,
             class: 0x18,
@@ -890,7 +928,7 @@ fn line_pcurve_decodes_every_complete_mode() {
         }
     };
 
-    let general = parse_line_pcurve(&record(0x01, &[2.0, 3.0, 4.0, -2.0, 1.0, 5.0]))
+    let general = parse_line_pcurve(&record(0x01, &[2.0, 3.0, 4.0, -2.0, 1.0, 5.0]).record())
         .expect("general line pcurve");
     assert_eq!(general.surface, 2);
     assert_eq!(
@@ -898,15 +936,15 @@ fn line_pcurve_decodes_every_complete_mode() {
         crate::test_support::test_b5::finite_lane(&[1.0, 5.0])
     );
     assert_eq!(general.control_points, [[6.0, 1.0], [22.0, -7.0]]);
-    let tiny = parse_line_pcurve(&record(0x01, &[0.0, 0.0, 1e-200, -1e-200, 1.0, 5.0]))
+    let tiny = parse_line_pcurve(&record(0x01, &[0.0, 0.0, 1e-200, -1e-200, 1.0, 5.0]).record())
         .expect("tiny nonzero line direction");
     assert_eq!(tiny.control_points, [[1e-200, -1e-200], [5e-200, -5e-200]]);
     let mut wrong_family = record(0x01, &[2.0, 3.0, 4.0, -2.0, 1.0, 5.0]);
     wrong_family.family = 0xa8;
-    assert!(parse_line_pcurve(&wrong_family).is_none());
+    assert!(parse_line_pcurve(&wrong_family.record()).is_none());
 
     let constant_u =
-        parse_line_pcurve(&record(0x05, &[3.0, -2.0, 7.0])).expect("constant-U pcurve");
+        parse_line_pcurve(&record(0x05, &[3.0, -2.0, 7.0]).record()).expect("constant-U pcurve");
     assert_eq!(
         constant_u.distinct_knots,
         crate::test_support::test_b5::finite_lane(&[-2.0, 7.0])
@@ -914,7 +952,7 @@ fn line_pcurve_decodes_every_complete_mode() {
     assert_eq!(constant_u.control_points, [[3.0, -2.0], [3.0, 7.0]]);
 
     let constant_v =
-        parse_line_pcurve(&record(0x09, &[3.0, -2.0, 7.0])).expect("constant-V pcurve");
+        parse_line_pcurve(&record(0x09, &[3.0, -2.0, 7.0]).record()).expect("constant-V pcurve");
     assert_eq!(
         constant_v.distinct_knots,
         crate::test_support::test_b5::finite_lane(&[-2.0, 7.0])
@@ -929,7 +967,7 @@ fn line_pcurve_rejects_degenerate_or_unclosed_payloads() {
         for value in values {
             payload.extend_from_slice(&value.to_le_bytes());
         }
-        B5Record {
+        B5RecordBuf {
             offset: 0,
             family: 0xb5,
             class: 0x18,
@@ -938,13 +976,13 @@ fn line_pcurve_rejects_degenerate_or_unclosed_payloads() {
         }
     };
 
-    assert!(parse_line_pcurve(&record(0x01, &[2.0, 3.0, 0.0, 0.0, 1.0, 5.0])).is_none());
-    assert!(parse_line_pcurve(&record(0x05, &[3.0, 2.0, 2.0])).is_none());
-    assert!(parse_line_pcurve(&record(0x0d, &[3.0, -2.0, 7.0])).is_none());
+    assert!(parse_line_pcurve(&record(0x01, &[2.0, 3.0, 0.0, 0.0, 1.0, 5.0]).record()).is_none());
+    assert!(parse_line_pcurve(&record(0x05, &[3.0, 2.0, 2.0]).record()).is_none());
+    assert!(parse_line_pcurve(&record(0x0d, &[3.0, -2.0, 7.0]).record()).is_none());
 
     let mut tailed = record(0x09, &[3.0, -2.0, 7.0]);
     tailed.payload.push(0);
-    assert!(parse_line_pcurve(&tailed).is_none());
+    assert!(parse_line_pcurve(&tailed.record()).is_none());
 }
 
 #[test]
@@ -956,14 +994,14 @@ fn circle_pcurve_preserves_arc_length_parameterization() {
         }
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x19,
         object_id: 0x1235,
         payload,
     };
-    let pcurve = parse_circle_pcurve(&record).expect("circle pcurve");
+    let pcurve = parse_circle_pcurve(&record.record()).expect("circle pcurve");
     assert_eq!(pcurve.surface, 0x1234);
     assert_eq!(pcurve.degree, 2);
     assert_eq!(
@@ -983,7 +1021,7 @@ fn circle_pcurve_preserves_arc_length_parameterization() {
     assert!((pcurve.control_points[4][0] + 2.0).abs() < 1.0e-12);
     let mut wrong_family = record;
     wrong_family.family = 0xa8;
-    assert!(parse_circle_pcurve(&wrong_family).is_none());
+    assert!(parse_circle_pcurve(&wrong_family.record()).is_none());
 }
 
 #[test]
@@ -1004,14 +1042,14 @@ fn class_1a_pcurve_uses_diameter_period_parameterization() {
     ] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x1a,
         object_id: 0x1235,
         payload,
     };
-    let pcurve = parse_class_1a_pcurve(&record).expect("class-1a pcurve");
+    let pcurve = parse_class_1a_pcurve(&record.record()).expect("class-1a pcurve");
     assert_eq!(pcurve.surface, 0x1234);
     assert_eq!(
         pcurve.distinct_knots,
@@ -1034,16 +1072,16 @@ fn class_1a_pcurve_uses_diameter_period_parameterization() {
     tiny.payload[22..30].copy_from_slice(&diameter.to_le_bytes());
     tiny.payload[54..62].copy_from_slice(&(period * 0.5).to_le_bytes());
     tiny.payload[70..78].copy_from_slice(&period.to_le_bytes());
-    assert!(parse_class_1a_pcurve(&tiny).is_some());
+    assert!(parse_class_1a_pcurve(&tiny.record()).is_some());
 
     let wrong_period = 1e-13_f64;
     tiny.payload[54..62].copy_from_slice(&(wrong_period * 0.5).to_le_bytes());
     tiny.payload[70..78].copy_from_slice(&wrong_period.to_le_bytes());
-    assert!(parse_class_1a_pcurve(&tiny).is_none());
+    assert!(parse_class_1a_pcurve(&tiny.record()).is_none());
 
     let mut wrong_family = record;
     wrong_family.family = 0xa8;
-    assert!(parse_class_1a_pcurve(&wrong_family).is_none());
+    assert!(parse_class_1a_pcurve(&wrong_family.record()).is_none());
 }
 
 #[test]
@@ -1066,14 +1104,14 @@ fn class_1a_pcurve_accepts_a_finite_nonzero_diameter() {
         ] {
             payload.extend_from_slice(&value.to_le_bytes());
         }
-        let record = B5Record {
+        let record = B5RecordBuf {
             offset: 0,
             family: 0xb5,
             class: 0x1a,
             object_id: 7,
             payload,
         };
-        let pcurve = parse_class_1a_pcurve(&record).expect("class-1a pcurve");
+        let pcurve = parse_class_1a_pcurve(&record.record()).expect("class-1a pcurve");
         assert_eq!(
             pcurve.control_points[0],
             crate::test_support::test_b5::finite_vector([diameter * 0.5, 0.0])
@@ -1091,15 +1129,15 @@ fn noncanonical_class_1a_payload_remains_opaque() {
     for value in [2.0_f64, 0.0, 1.0, 0.0, 1.0, 1.0, 3.0] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x1a,
         object_id: 7,
         payload,
     };
-    assert!(parse_class_1a_pcurve(&record).is_none());
-    assert!(parse_opaque_pcurve(&record).is_some());
+    assert!(parse_class_1a_pcurve(&record.record()).is_none());
+    assert!(parse_opaque_pcurve(&record.record()).is_some());
 }
 
 #[test]
@@ -1131,7 +1169,7 @@ fn opaque_conic_pcurves_retain_support_identity_and_payload() {
     ellipse.extend_from_slice(&[0; 16]);
     ellipse.extend_from_slice(&[0x05, 0x05]);
     ellipse.extend_from_slice(&[0; 56]);
-    let ellipse_record = B5Record {
+    let ellipse_record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x1a,
@@ -1139,7 +1177,7 @@ fn opaque_conic_pcurves_retain_support_identity_and_payload() {
         payload: ellipse.clone(),
     };
     assert_eq!(
-        parse_opaque_pcurve(&ellipse_record),
+        parse_opaque_pcurve(&ellipse_record.record()),
         Some(B5OpaquePcurve {
             object_id: 7,
             surface: 2,
@@ -1155,13 +1193,13 @@ fn opaque_conic_pcurves_retain_support_identity_and_payload() {
     class_1d.extend_from_slice(&[0; 24]);
     class_1d.push(0x1d);
     class_1d.extend_from_slice(&[0; 40]);
-    let class_1d_record = B5Record {
+    let class_1d_record = B5RecordBuf {
         class: 0x1d,
         payload: class_1d.clone(),
         ..ellipse_record
     };
     assert_eq!(
-        parse_opaque_pcurve(&class_1d_record),
+        parse_opaque_pcurve(&class_1d_record.record()),
         Some(B5OpaquePcurve {
             object_id: 7,
             surface: 2,
@@ -1172,7 +1210,7 @@ fn opaque_conic_pcurves_retain_support_identity_and_payload() {
     );
     let mut wrong_family = class_1d_record;
     wrong_family.family = 0xa8;
-    assert_eq!(parse_opaque_pcurve(&wrong_family), None);
+    assert_eq!(parse_opaque_pcurve(&wrong_family.record()), None);
 }
 
 #[test]
@@ -1197,7 +1235,7 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
     for value in [chart_scale, -0.75, 1.0 / chart_scale, -1.25, 0.0] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x1d,
@@ -1216,7 +1254,7 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
     };
 
     assert_eq!(
-        parse_sphere_great_circle_pcurve(&record, &sphere),
+        parse_sphere_great_circle_pcurve(&record.record(), &sphere),
         Some(B5SphereGreatCirclePcurve {
             u_bounds: crate::test_support::test_b5::increasing([
                 chart_scale * 0.25,
@@ -1236,7 +1274,7 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
     let mut outside_surface_chart = record.clone();
     outside_surface_chart.payload[2..10].copy_from_slice(&(-1.0_f64).to_le_bytes());
     assert_eq!(
-        parse_sphere_great_circle_pcurve(&outside_surface_chart, &sphere),
+        parse_sphere_great_circle_pcurve(&outside_surface_chart.record(), &sphere),
         None
     );
 
@@ -1246,7 +1284,7 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
     approximate_reciprocal.payload[reciprocal_offset..reciprocal_offset + 8]
         .copy_from_slice(&f64::from_bits((1.0 / chart_scale).to_bits() + 1).to_le_bytes());
     assert_eq!(
-        parse_sphere_great_circle_pcurve(&approximate_reciprocal, &sphere),
+        parse_sphere_great_circle_pcurve(&approximate_reciprocal.record(), &sphere),
         None
     );
 
@@ -1256,7 +1294,7 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
     approximate_chart_scale.payload[scale_offset..scale_offset + 8]
         .copy_from_slice(&f64::from_bits(chart_scale.to_bits() + 1).to_le_bytes());
     assert_eq!(
-        parse_sphere_great_circle_pcurve(&approximate_chart_scale, &sphere),
+        parse_sphere_great_circle_pcurve(&approximate_chart_scale.record(), &sphere),
         None
     );
 
@@ -1266,40 +1304,40 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
         unreachable!()
     };
     *azimuth_range = crate::test_support::test_b5::increasing([rounded_lower, 1.5]);
-    assert!(parse_sphere_great_circle_pcurve(&record, &rounded_surface_bounds).is_some());
+    assert!(parse_sphere_great_circle_pcurve(&record.record(), &rounded_surface_bounds).is_some());
 }
 
 #[test]
 fn surface_aliases_require_their_complete_class_layout() {
-    let alias = B5Record {
+    let alias = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x2e,
         object_id: 9,
         payload: vec![0x38, 0x34, 0x12, 0x00],
     };
-    assert_eq!(surface_alias_target(&alias), Some(0x1234));
+    assert_eq!(surface_alias_target(&alias.record()), Some(0x1234));
 
-    let counted = B5Record {
+    let counted = B5RecordBuf {
         payload: vec![0x81, 0x38, 0x34, 0x12, 0x00],
         ..alias.clone()
     };
-    assert_eq!(surface_alias_target(&counted), Some(0x1234));
+    assert_eq!(surface_alias_target(&counted.record()), Some(0x1234));
 
     let mut tailed = alias.clone();
     tailed.payload.push(0x05);
-    assert_eq!(surface_alias_target(&tailed), None);
+    assert_eq!(surface_alias_target(&tailed.record()), None);
 
-    let chart_alias = B5Record {
+    let chart_alias = B5RecordBuf {
         class: 0x38,
         payload: vec![0x81, 0x38, 0x34, 0x12, 0x00, 0x05, 0x05, 0x09],
         ..alias
     };
-    assert_eq!(surface_alias_target(&chart_alias), Some(0x1234));
+    assert_eq!(surface_alias_target(&chart_alias.record()), Some(0x1234));
 
     let mut truncated_chart_alias = chart_alias;
     truncated_chart_alias.payload.pop();
-    assert_eq!(surface_alias_target(&truncated_chart_alias), None);
+    assert_eq!(surface_alias_target(&truncated_chart_alias.record()), None);
 }
 
 #[test]
@@ -1325,7 +1363,7 @@ fn offset_surface_separates_result_carrier_source_and_bounds() {
     for value in [-2.0f64, 3.0, -4.0, 5.0] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x30,
@@ -1333,7 +1371,12 @@ fn offset_surface_separates_result_carrier_source_and_bounds() {
         payload,
     };
     assert_eq!(
-        parse_offset_surface(&record, &surfaces, &BTreeMap::new(), &HashMap::new()),
+        parse_offset_surface(
+            &record.record(),
+            &surfaces,
+            &BTreeMap::new(),
+            &HashMap::new()
+        ),
         Some(B5OffsetSurface {
             object_id: 9,
             carrier_surface: 2,
@@ -1377,7 +1420,7 @@ fn offset_surface_accepts_a_sphere_result_carrier() {
     for value in [0.0_f64, 2.0, -2.0, 4.0] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x30,
@@ -1386,7 +1429,12 @@ fn offset_surface_accepts_a_sphere_result_carrier() {
     };
 
     assert_eq!(
-        parse_offset_surface(&record, &surfaces, &BTreeMap::new(), &HashMap::new()),
+        parse_offset_surface(
+            &record.record(),
+            &surfaces,
+            &BTreeMap::new(),
+            &HashMap::new()
+        ),
         Some(B5OffsetSurface {
             object_id: 9,
             carrier_surface: 2,
@@ -1431,13 +1479,16 @@ fn cone_frames_admit_the_native_distance_band_on_either_side_of_the_axis() {
     let cone = |axis: [f64; 3]| {
         let mut payload = payload.clone();
         set(&mut payload, 73, &axis);
-        parse_surface(&B5Record {
-            offset: 0,
-            family: 0xb5,
-            class: 0x29,
-            object_id: 7,
-            payload,
-        })
+        parse_surface(
+            &B5RecordBuf {
+                offset: 0,
+                family: 0xb5,
+                class: 0x29,
+                object_id: 7,
+                payload,
+            }
+            .record(),
+        )
     };
     // One component 1.5e-12 from the cross product: inside the 2e-12
     // distance, on either side of the axis. The carrier holds the stored
@@ -1469,13 +1520,16 @@ fn cone_frames_admit_the_native_distance_band_on_either_side_of_the_axis() {
     set(&mut overflow, 73, &[0.0, 0.0, 1.0]);
     set(&mut overflow, 129, &[1.0e308, 1.5e308]);
     assert!(matches!(
-        parse_surface(&B5Record {
-            offset: 0,
-            family: 0xb5,
-            class: 0x29,
-            object_id: 7,
-            payload: overflow,
-        }),
+        parse_surface(
+            &B5RecordBuf {
+                offset: 0,
+                family: 0xb5,
+                class: 0x29,
+                object_id: 7,
+                payload: overflow,
+            }
+            .record()
+        ),
         Some(B5Surface::Cone { surface: None, .. })
     ));
 }
@@ -1501,7 +1555,7 @@ fn offset_surface_does_not_infer_cone_construction_from_result_class() {
     for value in [-3.0_f64, 3.0, -2.0, 4.0] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x30,
@@ -1510,7 +1564,12 @@ fn offset_surface_does_not_infer_cone_construction_from_result_class() {
     };
 
     assert_eq!(
-        parse_offset_surface(&record, &surfaces, &BTreeMap::new(), &HashMap::new()),
+        parse_offset_surface(
+            &record.record(),
+            &surfaces,
+            &BTreeMap::new(),
+            &HashMap::new()
+        ),
         None
     );
 }
@@ -1653,7 +1712,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
     for value in [-0.5f64, -2.0, -4.0, 3.0, 5.0] {
         cache_payload.extend_from_slice(&value.to_le_bytes());
     }
-    let cache = B5Record {
+    let cache = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x31,
@@ -1667,7 +1726,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
     for value in [-2.0f64, 3.0, -4.0, 5.0] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x30,
@@ -1676,7 +1735,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
     };
 
     assert_eq!(
-        parse_offset_surface(&record, &surfaces, &BTreeMap::new(), &records),
+        parse_offset_surface(&record.record(), &surfaces, &BTreeMap::new(), &records),
         Some(B5OffsetSurface {
             object_id: 9,
             carrier_surface: 2,
@@ -1697,7 +1756,7 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
     for value in [2.0f64, -3.0, 4.0] {
         pcurve_payload.extend_from_slice(&value.to_le_bytes());
     }
-    let pcurve = B5Record {
+    let pcurve = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x18,
@@ -1709,7 +1768,7 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         wrapper_payload.extend_from_slice(&value.to_le_bytes());
     }
     wrapper_payload.push(0x01);
-    let wrapper = B5Record {
+    let wrapper = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x24,
@@ -1721,7 +1780,7 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         directrix_payload.extend_from_slice(&value.to_le_bytes());
     }
     directrix_payload.push(0x01);
-    let directrix = B5Record {
+    let directrix = B5RecordBuf {
         offset: 0,
         family: 0xa8,
         class: 0x25,
@@ -1735,7 +1794,7 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         payload.extend_from_slice(&value.to_le_bytes());
     }
     payload.extend_from_slice(&[0x05, 0x05]);
-    let record = B5Record {
+    let record = B5RecordBuf {
         offset: 0,
         family: 0xb5,
         class: 0x2c,
@@ -1744,7 +1803,7 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
     };
 
     assert_eq!(
-        parse_extrusion_surface(&record, &records, &pcurves),
+        parse_extrusion_surface(&record.record(), &records, &pcurves),
         Some(B5ExtrusionSurface {
             object_id: 8,
             direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
@@ -1772,14 +1831,14 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
     trimmed_interval.payload[directrix_lower_bound..directrix_lower_bound + 8]
         .copy_from_slice(&(-2.0_f64).to_le_bytes());
     assert!(
-        parse_extrusion_surface(&trimmed_interval, &records, &pcurves).is_some(),
+        parse_extrusion_surface(&trimmed_interval.record(), &records, &pcurves).is_some(),
         "the extrusion may use a strict subinterval of its directrix"
     );
     let mut outside_interval = record.clone();
     outside_interval.payload[directrix_lower_bound..directrix_lower_bound + 8]
         .copy_from_slice(&(-3.0_f64 - 1.0e-9).to_le_bytes());
     assert_eq!(
-        parse_extrusion_surface(&outside_interval, &records, &pcurves),
+        parse_extrusion_surface(&outside_interval.record(), &records, &pcurves),
         None,
         "the active interval must remain inside the directrix domain"
     );
@@ -1789,7 +1848,7 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         let tail = candidate.payload.len() - 2;
         candidate.payload[tail..].copy_from_slice(&controls);
         assert!(
-            parse_extrusion_surface(&candidate, &records, &pcurves).is_some(),
+            parse_extrusion_surface(&candidate.record(), &records, &pcurves).is_some(),
             "terminal controls {controls:02x?}"
         );
     }
@@ -1808,7 +1867,7 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         let tail = candidate.payload.len() - 2;
         candidate.payload[tail..].copy_from_slice(&controls);
         assert_eq!(
-            parse_extrusion_surface(&candidate, &records, &pcurves),
+            parse_extrusion_surface(&candidate.record(), &records, &pcurves),
             None,
             "terminal controls {controls:02x?}"
         );

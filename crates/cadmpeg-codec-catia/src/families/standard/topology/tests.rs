@@ -258,6 +258,20 @@ fn duplicate_face_slot_operation(max_collection_items: u64) -> &'static str {
     })
 }
 
+/// The named operation refuses one collection item below its first need.
+fn assert_collection_boundary(
+    operation: &str,
+    mut run: impl FnMut(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError>,
+) {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| crate::test_support::with_collection_limit(cap, &mut run),
+    );
+}
+
 #[test]
 fn standard_endpoint_degrees_propagate_collection_refusal() {
     assert_eq!(
@@ -292,26 +306,26 @@ fn standard_endpoint_degree_entries_refuse_before_growth() {
 
 #[test]
 fn standard_unresolved_assignment_propagates_collection_refusal() {
-    assert_eq!(
-        duplicate_face_slot_operation(12),
-        "catia standard unresolved edge assignment"
-    );
+    assert_collection_boundary("catia standard unresolved edge assignment", |ctx| {
+        duplicate_face_slot_fixture(ctx)?;
+        Ok(())
+    });
 }
 
 #[test]
 fn standard_unresolved_marks_propagate_collection_refusal() {
-    assert_eq!(
-        duplicate_face_slot_operation(13),
-        "catia standard unresolved edge marks"
-    );
+    assert_collection_boundary("catia standard unresolved edge marks", |ctx| {
+        duplicate_face_slot_fixture(ctx)?;
+        Ok(())
+    });
 }
 
 #[test]
 fn standard_duplicate_choices_refuse_before_search_branch() {
-    assert_eq!(
-        duplicate_face_slot_operation(14),
-        "catia_standard_duplicate_choices"
-    );
+    assert_collection_boundary("catia_standard_duplicate_choices", |ctx| {
+        duplicate_face_slot_fixture(ctx)?;
+        Ok(())
+    });
 }
 
 #[test]
@@ -386,13 +400,6 @@ fn ambiguous_duplicate_face_fixture(
     )
 }
 
-fn ambiguous_duplicate_face_operation(max_collection_items: u64) -> &'static str {
-    standard_collection_limit_operation(max_collection_items, |ctx| {
-        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 2]), None)?;
-        Ok(())
-    })
-}
-
 #[test]
 fn standard_duplicate_mesh_edge_faces_refuse_before_search_copy() {
     use cadmpeg_core::CodecError;
@@ -417,26 +424,26 @@ fn standard_duplicate_mesh_edge_faces_refuse_before_search_copy() {
 
 #[test]
 fn standard_duplicate_solution_values_refuse_before_copy() {
-    assert_eq!(
-        ambiguous_duplicate_face_operation(24),
-        "catia_standard_duplicate_solution_values"
-    );
+    assert_collection_boundary("catia_standard_duplicate_solution_values", |ctx| {
+        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 2]), None)?;
+        Ok(())
+    });
 }
 
 #[test]
 fn standard_duplicate_solutions_refuse_before_result_growth() {
-    assert_eq!(
-        ambiguous_duplicate_face_operation(26),
-        "catia_standard_duplicate_solutions"
-    );
+    assert_collection_boundary("catia_standard_duplicate_solutions", |ctx| {
+        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 2]), None)?;
+        Ok(())
+    });
 }
 
 #[test]
 fn standard_duplicate_assignment_marks_propagate_collection_refusal() {
-    assert_eq!(
-        ambiguous_duplicate_face_operation(28),
-        "catia standard duplicate assignment marks"
-    );
+    assert_collection_boundary("catia standard duplicate assignment marks", |ctx| {
+        ambiguous_duplicate_face_fixture(ctx, Some(&[0, 1, 2, 2]), None)?;
+        Ok(())
+    });
 }
 
 #[test]
@@ -875,15 +882,17 @@ fn standard_vertex_point_domain_entries_refuse_collection_limit() {
         .expect("service resource budget")
         .is_none());
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 7;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let result = topology.bind_vertex_points(&ctx, &[[3, 1], [1, 2]]);
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "catia standard vertex point domain entries"));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "catia standard vertex point domain entries",
+        |cap| {
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                topology.bind_vertex_points(ctx, &[[0, 1], [1, 2]])
+            })
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
 }
 
 #[test]

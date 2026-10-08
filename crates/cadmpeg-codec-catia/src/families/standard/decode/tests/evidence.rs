@@ -1618,15 +1618,21 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     })
     .expect("service budget");
     assert_eq!(duplicated, vec![vec![*binding], vec![*binding]]);
-    let reversed = resolve_standard_limit_curve_binding(limit_candidates, [1, 0])
-        .expect("the solved endpoint pair selects the limit curve");
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        resolve_standard_limit_curve_binding(ctx, limit_candidates, [1, 0])
+    })
+    .expect("service budget")
+    .expect("the solved endpoint pair selects the limit curve");
     assert_eq!(reversed.points, [1, 0]);
     assert_eq!(
         reversed.parameter_range,
         [binding.parameter_range[1], binding.parameter_range[0]]
     );
     assert_eq!(
-        resolve_standard_limit_curve_binding(&[*binding, *binding], [0, 1]),
+        crate::test_support::with_service_context(|ctx| {
+            resolve_standard_limit_curve_binding(ctx, &[*binding, *binding], [0, 1])
+        })
+        .expect("service budget"),
         None
     );
 }

@@ -1111,7 +1111,11 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     let populations = vec![population(2, 3, 100), population(2, 3, 200)];
 
     let pairs = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &populations)
+        crate::families::standard::records::pair_standard_populations(
+            ctx,
+            &layouts,
+            populations.clone(),
+        )
     })
     .expect("service resource budget")
     .expect("source-ordered population relation");
@@ -1133,7 +1137,7 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     let mut mismatched = populations.clone();
     mismatched[1] = population(2, 2, 200);
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &mismatched)
+        crate::families::standard::records::pair_standard_populations(ctx, &layouts, mismatched)
     })
     .expect("service resource budget")
     .is_none());
@@ -1141,13 +1145,13 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
         crate::families::standard::records::pair_standard_populations(
             ctx,
             &layouts[..1],
-            &populations,
+            populations.clone(),
         )
     })
     .expect("service resource budget")
     .is_none());
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &[], &[])
+        crate::families::standard::records::pair_standard_populations(ctx, &[], Vec::new())
     })
     .expect("service resource budget")
     .is_none());
@@ -1155,7 +1159,7 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
         crate::families::standard::records::pair_standard_populations(
             ctx,
             &layouts[..1],
-            &populations[..1],
+            populations[..1].to_vec(),
         )
     })
     .expect("service resource budget")

@@ -754,8 +754,10 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     bytes.extend(crate::test_support::test_topology::standard_quad_topology_stream());
 
-    let groups = crate::test_support::with_service_context(|ctx| standard_fbb_groups(ctx, &bytes))
-        .expect("service resource budget");
+    let groups = crate::test_support::with_service_context(|ctx| {
+        standard_fbb_groups(ctx, &bytes, &crate::container::fbb_run_ranges(ctx, &bytes)?)
+    })
+    .expect("service resource budget");
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
         let layout =

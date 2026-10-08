@@ -105,7 +105,9 @@ fn formula_literal_scan_propagates_caller_work_refusal() {
 #[test]
 fn legacy_symbol_ordinal_scan_propagates_caller_work_refusal() {
     crate::test_support::with_work_limit(1, |ctx| {
-        let Err(limit) = super::super::legacy_symbol_matches_input(ctx, "#1_/12", "#1_") else {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            super::super::legacy_symbol_matches_input(ctx, "#1_/12", "#1_")
+        else {
             panic!("ordinal scan must refuse")
         };
         assert_eq!(limit.operation, "catia_legacy_symbol_ordinal_visits");
