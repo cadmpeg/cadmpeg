@@ -213,7 +213,7 @@ pub(super) fn standard_face_frame_vectors(
             }
             if combined_len == expected_face_count {
                 let mut vectors = Vec::new();
-                ctx.reserve_vec(
+                ctx.reserve_capacity(
                     &mut vectors,
                     expected_face_count,
                     "catia_trim_combined_frames",
@@ -603,14 +603,18 @@ pub(super) fn parse_standard_endpoint_candidates(
     {
         return Ok(None);
     }
-    for candidates in ctx.admit_iter(edge_candidates, "catia_standard_iteration")? {
-        if ctx.any_by(
-            candidates,
-            |pair| Ok(pair.iter().any(|point| *point >= vertex_points.len())),
-            "catia_standard_iteration",
-        )? {
-            return Ok(None);
-        }
+    if ctx.any_by(
+        edge_candidates,
+        |candidates| {
+            ctx.any_by(
+                candidates,
+                |pair| Ok(pair.iter().any(|point| *point >= vertex_points.len())),
+                "catia_standard_iteration",
+            )
+        },
+        "catia_standard_iteration",
+    )? {
+        return Ok(None);
     }
 
     reconstruct_incidence_candidates(
@@ -661,14 +665,18 @@ pub(super) fn parse_standard_port_endpoint_candidates(
     {
         return Ok(None);
     }
-    for candidates in ctx.admit_iter(edge_candidates, "catia_standard_iteration")? {
-        if ctx.any_by(
-            candidates,
-            |pair| Ok(pair.iter().any(|point| *point >= vertex_points.len())),
-            "catia_standard_iteration",
-        )? {
-            return Ok(None);
-        }
+    if ctx.any_by(
+        edge_candidates,
+        |candidates| {
+            ctx.any_by(
+                candidates,
+                |pair| Ok(pair.iter().any(|point| *point >= vertex_points.len())),
+                "catia_standard_iteration",
+            )
+        },
+        "catia_standard_iteration",
+    )? {
+        return Ok(None);
     }
     reconstruct_incidence_candidates(
         ctx,
@@ -2190,7 +2198,7 @@ fn parse_trim_chain_with_length_encoding(
 
     let mut solutions = Vec::new();
     let mut reversed = Vec::<TrimRecord>::new();
-    ctx.reserve_vec(&mut reversed, record_count, "catia_trim_reversed")?;
+    ctx.reserve_capacity(&mut reversed, record_count, "catia_trim_reversed")?;
     let mut frames = Vec::new();
     ctx.push_vec(
         &mut frames,

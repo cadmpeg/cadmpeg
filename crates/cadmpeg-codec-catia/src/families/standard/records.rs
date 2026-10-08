@@ -378,9 +378,11 @@ pub(super) fn standard_surface_record_groups(
     ctx: &DecodeContext<'_>,
     brep: &[u8],
 ) -> Result<Vec<Vec<StandardSurfaceRecord>>, CodecError> {
-    let table = standard_surface_record_table(ctx, brep)?;
-    let mut has_predecessor =
-        ctx.alloc_filled(table.records.len(), false, "catia_surface_has_predecessor")?;
+    let mut storage = ctx.reserve_scoped(0, "catia_surface_group_scratch")?;
+    let table = storage.with_storage(|| standard_surface_record_table(ctx, brep))?;
+    let mut has_predecessor = storage.with_storage(|| {
+        ctx.alloc_filled(table.records.len(), false, "catia_surface_has_predecessor")
+    })?;
     for successor in ctx
         .admit_iter(&table.successors, "catia_standard_iteration")?
         .filter_map(|successor| *successor)
@@ -491,7 +493,8 @@ pub(super) fn pair_standard_populations(
     let Some(first) = pairs.next() else {
         return Ok(None);
     };
-    let rest = ctx.collect_vec(pairs, "catia_population_pairs")?;
+    let mut rest = ctx.collection_vec(pairs.len(), "catia_population_pairs")?;
+    rest.extend(pairs);
     Ok(Some(StandardPopulationPairs { first, rest }))
 }
 

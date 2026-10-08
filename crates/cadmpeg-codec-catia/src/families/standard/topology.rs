@@ -255,8 +255,10 @@ impl StandardTopologyDraft {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<Vec<usize>>, CodecError> {
-        let mut union = UnionFind::charged(ctx, self.faces.len(), "catia_face_component_union")?;
         let mut storage = ctx.reserve_scoped(0, "catia_face_component_edges")?;
+        let mut union = storage.with_storage(|| {
+            UnionFind::charged(ctx, self.faces.len(), "catia_face_component_union")
+        })?;
         let mut first_face_by_edge = HashMap::<usize, usize>::new();
         for (face, topology) in ctx
             .admit_iter(&self.faces, "catia_face_component_edges")?
@@ -1218,14 +1220,18 @@ pub(super) fn complete_duplicate_face_slots(
             }
         }
     }
-    for row in ctx.admit_iter(&degrees, "catia_standard_duplicate_degree_rows")? {
-        if ctx.any_by(
-            row,
-            |(_, degree)| Ok(*degree > 2),
-            "catia_standard_duplicate_degree_values",
-        )? {
-            return Ok(None);
-        }
+    if ctx.any_by(
+        &degrees,
+        |row| {
+            ctx.any_by(
+                row,
+                |(_, degree)| Ok(*degree > 2),
+                "catia_standard_duplicate_degree_values",
+            )
+        },
+        "catia_standard_duplicate_degree_rows",
+    )? {
+        return Ok(None);
     }
     // Most constrained first: order the unresolved edges by how many faces
     // can still take them, counted once per edge.
