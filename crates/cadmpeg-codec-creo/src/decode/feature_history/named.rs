@@ -18,8 +18,7 @@ use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
-    feature_revolution_extent,
-    feature_schema_class, feature_section_sweep_semantics_conflict,
+    feature_revolution_extent, feature_schema_class, feature_section_sweep_semantics_conflict,
 };
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
@@ -112,7 +111,8 @@ fn name_only_feature_definition(
             source_carriers,
             feature_id,
             section_sweep_boolean_operation(
-                super::operations::feature_recipe(ctx, scan, feature_id)?.map(crate::feature::operations::FeatureRecipe::effect),
+                super::operations::feature_recipe(ctx, scan, feature_id)?
+                    .map(crate::feature::operations::FeatureRecipe::effect),
                 kind,
                 false,
                 preceding_features_establish_body(ctx, ir)?,
@@ -155,7 +155,8 @@ fn name_only_feature_definition(
     if kind == "Extrude" || numbered_feature_name_has_family(ctx, kind, "Extrude")? {
         let output_kind = sweep_output_kind(ctx, scan, ir, "extrusion", feature_id)?;
         let op = section_sweep_boolean_operation(
-            super::operations::feature_recipe(ctx, scan, feature_id)?.map(crate::feature::operations::FeatureRecipe::effect),
+            super::operations::feature_recipe(ctx, scan, feature_id)?
+                .map(crate::feature::operations::FeatureRecipe::effect),
             kind,
             output_kind.is_some(),
             preceding_features_establish_body(ctx, ir)?,
@@ -172,7 +173,8 @@ fn name_only_feature_definition(
     if kind == "Revolve" || numbered_feature_name_has_family(ctx, kind, "Revolve")? {
         let output_kind = sweep_output_kind(ctx, scan, ir, "revolution", feature_id)?;
         let op = section_sweep_boolean_operation(
-            super::operations::feature_recipe(ctx, scan, feature_id)?.map(crate::feature::operations::FeatureRecipe::effect),
+            super::operations::feature_recipe(ctx, scan, feature_id)?
+                .map(crate::feature::operations::FeatureRecipe::effect),
             kind,
             output_kind.is_some(),
             preceding_features_establish_body(ctx, ir)?,
@@ -203,8 +205,13 @@ pub(in super::super) fn named_or_referenced_feature_definition(
         return Ok(Some(definition));
     }
     if kind == "Native Feature"
-        && crate::decode::uniqueness::exactly_one_by(ctx, &scan.features.operations, |operation| Ok(operation.feature_id == feature_id), "creo current feature operation lookup")?
-            .is_some_and(|operation| operation.display_state_conflict)
+        && crate::decode::uniqueness::exactly_one_by(
+            ctx,
+            &scan.features.operations,
+            |operation| Ok(operation.feature_id == feature_id),
+            "creo current feature operation lookup",
+        )?
+        .is_some_and(|operation| operation.display_state_conflict)
     {
         return Ok(None);
     }
@@ -378,7 +385,9 @@ fn surface_intersect_feature_definition(
         let mut all_surfaces_owned = true;
         let mut entry_iter = table.entries.iter();
         while let Some(entry) = ctx.next_charged(&mut entry_iter, "creo intersect table entries")? {
-            if !table.contains_surface_id(entry.entity_id) { continue; }
+            if !table.contains_surface_id(entry.entity_id) {
+                continue;
+            }
             surface_count = surface_count.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit("creo intersect surface count", u64::MAX, u64::MAX)
             })?;

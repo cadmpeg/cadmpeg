@@ -88,15 +88,18 @@ fn equal_distance_chamfer_setback_propagates_scan_refusal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits, Some("creo chamfer cone support pairs"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_work_units = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        Some("creo chamfer cone support pairs"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
 
-    equal_distance_chamfer_setback(&ctx, &cones, &supports).map(|_| ())
-            });
+            equal_distance_chamfer_setback(&ctx, &cones, &supports).map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
 
@@ -233,8 +236,18 @@ fn chamfer_limit_error(operation: &'static str) {
     let scan = chamfer_scan();
     let ir = CadIr::empty();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation,
-        |ctx| chamfer_constant_distance(ctx, &scan, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(), 914),
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            chamfer_constant_distance(
+                ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                914,
+            )
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -266,22 +279,26 @@ fn chamfer_feature_definition_propagates_cone_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo chamfer cone witnesses"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    crate::decode::feature_history::draft::schema_feature_definition(
-        &ctx,
-        &scan,
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        914,
-        Some(crate::feature::schema::SchemaClass::Chamfer),
-        "Chamfer",
-    ).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo chamfer cone witnesses"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            crate::decode::feature_history::draft::schema_feature_definition(
+                &ctx,
+                &scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                914,
+                Some(crate::feature::schema::SchemaClass::Chamfer),
+                "Chamfer",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = crate::decode::feature_history::draft::schema_feature_definition(

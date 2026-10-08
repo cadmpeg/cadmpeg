@@ -68,31 +68,39 @@ fn dependency_collection_error(operation: &'static str, route: &str) {
         offset: 0,
     };
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation,
-        |ctx| { match route {
-        "parent" => native_feature_dependency_ids(
-            ctx,
-            &[parent.clone()],
-            &[],
-            &[],
-            &[],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
-            (17, &[]),
-        )
-        .map(|_| ()),
-        "owned" | "output" => feature_output_surface_dependencies(
-            ctx,
-            &[owned.clone(), consumer.clone()],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows([surface.clone()].to_vec()),
-            17,
-        )
-        .map(|_| ()),
-        "entity" => feature_entity_dependencies(ctx, &[producer.clone(), consumer.clone()], 17).map(|_| ()),
-        "merge" => {
-            surface_merge_entity_dependencies(ctx, &[], &[replay.clone()], &[producer.clone()], 17).map(|_| ())
-        }
-        _ => panic!("unknown dependency fixture route"),
-    } },
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| match route {
+            "parent" => native_feature_dependency_ids(
+                ctx,
+                &[parent.clone()],
+                &[],
+                &[],
+                &[],
+                &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
+                (17, &[]),
+            )
+            .map(|_| ()),
+            "owned" | "output" => feature_output_surface_dependencies(
+                ctx,
+                &[owned.clone(), consumer.clone()],
+                &crate::surface::unique_rows::UniqueIdRows::from_rows([surface.clone()].to_vec()),
+                17,
+            )
+            .map(|_| ()),
+            "entity" => feature_entity_dependencies(ctx, &[producer.clone(), consumer.clone()], 17)
+                .map(|_| ()),
+            "merge" => surface_merge_entity_dependencies(
+                ctx,
+                &[],
+                &[replay.clone()],
+                &[producer.clone()],
+                17,
+            )
+            .map(|_| ()),
+            _ => panic!("unknown dependency fixture route"),
+        },
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
@@ -136,21 +144,22 @@ fn feature_dependency_limit_error(
     ir.model.features[0].id =
         IrFeatureId::mint("creo:model:feature#3").expect("fixture feature ID");
     let prototypes = BTreeMap::from([(17, vec![3])]);
-    let error = crate::test_support::last_refusal_at(&[], dimension, operation,
-        |ctx| { if native_only {
-        native_feature_dependency_ids(
-            ctx,
-            &scan.features.affected_ids,
-            &scan.features.operations,
-            &scan.features.entity_tables,
-            &scan.features.surface_merge_replay_affected_ids,
-            &scan.surfaces.rows,
-            (17, &[3]),
-        )
-        .map(|_| ())
-    } else {
-        feature_dependencies(ctx, &scan, &ir, 17, &prototypes).map(|_| ())
-    } });
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        if native_only {
+            native_feature_dependency_ids(
+                ctx,
+                &scan.features.affected_ids,
+                &scan.features.operations,
+                &scan.features.entity_tables,
+                &scan.features.surface_merge_replay_affected_ids,
+                &scan.surfaces.rows,
+                (17, &[3]),
+            )
+            .map(|_| ())
+        } else {
+            feature_dependencies(ctx, &scan, &ir, 17, &prototypes).map(|_| ())
+        }
+    });
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -160,17 +169,29 @@ fn feature_dependency_limit_error(
 
 #[test]
 fn native_feature_dependencies_refuse_collection_limit() {
-    feature_dependency_limit_error(cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo native feature dependencies", true);
+    feature_dependency_limit_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo native feature dependencies",
+        true,
+    );
 }
 
 #[test]
 fn feature_dependency_id_refuses_retained_limit() {
-    feature_dependency_limit_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo feature dependency IDs", false);
+    feature_dependency_limit_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo feature dependency IDs",
+        false,
+    );
 }
 
 #[test]
 fn feature_dependencies_refuse_collection_limit() {
-    feature_dependency_limit_error(cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo feature dependencies", false);
+    feature_dependency_limit_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo feature dependencies",
+        false,
+    );
 }
 
 #[test]
@@ -203,10 +224,16 @@ fn dependency_result(limit: u64) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> 
 #[test]
 fn prototype_dependency_consumer_node_refuses_before_insertion() {
     assert_eq!(
-        dependency_result(DecodePolicy::service().limits.max_collection_items).expect("service limit admits the consumer and producer"),
+        dependency_result(DecodePolicy::service().limits.max_collection_items)
+            .expect("service limit admits the consumer and producer"),
         BTreeMap::from([(286, vec![40])])
     );
-    let error = dependency_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo prototype dependency consumers"), dependency_result)).expect_err("one consumer requires a map node");
+    let error = dependency_result(crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo prototype dependency consumers"),
+        dependency_result,
+    ))
+    .expect_err("one consumer requires a map node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -217,7 +244,12 @@ fn prototype_dependency_consumer_node_refuses_before_insertion() {
 
 #[test]
 fn prototype_dependency_producer_vec_refuses_before_growth() {
-    let error = dependency_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo prototype dependency producers"), dependency_result)).expect_err("producer follows its consumer node");
+    let error = dependency_result(crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo prototype dependency producers"),
+        dependency_result,
+    ))
+    .expect_err("producer follows its consumer node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -312,14 +344,25 @@ fn unemitted_native_dependency_skips_duplicate_membership_at_work_limit() {
     let bounded = crate::test_support::assert_work_boundaries(
         &["creo native dependency emission lookup"],
         |ctx| {
-            let result = reconciled_dependencies(ctx, &owner, std::slice::from_ref(&parent), [missing.clone()], &emitted);
-            if ctx.resource_refusal().is_some_and(|resource| resource.operation == "creo native dependency duplicate lookup") {
+            let result = reconciled_dependencies(
+                ctx,
+                &owner,
+                std::slice::from_ref(&parent),
+                [missing.clone()],
+                &emitted,
+            );
+            if ctx.resource_refusal().is_some_and(|resource| {
+                resource.operation == "creo native dependency duplicate lookup"
+            }) {
                 duplicate_query_reached.set(true);
             }
             result
         },
     );
-    assert!(!duplicate_query_reached.get(), "an un-emitted dependency skips duplicate membership");
+    assert!(
+        !duplicate_query_reached.get(),
+        "an un-emitted dependency skips duplicate membership"
+    );
     assert_eq!(bounded, vec![parent.clone()]);
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
@@ -344,15 +387,18 @@ fn established_dependency_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo established dependency IDs"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let dependency = dependency.clone();
-let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    reconciled_dependencies(&ctx, &owner, &[dependency], [], &emitted).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo established dependency IDs"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let dependency = dependency.clone();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            reconciled_dependencies(&ctx, &owner, &[dependency], [], &emitted).map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = reconciled_dependencies(&ctx, &owner, &[dependency], [], &emitted)
@@ -372,15 +418,18 @@ fn reconciled_dependencies_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo reconciled dependencies"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let dependency = dependency.clone();
-let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    reconciled_dependencies(&ctx, &owner, &[], [dependency], &emitted).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo reconciled dependencies"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let dependency = dependency.clone();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            reconciled_dependencies(&ctx, &owner, &[], [dependency], &emitted).map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = reconciled_dependencies(&ctx, &owner, &[], [dependency], &emitted)
@@ -449,14 +498,18 @@ fn generated_dependency_refuses_before_output_row() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo generated dependencies"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    feature_generated_dependencies(&ctx, &one_generated_face_dependency()).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo generated dependencies"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root");
+            feature_generated_dependencies(&ctx, &one_generated_face_dependency()).map(|_| ())
+        },
+    );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
     let error = feature_generated_dependencies(&ctx, &one_generated_face_dependency())
@@ -517,25 +570,31 @@ fn emitted_feature_identity_error(scoped: bool) {
     let mut policy = DecodePolicy::service();
     if scoped {
         policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
-            ResourceDimension::MaterializedBytes, Some(operation), |cap| {
+            ResourceDimension::MaterializedBytes,
+            Some(operation),
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = policy;
                 policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is admitted");
                 super::reconcile_feature_links(&ctx, &scan, &mut ir.clone(), &BTreeMap::new())
             },
         );
     } else {
         policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some(operation), |cap| {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some(operation),
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = policy;
                 policy.limits.max_collection_items = cap;
                 let mut ir = ir.clone();
-let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new()).map(|_| ())
-            });
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is admitted");
+                super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new()).map(|_| ())
+            },
+        );
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
@@ -595,8 +654,10 @@ fn feature_order_collection_error(operation: &'static str) {
     let scan = crate::test_support::empty_container_scan();
     let ir = reconciliation_ir_for_ordering();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation,
-        |ctx| { super::reconcile_feature_links(ctx, &scan, &mut ir.clone(), &BTreeMap::new()) },
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| super::reconcile_feature_links(ctx, &scan, &mut ir.clone(), &BTreeMap::new()),
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
@@ -660,8 +721,9 @@ fn regeneration_edge_limit_error(
 ) {
     let scan = regeneration_scan();
     let ir = reconciliation_ir_for_ordering();
-    let error = crate::test_support::last_refusal_at(&[], dimension, operation,
-        |ctx| { super::reconcile_feature_links(ctx, &scan, &mut ir.clone(), &BTreeMap::new()) });
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir.clone(), &BTreeMap::new())
+    });
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -671,24 +733,36 @@ fn regeneration_edge_limit_error(
 
 #[test]
 fn regeneration_parent_id_refuses_retained_limit() {
-    regeneration_edge_limit_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo regeneration parent IDs");
+    regeneration_edge_limit_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo regeneration parent IDs",
+    );
 }
 
 #[test]
 fn regeneration_child_id_refuses_retained_limit() {
-    regeneration_edge_limit_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo regeneration child IDs");
+    regeneration_edge_limit_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo regeneration child IDs",
+    );
 }
 
 #[test]
 fn regeneration_edges_refuse_collection_limit() {
     // The dependency uniqueness index admits one borrowed member first.
-    regeneration_edge_limit_error(cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo regeneration edges");
+    regeneration_edge_limit_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo regeneration edges",
+    );
 }
 
 #[test]
 fn regeneration_parent_nodes_refuse_collection_limit() {
     // The dependency uniqueness index stores one borrowed member.
-    regeneration_edge_limit_error(cadmpeg_core::decode::ResourceDimension::CollectionItems, "install decoded feature regeneration parent");
+    regeneration_edge_limit_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "install decoded feature regeneration parent",
+    );
 }
 
 #[test]
@@ -710,8 +784,14 @@ fn reconciled_native_dependency_error(
 ) {
     let scan = crate::test_support::empty_container_scan();
     let ir = reconciliation_ir_with_emitted_parent();
-    let error = crate::test_support::last_refusal_at(&[], dimension, operation,
-        |ctx| { super::reconcile_feature_links(ctx, &scan, &mut ir.clone(), &BTreeMap::from([(10, vec![3])])) });
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        super::reconcile_feature_links(
+            ctx,
+            &scan,
+            &mut ir.clone(),
+            &BTreeMap::from([(10, vec![3])]),
+        )
+    });
     assert!(
         matches!(error, CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -721,12 +801,18 @@ fn reconciled_native_dependency_error(
 
 #[test]
 fn reconciled_native_dependency_id_refuses_retained_limit() {
-    reconciled_native_dependency_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo reconciled native dependency IDs");
+    reconciled_native_dependency_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo reconciled native dependency IDs",
+    );
 }
 
 #[test]
 fn reconciled_native_dependencies_refuse_collection_limit() {
-    reconciled_native_dependency_error(cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo reconciled native dependencies");
+    reconciled_native_dependency_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo reconciled native dependencies",
+    );
 }
 
 #[test]
@@ -852,10 +938,10 @@ fn feature_dependency_copy_refuses_at_work_boundary() {
     let mut ir = reconciliation_ir_with_generated_dependency();
     ir.model.features[0].id =
         IrFeatureId::mint("creo:model:feature#3").expect("fixture feature ID");
-    let dependencies = crate::test_support::assert_work_boundaries(
-        &["creo feature dependency IDs"],
-        |ctx| feature_dependencies(ctx, &scan, &ir, 17, &BTreeMap::from([(17, vec![3])])),
-    );
+    let dependencies =
+        crate::test_support::assert_work_boundaries(&["creo feature dependency IDs"], |ctx| {
+            feature_dependencies(ctx, &scan, &ir, 17, &BTreeMap::from([(17, vec![3])]))
+        });
     assert_eq!(
         dependencies,
         vec![IrFeatureId::mint("creo:model:feature#3").expect("fixture dependency ID")],
@@ -968,4 +1054,25 @@ fn remaining_feature_order_removal_charges_only_suffix_bytes() {
     .expect("service profile admits feature ordering");
     assert_eq!(ir.model.features[0].ordinal, 0);
     assert_eq!(ir.model.features[1].ordinal, 1);
+}
+
+#[test]
+fn empty_feature_reconciliation_skips_operation_index() {
+    let scan = regeneration_scan();
+    let operation_query = std::cell::Cell::new(false);
+    let ir = crate::test_support::assert_work_boundaries(&[], |ctx| {
+        let mut ir = CadIr::empty();
+        let result = super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new());
+        if let Err(CodecError::ResourceLimit(resource)) = &result {
+            if matches!(
+                resource.operation,
+                "creo current operation rows" | "creo current operation index nodes"
+            ) {
+                operation_query.set(true);
+            }
+        }
+        result.map(|()| ir)
+    });
+    assert!(ir.model.features.is_empty());
+    assert!(!operation_query.get());
 }

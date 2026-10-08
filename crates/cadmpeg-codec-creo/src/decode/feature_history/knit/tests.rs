@@ -86,15 +86,16 @@ fn one_knit_scan() -> crate::container::ContainerScan<'static> {
 fn knit_operand_collection_error(operation: &'static str, route: &str) {
     let scan = one_knit_scan();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation,
-        |ctx| { match route {
-        "class" => {
-            knit_class_100_operand_entity_ids(ctx, 416, &scan.features.entity_tables).map(|_| ())
-        }
-        "quilt" => knit_operand_entity_ids(ctx, &scan, 416).map(|_| ()),
-        "surface" => knit_operand_surface_ids(ctx, &scan, 416, &[103]).map(|_| ()),
-        _ => panic!("unknown fixture route"),
-    } },
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| match route {
+            "class" => knit_class_100_operand_entity_ids(ctx, 416, &scan.features.entity_tables)
+                .map(|_| ()),
+            "quilt" => knit_operand_entity_ids(ctx, &scan, 416).map(|_| ()),
+            "surface" => knit_operand_surface_ids(ctx, &scan, 416, &[103]).map(|_| ()),
+            _ => panic!("unknown fixture route"),
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -235,14 +236,17 @@ fn generated_face_reference_error(
     )
     .expect("fixture feature ID")]);
     let results = std::collections::BTreeMap::from([(17, vec![201])]);
-    let error = crate::test_support::last_refusal_at(&[], dimension, operation,
-        |ctx| { generated_surface_face_refs(
-        ctx,
-        &[201],
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(std::slice::from_ref(&row).to_vec()),
-        &results,
-        &available,
-    ) });
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        generated_surface_face_refs(
+            ctx,
+            &[201],
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                std::slice::from_ref(&row).to_vec(),
+            ),
+            &results,
+            &available,
+        )
+    });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -252,17 +256,26 @@ fn generated_face_reference_error(
 
 #[test]
 fn generated_surface_feature_id_refuses_retained_limit() {
-    generated_face_reference_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo generated surface feature IDs");
+    generated_face_reference_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo generated surface feature IDs",
+    );
 }
 
 #[test]
 fn generated_surface_local_id_refuses_retained_limit() {
-    generated_face_reference_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo generated surface local IDs");
+    generated_face_reference_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo generated surface local IDs",
+    );
 }
 
 #[test]
 fn generated_surface_face_references_refuse_collection_limit() {
-    generated_face_reference_error(cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo generated surface face references");
+    generated_face_reference_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo generated surface face references",
+    );
 }
 
 fn one_result_surface() -> (
@@ -314,14 +327,15 @@ fn topology_limit_error(
         (Vec::new(), Vec::new())
     };
     let curve_rows = if face { Vec::new() } else { one_result_edge() };
-    let error = crate::test_support::last_refusal_at(&[], dimension, operation,
-        |ctx| { super::feature_result_topology(
-        ctx,
-        &tables,
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-        &curve_rows,
-        17,
-    ) });
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        super::feature_result_topology(
+            ctx,
+            &tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
+            &curve_rows,
+            17,
+        )
+    });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -331,32 +345,56 @@ fn topology_limit_error(
 
 #[test]
 fn feature_result_face_local_id_refuses_retained_limit() {
-    topology_limit_error(true, cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo feature result face local IDs");
+    topology_limit_error(
+        true,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo feature result face local IDs",
+    );
 }
 
 #[test]
 fn feature_result_face_members_refuse_collection_limit() {
-    topology_limit_error(true, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo feature result face members");
+    topology_limit_error(
+        true,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo feature result face members",
+    );
 }
 
 #[test]
 fn feature_result_edge_local_id_refuses_retained_limit() {
-    topology_limit_error(false, cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo feature result edge local IDs");
+    topology_limit_error(
+        false,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo feature result edge local IDs",
+    );
 }
 
 #[test]
 fn feature_result_edge_members_refuse_collection_limit() {
-    topology_limit_error(false, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo feature result edge members");
+    topology_limit_error(
+        false,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo feature result edge members",
+    );
 }
 
 #[test]
 fn feature_result_topology_id_refuses_retained_limit() {
-    topology_limit_error(true, cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo feature result topology ID");
+    topology_limit_error(
+        true,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo feature result topology ID",
+    );
 }
 
 #[test]
 fn feature_result_owner_id_refuses_retained_limit() {
-    topology_limit_error(true, cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo feature result owner ID");
+    topology_limit_error(
+        true,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo feature result owner ID",
+    );
 }
 
 #[test]
@@ -427,15 +465,18 @@ fn feature_result_topology_arena_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature result member distinctness"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let mut ir = ir.clone();
-let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    super::emit_feature_result_topologies(&ctx, &scan, &mut ir).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo feature result member distinctness"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let mut ir = ir.clone();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            super::emit_feature_result_topologies(&ctx, &scan, &mut ir).map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::emit_feature_result_topologies(&ctx, &scan, &mut ir)
@@ -473,26 +514,30 @@ let (ctx, _) =
 }
 
 fn result_surface_limit_error(by_feature: bool, operation: &'static str) {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let (tables, rows) = one_result_surface();
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation,
-        |ctx| { if by_feature {
-        super::feature_result_surface_ids_by_feature(
-            ctx,
-            &tables,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-        )
-        .map(|_| ())
-    } else {
-        super::feature_result_surface_ids(
-            ctx,
-            &tables,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-            17,
-        )
-        .map(|_| ())
-    } },
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            if by_feature {
+                super::feature_result_surface_ids_by_feature(
+                    ctx,
+                    &tables,
+                    &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
+                )
+                .map(|_| ())
+            } else {
+                super::feature_result_surface_ids(
+                    ctx,
+                    &tables,
+                    &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
+                    17,
+                )
+                .map(|_| ())
+            }
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -511,7 +556,6 @@ fn feature_result_surface_identity_nodes_refuse_collection_limit() {
 fn feature_result_surface_ids_refuse_collection_limit() {
     result_surface_limit_error(false, "creo feature result surface IDs");
 }
-
 
 #[test]
 fn feature_result_surface_map_nodes_refuse_collection_limit() {
@@ -615,14 +659,17 @@ fn draft_neutral_plane_native_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo draft neutral plane native"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    super::draft_neutral_plane_selection(&ctx, &scan, 225).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo draft neutral plane native"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            super::draft_neutral_plane_selection(&ctx, &scan, 225).map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = super::draft_neutral_plane_selection(&ctx, &scan, 225)
@@ -725,24 +772,28 @@ fn transition_limit_error(operation: &'static str, dependency_route: bool) {
     };
     let rows = [row(11, 3), row(201, 17)];
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation,
-        |ctx| { if dependency_route {
-        super::surface_transition_dependencies(
-            ctx,
-            17,
-            &[table.clone()],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
-        )
-        .map(|_| ())
-    } else {
-        super::feature_surface_transitions(
-            ctx,
-            17,
-            &[table.clone()],
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
-        )
-        .map(|_| ())
-    } },
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |ctx| {
+            if dependency_route {
+                super::surface_transition_dependencies(
+                    ctx,
+                    17,
+                    &[table.clone()],
+                    &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                )
+                .map(|_| ())
+            } else {
+                super::feature_surface_transitions(
+                    ctx,
+                    17,
+                    &[table.clone()],
+                    &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                )
+                .map(|_| ())
+            }
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)

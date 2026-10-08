@@ -77,7 +77,9 @@ fn unique_model_feature_index(
 ) -> Result<Option<usize>, CodecError> {
     let mut matching_index = None;
     let mut items = ir.model.features.iter().enumerate();
-    while let Some((index, feature)) = ctx.next_charged(&mut items, "creo linked model feature lookup")? {
+    while let Some((index, feature)) =
+        ctx.next_charged(&mut items, "creo linked model feature lookup")?
+    {
         if !ctx.equal(
             &feature.id,
             feature_id,
@@ -97,22 +99,31 @@ pub(in super::super) fn surface_kind_for_geometry(
     ctx: &DecodeContext<'_>,
     geometry: &SurfaceGeometry,
 ) -> Result<Option<crate::surface::SurfaceKind>, CodecError> {
-    let Some(mut basis) = geometry.solved() else { return Ok(None); };
+    let Some(mut basis) = geometry.solved() else {
+        return Ok(None);
+    };
     let mut bases = std::iter::successors(Some(basis), |current| match current {
         SolvedSurfaceGeometry::Transformed(placed) => Some(placed.basis()),
         _ => None,
-    }).skip(1);
+    })
+    .skip(1);
     while matches!(basis, SolvedSurfaceGeometry::Transformed(_)) {
-        let Some(next) = ctx.next_charged(&mut bases, "creo transformed surface bases")? else { return Ok(None); };
+        let Some(next) = ctx.next_charged(&mut bases, "creo transformed surface bases")? else {
+            return Ok(None);
+        };
         basis = next;
     }
     Ok(match basis {
         SolvedSurfaceGeometry::Plane(_) => Some(crate::surface::SurfaceKind::Plane),
         SolvedSurfaceGeometry::Cylinder(_) => Some(crate::surface::SurfaceKind::Cylinder),
         SolvedSurfaceGeometry::Cone(_) => Some(crate::surface::SurfaceKind::Cone),
-        SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_) => Some(crate::surface::SurfaceKind::TorusOrSphere),
+        SolvedSurfaceGeometry::Sphere(_) | SolvedSurfaceGeometry::Torus(_) => {
+            Some(crate::surface::SurfaceKind::TorusOrSphere)
+        }
         SolvedSurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
-        SolvedSurfaceGeometry::Transformed(_) | SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Transformed(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
     })
 }
 
@@ -124,12 +135,16 @@ pub(in super::super) fn generated_surface_id_for_feature(
 ) -> Result<Option<u32>, CodecError> {
     let mut surface_id = None;
     let mut table_iter = tables.iter();
-    while let Some(table) = ctx.next_charged(&mut table_iter, "creo generated surface feature tables")? {
+    while let Some(table) =
+        ctx.next_charged(&mut table_iter, "creo generated surface feature tables")?
+    {
         if table.feature_id != feature_id {
             continue;
         }
         let mut entry_iter = table.entries.iter();
-        while let Some(entry) = ctx.next_charged(&mut entry_iter, "creo generated surface feature entries")? {
+        while let Some(entry) =
+            ctx.next_charged(&mut entry_iter, "creo generated surface feature entries")?
+        {
             if entry.source_entity_id() != Some(source_entity_id)
                 || !table.contains_surface_id(entry.entity_id)
             {
@@ -167,11 +182,20 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     {
         return Ok(false);
     }
-    ctx.any_by(&table.entries[2..], |candidate| {
-        if !table.contains_surface_id(candidate.entity_id) { return Ok(false); }
-        let Some(row) = crate::surface::unique_surface_row(rows, candidate.entity_id) else { return Ok(false); };
-        Ok(row.feature_id == feature_id && expected_kinds.iter().any(|kind| kind.same_family(row.kind)))
-    }, "creo generated profile candidate entries")
+    ctx.any_by(
+        &table.entries[2..],
+        |candidate| {
+            if !table.contains_surface_id(candidate.entity_id) {
+                return Ok(false);
+            }
+            let Some(row) = crate::surface::unique_surface_row(rows, candidate.entity_id) else {
+                return Ok(false);
+            };
+            Ok(row.feature_id == feature_id
+                && expected_kinds.iter().any(|kind| kind.same_family(row.kind)))
+        },
+        "creo generated profile candidate entries",
+    )
 }
 
 pub(in super::super) fn section_entity_is_generated_profile(
@@ -208,9 +232,15 @@ pub(in super::super) fn section_entity_is_generated_profile(
         if table.feature_id != feature_id {
             continue;
         }
-        let Some(entry) = crate::decode::uniqueness::exactly_one_by(ctx, &table.entries,
+        let Some(entry) = crate::decode::uniqueness::exactly_one_by(
+            ctx,
+            &table.entries,
             |entry| Ok(entry.source_entity_id() == Some(source_entity_id)),
-            "creo generated profile rowless entries")? else { continue; };
+            "creo generated profile rowless entries",
+        )?
+        else {
+            continue;
+        };
         if !table.contains_surface_id(entry.entity_id)
             && generated_profile_entry_is_admissible(
                 ctx,
@@ -234,7 +264,9 @@ pub(in super::super) fn section_entity_is_generated_profile(
     }
     let mut found_cylinder = false;
     let mut table_iter = tables.iter();
-    while let Some(table) = ctx.next_charged(&mut table_iter, "creo blind generated profile tables")? {
+    while let Some(table) =
+        ctx.next_charged(&mut table_iter, "creo blind generated profile tables")?
+    {
         if table.feature_id != feature_id {
             continue;
         }
@@ -290,8 +322,16 @@ fn generated_profile_table_shape(
     let mut scratch = ctx.reserve_scoped(0, "creo generated profile identity index")?;
     let mut seen = std::collections::HashSet::new();
     let mut entries = table.entries.iter();
-    while let Some(entry) = ctx.next_charged(&mut entries, "creo generated profile unique entry IDs")? {
-        if !scratch.with_storage(|| ctx.insert_hash_set(&mut seen, entry.entity_id, "creo generated profile identity nodes"))? {
+    while let Some(entry) =
+        ctx.next_charged(&mut entries, "creo generated profile unique entry IDs")?
+    {
+        if !scratch.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut seen,
+                entry.entity_id,
+                "creo generated profile identity nodes",
+            )
+        })? {
             return Ok(false);
         }
     }
@@ -365,7 +405,13 @@ pub(super) fn insert_ordered_family_surface_binding(
     bindings: &mut BTreeMap<u32, u32>,
     bound_surfaces: &mut BTreeSet<u32>,
 ) -> Result<bool, CodecError> {
-    let SurfaceBindingSource { surface_rows, feature_id, tables, order, expected_kind } = *source;
+    let SurfaceBindingSource {
+        surface_rows,
+        feature_id,
+        tables,
+        order,
+        expected_kind,
+    } = *source;
     if order.internal_id(external_id).is_none() {
         return Ok(false);
     }
@@ -375,7 +421,11 @@ pub(super) fn insert_ordered_family_surface_binding(
     };
     if !crate::surface::unique_surface_row(surface_rows, surface_id)
         .is_some_and(|row| row.feature_id == feature_id && row.kind.same_family(expected_kind))
-        || ctx.contains_btree_set(bound_surfaces, &surface_id, "creo bound generated surface lookup")?
+        || ctx.contains_btree_set(
+            bound_surfaces,
+            &surface_id,
+            "creo bound generated surface lookup",
+        )?
     {
         return Ok(false);
     }
@@ -405,10 +455,18 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
     let mut bindings = BTreeMap::new();
     let mut bound_surfaces = BTreeSet::new();
     let mut external_ids = external_ids.into_iter();
-    while let Some(external_id) = ctx.next_charged(&mut external_ids, "creo ordered binding external IDs")? {
+    while let Some(external_id) =
+        ctx.next_charged(&mut external_ids, "creo ordered binding external IDs")?
+    {
         if !insert_ordered_family_surface_binding(
             ctx,
-            &SurfaceBindingSource { surface_rows, feature_id, tables, order, expected_kind },
+            &SurfaceBindingSource {
+                surface_rows,
+                feature_id,
+                tables,
+                order,
+                expected_kind,
+            },
             external_id,
             &mut bindings,
             &mut bound_surfaces,
@@ -429,28 +487,47 @@ pub(in super::super) fn profile_segment_ids(
     let mut external_ids = std::collections::HashSet::new();
     for profile in ctx.admit_iter(profiles, "creo sketch profiles")? {
         for entity_use in ctx.admit_iter(profile, "creo sketch profile entities")? {
-            let Some(suffix) = ctx.strip_prefix(entity_use.entity.as_str(), "creo:featdefs:sketch_entity#", "creo sketch profile identity prefix")? else {
+            let Some(suffix) = ctx.strip_prefix(
+                entity_use.entity.as_str(),
+                "creo:featdefs:sketch_entity#",
+                "creo sketch profile identity prefix",
+            )?
+            else {
                 continue;
             };
-            let Some((scope, external)) = ctx.split_once(suffix, ":", "creo sketch profile identity scope")? else {
+            let Some((scope, external)) =
+                ctx.split_once(suffix, ":", "creo sketch profile identity scope")?
+            else {
                 continue;
             };
             if !crate::identity::matches_numbered_identity(scope, "", definition_id) {
                 continue;
             }
-            let Ok(external_id) = ctx.parse_text::<u32>(external, "creo sketch profile external identity")? else {
+            let Ok(external_id) =
+                ctx.parse_text::<u32>(external, "creo sketch profile external identity")?
+            else {
                 continue;
             };
             if !crate::identity::matches_numbered_identity(external, "", external_id) {
                 continue;
             }
-            scratch.with_storage(|| ctx.insert_hash_set(&mut external_ids, external_id, "creo sketch profile external identity nodes"))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut external_ids,
+                    external_id,
+                    "creo sketch profile external identity nodes",
+                )
+            })?;
         }
     }
     let mut ids = BTreeSet::new();
     for segment in ctx.admit_iter(segments, "creo profile segment rows")? {
         if external_ids.contains(&segment.external_id) {
-            ctx.insert_btree_set(&mut ids, segment.external_id, "creo profile segment ID nodes")?;
+            ctx.insert_btree_set(
+                &mut ids,
+                segment.external_id,
+                "creo profile segment ID nodes",
+            )?;
         }
     }
     Ok(ids)

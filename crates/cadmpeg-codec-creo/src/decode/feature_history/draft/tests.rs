@@ -50,16 +50,17 @@ fn hole_face_limit_error(
     if resolved {
         ir.model.faces.push(resolved_hole_face());
     }
-    let error = crate::test_support::last_refusal_at(&[], dimension, operation,
-        |ctx| { hole_face_selection(
-        ctx,
-        &scan,
-        &ir,
-        9,
-        11,
-        &std::collections::BTreeMap::new(),
-        &std::collections::BTreeSet::new(),
-    ) });
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        hole_face_selection(
+            ctx,
+            &scan,
+            &ir,
+            9,
+            11,
+            &std::collections::BTreeMap::new(),
+            &std::collections::BTreeSet::new(),
+        )
+    });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -69,22 +70,29 @@ fn hole_face_limit_error(
 
 #[test]
 fn hole_native_face_selection_refuses_retained_limit() {
-    hole_face_limit_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, false, "creo hole native face selection");
-}
-
-#[test]
-fn hole_candidate_face_id_refuses_materialized_limit() {
-    hole_face_limit_error(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, true, "creo hole candidate face ID");
+    hole_face_limit_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        false,
+        "creo hole native face selection",
+    );
 }
 
 #[test]
 fn hole_resolved_face_id_refuses_retained_limit() {
-    hole_face_limit_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, true, "creo hole face IDs");
+    hole_face_limit_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        true,
+        "creo hole face IDs",
+    );
 }
 
 #[test]
 fn hole_resolved_face_vector_refuses_collection_limit() {
-    hole_face_limit_error(cadmpeg_core::decode::ResourceDimension::CollectionItems, true, "creo hole face identities");
+    hole_face_limit_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        true,
+        "creo hole face identities",
+    );
 }
 
 #[test]
@@ -200,20 +208,23 @@ fn hole_placements_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo hole placements"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let placement = cadmpeg_ir::features::holes::HolePlacement::Axis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-            .expect("finite origin"),
-        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-            .expect("finite direction"),
-    };
-    admitted_hole_placements(&ctx, [Some(placement), None, None]).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo hole placements"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let placement = cadmpeg_ir::features::holes::HolePlacement::Axis {
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .expect("finite origin"),
+                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .expect("finite direction"),
+            };
+            admitted_hole_placements(&ctx, [Some(placement), None, None]).map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let placement = cadmpeg_ir::features::holes::HolePlacement::Axis {
@@ -280,11 +291,14 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn thicken_resource_error(dimension: cadmpeg_core::decode::ResourceDimension,
-    operation: &'static str) {
+fn thicken_resource_error(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &'static str,
+) {
     let scan = thicken_scan();
-    let error = crate::test_support::last_refusal_at(&[], dimension, operation,
-        |ctx| { thicken_feature_definition(ctx, &scan, &CadIr::empty(), 17) });
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        thicken_feature_definition(ctx, &scan, &CadIr::empty(), 17)
+    });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -294,17 +308,26 @@ fn thicken_resource_error(dimension: cadmpeg_core::decode::ResourceDimension,
 
 #[test]
 fn thicken_source_surface_ids_refuse_collection_limit() {
-    thicken_resource_error(cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo thicken source surface IDs");
+    thicken_resource_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo thicken source surface IDs",
+    );
 }
 
 #[test]
 fn thicken_native_selection_refuses_retained_limit() {
-    thicken_resource_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo thicken native selection");
+    thicken_resource_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo thicken native selection",
+    );
 }
 
 #[test]
 fn thicken_generated_native_copy_refuses_retained_limit() {
-    thicken_resource_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo thicken generated native selection");
+    thicken_resource_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "creo thicken generated native selection",
+    );
 }
 
 #[test]
@@ -523,10 +546,10 @@ fn unbounded_plane_rejects_conflicting_carriers() {
 #[test]
 fn thicken_source_face_lookup_refuses_at_work_boundary() {
     let scan = thicken_scan();
-    let definition = crate::test_support::assert_work_boundaries(
-        &["creo thicken source face IDs"],
-        |ctx| thicken_feature_definition(ctx, &scan, &CadIr::empty(), 17),
-    );
+    let definition =
+        crate::test_support::assert_work_boundaries(&["creo thicken source face IDs"], |ctx| {
+            thicken_feature_definition(ctx, &scan, &CadIr::empty(), 17)
+        });
     assert!(matches!(
         definition,
         IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
@@ -537,12 +560,12 @@ fn thicken_source_face_lookup_refuses_at_work_boundary() {
 }
 
 #[test]
-fn hole_face_identity_validation_refuses_at_work_boundary() {
+fn hole_face_copy_refuses_at_work_boundary() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.faces.push(resolved_hole_face());
     let selection = crate::test_support::assert_work_boundaries(
-        &["creo hole face identity validation"],
+        &["creo hole face IDs"],
         |ctx| {
             hole_face_selection(
                 ctx,
@@ -570,16 +593,28 @@ fn resolved_thicken_faces_copy_only_output_identities() {
     let face = resolved_hole_face();
     let expected = face.id.clone();
     ir.model.faces.push(face);
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| thicken_feature_definition(ctx, &scan, &ir, 17);
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        thicken_feature_definition(ctx, &scan, &ir, 17)
+    };
     let definition = crate::test_support::assert_work_boundaries(&["creo thicken face IDs"], run);
-    assert!(matches!(definition, IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
+    assert!(
+        matches!(definition, IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
         faces: cadmpeg_ir::features::FaceSelection::Resolved { faces, native }, ..
-    }) if faces == vec![expected] && native == "creo:allfeatur:thicken_source_surfaces#17:11"));
+    }) if faces == vec![expected] && native == "creo:allfeatur:thicken_source_surfaces#17:11")
+    );
     for (dimension, operation) in [
-        (cadmpeg_core::decode::ResourceDimension::RetainedBytes, "creo thicken face IDs"),
-        (cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo thicken face identities"),
+        (
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "creo thicken face IDs",
+        ),
+        (
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo thicken face identities",
+        ),
     ] {
         let error = crate::test_support::last_refusal_at(&[], dimension, operation, run);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.operation == operation)
+        );
     }
 }

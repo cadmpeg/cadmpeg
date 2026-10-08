@@ -11,13 +11,17 @@ fn invalid_feature_reference_name_refuses_before_lossy_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo decoded feature reference name"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    decoded_feature_reference_name(&ctx, b"A\xff").map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo decoded feature reference name"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            decoded_feature_reference_name(&ctx, b"A\xff").map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = decoded_feature_reference_name(&ctx, b"A\xff")
         .expect_err("replacement needs four retained bytes");
@@ -93,13 +97,17 @@ fn feature_output_history_refuses_before_visiting_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo feature output visiting nodes"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    feature_output_bodies(&ctx, &scan, &CadIr::empty(), 40).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo feature output visiting nodes"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            feature_output_bodies(&ctx, &scan, &CadIr::empty(), 40).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = feature_output_bodies(&ctx, &scan, &CadIr::empty(), 40)
         .expect_err("one history node exceeds the limit");
@@ -115,7 +123,18 @@ fn feature_output_history_refuses_before_recursive_step() {
     let scan = crate::test_support::empty_container_scan();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_recursion_depth = 0;
+    policy.limits.max_recursion_depth = crate::test_support::allocation_limit_at(
+        ResourceDimension::RecursionDepth,
+        Some("creo feature output history"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_recursion_depth = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            feature_output_bodies(&ctx, &scan, &CadIr::empty(), 40).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = feature_output_bodies(&ctx, &scan, &CadIr::empty(), 40)
         .expect_err("the first history step exceeds zero recursion depth");
@@ -131,13 +150,17 @@ fn evaluated_sweep_candidate_refuses_before_scoped_text() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, Some("creo evaluated sweep body candidate"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_materialized_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    evaluated_sweep_output_bodies(&ctx, &CadIr::empty(), 40).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        Some("creo evaluated sweep body candidate"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            evaluated_sweep_output_bodies(&ctx, &CadIr::empty(), 40).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = evaluated_sweep_output_bodies(&ctx, &CadIr::empty(), 40)
         .expect_err("one candidate needs scoped text");
@@ -153,13 +176,17 @@ fn evaluated_sweep_body_refuses_before_retained_id() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo evaluated sweep body IDs"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo evaluated sweep body IDs"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40)
         .expect_err("one output needs a retained ID");
@@ -175,13 +202,17 @@ fn evaluated_sweep_body_refuses_before_output_row() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo evaluated sweep output bodies"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo evaluated sweep output bodies"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = evaluated_sweep_output_bodies(&ctx, &sweep_output_ir(), 40)
         .expect_err("one output needs a Vec row");
@@ -197,14 +228,18 @@ fn copied_output_body_id_refuses_before_retained_bytes() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo feature output body IDs"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let body = BodyId::mint("creo:test:body#1").expect("identity grammar");
-    copy_body_id(&ctx, &body).map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo feature output body IDs"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let body = BodyId::mint("creo:test:body#1").expect("identity grammar");
+            copy_body_id(&ctx, &body).map(|_| ())
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let body = BodyId::mint("creo:test:body#1").expect("identity grammar");
     let error = copy_body_id(&ctx, &body).expect_err("body ID needs retained bytes");
@@ -261,16 +296,32 @@ fn section_feature_lookups_keep_unique_source_selection() {
             saved_section: None,
             offset: 4,
         });
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::owned_section_feature_id(ctx, &scan, 17)).expect("admitted section owner"), Some(40));
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::section_definition_for_history_feature(ctx, &scan, 40)).expect("admitted section definition").map(|value| value.offset),
+        crate::decode::with_test_decode_ctx(|ctx| super::owned_section_feature_id(ctx, &scan, 17))
+            .expect("admitted section owner"),
+        Some(40)
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::section_definition_for_history_feature(
+            ctx, &scan, 40
+        ))
+        .expect("admitted section definition")
+        .map(|value| value.offset),
         Some(4)
     );
     scan.features
         .definitions
         .push(scan.features.definitions[0].clone());
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::owned_section_feature_id(ctx, &scan, 17)).expect("admitted section owner"), None);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| super::section_definition_for_history_feature(ctx, &scan, 40)).expect("admitted section definition").is_none());
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| super::owned_section_feature_id(ctx, &scan, 17))
+            .expect("admitted section owner"),
+        None
+    );
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        super::section_definition_for_history_feature(ctx, &scan, 40)
+    })
+    .expect("admitted section definition")
+    .is_none());
 }
 
 #[test]
@@ -353,7 +404,6 @@ fn evaluated_sweep_body_identity_validation_refuses_at_work_boundary() {
     );
 }
 
-
-mod selected_edges;
-mod properties;
 mod generated;
+mod properties;
+mod selected_edges;

@@ -17,13 +17,20 @@ fn revolution_axis_error_refuses_retained_text_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo revolution axis error text"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    match super::revolution_unit_axis(&ctx, 40, direction) { Err(CodecError::Malformed(_)) => Ok(()), value => value.map(|_| ()) }
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo revolution axis error text"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            match super::revolution_unit_axis(&ctx, 40, direction) {
+                Err(CodecError::Malformed(_)) => Ok(()),
+                value => value.map(|_| ()),
+            }
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = super::revolution_unit_axis(&ctx, 40, direction)
         .expect_err("axis error text exceeds retained limit");
@@ -47,13 +54,20 @@ fn revolution_knot_error_refuses_retained_text_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo revolution knot error text"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    match super::directrix_parameter_range(&ctx, 17, &[]) { Err(CodecError::Malformed(_)) => Ok(()), value => value.map(|_| ()) }
-            });
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        Some("creo revolution knot error text"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            match super::directrix_parameter_range(&ctx, 17, &[]) {
+                Err(CodecError::Malformed(_)) => Ok(()),
+                value => value.map(|_| ()),
+            }
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = super::directrix_parameter_range(&ctx, 17, &[])
         .expect_err("knot error text exceeds retained limit");
@@ -88,10 +102,9 @@ fn revolved_saved_spline_loss_refuses_text_and_row_below_limits() {
             "creo revolved saved spline losses",
         ),
     ] {
-        let error = crate::test_support::last_refusal_at(
-            &[], dimension, operation,
-            |ctx| super::push_revolution_surface_loss(ctx, &mut Vec::new(), "saved spline refused"),
-        );
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            super::push_revolution_surface_loss(ctx, &mut Vec::new(), "saved spline refused")
+        });
         assert!(matches!(error, CodecError::ResourceLimit(resource)
             if resource.dimension == dimension && resource.operation == operation));
     }
@@ -110,19 +123,24 @@ fn revolution_generating_ids_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo revolution generating segment IDs"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let mut ids = std::collections::HashSet::new();
-    ctx.insert_hash_set(&mut ids, 9, "creo revolution generating segment IDs").map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo revolution generating segment IDs"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let mut ids = std::collections::HashSet::new();
+            ctx.insert_hash_set(&mut ids, 9, "creo revolution generating segment IDs")
+                .map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut ids = std::collections::HashSet::new();
-    let error = ctx.insert_hash_set(&mut ids, 9, "creo revolution generating segment IDs")
+    let error = ctx
+        .insert_hash_set(&mut ids, 9, "creo revolution generating segment IDs")
         .expect_err("one generating ID exceeds the collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -161,26 +179,42 @@ fn revolution_profile_id_merge_refuses_second_node() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo revolution generating segment IDs"), |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = policy;
-                policy.limits.max_collection_items = cap;
-                let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let profile_ids =
-        crate::decode::feature_history::link::profile_segment_ids(&ctx, 2, &[&segment], &profiles)
-            ?;
-    let mut generating_ids = std::collections::HashSet::new();
-    ctx.insert_hash_set(&mut generating_ids, *profile_ids.first().expect("one profile ID"), "creo revolution generating segment IDs").map(|_| ())
-            });
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo revolution generating segment IDs"),
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = policy;
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let profile_ids = crate::decode::feature_history::link::profile_segment_ids(
+                &ctx,
+                2,
+                &[&segment],
+                &profiles,
+            )?;
+            let mut generating_ids = std::collections::HashSet::new();
+            ctx.insert_hash_set(
+                &mut generating_ids,
+                *profile_ids.first().expect("one profile ID"),
+                "creo revolution generating segment IDs",
+            )
+            .map(|_| ())
+        },
+    );
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let profile_ids =
         crate::decode::feature_history::link::profile_segment_ids(&ctx, 2, &[&segment], &profiles)
             .expect("one profile ID is admitted");
     let mut generating_ids = std::collections::HashSet::new();
-    let error = ctx.insert_hash_set(&mut generating_ids, *profile_ids.first().expect("one profile ID"), "creo revolution generating segment IDs")
-    .expect_err("a second BTreeSet node exceeds the limit");
+    let error = ctx
+        .insert_hash_set(
+            &mut generating_ids,
+            *profile_ids.first().expect("one profile ID"),
+            "creo revolution generating segment IDs",
+        )
+        .expect_err("a second BTreeSet node exceeds the limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo revolution generating segment IDs"),
