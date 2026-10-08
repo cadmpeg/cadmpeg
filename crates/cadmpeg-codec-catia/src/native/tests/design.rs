@@ -195,9 +195,10 @@ fn parallel_reference_table_refuses_nested_collection_limit() {
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_row_cells")
     );
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
-    });
+    let retained =
+        crate::test_support::with_retained_refusal(&[], "catia_design_column_field", |ctx| {
+            super::super::design_parallel_reference_table(ctx, &fields, graph, &record_index)
+        });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_design_column_field")

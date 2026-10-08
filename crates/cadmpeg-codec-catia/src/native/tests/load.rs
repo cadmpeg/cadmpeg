@@ -1659,3 +1659,32 @@ fn native_input_ordinal_scan_propagates_caller_work_refusal() {
     })
     .expect("service work admits the ordinal"));
 }
+
+#[test]
+fn native_input_ordinal_scan_has_a_distinct_digit_boundary() {
+    let dependency = crate::native::CatiaRelationParameterDependency {
+        source_offset: 0,
+        symbol: "#1_ /23".to_owned(),
+        candidates: Vec::new(),
+    };
+    let input = crate::native::CatiaRelationTypeInput {
+        parameter: "#1_".to_owned(),
+        input_type: "Real".to_owned(),
+    };
+    // Three prefix bytes, four suffix bytes, two digit visits, and the end probe.
+    crate::test_support::with_work_limit(9, |ctx| {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            crate::native::dependency_matches_input(ctx, &dependency, &input)
+        else {
+            panic!("ordinal end probe must refuse");
+        };
+        assert_eq!(limit.operation, "catia_native_input_ordinal_visits");
+        assert_eq!((limit.used, limit.additional), (9, 1));
+    });
+    crate::test_support::with_work_limit(10, |ctx| {
+        assert!(
+            crate::native::dependency_matches_input(ctx, &dependency, &input)
+                .expect("exact ordinal budget")
+        );
+    });
+}
