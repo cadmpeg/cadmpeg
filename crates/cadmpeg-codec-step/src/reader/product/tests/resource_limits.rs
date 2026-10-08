@@ -486,21 +486,43 @@ fn standalone_mapped_body_resolution_retains_no_scratch_nodes() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use std::collections::BTreeMap;
     let source = mapped_body_placement_source().replace("#76=MAPPED_ITEM('second',#74,#73);", "");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("mapped body exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("mapped body exchange");
     let arena = DecodeArena::new();
-    let (setup, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service()).expect("setup");
+    let (setup, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service()).expect("setup");
     let mut ir = cadmpeg_ir::CadIr::empty();
     let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &setup).expect("geometry");
     let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("carriers");
-    let topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup).expect("topology");
+    let topology =
+        crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup).expect("topology");
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut losses = Vec::new();
-        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
-        product::apply_body_placements(&exchange, product::BodyPlacementSources { geometry: &geometry.value, topology: &topology.value, usages: &BTreeMap::new() }, &mut ir, (&mut losses, &reports), ctx).expect("resolver nodes are scratch");
+        let reports =
+            std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+        product::apply_body_placements(
+            &exchange,
+            product::BodyPlacementSources {
+                geometry: &geometry.value,
+                topology: &topology.value,
+                usages: &BTreeMap::new(),
+            },
+            &mut ir,
+            (&mut losses, &reports),
+            ctx,
+        )
+        .expect("resolver nodes are scratch");
         assert!(losses.is_empty());
         assert_eq!(ir.model.bodies.len(), 1);
-        assert_eq!(ir.model.bodies[0].transform.expect("mapped transform").rows()[0][3], 20.0);
+        assert_eq!(
+            ir.model.bodies[0]
+                .transform
+                .expect("mapped transform")
+                .rows()[0][3],
+            20.0
+        );
     });
 }

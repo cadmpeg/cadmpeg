@@ -1759,12 +1759,11 @@ fn typed_omitted_descent_refuses_work_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
             crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-                super::modifier_values(&value, &mut Vec::new(), ctx).map(|_| ())
+                super::modifier_values(&value, &mut Vec::new(), ctx)
             })
         },
     );
 }
-
 
 mod typed_work;
 

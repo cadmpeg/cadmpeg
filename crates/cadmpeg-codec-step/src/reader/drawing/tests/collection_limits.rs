@@ -508,7 +508,8 @@ fn drawing_ambiguous_identity_text_refuses_materialized_limit() {
                 &targets,
                 &HashSet::from([1]),
                 &exchange,
-                &BTreeMap::new(), None,
+                &BTreeMap::new(),
+                None,
                 &ctx,
             )
             .map(|_| ())
