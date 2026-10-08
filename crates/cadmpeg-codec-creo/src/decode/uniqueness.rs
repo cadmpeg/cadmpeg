@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unique-owner lookups for feature definitions, transforms, profiles, and datum planes.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::document::CadIr;
@@ -40,10 +40,12 @@ pub(super) fn unique_owned_feature_definition<'a>(
     definitions: &'a [crate::feature::definitions::FeatureDefinition],
     feature_id: u32,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureDefinition>, CodecError> {
-    ctx.charge_work(u64_from_index(definitions.len()), "creo unique owner scan")?;
-    Ok(exactly_one(definitions.iter().filter(|definition| {
-        definition.identity.owner_feature_id() == Some(feature_id)
-    })))
+    exactly_one_by(
+        ctx,
+        definitions,
+        |definition| Ok(definition.identity.owner_feature_id() == Some(feature_id)),
+        "creo unique owner scan",
+    )
 }
 
 pub(super) fn unique_feature_section_transform<'a>(
@@ -52,18 +54,25 @@ pub(super) fn unique_feature_section_transform<'a>(
     definition_id: u32,
     section_offset: usize,
 ) -> Result<Option<&'a crate::placement::FeatureSectionTransform>, CodecError> {
-    ctx.charge_work(u64_from_index(transforms.len()), "creo unique owner scan")?;
-    let Some(transform) = exactly_one(transforms.iter().filter(|transform| {
-        transform.definition_id == definition_id && transform.offset == section_offset
-    })) else {
+    let Some(transform) = exactly_one_by(
+        ctx,
+        transforms,
+        |transform| {
+            Ok(transform.definition_id == definition_id && transform.offset == section_offset)
+        },
+        "creo unique owner scan",
+    )? else {
         return Ok(None);
     };
     if let Some(feature_id) = transform.feature_id {
-        let feature_matches = ctx
-            .admit_iter(transforms, "creo unique transform owner scan")?
-            .filter(|candidate| candidate.feature_id == Some(feature_id))
-            .count();
-        if feature_matches != 1 {
+        if exactly_one_by(
+            ctx,
+            transforms,
+            |candidate| Ok(candidate.feature_id == Some(feature_id)),
+            "creo unique transform owner scan",
+        )?
+        .is_none()
+        {
             return Ok(None);
         }
     }
@@ -75,14 +84,18 @@ pub(super) fn unique_feature_definition_for_transform<'a>(
     definitions: &'a [crate::feature::definitions::FeatureDefinition],
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureDefinition>, CodecError> {
-    ctx.charge_work(u64_from_index(definitions.len()), "creo unique owner scan")?;
-    Ok(exactly_one(definitions.iter().filter(|definition| {
-        definition.identity.id() == transform.definition_id
-            && definition
-                .section_3d
-                .as_ref()
-                .is_some_and(|section| section.offset == transform.offset)
-    })))
+    exactly_one_by(
+        ctx,
+        definitions,
+        |definition| {
+            Ok(definition.identity.id() == transform.definition_id
+                && definition
+                    .section_3d
+                    .as_ref()
+                    .is_some_and(|section| section.offset == transform.offset))
+        },
+        "creo unique owner scan",
+    )
 }
 
 pub(super) fn unique_feature_profile_definition<'a>(
@@ -91,20 +104,21 @@ pub(super) fn unique_feature_profile_definition<'a>(
     transforms: &'a [crate::placement::FeatureSectionTransform],
     feature_id: u32,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureDefinition>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(transforms.len()),
+    let Some(first) = ctx.position_by(
+        transforms,
+        |transform| Ok(transform.feature_id == Some(feature_id)),
         "creo unique profile transform scan",
-    )?;
-    let mut feature_transforms = transforms
-        .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id));
-    match (feature_transforms.next(), feature_transforms.next()) {
-        (Some(transform), None) => {
-            unique_feature_definition_for_transform(ctx, definitions, transform)
-        }
-        (None, None) => unique_owned_feature_definition(ctx, definitions, feature_id),
-        _ => Ok(None),
+    )? else {
+        return unique_owned_feature_definition(ctx, definitions, feature_id);
+    };
+    if ctx.any_by(
+        &transforms[first + 1..],
+        |transform| Ok(transform.feature_id == Some(feature_id)),
+        "creo unique profile transform scan",
+    )? {
+        return Ok(None);
     }
+    unique_feature_definition_for_transform(ctx, definitions, &transforms[first])
 }
 
 pub(super) fn unique_feature_profile_ref(
@@ -134,10 +148,12 @@ pub(super) fn unique_feature_datum_plane<'a>(
     datums: &'a [crate::datum::DatumPlaneRecord],
     feature_id: u32,
 ) -> Result<Option<&'a crate::datum::DatumPlaneRecord>, CodecError> {
-    ctx.charge_work(u64_from_index(datums.len()), "creo unique owner scan")?;
-    Ok(exactly_one(
-        datums.iter().filter(|datum| datum.feature_id == feature_id),
-    ))
+    exactly_one_by(
+        ctx,
+        datums,
+        |datum| Ok(datum.feature_id == feature_id),
+        "creo unique owner scan",
+    )
 }
 
 #[cfg(test)]
@@ -159,4 +175,44 @@ mod tests {
                 .map(|value| value.map(|value| value.id))
         });
     }
+
+    #[test]
+    fn duplicate_datum_owner_ignores_unvisited_tail() {
+        let datum = crate::datum::DatumPlaneRecord::new(
+            1,
+            7,
+            crate::datum::DatumPlane::new(crate::axis::Axis::Z, 0.0).expect("finite plane"),
+            0.0,
+            [[None; 2]; 2],
+            0,
+        )
+        .expect("finite datum");
+        let short = [datum.clone(), datum.clone()];
+        let long = vec![datum; 4096];
+        let refusal = |datums: &[crate::datum::DatumPlaneRecord]| {
+            crate::test_support::last_refusal_at(
+                &[],
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                "creo unique owner scan",
+                |ctx| {
+                    super::unique_feature_datum_plane(ctx, datums, 7)
+                        .map(|value| value.map(|value| value.id))
+                },
+            )
+        };
+        let cadmpeg_core::CodecError::ResourceLimit(short_refusal) = refusal(&short) else {
+            panic!("duplicate owner work refusal");
+        };
+        let cadmpeg_core::CodecError::ResourceLimit(long_refusal) = refusal(&long) else {
+            panic!("duplicate owner work refusal");
+        };
+        assert_eq!(short_refusal, long_refusal);
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            super::unique_feature_datum_plane(ctx, &long, 7)
+                .map(|value| value.map(|value| value.id))
+        })
+        .expect("duplicate owner query")
+        .is_none());
+    }
+
 }
