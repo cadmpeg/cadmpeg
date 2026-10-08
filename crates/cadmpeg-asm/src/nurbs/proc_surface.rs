@@ -737,7 +737,7 @@ fn g2_blend_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["g2_blend_spl_sur", "g2blnsur"];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, two scalars, two sides in
@@ -2189,7 +2189,7 @@ fn loft_spl_sur(
     use cadmpeg_ir::geometry::LoftBridgeToken;
     let names = ["loft_spl_sur", "loftsur"];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     // The modern name uses the revision-gated layout.
     if matches!(cur.peek(), Some(Token::Long(_))) && name == "loft_spl_sur" {
@@ -2457,7 +2457,7 @@ fn compound_loft_spl_sur(
         toks,
         &["cl_loft_spl_sur"]
     )?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         return revision_compound_loft(ctx, span, resolver);
@@ -2564,7 +2564,7 @@ fn scaled_compound_loft_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["scaled_cloft_spl_sur", "sclclftsur"];
     let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let singularity = cur.take_enum()?;
     let (shape, cache_fit_tolerance) = if cur.peek().is_some_and(Token::is_payload_ident) {
@@ -2892,7 +2892,7 @@ fn skin_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["skin_spl_sur", "skinsur"];
     let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let surface_boolean = cur.take_enum()?;
     let surface_normal = cur.take_enum()?;
@@ -2992,7 +2992,7 @@ pub(super) fn law_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["law_spl_sur", "lawsur"];
     let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let parameter_ranges = if matches!(cur.peek(), Some(Token::Double(_))) {
         Some([
@@ -3103,7 +3103,7 @@ pub(super) fn sub_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["sub_spl_sur", "subsur"];
     let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let parameter_ranges = [
         [cur.take_f64()?, cur.take_f64()?],
@@ -3125,7 +3125,7 @@ fn net_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["net_spl_sur", "netsur"];
     let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let sections = Box::new([
         propagate_resource!(loft_section(ctx, &mut cur)?),
@@ -3186,7 +3186,7 @@ fn sweep_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["sweep_spl_sur", "sweep_sur", "sweepsur"];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // The revision-gated layout belongs to `sweep_sur`.
@@ -3600,7 +3600,7 @@ fn taper_spl_sur(
     let kind = names
         .iter()
         .find_map(|(candidate, kind)| (*candidate == name).then_some(*kind))?;
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated form, stored by the orthogonal subtype's modern name.
@@ -3733,7 +3733,7 @@ fn comp_spl_sur(
         toks,
         &["comp_spl_sur"]
     )?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let cache_end = {
         let (decoded, _cache_storage) = propagate_resource!(ctx
@@ -3879,7 +3879,7 @@ fn off_spl_sur(
     let names = ["off_spl_sur", "offsur"];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let modern = name == "off_spl_sur";
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // The modern name uses the revision-gated layout.
@@ -3979,7 +3979,7 @@ fn rot_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["rot_spl_sur", "rotsur"];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, profile curve with two
@@ -4078,7 +4078,7 @@ fn sum_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["sum_spl_sur", "sumsur"];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, two curves each with two
@@ -4167,7 +4167,7 @@ fn ruled_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["rule_sur", "rulesur"];
     let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let (first, first_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
     cur.set_pos(first_end);
@@ -4198,7 +4198,7 @@ fn exact_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["exact_spl_sur", "exactsur"];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, shared tail, four optional
@@ -4291,7 +4291,7 @@ fn t_spl_sur(
 
     let (start, _) =
         propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &["t_spl_sur"])?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let (layout, type_code);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -4544,7 +4544,7 @@ fn defm_spl_sur(
     use cadmpeg_ir::geometry::DeformableSurfaceData;
     let names = ["defm_spl_sur", "defmsur"];
     let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let (support, revision_form_head) = if matches!(cur.peek(), Some(Token::Long(_))) {
         let revision = PositiveI64::new(cur.take_long()?)?;
@@ -4745,7 +4745,7 @@ pub(super) fn helix_spl_sur(
     let names = ["helix_spl_circ", "helix_spl_line"];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let circular = name == "helix_spl_circ";
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let current_layout = optional_helix_revision(&mut cur)?;
     let angle_range = [cur.take_range_value()?, cur.take_range_value()?];

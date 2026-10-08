@@ -54,7 +54,7 @@ pub(super) fn cyl_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["cyl_spl_sur", "cylsur"];
     let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let scope = toks::subtype_span(toks, start)?;
+    let scope = propagate_resource!(toks::subtype_span(ctx, toks, start))?;
     let span = scope.tokens();
     let mut cur = Cur::at(span, 2);
     // The revision-gated layout stores the directrix as a nested intcurve scope
@@ -567,7 +567,7 @@ fn rolling_ball_surface(
             }));
         }
         cur.take_bool()?;
-        let scope = toks::subtype_span(toks, cur.pos())?;
+        let scope = propagate_resource!(toks::subtype_span(ctx, toks, cur.pos()))?;
         let surface = propagate_resource!(reference_context
             .and_then(
                 |table| crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table)
@@ -627,7 +627,7 @@ pub(super) fn rolling_ball_curve(
     let kind = cur.take_ident()?;
     if kind == "intcurve" {
         cur.take_bool()?;
-        let scope = toks::subtype_span(toks, cur.pos())?;
+        let scope = propagate_resource!(toks::subtype_span(ctx, toks, cur.pos()))?;
         let curve = reference_context
             .and_then(|table| {
                 crate::nurbs::core::owned_curve_cache_resolving_refs(ctx, scope, table)
@@ -961,7 +961,7 @@ pub(super) fn var_blend_spl_sur(
         }
         _ => return None,
     };
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
     let first = match rolling_ball_side(ctx, &mut cur, reference_context)? {
@@ -1356,7 +1356,7 @@ pub(super) fn vertex_blend_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["VBL_SURF", "vertexblendsur"];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     // The revision-gated layout stores the revision integer before the
     // boundary count; boundary names are ident tokens and boundary payloads
@@ -1424,7 +1424,7 @@ pub(super) fn full_rb_blend_spl_sur(
     ];
     let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let has_third = name == "sss_blend_spl_sur" || name == "sssblndsur";
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
     let first = match rolling_ball_side(ctx, &mut cur, Some(table))? {
@@ -1518,7 +1518,7 @@ pub(super) fn compact_rb_blend_spl_sur(
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["rb_blend_spl_sur", "rbblnsur", "pipe_spl_sur", "pipesur"];
     let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
-    let span = toks::subtype_span(toks, start)?.tokens();
+    let span = propagate_resource!(toks::subtype_span(ctx, toks, start))?.tokens();
     let mut cur = Cur::at(span, 2);
     let mut supports = [None, None];
     let mut support_count = 0usize;

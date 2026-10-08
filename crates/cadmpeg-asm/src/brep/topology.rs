@@ -503,14 +503,15 @@ pub(super) fn walk_reachable_topology(
                                 let decoded = match (prec.chunk(3), prec.chunk(4)) {
                                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                                         if let Some(span) = nurbs::toks::payload_subtype_toks(
+                                            ctx,
                                             prec,
                                             5,
                                             "exp_par_cur",
-                                        ) {
+                                        )? {
                                             nurbs::pcurve::explicit_pcurve_cache(ctx, span)
                                                 .map(|pcurve| pcurve.map(|pcurve| (pcurve, true)))
                                         } else if let Some(span) =
-                                            nurbs::toks::payload_subtype_toks(prec, 5, "ref")
+                                            nurbs::toks::payload_subtype_toks(ctx, prec, 5, "ref")?
                                         {
                                             // The interior opens with the `ref`
                                             // identifier the lookup matched; the

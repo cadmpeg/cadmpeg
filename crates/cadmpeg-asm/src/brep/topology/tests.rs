@@ -800,6 +800,62 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
 }
 
 #[test]
+fn model_pcurve_subtype_lookup_propagates_work_refusal() {
+    let records = [
+        ref_record(0, "face", &[-1, -1, -1, -1, 1]),
+        ref_record(1, "loop", &[-1, -1, -1, -1, 2]),
+        ref_record(2, "coedge", &[-1, -1, -1, 2, -1, -1, 3, -1, -1, 4]),
+        ref_record(3, "edge", &[-1; 9]),
+        Record {
+            index: 4,
+            name: "pcurve".into(),
+            tokens: vec![
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Long(0),
+                Token::True,
+                Token::SubtypeOpen,
+                Token::Ident("exp_par_cur".into()),
+                Token::SubtypeClose,
+            ]
+            .into(),
+            offset: 0,
+            len: 0,
+        },
+    ];
+    let by_index = indexed_records(&records);
+    let error = with_work_limit("ASM payload subtype token scan", |ctx| {
+        let table = nurbs::toks::SubtypeTable::from_records(ctx, &records)
+            .expect("subtype table fits limit");
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        let mut reach = Reachable {
+            faces: HashSet::from([0]),
+            ..Reachable::default()
+        };
+        match walk_reachable_topology(
+            TopologyContext {
+                ctx,
+                by_index: &by_index,
+                token_table: &table,
+                purpose: DecodePurpose::Model,
+                format: crate::asm_format!("f3d"),
+            },
+            &mut out,
+            &records,
+            &mut carriers,
+            &mut reach,
+            &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap(),
+        ) {
+            Err(error) => error,
+            Ok(()) => panic!("payload subtype lookup did not refuse"),
+        }
+    });
+    assert_work_refusal(&error, "ASM payload subtype token scan");
+}
+
+#[test]
 fn history_construction_kind_does_not_consume_retained_storage() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let records = [
