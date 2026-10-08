@@ -965,6 +965,7 @@ fn section_segment_radius_constraint(
     )))
 }
 
+#[cfg(test)]
 pub(in super::super) fn section_segment_radius_constraints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
