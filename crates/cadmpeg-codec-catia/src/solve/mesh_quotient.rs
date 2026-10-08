@@ -86,7 +86,7 @@ pub(in crate::solve) mod selection_search;
 use selection_search::{
     canonical_singleton_coordinate_cycles, reconstruct_singleton_coordinate_topology,
     resolve_mesh_selection_from_quotient, resolve_singleton_mesh_selection,
-    singleton_mesh_boundary_directions,
+    singleton_mesh_boundary_directions, MeshOrientationEvidence,
 };
 
 fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
@@ -1834,9 +1834,11 @@ impl<'storage> MeshQuotient<'storage> {
             return self.enumerate_orientation_masks(
                 ctx,
                 assignment,
-                edge_candidates,
-                oriented_edges,
-                &gaugeable_edges,
+                MeshOrientationEvidence {
+                    edge_candidates,
+                    oriented_edges,
+                    gaugeable_edges: &gaugeable_edges,
+                },
                 limit,
                 budget,
             );
@@ -1867,189 +1869,6 @@ impl<'storage> MeshQuotient<'storage> {
                 budget,
             },
         )?;
-        Ok(output)
-    }
-
-    /// Counts the free directions of an assignment: each unreversed use whose
-    /// edge is already oriented, or is not gauge-fixed at its first use.
-    /// Stops counting once the count passes eight.
-    fn orientation_variable_count(
-        ctx: &DecodeContext<'_>,
-        assignment: &MeshFaceBoundaryAssignment,
-        oriented: &mut OrientedEdges<'_, '_>,
-        gaugeable_edges: &HashSet<usize>,
-    ) -> Result<Option<usize>, CodecError> {
-        let mut variables = 0usize;
-        let mut boundaries = assignment.boundaries.iter();
-        while let Some(boundary) = ctx.next_charged(&mut boundaries, "catia_orientation_plan")? {
-            let mut uses = boundary.iter();
-            while let Some(use_) = ctx.next_charged(&mut uses, "catia_orientation_plan")? {
-                if use_.reversed.is_some() {
-                    continue;
-                }
-                if !(oriented.fix(ctx, use_.edge)?
-                    && ctx.contains_hash_set(
-                        gaugeable_edges,
-                        &use_.edge,
-                        "catia_orientation_gauge",
-                    )?)
-                {
-                    variables += 1;
-                    if variables > 8 {
-                        return Ok(None);
-                    }
-                }
-            }
-        }
-        Ok(Some(variables))
-    }
-
-    /// Enumerates every assignment of at most eight free directions, in mask
-    /// order. Gauge-fixed and reversed uses keep their fixed direction.
-    #[allow(clippy::too_many_arguments)]
-    fn enumerate_orientation_masks(
-        &self,
-        ctx: &'storage DecodeContext<'_>,
-        assignment: &MeshFaceBoundaryAssignment,
-        edge_candidates: &[Vec<[usize; 2]>],
-        oriented_edges: &BTreeSet<usize>,
-        gaugeable_edges: &HashSet<usize>,
-        limit: usize,
-        budget: Option<&WorkBudget<'_>>,
-    ) -> Result<Vec<MeshOrientationOption<'storage>>, CodecError> {
-        let ((orientation_plan, variable_count), _plan_storage) =
-            ctx.with_scoped_storage("catia_orientation_plan_storage", || {
-                let mut oriented = OrientedEdges::new(ctx, oriented_edges)?;
-                let mut variable_count = 0usize;
-                let mut orientation_plan =
-                    ctx.collection_vec(assignment.boundaries.len(), "catia_orientation_plan_rows")?;
-                for boundary in ctx.admit_iter(&assignment.boundaries, "catia_orientation_plan")? {
-                    let mut row =
-                        ctx.collection_vec(boundary.len(), "catia_orientation_plan_values")?;
-                    for use_ in ctx.admit_iter(boundary, "catia_orientation_plan")? {
-                        row.push(match use_.reversed {
-                            Some(reversed) => (reversed, None),
-                            None if oriented.fix(ctx, use_.edge)?
-                                && ctx.contains_hash_set(
-                                    gaugeable_edges,
-                                    &use_.edge,
-                                    "catia_orientation_gauge",
-                                )? =>
-                            {
-                                (false, None)
-                            }
-                            None => {
-                                let variable = variable_count;
-                                variable_count += 1;
-                                (false, Some(variable))
-                            }
-                        });
-                    }
-                    orientation_plan.push(row);
-                }
-                Ok::<_, CodecError>((orientation_plan, variable_count))
-            })?;
-        let mut output = Vec::new();
-        let mut seen_storage = ctx.reserve_scoped(0, "catia_orientation_fingerprint_keys")?;
-        let mut seen = HashMap::new();
-        let combinations = 1usize << variable_count;
-        let orientation_work = work_units(ctx.fold(
-            &assignment.boundaries,
-            0usize,
-            |total: usize, boundary| {
-                total
-                    .checked_add(boundary.len())
-                    .ok_or_else(|| CodecError::malformed("CATIA orientation work exceeds usize"))
-            },
-            "catia_orientation_work",
-        )?);
-        for mask in 0..combinations {
-            if output.len() >= limit {
-                break;
-            }
-            if budget.is_some_and(|budget| !budget.charge_by(orientation_work)) {
-                break;
-            }
-            let (directions, direction_storage) =
-                ctx.with_scoped_storage("catia_orientation_candidate_directions", || {
-                    let mut directions = ctx.collection_vec(
-                        orientation_plan.len(),
-                        "catia_orientation_direction_rows",
-                    )?;
-                    for plan in ctx.admit_iter(&orientation_plan, "catia_orientation_directions")? {
-                        let mut row = ctx
-                            .collection_vec(plan.len(), "catia_orientation_boundary_directions")?;
-                        for &(fixed, variable) in
-                            ctx.admit_iter(plan, "catia_orientation_directions")?
-                        {
-                            row.push(variable.map_or(fixed, |variable| {
-                                let shift = variable_count - variable - 1;
-                                mask & (1usize << shift) != 0
-                            }));
-                        }
-                        directions.push(row);
-                    }
-                    Ok::<_, CodecError>(directions)
-                })?;
-            let mut quotient = self.clone_charged(ctx)?;
-            let mut merge_storage = ctx.reserve_scoped(0, "catia_orientation_merge_storage")?;
-            if !merge_storage.with_storage(|| {
-                let mut merged_nodes = Vec::new();
-                let mut merged = true;
-                'merge: for (boundary, row) in ctx
-                    .admit_iter(&assignment.boundaries, "catia_orientation_merges")?
-                    .zip(&directions)
-                {
-                    for index in ctx.admit_iter(0..boundary.len(), "catia_orientation_merges")? {
-                        let next = (index + 1) % boundary.len();
-                        let Some(left_end) = edge_end(boundary[index], row[index]) else {
-                            merged = false;
-                            break 'merge;
-                        };
-                        let Some(right_start) = edge_start(boundary[next], row[next]) else {
-                            merged = false;
-                            break 'merge;
-                        };
-                        let Some(root) = quotient.merge_charged(ctx, left_end, right_start)? else {
-                            merged = false;
-                            break 'merge;
-                        };
-                        ctx.push_vec(&mut merged_nodes, root, "catia_orientation_merged_nodes")?;
-                    }
-                }
-                if !merged {
-                    return Ok(false);
-                }
-                let affected_edges =
-                    quotient.affected_edges_for_nodes(ctx, &merged_nodes, edge_candidates)?;
-                if !quotient.propagate_edge_domains(
-                    ctx,
-                    &affected_edges,
-                    edge_candidates,
-                    budget,
-                )? {
-                    return Ok(false);
-                }
-                Ok::<_, CodecError>(true)
-            })? {
-                continue;
-            }
-            if admit_orientation_option(
-                ctx,
-                &mut seen,
-                &mut seen_storage,
-                &output,
-                &directions,
-                &quotient,
-            )? {
-                direction_storage.commit()?;
-                ctx.push_vec(
-                    &mut output,
-                    (directions, quotient),
-                    "catia_orientation_options",
-                )?;
-            }
-        }
         Ok(output)
     }
 

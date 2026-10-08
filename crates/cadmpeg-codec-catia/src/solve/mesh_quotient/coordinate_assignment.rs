@@ -2554,18 +2554,27 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[derive(Clone, Copy)]
+    struct CoordinateDomainState<'input> {
+        domains: &'input [Vec<usize>],
+        assigned: &'input [Option<usize>],
+        candidate: Option<(usize, usize)>,
+    }
+
     fn partial_ordered_assignment_viable(
         ctx: &DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         local_edge_by_id: &HashMap<usize, usize>,
         edges: &[[usize; 2]],
-        domains: &[Vec<usize>],
-        assigned: &[Option<usize>],
-        candidate: Option<(usize, usize)>,
+        state: CoordinateDomainState<'_>,
         budget: Option<&WorkBudget<'_>>,
     ) -> Result<bool, CodecError> {
         const OPERATION: &str = "catia_coordinate_ordered_viability";
+        let CoordinateDomainState {
+            domains,
+            assigned,
+            candidate,
+        } = state;
         let port_root =
             |use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool| -> Result<_, CodecError> {
                 let Some(&local) = ctx.get_hash_map(local_edge_by_id, &use_.edge, OPERATION)?
@@ -3206,9 +3215,11 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                                     assignment,
                                     local_edge_by_id,
                                     edges,
-                                    domains,
-                                    assigned,
-                                    Some((root, point)),
+                                    CoordinateDomainState {
+                                        domains,
+                                        assigned,
+                                        candidate: Some((root, point)),
+                                    },
                                     work_budget,
                                 )
                             },
