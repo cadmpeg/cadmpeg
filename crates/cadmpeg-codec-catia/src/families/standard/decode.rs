@@ -5231,11 +5231,14 @@ fn partition_standard_face_components(
     {
         return Ok(false);
     }
-    // Every row holds distinct in-memory face indexes, so the total fits usize.
     let component_face_count = ctx.fold(
         components,
         0usize,
-        |total, faces| Ok(total.saturating_add(faces.len())),
+        |total, faces| {
+            total.checked_add(faces.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_standard_component_face_count", u64::MAX, u64::MAX)
+            })
+        },
         "catia_standard_component_face_count",
     )?;
     if component_face_count != ir.model.faces.len() {
