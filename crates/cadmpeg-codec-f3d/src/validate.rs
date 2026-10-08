@@ -37,53 +37,15 @@ fn design_stream_contains_entry(
     stream: &str,
     entry: &str,
 ) -> Result<bool, CodecError> {
-    const OP: &str = "match F3D design stream entry";
-    if let Some(direct) = decode.strip_prefix(stream, "f3d:", OP)? {
-        let mut cursor = 0usize;
-        let matches = decode.all_by(
-            entry.chars(),
-            |character| {
-                let mut utf8 = [0; 4];
-                let bytes = character.encode_utf8(&mut utf8).as_bytes();
-                let mut escaped = [0; 12];
-                let length = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-                    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-                    // One Unicode scalar has at most four UTF-8 bytes.
-                    for (index, byte) in bytes.iter().copied().enumerate() {
-                        escaped[index * 3] = b'%';
-                        escaped[index * 3 + 1] = HEX[usize::from(byte >> 4)];
-                        escaped[index * 3 + 2] = HEX[usize::from(byte & 15)];
-                    }
-                    bytes.len() * 3
-                } else {
-                    escaped[..bytes.len()].copy_from_slice(bytes);
-                    bytes.len()
-                };
-                let Some(end) = cursor.checked_add(length) else {
-                    return Ok(false);
-                };
-                let Some(actual) = direct.as_bytes().get(cursor..end) else {
-                    return Ok(false);
-                };
-                if actual != &escaped[..length] {
-                    return Ok(false);
-                }
-                cursor = end;
-                Ok(true)
-            },
-            OP,
-        )?;
-        if matches && cursor == direct.len() {
-            return Ok(true);
-        }
-    }
-    match decode.strip_prefix(stream, "f3d:xref/", OP)? {
-        Some(qualified) => match decode.strip_suffix(qualified, entry, OP)? {
-            Some(prefix) => decode.ends_with(prefix, "/", OP),
-            None => Ok(false),
-        },
-        None => Ok(false),
-    }
+    decode.charge_work(
+        u64_from_index(stream.len())
+            .checked_add(u64_from_index(entry.len()))
+            .ok_or_else(|| {
+                decode.refuse_codec_limit("match F3D design stream entry", u64::MAX, u64::MAX)
+            })?,
+        "match F3D design stream entry",
+    )?;
+    Ok(ids::native_scope_matches(stream, entry))
 }
 
 /// Admit the empty reference table used by a legacy Combine tool operand.
@@ -5944,18 +5906,6 @@ fn validate_extrude_selection_members(
             Ord::cmp,
             "f3d extrude selection identities sort",
         )?;
-        let (expected_history, _expected_history_storage) = ctx.decode.with_scoped_storage(
-            "hold F3D expected Extrude selection history",
-            || {
-                history::selection::historical_extrude_selection_identity_kind(
-                    ctx.decode,
-                    member,
-                    &native.design_component_naming_spaces,
-                    &native.design_body_bindings,
-                    &native.asm_histories,
-                )
-            },
-        )?;
         let history_matches = if historical_candidates_retained {
             if let Some(binding) = member.historical.as_ref() {
                 let (state_ids, _state_ids_storage) = ctx.decode.with_scoped_storage(
@@ -5986,6 +5936,18 @@ fn validate_extrude_selection_members(
                 true
             }
         } else {
+            let (expected_history, _expected_history_storage) = ctx.decode.with_scoped_storage(
+                "hold F3D expected Extrude selection history",
+                || {
+                    history::selection::historical_extrude_selection_identity_kind(
+                        ctx.decode,
+                        member,
+                        &native.design_component_naming_spaces,
+                        &native.design_body_bindings,
+                        &native.asm_histories,
+                    )
+                },
+            )?;
             ctx.decode.equal(
                 &expected_history
                     .as_ref()
