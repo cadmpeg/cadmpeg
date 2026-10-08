@@ -41,3 +41,39 @@ fn inferred_point_candidate_deduplication_preserves_empty_constraints_and_refusa
         .is_empty());
     crate::test_support::work_refusal_at("deduplicate SLDPRT inferred point coordinates", solve);
 }
+
+#[test]
+fn empty_solver_graphs_release_storage_without_retaining_output() {
+    use crate::records::FeatureInputLane;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        assert!(
+            crate::resolved_features::endpoints::inferred_point_coordinates_by_index(
+                &ctx, &lane, "feature",
+            )
+            .unwrap()
+            .is_empty()
+        );
+    }
+}

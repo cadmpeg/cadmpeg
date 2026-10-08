@@ -1577,6 +1577,7 @@ pub(crate) fn bind_scalar_operands(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OWNER: &str = "bind SLDPRT scalar operand owners";
     const CANDIDATES: &str = "collect SLDPRT scalar binding candidates";
+    let mut selection_history = super::selections::SelectionHistory::new(ctx, histories)?;
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
     let represented_sketches =
         storage.with_storage(|| represented_sketch_features(ctx, histories, lanes))?;
@@ -1709,7 +1710,7 @@ pub(crate) fn bind_scalar_operands(
                 }
             }
         }
-        finalize_lane_bindings(ctx, histories, lane)?;
+        finalize_lane_bindings(ctx, histories, &mut selection_history, lane)?;
     }
     Ok(())
 }
@@ -1717,6 +1718,7 @@ pub(crate) fn bind_scalar_operands(
 pub(crate) fn finalize_lane_bindings(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
+    selection_history: &mut super::selections::SelectionHistory<'_, '_>,
     lane: &mut FeatureInputLane,
 ) -> Result<(), cadmpeg_core::CodecError> {
     const MARKERS: &str = "collect SLDPRT scalar marker candidates";
@@ -1796,7 +1798,9 @@ pub(crate) fn finalize_lane_bindings(
                     &u32::from(local_id),
                     "lookup SLDPRT scalar marker group",
                 )?
-                .and_then(|candidates| unique_marker_candidate(candidates))
+                .map(|candidates| unique_marker_candidate(ctx, candidates))
+                .transpose()?
+                .flatten()
             else {
                 continue;
             };
@@ -1886,9 +1890,12 @@ pub(crate) fn finalize_lane_bindings(
         relation_bindings_scoped(ctx, &lane.id, &lane.classes, &lane.scalars, &intervals)?;
     lane.relation_instances = relation_instances(ctx, histories, lane)?;
     lane.body_selections = compact_body_selections(ctx, histories, lane)?;
-    lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
-    lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
-    lane.generated_surface_identities = generated_surface_identities(ctx, lane)?;
+    let history_features = selection_history.for_lane(ctx, lane)?;
+    lane.edge_selections = compact_edge_selections(ctx, histories, history_features, lane)?;
+    let identities = generated_surface_identities(ctx, lane)?;
+    lane.surface_selections =
+        compact_surface_selections(ctx, histories, history_features, lane, &identities)?;
+    lane.generated_surface_identities = identities;
     Ok(())
 }
 
@@ -1960,6 +1967,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut selection_history = super::selections::SelectionHistory::new(ctx, histories)?;
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
     let mut unresolved = HashSet::new();
     for feature in ctx.admit_iter(model_features, SCALAR_BINDING_INDEX)? {
@@ -1995,7 +2003,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
             continue;
         }
         bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
-        finalize_lane_bindings(ctx, histories, lane)?;
+        finalize_lane_bindings(ctx, histories, &mut selection_history, lane)?;
     }
     Ok(())
 }
@@ -2577,11 +2585,21 @@ fn bind_resolved_curve_vertices(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const SELECTED: &str = "scan SLDPRT selected curve endpoints";
     const RESOLVE: &str = "resolve SLDPRT curve endpoints";
+    let prefixes = crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+        ctx,
+        &lane.native_payload,
+    )?;
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
     let selected_axis_endpoints = {
         let mut marker_storage = ctx.reserve_scoped(0, SELECTED)?;
         let (markers_by_id, markers) =
             lane_marker_index(ctx, &mut marker_storage, &lane.sketch_entities)?;
+        let geometry =
+            crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                ctx,
+                &markers,
+                std::rc::Rc::clone(&prefixes),
+            )?;
         let mut selected = HashSet::new();
         for curve in ctx.admit_iter(&markers, SELECTED)? {
             if !index_from_u64(curve.offset()).is_some_and(|offset| {
@@ -2596,6 +2614,7 @@ fn bind_resolved_curve_vertices(
                     curve,
                     &markers_by_id,
                     &markers,
+                    &geometry,
                 )
             })?;
             for marker in ctx.admit_iter(endpoints, SELECTED)? {
@@ -2618,6 +2637,12 @@ fn bind_resolved_curve_vertices(
         let (resolved_curves, resolved_endpoints) = {
             let (markers_by_id, markers) =
                 lane_marker_index(ctx, &mut round, &lane.sketch_entities)?;
+            let geometry =
+                crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                    ctx,
+                    &markers,
+                    std::rc::Rc::clone(&prefixes),
+                )?;
             let mut resolved_curves = HashSet::new();
             let mut resolved_endpoints = HashSet::new();
             for curve in ctx.admit_iter(&markers, RESOLVE)? {
@@ -2634,6 +2659,7 @@ fn bind_resolved_curve_vertices(
                         curve,
                         &markers_by_id,
                         &markers,
+                        &geometry,
                     )
                 })?;
                 if endpoints.len() == 2 {

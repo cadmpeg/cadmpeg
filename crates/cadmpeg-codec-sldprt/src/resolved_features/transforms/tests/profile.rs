@@ -269,26 +269,45 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
         producer_feature_refs: producer.into_iter().map(str::to_string).collect(),
         terminal_feature_ref: producer.map(str::to_string),
     };
+    let ctx = cadmpeg_test_support::service_decode_context();
     let retained = input_owned_edge_selections(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         vec![
-            selection(0, Some("input")),
-            selection(1, None),
-            selection(2, Some("input")),
+            (
+                selection(0, Some("input")),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
+            (
+                selection(1, None),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
+            (
+                selection(2, Some("input")),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
         ],
     )
     .unwrap();
     assert_eq!(
         retained
             .iter()
-            .map(|selection| selection.ordinal)
+            .map(|(selection, _)| selection.ordinal)
             .collect::<Vec<_>>(),
         vec![0, 2]
     );
 
     let retained = input_owned_edge_selections(
-        &cadmpeg_test_support::service_decode_context(),
-        vec![selection(3, None), selection(4, None)],
+        &ctx,
+        vec![
+            (
+                selection(3, None),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
+            (
+                selection(4, None),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
+        ],
     )
     .unwrap();
     assert_eq!(retained.len(), 2);

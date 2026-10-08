@@ -2573,6 +2573,7 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     index: &CurveMarkers<'_, 'a>,
+    geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
     let feature = curve.feature_ref.as_deref();
@@ -2609,6 +2610,7 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
         markers,
         linking,
         Some(index),
+        geometry,
     )
 }
 
@@ -2622,8 +2624,18 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
+    geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
-    marker_curve_endpoint_markers_from(ctx, payload, curve, markers_by_id, markers, markers, None)
+    marker_curve_endpoint_markers_from(
+        ctx,
+        payload,
+        curve,
+        markers_by_id,
+        markers,
+        markers,
+        None,
+        geometry,
+    )
 }
 
 fn marker_curve_endpoint_markers_from<'a>(
@@ -2634,6 +2646,7 @@ fn marker_curve_endpoint_markers_from<'a>(
     markers: &[&'a SketchInputEntity],
     linking: &[&'a SketchInputEntity],
     index: Option<&CurveMarkers<'_, 'a>>,
+    geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
     if index.is_none() {
@@ -2680,8 +2693,8 @@ fn marker_curve_endpoint_markers_from<'a>(
                 ctx,
                 payload,
                 curve,
-                markers,
                 Some(56),
+                geometry,
             )?
         };
         if endpoints.len() == 2 {
@@ -2713,12 +2726,14 @@ fn marker_curve_endpoint_markers_from<'a>(
         return copy_endpoint_markers(ctx, &endpoints);
     }
     let roster = index.map_or(markers, |index| index.roster);
-    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, roster)?;
+    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, roster, geometry)?;
     if endpoints.len() == 2 {
         if let Some(direct) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
             let roster = [endpoints[0], endpoints[1]];
-            if legacy_marker104_arc_center(ctx, payload, curve, markers, roster)?.is_none()
-                && legacy_marker104_arc_center(ctx, payload, curve, markers, direct)?.is_some()
+            if legacy_marker104_arc_center(ctx, payload, curve, markers, roster, geometry)?
+                .is_none()
+                && legacy_marker104_arc_center(ctx, payload, curve, markers, direct, geometry)?
+                    .is_some()
             {
                 return copy_endpoint_markers(ctx, &direct);
             }

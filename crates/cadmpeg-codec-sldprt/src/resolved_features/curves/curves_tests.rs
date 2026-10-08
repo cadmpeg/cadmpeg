@@ -137,15 +137,21 @@ fn connected_arc_refuses_collection_limit() {
 }
 
 #[test]
-fn connected_arc_refuses_retained_limit() {
-    let mut entities = connected_arc_limit_entities();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
+fn connected_arc_refuses_materialized_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "copy SLDPRT connected arc point identity",
+        |cap| {
+            let mut entities = connected_arc_limit_entities();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::resolve_connected_marker_arcs(&ctx, &mut entities, EPS_REFUSAL_GEOMETRY)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "copy SLDPRT connected arc point identity"));
 }
 
@@ -338,21 +344,21 @@ fn closed_profile_refuses_collection_limit() {
 }
 
 #[test]
-fn closed_profile_refuses_retained_limit() {
+fn closed_profile_refuses_materialized_limit() {
     let entities = closed_profile_limit_entities();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy SLDPRT closed curve identity",
         |cap| {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             super::closed_marker_profiles(&ctx, &entities).map(|_| ())
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "copy SLDPRT closed curve identity"));
 }
 
@@ -1197,38 +1203,47 @@ fn linked_semicircle_refuses_collection_limit() {
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error =
-        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
-            .unwrap_err();
+    let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
+    let error = resolve_two_center_semicircle_profile(
+        &ctx,
+        &payload,
+        &markers,
+        &mut entities,
+        &mut entities_storage,
+        EPS_REFUSAL_GEOMETRY,
+    )
+    .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "collect SLDPRT semicircle records"));
 }
 
 #[test]
-fn linked_semicircle_refuses_retained_limit() {
+fn linked_semicircle_refuses_materialized_limit() {
     let (payload, records, entities) = linked_semicircle_fixture();
     let markers = records.iter().collect::<Vec<_>>();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy SLDPRT semicircle point identity",
         |cap| {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
             let mut entities = entities.clone();
+            let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
             resolve_two_center_semicircle_profile(
                 &ctx,
                 &payload,
                 &markers,
                 &mut entities,
+                &mut entities_storage,
                 EPS_REFUSAL_GEOMETRY,
             )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "copy SLDPRT semicircle point identity"));
 }
 
@@ -1240,7 +1255,16 @@ fn linked_semicircle_records_close_a_two_center_profile() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
-    resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap();
+    let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
+    resolve_two_center_semicircle_profile(
+        &ctx,
+        &payload,
+        &markers,
+        &mut entities,
+        &mut entities_storage,
+        EPS_REFUSAL_GEOMETRY,
+    )
+    .unwrap();
 
     assert_eq!(
         entities
@@ -1736,12 +1760,14 @@ fn packed_slot_descriptor_run_is_not_independent_geometry() {
     }
     payload.copy_within(slot_offset..slot_offset + 126, slot_offset + 126);
 
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let slots = super::SlotReferences::new(&ctx, &payload).unwrap();
     assert_eq!(
-        super::slot_curve_and_center_indices(&payload, slot_offset),
+        super::slot_curve_and_center_indices(&ctx, &slots, slot_offset).unwrap(),
         Some(([0, 3, 1, 2], [0, 1]))
     );
     assert_eq!(
-        super::slot_curve_and_center_indices(&payload, slot_offset + 126),
+        super::slot_curve_and_center_indices(&ctx, &slots, slot_offset + 126).unwrap(),
         Some(([0, 3, 1, 2], [0, 1]))
     );
 
@@ -1762,11 +1788,13 @@ fn linked_semicircle_refuses_work_at_minimum_admission() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, policy).unwrap();
         let mut output = entities.clone();
+        let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
         resolve_two_center_semicircle_profile(
             &ctx,
             &payload,
             &markers,
             &mut output,
+            &mut entities_storage,
             EPS_SEMICIRCLE_TEST,
         )?;
         Ok::<_, CodecError>(output)

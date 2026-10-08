@@ -1,9 +1,11 @@
 use crate::records::SketchInputKind;
+use crate::resolved_features::endpoints::arc_centers::{unique_arc_center_marker, ArcCenterIndex};
 use crate::resolved_features::endpoints::coordinate_roster_arc_center;
 use crate::resolved_features::endpoints::current_indexed_arc_reverses_center_sweep;
 use crate::resolved_features::endpoints::indexed_arc_uses_coordinate_center;
 use crate::resolved_features::endpoints::legacy_compact_diameter_arc_center;
-use crate::resolved_features::endpoints::unique_arc_center_marker;
+
+const EPS_CENTER_POSITION: f64 = 1.0e-8;
 use crate::resolved_features::typed_relations::current_undetailed_bounded_curve_is_line;
 use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::resolved_features::LEGACY_SKETCH_MARKER;
@@ -74,18 +76,36 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
             ctx,
             &payload,
             &curve,
-            &markers,
             [&coordinates[8], &coordinates[10]],
+            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                ctx,
+                &markers,
+                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                    ctx, &payload,
+                )?,
+            )?,
         )
     });
     assert_eq!(
-        coordinate_roster_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            [&coordinates[8], &coordinates[10]],
-        )
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let result = coordinate_roster_arc_center(
+                &ctx,
+                &payload,
+                &curve,
+                [&coordinates[8], &coordinates[10]],
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                    &ctx,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &ctx, &payload,
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            );
+            result
+        }
         .unwrap(),
         Some([0.0, -0.02])
     );
@@ -180,24 +200,44 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
     let start = Point2::new(1.0, 0.0);
     let end = Point2::new(0.0, 1.0);
     assert_eq!(
-        unique_arc_center_marker(
-            &cadmpeg_test_support::service_decode_context(),
-            start,
-            end,
-            &[Point2::new(0.0, 0.0), Point2::new(4.0, 3.0)],
-            1.0e-8,
-        )
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let candidates = ArcCenterIndex::from_points(
+                &ctx,
+                &[(None, Point2::new(0.0, 0.0)), (None, Point2::new(4.0, 3.0))],
+                EPS_CENTER_POSITION,
+            )
+            .unwrap();
+            unique_arc_center_marker(
+                &ctx,
+                start,
+                end,
+                &candidates,
+                EPS_CENTER_POSITION,
+                [None, None],
+            )
+        }
         .unwrap(),
         Some(Point2::new(0.0, 0.0))
     );
     assert_eq!(
-        unique_arc_center_marker(
-            &cadmpeg_test_support::service_decode_context(),
-            start,
-            end,
-            &[Point2::new(0.0, 0.0), Point2::new(0.5, 0.5)],
-            1.0e-8,
-        )
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let candidates = ArcCenterIndex::from_points(
+                &ctx,
+                &[(None, Point2::new(0.0, 0.0)), (None, Point2::new(0.5, 0.5))],
+                EPS_CENTER_POSITION,
+            )
+            .unwrap();
+            unique_arc_center_marker(
+                &ctx,
+                start,
+                end,
+                &candidates,
+                EPS_CENTER_POSITION,
+                [None, None],
+            )
+        }
         .unwrap(),
         None
     );
@@ -241,16 +281,35 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
     let markers = [&start, &center, &end, &off_axis];
 
     crate::test_support::work_refusal_at("deduplicate SLDPRT endpoint centers", |ctx| {
-        legacy_compact_diameter_arc_center(ctx, &payload, &curve, &markers, [&start, &end])
-    });
-    assert_eq!(
         legacy_compact_diameter_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
+            ctx,
             &payload,
             &curve,
-            &markers,
-            [&start, &end]
+            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                ctx,
+                &markers,
+                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                    ctx, &payload,
+                )?,
+            )?,
+            [&start, &end],
         )
+    });
+    assert_eq!(
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let geometry =
+                crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                    &ctx,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &ctx, &payload,
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            legacy_compact_diameter_arc_center(&ctx, &payload, &curve, &geometry, [&start, &end])
+        }
         .unwrap(),
         Some([0.0, 0.0])
     );
@@ -260,14 +319,16 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
 fn unique_arc_center_cell_deduplication_preserves_center_and_refusal() {
     const EPS_CENTER_CELL: f64 = 1.0e-8;
     let center = Point2::new(0.0, 0.0);
-    let candidates = [center, center];
+    let candidates = [(None, center), (None, center)];
     let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let candidates = ArcCenterIndex::from_points(ctx, &candidates, EPS_CENTER_CELL)?;
         unique_arc_center_marker(
             ctx,
             Point2::new(1.0, 0.0),
             Point2::new(0.0, 1.0),
             &candidates,
             EPS_CENTER_CELL,
+            [None, None],
         )
     };
     assert_eq!(
