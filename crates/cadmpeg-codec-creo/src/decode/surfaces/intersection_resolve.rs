@@ -154,53 +154,38 @@ pub(in super::super) fn fc14_held_coordinate(
     ctx: &DecodeContext<'_>,
     record: Option<&crate::curve::FcCurveCoordinates>,
 ) -> Result<Option<f64>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let Some(record) = record else {
         return Ok(None);
     };
+    let mut first: Option<(&[u8; 8], f64)> = None;
+    let mut matched = 0;
     let mut tokens = record.tokens.iter();
-    let Some(first) = ctx.find_by(
-        &mut tokens,
-        |token| Ok(token.raw.first() == Some(&0x2d)),
-        "creo FC14 coordinate tokens",
-    )?
-    else {
-        return Ok(None);
-    };
-    for _ in 0..3 {
-        let Some(token) = ctx.find_by(
-            &mut tokens,
-            |token| Ok(token.raw.first() == Some(&0x2d)),
-            "creo FC14 coordinate tokens",
-        )?
-        else {
-            return Ok(None);
+    while tokens.len() != 0 {
+        let Some(token) = ctx.next_charged(&mut tokens, "creo FC14 coordinate tokens")? else {
+            break;
         };
-        if !ctx.equal(
-            &token.raw,
-            &first.raw,
-            "creo FC14 coordinate token bytes comparison",
-        )? || token.value_mm != first.value_mm
-        {
-            return Ok(None);
-        }
-    }
-    if !first.value_mm.is_finite() {
-        return Ok(None);
-    }
-    while let Some(token) = ctx.next_charged(&mut tokens, "creo FC14 coordinate tokens")? {
         if token.raw.first() != Some(&0x2d) {
             continue;
         }
-        if !ctx.equal(
-            &token.raw,
-            &first.raw,
-            "creo FC14 coordinate token bytes comparison",
-        )? || token.value_mm != first.value_mm
-        {
+        let Ok(raw): Result<&[u8; 8], _> = token.raw.as_slice().try_into() else {
+            return Ok(None);
+        };
+        if let Some((first_raw, value)) = first {
+            if raw != first_raw || token.value_mm != value {
+                return Ok(None);
+            }
+        } else {
+            first = Some((raw, token.value_mm));
+        }
+        matched = (matched + 1).min(4);
+        if matched == 4 && !token.value_mm.is_finite() {
             return Ok(None);
         }
     }
-    Ok(Some(first.value_mm))
+    Ok(first.filter(|_| matched == 4).map(|(_, value)| value))
 }
 
 pub(in super::super) fn select_fc14_axis_coordinate_candidate(
@@ -239,6 +224,8 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
 
 #[cfg(test)]
 mod tests {
+    mod fc14;
+
     use super::{curve_contains_points, CarrierEquation, CurveGeometry, SolvedCurveGeometry};
     use crate::decode::analytic::equations::{ConeEquation, PlaneEquation, SphereEquation};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -274,10 +261,7 @@ mod tests {
         };
         for expected in [Some(1.0), None] {
             crate::test_support::assert_work_boundaries(
-                &[
-                    "creo FC14 coordinate tokens",
-                    "creo FC14 coordinate token bytes comparison",
-                ],
+                &["creo FC14 coordinate tokens"],
                 |ctx| {
                     assert_eq!(super::fc14_held_coordinate(ctx, Some(&record))?, expected);
                     Ok(())
