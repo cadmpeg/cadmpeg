@@ -202,6 +202,22 @@ mod tests {
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
+        // The two lower endpoint knots pass; the first upper endpoint knot refuses.
+        policy.limits.max_work_units = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let original = super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve).unwrap_err();
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(original.operation, "sketch NURBS endpoint knot scan");
+        assert_eq!((original.limit, original.used, original.additional), (2, 2, 1));
+        assert_eq!(
+            super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve),
+            Err(original)
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
         // Four endpoint knots, three weights and two endpoint tangents.
         policy.limits.max_work_units = 9;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
