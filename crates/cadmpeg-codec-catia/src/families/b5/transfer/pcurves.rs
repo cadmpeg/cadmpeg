@@ -427,13 +427,9 @@ pub(super) fn lifted_curve_geometry(
         ..
     } = surface
     {
-        let Some(native_knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
+        let Some(knots) = pcurve_nurbs_knots(ctx, pcurve)? else {
             return Ok(None);
         };
-        let knots = ctx.collect_vec(
-            native_knots.into_iter().map(FiniteReal::get),
-            "catia_b5_lifted_plane_knots",
-        )?;
         let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
         let points = ctx.collect_vec(
             pcurve.control_points.iter().map(|uv| {
