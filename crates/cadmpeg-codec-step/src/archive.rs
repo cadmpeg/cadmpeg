@@ -56,7 +56,8 @@ pub(crate) fn open_root<'a>(
     root: View<'a>,
 ) -> Result<OpenedRoot<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
-    for entry in ctx.admit_iter(archive.entries(), "STEP open root borrowed traversal")? {
+    let mut entries = archive.entries().iter();
+    while let Some(entry) = ctx.next_charged(&mut entries, "STEP open root borrowed traversal")? {
         validate_entry_name(ctx, &entry.name)?;
         if entry.uses_utf8_name_encoding() {
             return Err(CodecError::Malformed(
