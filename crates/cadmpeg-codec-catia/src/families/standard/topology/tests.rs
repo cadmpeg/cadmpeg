@@ -448,7 +448,9 @@ fn standard_duplicate_assignment_marks_propagate_collection_refusal() {
 
 #[test]
 fn standard_duplicate_face_comparison_refuses_nested_face_lists() {
-    use super::{duplicate_face_assignments_equivalent, EdgeBoundaryLayout, EdgeRow};
+    use super::{
+        duplicate_face_assignments_equivalent, duplicate_face_groups, EdgeBoundaryLayout, EdgeRow,
+    };
     use cadmpeg_core::CodecError;
 
     let rows = [
@@ -464,29 +466,27 @@ fn standard_duplicate_face_comparison_refuses_nested_face_lists() {
         },
     ];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        duplicate_face_assignments_equivalent(
+        let groups = duplicate_face_groups(
             ctx,
             &[0, 1],
             &rows,
             &[[0, 0], [0, 0]],
             &[[0, 1], [0, 1]],
             None,
-            [&[0, 0], &[0, 1]],
-        )
+        )?;
+        duplicate_face_assignments_equivalent(ctx, &groups, [&[0, 0], &[0, 1]])
     };
     assert!(!crate::test_support::with_service_context(run).expect("service resource budget"));
-    for (cap, operation) in [
+    for operation in [
         "catia_standard_duplicate_left_faces",
         "catia_standard_duplicate_right_faces",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let result = crate::test_support::with_collection_limit(u64_from_index(cap) + 2, run);
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
-        ));
+    ] {
+        let result = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| crate::test_support::with_collection_limit(cap, run),
+        );
+        assert!(matches!(result, CodecError::ResourceLimit(limit) if limit.operation == operation));
     }
 }
 
@@ -1354,3 +1354,58 @@ fn reconstructed_union_root_sources_propagate_caller_work_refusals() {
 }
 
 mod source_replay;
+
+#[test]
+fn duplicate_face_groups_index_rows_and_preserve_nontransitive_stars() {
+    use super::{
+        duplicate_face_assignments_equivalent, duplicate_face_groups, EdgeBoundaryLayout, EdgeRow,
+    };
+    let rows = (0..1024_u32)
+        .map(|row| {
+            EdgeRow::new(
+                1,
+                vec![row, row + 1],
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("row")
+        })
+        .collect::<Vec<_>>();
+    let unresolved = (0..rows.len()).collect::<Vec<_>>();
+    let faces = vec![[0, 0]; rows.len()];
+    let points = (0..rows.len())
+        .map(|row| [2 * row, 2 * row + 1])
+        .collect::<Vec<_>>();
+    crate::test_support::with_work_limit(500_000, |ctx| {
+        let groups = duplicate_face_groups(ctx, &unresolved, &rows, &faces, &points, None)
+            .expect("indexed groups");
+        assert_eq!(
+            groups,
+            (0..rows.len()).map(|row| vec![row]).collect::<Vec<_>>()
+        );
+    });
+    // Row0 shares a class with row1; row1 shares a row signature with row2.
+    // The old representative-star relation produces two overlapping groups.
+    let rows = [rows[0].clone(), rows[1].clone(), rows[1].clone()];
+    let groups = crate::test_support::with_service_context(|ctx| {
+        duplicate_face_groups(
+            ctx,
+            &[0, 1, 2],
+            &rows,
+            &[[0, 0]; 3],
+            &[[0, 1]; 3],
+            Some(&[0, 0, 1]),
+        )
+    })
+    .expect("groups");
+    assert_eq!(groups, vec![vec![0, 1], vec![1, 2]]);
+    crate::test_support::with_retained_limit(0, |ctx| {
+        assert!(
+            duplicate_face_assignments_equivalent(ctx, &groups, [&[2, 3, 2], &[3, 2, 3]])
+                .expect("scratch comparison")
+        );
+        assert!(
+            !duplicate_face_assignments_equivalent(ctx, &groups, [&[2, 3, 2], &[2, 2, 3]])
+                .expect("distinct assignments")
+        );
+    });
+}
