@@ -585,7 +585,8 @@ impl SourceFidelity {
                                 "read native unknown product",
                             )
                         }))
-                    })? else {
+                    })?
+                    else {
                         break;
                     };
                     let product = match product {
