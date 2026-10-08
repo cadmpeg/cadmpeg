@@ -701,9 +701,9 @@ fn decode_container<'a>(
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
-                Ok(decoded) => {
-                    apply_kernel_header(ctx, &mut ir, carrier.family, &decoded.header.metadata)?;
-                    Some(decoded.brep)
+                Ok(brep) => {
+                    apply_kernel_header(ctx, &mut ir, carrier.family, &header.metadata)?;
+                    Some(brep)
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
@@ -1685,7 +1685,9 @@ fn project_preview_asset(
         return Err(CodecError::Malformed("asset data must not be empty".into()));
     }
     let native_ref = ctx.copy_retained_text(native_id, "retain Inventor preview source id")?;
-    let name = ctx.copy_retained_text("document preview", "retain Inventor preview name")?;
+    let mut name =
+        ctx.retained_string("document preview".len(), "retain Inventor preview name")?;
+    name.push_str("document preview");
     let media_type = ctx.copy_retained_text(media_type, "retain Inventor preview media type")?;
     let data = ctx.copy_retained(bytes, "retain Inventor preview asset")?;
     let asset = Asset::try_new(
@@ -1857,13 +1859,23 @@ fn project_ufrx_state(
 ) -> Result<UfrxRecord, CodecError> {
     ctx.charge_entities(1, "admit Inventor native structural records")?;
     Ok(match state {
-        UfrxState::Absent => UfrxRecord::Absent {
-            id: ctx
-                .copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
-        },
+        UfrxState::Absent => {
+            let mut id = ctx.retained_string(
+                "inventor:ufrx:state#root".len(),
+                "retain Inventor UFRx state id",
+            )?;
+            id.push_str("inventor:ufrx:state#root");
+            UfrxRecord::Absent { id }
+        }
         UfrxState::Malformed { stream, detail } => UfrxRecord::Malformed {
-            id: ctx
-                .copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
+            id: {
+                let mut id = ctx.retained_string(
+                    "inventor:ufrx:state#root".len(),
+                    "retain Inventor UFRx state id",
+                )?;
+                id.push_str("inventor:ufrx:state#root");
+                id
+            },
             directory_id: stream.directory_id(),
             detail: ctx.copy_retained_text(detail, "retain Inventor UFRx state detail")?,
         },
@@ -1874,8 +1886,14 @@ fn project_ufrx_state(
             source,
             detail,
         } => UfrxRecord::Unsupported {
-            id: ctx
-                .copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
+            id: {
+                let mut id = ctx.retained_string(
+                    "inventor:ufrx:state#root".len(),
+                    "retain Inventor UFRx state id",
+                )?;
+                id.push_str("inventor:ufrx:state#root");
+                id
+            },
             directory_id: stream.directory_id(),
             schema: *schema,
             section_versions: ctx
@@ -1952,10 +1970,14 @@ fn project_ufrx_state(
                 .transpose()?
                 .flatten();
             UfrxRecord::ParsedPrefix(Box::new(UfrxParsedPrefix {
-                id: ctx.copy_retained_text(
-                    "inventor:ufrx:state#root",
-                    "retain Inventor UFRx state id",
-                )?,
+                id: {
+                    let mut id = ctx.retained_string(
+                        "inventor:ufrx:state#root".len(),
+                        "retain Inventor UFRx state id",
+                    )?;
+                    id.push_str("inventor:ufrx:state#root");
+                    id
+                },
                 directory_id: document.stream.directory_id(),
                 schema: document.schema,
                 section_versions: {

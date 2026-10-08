@@ -1654,10 +1654,9 @@ impl ActiveCarrierRecord {
         ctx: &DecodeContext<'_>,
         state: &crate::kernel::ActiveCarrierState<'_>,
     ) -> Result<Self, CodecError> {
-        let id = ctx.copy_retained_text(
-            "inventor:kernel:active-carrier#root",
-            "retain Inventor active carrier id",
-        )?;
+        let id_text = "inventor:kernel:active-carrier#root";
+        let mut id = ctx.retained_string(id_text.len(), "retain Inventor active carrier id")?;
+        id.push_str(id_text);
         Ok(match state {
             crate::kernel::ActiveCarrierState::NotApplicable => Self::NotApplicable { id },
             crate::kernel::ActiveCarrierState::Unavailable(detail) => Self::Unavailable {
@@ -2089,6 +2088,54 @@ mod tests {
                 "history_reference": null, "detail": null
             }),
         );
+    }
+
+    #[test]
+    fn active_carrier_fixed_id_admits_exact_storage_without_work() {
+        use cadmpeg_core::decode::{
+            DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+        };
+        use cadmpeg_core::CodecError;
+
+        let id = "inventor:kernel:active-carrier#root";
+        let id_bytes = cadmpeg_core::decode::u64_from_index(id.len());
+        let state = crate::kernel::ActiveCarrierState::NotApplicable;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = id_bytes - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let Err(CodecError::ResourceLimit(limit)) = ActiveCarrierRecord::from_state(&ctx, &state)
+        else {
+            panic!("active-carrier ID must refuse below its exact retained size");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "retain Inventor active carrier id");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, id_bytes);
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit
+        ));
+
+        policy.limits.max_retained_bytes = id_bytes;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert_eq!(
+            ActiveCarrierRecord::from_state(&ctx, &state).expect("exact storage admitted"),
+            ActiveCarrierRecord::NotApplicable { id: id.to_owned() }
+        );
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "probe active-carrier ID work")
+        else {
+            panic!("fixed active-carrier ID copy must admit with zero work");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert!(matches!(
+            ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit
+        ));
     }
 
     #[test]

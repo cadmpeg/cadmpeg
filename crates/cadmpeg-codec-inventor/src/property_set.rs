@@ -127,7 +127,8 @@ impl PropertyValue<'_> {
             Self::String { value, .. } => {
                 ctx.copy_retained_text(value, "retain OLE scalar text")?
             }
-            Self::Guid { value, .. } => hex(ctx, value)?,
+            Self::Guid { value, .. } =>
+                crate::pmdc::fixed_hex(ctx, value, "retain OLE scalar text")?,
             Self::Empty { .. }
             | Self::Float { .. }
             | Self::Binary { .. }
@@ -979,19 +980,6 @@ fn require_and_remove_null(
     Ok(value)
 }
 
-fn hex(ctx: &DecodeContext<'_>, bytes: &[u8; 16]) -> Result<String, CodecError> {
-    let output_len = bytes
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain OLE scalar text", u64::MAX, u64::MAX))?;
-    let mut output = String::new();
-    ctx.try_reserve_retained_text(&mut output, output_len, "retain OLE scalar text")?;
-    for byte in ctx.admit_iter(bytes, "format OLE GUID as hexadecimal")? {
-        crate::decode::push_hex(ctx, &mut output, *byte)?;
-    }
-    Ok(output)
-}
-
 struct Cursor<'a> {
     view: View<'a>,
     scope: &'static str,
@@ -1140,6 +1128,20 @@ mod tests {
     };
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn guid_scalar_text_admits_storage_without_fixed_work() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 32;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("GUID context");
+        let value = PropertyValue::Guid { type_code: 0x48, value: [0xaf; 16] };
+        assert_eq!(value.scalar_text(&ctx).expect("fixed GUID text"),
+            Some("afafafafafafafafafafafafafafafaf".to_owned()));
+    }
 
     #[test]
     fn malformed_property_set_detail_refuses_retained_limit_before_copy() {
