@@ -1113,6 +1113,11 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],
@@ -1584,6 +1589,11 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &bindings,
@@ -1670,6 +1680,11 @@ fn standard_edge_limit_curve_copy_refuses_collection_limit() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut limited_ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],
@@ -1693,6 +1708,11 @@ fn standard_edge_limit_curve_copy_refuses_collection_limit() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],
@@ -1738,6 +1758,11 @@ fn standard_line_edge_uses_distance_parameterization() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],
@@ -1781,6 +1806,11 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[],

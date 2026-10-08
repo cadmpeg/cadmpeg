@@ -1072,6 +1072,300 @@ pub(super) fn standard_oriented_native_support_pcurves(
     Ok(Some([first, second]))
 }
 
+fn real_bits(value: f64) -> u64 {
+    if value == 0.0 {
+        0
+    } else {
+        value.to_bits()
+    }
+}
+
+fn point_bits(point: Point3) -> [u64; 3] {
+    [point.x, point.y, point.z].map(real_bits)
+}
+
+fn frame_bits(frame: &OrthonormalFrame3) -> [[u64; 3]; 2] {
+    [frame.axis().as_raw(), frame.reference().as_raw()]
+        .map(|vector| [vector.x, vector.y, vector.z].map(real_bits))
+}
+
+pub(super) fn nurbs_curve_fingerprint(
+    ctx: &DecodeContext<'_>,
+    curve: &NurbsCurve,
+) -> Result<u64, CodecError> {
+    use std::hash::{Hash, Hasher};
+    const OP: &str = "catia_standard_curve_fingerprint";
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    (
+        curve.degree(),
+        curve.periodic(),
+        curve.knots().len(),
+        curve.pole_count(),
+    )
+        .hash(&mut hash);
+    for &knot in ctx.admit_iter(curve.knots().as_slice(), OP)? {
+        real_bits(knot).hash(&mut hash);
+    }
+    match curve.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+            0u8.hash(&mut hash);
+            for point in ctx.admit_iter(points, OP)? {
+                point_bits(point.get()).hash(&mut hash);
+            }
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+            1u8.hash(&mut hash);
+            for pole in ctx.admit_iter(points, OP)? {
+                (point_bits(pole.point.get()), real_bits(pole.weight.get())).hash(&mut hash);
+            }
+        }
+    }
+    Ok(hash.finish())
+}
+
+fn solved_surface_fingerprint(
+    ctx: &DecodeContext<'_>,
+    geometry: &SolvedSurfaceGeometry,
+) -> Result<u64, CodecError> {
+    use std::hash::{Hash, Hasher};
+    const OP: &str = "catia_native_surface_fingerprint";
+    let _depth = ctx.enter_nested(OP)?;
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    match geometry {
+        SolvedSurfaceGeometry::Plane(value) => (
+            0u8,
+            point_bits(value.origin().get()),
+            frame_bits(value.frame()),
+        )
+            .hash(&mut hash),
+        SolvedSurfaceGeometry::Cylinder(value) => (
+            1u8,
+            point_bits(value.origin().get()),
+            frame_bits(value.frame()),
+            real_bits(value.radius().get()),
+        )
+            .hash(&mut hash),
+        SolvedSurfaceGeometry::Cone(value) => (
+            2u8,
+            point_bits(value.origin().get()),
+            frame_bits(value.frame()),
+            real_bits(value.radius().get()),
+            real_bits(value.ratio().get()),
+        )
+            .hash(&mut hash),
+        SolvedSurfaceGeometry::Sphere(value) => (
+            3u8,
+            point_bits(value.center().get()),
+            frame_bits(value.frame()),
+            real_bits(value.radius().get()),
+        )
+            .hash(&mut hash),
+        SolvedSurfaceGeometry::Torus(value) => (
+            4u8,
+            point_bits(value.center().get()),
+            frame_bits(value.frame()),
+            real_bits(value.major_radius().get()),
+            real_bits(value.minor_radius().get()),
+        )
+            .hash(&mut hash),
+        SolvedSurfaceGeometry::Nurbs(value) => {
+            (
+                5u8,
+                value.u_degree(),
+                value.v_degree(),
+                value.normal_reversed(),
+                value.u_periodic(),
+                value.v_periodic(),
+                value.u_knots().len(),
+                value.v_knots().len(),
+                value.u_count(),
+                value.v_count(),
+            )
+                .hash(&mut hash);
+            for knots in [value.u_knots(), value.v_knots()] {
+                for &knot in ctx.admit_iter(knots.as_slice(), OP)? {
+                    real_bits(knot).hash(&mut hash);
+                }
+            }
+            match value.pole_grid() {
+                cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } => {
+                    0u8.hash(&mut hash);
+                    for row in ctx.admit_iter(rows, OP)? {
+                        row.len().hash(&mut hash);
+                        for point in ctx.admit_iter(row, OP)? {
+                            point_bits(point.get()).hash(&mut hash);
+                        }
+                    }
+                }
+                cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } => {
+                    1u8.hash(&mut hash);
+                    for row in ctx.admit_iter(rows, OP)? {
+                        row.len().hash(&mut hash);
+                        for pole in ctx.admit_iter(row, OP)? {
+                            (point_bits(pole.point.get()), real_bits(pole.weight.get()))
+                                .hash(&mut hash);
+                        }
+                    }
+                }
+            }
+        }
+        SolvedSurfaceGeometry::Polygonal(value) => {
+            (
+                6u8,
+                real_bits(value.chordal_deflection().get()),
+                value.vertices().len(),
+                value.triangles().len(),
+            )
+                .hash(&mut hash);
+            for point in ctx.admit_iter(value.vertices(), OP)? {
+                point_bits(point.get()).hash(&mut hash);
+            }
+            for triangle in ctx.admit_iter(value.triangles(), OP)? {
+                triangle.hash(&mut hash);
+            }
+        }
+        SolvedSurfaceGeometry::Transformed(value) => {
+            (
+                7u8,
+                value.transform().rows().map(|row| row.map(real_bits)),
+                solved_surface_fingerprint(ctx, value.basis())?,
+            )
+                .hash(&mut hash);
+        }
+        SolvedSurfaceGeometry::Unknown { record } => {
+            (
+                8u8,
+                record
+                    .as_ref()
+                    .map(|id| ctx.hash_value(id.as_str(), OP))
+                    .transpose()?,
+            )
+                .hash(&mut hash);
+        }
+    }
+    Ok(hash.finish())
+}
+
+fn surface_fingerprint(
+    ctx: &DecodeContext<'_>,
+    geometry: &SurfaceGeometry,
+) -> Result<u64, CodecError> {
+    use std::hash::{Hash, Hasher};
+    const OP: &str = "catia_native_surface_fingerprint";
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    match geometry {
+        SurfaceGeometry::Solved(geometry) => {
+            (0u8, solved_surface_fingerprint(ctx, geometry)?).hash(&mut hash)
+        }
+        SurfaceGeometry::Procedural {
+            construction,
+            cache,
+        } => (
+            1u8,
+            ctx.hash_value(construction.as_str(), OP)?,
+            cache
+                .as_ref()
+                .map(|geometry| solved_surface_fingerprint(ctx, geometry))
+                .transpose()?,
+        )
+            .hash(&mut hash),
+    }
+    Ok(hash.finish())
+}
+
+struct GeometryBinding {
+    representative: usize,
+    unique: Option<usize>,
+}
+
+/// An append-only surface arena index. Repeated identities keep an explicit
+/// tombstone when distinct surface ids match the same source or geometry.
+pub(super) struct NativeSurfaceIndex<'ctx> {
+    source: HashMap<String, Option<usize>>,
+    geometry: HashMap<u64, Vec<GeometryBinding>>,
+    indexed_len: usize,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> NativeSurfaceIndex<'ctx> {
+    pub(super) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            source: HashMap::new(),
+            geometry: HashMap::new(),
+            indexed_len: 0,
+            storage: ctx.reserve_scoped(0, "catia_native_surface_index")?,
+        })
+    }
+
+    fn synchronize(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        surfaces: &[Surface],
+    ) -> Result<(), CodecError> {
+        const OP: &str = "catia_native_surface_index";
+        let mut tail = surfaces[self.indexed_len..].iter().enumerate();
+        while let Some((relative, surface)) = ctx.next_charged(&mut tail, OP)? {
+            let index = self.indexed_len + relative;
+            if let Some(source) = surface.source_object.as_ref().filter(|source| {
+                source.format == cadmpeg_ir::codec_format!(crate::dialect::FORMAT)
+                    && source.name.is_none()
+                    && source.color.is_none()
+                    && source.visible.is_none()
+                    && source.layer.is_none()
+                    && source.instance_path.is_empty()
+            }) {
+                if let Some(binding) =
+                    ctx.get_mut_hash_map(&mut self.source, source.object_id.as_str(), OP)?
+                {
+                    if let Some(previous) = *binding {
+                        if !ctx.equal(&surfaces[previous].id, &surface.id, OP)? {
+                            *binding = None;
+                        }
+                    }
+                } else {
+                    self.storage.with_storage(|| {
+                        let key = ctx.copy_retained_text(source.object_id.as_str(), OP)?;
+                        ctx.insert_hash_map(&mut self.source, key, Some(index), OP)
+                    })?;
+                }
+            }
+            let key = surface_fingerprint(ctx, &surface.geometry)?;
+            let mut matched = false;
+            if let Some(bucket) = ctx.get_mut_hash_map(&mut self.geometry, &key, OP)? {
+                // SurfaceGeometry has no DecodeCost; collision equality is unpriced.
+                if let Some(binding) = ctx.find_by(
+                    bucket,
+                    |binding| Ok(surfaces[binding.representative].geometry == surface.geometry),
+                    OP,
+                )? {
+                    if let Some(previous) = binding.unique {
+                        if !ctx.equal(&surfaces[previous].id, &surface.id, OP)? {
+                            binding.unique = None;
+                        }
+                    }
+                    matched = true;
+                }
+            }
+            if !matched {
+                self.storage.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut self.geometry,
+                        key,
+                        GeometryBinding {
+                            representative: index,
+                            unique: Some(index),
+                        },
+                        OP,
+                        OP,
+                    )
+                })?;
+            }
+        }
+        self.indexed_len = surfaces.len();
+        Ok(())
+    }
+}
+
 pub(super) struct BuildStandardEdgeCurveInputs<
     'input0,
     'input1,
@@ -1097,6 +1391,7 @@ pub(super) struct BuildStandardEdgeCurveInputs<
     pub(super) native_support: Option<&'input6 StandardEdgeSupport>,
     pub(super) limit_curve: Option<(&'input7 NurbsCurve, [f64; 2])>,
     pub(super) refusal: &'input8 mut crate::nurbs::LaneRefusals,
+    pub(super) native_surfaces: &'input11 mut NativeSurfaceIndex<'input9>,
     pub(super) admission: &'input11 mut FamilyEntityAdmission<'input9, 'input10>,
 }
 
@@ -1129,6 +1424,7 @@ pub(super) fn build_standard_edge_curve(
         native_support,
         limit_curve,
         refusal,
+        native_surfaces,
         admission,
     } = inputs;
 
@@ -1496,6 +1792,7 @@ pub(super) fn build_standard_edge_curve(
                 annotations,
                 native.surface_object_ids[0],
                 &native.carriers[0],
+                native_surfaces,
                 admission,
             )?;
             let second_surface = ensure_native_edge_support_surface(
@@ -1503,6 +1800,7 @@ pub(super) fn build_standard_edge_curve(
                 annotations,
                 native.surface_object_ids[1],
                 &native.carriers[1],
+                native_surfaces,
                 admission,
             )?;
             [
@@ -1616,80 +1914,44 @@ pub(super) fn ensure_native_edge_support_surface(
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     surface_object_id: u32,
     carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
+    index: &mut NativeSurfaceIndex<'_>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
     let ctx = admission.context();
-    let source = cgm_source(ctx, "surface", surface_object_id)?;
-    // A surface matches when its source object or, failing that, its exact
-    // geometry agrees; two distinct matching identities leave it ambiguous.
-    // Source objects and surface geometry have no decode cost, so those
-    // comparisons are unpriced; each visit and identity comparison is charged.
-    let mut source_match = None::<&SurfaceId>;
-    let mut source_ambiguous = false;
-    ctx.fold(
-        &ir.model.surfaces,
-        (),
-        |(), surface| {
-            if surface.source_object.as_ref() == Some(&source) {
-                match source_match {
-                    Some(id)
-                        if !ctx.equal(
-                            id,
-                            &surface.id,
-                            "catia_native_edge_support_source_scan",
-                        )? =>
-                    {
-                        source_ambiguous = true;
-                    }
-                    Some(_) => {}
-                    None => source_match = Some(&surface.id),
-                }
-            }
-            Ok(())
-        },
+    index.synchronize(ctx, &ir.model.surfaces)?;
+    let mut source_storage = ctx.reserve_scoped(0, "catia_native_edge_support_source")?;
+    let source = source_storage.with_storage(|| cgm_source(ctx, "surface", surface_object_id))?;
+    let source_match = ctx.get_hash_map(
+        &index.source,
+        source.object_id.as_str(),
         "catia_native_edge_support_source_scan",
     )?;
-    let source_matches_empty = source_match.is_none();
-    if !source_ambiguous {
-        if let Some(surface_id) = source_match {
-            return surface_id.try_clone_for_decode(
-                admission.context(),
-                "catia_native_edge_support_matched_surface_id",
-            );
-        }
+    if let Some(Some(surface)) = source_match {
+        return ir.model.surfaces[*surface]
+            .id
+            .try_clone_for_decode(ctx, "catia_native_edge_support_matched_surface_id");
     }
-    if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
-        let mut geometry_match = None::<&SurfaceId>;
-        let mut geometry_ambiguous = false;
-        ctx.fold(
-            &ir.model.surfaces,
-            (),
-            |(), surface| {
-                if surface.geometry == *geometry {
-                    match geometry_match {
-                        Some(id)
-                            if !ctx.equal(
-                                id,
-                                &surface.id,
-                                "catia_native_edge_support_geometry_scan",
-                            )? =>
-                        {
-                            geometry_ambiguous = true;
-                        }
-                        Some(_) => {}
-                        None => geometry_match = Some(&surface.id),
+    if source_match.is_none() {
+        if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
+            let key = surface_fingerprint(ctx, geometry)?;
+            if let Some(bucket) = ctx.get_hash_map(
+                &index.geometry,
+                &key,
+                "catia_native_edge_support_geometry_scan",
+            )? {
+                // SurfaceGeometry has no DecodeCost; collision equality is unpriced.
+                if let Some(binding) = ctx.find_by(
+                    bucket,
+                    |binding| Ok(ir.model.surfaces[binding.representative].geometry == *geometry),
+                    "catia_native_edge_support_geometry_scan",
+                )? {
+                    if let Some(surface) = binding.unique {
+                        return ir.model.surfaces[surface].id.try_clone_for_decode(
+                            ctx,
+                            "catia_native_edge_support_matched_surface_id",
+                        );
                     }
                 }
-                Ok(())
-            },
-            "catia_native_edge_support_geometry_scan",
-        )?;
-        if source_matches_empty && !geometry_ambiguous {
-            if let Some(surface_id) = geometry_match {
-                return surface_id.try_clone_for_decode(
-                    admission.context(),
-                    "catia_native_edge_support_matched_surface_id",
-                );
             }
         }
     }
@@ -1736,11 +1998,13 @@ pub(super) fn ensure_native_edge_support_surface(
         "native_edge_support_surface",
         Exactness::ByteExact,
     )?;
+    source_storage.commit()?;
     ir.model.surfaces.push(Surface {
         id: id.try_clone_for_decode(admission.context(), "catia_native_edge_support_record_id")?,
         geometry,
         source_object: Some(source),
     });
+    index.synchronize(ctx, &ir.model.surfaces)?;
     if let (
         Some(procedural_id),
         crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {

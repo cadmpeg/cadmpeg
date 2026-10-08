@@ -320,3 +320,156 @@ fn procedural_support_lookup_uses_the_stored_arena_index() {
     })
     .expect("one lookup and identity copy");
 }
+
+#[test]
+fn limit_curve_index_filters_distinct_curves_and_checks_collisions() {
+    use crate::families::standard::decode::{
+        edge_geometry::nurbs_curve_fingerprint, LimitCurveIndex,
+    };
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    let curves = (0..1024_u32)
+        .map(|row| {
+            NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    Point3::new(f64::from(row), 0.0, 0.0),
+                    Point3::new(f64::from(row), 1.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .expect("construction admission")
+            .expect("linear curve")
+        })
+        .collect::<Vec<_>>();
+    // Index construction plus every distinct lookup stays below the 523,776
+    // earlier-curve visits of an incremental linear scan.
+    crate::test_support::with_work_limit(400_000, |ctx| {
+        let mut index = LimitCurveIndex::new(ctx, &[]).expect("empty index");
+        for (row, curve) in curves.iter().enumerate() {
+            let key = nurbs_curve_fingerprint(ctx, curve).expect("fingerprint");
+            assert!(!index.contains(ctx, key, &curves, curve).expect("query"));
+            index.insert(ctx, key, row).expect("index insertion");
+            assert!(index.contains(ctx, key, &curves, curve).expect("repeat"));
+        }
+        index.insert(ctx, 0, 0).expect("synthetic collision bucket");
+        assert!(!index
+            .contains(ctx, 0, &curves, &curves[1])
+            .expect("exact collision check"));
+    });
+    let negative_zero = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![-0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(-0.0, -0.0, -0.0), Point3::new(0.0, 1.0, -0.0)],
+        None,
+        false,
+    )
+    .expect("construction admission")
+    .expect("linear curve");
+    assert_eq!(curves[0], negative_zero);
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(
+            nurbs_curve_fingerprint(ctx, &curves[0]).expect("key"),
+            nurbs_curve_fingerprint(ctx, &negative_zero).expect("normalized key")
+        );
+    });
+}
+
+#[test]
+fn native_surface_index_preserves_source_precedence_and_ambiguity() {
+    use crate::families::b5::transfer::ResolvedPcurveSurface;
+    use crate::families::standard::decode::edge_geometry::{
+        ensure_native_edge_support_surface, NativeSurfaceIndex,
+    };
+    use cadmpeg_ir::{
+        annotations::AnnotationBuilder,
+        geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry},
+        ids::SurfaceId,
+        CadIr,
+    };
+    let plane = |row: u32| {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, f64::from(row)),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane"),
+        ))
+    };
+    let surfaces = (0..1024_u32)
+        .map(|row| Surface {
+            id: SurfaceId::mint(format!("catia:test:surface#{row}")).expect("identity"),
+            geometry: plane(row),
+            source_object: None,
+        })
+        .collect::<Vec<_>>();
+    crate::test_support::with_work_limit(500_000, |ctx| {
+        let mut ir = CadIr::empty();
+        ir.model.surfaces = surfaces.clone();
+        let mut index = NativeSurfaceIndex::new(ctx).expect("index");
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let mut annotations = AnnotationBuilder::new();
+        for row in 0..1024_u32 {
+            let id = ensure_native_edge_support_surface(
+                &mut ir,
+                &mut annotations,
+                row,
+                &ResolvedPcurveSurface::Geometry(plane(row)),
+                &mut index,
+                &mut admission,
+            )
+            .expect("indexed exact geometry reuse");
+            assert_eq!(id, surfaces[usize::try_from(row).expect("row")].id);
+        }
+        assert_eq!(ir.model.surfaces.len(), 1024);
+        // The source identity wins even when the requested geometry differs.
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint("catia:test:surface#source").expect("id"),
+            geometry: plane(2000),
+            source_object: Some(crate::assemble::cgm_source(ctx, "surface", 42).expect("source")),
+        });
+        let first = ensure_native_edge_support_surface(
+            &mut ir,
+            &mut annotations,
+            42,
+            &ResolvedPcurveSurface::Geometry(plane(0)),
+            &mut index,
+            &mut admission,
+        )
+        .expect("source wins");
+        assert_eq!(first, ir.model.surfaces[1024].id);
+        // A second distinct source identity leaves a tombstone. Geometry
+        // fallback must not pick the otherwise unique plane zero.
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint("catia:test:surface#other").expect("id"),
+            geometry: plane(2001),
+            source_object: Some(crate::assemble::cgm_source(ctx, "surface", 42).expect("source")),
+        });
+        let emitted = ensure_native_edge_support_surface(
+            &mut ir,
+            &mut annotations,
+            42,
+            &ResolvedPcurveSurface::Geometry(plane(0)),
+            &mut index,
+            &mut admission,
+        )
+        .expect("ambiguous source emits");
+        assert_eq!(ir.model.surfaces.len(), 1027);
+        assert_eq!(emitted, ir.model.surfaces[1026].id);
+        // Plane zero now has two identities. An unrelated source also emits.
+        ensure_native_edge_support_surface(
+            &mut ir,
+            &mut annotations,
+            43,
+            &ResolvedPcurveSurface::Geometry(plane(0)),
+            &mut index,
+            &mut admission,
+        )
+        .expect("ambiguous geometry emits");
+        assert_eq!(ir.model.surfaces.len(), 1028);
+    });
+}

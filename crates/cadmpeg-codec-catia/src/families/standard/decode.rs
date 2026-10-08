@@ -4409,9 +4409,11 @@ fn standard_object_evidence(
     let streams = container::logical_record_streams(ctx, scan)?;
     let mut evidence =
         standard_object_evidence_from_streams(ctx, &streams, tags, edge_tags, refusal)?;
+    let mut limit_index = LimitCurveIndex::new(ctx, &evidence.limit_curves)?;
     merge_standard_limit_curves_from_records(
         ctx,
         &mut evidence.limit_curves,
+        &mut limit_index,
         &scan.data,
         consolidated_records,
         refusal,
@@ -4419,33 +4421,88 @@ fn standard_object_evidence(
     Ok(evidence)
 }
 
+struct LimitCurveIndex<'ctx> {
+    by_fingerprint: HashMap<u64, Vec<usize>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> LimitCurveIndex<'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>, curves: &[NurbsCurve]) -> Result<Self, CodecError> {
+        let mut index = Self {
+            by_fingerprint: HashMap::new(),
+            storage: ctx.reserve_scoped(0, "catia_standard_limit_curve_index")?,
+        };
+        for (row, curve) in ctx
+            .admit_iter(curves, "catia_standard_limit_curve_index")?
+            .enumerate()
+        {
+            let key = edge_geometry::nurbs_curve_fingerprint(ctx, curve)?;
+            index.insert(ctx, key, row)?;
+        }
+        Ok(index)
+    }
+
+    fn contains(
+        &self,
+        ctx: &DecodeContext<'_>,
+        key: u64,
+        curves: &[NurbsCurve],
+        geometry: &NurbsCurve,
+    ) -> Result<bool, CodecError> {
+        const OP: &str = "catia standard limit curve dedup";
+        let Some(bucket) = ctx.get_hash_map(&self.by_fingerprint, &key, OP)? else {
+            return Ok(false);
+        };
+        // NurbsCurve has no DecodeCost; collision equality is unpriced.
+        ctx.any_by(bucket, |&row| Ok(curves[row] == *geometry), OP)
+    }
+
+    fn insert(&mut self, ctx: &DecodeContext<'_>, key: u64, row: usize) -> Result<(), CodecError> {
+        self.storage.with_storage(|| {
+            ctx.push_hash_group(
+                &mut self.by_fingerprint,
+                key,
+                row,
+                "catia_standard_limit_curve_index",
+                "catia_standard_limit_curve_index",
+            )
+        })
+    }
+}
+
 fn merge_standard_limit_curves_from_records(
     ctx: &DecodeContext<'_>,
     curves: &mut Vec<NurbsCurve>,
+    index: &mut LimitCurveIndex<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let jets = crate::families::a5a8::records::a5_freeform_curves_from_records(ctx, data, records)?;
+    let mut jets_storage = ctx.reserve_scoped(0, "catia_standard_a5_freeform_jets")?;
+    let jets = jets_storage.with_storage(|| {
+        crate::families::a5a8::records::a5_freeform_curves_from_records(ctx, data, records)
+    })?;
     for jet in ctx.admit_iter(&jets, "catia_standard_a5_freeform_jets")? {
         for second_limit in [false, true] {
-            let Some(geometry) = crate::families::a5a8::records::rolling_ball_limit_curve(
-                ctx,
-                &jet,
-                second_limit,
-                refusal,
-            )?
+            let mut geometry_storage =
+                ctx.reserve_scoped(0, "catia_standard_limit_curve_geometry")?;
+            let Some(geometry) = geometry_storage.with_storage(|| {
+                crate::families::a5a8::records::rolling_ball_limit_curve(
+                    ctx,
+                    &jet,
+                    second_limit,
+                    refusal,
+                )
+            })?
             else {
                 continue;
             };
-            // NURBS curves have no decode cost: each visit is charged and
-            // the curve comparison itself is unpriced.
-            if !ctx.any_by(
-                curves.iter(),
-                |curve| Ok(curve == &geometry),
-                "catia standard limit curve dedup",
-            )? {
+            let key = edge_geometry::nurbs_curve_fingerprint(ctx, &geometry)?;
+            if !index.contains(ctx, key, curves, &geometry)? {
+                geometry_storage.commit()?;
+                let row = curves.len();
                 ctx.push_vec(curves, geometry, "catia standard limit curves")?;
+                index.insert(ctx, key, row)?;
             }
         }
     }
@@ -4463,6 +4520,7 @@ pub(super) fn standard_object_evidence_from_streams(
     let mut edge_face_candidates = BTreeMap::<u32, Option<Vec<u32>>>::new();
     let mut edge_support_candidates = BTreeMap::<u32, Option<StandardEdgeSupport>>::new();
     let mut limit_curves = Vec::<NurbsCurve>::new();
+    let mut limit_index = LimitCurveIndex::new(ctx, &limit_curves)?;
     let mut populations = Vec::new();
     for stream in ctx.admit_iter(streams, "catia_standard_object_streams")? {
         let records = crate::wire::records::consolidated_records_in_sources(
@@ -4475,6 +4533,7 @@ pub(super) fn standard_object_evidence_from_streams(
         merge_standard_limit_curves_from_records(
             ctx,
             &mut limit_curves,
+            &mut limit_index,
             &stream,
             &records,
             refusal,
@@ -8124,6 +8183,7 @@ fn emit_standard_topology(
         ));
     }
 
+    let mut native_surfaces = edge_geometry::NativeSurfaceIndex::new(admission.context())?;
     let mut edge_reversed = Vec::new();
     ctx.reserve_vec(
         &mut edge_reversed,
@@ -8158,6 +8218,7 @@ fn emit_standard_topology(
         let (curve, param_range) = build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces: &mut native_surfaces,
                 ir,
                 annotations,
                 bindings,

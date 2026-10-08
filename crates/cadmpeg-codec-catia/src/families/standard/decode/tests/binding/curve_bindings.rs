@@ -85,6 +85,11 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                native_surfaces:
+                    &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                        admission.context(),
+                    )
+                    .expect("index reservation"),
                 ir: &mut ir,
                 annotations: &mut AnnotationBuilder::new(),
                 bindings: &[(surface_id.clone(), false, 0)],
@@ -682,6 +687,10 @@ fn native_edge_support_match_refuses_work_limit() {
                 &mut AnnotationBuilder::new(),
                 42,
                 &carrier,
+                &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                    admission.context(),
+                )
+                .expect("index reservation"),
                 &mut admission,
             )
         });
@@ -696,6 +705,10 @@ fn native_edge_support_match_refuses_work_limit() {
             &mut AnnotationBuilder::new(),
             42,
             &carrier,
+            &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                admission.context(),
+            )
+            .expect("index reservation"),
             &mut admission,
         )
     })
@@ -717,6 +730,10 @@ fn native_edge_support_nurbs_copy_refuses_collection_limit() {
             &mut AnnotationBuilder::new(),
             42,
             &carrier,
+            &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                admission.context(),
+            )
+            .expect("index reservation"),
             &mut admission,
         )
     });
@@ -732,6 +749,10 @@ fn native_edge_support_nurbs_copy_refuses_collection_limit() {
             &mut AnnotationBuilder::new(),
             42,
             &carrier,
+            &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
+                admission.context(),
+            )
+            .expect("index reservation"),
             &mut admission,
         )?;
         Ok::<_, cadmpeg_core::CodecError>((id, ir.model.surfaces))
