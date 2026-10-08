@@ -61,15 +61,17 @@ fn surface_parameter_scales_for_step(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let (mut index, mut workspace) = SurfaceScaleIndex::build(ir, ctx)?;
-    workspace.with_storage(|| procedural_surface_parameter_scales(
-        ir,
-        &mut index,
-        surface_id,
-        geometry,
-        [length_scale, angle_scale],
-        source_curve_parameter_scales,
-        ctx,
-    ))
+    workspace.with_storage(|| {
+        procedural_surface_parameter_scales(
+            ir,
+            &mut index,
+            surface_id,
+            geometry,
+            [length_scale, angle_scale],
+            source_curve_parameter_scales,
+            ctx,
+        )
+    })
 }
 
 #[test]
@@ -1366,10 +1368,20 @@ fn surface_scale_index_tracks_appends_and_duplicate_owners() {
             .owned_procedural(&ir, ctx, &owner)
             .expect("lookup")
             .is_some());
-        assert_eq!(storage.with_storage(|| procedural_surface_parameter_scales(
-            &ir, &mut index, &owner, &ir.model.surfaces[0].geometry,
-            [10.0, 0.25], &BTreeMap::new(), ctx,
-        )).expect("cache unique procedure"), Some([0.25, 0.25]));
+        assert_eq!(
+            storage
+                .with_storage(|| procedural_surface_parameter_scales(
+                    &ir,
+                    &mut index,
+                    &owner,
+                    &ir.model.surfaces[0].geometry,
+                    [10.0, 0.25],
+                    &BTreeMap::new(),
+                    ctx,
+                ))
+                .expect("cache unique procedure"),
+            Some([0.25, 0.25])
+        );
         assert!(!index.terminals.is_empty());
         ir.model.surfaces.push(ir.model.surfaces[0].clone());
         storage
@@ -1379,10 +1391,20 @@ fn surface_scale_index_tracks_appends_and_duplicate_owners() {
             .owned_procedural(&ir, ctx, &owner)
             .expect("lookup")
             .is_none());
-        assert_eq!(storage.with_storage(|| procedural_surface_parameter_scales(
-            &ir, &mut index, &owner, &ir.model.surfaces[0].geometry,
-            [10.0, 0.25], &BTreeMap::new(), ctx,
-        )).expect("ambiguous cached owner"), None);
+        assert_eq!(
+            storage
+                .with_storage(|| procedural_surface_parameter_scales(
+                    &ir,
+                    &mut index,
+                    &owner,
+                    &ir.model.surfaces[0].geometry,
+                    [10.0, 0.25],
+                    &BTreeMap::new(),
+                    ctx,
+                ))
+                .expect("ambiguous cached owner"),
+            None
+        );
         let (rebuilt, _rebuilt_storage) =
             SurfaceScaleIndex::build(&ir, ctx).expect("rebuilt index");
         assert!(rebuilt
@@ -1413,7 +1435,6 @@ fn pcurve_trim_fallback_visits_each_selector_once() {
     );
 }
 
-
 #[test]
 fn surface_support_memo_uses_linear_slots_and_requester_units() {
     use cadmpeg_core::decode::DecodePolicy;
@@ -1423,9 +1444,12 @@ fn surface_support_memo_uses_linear_slots_and_requester_units() {
         id: cylinder,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0), 2.0,
-            ).expect("cylinder"),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("cylinder"),
         )),
         source_object: None,
     });
@@ -1459,16 +1483,25 @@ fn surface_support_memo_uses_linear_slots_and_requester_units() {
             let length = f64::from(u32::try_from(position + 1).expect("small chain"));
             let angle = length / 100.0;
             for units in [[length, angle], [length * 2.0, angle * 3.0]] {
-                assert_eq!(storage.with_storage(|| procedural_surface_parameter_scales(
-                    &ir, &mut index, &surface.id, &surface.geometry, units,
-                    &BTreeMap::new(), ctx,
-                )).expect("linear support walk"), Some([units[1], units[0]]));
+                assert_eq!(
+                    storage
+                        .with_storage(|| procedural_surface_parameter_scales(
+                            &ir,
+                            &mut index,
+                            &surface.id,
+                            &surface.geometry,
+                            units,
+                            &BTreeMap::new(),
+                            ctx,
+                        ))
+                        .expect("linear support walk"),
+                    Some([units[1], units[0]])
+                );
             }
         }
         assert_eq!(index.terminals.len(), ir.model.surfaces.len());
     });
 }
-
 
 #[test]
 fn surface_support_memo_observes_first_appended_procedure() {
@@ -1477,19 +1510,37 @@ fn surface_support_memo_observes_first_appended_procedure() {
         let owner = SurfaceId::mint("test:model:surface#owner").expect("identity");
         let support = SurfaceId::mint("test:model:surface#support").expect("identity");
         ir.model.surfaces.push(Surface {
-            id: owner.clone(), geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }), source_object: None,
+            id: owner.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
         });
         ir.model.surfaces.push(Surface {
-            id: support.clone(), geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            id: support.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0),
-                ).expect("plane"),
-            )), source_object: None,
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("plane"),
+            )),
+            source_object: None,
         });
         let (mut index, mut storage) = SurfaceScaleIndex::build(&ir, ctx).expect("index");
-        assert_eq!(storage.with_storage(|| procedural_surface_parameter_scales(
-            &ir, &mut index, &owner, &ir.model.surfaces[0].geometry, [10.0, 0.25], &BTreeMap::new(), ctx,
-        )).expect("unknown terminal"), None);
+        assert_eq!(
+            storage
+                .with_storage(|| procedural_surface_parameter_scales(
+                    &ir,
+                    &mut index,
+                    &owner,
+                    &ir.model.surfaces[0].geometry,
+                    [10.0, 0.25],
+                    &BTreeMap::new(),
+                    ctx,
+                ))
+                .expect("unknown terminal"),
+            None
+        );
         ir.model.add_procedural_surface(
             &cadmpeg_ir::document::admission::StandardAdmission, &owner,
             ProceduralSurface::new(
@@ -1499,13 +1550,26 @@ fn surface_support_memo_observes_first_appended_procedure() {
                 ), None,
             ),
         ).expect("procedure admission").expect("owned procedure");
-        storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
-            index.add_surface(&ir.model.surfaces[0], 0, ctx)?;
-            index.add_procedural(&ir.model.procedural_surfaces[0], 0, ctx)
-        }).expect("append procedure");
-        assert_eq!(storage.with_storage(|| procedural_surface_parameter_scales(
-            &ir, &mut index, &owner, &ir.model.surfaces[0].geometry, [10.0, 0.25], &BTreeMap::new(), ctx,
-        )).expect("new support"), Some([10.0, 10.0]));
+        storage
+            .with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+                index.add_surface(&ir.model.surfaces[0], 0, ctx)?;
+                index.add_procedural(&ir.model.procedural_surfaces[0], 0, ctx)
+            })
+            .expect("append procedure");
+        assert_eq!(
+            storage
+                .with_storage(|| procedural_surface_parameter_scales(
+                    &ir,
+                    &mut index,
+                    &owner,
+                    &ir.model.surfaces[0].geometry,
+                    [10.0, 0.25],
+                    &BTreeMap::new(),
+                    ctx,
+                ))
+                .expect("new support"),
+            Some([10.0, 10.0])
+        );
     });
 }
 
@@ -1516,7 +1580,8 @@ fn surface_support_memo_marks_closed_cycles_unresolved() {
         for position in 0..2 {
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::mint(format!("test:model:surface#{position}")).expect("identity"),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }), source_object: None,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
             });
         }
         for position in 0..2 {
@@ -1534,15 +1599,28 @@ fn surface_support_memo_marks_closed_cycles_unresolved() {
         }
         let (mut index, mut storage) = SurfaceScaleIndex::build(&ir, ctx).expect("index");
         for surface in &ir.model.surfaces {
-            assert_eq!(storage.with_storage(|| procedural_surface_parameter_scales(
-                &ir, &mut index, &surface.id, &surface.geometry, [10.0, 0.25], &BTreeMap::new(), ctx,
-            )).expect("cycle walk"), None);
+            assert_eq!(
+                storage
+                    .with_storage(|| procedural_surface_parameter_scales(
+                        &ir,
+                        &mut index,
+                        &surface.id,
+                        &surface.geometry,
+                        [10.0, 0.25],
+                        &BTreeMap::new(),
+                        ctx,
+                    ))
+                    .expect("cycle walk"),
+                None
+            );
         }
         assert_eq!(index.terminals.len(), 2);
-        assert!(index.terminals.values().all(|(_, terminal)| terminal.is_none()));
+        assert!(index
+            .terminals
+            .values()
+            .all(|(_, terminal)| terminal.is_none()));
     });
 }
-
 
 #[test]
 fn surface_scale_memo_keeps_each_duplicate_root_geometry() {
@@ -1553,27 +1631,49 @@ fn surface_scale_memo_keeps_each_duplicate_root_geometry() {
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0), 2.0,
-                ).expect("cylinder"),
-            )), source_object: None,
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("cylinder"),
+            )),
+            source_object: None,
         });
         ir.model.surfaces.push(Surface {
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0), 2.0,
-                ).expect("sphere"),
-            )), source_object: None,
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("sphere"),
+            )),
+            source_object: None,
         });
         let (mut index, mut storage) = SurfaceScaleIndex::build(&ir, ctx).expect("index");
         for position in [0, 1, 0] {
-            let expected = if position == 0 { [0.25, 10.0] } else { [0.25, 0.25] };
-            assert_eq!(storage.with_storage(|| procedural_surface_parameter_scales(
-                &ir, &mut index, &id, &ir.model.surfaces[position].geometry,
-                [10.0, 0.25], &BTreeMap::new(), ctx,
-            )).expect("duplicate root scale"), Some(expected));
+            let expected = if position == 0 {
+                [0.25, 10.0]
+            } else {
+                [0.25, 0.25]
+            };
+            assert_eq!(
+                storage
+                    .with_storage(|| procedural_surface_parameter_scales(
+                        &ir,
+                        &mut index,
+                        &id,
+                        &ir.model.surfaces[position].geometry,
+                        [10.0, 0.25],
+                        &BTreeMap::new(),
+                        ctx,
+                    ))
+                    .expect("duplicate root scale"),
+                Some(expected)
+            );
         }
     });
 }
