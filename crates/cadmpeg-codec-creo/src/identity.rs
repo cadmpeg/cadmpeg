@@ -116,13 +116,11 @@ pub(crate) fn uniquely_identified_rows_checked<'a, T>(
     rows: &'a [T],
     id: impl Fn(&T) -> u32,
 ) -> Result<Vec<&'a T>, CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(rows.len());
-    let lookup_work = 24 * (u64::from(u64::BITS - count.leading_zeros()) + 1);
+    let mut count_storage = ctx.reserve_scoped(0, "creo unique-row count storage")?;
     let mut counts = BTreeMap::<u32, usize>::new();
-    for row in rows {
-        ctx.charge_work(lookup_work, "creo unique-row identity work")?;
+    for row in ctx.admit_iter(rows, "creo unique-row identity work")? {
         let key = id(row);
-        match ctx.entry_btree_map(&mut counts, key, "creo unique-row count nodes")? {
+        match count_storage.with_storage(|| ctx.entry_btree_map(&mut counts, key, "creo unique-row count nodes"))? {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = entry.get().checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit("creo unique-row multiplicity", u64::MAX, u64::MAX)
@@ -134,9 +132,8 @@ pub(crate) fn uniquely_identified_rows_checked<'a, T>(
         }
     }
     let mut unique = Vec::new();
-    for row in rows {
-        ctx.charge_work(lookup_work, "creo unique-row identity work")?;
-        if counts.get(&id(row)) == Some(&1) {
+    for row in ctx.admit_iter(rows, "creo unique-row identity work")? {
+        if ctx.get_btree_map(&counts, &id(row), "creo unique-row count lookup")? == Some(&1) {
             ctx.reserve_vec(&mut unique, 1, "creo unique-row projection")?;
             unique.push(row);
         }

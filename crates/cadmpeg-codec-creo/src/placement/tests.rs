@@ -1630,3 +1630,5 @@ fn section_frame_refuses_a_non_finite_origin_or_axis() {
         );
     }
 }
+
+mod work_admission;

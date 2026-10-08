@@ -1198,7 +1198,7 @@ fn container_framing_misses_and_text_copies_refuse_work() {
         &[
             "creo container model-name scan",
             "creo version line scan",
-            "creo version text work",
+            "creo version UTF-8 validation",
             "creo container header scans",
             "creo container TOC scans",
             "creo TOC discovery scan",

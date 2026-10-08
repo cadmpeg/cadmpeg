@@ -1090,65 +1090,48 @@ fn zero_offset_standard_section_plane_equation(
     })())
 }
 
-fn circular_profile_aligned_origin(
-    _ctx: &DecodeContext<'_>,
-    definition: &FeatureDefinition,
-    feature_id: u32,
-    sketch_plane: SignedPlaneEquation,
+struct SectionPlaneAxes {
+    plane: SignedPlaneEquation,
     u_axis: [f64; 3],
     v_axis: [f64; 3],
+}
+
+fn circular_profile_aligned_origin(
+    ctx: &DecodeContext<'_>,
+    definition: &FeatureDefinition,
+    feature_id: u32,
+    axes: SectionPlaneAxes,
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    let Some((table, profile_external_id, order)) = (|| {
-        let table = exactly_one(
-            entity_tables
-                .iter()
-                .filter(|table| table.feature_id == feature_id)
-                .filter(|table| {
-                    table
-                        .entries
-                        .iter()
-                        .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
-                        .eq([204, 203, 200, 200])
-                }),
-        )?;
-        let profile_external_id = table.entries[2].source_entity_id()?;
-        Some((table, profile_external_id, definition.order_table.as_ref()?))
-    })() else {
-        return Ok(None);
-    };
+    let Some(table) = crate::decode::uniqueness::exactly_one_by(
+        ctx, entity_tables,
+        |table| Ok(table.feature_id == feature_id && table.entries.iter()
+            .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
+            .eq([204, 203, 200, 200])),
+        "creo circular profile entity table selection",
+    )? else { return Ok(None); };
+    let Some(profile_external_id) = table.entries[2].source_entity_id() else { return Ok(None); };
+    let Some(order) = definition.order_table.as_ref() else { return Ok(None); };
     let Some(profile_internal_id) = order.internal_id(profile_external_id) else {
         return Ok(None);
     };
+    let Some(section) = definition.saved_section.as_ref() else { return Ok(None); };
+    let Some(entity) = crate::decode::uniqueness::exactly_one_by(
+        ctx, &section.entities,
+        |entity| Ok(matches!(entity, crate::feature::definitions::FeatureSavedEntity::Circle(circle) if circle.entity_id == profile_internal_id)),
+        "creo circular profile saved entity selection",
+    )? else { return Ok(None); };
+    let crate::feature::definitions::FeatureSavedEntity::Circle(circle) = entity else { return Ok(None); };
+    let [Some(center_u), Some(center_v), _] = circle.center else { return Ok(None); };
+    let Some(radius) = circle.radius.filter(|radius| *radius > EPS_PLACEMENT_EXACT_GEOMETRY) else { return Ok(None); };
+    let cap_id = table.entries[1].entity_id;
+    let Some(envelope) = crate::decode::uniqueness::exactly_one_by(
+        ctx, sources.plane_envelopes,
+        |record| Ok(record.surface_id == cap_id),
+        "creo circular profile envelope selection",
+    )? else { return Ok(None); };
     Ok((|| {
-        let circle = exactly_one(
-            definition
-                .saved_section
-                .iter()
-                .flat_map(|section| &section.entities)
-                .filter_map(|entity| match entity {
-                    crate::feature::definitions::FeatureSavedEntity::Circle(circle)
-                        if circle.entity_id == profile_internal_id =>
-                    {
-                        Some(circle)
-                    }
-                    _ => None,
-                }),
-        )?;
-        let [Some(center_u), Some(center_v), _] = circle.center else {
-            return None;
-        };
-        let radius = circle
-            .radius
-            .filter(|radius| *radius > EPS_PLACEMENT_EXACT_GEOMETRY)?;
-        let cap_id = table.entries[1].entity_id;
-        let envelope = exactly_one(
-            sources
-                .plane_envelopes
-                .iter()
-                .filter(|record| record.surface_id == cap_id),
-        )?;
         let corners = match &envelope.envelope {
             PlaneEnvelope::Standard { corners_3d, .. }
             | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
@@ -1175,11 +1158,11 @@ fn circular_profile_aligned_origin(
             .then_some(())?;
         let cap_center: [f64; 3] =
             std::array::from_fn(|index| 0.5 * (first[index] + second[index]));
-        let signed_distance = dot(sketch_plane.normal, cap_center) - sketch_plane.offset;
-        let profile_center = add(cap_center, scale(sketch_plane.normal, -signed_distance));
+        let signed_distance = dot(axes.plane.normal, cap_center) - axes.plane.offset;
+        let profile_center = add(cap_center, scale(axes.plane.normal, -signed_distance));
         Some(add(
-            add(profile_center, scale(u_axis, -center_u)),
-            scale(v_axis, -center_v),
+            add(profile_center, scale(axes.u_axis, -center_u)),
+            scale(axes.v_axis, -center_v),
         ))
     })())
 }
@@ -1387,12 +1370,10 @@ pub(crate) fn resolve(
                 ctx,
                 definition,
                 feature_id,
-                SignedPlaneEquation {
-                    normal: sketch_normal,
-                    offset: sketch_offset,
+                SectionPlaneAxes {
+                    plane: SignedPlaneEquation { normal: sketch_normal, offset: sketch_offset },
+                    u_axis, v_axis: reference_axis,
                 },
-                u_axis,
-                reference_axis,
                 sources,
                 entity_tables,
             )?,

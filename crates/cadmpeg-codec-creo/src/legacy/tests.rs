@@ -486,21 +486,6 @@ fn legacy_unsigned_integer_parse_refuses_work() {
 }
 
 #[test]
-fn legacy_compact_real_radix_parse_refuses_work() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo compact real hexadecimal parsing",
-        |ctx| super::compact_real(ctx, b"3FF0000000000000"),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo compact real hexadecimal parsing")
-    );
-}
-
-#[test]
 fn legacy_declaration_utf8_refuses_before_malformed_input() {
     let error = crate::test_support::last_refusal_at(
         &[],
@@ -537,21 +522,6 @@ fn legacy_unsigned_utf8_refuses_before_invalid_scalar() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
         |ctx| super::unsigned_integer(ctx, b"1\xff"),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation")
-    );
-}
-
-#[test]
-fn legacy_compact_real_utf8_refuses_work() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo UTF-8 validation",
-        |ctx| super::compact_real(ctx, b"3FF0000000000000"),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -626,36 +596,6 @@ fn legacy_source_model_trim_refuses_work() {
 }
 
 #[test]
-fn signed_integer_sign_prefix_refuses_before_invalid_digits() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo signed integer sign prefix",
-        |ctx| super::signed_integer(ctx, b"-x"),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo signed integer sign prefix")
-    );
-}
-
-#[test]
-fn legacy_declaration_prefix_refuses_before_missing_fields() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo legacy declaration name prefix",
-        |ctx| super::parse_declaration(ctx, b"name"),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo legacy declaration name prefix")
-    );
-}
-
-#[test]
 fn legacy_unit_object_prefix_refuses_work() {
     let factor = 0.393_700_787_401_574_8_f64;
     let data = format!(
@@ -676,3 +616,5 @@ fn legacy_unit_object_prefix_refuses_work() {
             && resource.operation == "creo legacy unit object prefix")
     );
 }
+
+mod traversal;
