@@ -714,22 +714,28 @@ pub(super) fn build<'arena>(
     directory: &[DirectoryEntry],
     records: &[ParameterRecord],
     parameter_resolver: &ParameterResolver<'_, '_, 'arena>,
-    clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
+    clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> Result<usize, CodecError>,
     overdeclared_counts: &mut OverdeclaredCounts<'_, '_>,
     global_table: GlobalTable,
     ctx: &DecodeContext<'arena>,
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
-    ctx.try_collect_retained_with::<_, _, CodecError>(
-        ctx.admit_iter(directory, "iges native annotation scan")?
-            .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind))),
-        "iges native annotation slots",
-        |(entry, kind)| -> Result<NativeAnnotation, CodecError> {
+    let mut annotations = Vec::new();
+    let mut source = directory.iter();
+    while let Some(entry) = ctx.next_charged(&mut source, "iges native annotation scan")? {
+        let Some(kind) = classify(entry.entity_type, entry.form) else {
+            continue;
+        };
+        ctx.reserve_vec(&mut annotations, 1, "iges native annotation slots")?;
+        let annotation = {
             let record = record_by_sequence(records, entry.sequence, ctx)?;
             let subject = Subject {
                 sequence: entry.sequence,
                 form: entry.form,
                 record,
-                primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
+                primary_end: match record {
+                    Some(record) => clamped_primary_end(entry.sequence, record)?,
+                    None => 0,
+                },
                 entries: directory,
                 parameter_resolver,
                 ctx,
@@ -744,7 +750,7 @@ pub(super) fn build<'arena>(
                     )
                 })
                 .transpose()?;
-            Ok(match kind {
+            match kind {
                 AnnotationKind::GeneralNote => {
                     general_note(&subject, transformation, overdeclared_counts)?
                 }
@@ -849,7 +855,9 @@ pub(super) fn build<'arena>(
                     ],
                     transformation,
                 },
-            })
-        },
-    )
+            }
+        };
+        annotations.push(annotation);
+    }
+    Ok(annotations)
 }

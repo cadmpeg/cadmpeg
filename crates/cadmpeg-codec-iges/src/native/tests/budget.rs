@@ -6,6 +6,7 @@ use std::io::Cursor;
 use crate::test_support::test_owned::{
     owned_test_file, owned_test_file_with_structures, OwnedTestEntity,
 };
+use crate::test_support::test_drawing_and_trimming::nested_subfigure_file;
 use crate::IgesCodec;
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
@@ -113,6 +114,125 @@ fn assert_native_storage_boundary(bytes: &[u8], operation: &str) {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == operation)
     );
+}
+
+fn assert_native_store_refusal(
+    bytes: &[u8],
+    dimension: ResourceDimension,
+    operation: &'static str,
+) -> cadmpeg_core::decode::ResourceLimit {
+    use super::super::{NativeStoreInputs, ProductOccurrenceLimits, QuarantinedRecords};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+
+    let scan = crate::test_support::scan(bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (directory, quarantined_directory) =
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
+    let assembly = crate::parameter::assemble_with_context(
+        &scan,
+        &directory,
+        &quarantined_directory,
+        &global,
+        &parse_ctx,
+    )
+    .unwrap();
+    let (references, _reference_storage) = crate::graph::build(&directory, &parse_ctx).unwrap();
+    let mut structure_admitted = crate::entities::geometry::Projection::default();
+    structure_admitted.decoded.insert(3);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        dimension,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => panic!("test dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::store(
+                &mut cadmpeg_ir::CadIr::empty(),
+                NativeStoreInputs {
+                    scan: &scan,
+                    directory: &directory,
+                    parameters: &assembly.records,
+                    trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
+                    quarantine: QuarantinedRecords {
+                        directory: &quarantined_directory,
+                        parameters: &assembly.quarantined,
+                    },
+                    structure_admitted: Some(&structure_admitted),
+                    sequences: &structure_admitted.sequences,
+                    boundary_vertex_derivations: &structure_admitted
+                        .boundary_vertex_derivations,
+                },
+                &mut references.clone(),
+                &global,
+                ProductOccurrenceLimits::new(100_000, 64),
+                &ctx,
+            )
+            .map(|_| ())
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("{operation}: expected a resource refusal")
+    };
+    assert_eq!(limit.dimension, dimension);
+    assert_eq!(limit.operation, operation);
+    limit
+}
+
+#[test]
+fn native_indexes_and_ordered_queries_admit_real_search_work() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let directory_file = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00000000",
+        parameters: "116,1,2,3;".into(),
+    }]);
+    let occurrence_file = nested_subfigure_file();
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+    ] {
+        let _ = assert_native_store_refusal(
+            &directory_file,
+            dimension,
+            "iges native directory index",
+        );
+        let _ = assert_native_store_refusal(
+            &occurrence_file,
+            dimension,
+            "iges occurrence parameter index",
+        );
+    }
+    let primary_end_query = assert_native_store_refusal(
+        &occurrence_file,
+        ResourceDimension::WorkUnits,
+        "iges native primary-end cache lookup",
+    );
+    assert_eq!(primary_end_query.additional, 20);
+    let occurrence_membership = assert_native_store_refusal(
+        &occurrence_file,
+        ResourceDimension::WorkUnits,
+        "iges native admitted occurrence definition lookup",
+    );
+    assert_eq!(occurrence_membership.additional, 4);
+    let root_membership = assert_native_store_refusal(
+        &occurrence_file,
+        ResourceDimension::WorkUnits,
+        "iges occurrence admitted root lookup",
+    );
+    assert_eq!(root_membership.additional, 4);
 }
 
 #[test]
@@ -415,4 +535,99 @@ fn native_occurrence_id_and_role_follow_the_same_path() {
             assert_eq!(wire["member"], target);
         });
     }
+}
+
+#[test]
+fn native_typed_source_identity_refuses_materialized_limit() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 123,
+        form: 0,
+        label: "DIR".into(),
+        status: "00000000",
+        parameters: "123,1,0,0;".into(),
+    }]);
+    assert_boundary(
+        &bytes,
+        ResourceDimension::MaterializedBytes,
+        "iges native direction id",
+    );
+}
+
+#[test]
+fn native_store_releases_scoped_arena_scratch_after_serialization() {
+    use super::super::{NativeStoreInputs, ProductOccurrenceLimits, QuarantinedRecords};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+
+    const EMPTY_ROOT_MATERIALIZED_ALLOWANCE: u64 = 16 * 1024 * 1024;
+
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00000000",
+        parameters: "116,1,2,3,0;".into(),
+    }]);
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let parse_arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &parse_arena, &DecodePolicy::service()).unwrap();
+    let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (directory, quarantined_directory) =
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
+    let assembly = crate::parameter::assemble_with_context(
+        &scan,
+        &directory,
+        &quarantined_directory,
+        &global,
+        &parse_ctx,
+    )
+    .unwrap();
+    let (mut references, _reference_storage) =
+        crate::graph::build(&directory, &parse_ctx).unwrap();
+    let projection = crate::entities::geometry::Projection::default();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+
+    let store_arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = EMPTY_ROOT_MATERIALIZED_ALLOWANCE;
+    let (store_ctx, _) = DecodeContext::from_root_bytes(&[], &store_arena, &policy).unwrap();
+    let store_result = super::super::store(
+        &mut ir,
+        NativeStoreInputs {
+            scan: &scan,
+            directory: &directory,
+            parameters: &assembly.records,
+            trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
+            quarantine: QuarantinedRecords {
+                directory: &quarantined_directory,
+                parameters: &assembly.quarantined,
+            },
+            structure_admitted: Some(&projection),
+            sequences: &projection.sequences,
+            boundary_vertex_derivations: &projection.boundary_vertex_derivations,
+        },
+        &mut references,
+        &global,
+        ProductOccurrenceLimits::new(100_000, 64),
+        &store_ctx,
+    )
+    .unwrap();
+
+    assert_eq!(
+        ir.native.namespace("iges").unwrap().arenas()["entities"].len(),
+        1
+    );
+    // NativeStoreResult retains guards for source diagnostics and indexes.
+    // The arena builders drop their guards after serialization; dropping this
+    // result releases the remaining sidecar reservations before the probe.
+    drop(store_result);
+
+    let full_allowance = store_ctx
+        .reserve_scoped(
+            EMPTY_ROOT_MATERIALIZED_ALLOWANCE,
+            "iges native store scratch release proof",
+        )
+        .expect("native source scratch is released after arena serialization");
+    drop(full_allowance);
+    store_ctx.finish_session().unwrap();
 }

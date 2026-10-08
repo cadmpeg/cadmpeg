@@ -25,6 +25,7 @@ fn global_declaration_lossy_text_refuses_before_expanded_storage() {
                         }
                     }),
                     losses: Vec::new(),
+                    loss_storage: ctx.reserve_scoped(0, "iges global loss notes").unwrap(),
                 };
                 resolution.declaration_text(0)
             })
@@ -54,6 +55,7 @@ fn global_declaration_lossy_text_preserves_replacement_boundaries() {
                     }
                 }),
                 losses: Vec::new(),
+                loss_storage: ctx.reserve_scoped(0, "iges global loss notes").unwrap(),
             };
             assert_eq!(resolution.declaration_text(0).unwrap(), expected);
         });

@@ -56,6 +56,10 @@ fn native_entity_links_refuse_slots_and_text_before_copy() {
     use cadmpeg_core::CodecError;
 
     for (dimension, operation) in [
+        (
+            ResourceDimension::WorkUnits,
+            "iges native test link scan",
+        ),
         (ResourceDimension::CollectionItems, "iges native test links"),
         (
             ResourceDimension::RetainedBytes,
@@ -66,12 +70,19 @@ fn native_entity_links_refuse_slots_and_text_before_copy() {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
                 ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
                 ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
                 _ => unreachable!("test dimensions"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::native_entity_ids(&ctx, [3], "iges native test links")
+            super::native_entity_ids(
+                &ctx,
+                [3].into_iter(),
+                "iges native test link scan",
+                "iges native test links",
+                Some,
+            )
         });
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == dimension && limit.operation == operation));
@@ -79,8 +90,97 @@ fn native_entity_links_refuse_slots_and_text_before_copy() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::native_entity_ids(&ctx, [3], "iges native test links").unwrap(),
+        super::native_entity_ids(
+            &ctx,
+            [3].into_iter(),
+            "iges native test link scan",
+            "iges native test links",
+            Some,
+        )
+        .unwrap(),
         ["iges:entity:directory#3"]
+    );
+}
+
+#[test]
+fn native_entity_id_builder_steps_sparse_and_unfiltered_sources() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let id_bytes = u64::try_from("iges:entity:directory#2".len()).unwrap();
+    let sparse_work = 4 + 2 * id_bytes;
+    let arena = DecodeArena::new();
+    let mut sparse_policy = DecodePolicy::service();
+    sparse_policy.limits.max_work_units = sparse_work - 1;
+    let (sparse_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &sparse_policy).unwrap();
+    let error = super::native_entity_ids(
+        &sparse_ctx,
+        [1, 2, 3].into_iter(),
+        "iges native sparse link scan",
+        "iges native sparse link slots",
+        |sequence| (sequence == 2).then_some(sequence),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "iges native sparse link scan"
+            && limit.used == sparse_policy.limits.max_work_units
+            && limit.additional == 1));
+
+    let arena = DecodeArena::new();
+    let mut sparse_exact_policy = DecodePolicy::service();
+    sparse_exact_policy.limits.max_work_units = sparse_work;
+    let (sparse_exact_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &sparse_exact_policy).unwrap();
+    assert_eq!(
+        super::native_entity_ids(
+            &sparse_exact_ctx,
+            [1, 2, 3].into_iter(),
+            "iges native sparse link scan",
+            "iges native sparse link slots",
+            |sequence| (sequence == 2).then_some(sequence),
+        )
+        .unwrap(),
+        ["iges:entity:directory#2"]
+    );
+
+    let full_work = 4 + 6 * id_bytes;
+    let arena = DecodeArena::new();
+    let mut full_policy = DecodePolicy::service();
+    full_policy.limits.max_work_units = full_work - 1;
+    let (full_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &full_policy).unwrap();
+    let error = super::native_entity_ids(
+        &full_ctx,
+        [1, 2, 3].into_iter(),
+        "iges native full link scan",
+        "iges native full link slots",
+        Some,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "iges native full link scan"
+            && limit.used == full_policy.limits.max_work_units
+            && limit.additional == 1));
+
+    let arena = DecodeArena::new();
+    let mut full_exact_policy = DecodePolicy::service();
+    full_exact_policy.limits.max_work_units = full_work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &full_exact_policy).unwrap();
+    assert_eq!(
+        super::native_entity_ids(
+            &ctx,
+            [1, 2, 3].into_iter(),
+            "iges native full link scan",
+            "iges native full link slots",
+            Some,
+        )
+        .unwrap(),
+        [
+            "iges:entity:directory#1",
+            "iges:entity:directory#2",
+            "iges:entity:directory#3",
+        ]
     );
 }
 
@@ -335,7 +435,7 @@ fn native_input_cards_refuse_collection_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::collect_native_inputs(&scan, quarantine(), &ctx)
+            super::collect_native_inputs(&scan, quarantine(), &ctx).map(|_| ())
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -400,7 +500,7 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                super::collect_native_inputs(&scan, quarantine(), &ctx)
+                super::collect_native_inputs(&scan, quarantine(), &ctx).map(|_| ())
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)

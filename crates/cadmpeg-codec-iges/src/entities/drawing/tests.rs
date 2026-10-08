@@ -67,6 +67,10 @@ fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
             "iges drawing loss slots",
         ),
         (
+            ResourceDimension::MaterializedBytes,
+            "iges drawing loss slots",
+        ),
+        (
             ResourceDimension::RetainedBytes,
             "iges drawing loss message",
         ),
@@ -76,25 +80,41 @@ fn drawing_entity_loss_refuses_unadmitted_slot_and_message() {
             let mut policy = DecodePolicy::service();
             if dimension == ResourceDimension::RetainedBytes {
                 policy.limits.max_retained_bytes = cap;
-            } else {
+            } else if dimension == ResourceDimension::CollectionItems {
                 policy.limits.max_collection_items = cap;
+            } else {
+                policy.limits.max_materialized_bytes = cap;
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut losses = Vec::new();
-            let result = push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing");
+            let mut slots = ctx.reserve_scoped(0, "iges drawing loss slots").unwrap();
+            let result = push_drawing_entity_loss(&ctx, &mut slots, &mut losses, &entry, "missing");
             assert!(losses.is_empty());
+            drop(losses);
+            drop(slots);
             result
         });
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut losses = Vec::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    push_drawing_entity_loss(&ctx, &mut losses, &entry, "missing").unwrap();
+    let mut slots = ctx.reserve_scoped(0, "iges drawing loss slots").unwrap();
+    push_drawing_entity_loss(&ctx, &mut slots, &mut losses, &entry, "missing").unwrap();
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].message,
         "IGES entity type 404 form 0 was not projected: missing"
     );
+    assert_eq!(
+        losses[0]
+            .provenance
+            .as_ref()
+            .and_then(|value| value.tag.as_deref()),
+        Some("directory_entry:D1")
+    );
+    drop(losses);
+    drop(slots);
+    ctx.finish_session().unwrap();
 }
 
 #[test]
@@ -1128,6 +1148,7 @@ fn invalid_segmented_view_stops_before_the_remaining_count() {
         outcome.losses[0].code,
         IgesLossCode::EntityNotProjected.kind()
     );
+    drop(outcome);
     drop(global_storage);
     ctx.finish_session().unwrap();
 }
@@ -1220,6 +1241,7 @@ fn shared_drawing_property_names_do_not_repeat_text_comparisons() {
         assert!(outcome.decoded.contains(&entry.sequence));
     }
     assert_eq!(records.len(), directory.len());
+    drop(outcome);
     ctx.finish_session().unwrap();
 }
 
@@ -1357,6 +1379,7 @@ fn shared_view_associations_are_indexed_once() {
     for entry in &directory {
         assert!(outcome.decoded.contains(&entry.sequence));
     }
+    drop(outcome);
     ctx.finish_session().unwrap();
 }
 

@@ -183,6 +183,7 @@ fn global_supplied_string_refuses_utf8_work() {
                         }
                     }),
                     losses: Vec::new(),
+                    loss_storage: ctx.reserve_scoped(0, "iges global loss notes").unwrap(),
                 };
                 resolution.supplied_string(0).map(|_| ())
             })
@@ -315,6 +316,7 @@ fn global_supplied_string_borrows_text_without_storage() {
             }
         }),
         losses: Vec::new(),
+        loss_storage: ctx.reserve_scoped(0, "iges global loss notes").unwrap(),
     };
     assert!(matches!(
         resolution.supplied_string(0).unwrap(),
@@ -336,6 +338,7 @@ fn global_loss_note_refuses_collection_limit_before_push() {
                 ctx: &ctx,
                 values: [crate::global::Value::Omitted; 26],
                 losses: Vec::new(),
+                loss_storage: ctx.reserve_scoped(0, "iges global loss notes").unwrap(),
             };
             let result = resolution.charge(
                 IgesLossCode::GlobalMetadataFieldUnusable,
@@ -361,6 +364,7 @@ fn global_loss_note_refuses_collection_limit_before_push() {
         ctx: &ctx,
         values: [crate::global::Value::Omitted; 26],
         losses: Vec::new(),
+        loss_storage: ctx.reserve_scoped(0, "iges global loss notes").unwrap(),
     };
     resolution
         .charge(
@@ -449,7 +453,7 @@ fn global_excess_fields_are_counted_without_retaining_values() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let (_, losses, _global_storage) = crate::global::parse(&scan, &ctx).unwrap();
+    let (_, (losses, _loss_storage), _global_storage) = crate::global::parse(&scan, &ctx).unwrap();
     assert!(losses
         .iter()
         .any(|loss| loss.message.contains("1026 fields")));
@@ -753,6 +757,7 @@ fn global_integer_parse_refuses_after_utf8_admission() {
                         }
                     }),
                     losses: Vec::new(),
+                    loss_storage: ctx.reserve_scoped(0, "iges global loss notes").unwrap(),
                 };
                 resolution.supplied_integer(0)
             })
@@ -802,6 +807,7 @@ fn global_variable_scans_refuse_at_their_own_boundaries() {
                                 }
                             }),
                             losses: Vec::new(),
+                            loss_storage: ctx.reserve_scoped(0, "iges global loss notes")?,
                         };
                         resolution.apply_string_policy(crate::global::GlobalTable::V5Later)
                     }
@@ -821,19 +827,23 @@ fn global_resolved_text_has_scoped_storage_and_no_retained_copy() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 1024 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let (global, losses, storage) = crate::global::parse(&scan, &ctx).unwrap();
+    let (global, (losses, loss_storage), storage) = crate::global::parse(&scan, &ctx).unwrap();
     assert_eq!(global.sender_product(), Some("product"));
     assert!(losses.is_empty());
     assert!(ctx
         .reserve_scoped(policy.limits.max_materialized_bytes, "live Global storage")
         .is_err());
     drop(global);
+    drop(losses);
+    drop(loss_storage);
     drop(storage);
     // Use a fresh session for the release assertion because a refusal fuses its session.
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let (global, losses, storage) = crate::global::parse(&scan, &ctx).unwrap();
+    let (global, (losses, loss_storage), storage) = crate::global::parse(&scan, &ctx).unwrap();
     assert!(losses.is_empty());
     drop(global);
+    drop(losses);
+    drop(loss_storage);
     drop(storage);
     assert!(ctx
         .reserve_scoped(
@@ -863,6 +873,7 @@ fn recovered_real_declaration_refuses_temporary_storage() {
                     }
                 }),
                 losses: Vec::new(),
+                loss_storage: ctx.reserve_scoped(0, "iges global loss notes")?,
             };
             resolution.charge_recovered_real(0, 1.0)
         },

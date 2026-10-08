@@ -182,15 +182,17 @@ fn boolean_tree_is_valid(
     Ok(valid)
 }
 
-pub(super) fn project(
+pub(super) fn project<'ctx>(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
-    ctx: &DecodeContext<'_>,
-) -> Result<ProjectionOutcome, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<ProjectionOutcome<'ctx>, CodecError> {
+    let mut decoded_storage = ctx.reserve_scoped(0, "iges csg decoded sequences")?;
     let mut decoded = BTreeSet::new();
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
     let mut losses = Vec::new();
 
     for entry in ctx
@@ -202,8 +204,9 @@ pub(super) fn project(
         let Some(record) = ctx.get_btree_map(
             records, &entry.sequence, "iges csg parameter record lookup",
         )?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -221,8 +224,9 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive placement is invalid"),
@@ -252,8 +256,9 @@ pub(super) fn project(
             }
         }
         if !dimensions_present {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive dimensions are not numeric"),
@@ -296,8 +301,9 @@ pub(super) fn project(
             _ => false,
         };
         if !dimensions_valid {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive dimension invariant is violated"),
@@ -313,8 +319,9 @@ pub(super) fn project(
             160 => (3, None, Some(6)),
             168 => (4, Some(7), Some(10)),
             _ => {
-                super::push_entity_loss(
+                super::push_entity_loss_with_scoped_slots(
                     ctx,
+                    &mut loss_slots_storage,
                     &mut losses,
                     entry,
                     format_args!("{}", "primitive solid type is unsupported"),
@@ -323,8 +330,9 @@ pub(super) fn project(
             }
         };
         let Some(origin) = vector_or(record, origin_start, Vector3::new(0.0, 0.0, 0.0)) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive origin is invalid"),
@@ -332,8 +340,9 @@ pub(super) fn project(
             continue;
         };
         if !origin.is_finite() {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive origin is non-finite"),
@@ -362,15 +371,22 @@ pub(super) fn project(
                     )
                 })
         {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "primitive axes are not orthonormal"),
             )?;
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            entry.sequence,
+            "iges csg decoded sequences",
+            "iges csg decoded sequences",
+        )?;
     }
 
     let mut profile_index = None;
@@ -389,8 +405,9 @@ pub(super) fn project(
         let Some(record) = ctx.get_btree_map(
             records, &entry.sequence, "iges csg parameter record lookup",
         )?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -399,8 +416,9 @@ pub(super) fn project(
         };
         let factor = global.length_factor_mm();
         let Some(profile_sequence) = pointer(record, 1) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid profile curve pointer is invalid"),
@@ -427,8 +445,9 @@ pub(super) fn project(
             None => None,
         };
         let Some((profile_id, index)) = profile else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid profile curve pointer is invalid"),
@@ -439,8 +458,9 @@ pub(super) fn project(
             .number_or(2, 1.0)
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid sweep amount is invalid"),
@@ -448,8 +468,9 @@ pub(super) fn project(
             continue;
         };
         if entry.entity_type == 162 && amount > 1.0 {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid revolution fraction is greater than one"),
@@ -468,8 +489,9 @@ pub(super) fn project(
                     .is_none()
             })
         {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid sweep axis is invalid"),
@@ -501,8 +523,9 @@ pub(super) fn project(
         let Some(closed) = profile_proofs.closed(
             profile_sequence, index, edges, global.minimum_resolution_mm(), ctx,
         )? else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid profile endpoints are unavailable"),
@@ -512,8 +535,9 @@ pub(super) fn project(
         if (entry.entity_type == 162 && entry.form == 0 && closed)
             || (entry.entity_type == 164 && !closed)
         {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid sweep form disagrees with profile closure"),
@@ -530,15 +554,22 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid sweep placement is invalid"),
             )?;
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            entry.sequence,
+            "iges csg decoded sequences",
+            "iges csg decoded sequences",
+        )?;
     }
 
     drop(profile_proofs);
@@ -554,8 +585,9 @@ pub(super) fn project(
         let Some(record) = ctx.get_btree_map(
             records, &entry.sequence, "iges csg parameter record lookup",
         )?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -563,16 +595,16 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 2) else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Boolean postfix length is not greater than two"),
             )?;
             continue;
         };
-        let mut terms = boolean_storage
-            .with_storage(|| ctx.collection_vec(count, "iges Boolean postfix terms"))?;
+        let (mut terms, terms_storage) = ctx.temporary_vec(count, "iges Boolean postfix terms")?;
         let mut terms_valid = true;
         let mut indices = 0..count;
         while let Some(index) = ctx.next_charged(&mut indices, "iges Boolean postfix parsing")? {
@@ -595,8 +627,11 @@ pub(super) fn project(
             }
         }
         if !terms_valid {
-            super::push_entity_loss(
+            drop(terms);
+            drop(terms_storage);
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Boolean postfix term is invalid"),
@@ -622,8 +657,11 @@ pub(super) fn project(
             "iges Boolean postfix stack",
         )?;
         if !valid_stack || depth != 1 {
-            super::push_entity_loss(
+            drop(terms);
+            drop(terms_storage);
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Boolean postfix stack is unbalanced"),
@@ -636,7 +674,8 @@ pub(super) fn project(
                 entry.sequence,
                 terms,
                 "iges Boolean definition nodes",
-            )
+            )?;
+            terms_storage.commit()
         })?;
     }
     let mut validation = BooleanValidation {
@@ -657,8 +696,9 @@ pub(super) fn project(
             ctx,
         )?;
         if !operands_valid {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -679,16 +719,27 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Boolean result placement is invalid"),
             )?;
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, *sequence, "iges csg decoded sequences")?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            *sequence,
+            "iges csg decoded sequences",
+            "iges csg decoded sequences",
+        )?;
     }
+
+    drop(validation);
+    drop(boolean_definitions);
+    drop(boolean_storage);
 
     for entry in ctx
         .admit_iter(directory, "iges csg directory traversal")?
@@ -697,8 +748,9 @@ pub(super) fn project(
         let Some(record) = ctx.get_btree_map(
             records, &entry.sequence, "iges csg parameter record lookup",
         )?.copied() else {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -714,8 +766,9 @@ pub(super) fn project(
             None => false,
         };
         if !tree_valid {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "selected-component Boolean tree pointer is invalid"),
@@ -724,8 +777,9 @@ pub(super) fn project(
         };
         let point_valid = (2..=4).all(|index| record.number(index).is_some());
         if !point_valid || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!(
@@ -746,18 +800,25 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_entity_loss(
+            super::push_entity_loss_with_scoped_slots(
                 ctx,
+                &mut loss_slots_storage,
                 &mut losses,
                 entry,
                 format_args!("{}", "selected-component placement is invalid"),
             )?;
             continue;
         }
-        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            entry.sequence,
+            "iges csg decoded sequences",
+            "iges csg decoded sequences",
+        )?;
     }
 
-    Ok(ProjectionOutcome { decoded, losses })
+    Ok(ProjectionOutcome { decoded, decoded_storage, losses, loss_slots_storage })
 }
 
 #[cfg(test)]

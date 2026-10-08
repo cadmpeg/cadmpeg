@@ -1458,6 +1458,7 @@ fn cyclic_font_chains_are_classified_once_per_font() {
         .losses
         .iter()
         .all(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+    drop(outcome);
     drop(global_storage);
     ctx.finish_session().unwrap();
 }
@@ -1571,6 +1572,7 @@ fn invalid_definition_levels_stop_before_the_remaining_count() {
         outcome.losses[0].code,
         IgesLossCode::DisplayDataNotProjected.kind()
     );
+    drop(outcome);
     drop(global_storage);
     ctx.finish_session().unwrap();
 }
@@ -1663,5 +1665,6 @@ fn repeated_body_name_properties_do_not_rescan_shared_text() {
     .unwrap();
     assert!(outcome.losses.is_empty());
     assert_eq!(ir.model.bodies[0].name.as_deref(), Some(name.as_str()));
+    drop(outcome);
     ctx.finish_session().unwrap();
 }

@@ -5,7 +5,7 @@ use crate::card::{Card, CardScan, PhysicalLine, Section};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
@@ -617,35 +617,44 @@ pub(crate) fn entry_by_sequence<'a>(
         .and_then(|index| directory.get(index)))
 }
 
-pub(crate) fn summary_notes(
+pub(crate) fn summary_notes<'ctx>(
     entries: &[DirectoryEntry],
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<String>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(Vec<String>, ScopedReservation<'ctx>), CodecError> {
+    let mut census_storage = ctx.reserve_scoped(0, "iges directory summary groups")?;
     let mut census = BTreeMap::<(i64, i64), usize>::new();
-    for entry in entries {
-        ctx.admit_btree_entry(
-            &census,
-            &(entry.entity_type, entry.form),
-            "iges directory summary groups",
-        )?;
-        *census.entry((entry.entity_type, entry.form)).or_default() += 1;
+    let mut source = entries.iter();
+    while let Some(entry) = ctx.next_charged(&mut source, "iges directory summary groups")? {
+        census_storage.with_storage(|| {
+            ctx.admit_btree_entry(
+                &census,
+                &(entry.entity_type, entry.form),
+                "iges directory summary groups",
+            )?;
+            *census.entry((entry.entity_type, entry.form)).or_default() += 1;
+            Ok::<(), CodecError>(())
+        })?;
     }
+    let mut storage = ctx.reserve_scoped(0, "iges directory summary notes")?;
     let mut notes = Vec::new();
-    ctx.push_formatted_retained(
-        &mut notes,
+    ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges directory summary notes")?;
+    notes.push(ctx.format_retained(
         format_args!("entities={}", entries.len()),
-        "iges directory summary notes",
         "iges directory summary text",
-    )?;
-    for ((entity_type, form), count) in census {
-        ctx.push_formatted_retained(
-            &mut notes,
+    )?);
+    let mut grouped = census.into_iter();
+    while let Some(((entity_type, form), count)) =
+        ctx.next_charged(&mut grouped, "iges directory summary notes")?
+    {
+        ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges directory summary notes")?;
+        notes.push(ctx.format_retained(
             format_args!("entity.{entity_type}.form.{form}={count}"),
-            "iges directory summary notes",
             "iges directory summary text",
-        )?;
+        )?);
     }
-    Ok(notes)
+    drop(grouped);
+    drop(census_storage);
+    Ok((notes, storage))
 }
 
 #[cfg(test)]

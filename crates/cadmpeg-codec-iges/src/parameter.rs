@@ -6,7 +6,7 @@ use crate::card::{Card, CardScan, FramingDefect, FramingRecoveries, PhysicalLine
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{bounded_len, refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{bounded_len, refuse_local_limit, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -1162,7 +1162,11 @@ pub(crate) fn entity_primary_end_for_global_table(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
-    let Some(entry) = directory.get(&record.directory_sequence) else {
+    let Some(entry) = ctx.get_btree_map(
+        directory,
+        &record.directory_sequence,
+        "iges parameter primary layout directory lookup",
+    )? else {
         return Ok(None);
     };
     Ok(match (entry.entity_type, entry.form) {
@@ -4602,19 +4606,19 @@ pub(crate) fn record_by_sequence<'a>(
         .and_then(|index| records.get(index)))
 }
 
-pub(crate) fn summary_notes(
+pub(crate) fn summary_notes<'ctx>(
     records: &[ParameterRecord],
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<String>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(Vec<String>, ScopedReservation<'ctx>), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "iges parameter summary notes")?;
     let mut notes = Vec::new();
-    ctx.push_formatted_retained(
-        &mut notes,
+    ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges parameter summary notes")?;
+    notes.push(ctx.format_retained(
         format_args!("parameter_records={}", records.len()),
-        "iges parameter summary notes",
         "iges parameter summary text",
-    )?;
-    ctx.push_formatted_retained(
-        &mut notes,
+    )?);
+    ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges parameter summary notes")?;
+    notes.push(ctx.format_retained(
         format_args!(
             "parameter_tokens={}",
             ctx.fold(
@@ -4626,21 +4630,19 @@ pub(crate) fn summary_notes(
                 "iges parameter summary token census",
             )?
         ),
-        "iges parameter summary notes",
         "iges parameter summary text",
-    )?;
-    ctx.push_formatted_retained(
-        &mut notes,
+    )?);
+    ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges parameter summary notes")?;
+    notes.push(ctx.format_retained(
         format_args!(
             "external_references={}",
             ctx.admit_iter(records, "iges parameter summary references")?
                 .filter(|record| record.integer(0) == Some(416))
                 .count()
         ),
-        "iges parameter summary notes",
         "iges parameter summary text",
-    )?;
-    Ok(notes)
+    )?);
+    Ok((notes, storage))
 }
 
 #[cfg(test)]

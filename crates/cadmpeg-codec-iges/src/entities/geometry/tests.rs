@@ -42,6 +42,43 @@ fn assert_geometry_collection_refusal(bytes: &[u8], operation: &str) {
     );
 }
 
+fn projection_outcome<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    sequence: u32,
+    include_decoded: bool,
+    include_loss: bool,
+) -> Result<ProjectionOutcome<'ctx>, CodecError> {
+    let mut decoded_storage = ctx.reserve_scoped(0, "test projection decoded sequences")?;
+    let mut decoded = BTreeSet::new();
+    if include_decoded {
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            sequence,
+            "test projection decoded sequences",
+            "test projection decoded sequences",
+        )?;
+    }
+    let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
+    let mut losses = Vec::new();
+    if include_loss {
+        let entry = transform_entry(sequence, 0);
+        crate::entities::push_entity_loss_with_scoped_slots(
+            ctx,
+            &mut loss_slots_storage,
+            &mut losses,
+            &entry,
+            format_args!("test projection loss"),
+        )?;
+    }
+    Ok(ProjectionOutcome {
+        decoded,
+        decoded_storage,
+        losses,
+        loss_slots_storage,
+    })
+}
+
 #[test]
 fn merged_trimming_vertex_derivations_refuse_before_accumulator_growth() {
     let bytes = crate::test_support::test_surface_fixtures::bounded_plane_file();
@@ -192,7 +229,6 @@ fn free_wire_topology_refuses_nested_lists_and_model_slots() {
 
 #[test]
 fn projector_merges_refuse_decoded_loss_and_wire_growth() {
-    use crate::loss::IgesLossCode;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     for operation in [
         "iges merged decoded sequences",
@@ -211,16 +247,12 @@ fn projector_merges_refuse_decoded_loss_and_wire_growth() {
                 let mut decoded = BTreeSet::new();
                 let mut losses = Vec::new();
                 match operation {
-                    "iges merged decoded sequences" => ProjectionOutcome {
-                        decoded: BTreeSet::from([1]),
-                        losses: Vec::new(),
-                    }
-                    .merge_into(&mut decoded, &mut storage, &mut losses, &ctx),
-                    "iges merged loss slots" => ProjectionOutcome {
-                        decoded: BTreeSet::new(),
-                        losses: vec![IgesLossCode::EntityNotProjected.note("test")],
-                    }
-                    .merge_into(&mut decoded, &mut storage, &mut losses, &ctx),
+                    "iges merged decoded sequences" => projection_outcome(&ctx, 1, true, false)
+                        .unwrap()
+                        .merge_into(&mut decoded, &mut storage, &mut losses, &ctx),
+                    "iges merged loss slots" => projection_outcome(&ctx, 1, false, true)
+                        .unwrap()
+                        .merge_into(&mut decoded, &mut storage, &mut losses, &ctx),
                     "iges merged wire edge slots" => WireProjectionOutcome {
                         decoded: BTreeSet::new(),
                         losses: Vec::new(),
@@ -1958,3 +1990,5 @@ fn decode_reports_transform_translation_overflow_after_inch_scaling() {
 mod work_admission;
 
 mod boundary_storage;
+
+mod projection_outcome_storage;

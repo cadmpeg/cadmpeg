@@ -472,8 +472,9 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         graph: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     ) -> Result<ScopedReservation<'ctx>, CodecError> {
         let mut storage = self.storage.into_inner();
-        for (source, (mut edges, edge_storage)) in self.ctx.admit_iter(
-            self.edges.into_inner(),
+        let mut sources = self.edges.into_inner().into_iter();
+        while let Some((source, (mut edges, edge_storage))) = self.ctx.next_charged(
+            &mut sources,
             "iges parameter resolver graph sources",
         )? {
             match self.ctx.get_mut_btree_map(
@@ -655,7 +656,8 @@ fn cyclic_transform_nodes(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "IGES transform cycle indices")?;
     let mut next = BTreeMap::new();
-    for (source, values) in ctx.admit_iter(edges, "iges transform cycle sources")? {
+    let mut sources = edges.iter();
+    while let Some((source, values)) = ctx.next_charged(&mut sources, "iges transform cycle sources")? {
         // Directory graphs have at most seven reference kinds per source.
         if let Some(target) = values
             .iter()
@@ -673,14 +675,12 @@ fn cyclic_transform_nodes(
     }
     let mut cyclic = BTreeSet::new();
     let mut completed = BTreeSet::new();
-    for start in ctx
-        .admit_iter(&next, "iges transform cycle starts")?
-        .map(|(source, _)| *source)
-    {
+    let mut starts = next.iter();
+    while let Some((start, _)) = ctx.next_charged(&mut starts, "iges transform cycle starts")? {
         let mut path_storage = ctx.reserve_scoped(0, "IGES transform cycle path")?;
         let mut path = Vec::new();
         let mut active = BTreeMap::<u32, usize>::new();
-        let mut successor = Some(start);
+        let mut successor = Some(*start);
         let mut steps = std::iter::repeat(());
         while let Some(current) = successor {
             ctx.next_charged(&mut steps, "iges transform reference cycle walk")?;
@@ -691,11 +691,9 @@ fn cyclic_transform_nodes(
                 .get_btree_map(&active, &current, "iges active transform lookup")?
                 .copied()
             {
-                for node in ctx
-                    .admit_iter(&path[position..], "iges cyclic transform nodes")?
-                    .copied()
-                {
-                    ctx.insert_btree_set(&mut cyclic, node, "iges cyclic transform references")?;
+                let mut nodes = path[position..].iter();
+                while let Some(node) = ctx.next_charged(&mut nodes, "iges cyclic transform nodes")? {
+                    ctx.insert_btree_set(&mut cyclic, *node, "iges cyclic transform references")?;
                 }
                 break;
             }
@@ -718,7 +716,8 @@ fn cyclic_transform_nodes(
                 .get_btree_map(&next, &current, "iges transform successor lookup")?
                 .copied();
         }
-        for node in ctx.admit_iter(path, "iges completed transform path")? {
+        let mut nodes = path.into_iter();
+        while let Some(node) = ctx.next_charged(&mut nodes, "iges completed transform path")? {
             index_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut completed, node, "iges completed transform references")
             })?;
@@ -734,7 +733,8 @@ pub(crate) fn build<'ctx>(
 ) -> Result<(BTreeMap<u32, Vec<ReferenceEdge>>, ScopedReservation<'ctx>), CodecError> {
     ctx.with_scoped_storage("IGES Directory reference graph", || {
         let mut graph = BTreeMap::new();
-        for entry in ctx.admit_iter(directory, "iges directory reference sources")? {
+        let mut sources = directory.iter();
+        while let Some(entry) = ctx.next_charged(&mut sources, "iges directory reference sources")? {
             let mut edges = Vec::new();
             for candidate in candidates(entry) {
                 let target = match candidate.target_sequence {
@@ -766,7 +766,8 @@ pub(crate) fn build<'ctx>(
             .with_scoped_storage("IGES cyclic transform nodes", || {
                 cyclic_transform_nodes(&graph, ctx)
             })?;
-        for source in ctx.admit_iter(cyclic, "iges cyclic transform sources")? {
+        let mut sources = cyclic.into_iter();
+        while let Some(source) = ctx.next_charged(&mut sources, "iges cyclic transform sources")? {
             let edge = match ctx.get_mut_btree_map(
                 &mut graph,
                 &source,
@@ -804,12 +805,13 @@ pub(crate) fn resolved_structure_sequence(
     )
 }
 
-pub(crate) fn summary_notes(
+pub(crate) fn summary_notes<'ctx>(
     graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<String>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(Vec<String>, ScopedReservation<'ctx>), CodecError> {
     let mut counts = [0_usize; 6];
-    for (_, edges) in ctx.admit_iter(graph, "iges reference summary sources")? {
+    let mut sources = graph.iter();
+    while let Some((_, edges)) = ctx.next_charged(&mut sources, "iges reference summary sources")? {
         for edge in ctx.admit_iter(edges, "iges reference summary edges")? {
             let index = match edge.resolution {
                 Resolution::Cyclic(_) => 0,
@@ -822,6 +824,7 @@ pub(crate) fn summary_notes(
             counts[index] += 1;
         }
     }
+    let mut storage = ctx.reserve_scoped(0, "iges reference summary notes")?;
     let mut notes = Vec::new();
     for (resolution, count) in [
         "cyclic",
@@ -835,22 +838,19 @@ pub(crate) fn summary_notes(
     .zip(counts)
     .filter(|(_, count)| *count > 0)
     {
-        ctx.push_formatted_retained(
-            &mut notes,
-            format_args!("references.{resolution}={count}"),
-            "iges reference summary notes",
-            "iges reference summary text",
-        )?;
+        ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges reference summary notes")?;
+        notes.push(ctx.format_retained(format_args!("references.{resolution}={count}"),
+            "iges reference summary text")?);
     }
-    Ok(notes)
+    Ok((notes, storage))
 }
 
-pub(crate) fn losses(
+pub(crate) fn losses<'ctx>(
     graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
     scan: &CardScan<'_>,
     parameters: &[ParameterRecord],
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<LossNote>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<(Vec<LossNote>, ScopedReservation<'ctx>), CodecError> {
     // A card's sequence is its position in its section, so a section slice
     // answers an offset lookup by index.
     let directory_cards = scan.section(Section::Directory);
@@ -859,14 +859,17 @@ pub(crate) fn losses(
         let index = usize::try_from(sequence).ok()?.checked_sub(1)?;
         cards.get(index).map(|card| card.line.offset)
     };
+    let mut loss_storage = ctx.reserve_scoped(0, "iges graph loss notes")?;
     let mut losses = Vec::new();
-    for (source, edges) in ctx.admit_iter(graph, "iges graph loss sources")? {
+    let mut sources = graph.iter();
+    while let Some((source, edges)) = ctx.next_charged(&mut sources, "iges graph loss sources")? {
         let mut parameter_record = None;
-        for edge in ctx
-            .admit_iter(edges, "iges graph loss edge scan")?
-            .filter(|edge| !matches!(edge.resolution, Resolution::Resolved(_)))
-        {
-            ctx.reserve_vec(&mut losses, 1, "iges graph loss notes")?;
+        let mut edges = edges.iter();
+        while let Some(edge) = ctx.next_charged(&mut edges, "iges graph loss edge scan")? {
+            if matches!(edge.resolution, Resolution::Resolved(_)) {
+                continue;
+            }
+            ctx.reserve_scoped_vec(&mut loss_storage, &mut losses, 1, "iges graph loss notes")?;
             let record = match edge.origin.parameter_index() {
                 Some(_) => match parameter_record {
                     Some(record) => record,
@@ -931,7 +934,7 @@ pub(crate) fn losses(
             losses.push(note);
         }
     }
-    Ok(losses)
+    Ok((losses, loss_storage))
 }
 
 #[cfg(test)]

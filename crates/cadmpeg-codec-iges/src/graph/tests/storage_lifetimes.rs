@@ -111,3 +111,154 @@ fn parameter_append_keeps_absent_bucket_storage_live() {
         }
     }
 }
+
+#[test]
+fn graph_loss_slots_are_scoped_and_text_remains_retained() {
+    const MATERIALIZED_LIMIT: u64 = 8192;
+    let graph = BTreeMap::from([(
+        1,
+        vec![ReferenceEdge {
+            origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+            raw_pointer: 3,
+            resolution: Resolution::Dangling,
+            expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+        }],
+    )]);
+    let bytes = crate::test_support::test_curves_and_surfaces::point_file();
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "iges graph loss notes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            crate::graph::losses(&graph, &scan, &[], &ctx).map(|_| ())
+        },
+    );
+    for refuse_while_live in [true, false] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = MATERIALIZED_LIMIT;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (losses, storage) = crate::graph::losses(&graph, &scan, &[], &ctx).unwrap();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].message,
+            "IGES Directory Entry D1 Transform pointer 3 has dangling resolution; expected type-124-transformation");
+        if refuse_while_live {
+            let error = ctx.reserve_scoped(MATERIALIZED_LIMIT, "live graph loss slots").unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(expected) = error else {
+                panic!("expected graph loss storage refusal");
+            };
+            assert_eq!(expected.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(expected.operation, "live graph loss slots");
+            assert_eq!(expected.used,
+                4 * u64::try_from(std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>()).unwrap());
+            drop(losses);
+            drop(storage);
+            assert!(matches!(ctx.finish_session().unwrap_err(),
+                cadmpeg_core::CodecError::ResourceLimit(actual) if actual == expected
+            ));
+        } else {
+            drop(losses);
+            drop(storage);
+            ctx.reserve_scoped(MATERIALIZED_LIMIT, "released graph loss slots").unwrap();
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn graph_loss_payload_refusal_does_not_precharge_unvisited_sources() {
+    let graph = (1..=4096).map(|source| (source, vec![ReferenceEdge {
+        origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+        raw_pointer: 3,
+        resolution: Resolution::Dangling,
+        expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+    }])).collect();
+    let bytes = crate::test_support::test_curves_and_surfaces::point_file();
+    let scan = crate::test_support::scan(&bytes).unwrap();
+    let mut policy = DecodePolicy::service();
+    // The first source and edge cost two steps. Counting the two-byte D1 tag
+    // costs two more before its retained storage admission.
+    policy.limits.max_work_units = 4;
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::graph::losses(&graph, &scan, &[], &ctx).unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(expected) = error else {
+        panic!("expected graph loss tag refusal");
+    };
+    assert_eq!(expected.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(expected.operation, "iges graph loss tag");
+    assert_eq!(expected.additional, 2);
+    assert!(matches!(ctx.finish_session().unwrap_err(),
+        cadmpeg_core::CodecError::ResourceLimit(actual) if actual == expected));
+}
+
+#[test]
+fn graph_summary_slots_are_scoped_and_note_text_is_retained() {
+    const MATERIALIZED_LIMIT: u64 = 8192;
+    let graph = BTreeMap::from([(1, vec![ReferenceEdge {
+        origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+        raw_pointer: 3,
+        resolution: Resolution::Dangling,
+        expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+    }])]);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes, "iges reference summary notes", |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            crate::graph::summary_notes(&graph, &ctx).map(|_| ())
+        },
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(crate::graph::summary_notes(&graph, &ctx),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges reference summary text"
+                && limit.used == 0));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = MATERIALIZED_LIMIT;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (notes, storage) = crate::graph::summary_notes(&graph, &ctx).unwrap();
+    assert_eq!(notes, ["references.dangling=1"]);
+    let remaining = ctx.reserve_scoped(MATERIALIZED_LIMIT -
+        4 * u64::try_from(std::mem::size_of::<String>()).unwrap(),
+        "remaining storage with reference summary").unwrap();
+    drop(remaining);
+    drop(notes);
+    drop(storage);
+    ctx.reserve_scoped(MATERIALIZED_LIMIT, "released reference summary").unwrap();
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn summary_edge_refusal_does_not_precharge_unvisited_sources() {
+    let graph = (1..=17).map(|source| (source, vec![ReferenceEdge {
+        origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
+        raw_pointer: 3,
+        resolution: Resolution::Dangling,
+        expected: ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+    }])).collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::graph::summary_notes(&graph, &ctx).unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(expected) = error else {
+        panic!("expected first reference summary edge refusal");
+    };
+    assert_eq!(expected.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(expected.operation, "iges reference summary edges");
+    assert_eq!(expected.used, 1);
+    assert!(matches!(ctx.finish_session().unwrap_err(),
+        cadmpeg_core::CodecError::ResourceLimit(actual) if actual == expected));
+}
