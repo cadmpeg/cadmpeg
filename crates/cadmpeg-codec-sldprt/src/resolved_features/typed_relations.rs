@@ -7,7 +7,8 @@ use super::endpoints::{
     copy_endpoint_markers, extended_compact_indexed_curve_endpoint_indices,
     extended_direct_object_line_endpoint_ids, extended_shifted_construction_line_endpoint_indices,
     legacy_marker104_arc_center, legacy_terminal_profile_endpoint_offset,
-    marker_profile_curve_role, roster_curve_endpoint_markers, sort_endpoint_markers,
+    marker_profile_curve_role, roster_curve_endpoint_markers, single_marker, sort_endpoint_markers,
+    MarkerMatch,
     wide_indexed_curve_endpoint_indices, wide_indexed_curve_record_is_complete,
     CompactIndexedCurveRecordEnd,
 };
@@ -41,7 +42,7 @@ use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 const EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12: f64 = 1.0e-12;
 const EPS_TYPED_RELATIONS_SKETCH_ENTITY_MIDPOINT_E12: f64 = 1.0e-12;
@@ -2505,7 +2506,7 @@ pub(super) struct CurveMarkers<'roster, 'a, 'ctx> {
     roster: &'roster [&'a SketchInputEntity],
     reverse_incidence: std::cell::OnceCell<super::markers::ReverseIncidenceIndex<'a>>,
     by_feature: std::cell::OnceCell<HashMap<Option<&'a str>, Vec<&'a SketchInputEntity>>>,
-    by_offset: std::cell::OnceCell<BTreeMap<Option<&'a str>, Vec<&'a SketchInputEntity>>>,
+    by_offset: std::cell::RefCell<HashMap<Option<&'a str>, Vec<&'a SketchInputEntity>>>,
     by_object: std::cell::OnceCell<CurveObjectMarkers<'a>>,
     linked_from: std::cell::OnceCell<HashMap<&'a str, Vec<&'a SketchInputEntity>>>,
     storage: std::cell::RefCell<ScopedReservation<'ctx>>,
@@ -2520,7 +2521,7 @@ impl<'roster, 'a, 'ctx> CurveMarkers<'roster, 'a, 'ctx> {
             roster,
             reverse_incidence: std::cell::OnceCell::new(),
             by_feature: std::cell::OnceCell::new(),
-            by_offset: std::cell::OnceCell::new(),
+            by_offset: std::cell::RefCell::new(HashMap::new()),
             by_object: std::cell::OnceCell::new(),
             linked_from: std::cell::OnceCell::new(),
             storage: std::cell::RefCell::new(ctx.reserve_scoped(0, "index SLDPRT curve markers")?),
@@ -2662,38 +2663,40 @@ impl<'roster, 'a, 'ctx> CurveMarkers<'roster, 'a, 'ctx> {
         curve: &SketchInputEntity,
     ) -> Result<Option<&'a SketchInputEntity>, CodecError> {
         const INDEX: &str = "index SLDPRT curve marker offsets";
+        const SORT: &str = "sort SLDPRT curve marker offsets";
         const OPERATION: &str = "resolve SLDPRT curve marker offset";
-        let by_offset = match self.by_offset.get() {
-            Some(index) => index,
-            None => {
-                let built = self.storage.borrow_mut().with_storage(|| {
-                    let mut index = BTreeMap::new();
-                    for &marker in ctx.admit_iter(self.roster, INDEX)? {
-                        ctx.push_btree_group(
-                            &mut index,
-                            marker.feature_ref.as_deref(),
-                            marker,
-                            INDEX,
-                            INDEX,
-                        )?;
+        let source_order = self.feature_markers(ctx, curve)?;
+        if source_order.is_empty() {
+            return Ok(None);
+        }
+        let feature = source_order
+            .first()
+            .and_then(|marker| marker.feature_ref.as_deref());
+        let mut by_offset = self.by_offset.borrow_mut();
+        self.storage.borrow_mut().with_storage(|| {
+            let markers = match ctx.entry_hash_map(&mut by_offset, feature, INDEX)? {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    let mut sorted = Vec::new();
+                    for &marker in ctx.admit_iter(source_order, INDEX)? {
+                        ctx.push_vec(&mut sorted, marker, INDEX)?;
                     }
-                    for (_, markers) in ctx.admit_iter(&mut index, INDEX)? {
-                        ctx.stable_sort_by_key(markers, |marker| marker.offset(), Ord::cmp, INDEX)?;
-                    }
-                    Ok::<_, CodecError>(index)
-                })?;
-                self.by_offset.get_or_init(|| built)
-            }
-        };
-        let markers = ctx
-            .get_btree_map(by_offset, &curve.feature_ref.as_deref(), OPERATION)?
-            .map_or(&[][..], Vec::as_slice);
-        let next = ctx.partition_point(
-            markers,
-            |marker| Ok(marker.offset() <= curve.offset()),
-            OPERATION,
-        )?;
-        Ok(markers.get(next).copied())
+                    ctx.stable_sort_by_key(
+                        &mut sorted,
+                        |marker| marker.offset(),
+                        Ord::cmp,
+                        SORT,
+                    )?;
+                    entry.insert(sorted)
+                }
+            };
+            let next = ctx.partition_point(
+                markers,
+                |marker| Ok(marker.offset() <= curve.offset()),
+                OPERATION,
+            )?;
+            Ok(markers.get(next).copied())
+        })
     }
 }
 
@@ -2717,23 +2720,16 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
         if let Some(ids) = direct {
             let resolve = |id| {
                 let object = (id != 0).then_some(id);
-                let mut candidates = index.object_markers(ctx, feature, object)?.iter().copied();
-                let Some(first) = ctx.find_by(
-                    &mut candidates,
-                    |marker| Ok(is_coordinate_point(marker)),
+                let candidates = index.object_markers(ctx, feature, object)?;
+                Ok::<_, CodecError>(match single_marker(
+                    ctx,
+                    candidates,
+                    is_coordinate_point,
                     OPERATION,
-                )?
-                else {
-                    return Ok::<_, CodecError>(None);
-                };
-                Ok(ctx
-                    .find_by(
-                        &mut candidates,
-                        |marker| Ok(is_coordinate_point(marker)),
-                        OPERATION,
-                    )?
-                    .is_none()
-                    .then_some(first))
+                )? {
+                    MarkerMatch::One(marker) => Some(marker),
+                    MarkerMatch::None | MarkerMatch::Several => None,
+                })
             };
             let first = resolve(ids[0])?;
             let second = if first.is_some() {
@@ -2748,23 +2744,30 @@ pub(super) fn marker_curve_endpoint_markers_in<'a>(
             }
         }
     }
-    let markers = index.feature_markers(ctx, curve)?;
     let linking = index.linking_to(ctx, curve)?;
-    marker_curve_endpoint_markers_from(
+    let endpoints = line_endpoint_markers_from(
+        ctx,
+        curve,
+        markers_by_id,
+        linking,
+        ReverseLinkMembership::Proven,
+    )?;
+    if endpoints.len() == 2 {
+        return Ok(endpoints);
+    }
+    let markers = index.feature_markers(ctx, curve)?;
+    marker_curve_endpoint_layout_fallback_from(
         ctx,
         payload,
         curve,
         markers_by_id,
-        (markers, linking),
+        markers,
         Some(index),
         geometry,
     )
 }
 
-/// The two endpoint markers of a curve marker, resolved by the first layout
-/// that names them. `markers_by_id` resolves the curve's links and `markers`
-/// is the roster the layouts index into, which also supplies the markers that
-/// link back to the curve.
+/// Resolves a curve against a source roster when no lane index exists.
 pub(super) fn marker_curve_endpoint_markers<'a>(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -2773,43 +2776,32 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
     geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
-    marker_curve_endpoint_markers_from(
+    if let Some(endpoints) = extended_direct_object_line_endpoints(ctx, payload, curve, markers)? {
+        return copy_endpoint_markers(ctx, &endpoints);
+    }
+    let endpoints = line_endpoint_markers_from(
         ctx,
-        payload,
         curve,
         markers_by_id,
-        (markers, markers),
-        None,
-        geometry,
-    )
+        markers,
+        ReverseLinkMembership::Unchecked,
+    )?;
+    if endpoints.len() == 2 {
+        return Ok(endpoints);
+    }
+    marker_curve_endpoint_layout_fallback_from(ctx, payload, curve, markers_by_id, markers, None, geometry)
 }
 
-fn marker_curve_endpoint_markers_from<'a>(
+fn marker_curve_endpoint_layout_fallback_from<'a>(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
-    (markers, linking): (&[&'a SketchInputEntity], &[&'a SketchInputEntity]),
+    markers: &[&'a SketchInputEntity],
     index: Option<&CurveMarkers<'_, 'a, '_>>,
     geometry: &super::endpoints::geometry_index::MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
-    if index.is_none() {
-        if let Some(endpoints) =
-            extended_direct_object_line_endpoints(ctx, payload, curve, markers)?
-        {
-            return copy_endpoint_markers(ctx, &endpoints);
-        }
-    }
-    let membership = if index.is_some() {
-        ReverseLinkMembership::Proven
-    } else {
-        ReverseLinkMembership::Unchecked
-    };
-    let endpoints = line_endpoint_markers_from(ctx, curve, markers_by_id, linking, membership)?;
-    if endpoints.len() == 2 {
-        return Ok(endpoints);
-    }
     let shifted = usize::try_from(curve.offset()).ok().and_then(|offset| {
         extended_shifted_construction_line_endpoint_indices(payload, offset)
             .map(|indices| (offset, indices))

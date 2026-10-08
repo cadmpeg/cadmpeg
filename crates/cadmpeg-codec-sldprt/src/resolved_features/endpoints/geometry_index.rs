@@ -20,7 +20,7 @@ struct OwnerGeometry<'a, 'ctx> {
     markers: Vec<&'a SketchInputEntity>,
     native_arc_centers: std::cell::OnceCell<ArcCenterIndex<'a, 'ctx>>,
     profile_arc_centers: std::cell::OnceCell<ArcCenterIndex<'a, 'ctx>>,
-    points: Vec<&'a SketchInputEntity>,
+    points: std::cell::OnceCell<Vec<&'a SketchInputEntity>>,
     point_positions: std::cell::OnceCell<ArcCenterIndex<'a, 'ctx>>,
     coordinate_order: std::cell::OnceCell<Vec<(f64, &'a SketchInputEntity)>>,
     embedded_roster: std::cell::RefCell<EmbeddedRoster<'a>>,
@@ -54,12 +54,13 @@ impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
         for &marker in ctx.admit_iter(markers, OPERATION)? {
             let owner = marker.feature_ref.as_deref();
             storage.with_storage(|| {
-                if !ctx.contains_key_hash_map(&owners, &owner, OPERATION)? {
-                    ctx.insert_hash_map(
-                        &mut owners,
-                        owner,
-                        OwnerGeometry {
-                            points: Vec::new(),
+                let group = match ctx.entry_hash_map(&mut owners, owner, OPERATION)? {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        order_storage
+                            .with_storage(|| ctx.push_vec(&mut owner_order, owner, OPERATION))?;
+                        entry.insert(OwnerGeometry {
+                            points: std::cell::OnceCell::new(),
                             point_positions: std::cell::OnceCell::new(),
                             markers: Vec::new(),
                             all: Vec::new(),
@@ -70,26 +71,14 @@ impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
                             embedded_roster: std::cell::RefCell::new(EmbeddedRoster::default()),
                             native_arc_centers: std::cell::OnceCell::new(),
                             profile_arc_centers: std::cell::OnceCell::new(),
-                        },
-                        OPERATION,
-                    )?;
-                    order_storage
-                        .with_storage(|| ctx.push_vec(&mut owner_order, owner, OPERATION))?;
-                }
-                let Some(group) = ctx.get_mut_hash_map(&mut owners, &owner, OPERATION)? else {
-                    return Ok(());
+                        })
+                    }
                 };
                 ctx.push_vec(&mut group.all, marker, OPERATION)?;
                 if marker.coordinates_m.is_none() {
                     return Ok(());
                 }
                 ctx.push_vec(&mut group.markers, marker, OPERATION)?;
-                if matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                ) {
-                    ctx.push_vec(&mut group.points, marker, OPERATION)?;
-                }
                 ctx.push_hash_group(
                     &mut objects,
                     (owner, marker.object_index()),
@@ -99,16 +88,6 @@ impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
                 )?;
                 Ok::<(), CodecError>(())
             })?;
-        }
-        for &owner in ctx.admit_iter(&owner_order, OPERATION)? {
-            if let Some(group) = ctx.get_mut_hash_map(&mut owners, &owner, OPERATION)? {
-                ctx.sort_unstable_by_key(
-                    &mut group.points,
-                    |marker| marker.offset(),
-                    Ord::cmp,
-                    OPERATION,
-                )?;
-            }
         }
         Ok(Self {
             ctx,
@@ -256,6 +235,34 @@ impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
         Ok(Some(cache.get_or_init(|| index)))
     }
 
+    fn point_roster<'query>(
+        &'query self,
+        owner: &'query OwnerGeometry<'a, 'ctx>,
+    ) -> Result<&'query [&'a SketchInputEntity], CodecError> {
+        const OPERATION: &str = "index SLDPRT owner point markers";
+        if let Some(points) = owner.points.get() {
+            return Ok(points);
+        }
+        let mut points = Vec::new();
+        self.roster_storage.borrow_mut().with_storage(|| {
+            for &marker in self.ctx.admit_iter(&owner.markers, OPERATION)? {
+                if matches!(
+                    marker.kind(),
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                ) {
+                    self.ctx.push_vec(&mut points, marker, OPERATION)?;
+                }
+            }
+            self.ctx.sort_unstable_by_key(
+                &mut points,
+                |marker| marker.offset(),
+                Ord::cmp,
+                OPERATION,
+            )
+        })?;
+        Ok(owner.points.get_or_init(|| points))
+    }
+
     pub(in crate::resolved_features) fn point_positions<'query>(
         &'query self,
         curve: &'query SketchInputEntity,
@@ -270,7 +277,8 @@ impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
         if let Some(index) = owner.point_positions.get() {
             return Ok(Some(index));
         }
-        let index = ArcCenterIndex::from_markers(self.ctx, &owner.points, 1.0, false, 1.0)?;
+        let points = self.point_roster(owner)?;
+        let index = ArcCenterIndex::from_markers(self.ctx, points, 1.0, false, 1.0)?;
         Ok(Some(owner.point_positions.get_or_init(|| index)))
     }
 }
@@ -376,7 +384,7 @@ impl<'a> MarkerGeometryIndex<'a, '_, '_> {
             MarkerRoster::All => (&owner.all_roster, &owner.all),
             MarkerRoster::Located => (&owner.located_roster, &owner.markers),
             MarkerRoster::Geometry => (&owner.geometry_roster, &owner.markers),
-            MarkerRoster::Points => return Ok(&owner.points),
+            MarkerRoster::Points => return self.point_roster(owner),
         };
         if let Some(roster) = cache.get() {
             return Ok(roster);

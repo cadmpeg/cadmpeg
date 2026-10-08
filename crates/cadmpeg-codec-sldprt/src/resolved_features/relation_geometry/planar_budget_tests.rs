@@ -1255,6 +1255,54 @@ fn planar_native_marker_refuses_work_limit() {
     );
 }
 
+#[test]
+fn invalid_all_fallback_solver_lines_do_not_requery_point_roster() {
+    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (sketch, feature, lane, mut parameter) = two_solver_line_fixture();
+    parameter.value = Some(ParameterValue::Length(Length::new(7.0).unwrap()));
+    let mut entities = Vec::new();
+    let _retry_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "reuse SLDPRT solved-line point markers",
+        None,
+    );
+    project_relation_solved_line_geometry(
+        &ctx,
+        &mut entities,
+        &[sketch],
+        &[feature],
+        &[parameter],
+        &[lane],
+    )
+    .unwrap();
+    assert!(entities.is_empty());
+}
+
+#[test]
+fn solved_line_point_roster_reuse_keeps_a_charged_boundary() {
+    const REUSE: &str = "reuse SLDPRT solved-line point markers";
+    let (_, _, lane, _) = two_solver_line_fixture();
+    let error = crate::test_support::work_refusal_at(REUSE, |ctx| {
+        let mut points = super::SolvedLinePoints::new(ctx)?;
+        points.roster(
+            ctx,
+            &lane,
+            "feature",
+            "resolve SLDPRT solved-line point markers",
+        )?;
+        points.roster(ctx, &lane, "feature", REUSE).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == REUSE
+            && limit.dimension == ResourceDimension::WorkUnits));
+}
+
 mod roster_points;
 
 mod address_markers;

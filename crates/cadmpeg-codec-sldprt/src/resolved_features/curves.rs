@@ -584,6 +584,20 @@ pub(super) struct SlotReferences<'payload, 'ctx> {
     storage: std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SlotReferences<'_, '_> {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<Self>(),
+    ));
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 impl<'payload, 'ctx> SlotReferences<'payload, 'ctx> {
     pub(super) fn new(
         ctx: &'ctx DecodeContext<'_>,

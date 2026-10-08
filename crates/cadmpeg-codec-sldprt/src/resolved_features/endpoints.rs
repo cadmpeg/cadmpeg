@@ -830,14 +830,14 @@ fn same_marker(
 }
 
 /// How many markers of a group a predicate admits: none, exactly one, or several.
-enum MarkerMatch<'a> {
+pub(super) enum MarkerMatch<'a> {
     None,
     One(&'a SketchInputEntity),
     Several,
 }
 
 /// Classifies the markers `keep` admits, stepping only until a second one is found.
-fn single_marker<'a>(
+pub(super) fn single_marker<'a>(
     ctx: &DecodeContext<'_>,
     group: &[&'a SketchInputEntity],
     keep: impl Fn(&SketchInputEntity) -> bool,
