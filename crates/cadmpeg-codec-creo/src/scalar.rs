@@ -290,7 +290,7 @@ impl ScalarCache {
             let raw = [
                 byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
             ];
-            // The set charges the image's hash and comparison and any table growth.
+            // Fixed-width image probes are constant; table growth is admitted.
             if !image_storage.with_storage(|| ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images"))? {
                 continue;
             }

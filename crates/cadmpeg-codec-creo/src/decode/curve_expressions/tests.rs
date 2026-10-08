@@ -1291,3 +1291,28 @@ fn curve_expression_components_match_reachability_for_small_graphs() {
         }
     }
 }
+
+#[test]
+fn dimension_dependency_aliases_keep_first_identity_and_assignment_order() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::features::ParameterId;
+    use std::collections::BTreeMap;
+
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\xe0\x0aexpression\0\xf8\x02a=1\0b=x+a+y+z\0";
+    let record = crate::curve::expression_records(payload).pop().expect("complete expression");
+    assert_eq!(record.offset, 2);
+    let dimensions = BTreeMap::from([
+        ("x".to_owned(), ParameterId::mint("test:test:parameter#dimension").expect("dimension")),
+        ("y".to_owned(), ParameterId::mint("test:test:parameter#dimension").expect("dimension alias")),
+        ("z".to_owned(), ParameterId::mint("creo:depdb:curve_expression_parameter#7-2-0").expect("assignment alias")),
+    ]);
+    let indices = crate::decode::with_test_decode_ctx(|ctx| super::curve_expression_assignment_indices(ctx, &record)).expect("indices");
+    let cyclic = std::collections::HashSet::new();
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| super::curve_expression_parameter_dependencies(ctx, &record, 1, &indices.by_name, &indices.unique, &cyclic, &dimensions);
+    let dependencies = crate::decode::with_test_decode_ctx(run).expect("dependencies");
+    assert_eq!(dependencies.iter().map(ParameterId::as_str).collect::<Vec<_>>(), ["creo:depdb:curve_expression_parameter#7-2-0", "test:test:parameter#dimension"]);
+    for operation in ["creo curve-expression dependency identity lookup", "creo curve-expression dimension identity lookup"] {
+        let error = crate::test_support::last_refusal_at(payload, ResourceDimension::WorkUnits, operation, run);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::WorkUnits && resource.operation == operation));
+    }
+}
