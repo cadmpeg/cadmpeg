@@ -901,16 +901,17 @@ pub(in crate::native) fn feature_extrude_profile_references(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let decoded = match crate::om::extrude_profile::extrude_profile_references(
-                ctx,
-                record.payload_view(),
-            ) {
-                Ok(Some(field)) => field,
-                Ok(None) => continue,
-                Err(error) => {
-                    return Err(error);
-                }
-            };
+            let (decoded, _profile_storage) =
+                match crate::om::extrude_profile::extrude_profile_references(
+                    ctx,
+                    record.payload_view(),
+                ) {
+                    Ok((Some(field), storage)) => (field, storage),
+                    Ok((None, _)) => continue,
+                    Err(error) => {
+                        return Err(error);
+                    }
+                };
             let Some(decoded) = decoded.relocate(ctx, entry_offset)? else {
                 continue;
             };
@@ -1062,10 +1063,11 @@ pub(in crate::native) fn feature_operation_body_scalar_triples(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let rows = crate::om::body_scalar_triple::operation_body_scalar_triples(
-                ctx,
-                record.body_view(),
-            )?;
+            let (rows, _triple_storage) =
+                crate::om::body_scalar_triple::operation_body_scalar_triples(
+                    ctx,
+                    record.body_view(),
+                )?;
             for triple in ctx.admit_iter(rows, "visit NX operation body scalar triples")? {
                 let Some(scalars) = triple.scalars.relocate(entry_offset) else {
                     continue;
@@ -1648,13 +1650,15 @@ pub(in crate::native) fn feature_extrude_payload_32_branches(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let frame = crate::om::extrude_32::extrude_payload_32_branch(ctx, record.body_view())?;
+            let (frame, frame_storage) =
+                crate::om::extrude_32::extrude_payload_32_branch(ctx, record.body_view())?;
             let Some(frame) = frame.and_then(|frame| frame.relocate(entry_offset)) else {
                 continue;
             };
             let frame = frame.map_bindings(ctx, |index, ()| {
                 charged_unique_offset_data_block(ctx, &indexed, index)
             })?;
+            drop(frame_storage);
             let id = format_feature_history_id(
                 ctx,
                 "extrude-payload-32-branch",

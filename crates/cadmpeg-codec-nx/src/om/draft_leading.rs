@@ -137,7 +137,20 @@ impl<O> DraftLeadingLane<(), O> {
 }
 
 /// Decode the exactly positioned counted compact-index lane preceding a `DRAFT` graph.
-pub(crate) fn scan(
+pub(crate) fn scan<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    record: OperationPayload<'_>,
+) -> Result<
+    (
+        Option<DraftLeadingLane>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.with_scoped_storage("NX draft leading lane storage", || read_scan(ctx, record))
+}
+
+fn read_scan(
     ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
 ) -> Result<Option<DraftLeadingLane>, CodecError> {
@@ -210,6 +223,7 @@ mod tests {
 
         crate::test_support::resource_refusal_at(&bytes, dimension, operation, |ctx| {
             scan(ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap())
+                .map(|(value, _storage)| value)
         })
     }
 
@@ -228,6 +242,7 @@ mod tests {
             |ctx| {
                 assert!(
                     scan(ctx, OperationPayload::new(&bytes, 0, "DRAFT").unwrap())
+                        .map(|(value, _storage)| value)
                         .unwrap()
                         .is_none()
                 );
@@ -244,10 +259,10 @@ mod tests {
     }
 
     #[test]
-    fn om_draft_leading_route_refuses_retained_limit() {
+    fn om_draft_leading_route_refuses_scoped_limit() {
         assert!(
-            matches!(draft_leading_limit_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "NX draft leading index members"), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            matches!(draft_leading_limit_error(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, "NX draft leading index members"), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
         );
     }
 
@@ -300,6 +315,7 @@ mod tests {
             bytes.extend_from_slice(&[1, 2]);
             let frame = crate::test_support::with_decode_context(|ctx| {
                 scan(ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap())
+                    .map(|(value, _storage)| value)
             })
             .unwrap()
             .unwrap();
@@ -354,5 +370,35 @@ mod tests {
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX draft leading token widths"));
+    }
+    #[test]
+    fn draft_reader_storage_is_retained_only_when_the_caller_keeps_the_lane() {
+        let bytes = [
+            0x67, 0, 0, 1, 0, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 3, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 1, 2, 8, 1, 2,
+        ];
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                let (lane, storage) =
+                    super::scan(ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap()).unwrap();
+                assert_eq!(lane.unwrap().declared_count(), 2);
+                drop(storage);
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+        crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "NX draft leading lane storage",
+            |ctx| {
+                let (lane, storage) =
+                    super::scan(ctx, OperationPayload::new(&bytes, 100, "DRAFT").unwrap())?;
+                assert!(lane.is_some());
+                storage.commit()?;
+                Ok(lane)
+            },
+        );
     }
 }

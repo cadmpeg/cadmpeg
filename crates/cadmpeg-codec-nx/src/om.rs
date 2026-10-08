@@ -320,13 +320,7 @@ fn color_table_at<'a>(
     }
     let mut at = start + COLOR_TABLE_NAME_HEADER.len();
     let mut names = [""; 217];
-    let mut name_slots = names.iter_mut().enumerate();
-    while name_slots.len() > 0 {
-        let Some((ordinal, slot)) =
-            ctx.next_charged(&mut name_slots, "NX color palette name traversal")?
-        else {
-            break;
-        };
+    for (ordinal, slot) in names.iter_mut().enumerate() {
         let Some((name, width)) = color_name_frame(ctx, bytes, at)? else {
             return Ok(None);
         };
@@ -2012,17 +2006,24 @@ fn unique_payload_candidate<T, I: IntoIterator>(
 }
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
-pub(crate) fn sketch_payload_references(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn sketch_payload_references<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<SketchReferenceField>, CodecError> {
+) -> Result<
+    (
+        Option<SketchReferenceField>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    let mut storage = ctx.reserve_scoped(0, "NX sketch reference scratch")?;
     if record.name() != "SKETCH" {
-        return Ok(None);
+        return Ok((None, storage));
     }
     let Some(end) = record.payload().len().checked_sub(3) else {
-        return Ok(None);
+        return Ok((None, storage));
     };
-    unique_payload_candidate(
+    let Some(shape) = unique_payload_candidate(
         ctx,
         0..end,
         |start| {
@@ -2034,8 +2035,11 @@ pub(crate) fn sketch_payload_references(
         "scan NX sketch reference fields",
         "NX sketch reference candidate storage",
     )?
-    .map(|shape| shape.materialize(ctx))
-    .transpose()
+    else {
+        return Ok((None, storage));
+    };
+    let field = storage.with_storage(|| shape.materialize(ctx))?;
+    Ok((Some(field), storage))
 }
 
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {

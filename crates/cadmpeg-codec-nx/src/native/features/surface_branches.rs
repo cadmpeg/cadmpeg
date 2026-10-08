@@ -178,7 +178,9 @@ pub(in crate::native) fn feature_surface_construction_branches(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(group) = surface_feature_payload_branches(ctx, record.payload_view())? else {
+            let (group, _group_storage) =
+                surface_feature_payload_branches(ctx, record.payload_view())?;
+            let Some(group) = group else {
                 continue;
             };
             let family = group.family;

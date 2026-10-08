@@ -220,7 +220,9 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(group) = thru_curve_payload_branch_group(ctx, record.payload_view())? else {
+            let (group, group_storage) =
+                thru_curve_payload_branch_group(ctx, record.payload_view())?;
+            let Some(group) = group else {
                 continue;
             };
             let Some(frame) = group.resolve(ctx, entry_offset, |token| {
@@ -229,6 +231,7 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
             else {
                 continue;
             };
+            drop(group_storage);
             let id = format_feature_history_id(
                 ctx,
                 "thru-curve-construction-branch-group",

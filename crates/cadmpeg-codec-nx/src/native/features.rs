@@ -4754,7 +4754,7 @@ pub(super) fn feature_operation_object_references(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let fields = crate::om::direct_reference::operation_reference_fields(
+            let (fields, _field_storage) = crate::om::direct_reference::operation_reference_fields(
                 ctx,
                 record.payload_view(),
                 kind,
@@ -6365,8 +6365,15 @@ pub(super) fn feature_datum_plane_payloads(
         else {
             continue;
         };
-        let lanes = crate::om::datum_index::scan(ctx, joined.bytes())?;
+        let (lanes, indices_storage, lanes_storage) =
+            crate::om::datum_index::scan(ctx, joined.bytes())?;
         let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
+        drop(lanes_storage);
+        if lane.is_some() {
+            indices_storage.commit()?;
+        } else {
+            drop(indices_storage);
+        }
         let key = identity_key(ctx, &header.id, "NX datum plane payload identity")?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:datum-plane-payload#{key}"),
@@ -9264,8 +9271,9 @@ pub(super) fn feature_sketch_references(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(decoded) = crate::om::sketch_payload_references(ctx, record.payload_view())?
-            else {
+            let (decoded, _reference_storage) =
+                crate::om::sketch_payload_references(ctx, record.payload_view())?;
+            let Some(decoded) = decoded else {
                 continue;
             };
             for (position, reference) in decoded.into_positioned() {

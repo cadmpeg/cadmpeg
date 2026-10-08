@@ -95,8 +95,24 @@ macro_rules! positioned_frame {
 positioned_frame!(usize);
 positioned_frame!(u64);
 
-/// Retain fields with their exact suffix; assign no endpoint or operation role.
-pub(crate) fn operation_reference_fields(
+/// Decode fields with their exact suffix; assign no endpoint or operation role.
+pub(crate) fn operation_reference_fields<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    record: OperationPayload<'_>,
+    kind: ReferenceFieldKind,
+) -> Result<
+    (
+        Vec<DirectReferenceFrame<usize>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.with_scoped_storage("NX direct reference scratch", || {
+        read_operation_reference_fields(ctx, record, kind)
+    })
+}
+
+fn read_operation_reference_fields(
     ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
     kind: ReferenceFieldKind,
@@ -206,6 +222,7 @@ mod tests {
                     record(&bytes, 0),
                     ReferenceFieldKind::DataBlock03,
                 )
+                .map(|(value, _storage)| value)
             },
         );
         assert!(
@@ -214,12 +231,12 @@ mod tests {
     }
 
     #[test]
-    fn direct_reference_fields_refuse_retained_limit() {
+    fn direct_reference_fields_refuse_scoped_limit() {
         let bytes = [1, 2, 3, 7, 1, 0, 0, 0, 0, 0];
 
         let error = crate::test_support::resource_refusal_at(
             &bytes,
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
             "nx direct reference fields",
             |ctx| {
                 super::operation_reference_fields(
@@ -227,10 +244,11 @@ mod tests {
                     record(&bytes, 0),
                     ReferenceFieldKind::DataBlock03,
                 )
+                .map(|(value, _storage)| value)
             },
         );
         assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
         );
     }
 }
