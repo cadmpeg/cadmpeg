@@ -472,7 +472,7 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
         offset: 0,
     };
 
-    assert_eq!(super::prototype_local_frame(&record), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::prototype_local_frame(ctx, &record)).expect("frame selection admission"), None);
 }
 
 #[test]
@@ -515,7 +515,7 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
         offset: 0,
     };
 
-    assert_eq!(super::prototype_local_frame(&record), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::prototype_local_frame(ctx, &record)).expect("frame selection admission"), None);
 }
 
 #[test]
@@ -918,7 +918,7 @@ fn surface_prototype_frame_bounds_error_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::surface_prototype_frame_bounds(&ctx, &scan, &section, 32)
+    let error = super::surface_prototype_frame_bounds(&ctx, &scan, &section, 32, &mut super::PrototypeFrames::new(&ctx).expect("frame workspace"))
         .expect_err("bounds error text exceeds retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -926,7 +926,7 @@ fn surface_prototype_frame_bounds_error_refuses_retained_limit() {
             && resource.operation == "creo surface prototype frame bounds error")
     );
     crate::decode::with_test_decode_ctx(|ctx| {
-        let error = super::surface_prototype_frame_bounds(ctx, &scan, &section, 32)
+        let error = super::surface_prototype_frame_bounds(ctx, &scan, &section, 32, &mut super::PrototypeFrames::new(ctx)?)
             .expect_err("declared section exceeds scanned bytes");
         assert!(error.to_string().contains("VisibGeom"));
         Ok::<(), cadmpeg_core::CodecError>(())

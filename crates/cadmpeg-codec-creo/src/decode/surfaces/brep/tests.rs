@@ -116,26 +116,23 @@ fn brep_edge_index_input() -> BrepEdgeIndexInput {
     }
 }
 
-fn brep_edge_index_limit_error(limit: u64) -> CodecError {
+fn brep_edge_index_limit_error(operation: &'static str) -> CodecError {
     let BrepEdgeIndexInput {
         rows,
         native_vertices,
         solved_vertices,
         ir,
     } = brep_edge_index_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    BrepEdgeIndexes::from_rows(&ctx, &rows, &native_vertices, &solved_vertices, &ir)
-        .err()
-        .expect("edge-index node refused")
+    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation, |ctx| {
+
+    BrepEdgeIndexes::from_rows(ctx, &rows, &native_vertices, &solved_vertices, &ir)
+        })
 }
 
 #[test]
 fn brep_edge_vertex_nodes_refuse_collection_limit() {
-    let error = brep_edge_index_limit_error(2);
+    let error = brep_edge_index_limit_error("creo B-rep edge-vertex nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep edge-vertex nodes"));
@@ -143,7 +140,7 @@ fn brep_edge_vertex_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_model_curve_count_nodes_refuse_collection_limit() {
-    let error = brep_edge_index_limit_error(3);
+    let error = brep_edge_index_limit_error("creo B-rep model curve count nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep model curve count nodes"));
@@ -151,7 +148,7 @@ fn brep_model_curve_count_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_admitted_edge_id_nodes_refuse_collection_limit() {
-    let error = brep_edge_index_limit_error(4);
+    let error = brep_edge_index_limit_error("creo B-rep admitted edge ID nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep admitted edge ID nodes"));
@@ -200,22 +197,19 @@ fn face_candidate_scan() -> crate::container::ContainerScan<'static> {
     scan
 }
 
-fn face_candidate_index_limit_error(limit: u64) -> CodecError {
+fn face_candidate_index_limit_error(operation: &'static str) -> CodecError {
     let scan = face_candidate_scan();
     let ir = CadIr::empty();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    BrepFaceCandidateIndexes::from_scan(&ctx, &scan, &ir)
-        .err()
-        .expect("candidate index allocation refused")
+    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation, |ctx| {
+
+    BrepFaceCandidateIndexes::from_scan(ctx, &scan, &ir)
+        })
 }
 
 #[test]
 fn brep_face_loop_index_nodes_refuse_collection_limit() {
-    let error = face_candidate_index_limit_error(0);
+    let error = face_candidate_index_limit_error("creo B-rep face-loop index nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep face-loop index nodes"));
@@ -223,7 +217,7 @@ fn brep_face_loop_index_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_face_loop_references_refuse_collection_limit() {
-    let error = face_candidate_index_limit_error(1);
+    let error = face_candidate_index_limit_error("creo B-rep face-loop references");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep face-loop references"));
@@ -231,7 +225,7 @@ fn brep_face_loop_references_refuse_collection_limit() {
 
 #[test]
 fn brep_topology_face_id_nodes_refuse_collection_limit() {
-    let error = face_candidate_index_limit_error(2);
+    let error = face_candidate_index_limit_error("creo B-rep topology face ID nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep topology face ID nodes"));
@@ -239,7 +233,7 @@ fn brep_topology_face_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_candidate_face_id_nodes_refuse_collection_limit() {
-    let error = face_candidate_index_limit_error(3);
+    let error = face_candidate_index_limit_error("creo B-rep candidate face ID nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep candidate face ID nodes"));
@@ -247,7 +241,7 @@ fn brep_candidate_face_id_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_model_surface_count_nodes_refuse_collection_limit() {
-    let error = face_candidate_index_limit_error(4);
+    let error = face_candidate_index_limit_error("creo B-rep model surface count nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep model surface count nodes"));
@@ -385,24 +379,22 @@ fn brep_source_indexes_keep_last_duplicate_half_edge_and_incidence() {
     assert_eq!(indexes.incidence[&id].start_vertex_id.get(), 6);
 }
 
-fn pcurve_candidate_limit_error(limit: u64, second_on_same_key: bool) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+fn pcurve_candidate_limit_error(operation: &'static str, second_on_same_key: bool) -> CodecError {
+    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation, |ctx| {
+
     let mut candidates = NativePcurveCandidates::new();
     if second_on_same_key {
-        push_native_pcurve_candidate(&ctx, &mut candidates, 10, 5, [[0.0, 0.0], [1.0, 0.0]], 4)
-            .expect("first candidate admitted");
+        push_native_pcurve_candidate(ctx, &mut candidates, 10, 5, [[0.0, 0.0], [1.0, 0.0]], 4)
+            ?;
     }
-    push_native_pcurve_candidate(&ctx, &mut candidates, 10, 5, [[1.0, 0.0], [2.0, 0.0]], 8)
-        .expect_err("candidate allocation refused")
+    push_native_pcurve_candidate(ctx, &mut candidates, 10, 5, [[1.0, 0.0], [2.0, 0.0]], 8)
+        })
 }
 
 #[test]
 fn brep_pcurve_candidate_nodes_refuse_collection_limit() {
-    let error = pcurve_candidate_limit_error(0, false);
+    let error = pcurve_candidate_limit_error("creo B-rep pcurve candidate nodes", false);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep pcurve candidate nodes"));
@@ -410,7 +402,7 @@ fn brep_pcurve_candidate_nodes_refuse_collection_limit() {
 
 #[test]
 fn brep_pcurve_candidates_refuse_collection_limit() {
-    let error = pcurve_candidate_limit_error(1, false);
+    let error = pcurve_candidate_limit_error("creo B-rep pcurve candidates", false);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep pcurve candidates"));
@@ -418,7 +410,7 @@ fn brep_pcurve_candidates_refuse_collection_limit() {
 
 #[test]
 fn brep_pcurve_candidates_reuse_nodes_and_preserve_source_order() {
-    let error = pcurve_candidate_limit_error(2, true);
+    let error = pcurve_candidate_limit_error("creo B-rep pcurve candidates", true);
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep pcurve candidates"
@@ -458,17 +450,12 @@ fn typed_curve_id_fixture() -> CadIr {
 #[test]
 fn brep_typed_curve_id_nodes_refuse_collection_limit() {
     let ir = typed_curve_id_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = model_typed_nonlinear_curve_ids(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo B-rep typed curve ID nodes", |ctx| model_typed_nonlinear_curve_ids(
+        ctx,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("first distinct typed curve node refused");
+    ));
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep typed curve ID nodes"));
@@ -477,17 +464,12 @@ fn brep_typed_curve_id_nodes_refuse_collection_limit() {
 #[test]
 fn brep_typed_curve_ids_charge_distinct_nodes_and_preserve_order() {
     let ir = typed_curve_id_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = model_typed_nonlinear_curve_ids(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo B-rep typed curve ID nodes", |ctx| model_typed_nonlinear_curve_ids(
+        ctx,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("second distinct typed curve node refused");
+    ));
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep typed curve ID nodes"
@@ -503,7 +485,7 @@ fn brep_typed_curve_ids_charge_distinct_nodes_and_preserve_order() {
     assert_eq!(ids, BTreeSet::from([10, 20]));
 }
 
-fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
+fn native_triangle_collection_error(operation: &'static str, ordered: bool) -> CodecError {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -565,14 +547,12 @@ fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
             )
         })
         .collect::<super::NativePcurveCandidates>();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+
     let typed = BTreeSet::new();
     let result = if ordered {
         ordered_native_parameter_face_loops(
-            &ctx,
+            ctx,
             &[&lp],
             (5, &surface),
             &incidence,
@@ -587,7 +567,7 @@ fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
         .map(|_| ())
     } else {
         native_parameter_loop_polygon(
-            &ctx,
+            ctx,
             &lp,
             (5, &surface),
             &incidence,
@@ -597,7 +577,8 @@ fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
         )
         .map(|_| ())
     };
-    result.expect_err("native triangle collection exceeds limit")
+    result
+    })
 }
 
 fn assert_native_collection_refusal(error: &CodecError, operation: &'static str) {
@@ -609,36 +590,32 @@ fn assert_native_collection_refusal(error: &CodecError, operation: &'static str)
 #[test]
 fn native_parameter_loop_polygon_refuses_pcurve_segments() {
     assert_native_collection_refusal(
-        &native_triangle_collection_error(0, false),
-        "creo native loop pcurve segments",
+        &native_triangle_collection_error("creo native loop pcurve segments", false), "creo native loop pcurve segments",
     );
 }
 
 #[test]
 fn native_parameter_loop_polygon_refuses_polygon_points() {
     assert_native_collection_refusal(
-        &native_triangle_collection_error(3, false),
-        "creo native loop polygon points",
+        &native_triangle_collection_error("creo native loop polygon points", false), "creo native loop polygon points",
     );
 }
 
 #[test]
 fn ordered_native_parameter_face_loops_refuses_polygon_collection() {
     assert_native_collection_refusal(
-        &native_triangle_collection_error(6, true),
-        "creo native face loop polygons",
+        &native_triangle_collection_error("creo native face loop polygons", true), "creo native face loop polygons",
     );
 }
 
 #[test]
 fn ordered_native_parameter_face_loops_refuses_loop_references() {
     assert_native_collection_refusal(
-        &native_triangle_collection_error(7, true),
-        "creo native face loop references",
+        &native_triangle_collection_error("creo native face loop references", true), "creo native face loop references",
     );
 }
 
-fn circle_order_collection_error(limit: u64) -> CodecError {
+fn circle_order_collection_error(operation: &'static str) -> CodecError {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -681,42 +658,37 @@ fn circle_order_collection_error(limit: u64) -> CodecError {
         make_circle(21, 1.0),
     ];
     let polygons = vec![vec![[2.0, 0.0], [-2.0, 0.0]], vec![[1.0, 0.0], [-1.0, 0.0]]];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+
     super::ordered_two_edge_circle_loops(
-        &ctx,
+        ctx,
         &[&outer, &inner],
         &polygons,
         &surface,
         &curves,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
     )
-    .expect_err("circle loop collection exceeds limit")
+    })
 }
 
 #[test]
 fn ordered_two_edge_circle_loops_refuses_geometry_collection() {
     assert_native_collection_refusal(
-        &circle_order_collection_error(0),
-        "creo native circle loop geometry",
+        &circle_order_collection_error("creo native circle loop geometry"), "creo native circle loop geometry",
     );
 }
 
 #[test]
 fn ordered_two_edge_circle_loops_refuses_order_collection() {
     assert_native_collection_refusal(
-        &circle_order_collection_error(2),
-        "creo native circle loop order",
+        &circle_order_collection_error("creo native circle loop order"), "creo native circle loop order",
     );
 }
 
 #[test]
 fn ordered_two_edge_circle_loops_refuses_ordered_output() {
     assert_native_collection_refusal(
-        &circle_order_collection_error(4),
-        "creo native ordered circle loops",
+        &circle_order_collection_error("creo native ordered circle loops"), "creo native ordered circle loops",
     );
 }
 
@@ -823,22 +795,26 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
 
 #[test]
 fn brep_face_rejection_diagnostics_refuse_collection_limit() {
+    let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo B-rep face rejection diagnostics"), |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        BrepTransferDiagnostics::default().reject_face(&ctx, FaceAdmissionRejection::MissingLoops, 17)
+    });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut diagnostics = BrepTransferDiagnostics::default();
-    let error = diagnostics
-        .reject_face(&ctx, FaceAdmissionRejection::MissingLoops, 17)
-        .expect_err("rejection diagnostic refused");
+    let error = diagnostics.reject_face(&ctx, FaceAdmissionRejection::MissingLoops, 17).expect_err("rejection diagnostic refused");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep face rejection diagnostics"));
     assert!(diagnostics.face_rejection_diagnostics.is_empty());
 }
 
-fn rejection_detail_limit_error(limit: u64) -> CodecError {
+fn rejection_detail_limit_error(operation: &'static str) -> CodecError {
     let half_edge = crate::topology::HalfEdgeId {
         curve_id: 4,
         side: crate::topology::Side::Zero,
@@ -851,24 +827,22 @@ fn rejection_detail_limit_error(limit: u64) -> CodecError {
         end_vertex_id: None,
     };
     let incidence = BTreeMap::from([(half_edge, &binding)]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation, |ctx| {
+
     FaceAdmissionDetail::unresolved_boundary(
-        &ctx,
+        ctx,
         17,
         &[&loop_record],
         &BTreeMap::new(),
         &incidence,
     )
-    .expect_err("rejection detail refused")
+        })
 }
 
 #[test]
 fn brep_rejection_boundary_samples_refuse_collection_limit() {
-    let error = rejection_detail_limit_error(0);
+    let error = rejection_detail_limit_error("creo B-rep rejection boundary samples");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep rejection boundary samples"));
@@ -876,15 +850,15 @@ fn brep_rejection_boundary_samples_refuse_collection_limit() {
 
 #[test]
 fn brep_rejection_vertex_samples_refuse_collection_limit() {
-    let error = rejection_detail_limit_error(1);
+    let error = rejection_detail_limit_error("creo B-rep rejection vertex samples");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep rejection vertex samples"));
 }
 
 fn rejection_record_limit_error(
-    collection_limit: Option<u64>,
-    retained_limit: Option<u64>,
+    dimension: ResourceDimension,
+    operation: &'static str,
 ) -> CodecError {
     let mut diagnostics = BrepTransferDiagnostics::default();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -902,25 +876,13 @@ fn rejection_record_limit_error(
         )
     })
     .expect("service rejection admitted");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    if let Some(limit) = collection_limit {
-        policy.limits.max_collection_items = limit;
-    }
-    if let Some(limit) = retained_limit {
-        policy.limits.max_retained_bytes = limit;
-    }
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    diagnostics
-        .face_admission_rejection_records(&ctx)
-        .err()
-        .expect("rejection record allocation refused")
+    crate::test_support::last_refusal_at(&[], dimension, operation,
+        |ctx| diagnostics.face_admission_rejection_records(ctx))
 }
 
 #[test]
 fn brep_rejection_record_id_refuses_retained_limit() {
-    let error = rejection_record_limit_error(None, Some(0));
+    let error = rejection_record_limit_error(ResourceDimension::RetainedBytes, "creo B-rep rejection record IDs");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo B-rep rejection record IDs"));
@@ -928,7 +890,7 @@ fn brep_rejection_record_id_refuses_retained_limit() {
 
 #[test]
 fn brep_rejection_half_edges_refuse_collection_limit() {
-    let error = rejection_record_limit_error(Some(0), None);
+    let error = rejection_record_limit_error(ResourceDimension::CollectionItems, "creo B-rep rejection half edges");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep rejection half edges"));
@@ -936,7 +898,7 @@ fn brep_rejection_half_edges_refuse_collection_limit() {
 
 #[test]
 fn brep_rejection_vertex_ids_refuse_collection_limit() {
-    let error = rejection_record_limit_error(Some(1), None);
+    let error = rejection_record_limit_error(ResourceDimension::CollectionItems, "creo B-rep rejection vertex IDs");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep rejection vertex IDs"));
@@ -944,7 +906,7 @@ fn brep_rejection_vertex_ids_refuse_collection_limit() {
 
 #[test]
 fn brep_rejection_record_rows_refuse_collection_limit() {
-    let error = rejection_record_limit_error(Some(2), None);
+    let error = rejection_record_limit_error(ResourceDimension::CollectionItems, "creo B-rep rejection records");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep rejection records"));
@@ -1207,13 +1169,8 @@ fn admitted_face_component_refs_refuse_collection_limit() {
         .expect("component admission")
         .expect("valid component fixture"),
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = admitted_face_components(&ctx, &scan, &BTreeSet::from([5]))
-        .expect_err("component reference refused");
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo B-rep admitted component refs", |ctx| admitted_face_components(ctx, &scan, &BTreeSet::from([5])));
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo B-rep admitted component refs"));

@@ -81,7 +81,7 @@ fn pcurve_use() -> PcurveUse {
 #[test]
 fn brep_coedge_pcurve_uses_refuse_collection_limit() {
     assert_refusal(
-        &pcurve_use_result(0, Some(pcurve_use())).expect_err("pcurve use refused"),
+        &pcurve_use_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo B-rep coedge pcurve uses"), |cap| pcurve_use_result(cap, Some(pcurve_use()))), Some(pcurve_use())).expect_err("pcurve use refused"),
         ResourceDimension::CollectionItems,
         "creo B-rep coedge pcurve uses",
     );
@@ -91,7 +91,7 @@ fn brep_coedge_pcurve_uses_refuse_collection_limit() {
 fn brep_coedge_pcurve_uses_preserve_service_value() {
     let value = pcurve_use();
     assert_eq!(
-        pcurve_use_result(16, Some(value.clone())).expect("service use admitted"),
+        pcurve_use_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| pcurve_use_result(cap, Some(value.clone()))), Some(value.clone())).expect("service use admitted"),
         vec![value]
     );
     assert!(pcurve_use_result(0, None)

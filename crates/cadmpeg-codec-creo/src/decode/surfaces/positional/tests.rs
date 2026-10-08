@@ -179,8 +179,8 @@ fn positional_round_result(limit: u64) -> Result<usize, CodecError> {
 
 #[test]
 fn positional_torus_round_feature_node_refuses_before_insertion() {
-    assert_eq!(positional_round_result(2).expect("service admits round"), 0);
-    let error = positional_round_result(0).expect_err("round feature needs a set node");
+    assert_eq!(positional_round_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, |cap| positional_round_result(cap))).expect("service admits round"), 0);
+    let error = positional_round_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo positional torus round feature ids"), |cap| positional_round_result(cap))).expect_err("round feature needs a set node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -191,7 +191,7 @@ fn positional_torus_round_feature_node_refuses_before_insertion() {
 
 #[test]
 fn positional_torus_constant_round_node_refuses_before_insertion() {
-    let error = positional_round_result(1).expect_err("constant round follows feature node");
+    let error = positional_round_result(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo positional torus constant round ids"), |cap| positional_round_result(cap))).expect_err("constant round follows feature node");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -232,8 +232,8 @@ fn paired_sphere_association_copy_refuses_before_vec_growth() {
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     };
-    assert_eq!(run(37).expect("service limit admits the association"), 0);
-    let error = run(36).expect_err("the copied association follows two discovery charges");
+    assert_eq!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, None, run)).expect("service limit admits the association"), 0);
+    let error = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo paired sphere associations"), run)).expect_err("the copied association needs a collection item");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)

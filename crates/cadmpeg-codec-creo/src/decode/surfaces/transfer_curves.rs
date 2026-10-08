@@ -66,7 +66,7 @@ fn resolve_carrier_intersection_curve(
     points: Option<[[f64; 3]; 2]>,
     allow_unresolved_endpoint_witness: bool,
 ) -> Result<Option<(CurveGeometry, &'static str)>, CodecError> {
-    let Some((geometry, tag)) = carrier_intersection_curve(ctx, first, second)? else {
+    let Some((geometry, tag)) = carrier_intersection_curve(first, second) else {
         return Ok(None);
     };
     let candidates = analytic_curve_branches(ctx, &geometry, tag)?;
@@ -100,25 +100,28 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
+    let mut workspace = ctx.reserve_scoped(0, "creo carrier intersection workspace")?;
     let mut curves_index = super::model_ids::ModelIdentityIndex::new(ctx)?;
+    let coordinates = super::native_ids::UniqueRows::new(ctx, &scan.curves.fc_coordinates,
+        |record| (record.subtype == 0x14).then_some(record.curve_id), "creo FC14 coordinate index")?;
     let mut transferred = BTreeSet::new();
-    let carriers = placed_carriers(ctx, scan, ir, source_carriers)?;
-    let solved_vertices = solved_topological_vertices(
+    let carriers = workspace.with_storage(|| placed_carriers(ctx, scan, ir, source_carriers))?;
+    let solved_vertices = workspace.with_storage(|| solved_topological_vertices(
         ctx,
         scan,
         ir,
         &carriers,
         nurbs_endpoint_witnesses,
         source_carriers,
-    )?;
-    let endpoint_evidence = pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)?;
+    ))?;
+    let endpoint_evidence = workspace.with_storage(|| pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers))?;
     let edge_vertices =
-        crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(
+        workspace.with_storage(|| crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence))?;
+    let unique_rows = workspace.with_storage(|| crate::identity::uniquely_identified_rows_checked(
         ctx,
         &scan.curves.topology_rows,
         |row| row.id,
-    )?;
+    ))?;
     for row in ctx
         .admit_iter(&unique_rows, "creo boundary unique topology row traversal")?
         .copied()
@@ -161,11 +164,11 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         )? {
             Some(resolved)
         } else {
-            let candidates = multi_component_intersection_candidates(ctx, first, second)?;
+            let candidates = multi_component_intersection_candidates(first, second);
             if points.is_some() {
                 resolve_curve_candidates(candidates, points)
             } else {
-                match fc14_held_coordinate(ctx, &scan.curves.fc_coordinates, row.id)? {
+                match fc14_held_coordinate(ctx, coordinates.unique(row.id))? {
                     Some(held) => select_fc14_axis_coordinate_candidate(candidates, held),
                     None => None,
                 }
@@ -330,11 +333,12 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         extrusion_plane_section_generator_count: 0,
         shared_extrusion_generator_count: 0,
     };
-    let unique_rows = crate::identity::uniquely_identified_rows_checked(
+    let mut topology_storage = ctx.reserve_scoped(0, "creo boundary topology workspace")?;
+    let unique_rows = topology_storage.with_storage(|| crate::identity::uniquely_identified_rows_checked(
         ctx,
         &scan.curves.topology_rows,
         |row| row.id,
-    )?;
+    ))?;
     for row in ctx
         .admit_iter(&unique_rows, "creo boundary unique topology row traversal")?
         .copied()
