@@ -271,7 +271,6 @@ fn reconciled_output_refuses_before_update_row() {
                 &mut ir,
                 &BTreeMap::new(),
             )
-            .map(|_| ())
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");

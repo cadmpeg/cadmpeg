@@ -74,7 +74,7 @@ fn dependency_collection_error(operation: &'static str, route: &str) {
         |ctx| match route {
             "parent" => native_feature_dependency_ids(
                 ctx,
-                &[parent.clone()],
+                std::slice::from_ref(&parent),
                 &[],
                 &[],
                 &[],
@@ -94,8 +94,8 @@ fn dependency_collection_error(operation: &'static str, route: &str) {
             "merge" => surface_merge_entity_dependencies(
                 ctx,
                 &[],
-                &[replay.clone()],
-                &[producer.clone()],
+                std::slice::from_ref(&replay),
+                std::slice::from_ref(&producer),
                 17,
             )
             .map(|_| ()),
@@ -592,7 +592,7 @@ fn emitted_feature_identity_error(scoped: bool) {
                 let mut ir = ir.clone();
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root is admitted");
-                super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new()).map(|_| ())
+                super::reconcile_feature_links(&ctx, &scan, &mut ir, &BTreeMap::new())
             },
         );
     }
@@ -976,7 +976,10 @@ fn reconciliation_identity_and_order_work_boundaries_preserve_parent_edges() {
         .iter()
         .find(|feature| feature.id == child)
         .expect("child feature exists");
-    assert_eq!(child_record.dependencies.as_slice(), &[parent.clone()]);
+    assert_eq!(
+        child_record.dependencies.as_slice(),
+        std::slice::from_ref(&parent)
+    );
     assert_eq!(ir.model.feature_regeneration_parent(&child), Some(&parent));
     assert_eq!(ir.model.features[0].ordinal, 0);
     assert_eq!(ir.model.features[1].ordinal, 1);

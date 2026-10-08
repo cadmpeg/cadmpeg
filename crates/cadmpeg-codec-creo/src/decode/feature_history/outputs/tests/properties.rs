@@ -33,7 +33,6 @@ fn feature_parameter_refuses_before_btree_node() {
                 "choice.value",
                 "x",
             )
-            .map(|_| ())
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
@@ -88,7 +87,6 @@ fn feature_parameter_staging_node_refuses_materialized_storage() {
                 "choice.value",
                 "x",
             )
-            .map(|_| ())
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
@@ -144,7 +142,6 @@ fn feature_parameter_refuses_before_staging_value() {
                 "choice.value",
                 "x",
             )
-            .map(|_| ())
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
@@ -199,7 +196,6 @@ fn feature_parameter_refuses_before_scoped_key_candidate() {
                 "choice.value",
                 "x",
             )
-            .map(|_| ())
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
@@ -255,7 +251,7 @@ fn feature_parameter_native_text_transfer_refuses_retained_storage() {
                 "x",
             )
             .expect("staging text fits materialized storage");
-            text_storage.commit().map(|_| ())
+            text_storage.commit()
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
@@ -409,7 +405,6 @@ fn feature_source_property_refuses_before_btree_node() {
                 "recipe",
                 "Extrude",
             )
-            .map(|_| ())
         },
     );
     let (ctx, _) =
@@ -458,7 +453,6 @@ fn feature_source_property_staging_node_refuses_materialized_storage() {
                 "recipe",
                 "Extrude",
             )
-            .map(|_| ())
         },
     );
     let (ctx, _) =
@@ -506,7 +500,6 @@ fn feature_source_property_refuses_before_key_copy() {
                 "recipe",
                 "Extrude",
             )
-            .map(|_| ())
         },
     );
     let (ctx, _) =
@@ -554,7 +547,6 @@ fn feature_source_property_refuses_before_value_copy() {
                 "recipe",
                 "Extrude",
             )
-            .map(|_| ())
         },
     );
     let (ctx, _) =

@@ -186,7 +186,7 @@ fn feature_source_parameter_refuses_before_content_growth() {
             let id = ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
                 .expect("valid test identity");
             let mut content = cadmpeg_ir::features::FeatureContent::default();
-            push_feature_source_parameter(&ctx, &mut content, id).map(|_| ())
+            push_feature_source_parameter(&ctx, &mut content, id)
         },
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
@@ -366,7 +366,6 @@ fn dimension_property_refuses_before_btree_node() {
                 .expect("dimension property lease");
             let mut properties = BTreeMap::new();
             insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
-                .map(|_| ())
         },
     );
     let (ctx, _) =
@@ -403,7 +402,6 @@ fn dimension_property_refuses_before_key_copy() {
                 .expect("dimension property lease");
             let mut properties = BTreeMap::new();
             insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
-                .map(|_| ())
         },
     );
     let (ctx, _) =
@@ -440,7 +438,6 @@ fn dimension_property_refuses_before_value_copy() {
                 .expect("dimension property lease");
             let mut properties = BTreeMap::new();
             insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
-                .map(|_| ())
         },
     );
     let (ctx, _) =
@@ -477,7 +474,6 @@ fn dimension_property_staging_node_refuses_materialized_storage() {
                 .expect("dimension property lease");
             let mut properties = BTreeMap::new();
             insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
-                .map(|_| ())
         },
     );
     let (ctx, _) =

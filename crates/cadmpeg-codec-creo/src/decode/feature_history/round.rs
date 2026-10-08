@@ -29,6 +29,7 @@ const EPS_ROUND_CAP_PARALLEL: f64 = 1.0e-10;
 const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1.0e-9;
 const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1.0e-9;
 
+#[cfg(test)]
 pub(in super::super) fn parallel_support_radius<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sources: &[T],
@@ -342,9 +343,7 @@ pub(in super::super) fn paired_five_coordinate_sphere_center(
             return None;
         }
     }
-    let Some(center_z) = center_z else {
-        return None;
-    };
+    let center_z = center_z?;
     let axial_values = [
         first_axial[0],
         first_axial[1],
