@@ -51,9 +51,9 @@ fn assert_native_storage_boundary(bytes: &[u8], operation: &str) {
     let arena = DecodeArena::new();
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
             .unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
@@ -63,11 +63,10 @@ fn assert_native_storage_boundary(bytes: &[u8], operation: &str) {
         &parse_ctx,
     )
     .unwrap();
-    let references = crate::graph::build(&directory, &parse_ctx).unwrap();
+    let (references, _reference_storage) = crate::graph::build(&directory, &parse_ctx).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let projection = global
-        .length_context(&parse_ctx)
-        .unwrap()
+        .length_context()
         .map(|length| {
             crate::entities::geometry::project_geometry(
                 &mut ir,

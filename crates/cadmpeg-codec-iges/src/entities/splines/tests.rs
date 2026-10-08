@@ -600,9 +600,9 @@ fn spline_projection_refuses_variable_work_and_scratch() {
                 .unwrap();
             crate::test_support::with_service_context(&bytes, |ctx| {
                 let scan = crate::card::scan_with_context(&bytes, ctx).unwrap();
-                let (global, _) = crate::global::parse(&scan, ctx).unwrap();
+                let (global, _, _global_storage) = crate::global::parse(&scan, ctx).unwrap();
                 let (directory, quarantined) =
-                    crate::directory::parse(&scan, global.global_table(ctx).unwrap(), ctx).unwrap();
+                    crate::directory::parse(&scan, global.global_table(), ctx).unwrap();
                 assert!(quarantined.is_empty());
                 let parameters = crate::parameter::assemble_with_context(
                     &scan,
@@ -617,7 +617,7 @@ fn spline_projection_refuses_variable_work_and_scratch() {
                     decoded.ir().clone(),
                     directory,
                     parameters,
-                    global.length_context(ctx).unwrap().unwrap(),
+                    global.length_context().unwrap(),
                 )
             })
         });

@@ -1054,8 +1054,8 @@ fn rejected_brep_definition_vectors_release_their_storage() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let bytes = owned_test_file(&[]);
     let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
-    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
-    let global = global.length_context(&ctx).unwrap().unwrap();
+    let (global, _, global_storage) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context().unwrap();
     let mut ir = CadIr::empty();
     let outcome = super::project(
         &mut ir,
@@ -1070,5 +1070,6 @@ fn rejected_brep_definition_vectors_release_their_storage() {
     assert_eq!(outcome.losses.len(), usize::try_from(count).unwrap());
     assert!(ir.model.points.is_empty());
     assert!(ir.model.vertices.is_empty());
+    drop(global_storage);
     ctx.finish_session().unwrap();
 }
