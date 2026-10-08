@@ -4987,7 +4987,7 @@ fn common_supported_corner_equations<'storage>(
     quotient: &mut MeshQuotient<'storage>,
     assignments: &[MeshFaceBoundaryAssignment],
     budget: &WorkBudget<'_>,
-) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+) -> Result<Option<ScopedValue<'storage, Vec<[usize; 2]>>>, CodecError> {
     const OPERATION: &str = "catia_boundary_corner_search";
     fn compatible(
         ctx: &DecodeContext<'_>,
@@ -5010,25 +5010,12 @@ fn common_supported_corner_equations<'storage>(
                 )?,
         ))
     }
-    fn direction_rows(
-        ctx: &DecodeContext<'_>,
-        directions: &[Vec<bool>],
-        row_operation: &'static str,
-        rows_operation: &'static str,
-    ) -> Result<Vec<Vec<bool>>, CodecError> {
-        let mut rows = Vec::new();
-        for states in ctx.admit_iter(directions, rows_operation)? {
-            let row = ctx.alloc_filled(states.len(), false, row_operation)?;
-            ctx.push_vec(&mut rows, row, rows_operation)?;
-        }
-        Ok(rows)
-    }
-
-    let mut common = None::<Vec<[usize; 2]>>;
+    let mut common = None::<ScopedValue<'storage, Vec<[usize; 2]>>>;
     'assignments: for assignment in ctx.admit_iter(assignments, OPERATION)? {
         if !budget.charge() {
             return Ok(None);
         }
+        let mut forced_storage = ctx.reserve_scoped(0, "catia_boundary_forced_corners")?;
         let mut forced = Vec::new();
         for boundary in ctx.admit_iter(&assignment.boundaries, OPERATION)? {
             if boundary.is_empty() {
@@ -5036,43 +5023,46 @@ fn common_supported_corner_equations<'storage>(
             }
             // Each use offers its fixed direction or both, so every inner
             // loop below visits at most two directions.
-            let mut directions = Vec::new();
-            for use_ in ctx.admit_iter(boundary, OPERATION)? {
-                let mut options = Vec::new();
-                if let Some(reversed) = use_.reversed {
-                    ctx.push_vec(&mut options, reversed, "catia_boundary_direction_options")?;
-                } else {
-                    ctx.push_vec(&mut options, false, "catia_boundary_direction_options")?;
-                    ctx.push_vec(&mut options, true, "catia_boundary_direction_options")?;
-                }
-                ctx.push_vec(&mut directions, options, "catia_boundary_directions")?;
-            }
+            let (directions, _direction_storage) =
+                ctx.with_scoped_storage("catia_boundary_directions", || {
+                    ctx.collect_vec(
+                        boundary.iter().map(|use_| match use_.reversed {
+                            Some(value) => [Some(value), None],
+                            None => [Some(false), Some(true)],
+                        }),
+                        "catia_boundary_directions",
+                    )
+                })?;
             let last = boundary.len() - 1;
-            let mut supported = Vec::new();
-            for index in ctx.admit_iter(0..boundary.len(), OPERATION)? {
-                let width = directions[(index + 1) % boundary.len()].len();
-                let mut grid = Vec::new();
-                for _ in 0..directions[index].len() {
-                    let row = ctx.alloc_filled(width, false, "catia_boundary_dir_row")?;
-                    ctx.push_vec(&mut grid, row, "catia_boundary_dir_grid")?;
-                }
-                ctx.push_vec(&mut supported, grid, "catia_boundary_supported_grids")?;
-            }
+            let (mut supported, _supported_storage) =
+                ctx.with_scoped_storage("catia_boundary_supported_grids", || {
+                    ctx.alloc_filled(
+                        boundary.len(),
+                        [[false; 2]; 2],
+                        "catia_boundary_supported_grids",
+                    )
+                })?;
             let corner = |index: usize, left: usize, next: usize, right: usize| {
+                let (Some(left_direction), Some(right_direction)) =
+                    (directions[index][left], directions[next][right])
+                else {
+                    return Ok(Some(false));
+                };
                 compatible(
                     ctx,
                     quotient,
-                    port(boundary[index], directions[index][left], true),
-                    port(boundary[next], directions[next][right], false),
+                    port(boundary[index], left_direction, true),
+                    port(boundary[next], right_direction, false),
                 )
             };
             for first in 0..directions[0].len() {
-                let mut forward = direction_rows(
-                    ctx,
-                    &directions,
-                    "catia_boundary_forward",
-                    "catia_boundary_forward_rows",
-                )?;
+                if directions[0][first].is_none() {
+                    continue;
+                }
+                let (mut forward, _forward_storage) = ctx
+                    .with_scoped_storage("catia_boundary_forward", || {
+                        ctx.alloc_filled(boundary.len(), [false; 2], "catia_boundary_forward")
+                    })?;
                 forward[0][first] = true;
                 for index in ctx.admit_iter(0..last, OPERATION)? {
                     for left in 0..directions[index].len() {
@@ -5089,12 +5079,10 @@ fn common_supported_corner_equations<'storage>(
                         }
                     }
                 }
-                let mut backward = direction_rows(
-                    ctx,
-                    &directions,
-                    "catia_boundary_backward",
-                    "catia_boundary_backward_rows",
-                )?;
+                let (mut backward, _backward_storage) = ctx
+                    .with_scoped_storage("catia_boundary_backward", || {
+                        ctx.alloc_filled(boundary.len(), [false; 2], "catia_boundary_backward")
+                    })?;
                 for state in 0..directions[last].len() {
                     let Some(joined) = corner(last, state, 0, first)? else {
                         return Ok(None);
@@ -5157,15 +5145,18 @@ fn common_supported_corner_equations<'storage>(
             for index in ctx.admit_iter(0..boundary.len(), OPERATION)? {
                 let next = (index + 1) % boundary.len();
                 // At most four supported transitions, so at most four equations.
-                let mut equations = Vec::new();
+                let mut equations = [None; 4];
+                let mut equation_count = 0;
                 for left in 0..directions[index].len() {
                     for right in 0..directions[next].len() {
                         if !supported[index][left][right] {
                             continue;
                         }
                         let (Some(left_port), Some(right_port)) = (
-                            port(boundary[index], directions[index][left], true),
-                            port(boundary[next], directions[next][right], false),
+                            directions[index][left]
+                                .and_then(|direction| port(boundary[index], direction, true)),
+                            directions[next][right]
+                                .and_then(|direction| port(boundary[next], direction, false)),
                         ) else {
                             return Ok(None);
                         };
@@ -5176,17 +5167,18 @@ fn common_supported_corner_equations<'storage>(
                         } else {
                             [right, left]
                         };
-                        if !equations.contains(&equation) {
-                            ctx.push_vec(
-                                &mut equations,
-                                equation,
-                                "catia_boundary_corner_equations",
-                            )?;
+                        if !equations[..equation_count].contains(&Some(equation)) {
+                            equations[equation_count] = Some(equation);
+                            equation_count += 1;
                         }
                     }
                 }
-                if let [equation] = equations[..] {
-                    ctx.push_vec(&mut forced, equation, "catia_boundary_forced_corners")?;
+                if equation_count == 1 {
+                    if let Some(equation) = equations[0] {
+                        forced_storage.with_storage(|| {
+                            ctx.push_vec(&mut forced, equation, "catia_boundary_forced_corners")
+                        })?;
+                    }
                 }
             }
         }
@@ -5194,11 +5186,16 @@ fn common_supported_corner_equations<'storage>(
         ctx.dedup_vec(&mut forced, OPERATION)?;
         match &mut common {
             Some(common) => ctx.retain_vec(
-                common,
+                &mut common.value,
                 |equation| Ok(ctx.binary_search(&forced, equation, OPERATION)?.is_ok()),
                 OPERATION,
             )?,
-            None => common = Some(forced),
+            None => {
+                common = Some(ScopedValue {
+                    value: forced,
+                    storage: Some(forced_storage),
+                })
+            }
         }
     }
     Ok(common)
@@ -5443,12 +5440,13 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                     };
                     if let Some(equations) = equations {
                         let mut merged_nodes = Vec::new();
-                        let equations =
-                            match ctx.admit_iter(equations, "catia_ordered_merged_nodes") {
-                                Ok(equations) => equations,
-                                Err(error) => return Some(Err(error.into())),
-                            };
-                        for [left, right] in equations {
+                        let equations = match ctx
+                            .admit_iter(equations.as_slice(), "catia_ordered_merged_nodes")
+                        {
+                            Ok(equations) => equations,
+                            Err(error) => return Some(Err(error.into())),
+                        };
+                        for &[left, right] in equations {
                             let merged = match quotient.merge_charged(ctx, left, right) {
                                 Ok(Some(root)) => root,
                                 Ok(None) => return None,
@@ -6244,7 +6242,12 @@ type MeshSelectionStateSignature = (
     Vec<Option<bool>>,
 );
 type MeshOrientationOption<'storage> = (Vec<Vec<bool>>, MeshQuotient<'storage>);
-type MeshFaceEquationCache = RefCell<HashMap<(usize, MeshQuotientSignature), Vec<[usize; 2]>>>;
+struct CachedFaceEquations<'storage> {
+    equations: ScopedValue<'storage, Vec<[usize; 2]>>,
+    _key_storage: Option<ScopedReservation<'storage>>,
+}
+type MeshFaceEquationCache<'storage> =
+    RefCell<HashMap<(usize, MeshQuotientSignature), CachedFaceEquations<'storage>>>;
 
 fn canonical_direction_bit(row: &[bool], index: usize) -> bool {
     row[index] ^ row.first().copied().unwrap_or(false)
@@ -6625,9 +6628,10 @@ struct MeshSelectionSearch<'a, 'ctx> {
     fixed_edge_orientations: Vec<Option<bool>>,
     edge_has_fixed_direction: Vec<bool>,
     selected: Vec<MeshFaceSelection>,
-    visited_states: HashSet<MeshSelectionStateSignature>,
+    visited_states: HashMap<MeshSelectionStateSignature, ScopedReservation<'a>>,
     outcome: SearchOutcome<(StandardTopologyDraft, Vec<usize>)>,
-    face_equation_cache: MeshFaceEquationCache,
+    face_equation_cache: MeshFaceEquationCache<'a>,
+    memo_storage: RefCell<ScopedReservation<'a>>,
 }
 
 fn possible_face_equations(
@@ -10592,7 +10596,8 @@ fn resolve_fixed_mesh_endpoint_pairs(
             "catia_fixed_mesh_selection",
             |_| Ok(None),
         )?,
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new((ctx).reserve_scoped(0, "catia_selection_memo_storage")?),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -11369,7 +11374,8 @@ fn resolve_standard_mesh_endpoint_candidates<'storage>(
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: ctx.collect_indexed_vec(face_count, "catia_mesh_selected_faces", |_| Ok(None))?,
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new((ctx).reserve_scoped(0, "catia_selection_memo_storage")?),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };

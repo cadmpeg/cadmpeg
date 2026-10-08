@@ -70,7 +70,12 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
             fixed_edge_orientations: Vec::new(),
             edge_has_fixed_direction: Vec::new(),
             selected: vec![None],
-            visited_states: HashSet::new(),
+            visited_states: std::collections::HashMap::new(),
+            memo_storage: RefCell::new(
+                (&ctx)
+                    .reserve_scoped(0, "catia_selection_memo_storage")
+                    .expect("memo storage"),
+            ),
             outcome: SearchOutcome::Open,
             face_equation_cache: RefCell::default(),
         };

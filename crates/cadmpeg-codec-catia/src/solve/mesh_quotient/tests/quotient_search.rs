@@ -271,7 +271,12 @@ fn selection_state_signature_charges_nested_face_directions() {
             fixed_edge_orientations: vec![Some(true)],
             edge_has_fixed_direction: Vec::new(),
             selected: vec![Some((0, vec![vec![true]]))],
-            visited_states: HashSet::new(),
+            visited_states: std::collections::HashMap::new(),
+            memo_storage: RefCell::new(
+                (ctx)
+                    .reserve_scoped(0, "catia_selection_memo_storage")
+                    .expect("memo storage"),
+            ),
             outcome: SearchOutcome::Open,
             face_equation_cache: RefCell::default(),
         };
@@ -806,7 +811,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
             std::slice::from_ref(&assignment),
             &budget,
         )?;
-        Ok::<_, CodecError>(equations)
+        Ok::<_, CodecError>(equations.map(|_| ()))
     };
     assert!(run(&service_ctx)
         .expect("service resource budget")
@@ -830,16 +835,10 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
         }
     }
     for operation in [
-        "catia_boundary_direction_options",
         "catia_boundary_directions",
-        "catia_boundary_dir_row",
-        "catia_boundary_dir_grid",
         "catia_boundary_supported_grids",
         "catia_boundary_forward",
-        "catia_boundary_forward_rows",
         "catia_boundary_backward",
-        "catia_boundary_backward_rows",
-        "catia_boundary_corner_equations",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
@@ -863,12 +862,12 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
             std::slice::from_ref(&fixed_assignment),
             &budget,
         )
+        .map(|equations| equations.map(|values| values.len()))
     };
     assert_eq!(
         fixed_run(&service_ctx)
             .expect("service resource budget")
-            .expect("fixed cycle has supported corners")
-            .len(),
+            .expect("fixed cycle has supported corners"),
         3
     );
     let mut refused_forced_corner = false;
@@ -883,7 +882,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
                 assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                 refused_forced_corner |= error.operation == "catia_boundary_forced_corners";
             }
-            Ok(Some(corners)) => assert_eq!(corners.len(), 3),
+            Ok(Some(corners)) => assert_eq!(corners, 3),
             Ok(None) => panic!("fixed closed cycle must admit corners"),
             Err(error) => panic!("unexpected refusal: {error}"),
         }
@@ -916,7 +915,7 @@ fn ordered_corner_equations_propagate_direction_collection_refusals() {
         }
     }
     assert!(ordered_refusals.contains("catia_ordered_face_order"));
-    assert!(ordered_refusals.contains("catia_boundary_direction_options"));
+    assert!(ordered_refusals.contains("catia_boundary_directions"));
 }
 
 #[test]
@@ -1480,7 +1479,12 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
             Some((0, vec![vec![false, false]])),
             Some((0, vec![vec![false, false]])),
         ],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -1591,7 +1595,12 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
             Some((0, vec![vec![false, false]])),
             None,
         ],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -1645,7 +1654,12 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![Some((0, vec![vec![false, false]])), None, None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -1713,7 +1727,12 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -1824,7 +1843,12 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None; 2],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            (&ctx)
+                .reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
