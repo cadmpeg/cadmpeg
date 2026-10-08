@@ -57,8 +57,11 @@ macro_rules! required {
     };
 }
 
+mod indexes;
 mod profiles;
 mod spreadsheets;
+
+use indexes::{BodyPredecessors, ObjectIndex};
 
 fn malformed_design(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
     crate::resource::malformed_charged(ctx, message, "fcstd design diagnostic")
@@ -79,15 +82,16 @@ pub(crate) fn transfer(
             .map(|property| (property.owner.as_str(), property)),
         "fcstd design owner index",
     )?;
-    let (properties_by_id, _property_id_storage) = ctx.collect_scoped_btree_groups(
-        properties
-            .iter()
-            .map(|property| (property.id.as_str(), property)),
-        "fcstd design property identity index",
-    )?;
     let (payloads_by_owner, _payload_storage) =
         ctx.with_scoped_storage("fcstd design payload owner storage", || {
             let mut by_owner = BTreeMap::new();
+            if payloads.is_empty() {
+                return Ok(by_owner);
+            }
+            let (properties_by_id, _property_id_storage) = ctx.collect_scoped_btree_groups(
+                properties.iter().map(|property| (property.id.as_str(), property)),
+                "fcstd design property identity index",
+            )?;
             for payload in ctx.admit_iter(payloads, "fcstd design payload index inputs")? {
                 let Some(properties) = ctx.get_btree_map(
                     &properties_by_id,
@@ -123,13 +127,7 @@ pub(crate) fn transfer(
             }
             Ok::<_, CodecError>(by_owner)
         })?;
-    let (object_by_id, _object_storage) = ctx.collect_scoped_btree_map(
-        objects
-            .iter()
-            .rev()
-            .map(|object| (object.id().as_str(), object)),
-        "fcstd design object index",
-    )?;
+    let object_by_id = ObjectIndex::new(ctx, objects)?;
     let (feature_ids, feature_ids_storage) =
         ctx.with_scoped_storage("fcstd design feature index storage", || {
             let mut feature_ids = HashMap::new();
@@ -146,8 +144,7 @@ pub(crate) fn transfer(
             }
             Ok::<_, CodecError>(feature_ids)
         })?;
-    let (predecessors, predecessor_storage) =
-        body_predecessors(ctx, objects, &feature_ids, &properties_by_owner)?;
+    let predecessors = BodyPredecessors::new(ctx, objects, &feature_ids, &properties_by_owner)?;
     let (parent_by_member, parent_by_member_storage) =
         ctx.with_scoped_storage("fcstd design membership index storage", || {
             let mut parent_by_member = HashMap::new();
@@ -264,16 +261,30 @@ pub(crate) fn transfer(
             )?
             .ok_or_else(|| CodecError::malformed("design object lost its ordinal"))?;
         let id = feature_id(ctx, object)?;
-        let mut definition = if is_spreadsheet(&object.type_name) {
+        let cycle_affected_object = ctx.contains_btree_set(
+            &cycle_affected,
+            object.id().as_str(),
+            "fcstd design cycle object lookup",
+        )?;
+        let definition = if cycle_affected_object
+            && !is_sketch(&object.type_name)
+            && !is_spreadsheet(&object.type_name)
+        {
+            native_definition(ctx, &object.type_name, owned)?
+        } else if is_spreadsheet(&object.type_name) {
             ctx.push_vec(
                 &mut ir.model.spreadsheets,
                 spreadsheets::append_spreadsheet(ctx, &mut ir.model.parameters, object, owned)?,
                 "fcstd design spreadsheets",
             )?;
-            FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                role: FeatureTreeNodeRole::Equations,
-                children: TreeChildren::default(),
-            })
+            if cycle_affected_object {
+                native_definition(ctx, &object.type_name, owned)?
+            } else {
+                FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                    role: FeatureTreeNodeRole::Equations,
+                    children: TreeChildren::default(),
+                })
+            }
         } else if is_body(&object.type_name) {
             body_definition(ctx, owned, &feature_ids)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
@@ -283,17 +294,23 @@ pub(crate) fn transfer(
         } else if is_sketch(&object.type_name) {
             let decoded = parse_sketch(ctx, object, owned)?;
             let sketch = decoded.sketch;
-            let sketch_id = sketch
-                .id
-                .try_clone_for_decode(ctx, "fcstd design sketch identity")?;
             sketch_ids_storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut sketch_ids,
                     object.id().as_str(),
-                    sketch_id.try_clone_for_decode(ctx, "fcstd design sketch index identity")?,
+                    sketch.id.try_clone_for_decode(ctx, "fcstd design sketch index identity")?,
                     "fcstd design sketch ids",
                 )
             })?;
+            let definition = if cycle_affected_object {
+                native_definition(ctx, &object.type_name, owned)?
+            } else {
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                        sketch.id.try_clone_for_decode(ctx, "fcstd design sketch identity")?,
+                    )),
+                })
+            };
             ctx.push_vec(&mut ir.model.sketches, sketch, "fcstd neutral sketches")?;
             ctx.extend_vec(
                 &mut ir.model.sketch_entities,
@@ -310,9 +327,7 @@ pub(crate) fn transfer(
                 decoded.parameters,
                 "fcstd sketch parameters",
             )?;
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
-            })
+            definition
         } else if is_stored_geometry_feature(&object.type_name) {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
         } else if object.type_name == "PartDesign::FeatureBase" {
@@ -421,7 +436,7 @@ pub(crate) fn transfer(
             };
             let profile_normal = match profile_target(ctx, owned)? {
                 Some((_, target)) => {
-                    match ctx.get_btree_map(&object_by_id, target, "fcstd profile object lookup")? {
+                    match object_by_id.get(target, "fcstd profile object lookup")? {
                         Some(profile_object) => {
                             let profile_properties = ctx
                                 .get_btree_map(
@@ -498,13 +513,6 @@ pub(crate) fn transfer(
         } else {
             native_definition(ctx, &object.type_name, owned)?
         };
-        if ctx.contains_btree_set(
-            &cycle_affected,
-            object.id().as_str(),
-            "fcstd design cycle object lookup",
-        )? {
-            definition = native_definition(ctx, &object.type_name, owned)?;
-        }
         let mut semantic_dependencies = Vec::new();
         let mut semantic_storage = ctx.reserve_scoped(0, "fcstd semantic dependency storage")?;
         if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = &definition {
@@ -547,12 +555,7 @@ pub(crate) fn transfer(
                 )?;
             }
         }
-        let cycle_affected = ctx.contains_btree_set(
-            &cycle_affected,
-            object.id().as_str(),
-            "fcstd design cycle object lookup",
-        )?;
-        let dependencies = if cycle_affected {
+        let dependencies = if cycle_affected_object {
             // The native object and property arenas retain the exact cycle.
             // A neutral edge would require a decoder-owned cycle break and
             // would change when persisted declaration order changes.
@@ -710,7 +713,6 @@ pub(crate) fn transfer(
     drop(body_ids);
     drop(body_ids_storage);
     drop(predecessors);
-    drop(predecessor_storage);
     drop(feature_ids);
     drop(feature_ids_storage);
     drop(sketch_ids);
@@ -802,8 +804,9 @@ impl<'ctx> BodyOutputPrefix<'ctx> {
         payload: &crate::brep::ShapePayloadRecord,
     ) -> Result<Self, CodecError> {
         let key = ctx
-            .split_once(&payload.id, "#", "fcstd design body output identity key")?
-            .map_or(payload.id.as_str(), |(_, key)| key);
+            .position_by(payload.id.as_bytes(), |byte| Ok(*byte == b'#'),
+                "fcstd design body output identity key")?
+            .map_or(payload.id.as_str(), |index| &payload.id[index + 1..]);
         let (text, storage) = ctx.format_scoped(
             format_args!("fcstd:model:body#{key}:"),
             "fcstd design body output prefix",
@@ -1052,11 +1055,12 @@ fn feature_ordinals<'ctx, 'a>(
                                 expression,
                                 "fcstd design expression identifiers",
                                 |identifier| {
-                                    if let Some((owner, _)) = ctx.split_once(
-                                        identifier,
-                                        ".",
+                                    if let Some(index) = ctx.position_by(
+                                        identifier.as_bytes(),
+                                        |byte| Ok(*byte == b'.'),
                                         "fcstd design expression owner separator",
                                     )? {
+                                        let owner = &identifier[..index];
                                         if let Some(dependency) = ctx.get_hash_map(
                                             &object_by_name,
                                             owner,
@@ -1317,38 +1321,40 @@ fn append_operation_parameters(
         "ThreadDepth",
         "CustomThreadClearance",
     ];
-    let owner = feature_id(ctx, object)?;
+    let mut owner = None;
     for property in ctx.admit_iter(properties, "fcstd operation parameter properties")? {
         let property = *property;
         if !NAMES.contains(&property.name.as_str()) {
-            continue;
-        }
-        if ctx.any_by(
-            parameters.as_slice(),
-            |parameter| {
-                let owner_matches = match parameter.owner.as_ref() {
-                    Some(parameter_owner) => {
-                        ctx.equal(parameter_owner, &owner, "fcstd operation parameter owner")?
-                    }
-                    None => false,
-                };
-                if !owner_matches {
-                    return Ok(false);
-                }
-                ctx.equal(
-                    &parameter.name,
-                    &property.name,
-                    "fcstd operation parameter duplicate name",
-                )
-            },
-            "fcstd operation parameter duplicate search",
-        )? {
             continue;
         }
         let Some(tag) = scalar_value_tag(&property.type_name) else {
             continue;
         };
         if tag == "Bool" {
+            continue;
+        }
+        let (owner, _owner_storage) = match &mut owner {
+            Some(owner) => owner,
+            slot @ None => slot.insert(ctx.with_scoped_storage(
+                "fcstd operation parameter owner storage", || feature_id(ctx, object),
+            )?),
+        };
+        if ctx.any_by(
+            parameters.as_slice(),
+            |parameter| {
+                let owner_matches = match parameter.owner.as_ref() {
+                    Some(parameter_owner) => {
+                        ctx.equal(parameter_owner, owner, "fcstd operation parameter owner")?
+                    }
+                    None => false,
+                };
+                if !owner_matches {
+                    return Ok(false);
+                }
+                Ok(parameter.name == property.name)
+            },
+            "fcstd operation parameter duplicate search",
+        )? {
             continue;
         }
         let Some((value, expression, retained)) =
@@ -1654,8 +1660,9 @@ fn external_link_key(
         return Ok(None);
     };
     let parent_key = ctx
-        .split_once(object, "#", "fcstd external link parent key")?
-        .map_or(object, |(_, key)| key);
+        .position_by(object.as_bytes(), |byte| Ok(*byte == b'#'),
+            "fcstd external link parent key")?
+        .map_or(object, |index| &object[index + 1..]);
     Ok(Some(ctx.join_retained(
         &[parent_key, subelement.as_str()],
         ".",
@@ -2490,8 +2497,7 @@ fn sketch_frame(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<(Point3, Vector3, Vector3), CodecError> {
-    validate_sketch_placement(ctx, properties)?;
-    Ok(placement_frame(ctx, properties)?.map_or_else(
+    Ok(validate_sketch_placement(ctx, properties)?.map_or_else(
         || {
             (
                 Point3::new(0.0, 0.0, 0.0),
@@ -2514,7 +2520,7 @@ fn placement_frame(
     let Some(property) = property else {
         return Ok(None);
     };
-    let Some(matrix) = crate::placement::placement_matrix_unreported(property) else {
+    let Ok(matrix) = crate::placement::placement_matrix_value_charged(ctx, property)? else {
         return Ok(None);
     };
     let matrix = matrix.rows();
@@ -2530,45 +2536,43 @@ fn placement_frame(
 fn validate_sketch_placement(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
-) -> Result<(), CodecError> {
+) -> Result<Option<(Point3, Vector3, Vector3, Vector3)>, CodecError> {
     let property = match property(ctx, properties, "Placement")? {
         Some(property) => Some(property),
         None => property(ctx, properties, "AttachmentOffset")?,
     };
     let Some(property) = property else {
-        return Ok(());
+        return Ok(None);
     };
-    let error = if property.type_name != "App::PropertyPlacement" {
-        Some(ctx.format_retained(
+    if property.type_name != "App::PropertyPlacement" {
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "sketch {} placement carrier has runtime type {}",
                 property.name, property.type_name
             ),
             "FreeCAD sketch placement error",
-        )?)
-    } else if property.values().len() != 1 || property.values()[0].tag != "PropertyPlacement" {
-        Some(ctx.format_retained(
+        )?));
+    }
+    if property.values().len() != 1 || property.values()[0].tag != "PropertyPlacement" {
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "sketch {} placement carrier requires one PropertyPlacement value",
                 property.name
             ),
             "FreeCAD sketch placement error",
-        )?)
-    } else if placement_frame(ctx, properties)?.is_none() {
-        Some(ctx.format_retained(
+        )?));
+    }
+    let frame = placement_frame(ctx, properties)?;
+    if frame.is_none() {
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "sketch {} placement carrier has incomplete or invalid components",
                 property.name
             ),
             "FreeCAD sketch placement error",
-        )?)
-    } else {
-        None
-    };
-    if let Some(message) = error {
-        return Err(CodecError::Malformed(message));
+        )?));
     }
-    Ok(())
+    Ok(frame)
 }
 
 fn feature_state(
@@ -2635,15 +2639,7 @@ fn bool_property(
     scalar_text(
         ctx,
         required!(property(ctx, properties, name)?),
-        |_ctx, value| {
-            if (value == "1") || value.eq_ignore_ascii_case("true") {
-                Ok(Some(true))
-            } else if (value == "0") || value.eq_ignore_ascii_case("false") {
-                Ok(Some(false))
-            } else {
-                Ok(None)
-            }
-        },
+        |_ctx, value| Ok(crate::native::parse_bool(value)),
     )
 }
 
@@ -2818,26 +2814,11 @@ fn parse_constraints(
     {
         let (type_code, native_kind) =
             match ctx.xml_attribute(node, "Type", "FreeCAD design XML attribute")? {
-                None => (
-                    None,
-                    ctx.copy_retained_text("missing_type", "fcstd sketch constraint type")?,
-                ),
+                None => (None, "missing_type"),
                 Some(value) => {
                     match ctx.parse_text::<i64>(value, "fcstd sketch constraint type")? {
-                        Ok(type_code) => (
-                            Some(type_code),
-                            ctx.copy_retained_text(
-                                constraint_kind(type_code),
-                                "fcstd sketch constraint type",
-                            )?,
-                        ),
-                        Err(_) => (
-                            None,
-                            ctx.copy_retained_text(
-                                "malformed_type",
-                                "fcstd sketch constraint type",
-                            )?,
-                        ),
+                        Ok(type_code) => (Some(type_code), constraint_kind(type_code)),
+                        Err(_) => (None, "malformed_type"),
                     }
                 }
             };
@@ -2866,11 +2847,18 @@ fn parse_constraints(
         let mut resolved = resolved_storage.with_storage(|| {
             ctx.vector_storage(operands.len(), "fcstd resolved constraint operands")
         })?;
-        for (entity, position) in ctx
-            .admit_iter(&operands, "fcstd resolved constraint operands")?
-            .copied()
+        let mut unresolved_positive_operands = Vec::new();
+        for (operand_index, &(entity, position)) in ctx
+            .admit_iter(&operands, "fcstd resolved constraint operands")?.enumerate()
         {
-            if let Some(locus) = resolved_storage.with_storage(|| resolve(entity, position))? {
+            let locus = resolved_storage.with_storage(|| resolve(entity, position))?;
+            if entity >= 0 && locus.is_none() {
+                resolved_storage.with_storage(|| {
+                    ctx.push_vec(&mut unresolved_positive_operands, operand_index,
+                        "fcstd native operand candidates")
+                })?;
+            }
+            if let Some(locus) = locus {
                 resolved_storage.with_storage(|| {
                     ctx.push_vec(&mut resolved, locus, "fcstd resolved constraint operands")
                 })?;
@@ -3099,53 +3087,6 @@ fn parse_constraints(
                 _ => Ok(None),
             }
         };
-        let native_kind = cadmpeg_core::text::NonBlankString::for_decode(
-            ctx,
-            native_kind,
-            "validate nonblank text",
-        )?
-        .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
-        let mut native_operands = Vec::new();
-        for (entity, position) in ctx
-            .admit_iter(&operands, "fcstd native constraint operands")?
-            .copied()
-        {
-            if entity >= 0
-                && resolved_storage
-                    .with_storage(|| resolve(entity, position))?
-                    .is_some()
-            {
-                continue;
-            }
-            let native_kind = cadmpeg_core::text::NonBlankString::for_decode(
-                ctx,
-                ctx.format_retained(
-                    format_args!("position:{position}"),
-                    "fcstd native operand position kind",
-                )?,
-                "validate nonblank text",
-            )?
-            .ok_or_else(|| {
-                malformed_design(
-                    ctx,
-                    format_args!(
-                        "{} constraint {} has an empty source operand kind",
-                        property.id,
-                        index + 1
-                    ),
-                )
-            })?;
-            ctx.push_vec(
-                &mut native_operands,
-                SketchNativeOperand {
-                    native_kind,
-                    field: None,
-                    object_index: u32::try_from(entity).ok(),
-                    native_ref: None,
-                },
-                "fcstd native constraint operands",
-            )?;
-        }
         let mut definition = if type_code == Some(15) && all_resolved {
             internal_alignment()?
         } else {
@@ -3174,6 +3115,52 @@ fn parse_constraints(
         let definition = if let Some(definition) = definition {
             definition
         } else {
+            let native_kind = cadmpeg_core::text::NonBlankString::for_decode(
+                ctx,
+                ctx.copy_retained_text(native_kind, "fcstd sketch constraint type")?,
+                "validate nonblank text",
+            )?
+            .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
+            let mut native_operands = Vec::new();
+            let mut unresolved_index = 0;
+            for (operand_index, &(entity, position)) in ctx
+                .admit_iter(&operands, "fcstd native constraint operands")?.enumerate()
+            {
+                if entity >= 0 {
+                    if unresolved_positive_operands.get(unresolved_index).copied() != Some(operand_index) {
+                        continue;
+                    }
+                    unresolved_index += 1;
+                }
+                let native_kind = cadmpeg_core::text::NonBlankString::for_decode(
+                    ctx,
+                    ctx.format_retained(
+                        format_args!("position:{position}"),
+                        "fcstd native operand position kind",
+                    )?,
+                    "validate nonblank text",
+                )?
+                .ok_or_else(|| {
+                    malformed_design(
+                        ctx,
+                        format_args!(
+                            "{} constraint {} has an empty source operand kind",
+                            property.id,
+                            index + 1
+                        ),
+                    )
+                })?;
+                ctx.push_vec(
+                    &mut native_operands,
+                    SketchNativeOperand {
+                        native_kind,
+                        field: None,
+                        object_index: u32::try_from(entity).ok(),
+                        native_ref: None,
+                    },
+                    "fcstd native constraint operands",
+                )?;
+            }
             let mut entities =
                 ctx.vector_storage(resolved.len(), "fcstd native constraint entities")?;
             for locus in ctx.admit_iter(&resolved, "fcstd native constraint entities")? {
@@ -3313,13 +3300,7 @@ fn bool_attr(
     let Some(value) = ctx.xml_attribute(node, name, "FreeCAD design XML attribute")? else {
         return Ok(None);
     };
-    if (value == "1") || value.eq_ignore_ascii_case("true") {
-        Ok(Some(true))
-    } else if (value == "0") || value.eq_ignore_ascii_case("false") {
-        Ok(Some(false))
-    } else {
-        Ok(None)
-    }
+    Ok(crate::native::parse_bool(value))
 }
 
 fn label_attr(
@@ -3752,11 +3733,13 @@ fn order_parameters_by_dependencies<'ctx>(
             ctx.append_vec(parameters, &mut remaining, "fcstd reordered parameters")?;
             break;
         };
-        ctx.rotate_left(
-            &mut remaining[index..],
-            1,
-            "fcstd parameter dependency extraction",
-        )?;
+        if remaining.len() - index > 1 {
+            ctx.rotate_left(
+                &mut remaining[index..], 1, "fcstd parameter dependency extraction",
+            )?;
+        } else {
+            ctx.charge_work(0, "fcstd parameter dependency extraction")?;
+        }
         let parameter = remaining
             .pop()
             .ok_or_else(|| CodecError::malformed("ready parameter disappeared"))?;
@@ -4291,8 +4274,9 @@ fn split_ints(ctx: &DecodeContext<'_>, value: &str) -> Result<Vec<i64>, CodecErr
     let mut remaining = value;
     loop {
         let (group, rest) =
-            match ctx.split_once(remaining, ",", "fcstd constraint integer list groups")? {
-                Some((group, rest)) => (group, Some(rest)),
+            match ctx.position_by(remaining.as_bytes(), |byte| Ok(*byte == b','),
+                "fcstd constraint integer list groups")? {
+                Some(index) => (&remaining[..index], Some(&remaining[index + 1..])),
                 None => (remaining, None),
             };
         if ctx
@@ -6554,7 +6538,7 @@ fn project_on_surface_definition(
 fn draft_definition(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
-    objects: &BTreeMap<&str, &ObjectRecord>,
+    objects: &ObjectIndex<'_, '_, '_>,
     properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(faces) = property(ctx, properties, "Base")? else {
@@ -7346,11 +7330,19 @@ fn sweep_definition(
             )?;
         }
     }
-    ctx.dedup_vec(&mut profiles, "fcstd sweep profile deduplication")?;
+    if profiles.len() > 1 {
+        ctx.dedup_vec(&mut profiles, "fcstd sweep profile deduplication")?;
+    } else {
+        ctx.charge_work(0, "fcstd sweep profile deduplication")?;
+    }
     if profiles.is_empty() {
         return Ok(None);
     }
-    ctx.rotate_left(&mut profiles, 1, "fcstd sweep primary profile removal")?;
+    if profiles.len() > 1 {
+        ctx.rotate_left(&mut profiles, 1, "fcstd sweep primary profile removal")?;
+    } else {
+        ctx.charge_work(0, "fcstd sweep primary profile removal")?;
+    }
     let profile = profiles
         .pop()
         .ok_or_else(|| CodecError::malformed("sweep primary profile disappeared"))?;
@@ -7544,7 +7536,7 @@ fn hole_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-    objects: &BTreeMap<&str, &ObjectRecord>,
+    objects: &ObjectIndex<'_, '_, '_>,
     properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
     program_version: Option<&str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
@@ -7864,7 +7856,7 @@ fn helical_sweep_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-    objects: &BTreeMap<&str, &ObjectRecord>,
+    objects: &ObjectIndex<'_, '_, '_>,
     properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((law, axis_origin, axis_direction)) = (|| -> Result<_, CodecError> {
@@ -8304,12 +8296,17 @@ fn enumeration_label(
 }
 
 #[derive(Clone, Copy)]
-struct PatternSources<'a, 'b> {
+struct PatternSources<'a, 'b, 'ctx, 'arena> {
     objects: &'a [ObjectRecord],
-    object_by_id: &'a BTreeMap<&'b str, &'b ObjectRecord>,
-    predecessors: &'a BTreeMap<&'b str, &'b FeatureId>,
+    object_by_id: &'a ObjectIndex<'ctx, 'arena, 'b>,
+    predecessors: &'a BodyPredecessors<'ctx, 'arena, 'b>,
     properties_by_owner: &'a BTreeMap<&'b str, Vec<&'b PropertyRecord>>,
     entries: &'a [EntryRecord],
+}
+
+enum PatternSeedCandidates<'a> {
+    Borrowed(Vec<&'a FeatureId>),
+    Owned(Vec<FeatureId>),
 }
 
 fn pattern_definition(
@@ -8318,7 +8315,7 @@ fn pattern_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     features: &HashMap<&str, FeatureId>,
-    sources: PatternSources<'_, '_>,
+    sources: PatternSources<'_, '_, '_, '_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let PatternSources {
         objects,
@@ -8358,15 +8355,14 @@ fn pattern_definition(
             if let Some(feature) =
                 ctx.get_hash_map(features, target, "fcstd pattern feature lookup")?
             {
-                let feature = feature.try_clone_for_decode(ctx, "fcstd pattern seed identity")?;
                 ctx.push_scoped_vec(
                     &mut seed_storage,
                     &mut seeds,
                     feature,
                     "fcstd pattern source seeds",
                 )?;
-            } else if !ctx
-                .get_btree_map(object_by_id, target, "fcstd pattern object lookup")?
+            } else if !object_by_id
+                .get(target, "fcstd pattern object lookup")?
                 .is_some_and(|object| {
                     matches!(
                         object.type_name.as_str(),
@@ -8380,28 +8376,26 @@ fn pattern_definition(
         if seeds.is_empty() {
             return Ok(None);
         }
-        (seeds, seed_storage)
+        (PatternSeedCandidates::Borrowed(seeds), seed_storage)
     } else if let Some(seeds) =
         multi_transform_stage_seeds(ctx, owner, features, objects, properties_by_owner)?
     {
-        seeds
+        let (seeds, storage) = seeds;
+        (PatternSeedCandidates::Owned(seeds), storage)
     } else {
-        let Some(feature) = ctx
-            .get_btree_map(predecessors, owner, "fcstd implicit body predecessor")?
-            .copied()
+        let Some(feature) = predecessors.get(owner, "fcstd implicit body predecessor")?
         else {
             return Ok(None);
         };
         let mut storage = ctx.reserve_scoped(0, "fcstd implicit pattern seed storage")?;
         let mut seeds = Vec::new();
-        let feature = feature.try_clone_for_decode(ctx, "fcstd implicit pattern seed identity")?;
         ctx.push_scoped_vec(
             &mut storage,
             &mut seeds,
             feature,
             "fcstd implicit pattern seed",
         )?;
-        (seeds, storage)
+        (PatternSeedCandidates::Borrowed(seeds), storage)
     };
 
     let pattern =
@@ -8422,7 +8416,7 @@ fn pattern_definition(
                     return Ok(None);
                 };
                 let Some(object) =
-                    ctx.get_btree_map(object_by_id, target, "fcstd pattern stage object lookup")?
+                    object_by_id.get(target, "fcstd pattern stage object lookup")?
                 else {
                     return Ok(None);
                 };
@@ -8464,10 +8458,25 @@ fn pattern_definition(
             };
             pattern
         };
-    let pattern_seeds = ctx.collect_vec(
-        seeds.into_iter().map(PatternSeed::Feature),
-        "fcstd pattern seed variants",
-    )?;
+    let pattern_seeds = match seeds {
+        PatternSeedCandidates::Borrowed(seeds) => {
+            let mut output = ctx.vector_storage(seeds.len(), "fcstd pattern seed variants")?;
+            let identity_operation = if originals.is_some() {
+                "fcstd pattern seed identity"
+            } else {
+                "fcstd implicit pattern seed identity"
+            };
+            for seed in ctx.admit_iter(seeds, "fcstd selected pattern seed candidates")? {
+                ctx.push_vec(&mut output,
+                    PatternSeed::Feature(seed.try_clone_for_decode(ctx, identity_operation)?),
+                    "fcstd pattern seed variants")?;
+            }
+            output
+        }
+        PatternSeedCandidates::Owned(seeds) => ctx.collect_vec(
+            seeds.into_iter().map(PatternSeed::Feature), "fcstd pattern seed variants",
+        )?,
+    };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Pattern {
             seeds: pattern_seeds,
@@ -8568,69 +8577,11 @@ fn multi_transform_stage_seeds<'ctx>(
     Ok(None)
 }
 
-fn body_predecessors<'ctx, 'a>(
-    ctx: &'ctx DecodeContext<'_>,
-    objects: &'a [ObjectRecord],
-    features: &'a HashMap<&str, FeatureId>,
-    properties_by_owner: &BTreeMap<&str, Vec<&'a PropertyRecord>>,
-) -> Result<(BTreeMap<&'a str, &'a FeatureId>, ScopedReservation<'ctx>), CodecError> {
-    ctx.with_scoped_storage("fcstd body predecessor storage", || {
-        let mut predecessors = BTreeMap::new();
-        for object in ctx.admit_iter(objects, "fcstd body predecessor objects")? {
-            let Some(owned) = ctx.get_btree_map(
-                properties_by_owner,
-                object.id().as_str(),
-                "fcstd body predecessor properties",
-            )?
-            else {
-                continue;
-            };
-            let Some(members) = body_membership_property(ctx, owned)? else {
-                continue;
-            };
-            let mut previous = None;
-            let (mut seen, mut seen_storage) = ctx
-                .with_scoped_storage("fcstd body predecessor seen storage", || {
-                    Ok::<_, CodecError>(BTreeSet::new())
-                })?;
-            for link in ctx.admit_iter(members.links(), "fcstd body predecessor members")? {
-                let Some(member) = link.as_ref().and_then(crate::native::LinkTarget::object) else {
-                    continue;
-                };
-                if seen_storage.with_storage(|| {
-                    ctx.insert_btree_set(&mut seen, member, "fcstd body predecessor first member")
-                })? {
-                    if let Some(previous) = previous {
-                        if !ctx.contains_key_btree_map(
-                            &predecessors,
-                            member,
-                            "fcstd body predecessor first body",
-                        )? {
-                            ctx.insert_btree_map(
-                                &mut predecessors,
-                                member,
-                                previous,
-                                "fcstd body predecessor index",
-                            )?;
-                        }
-                    }
-                }
-                if let Some(feature) =
-                    ctx.get_hash_map(features, member, "fcstd body predecessor feature")?
-                {
-                    previous = Some(feature);
-                }
-            }
-        }
-        Ok::<_, CodecError>(predecessors)
-    })
-}
-
 fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
     ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
-    sources: PatternSources<'_, '_>,
+    sources: PatternSources<'_, '_, '_, '_>,
 ) -> Result<Option<PatternKind<C>>, CodecError> {
     let PatternSources {
         object_by_id,
@@ -8822,7 +8773,7 @@ fn linear_pattern_axis(
     suffix: &str,
     count: u32,
     mode: u64,
-    sources: PatternSources<'_, '_>,
+    sources: PatternSources<'_, '_, '_, '_>,
 ) -> Result<Option<cadmpeg_ir::features::patterns::StagePatternKind>, CodecError> {
     let PatternSources {
         object_by_id,
@@ -9045,7 +8996,7 @@ fn axis_reference(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
-    objects: &BTreeMap<&str, &ObjectRecord>,
+    objects: &ObjectIndex<'_, '_, '_>,
     properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<(Point3, cadmpeg_ir::units::UnitVector3)>, CodecError> {
     if let Some(direction) = vector_property(ctx, properties, name)? {
@@ -9061,7 +9012,7 @@ fn axis_reference(
         return Ok(None);
     };
     let target = required!(link.object());
-    let object = required!(ctx.get_btree_map(objects, target, "fcstd reference object lookup")?);
+    let object = required!(objects.get(target, "fcstd reference object lookup")?);
     let owned = required!(ctx.get_btree_map(
         properties_by_owner,
         target,
@@ -9095,7 +9046,7 @@ fn plane_reference(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
-    objects: &BTreeMap<&str, &ObjectRecord>,
+    objects: &ObjectIndex<'_, '_, '_>,
     properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<(Point3, cadmpeg_ir::units::UnitVector3)>, CodecError> {
     let Some(property) = property(ctx, properties, name)? else {
@@ -9107,7 +9058,7 @@ fn plane_reference(
     let Some(target) = link.object() else {
         return Ok(None);
     };
-    let Some(object) = ctx.get_btree_map(objects, target, "fcstd reference object lookup")? else {
+    let Some(object) = objects.get(target, "fcstd reference object lookup")? else {
         return Ok(None);
     };
     let Some(owned) = ctx.get_btree_map(
@@ -9439,8 +9390,9 @@ fn design_identity_text(
     ctx.format_retained(
         format_args!(
             "fcstd:design:{kind}#{}{tail}",
-            ctx.split_once(object.id(), "#", "fcstd design object identity key")?
-                .map_or(object.id().as_str(), |(_, key)| key)
+            ctx.position_by(object.id().as_bytes(), |byte| Ok(*byte == b'#'),
+                "fcstd design object identity key")?
+                .map_or(object.id().as_str(), |index| &object.id()[index + 1..])
         ),
         operation,
     )

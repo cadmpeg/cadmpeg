@@ -145,6 +145,7 @@ fn placement_matrix_value<'property, E>(
     Ok(placement_components_admitted(values).ok_or(PlacementIssue::Rotation))
 }
 
+#[cfg(test)]
 pub(crate) fn placement_matrix_unreported(property: &PropertyRecord) -> Option<FiniteFrame> {
     match placement_matrix_value(
         property,
