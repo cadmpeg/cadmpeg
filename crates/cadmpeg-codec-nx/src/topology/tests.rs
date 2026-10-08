@@ -1110,6 +1110,103 @@ fn intersection_data_requires_complete_schema_header() {
 }
 
 #[test]
+fn intersection_data_duplicates_admit_identity_search_and_keep_only_output_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut stream = deltas_intersection_curve_stream();
+    let start = stream.iter().rposition(|byte| *byte == 0x5a).unwrap();
+    let duplicate = stream[start..].to_vec();
+    stream.extend_from_slice(&duplicate);
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes =
+                4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::CompositeCurve>());
+        },
+        |ctx| {
+            let curves = intersection_data_curves(ctx, &stream).unwrap();
+            assert_eq!(curves.len(), 1);
+            assert_eq!(curves[0].xmt, 12);
+        },
+    );
+    // Core admits the first B-tree insertion as three node passes. The node
+    // bound has eleven keys, sixteen pointer words, and two alignment pads.
+    let first_insert_work = cadmpeg_core::decode::u64_from_index(3 * (
+        11 * std::mem::size_of::<u32>()
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<usize>()
+    ));
+    let before_duplicate = cadmpeg_core::decode::u64_from_index(stream.len()) + first_insert_work;
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = before_duplicate + 3,
+        |ctx| {
+            let error = intersection_data_curves(ctx, &stream).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "NX intersection identities"
+                    && limit.used == before_duplicate && limit.additional == 4));
+        },
+    );
+    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+        let error = crate::test_support::resource_refusal_at(
+            &[], dimension, "NX intersection identities",
+            |ctx| intersection_data_curves(ctx, &stream),
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == "NX intersection identities"));
+    }
+}
+
+#[test]
+fn topology_preservation_stops_before_the_unused_node_suffix() {
+    let mut baseline = Graph::default();
+    for xmt in 2..4098 {
+        baseline.kinds[NodeKind::Point.ordinal()].push(Node {
+            kind: NodeKind::Point,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+            pos: 0,
+            end: 0,
+            shift: 0,
+            bytes: Vec::new(),
+        });
+    }
+    let other = Graph::default();
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 1,
+        |ctx| {
+            assert!(!baseline.is_preserved_by(ctx, &other).unwrap());
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}
+
+#[test]
+fn topology_ambiguous_boundaries_stop_before_the_unused_candidate_suffix() {
+    let stream = vec![0_u8; 4098];
+    let nodes: Vec<_> = (0..4096).map(|pos| NodeCandidate {
+        kind: NodeKind::Point,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(2).unwrap(),
+        pos,
+        end: if pos == 0 { stream.len() - 1 } else { stream.len() },
+        shift: 0,
+    }).collect();
+    crate::test_support::with_decode_context_over(
+        &[],
+        // The full overlap cluster requires 4096 visits. Its boundary test
+        // stops after the unbounded first candidate and two bounded candidates.
+        |policy| policy.limits.max_work_units = 4099,
+        |ctx| {
+            let (selected, storage) = Graph::select_non_overlapping_candidates(ctx, &stream, &nodes).unwrap();
+            assert!(selected.is_empty());
+            assert!(ctx.resource_refusal().is_none());
+            drop(selected);
+            drop(storage);
+        },
+    );
+}
+
+#[test]
 fn topology_reference_views_reserve_only_one_as_null() {
     for raw in [0_u16, 1, 2, 32_767] {
         for (kind, len, offsets, sense) in [

@@ -750,6 +750,7 @@ pub(crate) fn intersection_data_curves(
     stream: &[u8],
 ) -> Result<Vec<CompositeCurve>, CodecError> {
     let mut out = Vec::new();
+    let mut seen_storage = ctx.reserve_scoped(0, "NX intersection identities")?;
     let mut seen = BTreeSet::new();
     let mut schema_anchor_seen = false;
     ctx.charge_work(
@@ -764,10 +765,11 @@ pub(crate) fn intersection_data_curves(
         let Some((curve, _)) = intersection_data_curve_at(stream, pos, schema_anchor_seen) else {
             continue;
         };
-        if seen.contains(&curve.xmt) {
+        if !seen_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut seen, curve.xmt, "NX intersection identities")
+        })? {
             continue;
         }
-        ctx.insert_btree_set(&mut seen, curve.xmt, "NX intersection identities")?;
         ctx.reserve_vec(&mut out, 1, "NX intersection data curves")?;
         out.push(curve);
     }
@@ -1065,7 +1067,11 @@ impl Graph {
     /// Both graphs frame the same stream, so equal spans hold equal bytes.
     fn is_preserved_by(&self, ctx: &DecodeContext<'_>, other: &Self) -> Result<bool, CodecError> {
         for group in &self.kinds {
-            for node in ctx.admit_iter(group, "NX baseline topology preservation")? {
+            let mut nodes = group.iter();
+            while !nodes.as_slice().is_empty() {
+                let Some(node) = ctx.next_charged(&mut nodes, "NX baseline topology preservation")? else {
+                    break;
+                };
                 let Some(candidate) = other.get(ctx, node.kind, node.xmt())? else {
                     return Ok(false);
                 };
@@ -1221,7 +1227,7 @@ impl Graph {
         const OPERATION: &str = "NX topology candidates";
         let mut domains: [DomainCandidates; 2] = Default::default();
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-        let last = stream.len().saturating_sub(3);
+        let last = stream.len().checked_sub(3).unwrap_or(0);
         for pos in ctx.admit_iter(0..last, "scan NX topology candidates")? {
             if stream[pos] != 0 {
                 continue;
@@ -1442,7 +1448,11 @@ impl Graph {
                 } else {
                     let mut bounded = None;
                     let mut ambiguous = false;
-                    for candidate in ctx.admit_iter(cluster, OPERATION)? {
+                    let mut candidates = cluster.iter();
+                    while !candidates.as_slice().is_empty() {
+                        let Some(candidate) = ctx.next_charged(&mut candidates, OPERATION)? else {
+                            break;
+                        };
                         if fixed_record_boundary(stream, candidate.end()) {
                             ambiguous = bounded.is_some();
                             if ambiguous {
