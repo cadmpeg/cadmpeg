@@ -332,7 +332,7 @@ fn resolve_pcurve_uses<'a>(
     let mut mapped = ctx.collection_vec(uses.len(), "iges B-rep mapped pcurves")?;
     for (_, sequence) in uses {
         let Some((geometry, range)) = pcurve_geometry(
-            source,
+            index,
             *sequence,
             &super::trimming::PcurveSupport {
                 surface_id: support.id,

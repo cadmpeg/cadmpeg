@@ -6,7 +6,6 @@ use std::io::Cursor;
 use super::SourceParameterMap;
 
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
@@ -31,60 +30,57 @@ const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
 
 fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used + limit.additional;
-            }
-            other => panic!("expected offset collection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("offset collection refusal was not reached: {operation}");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| match error {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode refusal: {other:?}"),
+                })
+        },
+    );
 }
 
 fn assert_offset_retained_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..8192 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used + limit.additional;
-            }
-            other => panic!("expected offset retained refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("offset retained refusal was not reached: {operation}");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| match error {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode refusal: {other:?}"),
+                })
+        },
+    );
 }
 
 #[test]
 fn offset_identity_copies_refuse_before_retaining_text() {
     let bytes = placed_uniform_offset_circle_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
     for operation in [
-        "iges offset source identity copy",
         "iges offset procedural source identity",
         "iges offset placed source identity",
         "iges offset edge carrier identity",
@@ -378,13 +374,19 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
 
     let source = &ir.model.curves[0];
     assert_eq!(
-        crate::test_support::with_service_context(&[], |ctx| super::source_parameter_range(
-            ctx,
-            &ir,
-            &source_id,
-            source.geometry.solved().expect("solved carrier"),
-            EPS_OFFSET_ENDPOINT_MATCH,
-        ))
+        crate::test_support::with_service_context(&[], |ctx| {
+            let mut index = super::OffsetSourceIndex::default();
+            let mut storage = ctx.reserve_scoped(0, "test offset source lookup").unwrap();
+            index.update(&ir, ctx, &mut storage).unwrap();
+            super::source_parameter_range(
+                ctx,
+                &ir,
+                &index,
+                &source_id,
+                source.geometry.solved().expect("solved carrier"),
+                EPS_OFFSET_ENDPOINT_MATCH,
+            )
+        })
         .expect("source parameter selection")
         .map(FiniteVector::get),
         Some([0.0, 2.0])
@@ -848,4 +850,125 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn offset_source_index_admits_only_appended_entities_and_keeps_first_identity() {
+    let id = CurveId::mint("test:model:curve#source").unwrap();
+    let mut ir = CadIr::empty();
+    let curve = Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    };
+    ir.model.curves.push(curve.clone());
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "test source index").unwrap();
+        let mut index = super::OffsetSourceIndex::default();
+        index.update(&ir, ctx, &mut storage).unwrap();
+        let mut no_work = DecodePolicy::service();
+        no_work.limits.max_work_units = 0;
+        crate::test_support::with_policy_context(&[], &no_work, |ctx| {
+            index.update(&ir, ctx, &mut storage).unwrap();
+        });
+        ir.model.curves.push(curve);
+        index.update(&ir, ctx, &mut storage).unwrap();
+        assert_eq!(index.curve_count, 2);
+        assert_eq!(
+            ctx.get_btree_map(&index.curves, &id, "test query").unwrap(),
+            Some(&0)
+        );
+    });
+}
+
+#[test]
+fn offset_source_index_keys_and_nodes_use_released_scratch_storage() {
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("test:model:curve#source").unwrap(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 16_384;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "test source index").unwrap();
+        let mut index = super::OffsetSourceIndex::default();
+        index.update(&ir, ctx, &mut storage).unwrap();
+        assert_eq!(index.curves.len(), 1);
+        drop((index, storage));
+        ctx.reserve_scoped(16_384, "released source index storage")
+            .unwrap();
+    });
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::MaterializedBytes,
+    ] {
+        let operation = if dimension == ResourceDimension::WorkUnits {
+            "iges offset source curve scan"
+        } else {
+            "iges offset source curve key"
+        };
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            if dimension == ResourceDimension::WorkUnits {
+                policy.limits.max_work_units = cap;
+            } else {
+                policy.limits.max_materialized_bytes = cap;
+            }
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                let mut storage = ctx.reserve_scoped(0, "test source index")?;
+                super::OffsetSourceIndex::default().update(&ir, ctx, &mut storage)
+            })
+        });
+    }
+}
+
+#[test]
+fn offset_greville_refuses_each_degree_controlled_knot_sum() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges offset Greville knots",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                super::greville(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], 2, 1, ctx)
+            })
+        },
+    );
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert_eq!(
+            super::greville(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], 2, 1, ctx).unwrap(),
+            Some(0.5)
+        );
+    });
+}
+
+#[test]
+fn offset_greville_preserves_the_float_sum_signed_zero_identity() {
+    let knots = [-0.0; 6];
+    let expected = knots[2..4].iter().sum::<f64>() / 2.0;
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert_eq!(
+            super::greville(&knots, 2, 1, ctx)
+                .unwrap()
+                .unwrap()
+                .to_bits(),
+            expected.to_bits()
+        );
+    });
 }
