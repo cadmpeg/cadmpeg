@@ -64,10 +64,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 record order. `DecodedRecord::ordinal` remains the zero-based position from
 the paged stream, including rejected records.
 
-[`has_schemas`][has-schemas] takes the caller's decode context and returns a
-fallible schema probe. It returns `Ok(false)` for invalid ZIP bytes and for
-valid archives that contain no recognized schema XML. Resource refusals
-propagate as errors. Full archive validation remains part of decoding.
+[`SchemaCatalog::load`][schema-catalog] parses the schema catalog with the
+caller's admission. It returns `Ok(None)` for a valid archive with no schema
+entries. Malformed ZIP bytes and resource refusals return errors. The catalog
+holds its temporary storage until it is dropped.
 
 ## Input framing
 
@@ -180,7 +180,7 @@ any CAD vendor. See the [clean-room and legal policy][legal].
 [decoded-record]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/struct.DecodedRecord.html
 [docs]: https://docs.rs/cadmpeg-protein
 [f3d]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md
-[has-schemas]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/fn.has_schemas.html
+[schema-catalog]: https://docs.rs/cadmpeg-protein/latest/cadmpeg_protein/struct.SchemaCatalog.html
 [inventor]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/inventor.md
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md
 [protein-layout]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/layouts/protein.md

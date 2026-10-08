@@ -165,9 +165,9 @@ where
         admission
             .get_hash_map(&self.properties, name, "Protein resolved schema lookup")?
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                admission.format_text(format_args!(
                     "Protein instance references absent schema {name}"
-                ))
+                ), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
             })
     }
 }
@@ -197,16 +197,16 @@ where
             break;
         }
         if admission.contains_name(&active, current, "Protein inheritance cycle lookup")? {
-            return Err(CodecError::malformed(format_args!(
+            return Err(admission.format_text(format_args!(
                 "Protein schema inheritance contains a cycle at {current}"
-            )));
+            ), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into));
         }
         let schema = admission
             .get_hash_map(schemas, current, "Protein inherited schema lookup")?
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                admission.format_text(format_args!(
                     "Protein instance references absent schema {current}"
-                ))
+                ), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
             })?;
         let depth = admission.enter_nested("Protein schema inheritance")?;
         admission.scoped(&mut guard_storage, || {
@@ -405,14 +405,14 @@ where
     let xml = admission
         .validate_utf8(bytes, "validate Protein XML UTF-8")?
         .map_err(|error| {
-            CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
+            admission.format_text(format_args!("Protein schema {name} is not UTF-8: {error}"), "Protein malformed detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
         })?;
     admission
         .with_xml(xml, "Protein schema XML tree", |document| {
             let root = admission
                 .xml_root(document, "Protein schema root search")?
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("Protein schema {name} has no root"))
+                    admission.format_text(format_args!("Protein schema {name} has no root"), "Protein malformed detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
                 })?;
             let mut uid_node = None;
             let mut children = root.children();
@@ -426,12 +426,12 @@ where
                 }
             }
             let uid_node = uid_node.ok_or_else(|| {
-                CodecError::malformed(format_args!("Protein schema {name} has no UID"))
+                admission.format_text(format_args!("Protein schema {name} has no UID"), "Protein malformed detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
             })?;
             let uid = admission
                 .xml_attribute(uid_node, "val", "Protein schema UID search")?
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("Protein schema {name} has no UID"))
+                    admission.format_text(format_args!("Protein schema {name} has no UID"), "Protein malformed detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
                 })?;
             let mut schema = Schema::default();
             let mut children = root.children();
@@ -482,9 +482,9 @@ where
                     )?)
                 })?;
                 if replaced.is_some() {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(admission.format_text(format_args!(
                         "Protein schema {uid} declares property {id} more than once"
-                    )));
+                    ), "Protein malformed detail").map(CodecError::Malformed).unwrap_or_else(Into::into));
                 }
             }
             let replaced = admission.scoped(storage, || {
@@ -492,9 +492,9 @@ where
                 Ok(admission.insert_hash_map(schemas, key, schema, "Protein parsed schema")?)
             })?;
             if replaced.is_some() {
-                return Err(CodecError::malformed(format_args!(
+                return Err(admission.format_text(format_args!(
                     "Protein archive defines schema {uid} more than once"
-                )));
+                ), "Protein malformed detail").map(CodecError::Malformed).unwrap_or_else(Into::into));
             }
             Ok(())
         })
@@ -502,9 +502,9 @@ where
             let CodecError::Malformed(error) = error else {
                 return error;
             };
-            CodecError::malformed(format_args!(
+            admission.format_text(format_args!(
                 "Protein schema {name} is malformed XML: {error}"
-            ))
+            ), "Protein malformed detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
         })?
 }
 
@@ -607,9 +607,9 @@ where
             }
         ) {
             property_at.checked_add(4).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                admission.format_text(format_args!(
                     "Protein {schema} instance {guid} property {id} offset overflows usize"
-                ))
+                ), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
             })?
         } else {
             property_at
@@ -618,19 +618,19 @@ where
             if matches!(&error, CodecError::ResourceLimit(_)) {
                 return error;
             }
-            CodecError::malformed(format_args!(
+            admission.format_text(format_args!(
                 "Protein {schema} instance {guid} property {id} at {property_at}..{at}/{}: {error}",
                 record.len()
-            ))
+            ), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
         };
         let connection_error = |error: CodecError, at: usize| {
             if matches!(&error, CodecError::ResourceLimit(_)) {
                 return error;
             }
-            CodecError::malformed(format_args!(
+            admission.format_text(format_args!(
                 "Protein {schema} instance {guid} property {id} connection at {at}/{}: {error}",
                 record.len()
-            ))
+            ), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
         };
         let content = match property {
             Property::Reference { multiple } => {
@@ -676,10 +676,10 @@ where
         )?;
     }
     if at != record.len() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(admission.format_text(format_args!(
             "Protein {schema} instance {guid} consumed {at} of {} record bytes",
             record.len()
-        )));
+        ), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into));
     }
     Ok(Some(DecodedRecord {
         ordinal,
@@ -749,7 +749,7 @@ fn read_texture_uri<A: ProteinAdmission>(
 where
     CodecError: From<A::Error>,
 {
-    let malformed = || CodecError::malformed(format_args!("Protein property {id} is truncated"));
+    let malformed = || admission.format_text(format_args!("Protein property {id} is truncated"), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into);
     let kind = take::<1>(bytes, at).ok_or_else(malformed)?[0];
     if kind == 1 {
         return Ok(PropertyValue::TextureUri(admission.collect_indexed(
@@ -759,9 +759,9 @@ where
         )?));
     }
     if kind != 0 {
-        return Err(CodecError::malformed(format_args!(
+        return Err(admission.format_text(format_args!(
             "Protein TextureURI property {id} has invalid kind {kind}"
-        )));
+        ), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into));
     }
     let count = read_count(admission, bytes, at, id)?;
     let paths = admission.collect_indexed(count, "Protein texture URI paths", |_| {
@@ -780,7 +780,7 @@ where
     CodecError: From<A::Error>,
 {
     let count = usize::try_from(read_u32_le(bytes, at).ok_or_else(|| {
-        CodecError::malformed(format_args!("Protein property {id} is truncated"))
+        admission.format_text(format_args!("Protein property {id} is truncated"), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into)
     })?)
     .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
     let population = cadmpeg_core::decode::u64_from_index(count);
@@ -816,7 +816,7 @@ fn read_value<A: ProteinAdmission>(
 where
     CodecError: From<A::Error>,
 {
-    let malformed = || CodecError::malformed(format_args!("Protein property {id} is truncated"));
+    let malformed = || admission.format_text(format_args!("Protein property {id} is truncated"), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into);
     Ok(match carrier {
         ValueCarrier::Boolean => {
             PropertyValue::Boolean(take::<1>(bytes, at).ok_or_else(malformed)?[0] != 0)
@@ -825,19 +825,21 @@ where
             PropertyValue::Integer(read_u32_le(bytes, at).ok_or_else(malformed)?)
         }
         ValueCarrier::Float => PropertyValue::Float(finite_value(
+            admission,
             read_f64_le(bytes, at).ok_or_else(malformed)?,
             id,
         )?),
         ValueCarrier::UnitFloat => {
             take::<4>(bytes, at).ok_or_else(malformed)?;
             PropertyValue::Float(finite_value(
+            admission,
                 read_f64_le(bytes, at).ok_or_else(malformed)?,
                 id,
             )?)
         }
         ValueCarrier::Distance => PropertyValue::Distance {
             unit: read_u32_le(bytes, at).ok_or_else(malformed)?,
-            value: finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
+            value: finite_value(admission, read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
         },
         ValueCarrier::String => PropertyValue::String(
             take_lp_utf8_capped(admission, bytes, at, 1_048_576)?.ok_or_else(malformed)?,
@@ -845,16 +847,19 @@ where
         ValueCarrier::Color => {
             let mut rgba = [FiniteReal::ZERO; 4];
             for value in &mut rgba {
-                *value = finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?;
+                *value = finite_value(admission, read_f64_le(bytes, at).ok_or_else(malformed)?, id)?;
             }
             PropertyValue::Color(rgba)
         }
     })
 }
 
-fn finite_value(value: f64, id: &str) -> Result<FiniteReal, CodecError> {
+fn finite_value<A: ProteinAdmission>(admission: A, value: f64, id: &str) -> Result<FiniteReal, CodecError>
+where
+    CodecError: From<A::Error>,
+{
     FiniteReal::new(value)
-        .ok_or_else(|| CodecError::malformed(format_args!("Protein property {id} is not finite")))
+        .ok_or_else(|| admission.format_text(format_args!("Protein property {id} is not finite"), "Protein rejected record detail").map(CodecError::Malformed).unwrap_or_else(Into::into))
 }
 
 /// The connection block that follows every connectable member and every
@@ -936,6 +941,186 @@ mod tests {
             .child(protein.len(), bytes.len())
             .expect("fixture instance range");
         super::decode_detailed(&ctx, protein_view, instance_view)
+    }
+
+    fn assert_schema_diagnostic_admitted(name: &str, xml: &[u8], expected: &str, operation: &str) {
+        with_service_context(xml, |ctx| {
+            let error = super::parse_schema_document(
+                ctx, &mut scratch(ctx), name, xml, &mut HashMap::new(),
+            ).expect_err("invalid schema");
+            let CodecError::Malformed(detail) = error else {
+                panic!("service profile preserves structural error");
+            };
+            assert!(detail.contains(expected), "{detail}");
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(xml, &arena, &policy).expect("input");
+        let error = super::parse_schema_document(
+            &ctx, &mut scratch(&ctx), name, xml, &mut HashMap::new(),
+        ).expect_err("diagnostic storage requires admission");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected diagnostic refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, operation);
+        assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+        assert!(matches!(ctx.charge_work(0, "after diagnostic refusal"),
+            Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+
+    #[test]
+    fn invalid_schema_utf8_diagnostic_admits_entry_name() {
+        let name = "schema".repeat(256);
+        assert_schema_diagnostic_admitted(&name, &[0xff], &format!("Protein schema {name} is not UTF-8:"), "Protein malformed detail");
+    }
+
+    #[test]
+    fn missing_schema_uid_diagnostic_admits_entry_name() {
+        let name = "schema".repeat(256);
+        assert_schema_diagnostic_admitted(&name, b"<Schema/>", &format!("Protein schema {name} has no UID"), "Protein malformed detail");
+    }
+
+    #[test]
+    fn missing_schema_uid_attribute_diagnostic_admits_entry_name() {
+        let name = "schema".repeat(256);
+        assert_schema_diagnostic_admitted(&name, b"<Schema><UID/></Schema>", &format!("Protein schema {name} has no UID"), "Protein malformed detail");
+    }
+
+    #[test]
+    fn malformed_schema_xml_diagnostic_admits_entry_name() {
+        let name = "schema".repeat(256);
+        assert_schema_diagnostic_admitted(&name, b"<Schema>", &format!("Protein schema {name} is malformed XML:"), "Protein schema XML tree");
+    }
+
+    #[test]
+    fn duplicate_property_diagnostic_admits_schema_and_property_ids() {
+        let uid = "uid".repeat(256);
+        let id = "id".repeat(256);
+        let xml = format!("<Schema><UID val=\"{uid}\"/><String id=\"{id}\"/><String id=\"{id}\"/></Schema>");
+        assert_schema_diagnostic_admitted("schema", xml.as_bytes(),
+            &format!("Protein schema {uid} declares property {id} more than once"), "Protein malformed detail");
+    }
+
+    #[test]
+    fn duplicate_schema_diagnostic_admits_schema_id() {
+        let uid = "uid".repeat(256);
+        let xml = format!("<Schema><UID val=\"{uid}\"/></Schema>");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy).expect("input");
+        let mut schemas = HashMap::from([(uid.clone(), super::Schema::default())]);
+        let error = super::parse_schema_document(&ctx, &mut scratch(&ctx), "schema", xml.as_bytes(), &mut schemas)
+            .expect_err("duplicate schema diagnostic must be admitted");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "Protein malformed detail"));
+        with_service_context(xml.as_bytes(), |ctx| {
+            let mut schemas = HashMap::from([(uid.clone(), super::Schema::default())]);
+            let error = super::parse_schema_document(ctx, &mut scratch(ctx), "schema", xml.as_bytes(), &mut schemas)
+                .expect_err("duplicate schema");
+            assert!(matches!(error, CodecError::Malformed(detail)
+                if detail == format!("Protein archive defines schema {uid} more than once")));
+        });
+    }
+
+    #[test]
+    fn inheritance_cycle_diagnostic_admits_schema_id() {
+        let name = "schema".repeat(256);
+        let schemas = HashMap::from([(name.clone(), super::Schema {
+            base: Some(name.clone()), ..super::Schema::default()
+        })]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+        let error = super::resolve_inheritance(&ctx, &mut scratch(&ctx), &schemas, &mut HashMap::new(), &name)
+            .expect_err("cycle diagnostic must be admitted");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "Protein rejected record detail"));
+        with_service_context(&[], |ctx| {
+            let error = super::resolve_inheritance(ctx, &mut scratch(ctx), &schemas, &mut HashMap::new(), &name)
+                .expect_err("cycle");
+            assert!(matches!(error, CodecError::Malformed(detail)
+                if detail == format!("Protein schema inheritance contains a cycle at {name}")));
+        });
+    }
+
+    #[test]
+    fn absent_schema_diagnostic_admits_schema_id() {
+        let name = "schema".repeat(256);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+        let error = super::resolve_inheritance(&ctx, &mut scratch(&ctx), &HashMap::new(), &mut HashMap::new(), &name)
+            .expect_err("missing schema diagnostic must be admitted");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "Protein rejected record detail"));
+        with_service_context(&[], |ctx| {
+            let error = super::resolve_inheritance(ctx, &mut scratch(ctx), &HashMap::new(), &mut HashMap::new(), &name)
+                .expect_err("absent schema");
+            assert!(matches!(error, CodecError::Malformed(detail)
+                if detail == format!("Protein instance references absent schema {name}")));
+        });
+    }
+
+    #[test]
+    fn truncated_property_diagnostic_admits_property_id() {
+        let id = "property".repeat(256);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("input");
+        let error = read_value(&ctx, &[], &mut 0, ValueCarrier::Integer, &id)
+            .expect_err("truncation diagnostic must be admitted");
+        let CodecError::ResourceLimit(limit) = error else { panic!("diagnostic refusal"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "Protein rejected record detail");
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        with_service_context(&[], |ctx| {
+            let error = read_value(ctx, &[], &mut 0, ValueCarrier::Integer, &id).expect_err("truncated");
+            assert!(matches!(error, CodecError::Malformed(detail)
+                if detail == format!("Protein property {id} is truncated")));
+        });
+    }
+
+    #[test]
+    fn nonfinite_property_diagnostic_admits_property_id() {
+        let id = "property".repeat(256);
+        let bytes = f64::INFINITY.to_le_bytes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+        let error = read_value(&ctx, &bytes, &mut 0, ValueCarrier::Float, &id)
+            .expect_err("nonfinite diagnostic must be admitted");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "Protein rejected record detail"));
+        with_service_context(&bytes, |ctx| {
+            let error = read_value(ctx, &bytes, &mut 0, ValueCarrier::Float, &id).expect_err("nonfinite");
+            assert!(matches!(error, CodecError::Malformed(detail)
+                if detail == format!("Protein property {id} is not finite")));
+        });
+    }
+
+    #[test]
+    fn invalid_texture_kind_diagnostic_admits_property_id() {
+        let id = "property".repeat(256);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[2], &arena, &policy).expect("input");
+        let error = read_texture_uri(&ctx, &[2], &mut 0, &id)
+            .expect_err("texture kind diagnostic must be admitted");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "Protein rejected record detail"));
+        with_service_context(&[2], |ctx| {
+            let error = read_texture_uri(ctx, &[2], &mut 0, &id).expect_err("invalid texture kind");
+            assert!(matches!(error, CodecError::Malformed(detail)
+                if detail == format!("Protein TextureURI property {id} has invalid kind 2")));
+        });
     }
 
     #[test]

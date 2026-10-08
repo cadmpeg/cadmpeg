@@ -224,3 +224,30 @@ fn a_suffix_names_the_whole_property_or_an_underscore_qualified_one() {
         assert_eq!(value, if matches { 2.0 } else { 1.0 }, "{id}");
     }
 }
+
+#[test]
+fn overflowed_texture_distance_diagnostic_admits_asset_guid() {
+    let mut record = distance_record(0x2016, 1.0e308);
+    record.schema = "BumpMapSchema".into();
+    record.guid = "asset".repeat(256);
+    let property = record.properties.remove("test_Depth").expect("fixture distance");
+    record.properties.insert("bumpmap_Depth".into(), property);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("input");
+    let Err(error) = super::texture_asset(&ctx, &record) else {
+        panic!("overflowed distance must refuse");
+    };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("diagnostic storage must be admitted");
+    };
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "Protein malformed detail");
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    let Err(cadmpeg_core::CodecError::Malformed(detail)) = texture_for_test(&record) else {
+        panic!("service profile preserves malformed distance");
+    };
+    assert_eq!(detail, format!("Protein asset {} distance bumpmap_Depth is non-finite after millimetre conversion", record.guid));
+}
