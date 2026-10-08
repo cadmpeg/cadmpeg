@@ -2573,9 +2573,9 @@ fn feature_entity_tables(
         |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
         |table, base| {
             table.offset += base;
-            for entry in &mut table.entries {
-                entry.offset += base;
-                entry.end_offset += base;
+            for (offset, end_offset) in table.entries.offsets_mut() {
+                *offset += base;
+                *end_offset += base;
             }
         },
         |table| table.offset,
@@ -2637,7 +2637,11 @@ fn feature_entity_graph(
     Ok((entities, references))
 }
 
-fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset: usize) {
+fn offset_feature_definition(
+    ctx: &DecodeContext<'_>,
+    definition: &mut FeatureDefinition,
+    section_offset: usize,
+) -> Result<(), CodecError> {
     definition.offset += section_offset;
     for frame in &mut definition.parameter_frames {
         frame.offset += section_offset;
@@ -2653,7 +2657,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
     }
     if let Some(segments) = &mut definition.segments {
         segments.offset += section_offset;
-        segments.rows.add_offset(section_offset);
+        segments.rows.add_offset(ctx, section_offset)?;
     }
     if let Some(entities) = &mut definition.trim_entities {
         entities.offset += section_offset;
@@ -2669,7 +2673,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
     }
     if let Some(order) = &mut definition.order_table {
         order.offset += section_offset;
-        order.rows.add_offset(section_offset);
+        order.rows.add_offset(ctx, section_offset)?;
     }
     if let Some(section_3d) = &mut definition.section_3d {
         section_3d.offset += section_offset;
@@ -2692,10 +2696,10 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
             row.offset += section_offset;
         }
         if let Some(table) = &mut relations.skamps {
-            table.shift_offsets(section_offset);
+            table.shift_offsets(ctx, section_offset)?;
         }
         if let Some(table) = &mut relations.triples {
-            table.shift_offsets(section_offset);
+            table.shift_offsets(ctx, section_offset)?;
         }
     }
     if let Some(saved) = &mut definition.saved_section {
@@ -2721,6 +2725,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
             }
         }
     }
+    Ok(())
 }
 
 fn feature_definitions(
@@ -2739,10 +2744,10 @@ fn feature_definitions(
             feature::definitions::definitions(ctx, payload)?
         };
         ctx.reserve_vec(&mut definitions, decoded.len(), "creo feature definitions")?;
-        definitions.extend(decoded.into_iter().map(|mut definition| {
-            offset_feature_definition(&mut definition, section.section.offset());
-            definition
-        }));
+        for mut definition in ctx.admit_iter(decoded, "creo relocated feature definitions")? {
+            offset_feature_definition(ctx, &mut definition, section.section.offset())?;
+            definitions.push(definition);
+        }
         if section.section.name() == "DEPDB_DATA" {
             let mut recipe_operations = feature::operations::operations(ctx, payload)?
                 .into_iter()
@@ -2756,7 +2761,7 @@ fn feature_definitions(
                     payload,
                     Some(operation.feature_id),
                 )? {
-                    offset_feature_definition(&mut definition, section.section.offset());
+                    offset_feature_definition(ctx, &mut definition, section.section.offset())?;
                     if let Some(existing) = definitions
                         .iter_mut()
                         .find(|existing| existing.offset == definition.offset)
@@ -2790,7 +2795,7 @@ fn feature_row_definitions(
         else {
             continue;
         };
-        offset_feature_definition(&mut definition, row.body_offset);
+        offset_feature_definition(ctx, &mut definition, row.body_offset)?;
         ctx.reserve_vec(&mut definitions, 1, "creo feature row definitions")?;
         definitions.push(definition);
     }
@@ -2935,16 +2940,29 @@ fn positional_replay_definitions(
     ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    collect_section_records_result(
-        ctx,
-        sections
-            .iter()
-            .filter(|section| section.section.name() == "FeatDefs")
-            .map(Ok),
-        |bytes| feature::definitions::positional_replay_definitions(ctx, bytes),
-        offset_feature_definition,
+    let mut records = Vec::new();
+    for section in ctx.admit_iter(sections, "creo positional replay sections")? {
+        if section.section.name() != "FeatDefs" {
+            continue;
+        }
+        let decoded = feature::definitions::positional_replay_definitions(ctx, section.region)?;
+        ctx.reserve_vec(
+            &mut records,
+            decoded.len(),
+            "creo section record aggregation",
+        )?;
+        for mut record in ctx.admit_iter(decoded, "creo relocated positional replay definitions")? {
+            offset_feature_definition(ctx, &mut record, section.section.offset())?;
+            records.push(record);
+        }
+    }
+    ctx.stable_sort_by_key(
+        records.as_mut_slice(),
         |definition| definition.offset,
-    )
+        Ord::cmp,
+        "creo collect section records result records ordering",
+    )?;
+    Ok(records)
 }
 
 fn feature_operations(
@@ -3589,8 +3607,11 @@ pub(crate) fn scan_bytes<'a>(
         feature::rows::loop_restore_directions(ctx, &feature_rows)?;
     let feature_entity_tables = feature_entity_tables(ctx, &sections, &feature_ids, &surface_rows)?;
     let feature_definitions = feature_definitions(ctx, &sections)?;
-    let feature_definitions =
-        feature::definitions::bind_definition_owners(feature_definitions, &feature_geometry_tables);
+    let feature_definitions = feature::definitions::bind_definition_owners(
+        ctx,
+        feature_definitions,
+        &feature_geometry_tables,
+    )?;
     let mut feature_definitions = feature::definitions::bind_trimmed_definition_owners(
         ctx,
         feature_definitions,

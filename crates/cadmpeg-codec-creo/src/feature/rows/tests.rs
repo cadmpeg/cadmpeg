@@ -104,9 +104,14 @@ fn assert_row_item_refusal(error: &CodecError, operation: &'static str) {
 
 #[test]
 fn feature_row_start_refuses_before_vec_growth() {
-    assert_eq!(limited_row_spans(5).expect("span admitted").len(), 1);
+    assert_eq!(limited_row_spans(u64::MAX).expect("span admitted").len(), 1);
     assert_row_item_refusal(
-        &limited_row_spans(0).expect_err("start item"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature row starts"),
+            limited_row_spans,
+        ))
+        .expect_err("named collection boundary"),
         "creo feature row starts",
     );
 }
@@ -114,7 +119,12 @@ fn feature_row_start_refuses_before_vec_growth() {
 #[test]
 fn feature_row_seen_id_refuses_before_btree_insert() {
     assert_row_item_refusal(
-        &limited_row_spans(1).expect_err("seen id node"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature row seen ids"),
+            limited_row_spans,
+        ))
+        .expect_err("named collection boundary"),
         "creo feature row seen ids",
     );
 }
@@ -122,7 +132,12 @@ fn feature_row_seen_id_refuses_before_btree_insert() {
 #[test]
 fn feature_row_schema_class_refuses_before_btree_insert() {
     assert_row_item_refusal(
-        &limited_row_spans(2).expect_err("schema class node"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature row schema classes"),
+            limited_row_spans,
+        ))
+        .expect_err("named collection boundary"),
         "creo feature row schema classes",
     );
 }
@@ -130,7 +145,12 @@ fn feature_row_schema_class_refuses_before_btree_insert() {
 #[test]
 fn feature_row_retained_start_refuses_before_vec_growth() {
     assert_row_item_refusal(
-        &limited_row_spans(3).expect_err("retained start item"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature retained starts"),
+            limited_row_spans,
+        ))
+        .expect_err("named collection boundary"),
         "creo feature retained starts",
     );
 }
@@ -138,16 +158,34 @@ fn feature_row_retained_start_refuses_before_vec_growth() {
 #[test]
 fn feature_row_span_refuses_before_vec_growth() {
     assert_row_item_refusal(
-        &limited_row_spans(4).expect_err("span item"),
+        &limited_row_spans(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some("creo feature row spans"),
+            limited_row_spans,
+        ))
+        .expect_err("named collection boundary"),
         "creo feature row spans",
     );
 }
 
 #[test]
 fn feature_row_output_refuses_before_vec_growth() {
-    assert_eq!(limited_rows(6, u64::MAX).expect("row admitted").len(), 1);
+    assert_eq!(
+        limited_rows(u64::MAX, u64::MAX)
+            .expect("row admitted")
+            .len(),
+        1
+    );
     assert_row_item_refusal(
-        &limited_rows(5, u64::MAX).expect_err("row item"),
+        &limited_rows(
+            crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                Some("creo feature rows"),
+                |cap| limited_rows(cap, u64::MAX),
+            ),
+            u64::MAX,
+        )
+        .expect_err("named collection boundary"),
         "creo feature rows",
     );
 }
@@ -155,11 +193,11 @@ fn feature_row_output_refuses_before_vec_growth() {
 #[test]
 fn feature_row_body_refuses_before_retained_copy() {
     let error = limited_rows(
-        6,
+        u64::MAX,
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             Some("creo feature row bodies"),
-            |cap| limited_rows(6, cap),
+            |cap| limited_rows(u64::MAX, cap),
         ),
     )
     .expect_err("eight-byte body needs retention");
@@ -961,3 +999,63 @@ fn replay_ids_withholds_zero_count_past_end() {
         assert!(super::replay_ids(ctx, &[], 0, 1).is_none());
     });
 }
+
+#[test]
+fn loop_history_index_preserves_first_overlapping_row_and_next_table() {
+    let first_body = b"\xe0\x01lo_hist\0\xf8\x06\x2a\x01\x02\x03\x04\xe3";
+    let rows = [
+        FeatureRow {
+            feature_id: 7,
+            root_schema_class: None,
+            stream_offset: 0,
+            body: first_body.to_vec().try_into().expect("first row"),
+            body_offset: 100,
+            offset: 98,
+        },
+        FeatureRow {
+            feature_id: 7,
+            root_schema_class: None,
+            stream_offset: 0,
+            body: b"\xe0\x01lo_hist\0\xf8\x06\x2b\x01\x02\x03\x04\xe3"
+                .to_vec()
+                .try_into()
+                .expect("second row"),
+            body_offset: 100,
+            offset: 98,
+        },
+    ];
+    let table = |offset| super::FeatureGeometryTable {
+        feature_id: 7,
+        kind: super::FeatureGeometryTableKind::LoopIds,
+        count: 1,
+        entity_class: 96,
+        offset,
+    };
+    let entries = crate::test_support::assert_work_boundaries(
+        &[
+            "creo loop row lower bound",
+            "creo loop row upper bound",
+            "creo loop row key traversal",
+            "creo loop history materialization",
+        ],
+        |ctx| super::loop_history_entries(ctx, &rows, &[table(101), table(100)]),
+    );
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].loop_id, 42);
+    // A later table before a history label excludes that label from the earlier table.
+    let mut body = vec![0, 0];
+    body.extend_from_slice(first_body);
+    let row = FeatureRow {
+        feature_id: 7,
+        root_schema_class: None,
+        stream_offset: 0,
+        body: body.try_into().expect("prefixed row"),
+        body_offset: 100,
+        offset: 98,
+    };
+    let entries = loop_history_entries(&[row], &[table(101), table(100)]);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].loop_id, 42);
+}
+
+mod scalar_arrays;

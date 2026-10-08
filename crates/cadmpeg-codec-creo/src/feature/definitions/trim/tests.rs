@@ -1,23 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    entity_intersection, parse_entity_intersection, reconciled_points, with_dimension_limits,
-    with_trim_limits,
-};
-use crate::feature::definitions::order_table as parse_order_table;
-use crate::feature::definitions::positional_order_table as parse_positional_order_table;
-use crate::feature::definitions::positional_trim_entity_table as parse_positional_trim_entity_table;
-use crate::feature::definitions::positional_trim_vertex_table as parse_positional_trim_vertex_table;
+use super::entity_intersection as parse_entity_intersection;
 use crate::feature::definitions::test_support::with_points;
-use crate::feature::definitions::trim_buckets as parse_trim_buckets;
-use crate::feature::definitions::trim_vertex_entry as parse_trim_vertex_entry;
+use crate::feature::definitions::test_support::{reconciled_points, with_trim_limits};
+use crate::feature::definitions::trim::positional_trim_entity_table as parse_positional_trim_entity_table;
+use crate::feature::definitions::trim::positional_trim_vertex_table as parse_positional_trim_vertex_table;
+use crate::feature::definitions::trim::trim_buckets as parse_trim_buckets;
+use crate::feature::definitions::trim::trim_vertex_entry as parse_trim_vertex_entry;
+use crate::feature::definitions::trim::{
+    trim_table_header, TrimEntryKind, TrimTableClasses, TrimTableHeader,
+};
 use crate::feature::definitions::{
-    trim_table_header, FeatureOrderRow, FeatureSectionPoint, FeatureSegment, FeatureSegmentKind,
-    FeatureSegmentTable, FeatureVariableRow, FeatureVariableTable, ScalarLane, TrimEntityKind,
-    TrimEntryKind, TrimTableClasses, TrimTableHeader, VariableType,
+    FeatureSectionPoint, FeatureSegment, FeatureSegmentKind, FeatureSegmentTable,
+    FeatureVariableRow, FeatureVariableTable, ScalarLane, TrimEntityKind, VariableType,
 };
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
+
+fn entity_intersection(
+    entity_ids: &[u32],
+    segments: Option<&FeatureSegmentTable>,
+    variables: Option<&FeatureVariableTable>,
+) -> Option<[f64; 2]> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_entity_intersection(ctx, entity_ids, segments, variables)
+    })
+    .expect("test trim intersection")
+}
 
 fn trim_bucket_with_limits(
     collection_limit: u64,
@@ -90,14 +99,15 @@ fn trim_vertex_with_limit(
 }
 
 macro_rules! trim_bucket_collection_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
+    ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            assert!(matches!(trim_bucket_with_limits($limit, u64::MAX),
+            let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some($operation), |cap| trim_bucket_with_limits(cap, u64::MAX));
+            assert!(matches!(trim_bucket_with_limits(limit, u64::MAX),
                 Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                     if refusal.dimension == ResourceDimension::CollectionItems
                         && refusal.operation == $operation));
-            assert_eq!(trim_bucket_with_limits(3, u64::MAX)
+            assert_eq!(trim_bucket_with_limits(u64::MAX, u64::MAX)
                 .expect("all bucket allocations admitted").len(), 1);
         }
     };
@@ -105,12 +115,12 @@ macro_rules! trim_bucket_collection_limit_test {
 
 #[test]
 fn trim_bucket_entry_work_refuses_before_scan() {
-    // The allowance admits complete search windows and markers before scanning an entry.
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let cap = crate::test_support::allocation_limit_at(
         ResourceDimension::WorkUnits,
-        "creo trim bucket entry scan",
+        Some("creo trim bucket entry scan"),
         |cap| trim_bucket_with_limits(u64::MAX, cap),
     );
+    let error = trim_bucket_with_limits(u64::MAX, cap).expect_err("entry work refusal");
     let refused: Result<Vec<super::super::FeatureTrimBucket>, _> = Err(error);
     assert!(matches!(refused,
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
@@ -119,14 +129,15 @@ fn trim_bucket_entry_work_refuses_before_scan() {
 }
 
 macro_rules! trim_entity_collection_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
+    ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            assert!(matches!(trim_entity_with_limit($limit),
+            let limit = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some($operation), trim_entity_with_limit);
+            assert!(matches!(trim_entity_with_limit(limit),
                 Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                     if refusal.dimension == ResourceDimension::CollectionItems
                         && refusal.operation == $operation));
-            assert_eq!(trim_entity_with_limit(3)
+            assert_eq!(trim_entity_with_limit(u64::MAX)
                 .expect("entity table admitted")
                 .expect("one table").rows.len(), 1);
         }
@@ -135,12 +146,17 @@ macro_rules! trim_entity_collection_limit_test {
 
 #[test]
 fn trim_vertex_entities_refuse_before_vec_growth() {
-    assert!(matches!(trim_vertex_with_limit(1),
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo trim vertex entities"),
+        trim_vertex_with_limit,
+    );
+    assert!(matches!(trim_vertex_with_limit(limit),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "creo trim vertex entities"));
     assert_eq!(
-        trim_vertex_with_limit(3)
+        trim_vertex_with_limit(u64::MAX)
             .expect("vertex table admitted")
             .expect("one table")
             .rows[0]
@@ -151,7 +167,12 @@ fn trim_vertex_entities_refuse_before_vec_growth() {
 
 #[test]
 fn trim_vertex_rows_refuse_before_vec_growth() {
-    assert!(matches!(trim_vertex_with_limit(2),
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo trim vertex rows"),
+        trim_vertex_with_limit,
+    );
+    assert!(matches!(trim_vertex_with_limit(limit),
         Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "creo trim vertex rows"));
@@ -200,62 +221,6 @@ fn trim_buckets(
 fn trim_vertex_entry(payload: &[u8], offset: usize, end: usize) -> Option<(Vec<u32>, u32, usize)> {
     crate::decode::with_test_decode_ctx(|ctx| parse_trim_vertex_entry(ctx, payload, offset, end))
         .expect("trim vertex entities admitted")
-}
-
-fn order_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<super::super::FeatureOrderTable> {
-    crate::decode::with_test_decode_ctx(|ctx| parse_order_table(ctx, payload, start, end))
-        .expect("named order table admitted")
-}
-
-fn positional_order_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    table_class: u32,
-) -> Option<super::super::FeatureOrderTable> {
-    crate::decode::with_test_decode_ctx(|ctx| {
-        parse_positional_order_table(ctx, payload, start, end, table_class)
-    })
-    .expect("positional order table admitted")
-}
-
-fn order_with_limit(
-    limit: u64,
-    positional: bool,
-) -> Result<Option<super::super::FeatureOrderTable>, cadmpeg_core::CodecError> {
-    let named = b"order_table\0\xf8\x02\xf7\x42\xfb\xe2\
-            \xe0\x01ext_id\0\x09\xe0\x01int_id\0\x01\
-            \xe0\x01bitmask\0\x00\xf1\xf7\x42\xe2\x0a\x02\x01";
-    let replay = b"prefix\xf8\x02\xf7\x42\xfb\xe2\xf7\x43\
-            \x09\x01\x00\xf1\xf7\x42\xe2\x0a\x02\x01";
-    with_trim_limits(limit, u64::MAX, |ctx| {
-        if positional {
-            parse_positional_order_table(ctx, replay, 0, replay.len(), 66)
-        } else {
-            parse_order_table(ctx, named, 0, named.len())
-        }
-    })
-}
-
-#[test]
-fn order_rows_and_identity_indexes_refuse_before_growth() {
-    for positional in [false, true] {
-        let table = crate::test_support::assert_refusal_order(
-            ResourceDimension::CollectionItems,
-            &[
-                "creo order rows",
-                "creo order external ID index",
-                "creo order internal ID index",
-            ],
-            |limit| order_with_limit(limit, positional),
-        )
-        .expect("one order table");
-        assert_eq!(table.rows.len(), 1);
-    }
 }
 
 #[test]
@@ -330,104 +295,6 @@ fn positional_trim_entity_table_withholds_rows_without_the_entry_class() {
     assert_eq!(entities.declared_count, Some(1));
     assert!(entities.rows.is_empty());
     assert!(entities.solved_external_ids.is_empty());
-}
-
-#[test]
-fn positional_order_table_replays_prototype_and_following_rows() {
-    let payload = b"prefix\xf8\x03\xf7\x42\xfb\xe2\xf7\x43\
-            \x09\x01\x00\xf1\xf7\x42\xe2\
-            \x0a\x02\x01\xe2\x0b\x03\x00";
-
-    let order =
-        positional_order_table(payload, 0, payload.len(), 66).expect("positional order_table");
-
-    assert_eq!(order.declared_count, 3);
-    assert!(order.has_prototype);
-    assert!(order.is_complete());
-    assert_eq!(order.entity_ref, Some(66));
-    assert_eq!(order.rows.len(), 2);
-    assert_eq!(order.rows[0].external_id, 10);
-    assert_eq!(order.rows[0].internal_id, 2);
-    assert_eq!(order.rows[0].bitmask, 1);
-    assert_eq!(order.rows[1].external_id, 11);
-    assert_eq!(order.internal_id(10), Some(2));
-    assert_eq!(order.external_id(2), Some(10));
-
-    let mut duplicate_external = order.clone();
-    duplicate_external.declared_count += 1;
-    duplicate_external.rows.push(FeatureOrderRow {
-        external_id: 10,
-        internal_id: 4,
-        bitmask: 0,
-        offset: 20,
-    });
-    assert_eq!(duplicate_external.internal_id(10), None);
-    assert_eq!(duplicate_external.external_id(2), None);
-    let mut duplicate_internal = order;
-    duplicate_internal.declared_count += 1;
-    duplicate_internal.rows.push(FeatureOrderRow {
-        external_id: 12,
-        internal_id: 2,
-        bitmask: 0,
-        offset: 21,
-    });
-    assert_eq!(duplicate_internal.external_id(2), None);
-    assert_eq!(duplicate_internal.internal_id(10), None);
-}
-
-#[test]
-fn named_order_table_replays_prototype_and_following_rows() {
-    let payload = b"order_table\0\xf8\x03\xf7\x42\xfb\xe2\
-            \xe0\x01ext_id\0\x09\xe0\x01int_id\0\x01\
-            \xe0\x01bitmask\0\x00\xf1\xf7\x42\xe2\
-            \x0a\x02\x01\xe2\x0b\x03\x00";
-
-    let order = order_table(payload, 0, payload.len()).expect("named order_table");
-
-    assert_eq!(order.declared_count, 3);
-    assert!(order.has_prototype);
-    assert!(order.is_complete());
-    assert_eq!(order.entity_ref, Some(66));
-    assert_eq!(order.rows.len(), 2);
-    assert_eq!(order.external_id(2), Some(10));
-    assert_eq!(order.internal_id(11), Some(3));
-}
-
-#[test]
-fn order_tables_retain_extents_without_decoded_rows() {
-    let named = b"order_table\0\xf8\x02\xf7\x42\xfb\xe2\xf1\xf7\x42\xe2";
-    let order = order_table(named, 0, named.len()).expect("named order_table header");
-    assert_eq!(order.declared_count, 2);
-    assert!(!order.has_prototype);
-    assert!(!order.is_complete());
-    assert_eq!(order.entity_ref, Some(66));
-    assert!(order.rows.is_empty());
-
-    let positional = b"\xf8\x02\xf7\x42\xfb\xe2";
-    let order = positional_order_table(positional, 0, positional.len(), 66)
-        .expect("positional order_table header");
-    assert_eq!(order.declared_count, 2);
-    assert!(!order.has_prototype);
-    assert!(!order.is_complete());
-    assert_eq!(order.entity_ref, Some(66));
-    assert!(order.rows.is_empty());
-}
-
-#[test]
-fn incomplete_order_tables_do_not_resolve_identifiers() {
-    let named = b"order_table\0\xf8\x02\xf7\x42\xfb\xe2\
-            \xf1\xf7\x42\xe2\x0a\x02\x00";
-    let order = order_table(named, 0, named.len()).expect("named order_table");
-    assert_eq!(order.rows.len(), 1);
-    assert!(!order.is_complete());
-    assert_eq!(order.internal_id(10), None);
-    assert_eq!(order.external_id(2), None);
-
-    let positional = b"\xf8\x02\xf7\x42\xfb\xe2";
-    let order = positional_order_table(positional, 0, positional.len(), 66)
-        .expect("positional order_table");
-    assert!(!order.is_complete());
-    assert_eq!(order.internal_id(10), None);
 }
 
 #[test]
@@ -621,11 +488,23 @@ fn trim_intersection_refuses_before_entity_node() {
             v: Some(4.0),
         }],
     );
-    assert!(matches!(with_dimension_limits(&[0], 0, u64::MAX, |ctx| {
-        parse_entity_intersection(ctx, &[9, 10], Some(&segments), Some(&variables))
-    }), Err(CodecError::ResourceLimit(limit))
+    let error = crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        "creo trim intersection entity nodes",
+        |ctx| parse_entity_intersection(ctx, &[9, 10], Some(&segments), Some(&variables)),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo trim intersection entity nodes"));
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo trim intersection entities",
+            "creo point variable traversal",
+            "creo trim common point",
+        ],
+        |ctx| parse_entity_intersection(ctx, &[9, 10], Some(&segments), Some(&variables)),
+    );
     assert_eq!(
         entity_intersection(&[9, 10], Some(&segments), Some(&variables)),
         Some([3.0, 4.0])
@@ -1030,36 +909,69 @@ fn a_bucket_that_states_no_decoded_entry_count_is_not_complete() {
 
 trim_bucket_collection_limit_test!(
     trim_bucket_starts_refuse_before_vec_growth,
-    0,
     "creo trim bucket starts"
 );
 
 trim_bucket_collection_limit_test!(
     trim_bucket_results_refuse_before_vec_growth,
-    1,
     "creo trim buckets"
 );
 
 trim_bucket_collection_limit_test!(
     trim_bucket_vertex_nodes_refuse_before_btree_insertion,
-    2,
     "creo trim bucket vertex nodes"
 );
 
 trim_entity_collection_limit_test!(
     trim_entity_id_nodes_refuse_before_btree_insertion,
-    0,
     "creo trim entity ID nodes"
 );
 
 trim_entity_collection_limit_test!(
     trim_entity_rows_refuse_before_vec_growth,
-    1,
     "creo trim entity rows"
 );
 
 trim_entity_collection_limit_test!(
     trim_entity_solved_ids_refuse_before_vec_growth,
-    2,
     "creo trim entity solved IDs"
 );
+
+#[test]
+fn trim_parser_scans_refuse_at_work_boundaries() {
+    let payload = b"noise\xf8\x02\xf7\x42\xfb\xe2\xf7\x43\x00\xe3\x09\x00\x03\x04\xf6\x00";
+    let table = crate::test_support::assert_work_boundaries(
+        &[
+            "creo positional trim table",
+            "creo positional trim entity class",
+            "creo trim row traversal",
+            "creo trim solved ID traversal",
+        ],
+        |ctx| {
+            parse_positional_trim_entity_table(
+                ctx,
+                payload,
+                0,
+                payload.len(),
+                TrimTableClasses {
+                    table: 66,
+                    bucket: 67,
+                    entry: 67,
+                },
+                None,
+            )
+        },
+    )
+    .expect("trim entity table");
+    assert_eq!(table.solved_external_ids, [9]);
+    let payload = b"\xf8\x02\x09\x0a\x03\x00";
+    let entry = crate::test_support::assert_work_boundaries(
+        &["creo trim vertex entity traversal"],
+        |ctx| parse_trim_vertex_entry(ctx, payload, 0, payload.len()),
+    )
+    .expect("trim vertex");
+    assert_eq!(entry, (vec![9, 10], 3, payload.len()));
+}
+
+mod numerical;
+mod range;

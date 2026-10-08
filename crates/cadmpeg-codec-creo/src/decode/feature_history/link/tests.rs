@@ -405,7 +405,7 @@ fn rowless_generated_profile_rejects_duplicate_entity_ids() {
             std::slice::from_ref(&table),
             &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         )?);
-        table.entries[0].entity_id = 30;
+        table.entries.edit(0, |entry| entry.entity_id = 30);
         let table = table.with_surface_ids([30, 32]);
         assert!(!section_entity_is_generated_profile(
             ctx,

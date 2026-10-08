@@ -109,7 +109,10 @@ fn has_exact_materialized_surface_roster(
         .admit_iter(expected_ids, "creo expected surface roster count")?
         .count();
     let actual_count = ctx
-        .admit_iter(&table.entries, "creo materialized surface roster count")?
+        .admit_iter(
+            table.entries.as_slice(),
+            "creo materialized surface roster count",
+        )?
         .filter(|entry| table.contains_surface_id(entry.entity_id))
         .count();
     if actual_count != expected_count || table.unique_surface_ids().len() != expected_count {
@@ -150,7 +153,7 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
             ctx.refuse_codec_limit("creo compact hole topology width", u64::MAX, u64::MAX)
         })?;
         for (index, pair) in ctx
-            .admit_iter(&table.entries, "creo compact hole topology")?
+            .admit_iter(table.entries.as_slice(), "creo compact hole topology")?
             .windows(width)
             .enumerate()
         {
@@ -215,7 +218,7 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
         };
         let mut side = None;
         for (index, candidate) in ctx
-            .admit_iter(&table.entries, "creo compact hole side scan")?
+            .admit_iter(table.entries.as_slice(), "creo compact hole side scan")?
             .enumerate()
         {
             if candidate.class_id() == 200

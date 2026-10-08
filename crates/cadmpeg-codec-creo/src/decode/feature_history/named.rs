@@ -377,7 +377,7 @@ fn surface_intersect_feature_definition(
         let mut surface_count = 0usize;
         let mut all_surfaces_owned = true;
         for entry in ctx
-            .admit_iter(&table.entries, "creo intersect table entries")?
+            .admit_iter(table.entries.as_slice(), "creo intersect table entries")?
             .filter(|entry| table.contains_surface_id(entry.entity_id))
         {
             surface_count = surface_count.checked_add(1).ok_or_else(|| {

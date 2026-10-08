@@ -1227,9 +1227,12 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         generated_cylinder_section_transform(&definition, &divergent_sources, &tables).is_none()
     );
     let mut wrong_class = tables.clone();
-    wrong_class[0].entries[0].payload = crate::feature::entity::EntryPayload::Plain {
-        class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
-    };
+    wrong_class[0].entries.edit(0, |entry| {
+        entry.payload = crate::feature::entity::EntryPayload::Plain {
+            class: crate::feature::entity::PlainClass::new(201)
+                .expect("201 is not the source class"),
+        }
+    });
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
     let last_surface_id = non_surface[0]

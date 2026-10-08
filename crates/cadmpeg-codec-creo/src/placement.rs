@@ -1007,33 +1007,33 @@ fn zero_offset_standard_section_plane_equation(
         return Ok(None);
     };
     let mut instructions = placement_instructions(ctx, definition)?;
-    let Some(()) = (|| {
-        let instruction = instructions.next()?;
-        instructions
-            .all(|candidate| {
-                candidate.kind == instruction.kind
-                    && candidate.zero_offset == instruction.zero_offset
-                    && candidate.dimension_id == instruction.dimension_id
-                    && candidate.reference_id == instruction.reference_id
-                    && candidate.geometry1_id == instruction.geometry1_id
-                    && candidate.geometry2_id == instruction.geometry2_id
-                    && candidate.member1 == instruction.member1
-                    && candidate.member2 == instruction.member2
-            })
-            .then_some(())?;
-        (instruction.kind == 20_127
-            && instruction.zero_offset
-            && instruction.dimension_id.is_none()
-            && instruction.reference_id.is_none()
-            && instruction.geometry1_id == Some(reference_id)
-            && instruction.geometry2_id.is_none()
-            && instruction.member1 == 0
-            && instruction.member2 == 0)
-            .then_some(())?;
-        Some(())
-    })() else {
+    let Some(instruction) = instructions.next(ctx)? else {
         return Ok(None);
     };
+    while let Some(candidate) = instructions.next(ctx)? {
+        if candidate.kind != instruction.kind
+            || candidate.zero_offset != instruction.zero_offset
+            || candidate.dimension_id != instruction.dimension_id
+            || candidate.reference_id != instruction.reference_id
+            || candidate.geometry1_id != instruction.geometry1_id
+            || candidate.geometry2_id != instruction.geometry2_id
+            || candidate.member1 != instruction.member1
+            || candidate.member2 != instruction.member2
+        {
+            return Ok(None);
+        }
+    }
+    if instruction.kind != 20_127
+        || !instruction.zero_offset
+        || instruction.dimension_id.is_some()
+        || instruction.reference_id.is_some()
+        || instruction.geometry1_id != Some(reference_id)
+        || instruction.geometry2_id.is_some()
+        || instruction.member1 != 0
+        || instruction.member2 != 0
+    {
+        return Ok(None);
+    }
     let datum_tables = ctx
         .admit_iter(
             sources.geometry_tables,
