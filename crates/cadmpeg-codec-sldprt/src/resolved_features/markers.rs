@@ -3714,10 +3714,13 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Result<Option<[u64; 2]>, CodecError> {
-    if reverse_incidence_curve_index(payload, curve).is_none() {
+    let Some(curve_index) = reverse_incidence_curve_index(payload, curve) else {
         return Ok(None);
-    }
-    let (index, _storage) = ReverseIncidenceIndex::new(ctx, payload, markers)?;
+    };
+    let selected = Some((curve.feature_ref.as_deref(), curve_index));
+    let (index, _storage) = ctx.with_scoped_storage("index SLDPRT reverse incidence endpoints", || {
+        ReverseIncidenceIndex::build(ctx, payload, markers, selected)
+    })?;
     current_reverse_incidence_endpoint_offsets_in(ctx, payload, curve, &index)
 }
 
@@ -3741,7 +3744,7 @@ pub(super) fn current_reverse_incidence_endpoint_offsets_cached<'ctx, 'a>(
     current_reverse_incidence_endpoint_offsets_in(ctx, payload, curve, index)
 }
 
-fn reverse_incidence_curve_index(payload: &[u8], curve: &SketchInputEntity) -> Option<u16> {
+pub(super) fn reverse_incidence_curve_index(payload: &[u8], curve: &SketchInputEntity) -> Option<u16> {
     let offset = usize::try_from(curve.offset()).ok()?;
     let curve_index = u16::try_from(curve.object_index()?).ok()?;
     (payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
@@ -3764,7 +3767,14 @@ impl<'a> ReverseIncidenceIndex<'a> {
         markers: &[&'a SketchInputEntity],
     ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
         const OPERATION: &str = "index SLDPRT reverse incidence endpoints";
-        ctx.with_scoped_storage(OPERATION, || {
+        ctx.with_scoped_storage(OPERATION, || Self::build(ctx, payload, markers, None))
+    }
+
+    pub(super) fn build(
+        ctx: &DecodeContext<'_>, payload: &[u8], markers: &[&'a SketchInputEntity],
+        selected: Option<(Option<&str>, u16)>,
+    ) -> Result<Self, CodecError> {
+        const OPERATION: &str = "index SLDPRT reverse incidence endpoints";
             let mut selectors_storage = ctx.reserve_scoped(0, OPERATION)?;
             let mut selectors =
                 BTreeMap::<(Option<&str>, u16, u16), ReverseIncidenceOffsets>::new();
@@ -3774,6 +3784,9 @@ impl<'a> ReverseIncidenceIndex<'a> {
             };
             for &marker in ctx.admit_iter(markers, OPERATION)? {
                 let feature = marker.feature_ref.as_deref();
+                if let Some((selected_feature, _)) = selected {
+                    if !ctx.equal(&feature, &selected_feature, OPERATION)? { continue; }
+                }
                 let Ok(offset) = usize::try_from(marker.offset()) else {
                     ctx.insert_btree_set(&mut index.invalid_features, feature, OPERATION)?;
                     continue;
@@ -3782,6 +3795,7 @@ impl<'a> ReverseIncidenceIndex<'a> {
                     continue;
                 };
                 for (selector, curve) in links {
+                    if selected.is_some_and(|(_, selected_curve)| selected_curve != curve) { continue; }
                     selectors_storage.with_storage(|| {
                         match ctx.entry_btree_map(
                             &mut selectors,
@@ -3813,7 +3827,6 @@ impl<'a> ReverseIncidenceIndex<'a> {
                 }
             }
             Ok(index)
-        })
     }
 }
 

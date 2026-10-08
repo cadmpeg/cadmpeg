@@ -152,6 +152,7 @@ fn curve_object_index_preserves_zero_identity_and_duplicate_ambiguity() {
             assert!(index.by_feature.get().is_none());
             assert!(index.by_offset.get().is_none());
             assert!(index.linked_from.get().is_none());
+            assert!(index.reverse_incidence.get().is_none());
         }
     }
 }
