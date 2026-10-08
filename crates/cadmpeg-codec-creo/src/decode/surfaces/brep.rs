@@ -1647,7 +1647,7 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
         }
         ctx.retain_btree_map(
             &mut loops_by_face,
-            |face_id, _| Ok(is_neutral_face_reference(scan, *face_id)),
+            |face_id, _| Ok::<_, cadmpeg_core::CodecError>(is_neutral_face_reference(scan, *face_id)),
             "creo B-rep neutral loop faces",
         )?;
         let mut model_surface_counts = BTreeMap::new();

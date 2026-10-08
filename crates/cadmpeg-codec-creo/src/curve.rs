@@ -4801,7 +4801,7 @@ impl DimensionForm {
         }
         ctx.retain_btree_map(
             &mut self.variables,
-            |_, coefficient| Ok(!coefficient.is_zero()),
+            |_, coefficient| Ok::<_, cadmpeg_core::CodecError>(!coefficient.is_zero()),
             "creo dimension zero coefficient removal",
         )?;
         Ok(Some(self))
@@ -4830,7 +4830,7 @@ impl DimensionForm {
         }
         ctx.retain_btree_map(
             &mut self.variables,
-            |_, coefficient| Ok(!coefficient.is_zero()),
+            |_, coefficient| Ok::<_, cadmpeg_core::CodecError>(!coefficient.is_zero()),
             "creo dimension zero coefficient removal",
         )?;
         Ok(Some(self))

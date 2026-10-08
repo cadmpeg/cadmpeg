@@ -649,7 +649,29 @@ impl ScopedReservation<'_> {
     }
 
     /// Converts the temporary reservation into session-retained bytes.
-    pub fn commit(self) -> Result<(), CodecError> {
+    ///
+    /// Inside an enclosing storage scope the bytes stay temporary: that scope
+    /// takes over the bytes this reservation already holds, so they are
+    /// neither charged again nor released.
+    pub fn commit(mut self) -> Result<(), CodecError> {
+        if let Some(limit) = self.budget.fused() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        if let Some(current) = self.budget.scoped_storage.get() {
+            let total = current.checked_add(self.bytes).ok_or_else(|| {
+                self.budget.refuse_limit(
+                    ResourceDimension::MaterializedBytes,
+                    ResourceFailure::BudgetExceeded,
+                    self.budget.materialized_allowance(),
+                    current,
+                    self.bytes,
+                    self.operation,
+                )
+            })?;
+            self.budget.scoped_storage.set(Some(total));
+            self.bytes = 0;
+            return Ok(());
+        }
         self.budget.charge_retained(self.bytes, self.operation)
     }
 }
