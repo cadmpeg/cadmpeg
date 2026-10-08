@@ -811,8 +811,8 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
         .reserve_scoped(0, "test loss slots")
         .expect("empty loss storage");
     let ir = cadmpeg_ir::CadIr::empty();
-    let mut face_cache = super::super::FaceAttributeCache::new(&ctx)
-        .expect("empty face attribute cache");
+    let mut face_cache =
+        super::super::FaceAttributeCache::new(&ctx).expect("empty face attribute cache");
     let mut state = super::super::BuildState {
         face_cache: &mut face_cache,
         failure: None,
@@ -898,14 +898,26 @@ fn face_attribute_attempt(
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let mut cache = super::super::FaceAttributeCache::new(&ctx)?;
     let info = super::super::face_attributes(
-        face_id, exchange.records().get(&face_id).expect("face record"), &exchange,
-        &mut std::collections::BTreeSet::new(), &mut cache, &ctx,
+        face_id,
+        exchange.records().get(&face_id).expect("face record"),
+        &exchange,
+        &mut std::collections::BTreeSet::new(),
+        &mut cache,
+        &ctx,
     )?;
     if let super::super::FaceResolution::Resolved(info) = info {
         super::super::claim_face_ancestors(
-            info.parent, &cache.completed,
-            (&mut std::collections::BTreeSet::new(), &mut ctx.reserve_scoped(0, "test claims")?),
-            (&mut std::collections::BTreeSet::new(), &mut ctx.reserve_scoped(0, "test ancestry")?), &ctx,
+            info.parent,
+            &cache.completed,
+            (
+                &mut std::collections::BTreeSet::new(),
+                &mut ctx.reserve_scoped(0, "test claims")?,
+            ),
+            (
+                &mut std::collections::BTreeSet::new(),
+                &mut ctx.reserve_scoped(0, "test ancestry")?,
+            ),
+            &ctx,
         )?;
     }
     Ok(())
@@ -1088,8 +1100,7 @@ fn rejected_pcurve_does_not_clone_the_output_identity() {
     use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
     use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-        SurfaceGeometry,
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, PcurveId, PointId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1150,16 +1161,28 @@ fn rejected_pcurve_does_not_clone_the_output_identity() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
-    assert!(matches!(super::super::select_associated_pcurve(
-        Some(&index), &exchange, 1,
-        &super::super::EdgeDef::Curve { start: 2, end: 3, curve: 4, same: true },
-        super::super::PcurveAssociationSources {
-            vdefs: &vdefs, point_positions: &carriers,
-            candidates: std::slice::from_ref(&candidate),
-        }, &ctx,
-    ), Err(super::super::PcurveSelectionFailure::Endpoint)));
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    assert!(matches!(
+        super::super::select_associated_pcurve(
+            Some(&index),
+            &exchange,
+            1,
+            &super::super::EdgeDef::Curve {
+                start: 2,
+                end: 3,
+                curve: 4,
+                same: true
+            },
+            super::super::PcurveAssociationSources {
+                vdefs: &vdefs,
+                point_positions: &carriers,
+                candidates: std::slice::from_ref(&candidate),
+            },
+            &ctx,
+        ),
+        Err(super::super::PcurveSelectionFailure::Endpoint)
+    ));
     assert_eq!(ctx.resource_refusal(), None);
 }
 
@@ -1168,8 +1191,7 @@ fn selected_pcurve_output_id_refuses_retained_limit() {
     use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
     use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-        SurfaceGeometry,
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, PcurveId, PointId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1253,9 +1275,9 @@ fn selected_pcurve_output_id_refuses_retained_limit() {
                 },
                 &ctx,
             );
-            if let Err(super::super::PcurveSelectionFailure::Resource(
-                CodecError::ResourceLimit(limit),
-            )) = &result
+            if let Err(super::super::PcurveSelectionFailure::Resource(CodecError::ResourceLimit(
+                limit,
+            ))) = &result
             {
                 assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
