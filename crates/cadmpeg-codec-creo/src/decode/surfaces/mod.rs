@@ -733,7 +733,7 @@ pub(super) fn transfer_fc05_cap_circles(
             surface_origin[axis_index.index()] = frame.origin[axis_index.index()];
         }
         let (center, axis, ref_direction) = (witness.origin, witness.axis, witness.ref_direction);
-        let id = crate::identity::compose_checked::<CurveId>(
+        let (id, id_storage) = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_CURVE,
             circle.curve_id,
@@ -749,7 +749,8 @@ pub(super) fn transfer_fc05_cap_circles(
             ) else {
                 continue;
             };
-            annotate(
+            id_storage.commit()?;
+        annotate(
                 ctx,
                 annotations,
                 &id,
@@ -789,7 +790,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 },
             )?;
         }
-        let surface_id = crate::identity::compose_checked::<SurfaceId>(
+        let (surface_id, surface_id_storage) = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             cylinder_id,
@@ -807,6 +808,7 @@ pub(super) fn transfer_fc05_cap_circles(
         ) else {
             continue;
         };
+        surface_id_storage.commit()?;
         annotate(
             ctx,
             annotations,

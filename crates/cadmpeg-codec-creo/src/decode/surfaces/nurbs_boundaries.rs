@@ -54,6 +54,20 @@ fn report_cubic_generator_loss(
     Ok(())
 }
 
+/// A solved curve whose storage becomes retained at model admission.
+#[derive(Debug)]
+pub(in super::super) struct NurbsCurveCandidate<'ctx> {
+    storage: ScopedReservation<'ctx>,
+    curve: NurbsCurve,
+}
+
+impl NurbsCurveCandidate<'_> {
+    pub(in super::super) fn into_geometry(self) -> Result<CurveGeometry, CodecError> {
+        self.storage.commit()?;
+        Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(self.curve)))
+    }
+}
+
 struct NurbsSurfaceBoundary<'ctx> {
     storage: ScopedReservation<'ctx>,
     curve: NurbsCurve,
@@ -62,10 +76,15 @@ struct NurbsSurfaceBoundary<'ctx> {
     transverse_periodic: bool,
 }
 
-impl NurbsSurfaceBoundary<'_> {
+impl<'ctx> NurbsSurfaceBoundary<'ctx> {
+    #[cfg(test)]
     fn into_curve(self) -> Result<NurbsCurve, CodecError> {
         self.storage.commit()?;
         Ok(self.curve)
+    }
+
+    fn into_candidate(self) -> NurbsCurveCandidate<'ctx> {
+        NurbsCurveCandidate { storage: self.storage, curve: self.curve }
     }
 
     fn control_index(&self, position: usize, v_count: usize) -> usize {
@@ -236,13 +255,13 @@ fn point_tolerance(
     Ok(anchor.map(|_| (EPS_BOUNDARY_EXTENT * extent).max(32.0 * f64::EPSILON * coordinate_scale)))
 }
 
-pub(in super::super) fn nurbs_plane_boundary_curve(
-    ctx: &DecodeContext<'_>,
+pub(in super::super) fn nurbs_plane_boundary_curve<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     nurbs: &NurbsSurface,
     surface_id: u32,
     plane: PlaneEquation,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<CurveGeometry>, CodecError> {
+) -> Result<Option<NurbsCurveCandidate<'ctx>>, CodecError> {
     let Some(boundaries) = nurbs_surface_boundaries(ctx, nurbs, surface_id, refusal)? else {
         return Ok(None);
     };
@@ -342,9 +361,7 @@ pub(in super::super) fn nurbs_plane_boundary_curve(
         ([_, _, _, fourth], 3) => fourth,
         _ => return Ok(None),
     };
-    Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        boundary.into_curve()?,
-    ))))
+    Ok(Some(boundary.into_candidate()))
 }
 
 fn scalar_near(left: f64, right: f64, tolerance: f64) -> bool {
@@ -604,14 +621,14 @@ fn generator_separates_control_nets(
     Ok(false)
 }
 
-pub(in super::super) fn shared_extrusion_generator_curve(
-    ctx: &DecodeContext<'_>,
+pub(in super::super) fn shared_extrusion_generator_curve<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     first: &NurbsSurface,
     first_surface_id: u32,
     second: &NurbsSurface,
     second_surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<Option<CurveGeometry>, CodecError> {
+) -> Result<Option<NurbsCurveCandidate<'ctx>>, CodecError> {
     let Some(first_boundaries) = nurbs_surface_boundaries(ctx, first, first_surface_id, refusal)?
     else {
         return Ok(None);
@@ -676,10 +693,7 @@ pub(in super::super) fn shared_extrusion_generator_curve(
     let Some(boundary) = first_boundaries.into_iter().nth(selected_index) else {
         return Ok(None);
     };
-    let curve = boundary.into_curve()?;
-    Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        curve,
-    ))))
+    Ok(Some(boundary.into_candidate()))
 }
 
 /// The power-basis coefficients `[cubic, quadratic, linear, constant]` of the
@@ -891,20 +905,20 @@ pub(in super::super) fn cubic_unit_interval_roots(
 /// A refused boundary lane states no generator curve. The model carries the
 /// surface and the plane without it, so the refusal is a loss note naming the
 /// `VisibGeom` surface row and the decode continues with `Ok(None)`.
-pub(in super::super) fn cubic_extrusion_plane_generator_curve(
-    ctx: &DecodeContext<'_>,
+pub(in super::super) fn cubic_extrusion_plane_generator_curve<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     nurbs: &NurbsSurface,
     surface_id: u32,
     plane: PlaneEquation,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<CurveGeometry>, CodecError> {
-    fn recognize(
-        ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurveCandidate<'ctx>>, CodecError> {
+    fn recognize<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
         nurbs: &NurbsSurface,
         surface_id: u32,
         plane: PlaneEquation,
         refusal: &mut crate::lane_refusal::LaneRefusals,
-    ) -> Option<Result<CurveGeometry, CodecError>> {
+    ) -> Option<Result<NurbsCurveCandidate<'ctx>, CodecError>> {
         (nurbs.u_degree() == 3
             && nurbs.v_degree() == 1
             && nurbs.u_count() == 4
@@ -1071,8 +1085,12 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
             Ok(storage) => storage,
             Err(error) => return Some(Err(error)),
         };
+        let mut storage = match ctx.reserve_scoped(0, "creo cubic generator candidate") {
+            Ok(storage) => storage,
+            Err(error) => return Some(Err(error)),
+        };
         let mut knots = Vec::new();
-        if let Err(error) = ctx.reserve_vec(
+        if let Err(error) = ctx.reserve_scoped_vec(&mut storage,
             &mut knots,
             curve.knots().len(),
             "creo cubic generator knots",
@@ -1099,14 +1117,14 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         } else {
             None
         };
-        let curve = match NurbsCurve::from_lanes(
+        let curve = match storage.with_storage(|| NurbsCurve::from_lanes(
             ctx,
             curve.degree(),
             knots,
             control_points,
             weights,
             curve.periodic(),
-        ) {
+        )) {
             Ok(result) => result,
             Err(error) => return Some(Err(error)),
         };
@@ -1124,7 +1142,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
                 return None;
             }
         };
-        Some(Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))))
+        Some(Ok(NurbsCurveCandidate { storage, curve }))
     }
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let recognized = recognize(ctx, nurbs, surface_id, plane, &mut refusal).transpose();
@@ -1326,7 +1344,7 @@ mod tests {
                 normal: [1.0, 0.0, 0.0],
             },
             &mut Vec::new(),
-        )
+        ).and_then(|candidate| candidate.map(|candidate| candidate.into_geometry()).transpose())
     }
 
     #[test]
@@ -1426,7 +1444,7 @@ mod tests {
                 normal: [1.0, 0.0, 0.0],
             },
             &mut crate::lane_refusal::LaneRefusals::new(),
-        )
+        ).and_then(|candidate| candidate.map(|candidate| candidate.into_geometry()).transpose())
         .expect_err("boundary allocation refusal must remain a resource error");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
@@ -1464,7 +1482,7 @@ mod tests {
                         normal: [1.0, 0.0, 0.0],
                     },
                     &mut crate::lane_refusal::LaneRefusals::new(),
-                )
+                ).and_then(|candidate| candidate.map(|candidate| candidate.into_geometry()).transpose())
             },
         );
         let curve = match result {
@@ -1497,7 +1515,7 @@ mod tests {
                     &second,
                     9,
                     &mut crate::lane_refusal::LaneRefusals::new(),
-                )
+                ).and_then(|candidate| candidate.map(|candidate| candidate.into_geometry()).transpose())
             },
         );
         let curve = match result {
@@ -1515,6 +1533,31 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
         );
+    }
+
+    #[test]
+    fn selected_nurbs_boundary_storage_stays_scoped_until_admission() {
+        let (surface, _) = shared_generator_surfaces();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let candidate = super::nurbs_plane_boundary_curve(&ctx, &surface, 7,
+            super::PlaneEquation { origin: [0.0; 3], normal: [1.0, 0.0, 0.0] },
+            &mut crate::lane_refusal::LaneRefusals::new()).expect("scoped boundary");
+        assert!(candidate.is_some());
+        drop(candidate);
+        assert!(ctx.resource_refusal().is_none());
+        let error = crate::test_support::last_refusal_at(&[], ResourceDimension::RetainedBytes,
+            "creo NURBS boundary curve storage", |ctx| {
+                super::nurbs_plane_boundary_curve(ctx, &surface, 7,
+                    super::PlaneEquation { origin: [0.0; 3], normal: [1.0, 0.0, 0.0] },
+                    &mut crate::lane_refusal::LaneRefusals::new())?
+                    .map(|candidate| candidate.into_geometry()).transpose()
+            });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo NURBS boundary curve storage"));
     }
 
     fn shared_generator_surfaces() -> (NurbsSurface, NurbsSurface) {
@@ -1569,7 +1612,7 @@ mod tests {
             &second,
             9,
             &mut crate::lane_refusal::LaneRefusals::new(),
-        )
+        ).and_then(|candidate| candidate.map(|candidate| candidate.into_geometry()).transpose())
     }
 
     #[test]
@@ -1603,7 +1646,7 @@ mod tests {
                     &second,
                     9,
                     &mut crate::lane_refusal::LaneRefusals::new(),
-                )
+                ).and_then(|candidate| candidate.map(|candidate| candidate.into_geometry()).transpose())
             },
         );
         assert!(

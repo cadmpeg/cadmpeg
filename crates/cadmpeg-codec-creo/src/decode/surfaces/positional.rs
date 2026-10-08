@@ -109,7 +109,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             continue;
         };
         for row in [first_row, second_row] {
-            let id = crate::identity::compose_checked::<SurfaceId>(
+            let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
                 ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
                 row.id,
@@ -127,7 +127,8 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             ) else {
                 continue;
             };
-            annotate(
+            id_storage.commit()?;
+        annotate(
                 ctx,
                 annotations,
                 &id,
@@ -242,7 +243,7 @@ pub(in super::super) fn transfer_positional_tori(
         let Some(frame) = record.positional_torus_frame() else {
             continue;
         };
-        let id = crate::identity::compose_checked::<SurfaceId>(
+        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
@@ -279,6 +280,7 @@ pub(in super::super) fn transfer_positional_tori(
                 cadmpeg_ir::geometry::analytic::SphereSurface::new(center, placement, minor_radius),
             ))
         };
+        id_storage.commit()?;
         annotate(
             ctx,
             annotations,
@@ -363,7 +365,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         ) else {
             continue;
         };
-        let surface_id = crate::identity::compose_checked::<SurfaceId>(
+        let (surface_id, surface_id_storage) = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             record.surface_id,
@@ -373,13 +375,13 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         if identity_present {
             continue;
         }
-        let curve_id = crate::identity::compose_checked::<CurveId>(
+        let (curve_id, curve_id_storage) = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE_DIRECTRIX,
             record.surface_id,
             "creo positional directrix identity",
         )?;
-        let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
+        let (procedural_id, procedural_id_storage) = crate::identity::compose_scoped::<ProceduralSurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
             record.surface_id,
@@ -398,6 +400,9 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         ) else {
             continue;
         };
+        curve_id_storage.commit()?;
+        procedural_id_storage.commit()?;
+        surface_id_storage.commit()?;
         annotate(
             ctx,
             annotations,
@@ -597,14 +602,15 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             Some(prototype) => super::prototypes::prototype_tabulated_chart_origin(ctx, prototype)?,
             None => None,
         };
+        let mut geometry_storage = ctx.reserve_scoped(0, "creo tabulated extrusion geometry")?;
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let directrix = placed_tabulated_cylinder_directrix(
+        let directrix = geometry_storage.with_storage(|| placed_tabulated_cylinder_directrix(
             ctx,
             replay,
             parameters,
             chart_origin,
             &mut refusal,
-        )?;
+        ))?;
         let refused = refusal.take_records_checked()?;
         let Some((directrix, sweep)) = directrix.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(
@@ -618,7 +624,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             continue;
         };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let surface = extruded_nurbs_surface(
+        let surface = geometry_storage.with_storage(|| extruded_nurbs_surface(
             ctx,
             &directrix,
             sweep,
@@ -627,7 +633,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 replay.surface_id, replay.offset
             ),
             &mut refusal,
-        )?;
+        ))?;
         let refused = refusal.take_records_checked()?;
         let Some(surface) = surface.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(
@@ -640,13 +646,13 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             )?;
             continue;
         };
-        let curve_id = crate::identity::compose_checked::<CurveId>(
+        let (curve_id, curve_id_storage) = crate::identity::compose_scoped::<CurveId>(
             ctx,
             &crate::identity::VISIBGEOM_TABULATED_DIRECTRIX,
             replay.surface_id,
             "creo tabulated directrix identity",
         )?;
-        let surface_id = crate::identity::compose_checked::<SurfaceId>(
+        let (surface_id, surface_id_storage) = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             replay.surface_id,
@@ -656,12 +662,16 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         if identity_present {
             continue;
         }
-        let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
+        let (procedural_id, procedural_id_storage) = crate::identity::compose_scoped::<ProceduralSurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
             replay.surface_id,
             "creo tabulated extrusion identity",
         )?;
+        geometry_storage.commit()?;
+        curve_id_storage.commit()?;
+        procedural_id_storage.commit()?;
+        surface_id_storage.commit()?;
         annotate(
             ctx,
             annotations,

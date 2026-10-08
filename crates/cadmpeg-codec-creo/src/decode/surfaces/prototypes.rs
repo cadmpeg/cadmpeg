@@ -395,7 +395,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
 > {
     if scan.surfaces.prototype_records.is_empty() { return Ok(Vec::new()); }
     let mut frames = PrototypeFrames::new(ctx)?;
-    let rows = PrototypeRows::new(ctx, &scan.surfaces.rows)?;
+    let mut rows = None;
     let mut associations = Vec::new();
     for record in ctx.admit_iter(
         &scan.surfaces.prototype_records,
@@ -437,9 +437,11 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         else {
             continue;
         };
+        if rows.is_none() { rows = Some(PrototypeRows::new(ctx, &scan.surfaces.rows)?); }
+        let Some(rows) = rows.as_ref() else { continue; };
         let Some(row) = first_instance_surface_row(
             ctx,
-            &rows,
+            rows,
             adjacent_start,
             adjacent_end,
             record.offset,
@@ -507,6 +509,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         .copied()
     {
         let record = prototype.record();
+        let mut geometry_storage = ctx.reserve_scoped(0, "creo prototype geometry")?;
         let geometry = match prototype {
             SupportedPrototype::Plane(_) => {
                 let Some((origin, axis, reference)) = prototype_local_frame(ctx, record)? else {
@@ -600,7 +603,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             }
             SupportedPrototype::Spline(_) => {
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                let nurbs = prototype_spline_nurbs(ctx, record, &mut refusal)?;
+                let nurbs = geometry_storage.with_storage(|| prototype_spline_nurbs(ctx, record, &mut refusal))?;
                 let refused = refusal.take_records_checked()?;
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {
@@ -622,7 +625,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
             }
         };
-        let id = crate::identity::compose_checked::<SurfaceId>(
+        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
@@ -632,6 +635,8 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         if identity_present {
             continue;
         }
+        geometry_storage.commit()?;
+        id_storage.commit()?;
         annotate(
             ctx,
             annotations,
@@ -708,6 +713,8 @@ pub(in super::super) fn transfer_positional_spline_replays(
     if !matches!(scan.framing.layout, crate::container::Layout::Nd) {
         return Ok(0);
     }
+    let mut section_storage = ctx.reserve_scoped(0, "creo positional spline section workspace")?;
+    let mut sections = std::collections::HashMap::<(usize, usize), (Vec<crate::surface::SurfaceRow>, Option<crate::scalar::ScalarCache>)>::new();
     let mut transferred = 0;
     for parameter in ctx.admit_iter(
         &*scan.surfaces.parameters,
@@ -738,28 +745,40 @@ pub(in super::super) fn transfer_positional_spline_replays(
             row
         };
         let mut replay_storage = ctx.reserve_scoped(0, "creo positional spline replay workspace")?;
-        let relative_rows = replay_storage.with_storage(|| relative_surface_rows(ctx, &scan.surfaces.rows, section))?;
+        let key = (section.offset(), section.end());
+        if !sections.contains_key(&key) {
+            section_storage.with_storage(|| {
+                let relative_rows = relative_surface_rows(ctx, &scan.surfaces.rows, section)?;
+                ctx.insert_hash_map(&mut sections, key, (relative_rows, None), "creo positional replay section index")?;
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })?;
+        }
+        let Some((relative_rows, cache)) = sections.get_mut(&key) else { continue; };
         let Some(prototype) = replay_storage.with_storage(|| crate::surface::positional_spline_replay_prototype(
             ctx,
             payload,
-            &relative_rows,
+            relative_rows,
             &relative_row,
         ))?
         else {
             continue;
         };
-        let cache = replay_storage.with_storage(|| crate::scalar::ScalarCache::from_section_checked(ctx, payload))?;
+        if cache.is_none() {
+            *cache = Some(section_storage.with_storage(|| crate::scalar::ScalarCache::from_section_checked(ctx, payload))?);
+        }
+        let Some(cache) = cache.as_ref() else { continue; };
         let Some(replay) = replay_storage.with_storage(|| crate::surface::decode_positional_spline_replay(
             ctx,
             &parameter.body,
             &prototype,
-            &cache,
+            cache,
         ))?
         else {
             continue;
         };
+        let mut geometry_storage = ctx.reserve_scoped(0, "creo spline surface geometry")?;
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let nurbs = interpolation_spline_surface(
+        let nurbs = geometry_storage.with_storage(|| interpolation_spline_surface(
             ctx,
             &replay,
             &format_args!(
@@ -767,7 +786,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
                 row.id, parameter.body_offset
             ),
             &mut refusal,
-        )?;
+        ))?;
         let refused = refusal.take_records_checked()?;
         let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
             if !refused.is_empty() {
@@ -786,7 +805,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             }
             continue;
         };
-        let id = crate::identity::compose_checked::<SurfaceId>(
+        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             row.id,
@@ -796,6 +815,8 @@ pub(in super::super) fn transfer_positional_spline_replays(
         if identity_present {
             continue;
         }
+        geometry_storage.commit()?;
+        id_storage.commit()?;
         annotate(
             ctx,
             annotations,
@@ -865,9 +886,10 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     ) {
         return Ok(0);
     }
-    let carrier_counts = legacy_carrier_counts(ctx, &scan.surfaces.legacy_carriers, |carrier| {
+    let mut count_storage = ctx.reserve_scoped(0, "creo legacy carrier count workspace")?;
+    let carrier_counts = count_storage.with_storage(|| legacy_carrier_counts(ctx, &scan.surfaces.legacy_carriers, |carrier| {
         carrier.surface_id
-    })?;
+    }))?;
 
     let mut transferred = 0;
     for carrier in ctx.admit_iter(
@@ -889,6 +911,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         let Some(row) = crate::surface::unique_surface_row(rows, carrier.surface_id) else {
             continue;
         };
+        let mut geometry_storage = ctx.reserve_scoped(0, "creo spline surface geometry")?;
         let geometry = match &carrier.geometry {
             crate::legacy_geometry::LegacySurfaceGeometry::Plane { frame }
                 if row.kind == crate::surface::SurfaceKind::Plane =>
@@ -943,7 +966,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 if row.kind == crate::surface::SurfaceKind::Spline =>
             {
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                let nurbs = interpolation_spline_surface(
+                let nurbs = geometry_storage.with_storage(|| interpolation_spline_surface(
                     ctx,
                     spline,
                     &format_args!(
@@ -953,7 +976,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                         carrier.offset
                     ),
                     &mut refusal,
-                )?;
+                ))?;
                 let refused = refusal.take_records_checked()?;
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {
@@ -981,7 +1004,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             LegacySurfaceNamespace::Visible => &crate::identity::VISIBGEOM_SURFACE,
             LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
         };
-        let id = crate::identity::compose_checked::<SurfaceId>(
+        let (id, id_storage) = crate::identity::compose_scoped::<SurfaceId>(
             ctx,
             namespace,
             carrier.surface_id,
@@ -991,6 +1014,8 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         if identity_present {
             continue;
         }
+        geometry_storage.commit()?;
+        id_storage.commit()?;
         annotate(
             ctx,
             annotations,
