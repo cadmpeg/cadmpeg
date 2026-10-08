@@ -285,7 +285,7 @@ fn feature_ordering_releases_scratch_identity_indexes() {
             &[],
             operation,
             |ctx| {
-                let ordering = super::super::feature_ordinals(
+                let ordering = super::super::ordering::feature_ordinals(
                     ctx,
                     std::slice::from_ref(&object),
                     &BTreeMap::new(),

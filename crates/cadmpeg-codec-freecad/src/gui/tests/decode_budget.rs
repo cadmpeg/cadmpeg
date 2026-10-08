@@ -181,7 +181,16 @@ fn gui_body_payload_index_preserves_nested_keys_and_repeated_sources() {
             body("fcstd:model:body#a:2"),
         ];
         let mut index = super::super::TopologyIndex::new(&ir);
-        index.ensure_bodies(ctx).expect("body payload index");
+        index
+            .ensure_bodies(
+                ctx,
+                [
+                    "fcstd:payload#a:child",
+                    "fcstd:payload#a",
+                    "fcstd:payload#a:child",
+                ],
+            )
+            .expect("body payload index");
         let selected = super::super::select_shape_bodies(
             ctx,
             &index.bodies,

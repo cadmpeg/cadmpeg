@@ -61,8 +61,7 @@ fn profile_endpoint_buckets_refuse_at_matching_collection_limits() {
         "FCStd profile endpoint index",
     ] {
         crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            super::EndpointIndex::new(ctx, &profile_entities, &entities)
-                .map(|(_storage, index)| index)
+            super::EndpointIndex::new(ctx, &profile_entities, &entities).map(drop)
         });
     }
 }
@@ -84,8 +83,7 @@ fn explicit_profile_candidates_refuse_at_matching_collection_limit() {
         by_scale: std::collections::BTreeMap::new(),
     };
     crate::test_support::assert_collection_refusal_at(&[], "FCStd profile candidates", |ctx| {
-        super::endpoint_candidates(ctx, source, &available, &relations, &[], &index)
-            .map(|(_storage, candidates)| candidates)
+        super::endpoint_candidates(ctx, source, &available, &relations, &[], &index).map(drop)
     });
 }
 
@@ -95,6 +93,57 @@ fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
         SketchId::mint("test:test:sketch#curved").unwrap(),
         geometry,
     )
+}
+
+fn line_entity(ordinal: u32) -> SketchEntity {
+    let start = f64::from(ordinal) * 10.0;
+    entity(
+        &format!("test:test:entity#profile-work-{ordinal}"),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(start, 0.0),
+            end: Point2::new(start + 1.0, 0.0),
+        })
+        .expect("line geometry"),
+    )
+}
+
+fn coincident_constraint(
+    id: &str,
+    sketch: SketchId,
+    loci: Vec<SketchLocus>,
+) -> SketchConstraint {
+    SketchConstraint {
+        id: SketchConstraintId::mint(id).unwrap(),
+        sketch,
+        definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::CoincidentLoci { loci },
+        )
+        .unwrap(),
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    }
+}
+
+fn successful_work_used(ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> u64 {
+    let error = ctx
+        .charge_work(u64::MAX, "FCStd profile short-prefix work oracle")
+        .unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work overflow probe must return a resource refusal")
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    limit.used
 }
 
 #[test]
@@ -477,7 +526,8 @@ fn empty_profile_relations_release_entity_index_storage() {
         &[],
         operation,
         |ctx| {
-            let (_storage, relations) = super::explicit_endpoint_relations(
+            let (_storage, relations);
+            (relations, _storage) = super::explicit_endpoint_relations(
                 ctx,
                 &std::collections::BTreeSet::new(),
                 &entities,
@@ -485,7 +535,11 @@ fn empty_profile_relations_release_entity_index_storage() {
             )?;
             assert!(relations.is_empty());
             ctx.format_scoped(format_args!("{marker}"), operation)
-                .map(|(text, _storage)| text)
+                .map(|result| {
+                    let (_format_storage, text);
+                    (text, _format_storage) = result;
+                    text
+                })
         },
     );
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
@@ -495,4 +549,222 @@ fn empty_profile_relations_release_entity_index_storage() {
         limit.used, 0,
         "empty relations hold no temporary index storage"
     );
+}
+
+#[test]
+fn profile_endpoint_index_failure_does_not_precharge_entity_suffix() {
+    let first_entity = line_entity(0);
+    let short_profile_entities = std::collections::BTreeSet::from([0]);
+    let short_work = {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("profile oracle context");
+        let mut source = short_profile_entities.iter();
+        let Some(index) = ctx
+            .next_charged(&mut source, "FCStd profile endpoint extraction")
+            .expect("short index source step")
+        else {
+            panic!("short index source contains its first entity")
+        };
+        let (start, _) = super::endpoints(&first_entity).expect("line endpoints");
+        let mut by_scale = std::collections::BTreeMap::new();
+        ctx.push_btree_group(
+            &mut by_scale,
+            super::endpoint_scale_bucket(start),
+            super::IndexedEndpoint {
+                locus: super::EndpointLocus {
+                    entity: *index,
+                    start: true,
+                },
+                point: start,
+            },
+            "FCStd profile endpoint buckets",
+            "FCStd profile endpoint index",
+        )
+        .expect("first indexed endpoint");
+        drop(by_scale);
+        successful_work_used(&ctx)
+    };
+    let entity_count = usize::try_from(short_work)
+        .expect("short profile work fits a test input")
+        .checked_add(1)
+        .expect("profile entity suffix length fits")
+        .max(256);
+    let entity_count = u32::try_from(entity_count).expect("profile entity suffix fits u32");
+    let entities = (0..entity_count).map(line_entity).collect::<Vec<_>>();
+    let profile_entities = (0..entities.len()).collect::<std::collections::BTreeSet<_>>();
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = short_work;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("profile replay context");
+    let error = super::EndpointIndex::new(&ctx, &profile_entities, &entities)
+        .err()
+        .expect("the second endpoint index visit must exceed the short-prefix cap");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("endpoint index work refusal required")
+    };
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "FCStd profile endpoint buckets");
+    assert_eq!(limit.used, short_work);
+    assert!(limit.additional > 0);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+#[test]
+fn explicit_profile_locus_failure_does_not_precharge_locus_suffix() {
+    let entities = [line_entity(0)];
+    let profile_entities = std::collections::BTreeSet::from([0]);
+    let first_locus = SketchLocus::Start(entities[0].id().clone());
+    let second_locus = SketchLocus::End(entities[0].id().clone());
+    let short_constraint = coincident_constraint(
+        "test:test:constraint#profile-short-prefix",
+        entities[0].sketch.clone(),
+        vec![first_locus.clone(), second_locus.clone()],
+    );
+    let short_work = {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("profile oracle context");
+        let (storage, relations);
+        (relations, storage) = super::explicit_endpoint_relations(
+            &ctx,
+            &profile_entities,
+            &entities,
+            std::slice::from_ref(&short_constraint),
+        )
+        .expect("short explicit relation prefix");
+        let start = super::EndpointLocus {
+            entity: 0,
+            start: true,
+        };
+        let end = super::EndpointLocus {
+            entity: 0,
+            start: false,
+        };
+        assert!(
+            relations
+                == std::collections::BTreeMap::from([
+                    (start, std::collections::BTreeSet::from([end])),
+                    (end, std::collections::BTreeSet::from([start])),
+                ])
+        );
+        drop(relations);
+        drop(storage);
+        successful_work_used(&ctx)
+    };
+    let mut loci = vec![first_locus, second_locus];
+    loci.extend((0..(short_work + 256)).map(|_| SketchLocus::Start(entities[0].id().clone())));
+    let long_locus_count = loci.len();
+    let long_constraint = coincident_constraint(
+        "test:test:constraint#profile-long-suffix",
+        entities[0].sketch.clone(),
+        loci,
+    );
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = short_work
+        .checked_add(1)
+        .expect("short profile work cap fits");
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("profile replay context");
+    let error = super::explicit_endpoint_relations(
+        &ctx,
+        &profile_entities,
+        &entities,
+        std::slice::from_ref(&long_constraint),
+    )
+    .err()
+    .expect("second nested locus lookup must exceed the short-prefix cap");
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("profile locus work refusal required")
+    };
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert!(
+        [
+            "FCStd explicit profile loci",
+            "FCStd profile entity index",
+            "FCStd eligible profile entity lookup",
+        ]
+        .contains(&limit.operation)
+    );
+    assert!(limit.additional < u64::try_from(long_locus_count).expect("locus bound fits u64"));
+    assert!(limit.used <= policy.limits.max_work_units);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+#[test]
+fn empty_profile_routes_preserve_prior_resource_refusal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("profile test context");
+    let chain_storage = ctx
+        .reserve_scoped(0, "FCStd profile uses")
+        .expect("empty profile storage");
+    let cadmpeg_core::CodecError::ResourceLimit(first) = ctx
+        .charge_work(1, "test prior profile work refusal")
+        .expect_err("work cap fuses the context")
+    else {
+        panic!("work refusal required")
+    };
+
+    assert!(matches!(
+        super::build_profiles(&ctx, &[], &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
+    ));
+    assert!(matches!(
+        super::EndpointIndex::new(
+            &ctx,
+            &std::collections::BTreeSet::new(),
+            &[],
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
+    ));
+    let source = super::EndpointLocus {
+        entity: 0,
+        start: true,
+    };
+    let explicit = std::collections::BTreeMap::from([(
+        source,
+        std::collections::BTreeSet::new(),
+    )]);
+    let endpoint_index = super::EndpointIndex {
+        by_scale: std::collections::BTreeMap::new(),
+    };
+    assert!(matches!(
+        super::endpoint_candidates(
+            &ctx,
+            source,
+            &std::collections::BTreeSet::new(),
+            &explicit,
+            &[],
+            &endpoint_index,
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
+    ));
+    assert!(matches!(
+        super::explicit_endpoint_relations(
+            &ctx,
+            &std::collections::BTreeSet::new(),
+            &[],
+            &[],
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
+    ));
+    assert!(matches!(
+        super::finish_profile_chain(
+            &ctx,
+            chain_storage,
+            std::collections::VecDeque::new(),
+            &[],
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first
+    ));
+    assert_eq!(ctx.resource_refusal(), Some(first));
 }

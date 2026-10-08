@@ -23,7 +23,7 @@ fn design_parameter_object_name_index_refuses_at_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    assert!(matches!(super::super::bind_parameter_dependencies(
+    assert!(matches!(super::super::ordering::bind_parameter_dependencies(
         &ctx, &mut Vec::new(), &[object], &std::collections::BTreeSet::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "fcstd parameter dependency object names"));
@@ -50,14 +50,14 @@ fn design_parameter_candidates_refuse_at_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    assert!(matches!(super::super::bind_parameter_dependencies(
+    assert!(matches!(super::super::ordering::bind_parameter_dependencies(
         &ctx, &mut vec![parameter.clone()], &[], &std::collections::BTreeSet::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "fcstd parameter dependency candidates"));
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    let result = super::super::order_parameters_by_dependencies(&ctx, &mut vec![parameter]);
+    let result = super::super::ordering::order_parameters_by_dependencies(&ctx, &mut vec![parameter]);
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(ref limit))
         if limit.operation == "fcstd known parameter identities"),
@@ -101,7 +101,7 @@ fn design_qualified_parameter_name_refuses_at_materialized_limit() {
     };
     let _error =
         crate::test_support::materialized_refusal_at("fcstd qualified candidate name", |ctx| {
-            super::super::bind_parameter_dependencies(
+            super::super::ordering::bind_parameter_dependencies(
                 ctx,
                 &mut vec![parameter.clone()],
                 std::slice::from_ref(&object),
@@ -186,7 +186,7 @@ fn design_parameter_dependency_stages_refuse_at_collection_limits() {
         "fcstd next ordinal owners",
     ] {
         crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            super::super::bind_parameter_dependencies(
+            super::super::ordering::bind_parameter_dependencies(
                 ctx,
                 &mut parameters.clone(),
                 std::slice::from_ref(&object),
@@ -201,7 +201,7 @@ fn design_parameter_dependency_stages_refuse_at_collection_limits() {
 fn design_parameter_cycle_owners_refuse_at_collection_limit() {
     let (object, parameters) = parameter_dependency_fixture(true);
     crate::test_support::assert_collection_refusal_at(&[], "fcstd parameter cycle owners", |ctx| {
-        super::super::bind_parameter_dependencies(
+        super::super::ordering::bind_parameter_dependencies(
             ctx,
             &mut parameters.clone(),
             std::slice::from_ref(&object),
