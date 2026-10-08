@@ -374,7 +374,9 @@ limit_case!(
 
 #[test]
 fn dimension_recipe_absent_companion_member_skips_text_comparison() {
-    crate::test_support::with_decode_context(|decode| {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = crate::native::F3dNative::default();
         native
@@ -418,5 +420,17 @@ fn dimension_recipe_absent_companion_member_skips_text_comparison() {
             "Fusion Design dimension recipe has an invalid indexed-record owner"
         );
         assert!(decode.resource_refusal().is_none());
+        let error = decode
+            .equal(
+                "positive control",
+                "positive control",
+                "compare F3D dimension companion recipe order",
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "compare F3D dimension companion recipe order")
+        );
     });
 }

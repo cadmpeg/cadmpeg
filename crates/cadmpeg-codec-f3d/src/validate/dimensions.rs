@@ -39,33 +39,38 @@ pub(super) fn validate_dimension_recipe_records<'a>(
             "index F3D first dimension recipes",
         )
     })?;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
+
+    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let mut dimension_recipe_ids = HashSet::new();
     for record in ctx.decode.admit_iter(
         &native.design_dimension_recipe_records,
         "scan F3D design dimension recipe records",
     )? {
-        let native_stream = design_stream(&record.id);
+        let native_stream = design_stream(ctx.decode, &record.id)?;
         let companion = ctx.decode.get_hash_map(
             companions_by_index,
             &(native_stream, record.companion_record_index),
             "find F3D validation record index",
         )?;
         let dimension_companion = match companion {
-            Some(companion) => match ctx.decode.get_hash_map(
-                owners_by_index,
-                &(native_stream, companion.owner_record_index()),
-                "find F3D dimension recipe owner",
-            )? {
+            Some(companion) => match ctx
+                .decode
+                .get_hash_map(
+                    owners_by_index,
+                    &(native_stream, companion.owner_record_index()),
+                    "find F3D dimension recipe owner",
+                )?
+                .and_then(|records| records.last())
+            {
                 Some(owner) => ctx
                     .decode
                     .get_hash_map(
-                        parameters_by_index,
+                        ctx.parameters()?,
                         &(native_stream, owner.parameter_record_index()),
                         "find F3D dimension recipe parameter",
                     )?
+                    .and_then(|records| records.last())
                     .is_some_and(|parameter| {
                         parameter.kind() == records::parameters::DesignParameterKind::Dimension
                     }),
@@ -152,7 +157,7 @@ pub(super) fn validate_dimension_recipe_records<'a>(
         let recipe_frame_matches = match recipe {
             Some(recipe) => {
                 ctx.decode.equal(
-                    &design_stream(&recipe.id),
+                    &design_stream(ctx.decode, &recipe.id)?,
                     &native_stream,
                     "compare F3D dimension recipe stream",
                 )? && record
@@ -216,25 +221,29 @@ pub(super) fn validate_dimension_companion_recipes<'a>(
     dimension_recipe_ids: &HashSet<(&'a str, &'a str)>,
 ) -> Result<(), CodecError> {
     let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
+    let owners_by_index = &ctx.owner_groups;
     for companion in ctx.decode.admit_iter(
         &native.design_parameter_companions,
         "scan F3D design parameter companions",
     )? {
-        let native_stream = design_stream(companion.id());
-        let dimension_companion = match ctx.decode.get_hash_map(
-            owners_by_index,
-            &(native_stream, companion.owner_record_index()),
-            "find F3D dimension companion owner",
-        )? {
+        let native_stream = design_stream(ctx.decode, companion.id())?;
+        let dimension_companion = match ctx
+            .decode
+            .get_hash_map(
+                owners_by_index,
+                &(native_stream, companion.owner_record_index()),
+                "find F3D dimension companion owner",
+            )?
+            .and_then(|records| records.last())
+        {
             Some(owner) => ctx
                 .decode
                 .get_hash_map(
-                    parameters_by_index,
+                    ctx.parameters()?,
                     &(native_stream, owner.parameter_record_index()),
                     "find F3D dimension companion parameter",
                 )?
+                .and_then(|records| records.last())
                 .is_some_and(|parameter| {
                     parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 }),
@@ -282,8 +291,7 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
         .decode
         .reserve_scoped(0, "hold F3D dimension locus pairs result")?;
     let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
+    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut locus_pair_indices = HashSet::new();
@@ -297,7 +305,7 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
         &*native.design_dimension_locus_pairs,
         "scan F3D design dimension locus pairs",
     )? {
-        let native_stream = design_stream(&pair.id);
+        let native_stream = design_stream(ctx.decode, &pair.id)?;
         let unique_index = scratch_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut locus_pair_indices,
@@ -327,7 +335,7 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
                         &native.design_parameter_owners,
                         |owner| {
                             Ok(ctx.decode.equal(
-                                &design_stream(owner.id()),
+                                &design_stream(ctx.decode, owner.id())?,
                                 &native_stream,
                                 "compare F3D dimension locus owner stream",
                             )? && owner.byte_offset() > companion.byte_offset()
@@ -339,18 +347,23 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
             None => false,
         };
         let dimension_companion = match companion {
-            Some(companion) => match ctx.decode.get_hash_map(
-                owners_by_index,
-                &(native_stream, companion.owner_record_index()),
-                "find F3D locus companion owner",
-            )? {
+            Some(companion) => match ctx
+                .decode
+                .get_hash_map(
+                    owners_by_index,
+                    &(native_stream, companion.owner_record_index()),
+                    "find F3D locus companion owner",
+                )?
+                .and_then(|records| records.last())
+            {
                 Some(owner) => ctx
                     .decode
                     .get_hash_map(
-                        parameters_by_index,
+                        ctx.parameters()?,
                         &(native_stream, owner.parameter_record_index()),
                         "find F3D locus companion parameter",
                     )?
+                    .and_then(|records| records.last())
                     .is_some_and(|parameter| {
                         parameter.kind() == records::parameters::DesignParameterKind::Dimension
                     }),
@@ -400,10 +413,9 @@ pub(super) fn validate_dimension_annotation_frames(
         .decode
         .reserve_scoped(0, "hold F3D dimension annotation frames scratch")?;
     let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
+    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
-    let scopes_by_index = &ctx.scopes_by_index;
+    let scopes_by_index = &ctx.scope_groups;
     let entities_by_suffix = &ctx.entities_by_suffix;
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut annotation_frame_indices = HashSet::new();
@@ -411,7 +423,7 @@ pub(super) fn validate_dimension_annotation_frames(
         &native.design_dimension_annotation_frames,
         "scan F3D design dimension annotation frames",
     )? {
-        let native_stream = design_stream(&frame.id);
+        let native_stream = design_stream(ctx.decode, &frame.id)?;
         let unique_index = scratch_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut annotation_frame_indices,
@@ -426,6 +438,7 @@ pub(super) fn validate_dimension_annotation_frames(
                 &(native_stream, frame.governing_owner_record_index),
                 "find F3D dimension annotation owner",
             )?
+            .and_then(|records| records.last())
             .copied();
         let physical_interval_valid = match frame.companion_record_index {
             Some(record_index) => ctx
@@ -459,6 +472,7 @@ pub(super) fn validate_dimension_annotation_frames(
                             &(native_stream, owner.scope_record_index()),
                             "find F3D annotation interval scope",
                         )?
+                        .and_then(|records| records.last())
                         .is_some_and(|scope| frame.byte_offset() >= scope.byte_offset());
                     if scope_contains_frame {
                         let end = ctx.decode.fold(
@@ -466,7 +480,7 @@ pub(super) fn validate_dimension_annotation_frames(
                             None::<u64>,
                             |end, candidate| {
                                 if !ctx.decode.equal(
-                                    &design_stream(candidate.id()),
+                                    &design_stream(ctx.decode, candidate.id())?,
                                     &native_stream,
                                     "compare F3D annotation interval stream",
                                 )? || candidate.scope_record_index()
@@ -504,10 +518,11 @@ pub(super) fn validate_dimension_annotation_frames(
                     && ctx
                         .decode
                         .get_hash_map(
-                            parameters_by_index,
+                            ctx.parameters()?,
                             &(native_stream, owner.parameter_record_index()),
                             "find F3D annotation governing parameter",
                         )?
+                        .and_then(|records| records.last())
                         .is_some_and(|parameter| {
                             parameter.kind() == records::parameters::DesignParameterKind::Dimension
                         })
@@ -563,33 +578,34 @@ pub(super) fn validate_dimension_presentation_frames(
         .decode
         .reserve_scoped(0, "hold F3D dimension presentation frames scratch")?;
     let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
+    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
-    let sketch_scope_by_entity = scratch_storage.with_storage(|| {
-        ctx.decode.collect_hash_map(
-            ctx.decode
-                .admit_iter(
-                    &native.design_sketch_placements,
-                    "admit source for index F3D dimension presentation sketch scopes",
-                )?
-                .filter_map(|placement| {
-                    Some((
-                        (design_stream(&placement.id), placement.entity_id.suffix()),
-                        placement.scope_record_index?,
-                    ))
-                }),
-            "index F3D dimension presentation sketch scopes",
-        )
-    })?;
+    let mut sketch_scope_by_entity = std::collections::HashMap::new();
+    for placement in ctx.decode.admit_iter(
+        &native.design_sketch_placements,
+        "index F3D dimension presentation sketch scopes",
+    )? {
+        let Some(scope_record_index) = placement.scope_record_index else {
+            continue;
+        };
+        let stream = design_stream(ctx.decode, &placement.id)?;
+        scratch_storage.with_storage(|| {
+            ctx.decode.insert_hash_map(
+                &mut sketch_scope_by_entity,
+                (stream, placement.entity_id.suffix()),
+                scope_record_index,
+                "index F3D dimension presentation sketch scopes",
+            )
+        })?;
+    }
     let mut presentation_frame_indices = HashSet::new();
     for frame in ctx.decode.admit_iter(
         &native.design_dimension_presentation_frames,
         "scan F3D design dimension presentation frames",
     )? {
-        let native_stream = design_stream(&frame.id);
+        let native_stream = design_stream(ctx.decode, &frame.id)?;
         let unique_index = scratch_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut presentation_frame_indices,
@@ -597,16 +613,22 @@ pub(super) fn validate_dimension_presentation_frames(
                 "index F3D dimension presentation frames",
             )
         })?;
-        let owner = ctx.decode.get_hash_map(
-            owners_by_index,
-            &(native_stream, frame.governing_owner_record_index),
-            "find F3D validation record index",
-        )?;
-        let parameter = ctx.decode.get_hash_map(
-            parameters_by_index,
-            &(native_stream, frame.governing_parameter_record_index),
-            "find F3D presentation governing parameter",
-        )?;
+        let owner = ctx
+            .decode
+            .get_hash_map(
+                owners_by_index,
+                &(native_stream, frame.governing_owner_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
+        let parameter = ctx
+            .decode
+            .get_hash_map(
+                ctx.parameters()?,
+                &(native_stream, frame.governing_parameter_record_index),
+                "find F3D presentation governing parameter",
+            )?
+            .and_then(|records| records.last());
         let companion = ctx.decode.get_hash_map(
             companions_by_index,
             &(native_stream, frame.governing_companion_record_index),
@@ -638,10 +660,11 @@ pub(super) fn validate_dimension_presentation_frames(
                         || !ctx
                             .decode
                             .get_hash_map(
-                                parameters_by_index,
+                                ctx.parameters()?,
                                 &(native_stream, candidate.parameter_record_index()),
                                 "find F3D presentation owner parameter",
                             )?
+                            .and_then(|records| records.last())
                             .is_some_and(|parameter| {
                                 parameter.kind()
                                     == records::parameters::DesignParameterKind::Dimension
@@ -752,8 +775,7 @@ pub(super) fn validate_dimension_locus_groups<'a>(
         .reserve_scoped(0, "hold F3D dimension locus groups result")?;
     let decode: &DecodeContext<'_> = ctx.decode;
     let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
+    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
@@ -763,7 +785,7 @@ pub(super) fn validate_dimension_locus_groups<'a>(
         &native.design_dimension_locus_groups,
         "scan F3D design dimension locus groups",
     )? {
-        let native_stream = design_stream(&group.id);
+        let native_stream = design_stream(ctx.decode, &group.id)?;
         let unique_index = scratch_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut locus_group_indices,
@@ -793,7 +815,7 @@ pub(super) fn validate_dimension_locus_groups<'a>(
                         &native.design_parameter_owners,
                         |owner| {
                             Ok(ctx.decode.equal(
-                                &design_stream(owner.id()),
+                                &design_stream(ctx.decode, owner.id())?,
                                 &native_stream,
                                 "compare F3D dimension locus owner stream",
                             )? && owner.byte_offset() > companion.byte_offset()
@@ -805,18 +827,23 @@ pub(super) fn validate_dimension_locus_groups<'a>(
             None => false,
         };
         let dimension_companion = match companion {
-            Some(companion) => match ctx.decode.get_hash_map(
-                owners_by_index,
-                &(native_stream, companion.owner_record_index()),
-                "find F3D locus companion owner",
-            )? {
+            Some(companion) => match ctx
+                .decode
+                .get_hash_map(
+                    owners_by_index,
+                    &(native_stream, companion.owner_record_index()),
+                    "find F3D locus companion owner",
+                )?
+                .and_then(|records| records.last())
+            {
                 Some(owner) => ctx
                     .decode
                     .get_hash_map(
-                        parameters_by_index,
+                        ctx.parameters()?,
                         &(native_stream, owner.parameter_record_index()),
                         "find F3D locus companion parameter",
                     )?
+                    .and_then(|records| records.last())
                     .is_some_and(|parameter| {
                         parameter.kind() == records::parameters::DesignParameterKind::Dimension
                     }),
@@ -924,7 +951,7 @@ pub(super) fn validate_dimension_locus_groups<'a>(
             &native.design_dimension_locus_groups,
             |other| {
                 Ok(!ctx.decode.equal(
-                    &design_stream(&other.id),
+                    &design_stream(ctx.decode, &other.id)?,
                     &native_stream,
                     "compare F3D counted locus frame stream",
                 )? || other.companion_record_index != group.companion_record_index
@@ -991,8 +1018,7 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
         .decode
         .reserve_scoped(0, "hold F3D dimension null locus pairs scratch")?;
     let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
+    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut null_locus_pair_indices = HashSet::new();
@@ -1006,7 +1032,7 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
         &*native.design_dimension_null_locus_pairs,
         "scan F3D design dimension null locus pairs",
     )? {
-        let native_stream = design_stream(&pair.id);
+        let native_stream = design_stream(ctx.decode, &pair.id)?;
         let unique_index = scratch_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut null_locus_pair_indices,
@@ -1036,7 +1062,7 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
                         &native.design_parameter_owners,
                         |owner| {
                             Ok(ctx.decode.equal(
-                                &design_stream(owner.id()),
+                                &design_stream(ctx.decode, owner.id())?,
                                 &native_stream,
                                 "compare F3D dimension locus owner stream",
                             )? && owner.byte_offset() > companion.byte_offset()
@@ -1048,18 +1074,23 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
             None => false,
         };
         let dimension_companion = match companion {
-            Some(companion) => match ctx.decode.get_hash_map(
-                owners_by_index,
-                &(native_stream, companion.owner_record_index()),
-                "find F3D locus companion owner",
-            )? {
+            Some(companion) => match ctx
+                .decode
+                .get_hash_map(
+                    owners_by_index,
+                    &(native_stream, companion.owner_record_index()),
+                    "find F3D locus companion owner",
+                )?
+                .and_then(|records| records.last())
+            {
                 Some(owner) => ctx
                     .decode
                     .get_hash_map(
-                        parameters_by_index,
+                        ctx.parameters()?,
                         &(native_stream, owner.parameter_record_index()),
                         "find F3D locus companion parameter",
                     )?
+                    .and_then(|records| records.last())
                     .is_some_and(|parameter| {
                         parameter.kind() == records::parameters::DesignParameterKind::Dimension
                     }),

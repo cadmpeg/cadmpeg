@@ -561,20 +561,16 @@ fn collect_edge_flange_claimed_references<'a>(
     )
 }
 
-/// Assembly scopes indexed by their operand reference and byte offset.
-struct AssemblyScopeIndexes<'a> {
-    by_frame: RecordGroups<'a, (&'a str, u32), records::feature::scope::DesignParameterScope>,
-    by_offset: RecordGroups<'a, (&'a str, u64), records::feature::scope::DesignParameterScope>,
-}
-
-/// Each index group keeps arena order.
-fn assembly_scope_indexes<'a>(
+/// Assembly scopes grouped by operand reference, in arena order.
+fn assembly_scopes_by_frame<'a>(
     ctx: &Ctx<'a, '_>,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-) -> Result<AssemblyScopeIndexes<'a>, CodecError> {
-    const OPERATION: &str = "group F3D assembly scopes";
-    let mut by_frame = HashMap::new();
-    let mut by_offset = HashMap::new();
+) -> Result<
+    RecordGroups<'a, (&'a str, u32), records::feature::scope::DesignParameterScope>,
+    CodecError,
+> {
+    const OPERATION: &str = "group F3D assembly scopes by frame";
+    let mut groups = HashMap::new();
     for scope in ctx
         .decode
         .admit_iter(&ctx.native.design_parameter_scopes, OPERATION)?
@@ -582,29 +578,20 @@ fn assembly_scope_indexes<'a>(
         if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Assemble {
             continue;
         }
-        let stream = design_stream(&scope.id);
-        storage.with_storage(|| {
-            ctx.decode.push_hash_group(
-                &mut by_offset,
-                (stream, scope.byte_offset()),
-                scope,
-                OPERATION,
-                OPERATION,
-            )
-        })?;
         let Some(frames) = scope
             .assembly_alignment()
             .and_then(records::feature::assembly::DesignAssemblyAlignment::operand_frames)
         else {
             continue;
         };
+        let stream = design_stream(ctx.decode, &scope.id)?;
         for (ordinal, frame) in frames.iter().enumerate() {
             if ordinal == 1 && frame.reference_record_index == frames[0].reference_record_index {
                 continue;
             }
             storage.with_storage(|| {
                 ctx.decode.push_hash_group(
-                    &mut by_frame,
+                    &mut groups,
                     (stream, frame.reference_record_index),
                     scope,
                     OPERATION,
@@ -613,10 +600,33 @@ fn assembly_scope_indexes<'a>(
             })?;
         }
     }
-    Ok(AssemblyScopeIndexes {
-        by_frame,
-        by_offset,
-    })
+    Ok(groups)
+}
+
+/// Assembly scopes grouped by byte offset, in arena order.
+fn assembly_scopes_by_offset<'a>(
+    ctx: &Ctx<'a, '_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+) -> Result<
+    RecordGroups<'a, (&'a str, u64), records::feature::scope::DesignParameterScope>,
+    CodecError,
+> {
+    const OPERATION: &str = "group F3D assembly scopes by offset";
+    group_records(
+        ctx.decode,
+        storage,
+        &ctx.native.design_parameter_scopes,
+        |scope| {
+            if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Assemble {
+                return Ok(None);
+            }
+            Ok(Some((
+                design_stream(ctx.decode, &scope.id)?,
+                scope.byte_offset(),
+            )))
+        },
+        OPERATION,
+    )
 }
 
 /// Validate feature parameter scopes and their paired feature-operation frames.
@@ -634,12 +644,13 @@ pub(super) fn validate_parameter_scopes(
     let mut scope_indices = HashSet::new();
     let mut bindings_by_entity = None;
     let mut xrefs_by_role = None;
-    let mut assemblies = None;
+    let mut assemblies_by_frame = None;
+    let mut assemblies_by_offset = None;
     for scope in ctx.decode.admit_iter(
         &native.design_parameter_scopes,
         "scan F3D design parameter scopes",
     )? {
-        let native_stream = design_stream(&scope.id);
+        let native_stream = design_stream(ctx.decode, &scope.id)?;
         let unique_index = storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut scope_indices,
@@ -989,7 +1000,10 @@ pub(super) fn validate_parameter_scopes(
                                 &mut storage,
                                 &native.design_body_bindings,
                                 |binding| {
-                                    Some((design_stream(binding.id()), binding.entity_suffix))
+                                    Ok(Some((
+                                        design_stream(ctx.decode, binding.id())?,
+                                        binding.entity_suffix,
+                                    )))
                                 },
                                 "group F3D copied body bindings",
                             )?),
@@ -1801,7 +1815,7 @@ pub(super) fn validate_parameter_scopes(
                                 ctx.decode,
                                 &mut storage,
                                 &native.xref_references,
-                                |reference| Some(reference.neutron_role.as_str()),
+                                |reference| Ok(Some(reference.neutron_role.as_str())),
                                 "group F3D component insert xrefs",
                             )?),
                         };
@@ -2220,15 +2234,14 @@ pub(super) fn validate_parameter_scopes(
                     }
                     _ => false,
                 };
-                let AssemblyScopeIndexes {
-                    by_frame: assemblies_by_frame,
-                    by_offset: assemblies_by_offset,
-                } = match &mut assemblies {
-                    Some(assemblies) => assemblies,
-                    None => assemblies.insert(assembly_scope_indexes(ctx, &mut storage)?),
-                };
-                let assembly_operand = origin.reference.is_none()
-                    && ctx.decode.any_by(
+                let assembly_operand = if origin.reference.is_none() {
+                    let assemblies_by_frame = match &mut assemblies_by_frame {
+                        Some(groups) => groups,
+                        None => {
+                            assemblies_by_frame.insert(assembly_scopes_by_frame(ctx, &mut storage)?)
+                        }
+                    };
+                    ctx.decode.any_by(
                         ctx.decode
                             .get_hash_map(
                                 assemblies_by_frame,
@@ -2248,20 +2261,29 @@ pub(super) fn validate_parameter_scopes(
                             }))
                         },
                         "find F3D joint origin assembly operand",
-                    )?;
+                    )?
+                } else {
+                    false
+                };
                 let single_operand_assembly = origin
                     .reference
                     .as_ref()
                     .map(|reference| -> Result<bool, CodecError> {
                         let candidates = match transform_offset.checked_sub(36) {
-                            Some(byte_offset) => ctx
-                                .decode
-                                .get_hash_map(
-                                    assemblies_by_offset,
-                                    &(native_stream, byte_offset),
-                                    "find F3D single operand joint assemblies",
-                                )?
-                                .map_or(&[][..], Vec::as_slice),
+                            Some(byte_offset) => {
+                                let assemblies_by_offset = match &mut assemblies_by_offset {
+                                    Some(groups) => groups,
+                                    None => assemblies_by_offset
+                                        .insert(assembly_scopes_by_offset(ctx, &mut storage)?),
+                                };
+                                ctx.decode
+                                    .get_hash_map(
+                                        assemblies_by_offset,
+                                        &(native_stream, byte_offset),
+                                        "find F3D single operand joint assemblies",
+                                    )?
+                                    .map_or(&[][..], Vec::as_slice)
+                            }
                             None => &[],
                         };
                         ctx.decode.any_by(
@@ -3369,7 +3391,7 @@ fn valid_work_point_construction(
                             operand_id,
                             "compare F3D work-point edge recipe identity",
                         )? && ctx.decode.equal(
-                            design_stream(&operand.id),
+                            design_stream(ctx.decode, &operand.id)?,
                             native_stream,
                             "compare F3D work-point edge recipe stream",
                         )? && operand.scope_record_index == scope.record_index
@@ -3399,7 +3421,7 @@ fn valid_work_point_construction(
                             &native.design_parameter_scopes,
                             |plane| {
                                 Ok(ctx.decode.equal(
-                                    design_stream(&plane.id),
+                                    design_stream(ctx.decode, &plane.id)?,
                                     native_stream,
                                     "compare F3D work-point plane stream",
                                 )? && (plane.kind()
@@ -3437,7 +3459,7 @@ fn valid_work_point_construction(
                                     &selection.point_native_id,
                                     "compare F3D work-point sketch identity",
                                 )? && ctx.decode.equal(
-                                    design_stream(&point.id),
+                                    design_stream(ctx.decode, &point.id)?,
                                     native_stream,
                                     "compare F3D work-point sketch stream",
                                 )? && point.owner_reference

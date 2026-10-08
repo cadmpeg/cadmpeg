@@ -27,8 +27,23 @@ use cadmpeg_ir::report::{
 
 /// Resolve the native design stream that owns a record `id`, defaulting to the
 /// primary design stream when the id carries no stream qualifier.
-fn design_stream(id: &str) -> &str {
-    ids::native_stream(id).unwrap_or(ids::DEFAULT_STREAM)
+fn design_stream<'id>(decode: &DecodeContext<'_>, id: &'id str) -> Result<&'id str, CodecError> {
+    Ok(decode
+        .rsplit_once(id, ":", "resolve F3D validation design stream")?
+        .map_or(ids::DEFAULT_STREAM, |(stream, _)| stream))
+}
+
+/// Resolve the Design segment from a parsed native stream. Only the two
+/// Design stream entry names identify a segment.
+fn design_segment<'stream>(
+    decode: &DecodeContext<'_>,
+    stream: &'stream str,
+) -> Result<Option<&'stream str>, CodecError> {
+    Ok(decode
+        .rsplit_once(stream, "/", "resolve F3D validation design segment")?
+        .and_then(|(segment, entry)| {
+            matches!(entry, "MetaStream.dat" | "BulkStream.dat").then_some(segment)
+        }))
 }
 
 /// Match a direct escaped entry or an xref scope ending in the entry.
@@ -95,6 +110,7 @@ fn reference_member_at<T, O>(
 }
 
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 
 fn reload_native_arena<'ctx, T: serde::de::DeserializeOwned>(
@@ -116,18 +132,30 @@ fn reload_native_arena<'ctx, T: serde::de::DeserializeOwned>(
 /// Records of one arena grouped by key, each group in arena order.
 type RecordGroups<'a, K, T> = HashMap<K, Vec<&'a T>>;
 
+/// A grouped index and the storage held for its consumers.
+type ScopedGroups<'a, K, T> = (
+    RecordGroups<'a, K, T>,
+    cadmpeg_core::decode::ScopedReservation<'a>,
+);
+
+/// Unique ASM states and their live index storage.
+type StateIndex<'a> = (
+    HashMap<i64, Option<&'a crate::history_records::AsmDeltaState>>,
+    cadmpeg_core::decode::ScopedReservation<'a>,
+);
+
 /// Group `records` by `key` under `storage`, keeping arena order within each
 /// group. Records whose key is `None` are left out.
 fn group_records<'a, K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, T>(
     decode: &DecodeContext<'_>,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     records: &'a [T],
-    key: impl Fn(&'a T) -> Option<K>,
+    key: impl Fn(&'a T) -> Result<Option<K>, CodecError>,
     operation: &'static str,
 ) -> Result<RecordGroups<'a, K, T>, CodecError> {
     let mut groups = HashMap::new();
     for record in decode.admit_iter(records, operation)? {
-        let Some(key) = key(record) else {
+        let Some(key) = key(record)? else {
             continue;
         };
         storage.with_storage(|| {
@@ -174,18 +202,13 @@ struct Ctx<'a, 'd> {
     header_offsets: HashSet<(&'a str, u64)>,
     /// Construction recipes keyed by recipe id.
     recipes_by_id: HashMap<&'a str, &'a records::recipes::ConstructionRecipe>,
-    /// Parameters keyed by `(stream, record_index)`.
-    parameters_by_index: HashMap<(&'a str, u32), &'a records::parameters::DesignParameter>,
     /// Every parameter sharing a `(stream, record_index)`, in arena order.
-    parameter_groups: RecordGroups<'a, (&'a str, u32), records::parameters::DesignParameter>,
-    /// Parameter owners keyed by `(stream, record_index)`.
-    owners_by_index: HashMap<(&'a str, u32), &'a records::parameters::DesignParameterOwner>,
+    parameter_groups:
+        OnceCell<ScopedGroups<'a, (&'a str, u32), records::parameters::DesignParameter>>,
     /// Every parameter owner sharing a `(stream, record_index)`, in arena order.
     owner_groups: RecordGroups<'a, (&'a str, u32), records::parameters::DesignParameterOwner>,
     /// Parameter companions keyed by `(stream, record_index)`.
     companions_by_index: HashMap<(&'a str, u32), &'a records::parameters::DesignParameterCompanion>,
-    /// Parameter scopes keyed by `(stream, record_index)`.
-    scopes_by_index: HashMap<(&'a str, u32), &'a records::feature::scope::DesignParameterScope>,
     /// Every parameter scope sharing a `(stream, record_index)`, in arena order.
     scope_groups: RecordGroups<'a, (&'a str, u32), records::feature::scope::DesignParameterScope>,
     /// Every parameter owner of a `(stream, scope_record_index)`, in arena order.
@@ -210,10 +233,12 @@ struct Ctx<'a, 'd> {
     >,
     /// Every component occurrence sharing a stream and case-folded occurrence
     /// GUID, in arena order.
-    occurrence_guid_groups: RecordGroups<
-        'a,
-        (&'a str, FoldedGuid),
-        records::feature::assembly_features::DesignComponentOccurrence,
+    occurrence_guid_groups: OnceCell<
+        ScopedGroups<
+            'a,
+            (&'a str, FoldedGuid),
+            records::feature::assembly_features::DesignComponentOccurrence,
+        >,
     >,
     /// Entity headers keyed by `(stream, entity_suffix)`.
     entities_by_suffix: HashMap<(&'a str, u64), &'a records::entity_header::DesignEntityHeader>,
@@ -227,11 +252,6 @@ struct Ctx<'a, 'd> {
         (&'a str, u32),
         &'a records::topology::extrude_selection::DesignExtrudeSelectionGroup,
     >,
-    /// Construction operand groups keyed by `(stream, record_index)`.
-    operand_groups_by_index: HashMap<
-        (&'a str, u32),
-        &'a records::topology::construction::DesignConstructionOperandGroup,
-    >,
     /// Extrude selection members keyed by `(stream, group_record_index, ordinal)`.
     members_by_slot: HashMap<
         (&'a str, u32, u32),
@@ -240,13 +260,16 @@ struct Ctx<'a, 'd> {
     /// Sketch owner entity ids keyed by `(stream, suffix)`.
     sketch_owner_ids: HashMap<(&'a str, u32), &'a str>,
     /// Unique ASM states by id; a repeated id keeps a tombstone.
-    states_by_id: HashMap<i64, Option<&'a crate::history_records::AsmDeltaState>>,
+    states_by_id: OnceCell<StateIndex<'a>>,
     /// ASM history bound to each parameter scope with a history state.
     scope_histories: HashMap<String, String>,
     /// Storage of the grouped and record lookup indexes.
     _index_storage: cadmpeg_core::decode::ScopedReservation<'a>,
-    /// Storage of the unique state index.
-    _state_storage: cadmpeg_core::decode::ScopedReservation<'a>,
+    /// Neutral features grouped by native reference on first use.
+    neutral_features: OnceCell<(
+        NeutralFeatureGroups<'a>,
+        cadmpeg_core::decode::ScopedReservation<'a>,
+    )>,
 }
 
 impl<'a, 'd> Ctx<'a, 'd> {
@@ -359,10 +382,83 @@ impl<'a, 'd> Ctx<'a, 'd> {
         let Some(guid) = folded_guid(guid) else {
             return Ok(&[]);
         };
+        let (groups, _) = match self.occurrence_guid_groups.get() {
+            Some(groups) => groups,
+            None => {
+                let mut storage = self
+                    .decode
+                    .reserve_scoped(0, "hold F3D occurrence GUID groups")?;
+                let groups = group_records(
+                    self.decode,
+                    &mut storage,
+                    &self.native.design_component_occurrences,
+                    |occurrence| {
+                        let Some(guid) = folded_guid(occurrence.occurrence_guid.as_str()) else {
+                            return Ok(None);
+                        };
+                        Ok(Some((design_stream(self.decode, &occurrence.id)?, guid)))
+                    },
+                    "group F3D component occurrences by GUID",
+                )?;
+                self.occurrence_guid_groups
+                    .get_or_init(|| (groups, storage))
+            }
+        };
         Ok(self
             .decode
-            .get_hash_map(&self.occurrence_guid_groups, &(stream, guid), operation)?
+            .get_hash_map(groups, &(stream, guid), operation)?
             .map_or(&[], Vec::as_slice))
+    }
+
+    /// Build the parameter groups on their first lookup.
+    fn parameters(
+        &self,
+    ) -> Result<&RecordGroups<'a, (&'a str, u32), records::parameters::DesignParameter>, CodecError>
+    {
+        let (groups, _) = match self.parameter_groups.get() {
+            Some(groups) => groups,
+            None => {
+                let mut storage = self.decode.reserve_scoped(0, "hold F3D parameter groups")?;
+                let groups = group_records(
+                    self.decode,
+                    &mut storage,
+                    &self.native.design_parameters,
+                    |parameter| {
+                        Ok(Some((
+                            design_stream(self.decode, &parameter.id)?,
+                            parameter.record_index,
+                        )))
+                    },
+                    "group F3D design parameters",
+                )?;
+                self.parameter_groups.get_or_init(|| (groups, storage))
+            }
+        };
+        Ok(groups)
+    }
+
+    /// Build the ASM state table on its first lookup; repeated ids stay tombstones.
+    fn states(
+        &self,
+    ) -> Result<&HashMap<i64, Option<&'a crate::history_records::AsmDeltaState>>, CodecError> {
+        let (states, _) = match self.states_by_id.get() {
+            Some(states) => states,
+            None => {
+                let built = self.decode.unique_index(
+                    self.decode
+                        .admit_iter(
+                            &self.native.asm_histories,
+                            "index F3D validation state histories",
+                        )?
+                        .flat_map(|history| {
+                            history.states.iter().map(|state| (state.state_id, state))
+                        }),
+                    "index F3D validation states",
+                )?;
+                self.states_by_id.get_or_init(|| built)
+            }
+        };
+        Ok(states)
     }
 
     /// Every parameter at `(stream, record_index)`, in arena order.
@@ -374,141 +470,162 @@ impl<'a, 'd> Ctx<'a, 'd> {
     ) -> Result<&'s [&'s records::parameters::DesignParameter], CodecError> {
         Ok(self
             .decode
-            .get_hash_map(&self.parameter_groups, &(stream, record_index), operation)?
+            .get_hash_map(self.parameters()?, &(stream, record_index), operation)?
             .map_or(&[], Vec::as_slice))
     }
 
-    /// Build every shared index over `native` up front. All builds are pure and
-    /// emit no findings, so their eager construction does not affect the
-    /// observable finding order. A repeated key keeps its last record in the
-    /// single-record indexes; the group indexes keep every record.
+    /// Build shared record indexes. Grouped indexes preserve arena order;
+    /// last-record consumers read the final group member. Conditional indexes
+    /// are built by their first consumer and keep their scoped storage.
     fn new(
         ir: &'a CadIr,
         native: &'a native::F3dNative,
         decode: &'a DecodeContext<'d>,
     ) -> Result<Self, CodecError> {
         let mut storage = decode.reserve_scoped(0, "hold F3D validation indexes")?;
-        let records_by_index = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native
-                    .design_record_headers
-                    .iter()
-                    .map(|record| ((design_stream(&record.id), record.record_index), record)),
-                "index F3D design headers",
-            )
-        })?;
-        let header_offsets = storage.with_storage(|| {
-            decode.collect_hash_set(
-                native
-                    .design_record_headers
-                    .iter()
-                    .map(|record| (design_stream(&record.id), record.byte_offset)),
-                "index F3D design header offsets",
-            )
-        })?;
-        let recipes_by_id = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native
-                    .construction_recipes
-                    .iter()
-                    .map(|recipe| (recipe.id.as_str(), recipe)),
-                "index F3D construction recipes",
-            )
-        })?;
-        let parameters_by_index = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native.design_parameters.iter().map(|parameter| {
-                    (
-                        (design_stream(&parameter.id), parameter.record_index),
-                        parameter,
-                    )
-                }),
-                "index F3D design parameters",
-            )
-        })?;
-        let parameter_groups = group_records(
-            decode,
-            &mut storage,
-            &native.design_parameters,
-            |parameter| Some((design_stream(&parameter.id), parameter.record_index)),
-            "group F3D design parameters",
-        )?;
-        let owners_by_index = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native
-                    .design_parameter_owners
-                    .iter()
-                    .map(|owner| ((design_stream(owner.id()), owner.record_index()), owner)),
-                "index F3D parameter owners",
-            )
-        })?;
-        let owner_groups = group_records(
-            decode,
-            &mut storage,
+        let mut records_by_index = HashMap::new();
+        let mut header_offsets = HashSet::new();
+        for record in
+            decode.admit_iter(&native.design_record_headers, "index F3D design headers")?
+        {
+            let stream = design_stream(decode, &record.id)?;
+            storage.with_storage(|| {
+                decode.insert_hash_map(
+                    &mut records_by_index,
+                    (stream, record.record_index),
+                    record,
+                    "index F3D design headers",
+                )
+            })?;
+            storage.with_storage(|| {
+                decode.insert_hash_set(
+                    &mut header_offsets,
+                    (stream, record.byte_offset),
+                    "index F3D design header offsets",
+                )
+            })?;
+        }
+        let mut recipes_by_id = HashMap::new();
+        for recipe in decode.admit_iter(
+            &native.construction_recipes,
+            "index F3D construction recipes",
+        )? {
+            storage.with_storage(|| {
+                decode.insert_hash_map(
+                    &mut recipes_by_id,
+                    recipe.id.as_str(),
+                    recipe,
+                    "index F3D construction recipes",
+                )
+            })?;
+        }
+        let mut owner_groups = HashMap::new();
+        let mut scope_owner_groups = HashMap::new();
+        for owner in decode.admit_iter(
             &native.design_parameter_owners,
-            |owner| Some((design_stream(owner.id()), owner.record_index())),
             "group F3D parameter owners",
-        )?;
-        let scope_owner_groups = group_records(
-            decode,
-            &mut storage,
-            &native.design_parameter_owners,
-            |owner| Some((design_stream(owner.id()), owner.scope_record_index())),
-            "group F3D parameter owners by scope",
-        )?;
-        let companions_by_index = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native.design_parameter_companions.iter().map(|companion| {
-                    (
-                        (design_stream(companion.id()), companion.record_index()),
-                        companion,
-                    )
-                }),
-                "index F3D parameter companions",
-            )
-        })?;
-        let scopes_by_index = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native
-                    .design_parameter_scopes
-                    .iter()
-                    .map(|scope| ((design_stream(&scope.id), scope.record_index), scope)),
-                "index F3D parameter scopes",
-            )
-        })?;
-        let scope_groups = group_records(
-            decode,
-            &mut storage,
+        )? {
+            let stream = design_stream(decode, owner.id())?;
+            storage.with_storage(|| {
+                decode.push_hash_group(
+                    &mut owner_groups,
+                    (stream, owner.record_index()),
+                    owner,
+                    "group F3D parameter owners",
+                    "group F3D parameter owners",
+                )
+            })?;
+            storage.with_storage(|| {
+                decode.push_hash_group(
+                    &mut scope_owner_groups,
+                    (stream, owner.scope_record_index()),
+                    owner,
+                    "group F3D parameter owners by scope",
+                    "group F3D parameter owners by scope",
+                )
+            })?;
+        }
+        let mut companions_by_index = HashMap::new();
+        for companion in decode.admit_iter(
+            &native.design_parameter_companions,
+            "index F3D parameter companions",
+        )? {
+            let stream = design_stream(decode, companion.id())?;
+            storage.with_storage(|| {
+                decode.insert_hash_map(
+                    &mut companions_by_index,
+                    (stream, companion.record_index()),
+                    companion,
+                    "index F3D parameter companions",
+                )
+            })?;
+        }
+        let mut scope_groups = HashMap::new();
+        for scope in decode.admit_iter(
             &native.design_parameter_scopes,
-            |scope| Some((design_stream(&scope.id), scope.record_index)),
             "group F3D parameter scopes",
-        )?;
-        let entities_by_suffix = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native.design_entity_headers.iter().map(|entity| {
-                    (
-                        (design_stream(&entity.id), entity.entity_id.suffix()),
-                        entity,
-                    )
-                }),
-                "index F3D entity suffixes",
-            )
-        })?;
-        let sketch_geometry_indices = storage.with_storage(|| {
-            decode.collect_hash_set(
-                native
-                    .sketch_points
-                    .iter()
-                    .map(|point| (design_stream(&point.id), point.record_index))
-                    .chain(
-                        native
-                            .sketch_curve_identities
-                            .iter()
-                            .map(|curve| (design_stream(&curve.id), curve.record_index)),
-                    ),
-                "index F3D sketch geometry",
-            )
-        })?;
+        )? {
+            let stream = design_stream(decode, &scope.id)?;
+            storage.with_storage(|| {
+                decode.push_hash_group(
+                    &mut scope_groups,
+                    (stream, scope.record_index),
+                    scope,
+                    "group F3D parameter scopes",
+                    "group F3D parameter scopes",
+                )
+            })?;
+        }
+        let mut entities_by_suffix = HashMap::new();
+        let mut sketch_owner_ids = HashMap::new();
+        for entity in
+            decode.admit_iter(&native.design_entity_headers, "index F3D entity suffixes")?
+        {
+            let stream = design_stream(decode, &entity.id)?;
+            storage.with_storage(|| {
+                decode.insert_hash_map(
+                    &mut entities_by_suffix,
+                    (stream, entity.entity_id.suffix()),
+                    entity,
+                    "index F3D entity suffixes",
+                )
+            })?;
+            if entity.in_sketch_module() {
+                if let Ok(suffix) = u32::try_from(entity.entity_id.suffix()) {
+                    storage.with_storage(|| {
+                        decode.insert_hash_map(
+                            &mut sketch_owner_ids,
+                            (stream, suffix),
+                            entity.entity_id.as_str(),
+                            "index F3D sketch owner ids",
+                        )
+                    })?;
+                }
+            }
+        }
+        let mut sketch_geometry_indices = HashSet::new();
+        for point in decode.admit_iter(&native.sketch_points, "index F3D sketch geometry")? {
+            let stream = design_stream(decode, &point.id)?;
+            storage.with_storage(|| {
+                decode.insert_hash_set(
+                    &mut sketch_geometry_indices,
+                    (stream, point.record_index),
+                    "index F3D sketch geometry",
+                )
+            })?;
+        }
+        for curve in
+            decode.admit_iter(&native.sketch_curve_identities, "index F3D sketch geometry")?
+        {
+            let stream = design_stream(decode, &curve.id)?;
+            storage.with_storage(|| {
+                decode.insert_hash_set(
+                    &mut sketch_geometry_indices,
+                    (stream, curve.record_index),
+                    "index F3D sketch geometry",
+                )
+            })?;
+        }
         let mut placements_by_scope = HashMap::new();
         for placement in decode.admit_iter(
             &native.design_sketch_placements,
@@ -517,112 +634,92 @@ impl<'a, 'd> Ctx<'a, 'd> {
             let Some(scope_record_index) = placement.scope_record_index else {
                 continue;
             };
+            let stream = design_stream(decode, &placement.id)?;
             storage.with_storage(|| {
                 decode.insert_hash_map(
                     &mut placements_by_scope,
-                    (design_stream(&placement.id), scope_record_index),
+                    (stream, scope_record_index),
                     placement,
                     "index F3D sketch placements",
                 )
             })?;
         }
-        let groups_by_index = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native
-                    .design_extrude_selection_groups
-                    .iter()
-                    .map(|group| ((design_stream(&group.id), group.record_index), group)),
-                "index F3D extrude selection groups",
-            )
-        })?;
-        let operand_groups_by_index = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native
-                    .design_construction_operand_groups
-                    .iter()
-                    .map(|group| ((design_stream(&group.id), group.record_index), group)),
-                "index F3D construction operand groups",
-            )
-        })?;
-        let operand_group_groups = group_records(
-            decode,
-            &mut storage,
-            &native.design_construction_operand_groups,
-            |group| Some((design_stream(&group.id), group.record_index)),
-            "group F3D construction operand groups",
-        )?;
-        let operand_groups_by_scope = group_records(
-            decode,
-            &mut storage,
-            &native.design_construction_operand_groups,
-            |group| Some((design_stream(&group.id), group.scope_record_index)),
-            "group F3D operand groups by scope",
-        )?;
-        let occurrence_groups = group_records(
-            decode,
-            &mut storage,
-            &native.design_component_occurrences,
-            |occurrence| Some((design_stream(&occurrence.id), occurrence.record_index)),
-            "group F3D component occurrences",
-        )?;
-        let occurrence_guid_groups = group_records(
-            decode,
-            &mut storage,
-            &native.design_component_occurrences,
-            |occurrence| {
-                Some((
-                    design_stream(&occurrence.id),
-                    folded_guid(occurrence.occurrence_guid.as_str())?,
-                ))
-            },
-            "group F3D component occurrences by GUID",
-        )?;
-        let members_by_slot = storage.with_storage(|| {
-            decode.collect_hash_map(
-                native
-                    .design_extrude_selection_members
-                    .iter()
-                    .map(|member| {
-                        (
-                            (
-                                design_stream(&member.id),
-                                member.group_record_index,
-                                member.group_member_ordinal,
-                            ),
-                            member,
-                        )
-                    }),
-                "index F3D extrude selection members",
-            )
-        })?;
-        let mut sketch_owner_ids = HashMap::new();
-        for header in
-            decode.admit_iter(&native.design_entity_headers, "index F3D sketch owner ids")?
-        {
-            if !header.in_sketch_module() {
-                continue;
-            }
-            let Ok(suffix) = u32::try_from(header.entity_id.suffix()) else {
-                continue;
-            };
+        let mut groups_by_index = HashMap::new();
+        for group in decode.admit_iter(
+            &native.design_extrude_selection_groups,
+            "index F3D extrude selection groups",
+        )? {
+            let stream = design_stream(decode, &group.id)?;
             storage.with_storage(|| {
                 decode.insert_hash_map(
-                    &mut sketch_owner_ids,
-                    (design_stream(&header.id), suffix),
-                    header.entity_id.as_str(),
-                    "index F3D sketch owner ids",
+                    &mut groups_by_index,
+                    (stream, group.record_index),
+                    group,
+                    "index F3D extrude selection groups",
                 )
             })?;
         }
-        let (states_by_id, state_storage) = decode.unique_index(
-            decode
-                .admit_iter(
-                    &native.asm_histories,
-                    "index F3D validation state histories",
-                )?
-                .flat_map(|history| history.states.iter().map(|state| (state.state_id, state))),
-            "index F3D validation states",
-        )?;
+        let mut operand_group_groups = HashMap::new();
+        let mut operand_groups_by_scope = HashMap::new();
+        for group in decode.admit_iter(
+            &native.design_construction_operand_groups,
+            "group F3D construction operand groups",
+        )? {
+            let stream = design_stream(decode, &group.id)?;
+            storage.with_storage(|| {
+                decode.push_hash_group(
+                    &mut operand_group_groups,
+                    (stream, group.record_index),
+                    group,
+                    "group F3D construction operand groups",
+                    "group F3D construction operand groups",
+                )
+            })?;
+            storage.with_storage(|| {
+                decode.push_hash_group(
+                    &mut operand_groups_by_scope,
+                    (stream, group.scope_record_index),
+                    group,
+                    "group F3D operand groups by scope",
+                    "group F3D operand groups by scope",
+                )
+            })?;
+        }
+        let mut occurrence_groups = HashMap::new();
+        for occurrence in decode.admit_iter(
+            &native.design_component_occurrences,
+            "group F3D component occurrences",
+        )? {
+            let stream = design_stream(decode, &occurrence.id)?;
+            storage.with_storage(|| {
+                decode.push_hash_group(
+                    &mut occurrence_groups,
+                    (stream, occurrence.record_index),
+                    occurrence,
+                    "group F3D component occurrences",
+                    "group F3D component occurrences",
+                )
+            })?;
+        }
+        let mut members_by_slot = HashMap::new();
+        for member in decode.admit_iter(
+            &native.design_extrude_selection_members,
+            "index F3D extrude selection members",
+        )? {
+            let stream = design_stream(decode, &member.id)?;
+            storage.with_storage(|| {
+                decode.insert_hash_map(
+                    &mut members_by_slot,
+                    (
+                        stream,
+                        member.group_record_index,
+                        member.group_member_ordinal,
+                    ),
+                    member,
+                    "index F3D extrude selection members",
+                )
+            })?;
+        }
         let scope_histories = storage.with_storage(|| {
             history::bind_scope_histories(
                 decode,
@@ -639,29 +736,25 @@ impl<'a, 'd> Ctx<'a, 'd> {
             records_by_index,
             header_offsets,
             recipes_by_id,
-            parameters_by_index,
-            parameter_groups,
-            owners_by_index,
+            parameter_groups: OnceCell::new(),
             owner_groups,
             companions_by_index,
-            scopes_by_index,
             scope_groups,
             scope_owner_groups,
             operand_group_groups,
             operand_groups_by_scope,
             occurrence_groups,
-            occurrence_guid_groups,
+            occurrence_guid_groups: OnceCell::new(),
             entities_by_suffix,
             sketch_geometry_indices,
             placements_by_scope,
             groups_by_index,
-            operand_groups_by_index,
             members_by_slot,
             sketch_owner_ids,
             scope_histories,
-            states_by_id,
+            states_by_id: OnceCell::new(),
             _index_storage: storage,
-            _state_storage: state_storage,
+            neutral_features: OnceCell::new(),
         })
     }
 }
@@ -733,7 +826,7 @@ fn validate_loaded(
         face_group_members_storage.with_storage(|| {
             decode.insert_hash_set(
                 &mut decoded_profile_face_groups,
-                (design_stream(&operand.id), group_record_index),
+                (design_stream(ctx.decode, &operand.id)?, group_record_index),
                 "index F3D decoded profile face groups",
             )
         })?;
@@ -743,22 +836,23 @@ fn validate_loaded(
         &native.design_construction_operand_groups,
         "scan F3D face groups",
     )? {
-        let selected = group.extrude_role().is_some_and(|role| {
-            matches!(
-                role,
-                records::topology::extrude_selection::DesignExtrudeOperandRole::Faces(_)
-            )
-        }) || (group.extrude_role()
-            == Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Profile)
-            && decode.contains_hash_set(
-                &decoded_profile_face_groups,
-                &(design_stream(&group.id), group.record_index),
-                "find F3D profile face group",
-            )?);
-        if !selected {
-            continue;
-        }
-        let native_stream = design_stream(&group.id);
+        let native_stream = match group.extrude_role() {
+            Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Faces(_)) => {
+                design_stream(ctx.decode, &group.id)?
+            }
+            Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Profile) => {
+                let stream = design_stream(ctx.decode, &group.id)?;
+                if !decode.contains_hash_set(
+                    &decoded_profile_face_groups,
+                    &(stream, group.record_index),
+                    "find F3D profile face group",
+                )? {
+                    continue;
+                }
+                stream
+            }
+            _ => continue,
+        };
         for member in decode.admit_iter(group.members(), "scan F3D face group members")? {
             face_group_members_storage.with_storage(|| {
                 decode.insert_btree_set(
@@ -1319,33 +1413,31 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     let mut entity_type_counts = HashMap::<(&str, u64), usize>::new();
     let mut expected = std::collections::BTreeMap::<(&str, u64), (String, u32, bool, &str)>::new();
     let mut design_types = timeline_indexes_storage.with_storage(|| {
-        ctx.decode.collect_vec(
+        ctx.decode.try_collect_vec(
             native.design_types.iter().map(|value| {
-                (
-                    (
-                        ids::native_stream(value.id()).unwrap_or_default(),
-                        value.byte_offset,
-                    ),
-                    value,
-                )
+                let stream = ctx
+                    .decode
+                    .rsplit_once(value.id(), ":", "resolve F3D validation design stream")?
+                    .map(|(stream, _)| stream);
+                Ok::<_, CodecError>((stream, value))
             }),
             "order F3D feature timeline types",
         )
     })?;
     ctx.decode.stable_sort_by_key(
         &mut design_types,
-        |(key, _)| *key,
+        |(stream, value)| (stream.unwrap_or_default(), value.byte_offset),
         Ord::cmp,
         "f3d feature timeline types sort",
     )?;
-    for (_, design_type) in ctx
+    for (meta_stream, design_type) in ctx
         .decode
         .admit_iter(&design_types, "scan F3D design types")?
     {
-        let Some(meta_stream) = ids::native_stream(design_type.id()) else {
+        let Some(meta_stream) = *meta_stream else {
             continue;
         };
-        let Some(segment) = ids::design_segment(design_type.id()) else {
+        let Some(segment) = design_segment(ctx.decode, meta_stream)? else {
             continue;
         };
         if !ctx.decode.contains_key_hash_map(
@@ -1636,7 +1728,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
                 &native.design_parameter_scopes,
                 "scan F3D design parameter scopes",
             )? {
-                let stream = design_stream(&scope.id);
+                let stream = design_stream(ctx.decode, &scope.id)?;
                 let Some(position) = ctx.decode.get_hash_map(
                     &authored,
                     &(stream, scope.record_index),
@@ -1760,17 +1852,16 @@ fn mesh_record_offset_is(
 type NeutralFeatureGroups<'a> = HashMap<&'a str, Vec<&'a cadmpeg_ir::features::Feature>>;
 
 /// The neutral features whose native reference is `native_ref`, in model
-/// order. The grouping is built on first use under `storage`.
+/// order. The grouping and its storage are shared by mesh and Decal checks.
 fn neutral_features_with_native_ref<'g, 'a>(
-    ctx: &Ctx<'a, '_>,
-    groups: &'g mut Option<NeutralFeatureGroups<'a>>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ctx: &'g Ctx<'a, '_>,
     native_ref: &str,
 ) -> Result<&'g [&'a cadmpeg_ir::features::Feature], CodecError> {
     const OPERATION: &str = "group F3D neutral features by native reference";
-    let groups = match groups {
+    let (groups, _) = match ctx.neutral_features.get() {
         Some(groups) => groups,
         None => {
+            let mut storage = ctx.decode.reserve_scoped(0, OPERATION)?;
             let mut built = HashMap::new();
             for feature in ctx.decode.admit_iter(&ctx.ir.model.features, OPERATION)? {
                 let Some(feature_ref) = feature.native_ref.as_deref() else {
@@ -1786,7 +1877,7 @@ fn neutral_features_with_native_ref<'g, 'a>(
                     )
                 })?;
             }
-            groups.insert(built)
+            ctx.neutral_features.get_or_init(|| (built, storage))
         }
     };
     Ok(ctx
@@ -1838,17 +1929,19 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), 
             "index F3D mesh tessellation IDs",
         )
     })?;
-    let mut neutral_features = None;
     for feature in ctx.decode.admit_iter(
         &ctx.native.design_mesh_features,
         "scan F3D design mesh features",
     )? {
-        let stream = design_stream(&feature.id);
-        let scope = ctx.decode.get_hash_map(
-            &ctx.scopes_by_index,
-            &(stream, feature.scope().record().record_index()),
-            "find F3D mesh scope",
-        )?;
+        let stream = design_stream(ctx.decode, &feature.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                &ctx.scope_groups,
+                &(stream, feature.scope().record().record_index()),
+                "find F3D mesh scope",
+            )?
+            .and_then(|records| records.last());
         let mut valid = record_indexes_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut feature_ids,
@@ -2042,7 +2135,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), 
             "find F3D projected mesh body",
         )? {
             valid &= match scope {
-                Some(scope) => ctx.decode.any_by(neutral_features_with_native_ref(ctx, &mut neutral_features, &mut record_indexes_storage, scope.id.as_str())?, |neutral| {
+                Some(scope) => ctx.decode.any_by(neutral_features_with_native_ref(ctx, scope.id.as_str())?, |neutral| {
                     Ok(matches!(
                             neutral.evaluation.definition(),
                             cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations })
@@ -2113,7 +2206,8 @@ fn validate_canvas_images(
             ),
             _ => continue,
         };
-        let segment = ids::design_segment(design_type.id());
+        let stream = design_stream(ctx.decode, design_type.id())?;
+        let segment = design_segment(ctx.decode, stream)?;
         let (entity_values, located_entity_values) = design_type.entities.storage_slices();
         for suffix in ctx
             .decode
@@ -2137,13 +2231,16 @@ fn validate_canvas_images(
         &native.design_canvas_images,
         "scan F3D design canvas images",
     )? {
-        let native_stream = design_stream(&image.id);
-        let design_segment = ids::design_segment(&image.id);
-        let scope = ctx.decode.get_hash_map(
-            &ctx.scopes_by_index,
-            &(native_stream, image.scope_record_index),
-            "find F3D Canvas scope",
-        )?;
+        let native_stream = design_stream(ctx.decode, &image.id)?;
+        let design_segment = design_segment(ctx.decode, native_stream)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                &ctx.scope_groups,
+                &(native_stream, image.scope_record_index),
+                "find F3D Canvas scope",
+            )?
+            .and_then(|records| records.last());
         let scope_valid = match scope {
             Some(scope) => {
                 scope.kind() == crate::records::feature::scope::DesignFeatureKind::Canvas
@@ -2214,7 +2311,6 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
         .reserve_scoped(0, "index F3D Decal fusion entities")?;
     let mut fusion_entities = HashSet::new();
     let mut operands_by_record = None;
-    let mut neutral_features = None;
     for design_type in ctx.decode.admit_iter(
         &ctx.native.design_types,
         "scan F3D Decal fusion entities types",
@@ -2225,7 +2321,8 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
         ) {
             continue;
         }
-        let segment = ids::design_segment(design_type.id());
+        let stream = design_stream(ctx.decode, design_type.id())?;
+        let segment = design_segment(ctx.decode, stream)?;
         let (entity_values, located_entity_values) = design_type.entities.storage_slices();
         for suffix in ctx
             .decode
@@ -2252,18 +2349,24 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
         &ctx.native.design_decal_images,
         "scan F3D design decal images",
     )? {
-        let native_stream = design_stream(&image.id);
-        let design_segment = ids::design_segment(&image.id);
-        let scope = ctx.decode.get_hash_map(
-            &ctx.scopes_by_index,
-            &(native_stream, image.scope_record_index()),
-            "find F3D Decal scope",
-        )?;
-        let group = ctx.decode.get_hash_map(
-            &ctx.operand_groups_by_index,
-            &(native_stream, image.target_group_record_index),
-            "find F3D Decal target group",
-        )?;
+        let native_stream = design_stream(ctx.decode, &image.id)?;
+        let design_segment = design_segment(ctx.decode, native_stream)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                &ctx.scope_groups,
+                &(native_stream, image.scope_record_index()),
+                "find F3D Decal scope",
+            )?
+            .and_then(|records| records.last());
+        let group = ctx
+            .decode
+            .get_hash_map(
+                &ctx.operand_group_groups,
+                &(native_stream, image.target_group_record_index),
+                "find F3D Decal target group",
+            )?
+            .and_then(|records| records.last());
         let operand = match group
             .and_then(|group| group.members().first().map(|member| (group, member.value)))
         {
@@ -2279,7 +2382,10 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
                             fusion_entities_storage.with_storage(|| {
                                 ctx.decode.push_hash_group(
                                     &mut operands,
-                                    (design_stream(&operand.id), operand.record_index()),
+                                    (
+                                        design_stream(ctx.decode, &operand.id)?,
+                                        operand.record_index(),
+                                    ),
                                     operand,
                                     "group F3D Decal operands",
                                     "collect F3D Decal operand group members",
@@ -2358,12 +2464,7 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
             Some((operand, expected_faces)) => match scope {
                 None => false,
                 Some(scope) => ctx.decode.any_by(
-                    neutral_features_with_native_ref(
-                        ctx,
-                        &mut neutral_features,
-                        &mut fusion_entities_storage,
-                        scope.id.as_str(),
-                    )?,
+                    neutral_features_with_native_ref(ctx, scope.id.as_str())?,
                     |feature| {
                         let cadmpeg_ir::features::FeatureDefinition::Operation(
                             cadmpeg_ir::features::FeatureOperation::Decal {
@@ -2482,7 +2583,7 @@ fn validate_body_bindings(
         &native.design_body_bindings,
         "scan F3D design body bindings",
     )? {
-        let native_stream = design_stream(binding.id());
+        let native_stream = design_stream(ctx.decode, binding.id())?;
         let resolved_valid = if let Some(body) = &binding.body {
             let mut source_keys_storage =
                 ctx.decode.reserve_scoped(0, "hold F3D body source keys")?;
@@ -2666,7 +2767,7 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resul
         .decode
         .admit_iter(&native.design_body_bounds, "scan F3D design body bounds")?
     {
-        let native_stream = design_stream(bounds.id());
+        let native_stream = design_stream(ctx.decode, bounds.id())?;
         let candidates = ctx
             .decode
             .get_hash_map(
@@ -2802,7 +2903,7 @@ fn valid_vertex_recipe(
             let state_id = resolution.state_id;
             let vertex_slot = resolution.vertex_slot();
             let states = ctx.decode.get_hash_map(
-                &ctx.states_by_id,
+                ctx.states()?,
                 &state_id,
                 "find F3D vertex recipe state",
             )?;
@@ -2843,7 +2944,7 @@ fn valid_vertex_recipe(
             None => false,
             Some(recipe) => {
                 ctx.decode.equal(
-                    design_stream(&recipe.id),
+                    design_stream(ctx.decode, &recipe.id)?,
                     native_stream,
                     "compare F3D vertex recipe stream",
                 )? && recipe.kind == records::recipes::ConstructionRecipeKind::Vertex
@@ -2881,7 +2982,7 @@ fn validate_component_occurrences(
         &ctx.native.design_component_occurrences,
         "scan F3D design component occurrences",
     )? {
-        let stream = design_stream(&occurrence.id);
+        let stream = design_stream(ctx.decode, &occurrence.id)?;
         let key = folded_guid(occurrence.occurrence_guid.as_str());
         let unique_identity = scratch_storage.with_storage(|| {
             ctx.decode
@@ -2934,18 +3035,21 @@ fn validate_extrude_selection_groups(
         .reserve_scoped(0, "hold F3D extrude selection groups scratch")?;
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
-    let scopes_by_index = &ctx.scopes_by_index;
+    let scopes_by_index = &ctx.scope_groups;
     let mut group_slots = HashSet::new();
     for group in ctx.decode.admit_iter(
         &native.design_extrude_selection_groups,
         "scan F3D design extrude selection groups",
     )? {
-        let native_stream = design_stream(&group.id);
-        let scope = ctx.decode.get_hash_map(
-            scopes_by_index,
-            &(native_stream, group.scope_record_index),
-            "find F3D validation record index",
-        )?;
+        let native_stream = design_stream(ctx.decode, &group.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                scopes_by_index,
+                &(native_stream, group.scope_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let header = ctx.decode.get_hash_map(
             records_by_index,
             &(native_stream, group.record_index),
@@ -3020,18 +3124,21 @@ fn validate_construction_operand_groups(
         .reserve_scoped(0, "hold F3D construction operand groups scratch")?;
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
-    let scopes_by_index = &ctx.scopes_by_index;
+    let scopes_by_index = &ctx.scope_groups;
     let mut operand_group_slots = HashSet::new();
     for group in ctx.decode.admit_iter(
         &native.design_construction_operand_groups,
         "scan F3D design construction operand groups",
     )? {
-        let native_stream = design_stream(&group.id);
-        let scope = ctx.decode.get_hash_map(
-            scopes_by_index,
-            &(native_stream, group.scope_record_index),
-            "find F3D validation record index",
-        )?;
+        let native_stream = design_stream(ctx.decode, &group.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                scopes_by_index,
+                &(native_stream, group.scope_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let header = ctx.decode.get_hash_map(
             records_by_index,
             &(native_stream, group.record_index),
@@ -3661,7 +3768,7 @@ fn validate_path_feature_operand_roles(
         )?
         .filter(|scope| scope.has_path_construction())
     {
-        let native_stream = design_stream(&scope.id);
+        let native_stream = design_stream(ctx.decode, &scope.id)?;
         let mut group_storage = ctx
             .decode
             .reserve_scoped(0, "collect F3D path-feature operand groups")?;
@@ -3692,16 +3799,6 @@ fn validate_path_feature_operand_roles(
                     .count(),
             )
         };
-        let group_roles =
-            ctx.decode
-                .with_scoped_storage("collect F3D path-feature operand roles", || {
-                    ctx.decode.collect_vec(
-                        ctx.decode
-                            .admit_iter(&groups, "scan F3D path operand role groups")?
-                            .map(|group| (group.role(), group.members().len())),
-                        "collect F3D path-feature operand roles",
-                    )
-                })?;
         let valid = match &scope.payload() {
             records::feature::scope::DesignScopePayload::Revolve(Some(
                 crate::records::feature::path_features::DesignRevolveConstruction {
@@ -3757,7 +3854,20 @@ fn validate_path_feature_operand_roles(
                 crate::records::feature::path_features::DesignLoftConstruction {
                     operation, ..
                 },
-            )) => loft_operand_roles_are_valid(ctx.decode, *operation, &group_roles.0)?,
+            )) => {
+                let group_roles = ctx.decode.with_scoped_storage(
+                    "collect F3D path-feature operand roles",
+                    || {
+                        ctx.decode.collect_vec(
+                            groups
+                                .iter()
+                                .map(|group| (group.role(), group.members().len())),
+                            "collect F3D path-feature operand roles",
+                        )
+                    },
+                )?;
+                loft_operand_roles_are_valid(ctx.decode, *operation, &group_roles.0)?
+            }
             records::feature::scope::DesignScopePayload::Sweep(Some(
                 records::feature::scope::DesignSweepScope {
                     construction:
@@ -3807,7 +3917,7 @@ fn validate_path_feature_operand_roles(
                                                     &native.design_entity_selection_operands,
                                                     |operand| {
                                                         Ok(ctx.decode.equal(
-                                                            design_stream(&operand.id),
+                                                            design_stream(ctx.decode, &operand.id)?,
                                                             native_stream,
                                                             "compare F3D Sweep selection streams",
                                                         )? && operand.scope_record_index
@@ -3911,7 +4021,6 @@ fn validate_extrude_parameter_operands(
         "Side2Offset",
     ];
     let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
     for scope in ctx
         .decode
         .admit_iter(
@@ -3929,7 +4038,7 @@ fn validate_extrude_parameter_operands(
             )
         })
     {
-        let native_stream = design_stream(&scope.id);
+        let native_stream = design_stream(ctx.decode, &scope.id)?;
         if design::design_feature_family(&scope.kind())
             == Some(design::DesignFeatureFamily::Extrude)
         {
@@ -4047,7 +4156,7 @@ fn validate_extrude_parameter_operands(
                                         &native.design_body_recipe_operands,
                                         |operand| {
                                             Ok(ctx.decode.equal(
-                                                design_stream(&operand.id),
+                                                design_stream(ctx.decode, &operand.id)?,
                                                 native_stream,
                                                 "compare F3D Extrude target recipe streams",
                                             )? && operand.scope_record_index
@@ -4110,11 +4219,15 @@ fn validate_extrude_parameter_operands(
                 scope_owners,
                 ([0usize; 5], [None; 2]),
                 |(mut counts, mut side_one_values), owner| {
-                    if let Some(parameter) = ctx.decode.get_hash_map(
-                        parameters_by_index,
-                        &(native_stream, owner.parameter_record_index()),
-                        "find F3D Extrude owner parameter",
-                    )? {
+                    if let Some(parameter) = ctx
+                        .decode
+                        .get_hash_map(
+                            ctx.parameters()?,
+                            &(native_stream, owner.parameter_record_index()),
+                            "find F3D Extrude owner parameter",
+                        )?
+                        .and_then(|records| records.last())
+                    {
                         for (index, kind) in PARAMETER_KINDS.into_iter().enumerate() {
                             if ctx.decode.equal(
                                 parameter.source_kind(),
@@ -4390,47 +4503,58 @@ fn validate_fillet_radius_groups<'a>(
         .decode
         .reserve_scoped(0, "hold F3D fillet radius groups result")?;
     let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
-    let scopes_by_index = &ctx.scopes_by_index;
-    let construction_groups_by_index = &ctx.operand_groups_by_index;
+    let owners_by_index = &ctx.owner_groups;
+    let scopes_by_index = &ctx.scope_groups;
+    let construction_groups_by_index = &ctx.operand_group_groups;
     let mut fillet_radius_group_records = HashSet::new();
     let mut fillet_radius_group_slots = HashSet::new();
     for assignment in ctx.decode.admit_iter(
         &native.design_fillet_radius_groups,
         "scan F3D design fillet radius groups",
     )? {
-        let native_stream = design_stream(&assignment.id);
-        let scope = ctx.decode.get_hash_map(
-            scopes_by_index,
-            &(native_stream, assignment.scope_record_index),
-            "find F3D validation record index",
-        )?;
-        let group = ctx.decode.get_hash_map(
-            construction_groups_by_index,
-            &(native_stream, assignment.group_record_index),
-            "find F3D validation linked record",
-        )?;
+        let native_stream = design_stream(ctx.decode, &assignment.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                scopes_by_index,
+                &(native_stream, assignment.scope_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
+        let group = ctx
+            .decode
+            .get_hash_map(
+                construction_groups_by_index,
+                &(native_stream, assignment.group_record_index),
+                "find F3D validation linked record",
+            )?
+            .and_then(|records| records.last());
         let assignment_parameter = |record_index: u32| -> Result<
             Option<&records::parameters::DesignParameter>,
             CodecError,
         > {
-            let Some(&parameter) = ctx.decode.get_hash_map(
-                parameters_by_index,
-                &(native_stream, record_index),
-                "find F3D Fillet assignment parameter",
-            )?
+            let Some(&parameter) = ctx
+                .decode
+                .get_hash_map(
+                    ctx.parameters()?,
+                    &(native_stream, record_index),
+                    "find F3D Fillet assignment parameter",
+                )?
+                .and_then(|records| records.last())
             else {
                 return Ok(None);
             };
             let Some(owner_record_index) = parameter.owner_record_index() else {
                 return Ok(None);
             };
-            let Some(&owner) = ctx.decode.get_hash_map(
-                owners_by_index,
-                &(native_stream, owner_record_index),
-                "find F3D Fillet assignment parameter owner",
-            )?
+            let Some(&owner) = ctx
+                .decode
+                .get_hash_map(
+                    owners_by_index,
+                    &(native_stream, owner_record_index),
+                    "find F3D Fillet assignment parameter owner",
+                )?
+                .and_then(|records| records.last())
             else {
                 return Ok(None);
             };
@@ -4634,17 +4758,20 @@ fn validate_fillet_operand_groups<'a>(
     fillet_radius_group_records: &HashSet<(&'a str, u32)>,
 ) -> Result<(), CodecError> {
     let native = ctx.native;
-    let scopes_by_index = &ctx.scopes_by_index;
+    let scopes_by_index = &ctx.scope_groups;
     for group in ctx.decode.admit_iter(
         &native.design_construction_operand_groups,
         "scan F3D design construction operand groups",
     )? {
-        let native_stream = design_stream(&group.id);
-        let scope = ctx.decode.get_hash_map(
-            scopes_by_index,
-            &(native_stream, group.scope_record_index),
-            "find F3D validation record index",
-        )?;
+        let native_stream = design_stream(ctx.decode, &group.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                scopes_by_index,
+                &(native_stream, group.scope_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let is_fillet = scope.is_some_and(|scope| {
             design::design_feature_family(&scope.kind())
                 == Some(design::DesignFeatureFamily::Fillet)
@@ -4672,7 +4799,7 @@ fn validate_fillet_operand_groups<'a>(
                                 &native.design_edge_operands,
                                 |operand| {
                                     Ok(ctx.decode.equal(
-                                        design_stream(&operand.id),
+                                        design_stream(ctx.decode, &operand.id)?,
                                         native_stream,
                                         "compare F3D Fillet operand streams",
                                     )? && operand.scope_record_index == scope.record_index
@@ -4726,7 +4853,7 @@ fn validate_fillet_operand_groups<'a>(
                                 &native.design_edge_identity_operands,
                                 |operand| {
                                     Ok(ctx.decode.equal(
-                                        design_stream(&operand.id),
+                                        design_stream(ctx.decode, &operand.id)?,
                                         native_stream,
                                         "compare F3D Fillet operand streams",
                                     )? && operand.scope_record_index == scope.record_index
@@ -4760,7 +4887,7 @@ fn validate_fillet_operand_groups<'a>(
                             &native.design_edge_operands,
                             |operand| {
                                 Ok(!ctx.decode.equal(
-                                    design_stream(&operand.id),
+                                    design_stream(ctx.decode, &operand.id)?,
                                     native_stream,
                                     "compare F3D Fillet operand streams",
                                 )? || operand.scope_record_index != scope.record_index
@@ -4772,7 +4899,7 @@ fn validate_fillet_operand_groups<'a>(
                             &native.design_face_operands,
                             |operand| {
                                 Ok(ctx.decode.equal(
-                                    design_stream(&operand.id),
+                                    design_stream(ctx.decode, &operand.id)?,
                                     native_stream,
                                     "compare F3D Fillet operand streams",
                                 )? && operand.scope_record_index == scope.record_index
@@ -4797,7 +4924,7 @@ fn validate_fillet_operand_groups<'a>(
                 &native.design_face_operands,
                 |operand| {
                     Ok(ctx.decode.equal(
-                        design_stream(&operand.id),
+                        design_stream(ctx.decode, &operand.id)?,
                         native_stream,
                         "compare F3D Fillet operand streams",
                     )? && operand.scope_record_index == group.scope_record_index
@@ -4891,25 +5018,31 @@ fn validate_construction_operand_identities<'a>(
         .reserve_scoped(0, "hold F3D construction operand identities result")?;
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
-    let scopes_by_index = &ctx.scopes_by_index;
-    let operand_groups_by_index = &ctx.operand_groups_by_index;
+    let scopes_by_index = &ctx.scope_groups;
+    let operand_groups_by_index = &ctx.operand_group_groups;
     let mut operand_identity_groups = HashSet::new();
     for identity in ctx.decode.admit_iter(
         &native.design_construction_operand_identities,
         "scan F3D design construction operand identities",
     )? {
-        let native_stream = design_stream(&identity.id);
-        let group = ctx.decode.get_hash_map(
-            operand_groups_by_index,
-            &(native_stream, identity.group_record_index),
-            "find F3D validation record index",
-        )?;
+        let native_stream = design_stream(ctx.decode, &identity.id)?;
+        let group = ctx
+            .decode
+            .get_hash_map(
+                operand_groups_by_index,
+                &(native_stream, identity.group_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let selected_scope = match group {
-            Some(group) => ctx.decode.get_hash_map(
-                scopes_by_index,
-                &(native_stream, group.scope_record_index),
-                "find F3D selected profile scope",
-            )?,
+            Some(group) => ctx
+                .decode
+                .get_hash_map(
+                    scopes_by_index,
+                    &(native_stream, group.scope_record_index),
+                    "find F3D selected profile scope",
+                )?
+                .and_then(|records| records.last()),
             None => None,
         };
         let selected_profile = selected_scope.and_then(|scope| scope.extrude_profile());
@@ -5107,8 +5240,8 @@ fn validate_edge_identity_operands<'a>(
         .reserve_scoped(0, "hold F3D edge identity operands result")?;
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
-    let scopes_by_index = &ctx.scopes_by_index;
-    let operand_groups_by_index = &ctx.operand_groups_by_index;
+    let scopes_by_index = &ctx.scope_groups;
+    let operand_groups_by_index = &ctx.operand_group_groups;
     let (mut expected_edge_identity_operands_storage, mut expected_edge_identity_operands) =
         reload_native_arena(decode, ctx.ir, "design_edge_identity_operands")?;
     expected_edge_identity_operands_storage.with_storage(|| {
@@ -5142,17 +5275,23 @@ fn validate_edge_identity_operands<'a>(
         &native.design_edge_identity_operands,
         "scan F3D design edge identity operands",
     )? {
-        let native_stream = design_stream(&operand.id);
-        let scope = ctx.decode.get_hash_map(
-            scopes_by_index,
-            &(native_stream, operand.scope_record_index),
-            "find F3D validation record index",
-        )?;
-        let group = ctx.decode.get_hash_map(
-            operand_groups_by_index,
-            &(native_stream, operand.group_record_index),
-            "find F3D validation record index",
-        )?;
+        let native_stream = design_stream(ctx.decode, &operand.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                scopes_by_index,
+                &(native_stream, operand.scope_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
+        let group = ctx
+            .decode
+            .get_hash_map(
+                operand_groups_by_index,
+                &(native_stream, operand.group_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let header = ctx.decode.get_hash_map(
             records_by_index,
             &(native_stream, operand.record_index()),
@@ -5232,8 +5371,8 @@ fn validate_body_recipe_operands<'a>(
         .reserve_scoped(0, "hold F3D body recipe operands result")?;
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
-    let scopes_by_index = &ctx.scopes_by_index;
-    let operand_groups_by_index = &ctx.operand_groups_by_index;
+    let scopes_by_index = &ctx.scope_groups;
+    let operand_groups_by_index = &ctx.operand_group_groups;
     let recipes_by_id = &ctx.recipes_by_id;
     let (mut expected_operands_storage, mut expected_operands) =
         reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
@@ -5287,12 +5426,15 @@ fn validate_body_recipe_operands<'a>(
         &native.design_body_recipe_operands,
         "scan F3D design body recipe operands",
     )? {
-        let native_stream = design_stream(&operand.id);
-        let scope = ctx.decode.get_hash_map(
-            scopes_by_index,
-            &(native_stream, operand.scope_record_index),
-            "find F3D validation record index",
-        )?;
+        let native_stream = design_stream(ctx.decode, &operand.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                scopes_by_index,
+                &(native_stream, operand.scope_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let header = ctx.decode.get_hash_map(
             records_by_index,
             &(native_stream, operand.record_index()),
@@ -5316,6 +5458,7 @@ fn validate_body_recipe_operands<'a>(
                         &(native_stream, group_record_index),
                         "find F3D body recipe owner group",
                     )?
+                    .and_then(|records| records.last())
                     .is_some_and(|group| {
                         group.scope_record_index == operand.scope_record_index
                             && usize::try_from(group_member_ordinal)
@@ -5390,7 +5533,7 @@ fn validate_body_recipe_operands<'a>(
                             })
                     });
                     ctx.decode.equal(
-                        design_stream(&recipe.id),
+                        design_stream(ctx.decode, &recipe.id)?,
                         native_stream,
                         "compare F3D body recipe streams",
                     )? && recipe.kind == records::recipes::ConstructionRecipeKind::Body
@@ -5462,11 +5605,11 @@ fn validate_operand_group_carriers<'a>(
         &mut index_storage,
         &native.design_edge_identity_operands,
         |operand| {
-            Some((
-                design_stream(&operand.id),
+            Ok(Some((
+                design_stream(ctx.decode, &operand.id)?,
                 operand.scope_record_index,
                 operand.group_record_index,
-            ))
+            )))
         },
         "index F3D identity carrier groups",
     )?;
@@ -5475,11 +5618,11 @@ fn validate_operand_group_carriers<'a>(
         &mut index_storage,
         &native.design_entity_selection_operands,
         |operand| {
-            Some((
-                design_stream(&operand.id),
+            Ok(Some((
+                design_stream(ctx.decode, &operand.id)?,
                 operand.scope_record_index,
                 operand.group_record_index,
-            ))
+            )))
         },
         "index F3D entity selection carrier groups",
     )?;
@@ -5488,11 +5631,14 @@ fn validate_operand_group_carriers<'a>(
         &mut index_storage,
         &native.design_face_operands,
         |operand| {
-            Some((
-                design_stream(&operand.id),
+            let Some(group_record_index) = operand.group_record_index() else {
+                return Ok(None);
+            };
+            Ok(Some((
+                design_stream(ctx.decode, &operand.id)?,
                 operand.scope_record_index,
-                operand.group_record_index()?,
-            ))
+                group_record_index,
+            )))
         },
         "index F3D face carrier groups",
     )?;
@@ -5501,11 +5647,14 @@ fn validate_operand_group_carriers<'a>(
         &mut index_storage,
         &native.design_body_recipe_operands,
         |operand| {
-            Some((
-                design_stream(&operand.id),
+            let Some((group_record_index, _)) = operand.owner.group() else {
+                return Ok(None);
+            };
+            Ok(Some((
+                design_stream(ctx.decode, &operand.id)?,
                 operand.scope_record_index,
-                operand.owner.group()?.0,
-            ))
+                group_record_index,
+            )))
         },
         "index F3D body recipe carrier groups",
     )?;
@@ -5513,7 +5662,7 @@ fn validate_operand_group_carriers<'a>(
         &native.design_construction_operand_groups,
         "scan F3D design construction operand groups",
     )? {
-        let native_stream = design_stream(&group.id);
+        let native_stream = design_stream(ctx.decode, &group.id)?;
         let key = (native_stream, group.scope_record_index, group.record_index);
         let identity_candidates = ctx
             .decode
@@ -5639,11 +5788,15 @@ fn validate_operand_group_carriers<'a>(
                 "validate F3D topology recipe members",
             )?;
         let has_exact_sketch_profile_member = group.members().len() == 1
-            && match ctx.decode.get_hash_map(
-                &ctx.scopes_by_index,
-                &(native_stream, group.scope_record_index),
-                "find F3D operand group profile scope",
-            )? {
+            && match ctx
+                .decode
+                .get_hash_map(
+                    &ctx.scope_groups,
+                    &(native_stream, group.scope_record_index),
+                    "find F3D operand group profile scope",
+                )?
+                .and_then(|records| records.last())
+            {
                 Some(scope) => scope
                     .extrude_profile()
                     .or(scope.sweep_profile())
@@ -5749,84 +5902,23 @@ fn validate_extrude_selection_members(
     if native.design_extrude_selection_members.is_empty() {
         return Ok(());
     }
-    let mut target_storage = ctx
-        .decode
-        .reserve_scoped(0, "hold F3D Extrude selection target entries")?;
-    let mut target_entries = Vec::new();
-    for point in ctx.decode.admit_iter(
-        &native.sketch_points,
-        "scan F3D Extrude selection point targets",
-    )? {
-        if let (Some(owner), Some(local_id)) = (point.owner_reference, point.persistent_id()) {
-            target_storage.with_storage(|| {
-                ctx.decode.push_vec(
-                    &mut target_entries,
-                    (
-                        (design_stream(&point.id), owner, local_id),
-                        records::sketch_relations::SketchRelationOperand::Point {
-                            record_index: point.record_index,
-                            persistent_id: point.persistent_id(),
-                        },
-                    ),
-                    "collect F3D Extrude selection targets",
-                )
-            })?;
-        }
-    }
-    for curve in ctx.decode.admit_iter(
-        &native.sketch_curve_identities,
-        "scan F3D Extrude selection curve targets",
-    )? {
-        if let Some(owner) = curve.owner_reference {
-            let target = records::sketch_relations::SketchRelationOperand::Curve {
-                record_index: curve.record_index,
-                primary_id: curve.primary_id.get(),
-                secondary_id: curve.secondary_id,
-            };
-            target_storage.with_storage(|| {
-                ctx.decode.push_vec(
-                    &mut target_entries,
-                    (
-                        (design_stream(&curve.id), owner, curve.primary_id.get()),
-                        target.clone(),
-                    ),
-                    "collect F3D Extrude selection targets",
-                )
-            })?;
-            if curve.secondary_id != 0 && curve.secondary_id != curve.primary_id.get() {
-                target_storage.with_storage(|| {
-                    ctx.decode.push_vec(
-                        &mut target_entries,
-                        (
-                            (design_stream(&curve.id), owner, curve.secondary_id),
-                            target,
-                        ),
-                        "collect F3D Extrude selection targets",
-                    )
-                })?;
-            }
-        }
-    }
-    let (targets, _targets_storage) = ctx
-        .decode
-        .unique_index(target_entries, "index F3D Extrude selection targets")?;
-    drop(target_storage);
+    let mut targets = None;
     let identities_by_member = group_records(
         ctx.decode,
         &mut scratch_storage,
         &native.design_construction_operand_identities,
         |identity| {
-            Some((
-                design_stream(&identity.id),
+            Ok(Some((
+                design_stream(ctx.decode, &identity.id)?,
                 identity.following_record_index(),
                 identity.following_byte_offset(),
-            ))
+            )))
         },
         "index F3D Extrude selection identities",
     )?;
     let historical_candidates_retained =
         history::projection_was_finalized(ctx.decode, &native.asm_histories)?;
-    let scopes_by_index = &ctx.scopes_by_index;
+    let scopes_by_index = &ctx.scope_groups;
     let groups_by_index = &ctx.groups_by_index;
     let mut member_slots = HashSet::new();
     let mut member_records = HashSet::new();
@@ -5834,7 +5926,7 @@ fn validate_extrude_selection_members(
         &native.design_extrude_selection_members,
         "scan F3D design extrude selection members",
     )? {
-        let native_stream = design_stream(&member.id);
+        let native_stream = design_stream(ctx.decode, &member.id)?;
         let group = ctx.decode.get_hash_map(
             groups_by_index,
             &(native_stream, member.group_record_index),
@@ -5846,27 +5938,92 @@ fn validate_extrude_selection_members(
             "find F3D validation record index",
         )?;
         let selected_scope = match group {
-            Some(group) => ctx.decode.get_hash_map(
-                scopes_by_index,
-                &(native_stream, group.scope_record_index),
-                "find F3D selected profile scope",
-            )?,
+            Some(group) => ctx
+                .decode
+                .get_hash_map(
+                    scopes_by_index,
+                    &(native_stream, group.scope_record_index),
+                    "find F3D selected profile scope",
+                )?
+                .and_then(|records| records.last()),
             None => None,
         };
         let selected_profile = selected_scope.and_then(|scope| scope.extrude_profile());
         let selected_sketch =
             selected_profile.and_then(|profile| u32::try_from(profile.entity_id.suffix()).ok());
-        let expected_target = match selected_sketch {
-            Some(sketch) => ctx
+        if selected_sketch.is_some() && targets.is_none() {
+            let mut target_storage = ctx
+                .decode
+                .reserve_scoped(0, "hold F3D Extrude selection target entries")?;
+            let mut target_entries = Vec::new();
+            for point in ctx.decode.admit_iter(
+                &native.sketch_points,
+                "scan F3D Extrude selection point targets",
+            )? {
+                if let (Some(owner), Some(local_id)) =
+                    (point.owner_reference, point.persistent_id())
+                {
+                    let stream = design_stream(ctx.decode, &point.id)?;
+                    let target = records::sketch_relations::SketchRelationOperand::Point {
+                        record_index: point.record_index,
+                        persistent_id: point.persistent_id(),
+                    };
+                    target_storage.with_storage(|| {
+                        ctx.decode.push_vec(
+                            &mut target_entries,
+                            ((stream, owner, local_id), target),
+                            "collect F3D Extrude selection targets",
+                        )
+                    })?;
+                }
+            }
+            for curve in ctx.decode.admit_iter(
+                &native.sketch_curve_identities,
+                "scan F3D Extrude selection curve targets",
+            )? {
+                if let Some(owner) = curve.owner_reference {
+                    let stream = design_stream(ctx.decode, &curve.id)?;
+                    let target = records::sketch_relations::SketchRelationOperand::Curve {
+                        record_index: curve.record_index,
+                        primary_id: curve.primary_id.get(),
+                        secondary_id: curve.secondary_id,
+                    };
+                    target_storage.with_storage(|| {
+                        ctx.decode.push_vec(
+                            &mut target_entries,
+                            ((stream, owner, curve.primary_id.get()), target.clone()),
+                            "collect F3D Extrude selection targets",
+                        )
+                    })?;
+                    if curve.secondary_id != 0 && curve.secondary_id != curve.primary_id.get() {
+                        target_storage.with_storage(|| {
+                            ctx.decode.push_vec(
+                                &mut target_entries,
+                                ((stream, owner, curve.secondary_id), target),
+                                "collect F3D Extrude selection targets",
+                            )
+                        })?;
+                    }
+                }
+            }
+            let (built, targets_storage) = ctx
+                .decode
+                .unique_index(target_entries, "index F3D Extrude selection targets")?;
+            drop(target_storage);
+
+            targets = Some((built, targets_storage));
+        }
+        let expected_target = match (selected_sketch, targets.as_ref()) {
+            (Some(sketch), Some((targets, _))) => ctx
                 .decode
                 .get_hash_map(
-                    &targets,
+                    targets,
                     &(native_stream, sketch, member.local_id),
                     "find F3D Extrude selection target",
                 )?
                 .and_then(Option::as_ref)
                 .cloned(),
-            None => None,
+            _ => None,
         };
         let mut expected_identities_storage = ctx
             .decode
@@ -5924,7 +6081,7 @@ fn validate_extrude_selection_members(
                             Ok(ctx
                                 .decode
                                 .get_hash_map(
-                                    &ctx.states_by_id,
+                                    ctx.states()?,
                                     state_id,
                                     "find F3D Extrude selection history state",
                                 )?
@@ -6043,18 +6200,21 @@ fn validate_entity_selection_operands(
         .reserve_scoped(0, "hold F3D entity selection operands scratch")?;
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
-    let operand_groups_by_index = &ctx.operand_groups_by_index;
+    let operand_groups_by_index = &ctx.operand_group_groups;
     let mut entity_selection_slots = HashSet::new();
     for operand in ctx.decode.admit_iter(
         &native.design_entity_selection_operands,
         "scan F3D design entity selection operands",
     )? {
-        let native_stream = design_stream(&operand.id);
-        let group = ctx.decode.get_hash_map(
-            operand_groups_by_index,
-            &(native_stream, operand.group_record_index),
-            "find F3D validation record index",
-        )?;
+        let native_stream = design_stream(ctx.decode, &operand.id)?;
+        let group = ctx
+            .decode
+            .get_hash_map(
+                operand_groups_by_index,
+                &(native_stream, operand.group_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let header = ctx.decode.get_hash_map(
             records_by_index,
             &(native_stream, operand.record_index()),
@@ -6109,7 +6269,7 @@ fn validate_extrude_selection_group_members(
         &native.design_extrude_selection_groups,
         "scan F3D design extrude selection groups",
     )? {
-        let native_stream = design_stream(&group.id);
+        let native_stream = design_stream(ctx.decode, &group.id)?;
         let complete = ctx.decode.all_by(
             group.members().iter().enumerate(),
             |(index, _)| {
@@ -6259,7 +6419,7 @@ fn validate_edge_operands<'a>(
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
-    let scopes_by_index = &ctx.scopes_by_index;
+    let scopes_by_index = &ctx.scope_groups;
     let historical_candidates_retained =
         history::projection_was_finalized(decode, &native.asm_histories)?;
     let mut edge_operand_slots = HashSet::new();
@@ -6288,12 +6448,15 @@ fn validate_edge_operands<'a>(
         &native.design_edge_operands,
         "scan F3D design edge operands",
     )? {
-        let native_stream = design_stream(&operand.id);
-        let scope = ctx.decode.get_hash_map(
-            scopes_by_index,
-            &(native_stream, operand.scope_record_index),
-            "find F3D validation record index",
-        )?;
+        let native_stream = design_stream(ctx.decode, &operand.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                scopes_by_index,
+                &(native_stream, operand.scope_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let header = ctx.decode.get_hash_map(
             records_by_index,
             &(native_stream, operand.record_index()),
@@ -6421,7 +6584,7 @@ fn validate_edge_operands<'a>(
             && match recipe {
                 Some(recipe) => {
                     ctx.decode.equal(
-                        design_stream(&recipe.id),
+                        design_stream(ctx.decode, &recipe.id)?,
                         native_stream,
                         "compare F3D edge recipe streams",
                     )? && recipe.kind == records::recipes::ConstructionRecipeKind::Edge
@@ -6559,12 +6722,15 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.design_edge_treatment_vertex_operands,
         "scan F3D design edge treatment vertex operands",
     )? {
-        let stream = design_stream(&operand.id);
-        let scope = ctx.decode.get_hash_map(
-            &ctx.scopes_by_index,
-            &(stream, operand.scope_record_index),
-            "find F3D validation linked record",
-        )?;
+        let stream = design_stream(ctx.decode, &operand.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                &ctx.scope_groups,
+                &(stream, operand.scope_record_index),
+                "find F3D validation linked record",
+            )?
+            .and_then(|records| records.last());
         let groups = ctx.operand_group_records(
             stream,
             operand.group_record_index,
@@ -6699,7 +6865,7 @@ fn validate_edge_treatment_groups<'a>(
             )
         })
     {
-        let native_stream = design_stream(&scope.id);
+        let native_stream = design_stream(ctx.decode, &scope.id)?;
         let groups = ctx
             .decode
             .get_hash_map(
@@ -6772,10 +6938,10 @@ fn validate_face_operands<'a>(
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
-    let scopes_by_index = &ctx.scopes_by_index;
+    let scopes_by_index = &ctx.scope_groups;
     let historical_candidates_retained =
         history::projection_was_finalized(ctx.decode, &native.asm_histories)?;
-    let face_groups_by_index = &ctx.operand_groups_by_index;
+    let face_groups_by_index = &ctx.operand_group_groups;
     let expected_face_operands = scratch_storage.with_storage(|| {
         ctx.decode.collect_hash_map(
             expected_face_operands
@@ -6789,12 +6955,15 @@ fn validate_face_operands<'a>(
         &native.design_face_operands,
         "scan F3D design face operands",
     )? {
-        let native_stream = design_stream(&operand.id);
-        let scope = ctx.decode.get_hash_map(
-            scopes_by_index,
-            &(native_stream, operand.scope_record_index),
-            "find F3D validation record index",
-        )?;
+        let native_stream = design_stream(ctx.decode, &operand.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                scopes_by_index,
+                &(native_stream, operand.scope_record_index),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let header = ctx.decode.get_hash_map(
             records_by_index,
             &(native_stream, operand.record_index()),
@@ -7105,6 +7274,7 @@ fn validate_face_operands<'a>(
                                 &(native_stream, group_record_index),
                                 "find F3D face operand group",
                             )?
+                            .and_then(|records| records.last())
                             .copied();
                         let exact_group_member = match group {
                             Some(group) => {
@@ -7219,7 +7389,7 @@ fn validate_face_operands<'a>(
                                         &native.design_edge_identity_operands,
                                         |identity| {
                                             Ok(ctx.decode.equal(
-                                                design_stream(&identity.id),
+                                                design_stream(ctx.decode, &identity.id)?,
                                                 native_stream,
                                                 "compare F3D face identity streams",
                                             )? && identity.scope_record_index
@@ -7363,7 +7533,7 @@ fn validate_face_operands<'a>(
             && match recipe {
                 Some(recipe) => {
                     ctx.decode.equal(
-                        design_stream(&recipe.id),
+                        design_stream(ctx.decode, &recipe.id)?,
                         native_stream,
                         "compare F3D face recipe streams",
                     )? && recipe.kind == operand.recipe_kind
@@ -7425,18 +7595,20 @@ fn validate_face_group_member_resolution(
     let mut scratch_storage = ctx
         .decode
         .reserve_scoped(0, "hold F3D face group member resolution scratch")?;
-    let entity_selection_records = scratch_storage.with_storage(|| {
-        ctx.decode.collect_hash_set(
-            entity_selection_operands.iter().map(|operand| {
-                (
-                    design_stream(&operand.id),
-                    operand.scope_record_index,
-                    operand.record_index(),
-                )
-            }),
-            "index F3D face group entity selections",
-        )
-    })?;
+    let mut entity_selection_records = HashSet::new();
+    for operand in ctx.decode.admit_iter(
+        entity_selection_operands,
+        "index F3D face group entity selections",
+    )? {
+        let stream = design_stream(ctx.decode, &operand.id)?;
+        scratch_storage.with_storage(|| {
+            ctx.decode.insert_hash_set(
+                &mut entity_selection_records,
+                (stream, operand.scope_record_index, operand.record_index()),
+                "index F3D face group entity selections",
+            )
+        })?;
+    }
     for member in ctx
         .decode
         .admit_iter(face_group_members, "scan F3D face group members")?
@@ -7483,12 +7655,15 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result
         &native.design_face_source_groups,
         "scan F3D design face source groups",
     )? {
-        let native_stream = design_stream(&group.id);
-        let scope = ctx.decode.get_hash_map(
-            &ctx.scopes_by_index,
-            &(native_stream, group.scope_record_index),
-            "find F3D validation linked record",
-        )?;
+        let native_stream = design_stream(ctx.decode, &group.id)?;
+        let scope = ctx
+            .decode
+            .get_hash_map(
+                &ctx.scope_groups,
+                &(native_stream, group.scope_record_index),
+                "find F3D validation linked record",
+            )?
+            .and_then(|records| records.last());
         let carrier_header = ctx.decode.get_hash_map(
             &ctx.records_by_index,
             &(native_stream, group.carrier_record_index),
@@ -7638,7 +7813,7 @@ fn validate_sketch_placements(
         .decode
         .reserve_scoped(0, "hold F3D sketch placements scratch")?;
     let native = ctx.native;
-    let scopes_by_index = &ctx.scopes_by_index;
+    let scopes_by_index = &ctx.scope_groups;
     let mut placement_records = HashSet::new();
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
@@ -7647,7 +7822,7 @@ fn validate_sketch_placements(
         &native.design_sketch_placements,
         "scan F3D design sketch placements",
     )? {
-        let native_stream = design_stream(&placement.id);
+        let native_stream = design_stream(ctx.decode, &placement.id)?;
         let unique_record = scratch_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut placement_records,
@@ -7666,11 +7841,14 @@ fn validate_sketch_placements(
             None => true,
         };
         let scope = match placement.scope_record_index {
-            Some(index) => ctx.decode.get_hash_map(
-                scopes_by_index,
-                &(native_stream, index),
-                "find F3D placement scope",
-            )?,
+            Some(index) => ctx
+                .decode
+                .get_hash_map(
+                    scopes_by_index,
+                    &(native_stream, index),
+                    "find F3D placement scope",
+                )?
+                .and_then(|records| records.last()),
             None => None,
         };
         let visibility_valid = if let Some(visibility) = placement.visibility.as_ref() {
@@ -7813,7 +7991,6 @@ fn validate_parameter_owners(
         .reserve_scoped(0, "hold F3D parameter owners scratch")?;
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
-    let parameters_by_index = &ctx.parameters_by_index;
     let companions_by_index = &ctx.companions_by_index;
     let mut owner_indices = HashSet::new();
     let mut owner_local_ordinals = HashSet::new();
@@ -7821,7 +7998,7 @@ fn validate_parameter_owners(
         &native.design_parameter_owners,
         "scan F3D design parameter owners",
     )? {
-        let native_stream = design_stream(owner.id());
+        let native_stream = design_stream(ctx.decode, owner.id())?;
         let unique_index = scratch_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut owner_indices,
@@ -7829,11 +8006,14 @@ fn validate_parameter_owners(
                 "index F3D parameter owners",
             )
         })?;
-        let parameter = ctx.decode.get_hash_map(
-            parameters_by_index,
-            &(native_stream, owner.parameter_record_index()),
-            "find F3D validation record index",
-        )?;
+        let parameter = ctx
+            .decode
+            .get_hash_map(
+                ctx.parameters()?,
+                &(native_stream, owner.parameter_record_index()),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let legacy_68_frame = owner.frame_length() == 68;
         let frame_layout = !matches!(owner.frame_length(), 68 | 88)
             || parameter.is_some_and(|parameter| {
@@ -7912,14 +8092,14 @@ fn validate_parameter_companions(
         .reserve_scoped(0, "hold F3D parameter companions scratch")?;
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
-    let owners_by_index = &ctx.owners_by_index;
+    let owners_by_index = &ctx.owner_groups;
     let mut companion_indices = HashSet::new();
     let mut companion_owners = HashSet::new();
     for companion in ctx.decode.admit_iter(
         &native.design_parameter_companions,
         "scan F3D design parameter companions",
     )? {
-        let native_stream = design_stream(companion.id());
+        let native_stream = design_stream(ctx.decode, companion.id())?;
         let payload = companion.payload();
         let payload_end =
             payload.and_then(|payload| payload.byte_offset().checked_add(payload.byte_length()));
@@ -7932,7 +8112,7 @@ fn validate_parameter_companions(
             "scan F3D companion expected recipes",
         )? {
             if ctx.decode.equal(
-                design_stream(&recipe.id),
+                design_stream(ctx.decode, &recipe.id)?,
                 native_stream,
                 "compare F3D companion recipe streams",
             )? && payload.is_some_and(|payload| {
@@ -7968,11 +8148,14 @@ fn validate_parameter_companions(
                 "index F3D companion owners",
             )
         })?;
-        let owner = ctx.decode.get_hash_map(
-            owners_by_index,
-            &(native_stream, companion.owner_record_index()),
-            "find F3D validation record index",
-        )?;
+        let owner = ctx
+            .decode
+            .get_hash_map(
+                owners_by_index,
+                &(native_stream, companion.owner_record_index()),
+                "find F3D validation record index",
+            )?
+            .and_then(|records| records.last());
         let valid = companion
             .byte_offset()
             .checked_add(42)
@@ -8036,7 +8219,7 @@ fn validate_parameters(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
         .decode
         .admit_iter(&native.design_parameters, "scan F3D design parameters")?
     {
-        let native_stream = design_stream(&parameter.id);
+        let native_stream = design_stream(ctx.decode, &parameter.id)?;
         let key = (native_stream, parameter.record_index);
         if !parameter_indices_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
@@ -8078,7 +8261,7 @@ fn validate_entity_headers(
         &native.design_entity_headers,
         "scan F3D design entity headers",
     )? {
-        let native_stream = design_stream(&header.id);
+        let native_stream = design_stream(ctx.decode, &header.id)?;
         let references_resolve = match header.sketch_references() {
             Some(references) => ctx.decode.all_by(
                 &references.references,
@@ -8137,7 +8320,7 @@ fn validate_sketch_relations(
         .decode
         .admit_iter(&native.sketch_relations, "scan F3D sketch relations")?
     {
-        let native_stream = design_stream(&relation.id);
+        let native_stream = design_stream(ctx.decode, &relation.id)?;
         let owner_matches = matches!(
             (
                 ctx.decode.get_hash_map(sketch_owner_ids, &(native_stream, relation.owner_reference), "find F3D sketch relation owner")?,
@@ -8180,13 +8363,14 @@ fn validate_sketch_geometry_identities(
         .decode
         .admit_iter(&native.sketch_points, "scan F3D sketch points")?
     {
+        let native_stream = design_stream(ctx.decode, &point.id)?;
         let duplicate = if let (Some(persistent_id), Some(owner_reference)) =
             (point.persistent_id(), point.owner_reference)
         {
             !sketch_point_storage.with_storage(|| {
                 ctx.decode.insert_hash_set(
                     &mut sketch_point_identities,
-                    (design_stream(&point.id), owner_reference, persistent_id),
+                    (native_stream, owner_reference, persistent_id),
                     "index F3D sketch point identities",
                 )
             })?
@@ -8207,7 +8391,7 @@ fn validate_sketch_geometry_identities(
         if !sketch_geometry_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut sketch_geometry_records,
-                (design_stream(&point.id), point.record_index),
+                (native_stream, point.record_index),
                 "index F3D sketch geometry records",
             )
         })? {
@@ -8230,12 +8414,13 @@ fn validate_sketch_geometry_identities(
         &native.sketch_curve_identities,
         "scan F3D sketch curve identities",
     )? {
+        let native_stream = design_stream(ctx.decode, &curve.id)?;
         let duplicate = if let Some(owner_reference) = curve.owner_reference {
             !sketch_curve_storage.with_storage(|| {
                 ctx.decode.insert_hash_set(
                     &mut sketch_curve_identities,
                     (
-                        design_stream(&curve.id),
+                        native_stream,
                         owner_reference,
                         curve.primary_id.get(),
                         curve.secondary_id,
@@ -8260,7 +8445,7 @@ fn validate_sketch_geometry_identities(
         if !sketch_geometry_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut sketch_geometry_records,
-                (design_stream(&curve.id), curve.record_index),
+                (native_stream, curve.record_index),
                 "index F3D sketch geometry records",
             )
         })? {
@@ -8283,15 +8468,12 @@ fn validate_sketch_geometry_identities(
         .decode
         .admit_iter(&native.sketch_surfaces, "scan F3D sketch surfaces")?
     {
+        let native_stream = design_stream(ctx.decode, &surface.id)?;
         let duplicate = if let Some(owner_reference) = surface.owner_reference {
             !sketch_surface_storage.with_storage(|| {
                 ctx.decode.insert_hash_set(
                     &mut sketch_surface_identities,
-                    (
-                        design_stream(&surface.id),
-                        owner_reference,
-                        surface.persistent_id.get(),
-                    ),
+                    (native_stream, owner_reference, surface.persistent_id.get()),
                     "index F3D sketch surface identities",
                 )
             })?
@@ -8312,7 +8494,7 @@ fn validate_sketch_geometry_identities(
         if !sketch_geometry_storage.with_storage(|| {
             ctx.decode.insert_hash_set(
                 &mut sketch_geometry_records,
-                (design_stream(&surface.id), surface.record_index),
+                (native_stream, surface.record_index),
                 "index F3D sketch geometry records",
             )
         })? {
@@ -8356,120 +8538,87 @@ fn validate_sketch_relation_owners(
         .decode
         .reserve_scoped(0, "hold F3D sketch relation owners scratch")?;
     let native = ctx.native;
-    let owners_by_index = &ctx.owners_by_index;
+    let owners_by_index = &ctx.owner_groups;
     let companions_by_index = &ctx.companions_by_index;
     let placements_by_scope = &ctx.placements_by_scope;
     let sketch_owner_ids = &ctx.sketch_owner_ids;
-    let typed_sketch_records = scratch_storage.with_storage(|| {
-        decode.collect_hash_set(
-            decode
-                .admit_iter(
-                    &native.sketch_points,
-                    "admit source for index F3D typed sketch records",
-                )?
-                .map(|point| (design_stream(&point.id), point.record_index))
-                .chain(
-                    decode
-                        .admit_iter(
-                            &native.sketch_curve_identities,
-                            "admit source for index F3D typed sketch records",
-                        )?
-                        .map(|curve| (design_stream(&curve.id), curve.record_index)),
-                )
-                .chain(
-                    decode
-                        .admit_iter(
-                            &native.sketch_surfaces,
-                            "admit source for index F3D typed sketch records",
-                        )?
-                        .map(|surface| (design_stream(&surface.id), surface.record_index)),
-                ),
-            "index F3D typed sketch records",
-        )
-    })?;
-    let sketch_operands = scratch_storage.with_storage(|| {
-        decode.collect_hash_map(
-            decode
-                .admit_iter(
-                    &native.sketch_points,
-                    "admit source for index F3D sketch operands",
-                )?
-                .map(|point| {
-                    (
-                        (design_stream(&point.id), point.record_index),
-                        records::sketch_relations::SketchRelationOperand::Point {
-                            record_index: point.record_index,
-                            persistent_id: point.persistent_id(),
-                        },
-                    )
-                })
-                .chain(
-                    decode
-                        .admit_iter(
-                            &native.sketch_curve_identities,
-                            "admit source for index F3D sketch operands",
-                        )?
-                        .map(|curve| {
-                            (
-                                (design_stream(&curve.id), curve.record_index),
-                                records::sketch_relations::SketchRelationOperand::Curve {
-                                    record_index: curve.record_index,
-                                    primary_id: curve.primary_id.get(),
-                                    secondary_id: curve.secondary_id,
-                                },
-                            )
-                        }),
-                )
-                .chain(
-                    decode
-                        .admit_iter(
-                            &native.sketch_surfaces,
-                            "admit source for index F3D sketch operands",
-                        )?
-                        .map(|surface| {
-                            (
-                                (design_stream(&surface.id), surface.record_index),
-                                records::sketch_relations::SketchRelationOperand::Surface {
-                                    record_index: surface.record_index,
-                                    persistent_id: surface.persistent_id.get(),
-                                },
-                            )
-                        }),
-                ),
-            "index F3D sketch operands",
-        )
-    })?;
-    let mut relation_owners = std::collections::HashMap::new();
-    for (id, record_index, owner_reference) in decode
-        .admit_iter(&native.sketch_points, "scan F3D sketch point owners")?
-        .map(|point| (&point.id, point.record_index, point.owner_reference))
+    let mut typed_sketch_records = HashSet::new();
+    let mut sketch_operands = HashMap::new();
+    let mut relation_owners = HashMap::new();
+    for (id, record_index, owner_reference, operand) in decode
+        .admit_iter(&native.sketch_points, "index F3D typed sketch records")?
+        .map(|point| {
+            (
+                &point.id,
+                point.record_index,
+                point.owner_reference,
+                records::sketch_relations::SketchRelationOperand::Point {
+                    record_index: point.record_index,
+                    persistent_id: point.persistent_id(),
+                },
+            )
+        })
         .chain(
             decode
                 .admit_iter(
                     &native.sketch_curve_identities,
-                    "scan F3D sketch curve owners",
+                    "index F3D typed sketch records",
                 )?
-                .map(|curve| (&curve.id, curve.record_index, curve.owner_reference)),
+                .map(|curve| {
+                    (
+                        &curve.id,
+                        curve.record_index,
+                        curve.owner_reference,
+                        records::sketch_relations::SketchRelationOperand::Curve {
+                            record_index: curve.record_index,
+                            primary_id: curve.primary_id.get(),
+                            secondary_id: curve.secondary_id,
+                        },
+                    )
+                }),
         )
         .chain(
             decode
-                .admit_iter(&native.sketch_surfaces, "scan F3D sketch surface owners")?
-                .map(|surface| (&surface.id, surface.record_index, surface.owner_reference)),
+                .admit_iter(&native.sketch_surfaces, "index F3D typed sketch records")?
+                .map(|surface| {
+                    (
+                        &surface.id,
+                        surface.record_index,
+                        surface.owner_reference,
+                        records::sketch_relations::SketchRelationOperand::Surface {
+                            record_index: surface.record_index,
+                            persistent_id: surface.persistent_id.get(),
+                        },
+                    )
+                }),
         )
     {
+        let stream = design_stream(decode, id)?;
+        scratch_storage.with_storage(|| {
+            decode.insert_hash_set(
+                &mut typed_sketch_records,
+                (stream, record_index),
+                "index F3D typed sketch records",
+            )?;
+            decode.insert_hash_map(
+                &mut sketch_operands,
+                (stream, record_index),
+                operand,
+                "index F3D sketch operands",
+            )
+        })?;
         let Some(owner_reference) = owner_reference else {
             continue;
         };
-        let native_stream = design_stream(id);
         if decode.contains_key_hash_map(
             sketch_owner_ids,
-            &(native_stream, owner_reference),
+            &(stream, owner_reference),
             "find F3D sketch owner identity",
         )? {
             scratch_storage.with_storage(|| {
                 decode.insert_hash_map(
                     &mut relation_owners,
-                    (native_stream, record_index),
+                    (stream, record_index),
                     owner_reference,
                     "index F3D sketch relation owners",
                 )
@@ -8480,7 +8629,7 @@ fn validate_sketch_relation_owners(
         .decode
         .admit_iter(&native.sketch_relations, "scan F3D sketch relations")?
     {
-        let native_stream = design_stream(&relation.id);
+        let native_stream = design_stream(ctx.decode, &relation.id)?;
         let agrees = |reference: &records::sketch_relations::SketchRelationReference| -> Result<bool, CodecError> {
             let record_index = reference.record_index();
             Ok(match decode.get_hash_map(&sketch_operands, &(native_stream, record_index), "find F3D sketch relation operand")? {
@@ -8555,7 +8704,7 @@ fn validate_sketch_relation_owners(
         )?
         .filter(|entity| entity.in_sketch_module())
     {
-        let native_stream = design_stream(&entity.id);
+        let native_stream = design_stream(ctx.decode, &entity.id)?;
         let Ok(owner) = u32::try_from(entity.entity_id.suffix()) else {
             continue;
         };
@@ -8602,17 +8751,20 @@ fn validate_sketch_relation_owners(
         &native.design_dimension_locus_pairs[..],
         "scan F3D design dimension locus pairs",
     )? {
-        let native_stream = design_stream(&pair.id);
+        let native_stream = design_stream(ctx.decode, &pair.id)?;
         let owner = match decode.get_hash_map(
             companions_by_index,
             &(native_stream, pair.governing_companion_record_index),
             "find F3D sketch relation dimension companion",
         )? {
-            Some(companion) => match decode.get_hash_map(
-                owners_by_index,
-                &(native_stream, companion.owner_record_index()),
-                "find F3D sketch relation parameter owner",
-            )? {
+            Some(companion) => match decode
+                .get_hash_map(
+                    owners_by_index,
+                    &(native_stream, companion.owner_record_index()),
+                    "find F3D sketch relation parameter owner",
+                )?
+                .and_then(|records| records.last())
+            {
                 Some(parameter_owner) => decode
                     .get_hash_map(
                         placements_by_scope,
@@ -8655,7 +8807,7 @@ fn validate_sketch_relation_owners(
         &native.design_dimension_locus_groups,
         "scan F3D design dimension locus groups",
     )? {
-        let native_stream = design_stream(&group.id);
+        let native_stream = design_stream(ctx.decode, &group.id)?;
         for member in decode
             .admit_iter(&group.loci, "scan F3D locus geometry members")?
             .map(|locus| locus.geometry_record_index)
@@ -8689,17 +8841,20 @@ fn validate_sketch_relation_owners(
         &native.design_dimension_null_locus_pairs[..],
         "scan F3D design dimension null locus pairs",
     )? {
-        let native_stream = design_stream(&pair.id);
+        let native_stream = design_stream(ctx.decode, &pair.id)?;
         let owner = match decode.get_hash_map(
             companions_by_index,
             &(native_stream, pair.governing_companion_record_index),
             "find F3D sketch relation dimension companion",
         )? {
-            Some(companion) => match decode.get_hash_map(
-                owners_by_index,
-                &(native_stream, companion.owner_record_index()),
-                "find F3D sketch relation parameter owner",
-            )? {
+            Some(companion) => match decode
+                .get_hash_map(
+                    owners_by_index,
+                    &(native_stream, companion.owner_record_index()),
+                    "find F3D sketch relation parameter owner",
+                )?
+                .and_then(|records| records.last())
+            {
                 Some(parameter_owner) => decode
                     .get_hash_map(
                         placements_by_scope,
@@ -8748,7 +8903,7 @@ fn validate_sketch_relation_owners(
         if decode
             .get_hash_map(
                 &relation_owners,
-                &(design_stream(id), record_index),
+                &(design_stream(ctx.decode, id)?, record_index),
                 "find F3D sketch geometry relation owner",
             )?
             .copied()

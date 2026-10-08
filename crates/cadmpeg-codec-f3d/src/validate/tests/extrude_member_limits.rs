@@ -250,3 +250,53 @@ fn extrude_member_valid_slot_has_no_finding() {
         assert!(findings.is_empty());
     })
 }
+
+#[test]
+fn extrude_member_without_selected_sketch_skips_target_index() {
+    use crate::records::sketch_geometry::{
+        SketchPoint, SketchPointCompanion, SketchPointDraft, SketchPointRecordForm,
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    crate::test_support::with_decode_policy(&policy, |decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let mut native = native(true);
+        native.sketch_points.push(
+            SketchPoint::try_from(SketchPointDraft {
+                id: "f3d:Design/BulkStream.dat:point#20".into(),
+                record_index: 20,
+                owner_reference: Some(7),
+                class_tag: "256".to_owned().try_into().unwrap(),
+                byte_offset: 0,
+                coordinate_offset: 11,
+                record_form: SketchPointRecordForm::Version8 {
+                    persistent_id: std::num::NonZeroU64::new(42).unwrap(),
+                    flags: [false; 7],
+                    depth: 0.0,
+                },
+                companion: SketchPointCompanion {
+                    incident_curves: Vec::new(),
+                },
+                paired_reference: 21,
+                coordinates: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            })
+            .unwrap(),
+        );
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "scan F3D Extrude selection point targets",
+            None,
+        );
+        let mut findings = Vec::new();
+        super::super::validate_extrude_selection_members(&ctx, &mut findings).unwrap();
+        assert!(findings.is_empty());
+        assert!(decode.resource_refusal().is_none());
+        assert!(decode
+            .admit_iter(
+                &native.sketch_points,
+                "scan F3D Extrude selection point targets"
+            )
+            .is_err());
+    });
+}
