@@ -1950,14 +1950,10 @@ fn modifier_text(
             ctx.make_ascii_lowercase(&mut text, "STEP PMI text case conversion")?;
             Ok(Some(text))
         }
-        Value::Typed(_, value) => modifier_text(
-            value,
-            exchange,
-            (typed, claim_storage),
-            measurements,
-            storage,
-            ctx,
-        ),
+        Value::Typed(_, value) => {
+            ctx.charge_work(1, "STEP typed datum modifier descent")?;
+            modifier_text(value, exchange, (typed, claim_storage), measurements, storage, ctx)
+        },
         Value::Reference(id) => {
             let Some(record) = ctx.get_btree_map(exchange.records(), id, "STEP pmi record get")?
             else {
@@ -2655,7 +2651,10 @@ fn modifier_values(
                 modifier_values(value, output, ctx)?;
             }
         }
-        Value::Typed(_, value) => modifier_values(value, output, ctx)?,
+        Value::Typed(_, value) => {
+            ctx.charge_work(1, "STEP typed modifier descent")?;
+            modifier_values(value, output, ctx)?;
+        }
         _ => {}
     }
     Ok(())
@@ -2932,6 +2931,7 @@ fn collect_measure_ids(
             }
         }
         Value::Typed(_, value) => {
+            ctx.charge_work(1, "STEP typed measure ID descent")?;
             collect_measure_ids(
                 value,
                 exchange,
