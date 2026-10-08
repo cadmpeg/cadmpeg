@@ -18,12 +18,12 @@ use crate::families::standard::topology::{
 use crate::families::standard::trim_packet::TrimPacket;
 use crate::layout::fbb_face_row as fbb_row;
 use crate::solve::incidence::{reconstruct_incidence_candidates, IncidenceEndpointDomains};
-use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::mesh_quotient::{domain_contains, point_domain, MeshQuotient};
 use crate::solve::missing_edge::{expand_deferred_edge_port_components, motif_port_points};
 use crate::solve::union_find::UnionFind;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::rc::Rc;
 
 pub(super) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_RECORD_BYTES: usize = 3 + 3 * size_of::<f32>();
@@ -487,37 +487,32 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
             return Ok(None);
         }
         let is_deferred = |edge: usize| effective_deferred[edge];
-        let mut all_points = HashSet::new();
+        let mut all_points = Vec::new();
         for candidates in ctx.admit_iter(edge_candidates, "catia_standard_iteration")? {
             for pair in ctx.admit_iter(candidates, "catia_standard_iteration")? {
                 for point in *pair {
-                    ctx.insert_hash_set(&mut all_points, point, "catia_port_all_points")?;
+                    ctx.push_vec(&mut all_points, point, "catia_port_all_points")?;
                 }
             }
         }
-        // Every deferred edge shares the one all-points domain; the quotient
-        // never edits a domain in place.
-        let all_points = Arc::new(all_points);
+        let all_points = point_domain(ctx, all_points, "catia_port_all_points")?;
         let mut domains = Vec::new();
         for (edge, candidates) in ctx
             .admit_iter(edge_candidates, "catia_standard_iteration")?
             .enumerate()
         {
             let domain = if is_deferred(edge) {
-                Arc::clone(&all_points)
+                Rc::clone(&all_points)
             } else {
-                let mut points = HashSet::new();
-                for pair in ctx.admit_iter(candidates, "catia_standard_iteration")? {
-                    for point in *pair {
-                        ctx.insert_hash_set(&mut points, point, "catia_port_candidate_domain")?;
-                    }
-                }
-                Arc::new(points)
+                point_domain(
+                    ctx,
+                    candidates.iter().flatten().copied(),
+                    "catia_port_candidate_domain",
+                )?
             };
-            ctx.push_vec(&mut domains, domain.clone(), "catia_port_domains")?;
             ctx.push_vec(&mut domains, domain, "catia_port_domains")?;
         }
-        let mut quotient = MeshQuotient::new_charged(ctx, domains)?;
+        let mut quotient = MeshQuotient::from_edge_domains(ctx, &domains)?;
         let mut node_by_port = HashMap::new();
         {
             let mut visits = edge_ports.iter().enumerate();
@@ -576,9 +571,10 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
                 let right = quotient.find(ctx, edge * 2 + 1)?;
                 let mut filtered = Vec::new();
                 let contains = |root: usize, point: usize| {
-                    ctx.contains_hash_set(
+                    domain_contains(
+                        ctx,
                         &quotient.domains()[root],
-                        &point,
+                        point,
                         "catia_port_domain_lookup",
                     )
                 };

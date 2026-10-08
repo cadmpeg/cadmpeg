@@ -1537,7 +1537,7 @@ fn compact_face_quotient_states_accumulate_across_calls() {
     let budget = WorkBudget::new(10_000);
     let first = domain(false);
     let conflicting = domain(true);
-    let initial = vec![(quotient.clone(), HashSet::new())];
+    let initial = vec![(quotient.clone(), std::collections::BTreeSet::new())];
 
     let crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(first_states) =
         crate::solve::incidence::advance_compact_boundary_domains(
@@ -1627,7 +1627,7 @@ fn compact_face_quotient_state_cap_is_exhausted() {
         &choices,
         &assignment,
         None,
-        vec![(quotient, HashSet::new())],
+        vec![(quotient, std::collections::BTreeSet::new())],
         &budget,
     )
     .expect("service resource budget");

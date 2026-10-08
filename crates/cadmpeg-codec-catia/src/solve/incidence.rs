@@ -11,14 +11,17 @@ use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
     StandardTopologyDraft,
 };
+use crate::solve::mesh_quotient::coordinate_assignment::{
+    MeshCoordinateRootDomains, MeshEndpointCandidates, MeshImplicitEdgeCandidates,
+    MeshIncidenceBoundary,
+};
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
     mesh_assignment_endpoint_cycles_viable_by, mesh_assignment_endpoint_cycles_viable_where,
-    mesh_face_endpoint_configurations, AssignmentOrder, MeshCandidateFailure,
-    MeshCoordinateRootDomains, MeshEndpointCandidates, MeshEndpointPair,
-    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates,
-    MeshIncidenceBoundary, MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState,
-    MeshSolve, MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
+    mesh_face_endpoint_configurations, AssignmentOrder, MeshCandidateFailure, MeshEndpointPair,
+    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshPartialEndpointConstraint,
+    MeshQuotient, MeshQuotientGaugeState, MeshSolve, MAX_FACE_ENDPOINT_CONFIGURATION_WORK,
+    MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -29,7 +32,7 @@ use crate::solve::union_find::UnionFind;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::ops::ControlFlow;
-use std::sync::Arc;
+use std::rc::Rc;
 
 type MeshEndpointSolutionVisitor<'a> =
     &'a mut dyn FnMut(&[MeshEndpointPair]) -> Result<ControlFlow<()>, CodecError>;
@@ -1088,7 +1091,7 @@ struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) face_edges: &'a [Vec<usize>],
     pub(crate) mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
     pub(crate) face_configuration_domains: Option<PreparedFaceFactors>,
-    pub(crate) coordinate_domains: Option<&'a MeshCoordinateRootDomains>,
+    pub(crate) coordinate_domains: Option<&'a MeshCoordinateRootDomains<'a>>,
     pub(crate) active: Vec<bool>,
     pub(crate) edges: &'a [usize],
     pub(crate) constraints: Vec<(usize, usize)>,
@@ -1108,11 +1111,11 @@ struct IncidenceComponentSearch<'a, 'v> {
     search_storage: RefCell<cadmpeg_core::decode::ScopedReservation<'a>>,
 }
 
-enum IncidenceBranch {
+enum IncidenceBranch<'storage> {
     Options(std::vec::IntoIter<(usize, [usize; 2])>),
     Implicit {
         edge: usize,
-        candidates: MeshImplicitEdgeCandidates,
+        candidates: MeshImplicitEdgeCandidates<'storage>,
     },
     Complete(Vec<(usize, [usize; 2])>),
 }
@@ -1122,7 +1125,7 @@ enum IncidenceCandidatePairs<'a> {
         candidates: &'a [[usize; 2]],
         next_index: usize,
     },
-    Implicit(MeshImplicitEdgeCandidates),
+    Implicit(MeshImplicitEdgeCandidates<'a>),
 }
 
 enum IncidenceConstraintOptions {
@@ -1135,7 +1138,7 @@ enum IncidenceConstraintOptions {
 struct AppliedFaceConfiguration<'storage> {
     assigned: Vec<(usize, [usize; 2], IncidenceDegreeUndo)>,
     affected_faces: Vec<usize>,
-    coordinate_domains: Option<Arc<MeshCoordinateRootDomains>>,
+    coordinate_domains: Option<Rc<MeshCoordinateRootDomains<'storage>>>,
     coordinate_storage: cadmpeg_core::decode::ScopedReservation<'storage>,
     factor_checkpoint: Option<MaskUndo<'storage>>,
     /// Holds the assignment and face lists until the configuration is undone.
@@ -2146,7 +2149,7 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                     &supports,
                     |(_, support, _storage)| {
                         Ok(ctx
-                            .get_hash_map(&support.by_edge, &edge, OPERATION)?
+                            .get_btree_map(&support.by_edge, &edge, OPERATION)?
                             .is_some())
                     },
                     OPERATION,
@@ -2160,14 +2163,20 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                     "catia implicit face candidate pairs",
                     || -> Result<Option<Vec<[usize; 2]>>, CodecError> {
                         if current.is_empty() {
-                            let Some(values) =
+                            let Some(mut values) =
                                 coordinate_domains.implicit_edge_candidates(edge, None)
                             else {
                                 return Ok(None);
                             };
-                            return Ok(Some(
-                                ctx.collect_vec(values, "catia implicit face candidate pairs")?,
-                            ));
+                            let mut collected = Vec::new();
+                            while let Some(value) = values.next_with_context(ctx)? {
+                                ctx.push_vec(
+                                    &mut collected,
+                                    value,
+                                    "catia implicit face candidate pairs",
+                                )?;
+                            }
+                            return Ok(Some(collected));
                         }
                         Ok(Some(ctx.copy_slice(
                             current,
@@ -2191,12 +2200,12 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
                                 &supports,
                                 |(_, support, _storage)| {
                                     Ok(
-                                        match ctx.get_hash_map(
+                                        match ctx.get_btree_map(
                                             &support.by_edge,
                                             &edge,
                                             OPERATION,
                                         )? {
-                                            Some(pairs) => ctx.contains_hash_set(
+                                            Some(pairs) => ctx.contains(
                                                 pairs,
                                                 &pair,
                                                 "catia implicit face support pairs",
@@ -2400,9 +2409,33 @@ fn prepare_face_configuration_domains(
     }))
 }
 
+impl IncidenceCandidatePairs<'_> {
+    fn next_with_context(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Option<[usize; 2]>, CodecError> {
+        match self {
+            Self::Options {
+                candidates,
+                next_index,
+            } => {
+                let mut pairs = std::iter::from_fn(|| {
+                    let pair = candidates.get(*next_index).copied()?;
+                    *next_index += 1;
+                    Some(pair)
+                });
+                ctx.next_charged(&mut pairs, operation)
+            }
+            Self::Implicit(candidates) => candidates.next_with_context(ctx),
+        }
+    }
+}
+
+// The reference degree-support oracle runs independently of the admitted search.
+#[cfg(test)]
 impl Iterator for IncidenceCandidatePairs<'_> {
     type Item = [usize; 2];
-
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Options {
@@ -2413,19 +2446,25 @@ impl Iterator for IncidenceCandidatePairs<'_> {
                 *next_index += 1;
                 Some(pair)
             }
-            Self::Implicit(candidates) => candidates.next(),
+            Self::Implicit(candidates) => {
+                crate::test_support::with_service_context(|ctx| candidates.next_with_context(ctx))
+                    .expect("reference candidate budget")
+            }
         }
     }
 }
 
-impl Iterator for IncidenceBranch {
-    type Item = (usize, [usize; 2]);
-
-    fn next(&mut self) -> Option<Self::Item> {
+impl IncidenceBranch<'_> {
+    fn next_with_context(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<(usize, [usize; 2])>, CodecError> {
         match self {
-            Self::Options(options) => options.next(),
-            Self::Implicit { edge, candidates } => candidates.next().map(|pair| (*edge, pair)),
-            Self::Complete(_) => None,
+            Self::Options(options) => Ok(options.next()),
+            Self::Implicit { edge, candidates } => {
+                Ok(candidates.next_with_context(ctx)?.map(|pair| (*edge, pair)))
+            }
+            Self::Complete(_) => Ok(None),
         }
     }
 }
@@ -2589,14 +2628,10 @@ enum CompactBoundaryAdvanceOutcome<'storage> {
 /// quotient state; its traversal is charged before it runs.
 fn copy_oriented_edges(
     ctx: &DecodeContext<'_>,
-    oriented: &HashSet<usize>,
+    oriented: &BTreeSet<usize>,
     operation: &'static str,
-) -> Result<HashSet<usize>, CodecError> {
-    let mut copy = HashSet::new();
-    ctx.reserve_set(&mut copy, oriented.len(), operation)?;
-    ctx.charge_work(u64_from_index(oriented.len()), operation)?;
-    copy.extend(oriented.iter().copied());
-    Ok(copy)
+) -> Result<BTreeSet<usize>, CodecError> {
+    ctx.collect_btree_set(oriented.iter().copied(), operation)
 }
 
 fn copy_quotient_states<'storage>(
@@ -2801,7 +2836,7 @@ fn advance_compact_boundary_domains<'storage, 'a>(
                         for use_ in
                             ctx.admit_iter(boundary, "catia_compact_boundary_oriented_edges")?
                         {
-                            ctx.insert_hash_set(
+                            ctx.insert_btree_set(
                                 &mut next_oriented,
                                 use_.edge,
                                 "catia_compact_boundary_oriented_edges",
@@ -2892,7 +2927,7 @@ pub(super) fn compact_boundary_domains_jointly_viable<'storage, 'a>(
 ) -> Result<bool, CodecError> {
     let mut initial = Vec::new();
     ctx.reserve_vec(&mut initial, 1, "catia compact initial quotient state")?;
-    initial.push((quotient.clone_charged(ctx)?, HashSet::new()));
+    initial.push((quotient.clone_charged(ctx)?, BTreeSet::new()));
     Ok(matches!(
         advance_compact_boundary_domains(
             ctx, domains, choices, assignment, selected, initial, budget,
@@ -2959,7 +2994,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         edge: usize,
         required_point: Option<usize>,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<IncidenceCandidatePairs<'_>, CodecError> {
         if let Some(candidates) = coordinate_domains
             .filter(|_| self.choices[edge].is_empty())
@@ -2992,12 +3027,12 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
 
     fn refine_coordinate_domains(
         &self,
-        domains: &Arc<MeshCoordinateRootDomains>,
+        domains: &Rc<MeshCoordinateRootDomains<'storage>>,
         edge: usize,
         pair: [usize; 2],
     ) -> Result<
         Option<(
-            Arc<MeshCoordinateRootDomains>,
+            Rc<MeshCoordinateRootDomains<'storage>>,
             cadmpeg_core::decode::ScopedReservation<'storage>,
         )>,
         CodecError,
@@ -3006,14 +3041,14 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             "catia_incidence_refined_domains",
             || -> Result<_, CodecError> {
                 if self.coordinate_propagation_budget.exhausted() {
-                    return Ok(Some(Arc::clone(domains)));
+                    return Ok(Some(Rc::clone(domains)));
                 }
                 if domains
                     .edge_candidates()
                     .get(edge)
                     .is_some_and(|candidates| candidates.as_slice() == [pair])
                 {
-                    return Ok(Some(Arc::clone(domains)));
+                    return Ok(Some(Rc::clone(domains)));
                 }
                 let refined = domains.refine_edge_candidate_arc(
                     self.ctx,
@@ -3021,16 +3056,16 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                     pair,
                     Some(self.coordinate_propagation_budget),
                 )?;
-                Ok(refined.map(Arc::new).or_else(|| {
+                Ok(refined.map(Rc::new).or_else(|| {
                     self.coordinate_propagation_budget
                         .exhausted()
-                        .then(|| Arc::clone(domains))
+                        .then(|| Rc::clone(domains))
                 }))
             },
         )?;
         let storage = if refined
             .as_ref()
-            .is_some_and(|refined| Arc::ptr_eq(refined, domains))
+            .is_some_and(|refined| Rc::ptr_eq(refined, domains))
         {
             // The shared input owns its data; failed refinement scratch is gone.
             drop(storage);
@@ -3165,7 +3200,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         faces: &[usize],
         selected: Option<(usize, [usize; 2])>,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<bool, CodecError> {
         const OPERATION: &str = "catia incidence degree frontiers";
         self.ctx.all_by(
@@ -3208,7 +3243,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         face: usize,
         point: usize,
         selected: Option<(usize, [usize; 2])>,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<bool, CodecError> {
         const OPERATION: &str = "catia incidence degree support";
         {
@@ -3227,9 +3262,13 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                         OPERATION,
                     )? || coordinate_domains
                         .filter(|_| self.choices[supporting_edge].is_empty())
-                        .is_some_and(|domains| {
-                            domains.supports_edge_candidate(supporting_edge, supporting_pair)
-                        });
+                        .map_or(Ok(false), |domains| {
+                            domains.supports_edge_candidate(
+                                self.ctx,
+                                supporting_edge,
+                                supporting_pair,
+                            )
+                        })?;
                     if selected.is_none_or(|(edge, _)| supporting_edge != edge)
                         && self.active[supporting_edge]
                         && self.assignment[supporting_edge].is_none()
@@ -3264,6 +3303,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             {
                 let mut refusal = None;
                 let witness = domains.implicit_edge_candidate_with_point(
+                    self.ctx,
                     supporting_edge,
                     point,
                     Some(self.degree_support_budget),
@@ -3274,7 +3314,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                                 false
                             })
                     },
-                );
+                )?;
                 if let Some(error) = refusal {
                     return Err(error);
                 }
@@ -3287,7 +3327,10 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 }
                 continue;
             }
-            for supporting_pair in self.candidate_pairs(supporting_edge, Some(point), None)? {
+            let mut supporting_pairs = self.candidate_pairs(supporting_edge, Some(point), None)?;
+            while let Some(supporting_pair) =
+                supporting_pairs.next_with_context(self.ctx, "catia_incidence_candidate_scan")?
+            {
                 if !self.degree_support_budget.charge() {
                     return Ok(true);
                 }
@@ -3310,7 +3353,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         edge: usize,
         pair: [usize; 2],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<bool, CodecError> {
         let [first, second] = self.edge_faces[edge];
         let faces = [first.min(second), first.max(second)];
@@ -3337,7 +3380,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         edge: usize,
         pair: [usize; 2],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> bool {
         let selected_faces = self.edge_faces[edge];
         let degree = |face: usize, point: usize| {
@@ -3366,11 +3409,18 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             })
         };
         let candidate_pairs = |supporting_edge: usize, point: usize| -> Vec<[usize; 2]> {
-            if let Some(candidates) = coordinate_domains
+            if let Some(mut candidates) = coordinate_domains
                 .filter(|_| self.choices[supporting_edge].is_empty())
                 .and_then(|domains| domains.implicit_edge_candidates(supporting_edge, Some(point)))
             {
-                return candidates.collect();
+                return crate::test_support::with_service_context(|ctx| {
+                    let mut pairs = Vec::new();
+                    while let Some(pair) = candidates.next_with_context(ctx)? {
+                        pairs.push(pair);
+                    }
+                    Ok::<_, CodecError>(pairs)
+                })
+                .expect("reference candidate budget");
             }
             self.choices[supporting_edge]
                 .iter()
@@ -3421,7 +3471,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         edge: usize,
         pair: [usize; 2],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<bool, CodecError> {
         if let Some(mesh_assignments) = self.mesh_assignments {
             let [first, second] = self.edge_faces[edge];
@@ -3523,17 +3573,19 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &self,
         edge: usize,
         pair: [usize; 2],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<bool, CodecError> {
         Ok(self.candidate_fits_in(edge, pair, coordinate_domains)?
-            && coordinate_domains.is_none_or(|domains| domains.supports_edge_candidate(edge, pair)))
+            && coordinate_domains.map_or(Ok(true), |domains| {
+                domains.supports_edge_candidate(self.ctx, edge, pair)
+            })?)
     }
 
     fn constraint_options(
         &self,
         face: usize,
         point: usize,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
         limit: Option<usize>,
         (viability, viability_storage): (
             &mut HashMap<MeshEndpointPair, bool>,
@@ -3551,7 +3603,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                 continue;
             }
             let mut pairs = self.candidate_pairs(edge, Some(point), coordinate_domains)?;
-            while let Some(pair) = self.ctx.next_charged(&mut pairs, OPERATION)? {
+            while let Some(pair) = pairs.next_with_context(self.ctx, OPERATION)? {
                 if !pair.contains(&point) {
                     continue;
                 }
@@ -3605,9 +3657,9 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn narrowest_edge_branch(
         &self,
         edges: &[usize],
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
         storage: &mut cadmpeg_core::decode::ScopedReservation<'storage>,
-    ) -> Result<IncidenceBranch, CodecError> {
+    ) -> Result<IncidenceBranch<'storage>, CodecError> {
         const OPERATION: &str = "catia_incidence_branch_options";
         let (mut ordered_edges, _edge_storage) =
             self.ctx
@@ -3698,10 +3750,10 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     /// The next branch and the scoped storage that holds its options.
     fn branch(
         &self,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
     ) -> Result<
         Option<(
-            IncidenceBranch,
+            IncidenceBranch<'storage>,
             cadmpeg_core::decode::ScopedReservation<'storage>,
         )>,
         CodecError,
@@ -3715,9 +3767,9 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
 
     fn branch_in(
         &self,
-        coordinate_domains: Option<&MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&MeshCoordinateRootDomains<'storage>>,
         storage: &mut cadmpeg_core::decode::ScopedReservation<'storage>,
-    ) -> Result<Option<IncidenceBranch>, CodecError> {
+    ) -> Result<Option<IncidenceBranch<'storage>>, CodecError> {
         const OPERATION: &str = "catia incidence branch edges";
         let mut constrained = None::<(
             Vec<MeshEndpointPair>,
@@ -4186,7 +4238,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &mut self,
         mut options: MeshFaceEndpointConfigurations,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
         if options.len() == 1 {
@@ -4236,7 +4288,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn apply_face_configuration(
         &mut self,
         option: Vec<(usize, [usize; 2])>,
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
     ) -> Result<Option<AppliedFaceConfiguration<'storage>>, CodecError> {
         let mut storage = self
             .ctx
@@ -4276,7 +4328,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
                     self.rollback_face_configuration(assigned)?;
                     return Ok(None);
                 };
-                if !Arc::ptr_eq(&domains, &refined) {
+                if !Rc::ptr_eq(&domains, &refined) {
                     coordinate_storage = refined_storage;
                 }
                 next_coordinate_domains = Some(refined);
@@ -4363,7 +4415,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
         &mut self,
         mut option: Vec<(usize, [usize; 2])>,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
         const OPERATION: &str = "catia forced face assignments";
@@ -4409,7 +4461,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             if domains
                 .as_ref()
                 .zip(applied_domains.as_ref())
-                .is_none_or(|(previous, next)| !Arc::ptr_eq(previous, next))
+                .is_none_or(|(previous, next)| !Rc::ptr_eq(previous, next))
             {
                 domain_storage = applied_domain_storage;
             }
@@ -4466,9 +4518,10 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             .reserve_scoped(0, "catia incidence component faces")?;
         let component_faces = storage.with_storage(|| self.component_faces())?;
         let coordinate_domains = storage.with_storage(|| {
-            self.coordinate_domains
-                .map(|domains| domains.clone_charged(self.ctx).map(Arc::new))
-                .transpose()
+            Ok::<_, CodecError>(
+                self.coordinate_domains
+                    .map(|domains| Rc::new(domains.clone())),
+            )
         })?;
         self.search_with_quotient(
             &quotient_states,
@@ -4484,7 +4537,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn search_with_quotient(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
         const OPERATION: &str = "catia incidence dead state key";
@@ -4526,7 +4579,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn search_state(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
         const MAX_SOLUTIONS: usize = 256;
@@ -4561,10 +4614,10 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
     fn search_edge_state(
         &mut self,
         quotient_states: &[MeshQuotientGaugeState<'storage>],
-        coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
+        coordinate_domains: Option<&Rc<MeshCoordinateRootDomains<'storage>>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
-        let branch = self.branch(coordinate_domains.map(Arc::as_ref))?;
+        let branch = self.branch(coordinate_domains.map(Rc::as_ref))?;
         if self.budget.exhausted() {
             self.state = IncidenceSearchState::Exhausted;
             return Ok(());
@@ -4595,10 +4648,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             }
             branch => branch,
         };
-        let Some(first_option) = options.next() else {
-            return Ok(());
-        };
-        for (edge, pair) in std::iter::once(first_option).chain(options) {
+        while let Some((edge, pair)) = options.next_with_context(self.ctx)? {
             if !self.budget.charge() {
                 self.state = IncidenceSearchState::Exhausted;
                 return Ok(());
@@ -4606,7 +4656,7 @@ impl<'storage> IncidenceComponentSearch<'storage, '_> {
             if self.assignment[edge].is_some() {
                 continue;
             }
-            if !self.candidate_fits_in(edge, pair, coordinate_domains.map(Arc::as_ref))? {
+            if !self.candidate_fits_in(edge, pair, coordinate_domains.map(Rc::as_ref))? {
                 if self.budget.exhausted() {
                     self.state = IncidenceSearchState::Exhausted;
                     return Ok(());
@@ -5620,7 +5670,7 @@ where
         edge_faces: &'input2 [[usize; 2]],
         face_edges: &'input3 [Vec<usize>],
         mesh_assignments: Option<&'input4 [MeshFaceBoundaryDomain]>,
-        coordinate_domains: Option<&'input5 MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&'input5 MeshCoordinateRootDomains<'input5>>,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
         assignment: &'input7 [Option<[usize; 2]>],
         degrees: &'input8 [BTreeMap<usize, u8>],
@@ -5890,7 +5940,7 @@ where
         face_edges: &'input2 [Vec<usize>],
         mesh_assignments: Option<&'input3 [MeshFaceBoundaryDomain]>,
         mesh_quotient: Option<&'input4 MeshQuotient<'storage>>,
-        coordinate_domains: Option<&'input5 MeshCoordinateRootDomains>,
+        coordinate_domains: Option<&'input5 MeshCoordinateRootDomains<'input5>>,
         coordinate_root_policy: CoordinateRootPolicy,
         partial_solution_valid: Option<MeshPartialEndpointConstraint<'input6>>,
         solution_valid: &'input7 F,

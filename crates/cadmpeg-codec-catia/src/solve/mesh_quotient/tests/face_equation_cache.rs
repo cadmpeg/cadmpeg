@@ -1,6 +1,7 @@
 use crate::solve::mesh_quotient::{
-    possible_face_choices, possible_face_choices_with_limit, possible_face_equations, MeshQuotient,
-    MeshSelectionSearch, SearchOutcome, MAX_FACE_EQUATION_CACHE_ENTRIES,
+    possible_face_choices, possible_face_choices_with_limit, possible_face_equations,
+    CachedFaceEquations, MeshQuotient, MeshSelectionSearch, ScopedValue, SearchOutcome,
+    MAX_FACE_EQUATION_CACHE_ENTRIES,
 };
 use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
 use std::cell::RefCell;
@@ -57,7 +58,12 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
             fixed_edge_orientations: Vec::new(),
             edge_has_fixed_direction: Vec::new(),
             selected: vec![None],
-            visited_states: HashSet::new(),
+            visited_states: std::collections::HashMap::new(),
+            memo_storage: RefCell::new(
+                (ctx)
+                    .reserve_scoped(0, "catia_selection_memo_storage")
+                    .expect("memo storage"),
+            ),
             outcome: SearchOutcome::Open,
             face_equation_cache: RefCell::default(),
         };
@@ -85,7 +91,6 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
         "catia_forced_equation_queue",
         "catia_forced_equation_queued",
         "catia_face_projection_roots",
-        "catia_face_projection_root_order",
         "catia_face_projection_signature_rows",
         "catia_face_projection_domain_points",
         "catia_face_projection_member_nodes",
@@ -98,12 +103,12 @@ fn face_equation_projection_and_cache_refuse_before_growth() {
     for _ in 0..128 {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
+        policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits input budget");
         match run(&ctx) {
             Err(CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_forced_equation_cache_key" =>
+                if limit.operation == "catia_face_projection_domain_points" =>
             {
                 reached = true;
                 break;
@@ -160,7 +165,11 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
-        visited_states: HashSet::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
+                .expect("memo storage"),
+        ),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
@@ -188,7 +197,13 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     {
         let mut cache = search.face_equation_cache.borrow_mut();
         for key in 1..=MAX_FACE_EQUATION_CACHE_ENTRIES {
-            cache.insert((key, Vec::new()), Vec::new());
+            cache.insert(
+                (key, Vec::new()),
+                CachedFaceEquations {
+                    equations: ScopedValue::default(),
+                    _key_storage: None,
+                },
+            );
         }
     }
     crate::test_support::with_service_context(|ctx| quotient.merge_charged(ctx, 1, 2))
@@ -197,5 +212,106 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     assert!(search
         .propagate_forced_face_equations(&mut quotient)
         .expect("service resource budget"));
-    assert_eq!(search.face_equation_cache.borrow().len(), 1);
+    let cache = search.face_equation_cache.borrow();
+    assert_eq!(cache.len(), MAX_FACE_EQUATION_CACHE_ENTRIES + 2);
+    for key in 1..=MAX_FACE_EQUATION_CACHE_ENTRIES {
+        assert!(cache
+            .get(&(key, Vec::new()))
+            .expect("seeded key")
+            .equations
+            .is_empty());
+    }
+}
+
+#[test]
+fn face_projection_ignores_member_insertion_order() {
+    catia_test_context!(ctx);
+    let assignments = [vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: None,
+        }]],
+    }]];
+    let search = MeshSelectionSearch {
+        ctx: &ctx,
+        assignments: &assignments,
+        possible_face_equations: Vec::new(),
+        possible_face_choices: Vec::new(),
+        face_work: Vec::new(),
+        edge_candidates: &[],
+        edge_rows: &[],
+        vertex_points: &[],
+        candidate_gauge: None,
+        port_identities: None,
+        fixed_face_directions: Vec::new(),
+        fixed_edge_orientations: Vec::new(),
+        edge_has_fixed_direction: Vec::new(),
+        selected: Vec::new(),
+        visited_states: std::collections::HashMap::new(),
+        memo_storage: RefCell::new(ctx.reserve_scoped(0, "test memo").expect("memo storage")),
+        outcome: SearchOutcome::Open,
+        face_equation_cache: RefCell::default(),
+    };
+    let make = || MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0]))).collect());
+    let mut left = make();
+    let mut right = make();
+    for node in [1, 2] {
+        left.merge_charged(&ctx, 0, node)
+            .expect("merge admission")
+            .expect("compatible domain");
+    }
+    for node in [2, 1] {
+        right
+            .merge_charged(&ctx, 0, node)
+            .expect("merge admission")
+            .expect("compatible domain");
+    }
+    assert_ne!(left.members(0), right.members(0));
+    assert_eq!(
+        search
+            .face_projection_signature(0, &mut left)
+            .expect("projection"),
+        search
+            .face_projection_signature(0, &mut right)
+            .expect("projection")
+    );
+}
+
+#[test]
+fn face_choices_retain_only_distinct_equations() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4096;
+    policy.limits.max_materialized_bytes = 512 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let faces = [vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 1,
+                reversed: None,
+            };
+            8
+        ]],
+    }]];
+    let mut choices = Vec::new();
+    assert!(
+        possible_face_choices_with_limit(&ctx, &faces, &[vec![]], usize::MAX, &mut choices)
+            .expect("only three distinct rows are retained")
+    );
+    assert_eq!(
+        choices,
+        vec![vec![
+            vec![[0, 0], [0, 1], [1, 1]],
+            vec![[0, 0], [1, 1]],
+            vec![[0, 1]]
+        ]]
+    );
+    let _released = ctx
+        .reserve_scoped(512 * 1024, "released face choice scratch")
+        .expect("all temporary bytes released");
 }
