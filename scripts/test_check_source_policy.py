@@ -1134,7 +1134,7 @@ fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8], end: usize, compare: {
 """, ["values.sort_unstable_by(compare);", "values[..end].sort_unstable_by(compare);"])
 
     def test_primitive_and_nested_composite_array_default_sorts_are_free(self) -> None:
-        for element in ("u64", "(u64, usize)", "[u64; 2]", "([u64; 2], (usize, bool))"):
+        for element in ("u64", "&'static u64", "&mut u64", "(u64, usize)", "[u64; 2]", "([u64; 2], (usize, bool))"):
             for method in ("sort", "sort_unstable"):
                 with self.subTest(element=element, method=method):
                     self.check_sort_source(f"""
@@ -1366,6 +1366,13 @@ fn order(_ctx: &DecodeContext<'_>, values: &mut [&mutant; 4]) {
     values.sort_unstable_by_key(|value| value.slot);
 }
 """, ["values.sort_unstable_by_key(|value| value.slot);"])
+        self.check_sort_source("""
+struct Edge { slot: &'static str }
+struct mutEdge { slot: u8 }
+fn order(_ctx: &DecodeContext<'_>, values: &mut [&mut Edge; 4]) {
+    values.sort_unstable_by_key(|value| value.slot);
+}
+""", ["values.sort_unstable_by_key(|value| value.slot);"])
 
     def test_generic_parameter_shadowing_is_distinct_from_return_types(self) -> None:
         self.check_sort_source("""
@@ -1381,6 +1388,37 @@ fn order<Edge>(_ctx: &DecodeContext<'_>, values: &mut [Edge; 4]) {
     values.sort_unstable_by_key(|value| value.slot);
 }
 """, ["values.sort_unstable_by_key(|value| value.slot);"])
+
+    def test_loop_and_match_patterns_erase_outer_array_types_only_in_their_scope(self) -> None:
+        for body in (
+            "for mut values in dynamic { values.sort_unstable(); }",
+            "for mut values in { dynamic } { values.sort_unstable(); }",
+            "match dynamic.pop() { Some(mut values) => values.sort_unstable(), None => {} }",
+            "match dynamic.pop() { Some(mut values) => { values.sort_unstable(); }, None => {} }",
+            "match dynamic.pop() { Some(mut values) if { values.sort_unstable(); true } => {}, _ => {} }",
+            "if let Some(mut values) = dynamic.pop() { values.sort_unstable(); }",
+            "while let Some(mut values) = dynamic.pop() { values.sort_unstable(); }",
+        ):
+            with self.subTest(body=body):
+                self.check_sort_source(f"""
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8], mut dynamic: Vec<Vec<String>>) {{
+    {body}
+    values.sort_unstable();
+}}
+""", [body])
+
+    def test_parenthesized_closure_receiver_uses_its_own_binding_type(self) -> None:
+        self.check_sort_source("""
+fn order(_ctx: &DecodeContext<'_>, values: &mut [u64; 8]) {
+    let dynamic = |values: &mut Vec<String>| (values).sort_unstable();
+    let fixed = |values: &mut [u64; 8]| (values).sort_unstable();
+    let blocked = |values: &mut Vec<String>| { (values).sort_unstable(); };
+    values.sort_unstable();
+}
+""", [
+            "let dynamic = |values: &mut Vec<String>| (values).sort_unstable();",
+            "let blocked = |values: &mut Vec<String>| { (values).sort_unstable(); };",
+        ])
 
     def test_each_slice_sort_with_context_parameter_is_rejected(self) -> None:
         for method in sorted(policy.SLICE_SORT_METHODS):

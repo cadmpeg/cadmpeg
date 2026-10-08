@@ -2328,14 +2328,14 @@ class FixedSortSyntax:
         if borrowed:
             child = self.type_shape(text[borrowed.end():])
             return ("ref", child) if child else None
-        text = re.sub(r"\s+", "", text)
-        if text in self.SCALARS and text not in self.shadowed:
-            return (text,)
+        compact = re.sub(r"\s+", "", text)
+        if compact in self.SCALARS and compact not in self.shadowed:
+            return (compact,)
         for prefix in ("::core::primitive::", "core::primitive::", "::std::primitive::", "std::primitive::"):
-            if text.startswith(prefix) and text[len(prefix):] in self.SCALARS:
+            if compact.startswith(prefix) and compact[len(prefix):] in self.SCALARS:
                 # Root/module identity is verified by the compiler, not spelling.
                 if prefix.strip(":").split("::")[0] not in self.shadowed:
-                    return (text[len(prefix):],)
+                    return (compact[len(prefix):],)
         if text.startswith("[") and text.endswith("]"):
             parts = self.split(text[1:-1], ";")
             if len(parts) == 2 and parts[1] and (element := self.type_shape(parts[0])):
@@ -2345,8 +2345,8 @@ class FixedSortSyntax:
             children = [self.type_shape(part) for part in parts if part]
             if children and all(children):
                 return ("tuple", *children)
-        if text in self.records:
-            return ("record", text)
+        if compact in self.records:
+            return ("record", compact)
         return None
 
     @staticmethod
@@ -2442,16 +2442,95 @@ class FixedSortSyntax:
         while parent is not None:
             ancestors.add(parent)
             parent = parents.get(parent)
+
+        def forget_pattern(start: int, stop: int) -> None:
+            for token in tokens[start:stop]:
+                if self.IDENTIFIER.fullmatch(token[0]):
+                    bindings[token[0]] = None
+
+        words = [token[0] for token in tokens]
         cursor = body + 1
         while cursor < call:
-            if tokens[cursor][0] != "let" or parents.get(cursor) not in ancestors:
+            parent = parents.get(cursor)
+            if parent not in ancestors:
+                cursor += 1
+                continue
+            word = words[cursor]
+            # A loop/conditional binding belongs to its body, not the outer
+            # scope. Unknown pattern types cannot retain an outer array fact.
+            if word == "for":
+                stop = cursor + 1
+                while stop < call and words[stop] not in {"in", "{", ";"}:
+                    stop += 1
+                scoped_body = any(index in ancestors and words[index] == "{" and parents.get(index) == parent
+                                  for index in range(stop + 1, call))
+                if words[stop:stop + 1] == ["in"] and scoped_body:
+                    forget_pattern(cursor + 1, stop)
+            if word == "let" and words[cursor - 1] in {"if", "while", "&"}:
+                stop = cursor + 1
+                while stop < call and words[stop] not in {"=", "{", ";"}:
+                    stop += 1
+                scoped_body = any(index in ancestors and words[index] == "{" and parents.get(index) == parent
+                                  for index in range(stop + 1, call))
+                if words[stop:stop + 1] == ["="] and scoped_body:
+                    forget_pattern(cursor + 1, stop)
+                cursor += 1
+                continue
+            if word == "{" and cursor in ancestors:
+                header = cursor - 1
+                while header > body:
+                    if words[header] in {")", "]", "}"} and header in pairs:
+                        header = pairs[header] - 1
+                        continue
+                    if words[header] in {"match", "if", "for", "while", "fn", "loop", ";", "{", "=>", "="}:
+                        break
+                    header -= 1
+                if words[header] == "match":
+                    # Match bindings are already in scope in an arm guard,
+                    # before its arrow. Inspect the current arm's pattern.
+                    start = cursor + 1
+                    for index in range(start, call):
+                        if words[index] == "," and parents.get(index) == cursor:
+                            start = index + 1
+                    stop = start
+                    while stop < pairs[cursor] and not (words[stop] in {"if", "=>"} and parents.get(stop) == cursor):
+                        stop += 1
+                    forget_pattern(start, stop)
+            if word == "|":
+                closing = cursor + 1
+                while closing < call and not (words[closing] == "|" and parents.get(closing) == parent):
+                    closing += 1
+                if closing < call:
+                    opening = closing + 1
+                    block = words[opening:opening + 1] == ["{"] and opening in pairs
+                    contains = opening < call < pairs[opening] if block else not any(
+                        words[index] in {",", ";"} and parents.get(index) == parent
+                        for index in range(opening, call))
+                    if contains:
+                        parameters = self.code[tokens[cursor].end():tokens[closing].start()]
+                        for parameter in self.split(parameters, ","):
+                            name, colon, type_text = parameter.partition(":")
+                            name = name.strip().removeprefix("mut ").strip()
+                            if self.IDENTIFIER.fullmatch(name):
+                                bindings[name] = self.type_shape(type_text) if colon else None
+                            else:
+                                for name in re.findall(r"[A-Za-z_]\w*", name):
+                                    bindings[name] = None
+                    cursor = closing + 1
+                    continue
+            if word != "let":
                 cursor += 1
                 continue
             start = cursor + 1
             stop = start
             while stop < call and tokens[stop][0] != ";":
                 stop = pairs[stop] + 1 if tokens[stop][0] in "([{" and stop in pairs else stop + 1
-            declaration = self.code[tokens[start].start():tokens[stop].start()] if stop < call else ""
+            if stop >= call:
+                # The new binding is not in scope inside its initializer.
+                # Still examine closures and locals within that initializer.
+                cursor += 1
+                continue
+            declaration = self.code[tokens[start].start():tokens[stop].start()]
             # A declaration's initializer must see the previous binding.
             pattern, sep, value = declaration.partition("=")
             name, colon, type_text = pattern.partition(":")
@@ -2476,15 +2555,6 @@ class FixedSortSyntax:
         while start >= 2 and words[start - 1] == ".":
             start -= 2
         receiver = self.code[tokens[start].start():tokens[end].end()]
-        # A closure parameter can shadow a visible binding without a `let`.
-        prefix = self.code[tokens[function[1]].end():tokens[call].start()]
-        root = re.match(r"[A-Za-z_]\w*", receiver)
-        if root:
-            for closure in re.finditer(r"(?=\|([^|]*)\|)", prefix):
-                for parameter in self.split(closure[1], ","):
-                    name = parameter.partition(":")[0].strip().removeprefix("mut ").strip()
-                    if name == root[0]:
-                        return False
         bindings = self.bindings_before(tokens, pairs, parents, function, call)
         shape = self.peel_refs(self.expression_shape(receiver, bindings))
         if not shape or shape[0] != "array":

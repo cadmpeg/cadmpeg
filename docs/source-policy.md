@@ -217,8 +217,8 @@ The closed grammar accepts these forms without an input-sized sort charge:
   lengths may be constants or const parameters. Element types may be
   primitives, references to primitives, or nested primitive tuples and arrays.
 - Local array literals and repeats with established element types. Visible
-  typed bindings, numeric and Boolean literals, tuple expressions, declared record fields
-  and array indices can establish those types. A type annotation establishes
+  typed bindings, numeric and Boolean literals, tuple expressions, declared
+  record fields and array indices can establish those types. A type annotation establishes
   the output type of an initializer; it does not exempt work in that initializer.
 - Direct array ranges, including input-selected prefixes, suffixes and
   inclusive ranges, plus parentheses and borrows of those arrays. A range
@@ -243,7 +243,11 @@ where the type is known. Record field evidence requires one declaration in the
 same source file and no matching alias, import or generic parameter. The finder
 does not resolve record imports. Primitive-name declarations or imports disable
 matching unqualified primitive type evidence. Glob imports disable named type
-evidence in their source file. Unknown syntax remains a finding.
+evidence in their source file. Loop, match, conditional and closure bindings
+erase an outer array fact when their type is unknown. An explicit local array
+type or a typed closure parameter can establish a new fact. The finder does
+not expand macros. Resolved symbol identity requires compiler checks.
+Unknown syntax remains a finding.
 
 The compiler resolves expressions, receiver types, associated trait calls,
 record fields and closure owners. The allocation and work rules inspect
