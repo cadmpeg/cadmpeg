@@ -64,7 +64,9 @@ pub(crate) fn decode_component_occurrences(
     )?;
     // The first occurrence of each identity becomes retained.
     let mut occurrences = Vec::new();
-    for (occurrence, storage) in candidates {
+    for parsed_occurrence in candidates {
+        let storage = parsed_occurrence.1;
+        let occurrence = parsed_occurrence.0;
         ctx.charge_work(1, "dedup f3d design components")?;
         if let Some(kept) = occurrences.last() {
             let kept: &DesignComponentOccurrence = kept;
@@ -76,7 +78,7 @@ pub(crate) fn decode_component_occurrences(
                 continue;
             }
         }
-        storage.commit()?;
+        let occurrence = storage.commit_value(occurrence)?;
         ctx.push_vec(
             &mut occurrences,
             occurrence,

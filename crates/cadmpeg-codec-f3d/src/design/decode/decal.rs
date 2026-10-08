@@ -109,7 +109,8 @@ pub(crate) fn project_decal_images(
         };
         // The faces, the asset ID and a new asset become retained only when
         // the image binds a neutral feature.
-        let (faces, faces_storage) = ctx.with_scoped_storage("f3d Decal faces", || {
+        let mut faces_storage = ctx.reserve_scoped(0, "f3d Decal faces")?;
+        let faces = faces_storage.with_storage(|| {
             let mut faces = Vec::new();
             for reference in
                 ctx.admit_iter(operand.references(), "scan F3D Decal operand references")?
@@ -117,6 +118,13 @@ pub(crate) fn project_decal_images(
                 for face in
                     ctx.admit_iter(&reference.candidate_faces, "scan F3D Decal face candidates")?
                 {
+                    if ctx.any_by(
+                        &faces,
+                        |kept: &cadmpeg_ir::ids::FaceId| ctx.equal(kept, face, "compare F3D Decal face candidates"),
+                        "find F3D repeated Decal face candidate",
+                    )? {
+                        continue;
+                    }
                     let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
                     ctx.push_vec(&mut faces, copied, "f3d Decal faces")?;
                 }
@@ -182,8 +190,8 @@ pub(crate) fn project_decal_images(
         };
         let native_id =
             ctx.copy_retained_text(&operand.id, "f3d Decal native operand identifier")?;
-        faces_storage.commit()?;
-        asset_storage.commit()?;
+        let faces = faces_storage.commit_value(faces)?;
+        let (asset_id, asset) = asset_storage.commit_value((asset_id, asset))?;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {

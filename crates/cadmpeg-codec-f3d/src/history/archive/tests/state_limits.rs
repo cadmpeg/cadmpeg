@@ -69,13 +69,13 @@ fn complete_record_binding_refusal(operation: &str) -> cadmpeg_core::CodecError 
         operation,
         0,
         |ctx| {
-            let (bytes, mut states) = complete_record_binding_fixture();
+            let (bytes, states) = complete_record_binding_fixture();
             crate::history::archive::bind_complete_record_tables(
                 ctx,
-                &mut states,
+                states,
                 &bytes,
                 cadmpeg_asm::kernel_header::RefWidth::Eight,
-            )
+            ).map(|_| ())
         },
     )
 }

@@ -915,8 +915,7 @@ pub(crate) fn decode_recipe_references_charged(
     let Some(references) = references else {
         return Ok(Vec::new());
     };
-    storage.commit()?;
-    Ok(references)
+    storage.commit_value(references)
 }
 
 fn decode_standard_recipe_references(
@@ -1865,7 +1864,7 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
         };
         let geometry_indices = geometry.of(ctx, scope)?;
         let stream_records = records.get(ctx, &entry.name, bytes)?;
-        let Some((mut pair, pair_storage)) = find_dimension_locus_pair(
+        let Some(parsed_pair) = find_dimension_locus_pair(
             ctx,
             bytes,
             start,
@@ -1877,12 +1876,14 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
         else {
             continue;
         };
+        let pair_storage = parsed_pair.1;
+        let pair = parsed_pair.0;
         let Some(governing_companion_record_index) =
             governing.governing_in(ctx, scope, pair.paired_byte_offset())?
         else {
             continue;
         };
-        pair_storage.commit()?;
+        let mut pair = pair_storage.commit_value(pair)?;
         pair.id = design_record_id_charged(
             ctx,
             &entry.name,
@@ -2140,7 +2141,7 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
         };
         let geometry_indices = geometry.of(ctx, scope)?;
         let stream_records = records.get(ctx, &entry.name, bytes)?;
-        let Some((mut pair, pair_storage)) = find_dimension_null_locus_pair(
+        let Some(parsed_pair) = find_dimension_null_locus_pair(
             ctx,
             bytes,
             start,
@@ -2152,12 +2153,14 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
         else {
             continue;
         };
+        let pair_storage = parsed_pair.1;
+        let pair = parsed_pair.0;
         let Some(governing_companion_record_index) =
             governing.governing_in(ctx, scope, pair.paired_byte_offset())?
         else {
             continue;
         };
-        pair_storage.commit()?;
+        let mut pair = pair_storage.commit_value(pair)?;
         pair.id = design_record_id_charged(
             ctx,
             &entry.name,
@@ -2400,7 +2403,7 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
                     }
                     paired_at
                 } else {
-                    let Some((mut frame, frame_storage)) = parse_scoped(ctx, || {
+                    let Some(parsed_frame) = parse_scoped(ctx, || {
                         parse_dimension_annotation_frame(
                             ctx,
                             bytes,
@@ -2413,7 +2416,9 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
                     else {
                         continue;
                     };
-                    frame_storage.commit()?;
+                    let frame_storage = parsed_frame.1;
+                    let frame = parsed_frame.0;
+                    let mut frame = frame_storage.commit_value(frame)?;
                     let Ok(paired_at) = usize::try_from(frame.paired_byte_offset()) else {
                         return Err(CodecError::Malformed(
                             "F3D annotation paired offset is not representable".into(),
@@ -3088,12 +3093,14 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
             if !is_presentation_record(at)? {
                 continue;
             }
-            let Some((mut frame, frame_storage)) = parse_scoped(ctx, || {
+            let Some(parsed_frame) = parse_scoped(ctx, || {
                 parse_dimension_presentation_frame(ctx, bytes, *at, &tables, is_paired_class)
             })?
             else {
                 continue;
             };
+            let frame_storage = parsed_frame.1;
+            let frame = parsed_frame.0;
             let Some(&scope_record_index) = ctx.get_hash_map(
                 &sketch_scope_by_entity,
                 &(stream.as_str(), u64::from(frame.owner_reference)),
@@ -3107,7 +3114,7 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
             else {
                 continue;
             };
-            frame_storage.commit()?;
+            let mut frame = frame_storage.commit_value(frame)?;
             frame.id = design_record_id_charged(
                 ctx,
                 &entry.name,
@@ -3530,7 +3537,7 @@ fn find_dimension_locus_groups(
     };
     for &at in std::iter::once(&start).chain(later) {
         ctx.charge_work(1, "scan F3D dimension locus group candidates")?;
-        if let Some((mut group, group_storage)) = parse_scoped(ctx, || {
+        if let Some(parsed_group) = parse_scoped(ctx, || {
             Ok(parse_dimension_locus_group(
                 ctx,
                 stream.bytes,
@@ -3541,7 +3548,9 @@ fn find_dimension_locus_groups(
             )?
             .filter(|group| group.next_byte_offset <= u64_from_index(end)))
         })? {
-            group_storage.commit()?;
+            let group_storage = parsed_group.1;
+            let group = parsed_group.0;
+            let mut group = group_storage.commit_value(group)?;
             group.id = design_record_id_charged(
                 ctx,
                 stream.name,
@@ -3586,8 +3595,11 @@ fn parse_dimension_locus_group(
     };
     let mut position = start + 24;
 
+    let mut geometry_storage = ctx.reserve_scoped(0, "f3d dimension locus geometry")?;
     let mut geometry = Vec::new();
-    ctx.reserve_capacity(&mut geometry, count, "f3d dimension locus geometry")?;
+    geometry_storage.with_storage(|| {
+        ctx.reserve_capacity(&mut geometry, count, "f3d dimension locus geometry")
+    })?;
     for _ in 0..count {
         if bytes.get(position) != Some(&1) || !zeros_at::<6>(bytes, position + 5) {
             return Ok(None);
@@ -3601,16 +3613,18 @@ fn parse_dimension_locus_group(
         if !set_contains(ctx, geometry_indices, geometry_record_index)? {
             return Ok(None);
         }
-        ctx.push_vec(
-            &mut geometry,
-            (
-                geometry_record_index,
-                u64_from_index(position + 1),
-                role,
-                u64_from_index(position + 11),
-            ),
-            "f3d dimension locus geometry",
-        )?;
+        geometry_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut geometry,
+                (
+                    geometry_record_index,
+                    u64_from_index(position + 1),
+                    role,
+                    u64_from_index(position + 11),
+                ),
+                "f3d dimension locus geometry",
+            )
+        })?;
         position += 15;
     }
     if bytes.get(position) != Some(&0)

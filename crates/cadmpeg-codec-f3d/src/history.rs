@@ -321,7 +321,7 @@ pub(crate) fn decode(
             };
             archive::bind_snapshot_revision_ids(ctx, &mut states)?;
             archive::bind_historical_entity_versions(ctx, &mut states)?;
-            archive::bind_complete_record_tables(ctx, &mut states, bytes, width)?;
+            let states = archive::bind_complete_record_tables(ctx, states, bytes, width)?;
 
             let preamble = preamble_offset
                 .and_then(|offset| archive::decode_preamble(bytes, offset + PREAMBLE.len(), width))
@@ -340,9 +340,10 @@ pub(crate) fn decode(
         },
     )?;
     if output.is_some() {
-        storage.commit()?;
+        storage.commit_value(output)
+    } else {
+        Ok(output)
     }
-    Ok(output)
 }
 
 fn retain_mirror_plane_topology(
@@ -1284,7 +1285,7 @@ pub(crate) fn bind_feature_body_selections(
         )?;
         if let Some((feature_id, slots)) = candidate {
             pattern_body_slots_storage.with_storage(|| {
-                candidate_storage.commit()?;
+                let (feature_id, slots) = candidate_storage.commit_value((feature_id, slots))?;
                 ctx.insert_hash_map(
                     &mut pattern_body_slots,
                     feature_id,
@@ -1477,8 +1478,7 @@ pub(crate) fn bind_feature_body_selections(
                         }
                     ));
                     if let Some(historical) = historical {
-                        admitted!(target_storage.commit());
-                        *target = historical;
+                        *target = admitted!(target_storage.commit_value(historical));
                     }
                     if let Some(selection) = admitted!(combine_history_tools(
                         ctx,
@@ -1897,9 +1897,10 @@ fn combine_history_tools<'a, 'ctx>(
         },
     )?;
     if selection.is_some() {
-        output_storage.commit()?;
+        output_storage.commit_value(selection)
+    } else {
+        Ok(selection)
     }
-    Ok(selection)
 }
 
 /// Encode a proved historical lane directly into its final member rows.
@@ -1971,9 +1972,10 @@ fn combine_historical_rows(
         },
     )?;
     if output.is_some() {
-        storage.commit()?;
+        storage.commit_value(output)
+    } else {
+        Ok(output)
     }
-    Ok(output)
 }
 
 fn pattern_combine_tool_slots(
@@ -2263,9 +2265,10 @@ fn combine_external_local_tools(
         },
     )?;
     if output.is_some() {
-        storage.commit()?;
+        storage.commit_value(output)
+    } else {
+        Ok(output)
     }
-    Ok(output)
 }
 
 fn historical_body_slot(
@@ -2448,8 +2451,9 @@ fn unique_external_body_candidate<'a>(
                 "intersect F3D external body candidates",
             )?;
         } else {
-            candidates_storage.with_storage(|| reference_storage.commit())?;
-            candidates = Some(reference_candidates);
+            candidates = Some(candidates_storage.with_storage(|| {
+                reference_storage.commit_value(reference_candidates)
+            })?);
         }
     }
     let Some(candidates) = candidates else {
@@ -2489,7 +2493,7 @@ fn bind_body_recipe_body_selection<'a, 'ctx>(
             use cadmpeg_ir::features::BodySelection;
 
             let BodySelection::Native(group_id) = selection else {
-                return Ok(false);
+                return Ok(None);
             };
             let Some(group) = scope_group(ctx, &index.groups, scope, group_id, |group| {
                 matches!(
@@ -2500,10 +2504,10 @@ fn bind_body_recipe_body_selection<'a, 'ctx>(
                 )
             })?
             else {
-                return Ok(false);
+                return Ok(None);
             };
             if group.members().is_empty() {
-                return Ok(false);
+                return Ok(None);
             }
             let stream = native_stream_of(ctx, &scope.id)?;
             let mut slots_storage = ctx.reserve_scoped(0, "collect F3D body recipe slots")?;
@@ -2516,16 +2520,16 @@ fn bind_body_recipe_body_selection<'a, 'ctx>(
                 ctx.next_charged(&mut history_source, "scan F3D body recipe group members")?
             {
                 let Ok(ordinal) = u32::try_from(ordinal) else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let Some(operand) = index
                     .member_operands
                     .get(ctx, &(stream, group.record_index, ordinal, record_index))?
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let Some(body_slot) = operand.resolved_body_slot else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 slots_storage.with_storage(|| {
                     if ctx.insert_hash_set(&mut seen, body_slot, "collect F3D body recipe slots")? {
@@ -2552,14 +2556,13 @@ fn bind_body_recipe_body_selection<'a, 'ctx>(
             if let Ok(historical) =
                 cadmpeg_ir::features::BodySelection::historical(state, body_ids, native, ctx)?
             {
-                *selection = historical;
-                return Ok(true);
+                return Ok(Some(historical));
             }
-            Ok(false)
+            Ok(None)
         },
     )?;
-    if bound {
-        storage.commit()?;
+    if let Some(bound) = bound {
+        *selection = storage.commit_value(bound)?;
     }
     Ok(())
 }
@@ -2590,10 +2593,10 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
                         )
                     })?
                     else {
-                        return Ok(false);
+                        return Ok(None);
                     };
                     if group.members().is_empty() {
-                        return Ok(false);
+                        return Ok(None);
                     }
                     let mut selected = ctx.collection_vec(
                         group.members().len(),
@@ -2607,16 +2610,16 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
                         "scan F3D direct body recipe group members",
                     )? {
                         let Ok(ordinal) = u32::try_from(ordinal) else {
-                            return Ok(false);
+                            return Ok(None);
                         };
                         let Some(operand) = index
                             .member_operands
                             .get(ctx, &(stream, group.record_index, ordinal, record_index))?
                         else {
-                            return Ok(false);
+                            return Ok(None);
                         };
                         let Some(body) = direct_body_recipe_candidate(ctx, operand, index)? else {
-                            return Ok(false);
+                            return Ok(None);
                         };
                         if !seen_storage.with_storage(|| {
                             ctx.insert_hash_set(
@@ -2625,7 +2628,7 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
                                 "index F3D direct body recipe selections",
                             )
                         })? {
-                            return Ok(false);
+                            return Ok(None);
                         }
                         selected.push(
                             body.try_clone_for_decode(
@@ -2638,7 +2641,7 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
                         match cadmpeg_ir::features::DistinctMembers::try_from(selected, ctx) {
                             Ok(value) => value,
                             Err(cadmpeg_ir::features::FeatureCollectionError::Invalid(_)) => {
-                                return Ok(false)
+                                return Ok(None)
                             }
                             Err(cadmpeg_ir::features::FeatureCollectionError::Resource(limit)) => {
                                 return Err(limit.into())
@@ -2648,14 +2651,13 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
                         &group.id,
                         "copy F3D direct body recipe group identity",
                     )?;
-                    *selection = BodySelection::Resolved { bodies, native };
-                    return Ok(true);
+                    return Ok(Some(BodySelection::Resolved { bodies, native }));
                 }
                 BodySelection::NativeSet(native) => native.as_slice(),
-                _ => return Ok(false),
+                _ => return Ok(None),
             };
             if native_members.is_empty() {
-                return Ok(false);
+                return Ok(None);
             }
             let mut members_storage =
                 ctx.reserve_scoped(0, "index F3D direct body recipe native members")?;
@@ -2672,11 +2674,11 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
                         "index F3D direct body recipe native members",
                     )
                 })? {
-                    return Ok(false);
+                    return Ok(None);
                 }
             }
             let Some(stream) = stream else {
-                return Ok(false);
+                return Ok(None);
             };
             let mut rows =
                 ctx.collection_vec(native_members.len(), "collect F3D direct body recipe rows")?;
@@ -2690,28 +2692,28 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
                     "split F3D direct body recipe native identity",
                 )?
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let Ok(record_index) = ctx
                     .parse_text::<u32>(record_index, "parse F3D direct body recipe record index")?
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 if !ctx.equal(
                     native_stream_name,
                     stream,
                     "compare F3D direct body recipe stream identity",
                 )? {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 let Some(operand) = index
                     .scope_operands
                     .get(ctx, &(Some(stream), scope.record_index, record_index))?
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let Some(body) = direct_body_recipe_candidate(ctx, operand, index)? else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 if !seen_storage.with_storage(|| {
                     ctx.insert_hash_set(
@@ -2720,26 +2722,25 @@ fn bind_direct_body_recipe_body_selection<'a, 'ctx>(
                         "index F3D direct body recipe selections",
                     )
                 })? {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 let body =
                     body.try_clone_for_decode(ctx, "copy F3D direct body recipe member body")?;
                 let native =
                     ctx.copy_retained_text(native, "copy F3D direct body recipe member identity")?;
                 let Some(row) = body_member(ctx, body, native)? else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 rows.push(row);
             }
             if let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows, ctx)? {
-                *selection = BodySelection::ResolvedSet { members };
-                return Ok(true);
+                return Ok(Some(BodySelection::ResolvedSet { members }));
             }
-            Ok(false)
+            Ok(None)
         },
     )?;
-    if bound {
-        storage.commit()?;
+    if let Some(bound) = bound {
+        *selection = storage.commit_value(bound)?;
     }
     Ok(())
 }
@@ -3730,8 +3731,7 @@ fn bind_entity_face_groups<'a, 'ctx>(
         )
     })?;
     if let Some(historical) = historical {
-        output_storage.commit()?;
-        *selection = historical;
+        *selection = output_storage.commit_value(historical)?;
     }
     Ok(())
 }
@@ -3848,8 +3848,7 @@ fn bind_hole_face_selection(
         )
     })?;
     if let Some(historical) = historical {
-        output_storage.commit()?;
-        *selection = historical;
+        *selection = output_storage.commit_value(historical)?;
     }
     Ok(())
 }
@@ -3988,13 +3987,13 @@ fn bind_entity_selection_path<'a, 'ctx>(
             use cadmpeg_ir::features::PathRef;
 
             let PathRef::Native(group_id) = path else {
-                return Ok(false);
+                return Ok(None);
             };
             let Some(group) = scope_group(ctx, groups, scope, group_id, |_| true)? else {
-                return Ok(false);
+                return Ok(None);
             };
             if group.members().is_empty() {
-                return Ok(false);
+                return Ok(None);
             }
             let stream = native_stream_of(ctx, &scope.id)?;
             let (mut edge_slots, _edge_slots_storage) = ctx
@@ -4008,15 +4007,15 @@ fn bind_entity_selection_path<'a, 'ctx>(
                 ctx.next_charged(&mut history_source, "scan F3D path group members")?
             {
                 let Ok(ordinal) = u32::try_from(ordinal) else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let Some(operand) =
                     operands.get(ctx, &(stream, group.record_index, ordinal, record_index))?
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let Some(edge_slot) = operand.resolved_edge_slot else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 edge_slots.push(edge_slot);
             }
@@ -4035,14 +4034,13 @@ fn bind_entity_selection_path<'a, 'ctx>(
                 crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)?;
             let native = ctx.copy_retained_text(&group.id, "copy F3D path group identity")?;
             if let Ok(historical) = PathRef::historical_edges(state, edge_ids, native, ctx)? {
-                *path = historical;
-                return Ok(true);
+                return Ok(Some(historical));
             }
-            Ok(false)
+            Ok(None)
         },
     )?;
-    if bound {
-        storage.commit()?;
+    if let Some(bound) = bound {
+        *path = storage.commit_value(bound)?;
     }
     Ok(())
 }
@@ -4187,7 +4185,7 @@ pub(crate) fn project_feature_input_topologies(
             },
         )?;
         if let Some(projection) = projection {
-            storage.commit()?;
+            let projection = storage.commit_value(projection)?;
             ctx.push_vec(&mut projected, projection, "collect F3D input topologies")?;
         }
     }
@@ -4610,8 +4608,9 @@ fn common_face_vertex(
                 "intersect F3D common face vertices",
             )?;
         } else {
-            vertices_storage.with_storage(|| reference_storage.commit())?;
-            common = Some(vertices);
+            common = Some(vertices_storage.with_storage(|| {
+                reference_storage.commit_value(vertices)
+            })?);
         }
     }
     Ok(single_btree_value(common))
@@ -4653,8 +4652,9 @@ fn recipe_reference_common_vertex(
                 "intersect F3D common face vertices",
             )?;
         } else {
-            vertices_storage.with_storage(|| reference_storage.commit())?;
-            common = Some(vertices);
+            common = Some(vertices_storage.with_storage(|| {
+                reference_storage.commit_value(vertices)
+            })?);
         }
     }
     Ok(single_btree_value(common))
@@ -7885,8 +7885,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     }
                 }
                 std::collections::hash_map::Entry::Vacant(entry) => {
-                    key_storage.commit()?;
-                    entry.insert(Some(body));
+                    key_storage.commit_value(entry)?.insert(Some(body));
                 }
             }
             Ok(())
@@ -8238,8 +8237,7 @@ fn resolve_direct_face_recipe_clauses(
                     }
                     intersection = Some(match intersection {
                         None => {
-                            clause_storage.with_storage(|| reference_storage.commit())?;
-                            candidates
+                            clause_storage.with_storage(|| reference_storage.commit_value(candidates))?
                         }
                         Some(mut intersection) => {
                             decode.retain_btree_set(
@@ -8269,9 +8267,10 @@ fn resolve_direct_face_recipe_clauses(
         },
     )?;
     if !resolved.is_empty() {
-        storage.commit()?;
+        storage.commit_value(resolved)
+    } else {
+        Ok(resolved)
     }
-    Ok(resolved)
 }
 
 fn bind_profile_face_group_cardinality(
@@ -9540,7 +9539,8 @@ fn bind_active_edge_operand_candidates(
     else {
         return Ok(());
     };
-    candidate_storage.commit()?;
+    let (state_id, edge, candidate_faces, boundary_edges, contexts, all_reference_edge_sets, selectors) =
+        candidate_storage.commit_value((state_id, edge, candidate_faces, boundary_edges, contexts, all_reference_edge_sets, selectors))?;
     operand.terminal_candidate_faces = candidate_faces;
     operand.terminal_boundary_edge_slots = boundary_edges;
     operand.terminal_boundary_edge_contexts = contexts;

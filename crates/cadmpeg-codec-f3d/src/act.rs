@@ -440,11 +440,11 @@ struct TableEntry {
 }
 
 struct DecodedTable<'ctx> {
-    _entries_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     entries: Vec<TableEntry>,
     guids: Vec<ActGuid>,
     references: Vec<ActTableReference>,
     registry_channels: Vec<ActRegistryChannel>,
+    _entries_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 fn decode_table<'ctx>(
@@ -648,14 +648,14 @@ fn decode_table<'ctx>(
 }
 
 struct ChannelGroup<'ctx> {
-    group_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-    entity_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     record_index: u32,
     record_index_offset: usize,
     entity_id: Option<Located<String, usize>>,
     class_tag: DesignClassTag,
     channels: BTreeMap<String, Located<crate::records::mesh::DesignGuidText>>,
     class_tail: Option<ActClassTail>,
+    group_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    entity_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 fn merge_entities<'ctx>(
@@ -725,8 +725,7 @@ fn merge_entities<'ctx>(
             }
             (item.entity_id, Some(item.row))
         } else if let Some(entity_id) = group.entity_id.take() {
-            group.entity_storage.commit()?;
-            (entity_id.value, None)
+            (group.entity_storage.commit_value(entity_id.value)?, None)
         } else {
             continue;
         };
@@ -746,7 +745,7 @@ fn merge_entities<'ctx>(
             channel_group,
         )
         .map_err(CodecError::malformed)?;
-        group.group_storage.commit()?;
+        let entity = group.group_storage.commit_value(entity)?;
         by_index_storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut by_index,

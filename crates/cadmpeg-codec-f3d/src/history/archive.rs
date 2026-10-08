@@ -408,7 +408,7 @@ pub(super) fn bind_historical_entity_versions(
     {
         return Ok(());
     }
-    state_versions_storage.commit()?;
+    let mut projected = state_versions_storage.commit_value(projected)?;
     for state in ctx.admit_iter(&mut *states, "bind F3D historical version states")? {
         state.entity_versions = ctx
             .remove_hash_map(
@@ -423,20 +423,23 @@ pub(super) fn bind_historical_entity_versions(
 
 pub(super) fn bind_complete_record_tables(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    states: &mut [AsmDeltaState],
+    states: Vec<AsmDeltaState>,
     bytes: &[u8],
     width: RefWidth,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<Vec<AsmDeltaState>, cadmpeg_core::CodecError> {
+    let mut cache_storage =
+        ctx.reserve_scoped(0, "collect F3D complete historical topology caches")?;
+    let mut states = states;
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
-        return Ok(());
+        return Ok(states);
     };
     // An archive and an insert-only chain state their active count before
     // the active stream needs framing.
-    let (active_count, insert_only) = match archived_active_record_count(ctx, states)? {
+    let (active_count, insert_only) = match archived_active_record_count(ctx, &states)? {
         Some(count) => (count, false),
-        None => match insert_only_active_record_count(ctx, states)? {
+        None => match insert_only_active_record_count(ctx, &states)? {
             Some(count) => (count, true),
-            None => return Ok(()),
+            None => return Ok(states),
         },
     };
     let active_limit =
@@ -460,13 +463,13 @@ pub(super) fn bind_complete_record_tables(
         Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
             return Err(error.into_codec_error())
         }
-        Err(_) => return Ok(()),
+        Err(_) => return Ok(states),
     };
     if insert_only && framed.len() != active_count {
-        return Ok(());
+        return Ok(states);
     }
     let Some(active_records) = framed.get(..active_count) else {
-        return Ok(());
+        return Ok(states);
     };
     let mut archived_frames_storage = ctx.reserve_scoped(0, "retain F3D archived record frame")?;
     let mut archived_frames = BTreeMap::new();
@@ -482,23 +485,23 @@ pub(super) fn bind_complete_record_tables(
                 continue;
             }
             let Some(revision_id) = record.revision_id else {
-                return Ok(());
+                return Ok(states);
             };
             let Some(offset) = usize::try_from(record.byte_offset).ok() else {
-                return Ok(());
+                return Ok(states);
             };
             let Some(limit) = offset.checked_add(record.raw_bytes.len()) else {
-                return Ok(());
+                return Ok(states);
             };
             let Some(record_bytes) = bytes.get(offset..limit) else {
-                return Ok(());
+                return Ok(states);
             };
             if !ctx.equal(
                 record_bytes,
                 record.raw_bytes.as_slice(),
                 "compare F3D archived record bytes",
             )? {
-                return Ok(());
+                return Ok(states);
             }
             let framed = archived_frames_storage.with_storage(|| {
                 Ok::<_, cadmpeg_core::CodecError>(cadmpeg_asm::sab::frame(
@@ -513,20 +516,20 @@ pub(super) fn bind_complete_record_tables(
                 Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
                     return Err(error.into_codec_error())
                 }
-                Err(_) => return Ok(()),
+                Err(_) => return Ok(states),
             };
             if framed.len() != 1 {
-                return Ok(());
+                return Ok(states);
             }
             let Some(framed) = framed.pop() else {
-                return Ok(());
+                return Ok(states);
             };
             if !ctx.equal(
                 framed.name.as_str(),
                 record.name(),
                 "compare F3D archived record names",
             )? {
-                return Ok(());
+                return Ok(states);
             }
 
             if !ctx.insert_scoped_btree_map_if_vacant(
@@ -537,16 +540,14 @@ pub(super) fn bind_complete_record_tables(
                 "find F3D archived record frame",
                 "retain F3D archived record frame",
             )? {
-                return Ok(());
+                return Ok(states);
             }
         }
     }
-    let Some(archive) = historical_record_archive(ctx, states, active_records, archived_frames)?
+    let Some(archive) = historical_record_archive(ctx, &states, active_records, archived_frames)?
     else {
-        return Ok(());
+        return Ok(states);
     };
-    let mut cache_storage =
-        ctx.reserve_scoped(0, "collect F3D complete historical topology caches")?;
     let mut complete = true;
     let mut complete_states = states.iter_mut();
     while let Some(state) =
@@ -582,12 +583,12 @@ pub(super) fn bind_complete_record_tables(
         state.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology);
     }
     if complete {
-        cache_storage.commit()?;
-        bind_historical_transitions(ctx, states)?;
+        states = cache_storage.commit_value(states)?;
+        bind_historical_transitions(ctx, &mut states)?;
         // Keep only record revisions that can be named by a late persistent
         // selection. Non-topological ASM attributes do not participate in
         // feature selection and need not survive projection finalization.
-        for state in ctx.admit_iter(states, "retain F3D historical entity versions")? {
+        for state in ctx.admit_iter(&mut states, "retain F3D historical entity versions")? {
             if let Some(topology) = state.topology() {
                 let slots = topology_entity_slots(ctx, topology)?;
                 ctx.retain_vec(
@@ -609,11 +610,11 @@ pub(super) fn bind_complete_record_tables(
             }
         }
     } else {
-        for state in ctx.admit_iter(states, "release F3D incomplete topology caches")? {
+        for state in ctx.admit_iter(&mut states, "release F3D incomplete topology caches")? {
             state.topology_cache = crate::history_records::AsmTopologyCache::Absent;
         }
     }
-    Ok(())
+    Ok(states)
 }
 
 #[derive(Debug)]
@@ -899,7 +900,7 @@ fn bind_historical_transitions(
             )
         })?;
     }
-    output_storage.commit()?;
+    let transitions = output_storage.commit_value(transitions)?;
     for (state, transition) in ctx
         .admit_iter(&mut *states, "bind F3D historical transitions")?
         .zip(transitions)
@@ -1266,9 +1267,10 @@ pub(super) fn decode_bulletin_boards(
         },
     )?;
     if output.is_some() {
-        storage.commit()?;
+        storage.commit_value(output)
+    } else {
+        Ok(output)
     }
-    Ok(output)
 }
 
 pub(super) fn decode_history_records(

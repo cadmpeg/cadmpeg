@@ -350,7 +350,7 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
         "retain F3D resolved face selection",
         || -> Result<_, cadmpeg_core::CodecError> {
             let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
-                return Ok(false);
+                return Ok(None);
             };
             if ctx.equal(
                 native.as_str(),
@@ -363,17 +363,16 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
                     index.inputs.operands,
                 )? {
                     if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
-                        *selection = resolved;
-                        return Ok(true);
+                        return Ok(Some(resolved));
                     }
                 }
-                return Ok(false);
+                return Ok(None);
             }
             let Some(group) = index.groups.get(ctx, native.as_str())? else {
-                return Ok(false);
+                return Ok(None);
             };
             if group.scope_record_index != scope.record_index {
-                return Ok(false);
+                return Ok(None);
             }
             let stream = super::native_stream_of(ctx, &scope.id)?;
             if !ctx.equal(
@@ -381,7 +380,7 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
                 &stream,
                 "compare F3D face selection group stream",
             )? {
-                return Ok(false);
+                return Ok(None);
             }
             if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
@@ -393,11 +392,10 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
             updated_face_slots,
         )?
     {
-        *selection = resolved;
-                return Ok(true);
+        return Ok(Some(resolved));
     }
             let Some(stream) = stream else {
-                return Ok(false);
+                return Ok(None);
             };
             let mut seen_storage = ctx.reserve_scoped(0, "index F3D resolved face selection")?;
             let mut seen = HashSet::new();
@@ -410,13 +408,13 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
                     .face_operands
                     .get(ctx, &(Some(stream), scope.record_index, member.value))?
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let candidate = match operand.preceding_candidate_faces.as_slice() {
                     [face] => face,
                     _ => {
                         let [face] = operand.changed_candidate_faces.as_slice() else {
-                            return Ok(false);
+                            return Ok(None);
                         };
                         face
                     }
@@ -429,7 +427,7 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
                     candidate,
                     "find F3D candidate face selection face",
                 )? {
-                    return Ok(false);
+                    return Ok(None);
                 }
                 seen_storage.with_storage(|| {
                     ctx.insert_hash_set(&mut seen, candidate, "index F3D resolved face selection")
@@ -440,18 +438,17 @@ pub(super) fn bind_face_selection<'a, 'ctx>(
                 faces.push(face);
             }
             if !faces.is_empty() {
-                *selection = cadmpeg_ir::features::FaceSelection::Resolved {
+                return Ok(Some(cadmpeg_ir::features::FaceSelection::Resolved {
                     faces,
                     native: ctx
                         .copy_retained_text(native, "copy F3D resolved face selection identity")?,
-                };
-                return Ok(true);
+                }));
             }
-            Ok(false)
+            Ok(None)
         },
     )?;
-    if bound {
-        storage.commit()?;
+    if let Some(bound) = bound {
+        *selection = storage.commit_value(bound)?;
     }
     Ok(())
 }
@@ -470,15 +467,15 @@ pub(super) fn bind_body_recipe_face_selection<'a, 'ctx>(
             use cadmpeg_ir::features::FaceSelection;
 
             let FaceSelection::Native(native) = selection else {
-                return Ok(false);
+                return Ok(None);
             };
             let Some(group) = index.groups.get(ctx, native.as_str())? else {
-                return Ok(false);
+                return Ok(None);
             };
             if group.scope_record_index != scope.record_index
                 || group.role() != DesignOperandRole::ROLE_0X5
             {
-                return Ok(false);
+                return Ok(None);
             }
             let stream = super::native_stream_of(ctx, &scope.id)?;
             if !ctx.equal(
@@ -487,7 +484,7 @@ pub(super) fn bind_body_recipe_face_selection<'a, 'ctx>(
                 "compare F3D body recipe face selection group stream",
             )? || group.members().is_empty()
             {
-                return Ok(false);
+                return Ok(None);
             }
             let mut slots_storage = ctx.reserve_scoped(0, "collect F3D body recipe face slots")?;
             let mut seen = HashSet::new();
@@ -498,16 +495,16 @@ pub(super) fn bind_body_recipe_face_selection<'a, 'ctx>(
                 "scan F3D body recipe selection group members",
             )? {
                 let Ok(ordinal) = u32::try_from(ordinal) else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let Some(operand) = index
                     .body_recipe_operands
                     .get(ctx, &(stream, group.record_index, ordinal, member.value))?
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 let Some(slot) = operand.resolved_face_slot else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 slots_storage.with_storage(|| {
                     if ctx.insert_hash_set(&mut seen, slot, "collect F3D body recipe face slots")? {
@@ -533,14 +530,13 @@ pub(super) fn bind_body_recipe_face_selection<'a, 'ctx>(
             if let Ok(historical) =
                 cadmpeg_ir::features::FaceSelection::historical(state, faces, native, ctx)?
             {
-                *selection = historical;
-                return Ok(true);
+                return Ok(Some(historical));
             }
-            Ok(false)
+            Ok(None)
         },
     )?;
-    if bound {
-        storage.commit()?;
+    if let Some(bound) = bound {
+        *selection = storage.commit_value(bound)?;
     }
     Ok(())
 }
@@ -2002,8 +1998,7 @@ pub(super) fn historical_pattern_identity_axes_for_selection(
     if matched_state_ids.len() != state_ids.len() || axes.is_empty() {
         return Ok(Vec::new());
     }
-    axes_storage.commit()?;
-    Ok(axes)
+    axes_storage.commit_value(axes)
 }
 
 fn historical_pattern_identity_axis_candidates(
@@ -3271,8 +3266,7 @@ pub(crate) fn bind_edge_identity_history(
                     };
                 }
                 std::collections::hash_map::Entry::Vacant(entry) => {
-                    key_storage.commit()?;
-                    entry.insert(operand.layout().is_compact().then_some(1));
+                    key_storage.commit_value(entry)?.insert(operand.layout().is_compact().then_some(1));
                 }
             }
             Ok::<(), cadmpeg_core::CodecError>(())

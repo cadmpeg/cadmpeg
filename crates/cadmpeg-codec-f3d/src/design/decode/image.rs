@@ -175,7 +175,9 @@ pub(super) fn decode_scoped_images<T>(
         "sort f3d design image 1",
     )?;
     let mut images = Vec::new();
-    for (image, storage) in parsed {
+    for parsed_image in parsed {
+        let storage = parsed_image.1;
+        let image = parsed_image.0;
         ctx.charge_work(1, "dedup f3d design images")?;
         if let Some(kept) = images.last() {
             if ctx.equal_bytes(
@@ -186,7 +188,7 @@ pub(super) fn decode_scoped_images<T>(
                 continue;
             }
         }
-        storage.commit()?;
+        let image = storage.commit_value(image)?;
         ctx.push_vec(&mut images, image, "f3d scoped image records")?;
     }
     Ok(images)

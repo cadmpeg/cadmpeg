@@ -47,9 +47,7 @@ impl ManifestFailure<'_> {
     }
     fn into_codec(self) -> CodecError {
         if let Some(reservation) = self.reservation {
-            if let Err(refusal) = reservation.commit() {
-                return refusal;
-            }
+            return reservation.commit_value(self.error).unwrap_or_else(std::convert::identity);
         }
         self.error
     }
@@ -679,8 +677,7 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
             let (name, reservation) = design_folders
                 .pop()
                 .ok_or_else(|| CodecError::malformed("missing admitted Design asset folder"))?;
-            reservation.commit()?;
-            Ok(name)
+            reservation.commit_value(name)
         }
         0 => Err(parse_malformed(
             ctx,

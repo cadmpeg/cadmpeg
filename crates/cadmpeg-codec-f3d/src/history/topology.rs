@@ -597,16 +597,17 @@ pub(super) fn historical_face_support_contexts(
         let preceding_face_boundaries = candidate_storage.with_storage(|| {
             face_boundary_contexts_for_slots(decode, &preceding_face_slots, preceding_topology)
         })?;
-        candidate_storage.commit()?;
-        decode.push_vec(
-            &mut contexts,
+        let context = candidate_storage.commit_value(
             crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
                 active_face_slot,
                 surface_slot,
                 preceding_face_slots,
                 preceding_face_boundaries,
                 changed_preceding_face_slots,
-            },
+            })?;
+        decode.push_vec(
+            &mut contexts,
+            context,
             "collect F3D historical support contexts",
         )?;
     }
@@ -773,7 +774,7 @@ pub(super) fn face_boundary_contexts_for_slots(
                     },
                 );
             }
-            let boundary = face_storage
+            let mut boundary = face_storage
                 .with_storage(|| historical_loop_boundary(decode, coedges, topology))?;
             if matches!(
                 boundary,
@@ -781,7 +782,7 @@ pub(super) fn face_boundary_contexts_for_slots(
                     _
                 )
             ) {
-                face_storage.with_storage(|| coedges_storage.commit())?;
+                boundary = face_storage.with_storage(|| coedges_storage.commit_value(boundary))?;
             }
 
             face_storage.with_storage(|| {
@@ -795,7 +796,7 @@ pub(super) fn face_boundary_contexts_for_slots(
             );
         }
 
-        face_storage.commit()?;
+        let loops = face_storage.commit_value(loops)?;
         decode.reserve_vec(&mut contexts, 1, "collect F3D face boundary contexts")?;
         contexts.push(
             crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext {
@@ -877,8 +878,7 @@ fn historical_loop_boundary(
     let mut history_source = IntoIterator::into_iter(&vertices);
     while let Some(vertex) = decode.next_charged(&mut history_source, "scan F3D vertices")? {
         let Some(binding) = bindings.get(decode, &vertex.vertex_slot)? else {
-            vertices_storage.commit()?;
-            return Ok(DesignHistoricalLoopBoundary::Vertices(vertices));
+            return vertices_storage.commit_value(DesignHistoricalLoopBoundary::Vertices(vertices));
         };
         points_storage.with_storage(|| {
             decode.push_vec(
@@ -896,8 +896,7 @@ fn historical_loop_boundary(
     let mut history_source = IntoIterator::into_iter(&points);
     while let Some(point) = decode.next_charged(&mut history_source, "scan F3D points")? {
         let Some(value) = values.get(decode, &point.point_slot)? else {
-            points_storage.commit()?;
-            return Ok(DesignHistoricalLoopBoundary::Points(points));
+            return points_storage.commit_value(DesignHistoricalLoopBoundary::Points(points));
         };
         positions_storage.with_storage(|| {
             decode.push_vec(
@@ -910,8 +909,7 @@ fn historical_loop_boundary(
             )
         })?;
     }
-    positions_storage.commit()?;
-    Ok(DesignHistoricalLoopBoundary::Positions(positions))
+    positions_storage.commit_value(DesignHistoricalLoopBoundary::Positions(positions))
 }
 
 pub(super) fn preceding_support_face_slots(
@@ -2729,9 +2727,10 @@ pub(super) fn historical_topology(
         },
     )?;
     if topology.is_some() {
-        topology_storage.commit()?;
+        topology_storage.commit_value(topology)
+    } else {
+        Ok(topology)
     }
-    Ok(topology)
 }
 
 #[cfg(test)]
