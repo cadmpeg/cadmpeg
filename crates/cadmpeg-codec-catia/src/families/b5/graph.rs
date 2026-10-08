@@ -3162,7 +3162,7 @@ impl<'data, 'ctx, 'arena> TargetedSurfaceResolver<'data, 'ctx, 'arena> {
                 .and_then(Option::as_ref);
             let borrowed = match (rolling, resolved) {
                 (Some(left), Some(right)) if !equal_b5_surfaces(ctx, left, right, OPERATION)? => {
-                    break None
+                    break None;
                 }
                 (Some(surface), _) | (_, Some(surface)) => Some(surface),
                 (None, None) => None,

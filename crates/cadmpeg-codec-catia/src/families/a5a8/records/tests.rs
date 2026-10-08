@@ -1606,7 +1606,7 @@ fn assert_a5_surface_collection_refusal(bytes: &[u8], first_cap: u64, operation:
         });
         match result {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation => {
-                return
+                return;
             }
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
                 let next = limit
@@ -1887,9 +1887,7 @@ fn a8_pcurve_bspline_retains_only_final_lanes() {
         .expect("valid jet");
     assert_eq!(result.0.len(), 12);
     assert_eq!(result.1.len(), 6);
-    let result = crate::test_support::with_retained_limit(6 * 16, |ctx| {
-        jet.control_points(ctx)
-    })
+    let result = crate::test_support::with_retained_limit(6 * 16, |ctx| jet.control_points(ctx))
         .expect("controls-only output retains 96 bytes")
         .expect("valid jet");
     assert_eq!(result.len(), 6);

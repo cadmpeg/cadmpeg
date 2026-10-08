@@ -451,7 +451,8 @@ fn assert_tetrahedron_attach_work_refusal(operation: &'static str, shape: Tetrah
         |ctx| fixture.attach(ctx),
         |result| {
             assert_eq!(
-                result.outcome, Ok(()),
+                result.outcome,
+                Ok(()),
                 "service fixture must attach topology: supports={}, native_pairs={}, domains={}, mesh={:?}",
                 result.diagnostics.curve_supports,
                 result.diagnostics.native_endpoint_pairs,

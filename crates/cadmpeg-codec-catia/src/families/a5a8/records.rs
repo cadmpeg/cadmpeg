@@ -4,6 +4,8 @@
 //! rolling-ball jets, guide-curve jets, and object-stream UV pcurves.
 
 type A8BSplineOutput = Result<Option<(Vec<f64>, Vec<FiniteVector<2>>)>, cadmpeg_core::CodecError>;
+type A8PcurveKnotsAndControlsOutput =
+    Result<Option<(Vec<FiniteReal>, Vec<FiniteVector<2>>)>, cadmpeg_core::CodecError>;
 
 use super::knot_lane::A8KnotLane;
 use crate::math::distance;
@@ -528,7 +530,7 @@ impl A8Pcurve {
     pub(in crate::families) fn control_points_and_knots(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ) -> Result<Option<(Vec<FiniteReal>, Vec<FiniteVector<2>>)>, CodecError> {
+    ) -> A8PcurveKnotsAndControlsOutput {
         let (mut source_knots, mut source_knot_storage) =
             ctx.scoped_vector_storage(0, "catia_a8_pcurve_source_knots")?;
         ctx.reserve_scoped_vec(
@@ -551,7 +553,8 @@ impl A8Pcurve {
                     cadmpeg_ir::units::FiniteVector::new,
                 )
             },
-        )? else {
+        )?
+        else {
             return Ok(None);
         };
         source_knot_storage.commit()?;
