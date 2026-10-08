@@ -37,6 +37,10 @@ pub(crate) fn transfer_native_sketch_entities(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
+    if ir.model.sketches.is_empty() {
+        return Ok(HashSet::new());
+    }
+
     let (object_records, _object_records_storage) = ctx
         .with_scoped_storage("catia_sketch_object_records_workspace", || {
             unique_object_records(ctx, native)
@@ -235,6 +239,10 @@ pub(crate) fn transfer_native_sketch_constraints(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
+    if ir.model.sketches.is_empty() {
+        return Ok(HashSet::new());
+    }
+
     let (mut identities, mut identity_storage) = ctx
         .with_scoped_storage("catia_sketch_constraint_identity_index", || {
             ConstraintIdentities::new(ctx, &ir.model.sketch_constraints)
@@ -1019,6 +1027,10 @@ pub(crate) fn transfer_constraint_ranges(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
+    if ir.model.sketches.is_empty() {
+        return Ok(HashSet::new());
+    }
+
     let (mut identities, mut identity_storage) = ctx
         .with_scoped_storage("catia_sketch_constraint_identity_index", || {
             ConstraintIdentities::new(ctx, &ir.model.sketch_constraints)
@@ -2019,6 +2031,46 @@ mod tests {
             Ok::<_, cadmpeg_core::CodecError>(())
         })
         .expect("one resolution per chain node fits the allowance");
+    }
+
+    #[test]
+    fn empty_sketch_arenas_skip_native_ownership_work() {
+        let (mut ir, native, transfer, scope) = fixture(false);
+        ir.model.sketches.clear();
+        crate::test_support::with_work_limit(0, |ctx| {
+            let mut membership = ctx.reserve_scoped(0, "test sketch memberships")?;
+            assert!(super::transfer_native_sketch_entities(
+                ctx,
+                &mut membership,
+                &mut ir,
+                &native,
+                &transfer,
+                &scope
+            )?
+            .is_empty());
+            assert!(super::transfer_native_sketch_constraints(
+                ctx,
+                &mut membership,
+                &mut ir,
+                &native,
+                &transfer,
+                &scope
+            )?
+            .is_empty());
+            assert!(super::transfer_constraint_ranges(
+                ctx,
+                &mut membership,
+                &mut ir,
+                &native,
+                &transfer,
+                &scope
+            )?
+            .is_empty());
+            assert!(ir.model.sketch_entities.is_empty());
+            assert!(ir.model.sketch_constraints.is_empty());
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })
+        .expect("no owner population requires no traversal");
     }
 
     #[test]
