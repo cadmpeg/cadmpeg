@@ -664,11 +664,12 @@ pub(in crate::decode) fn solve_topological_vertices(
             "creo vertex pcurve endpoint nodes",
         )?;
     }
-    let topology_rows = crate::identity::uniquely_identified_rows_checked(
-        ctx,
-        &scan.curves.topology_rows,
-        |row| row.id,
-    )?;
+    let (topology_rows, _topology_rows_storage) =
+        crate::identity::uniquely_identified_rows_checked(
+            ctx,
+            &scan.curves.topology_rows,
+            |row| row.id,
+        )?;
     let mut pcurve_constraints = Vec::new();
     let mut pcurve_endpoint_candidates = BTreeMap::<u32, Vec<[f64; 3]>>::new();
     for row in ctx.admit_iter(&topology_rows, "creo topology curve rows")? {
@@ -791,7 +792,7 @@ pub(in crate::decode) fn solve_topological_vertices(
             continue;
         };
         let Some(points) =
-            nonperiodic_nurbs_endpoint_points(ctx, source_carriers.curve_geometry(geometry))?
+            nonperiodic_nurbs_endpoint_points(ctx, source_carriers.curve_geometry(geometry)?)?
         else {
             continue;
         };
@@ -813,7 +814,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         let Some(curve) = unique_model_curve(ctx, ir, &id)? else {
             continue;
         };
-        let geometry = source_carriers.curve_geometry(curve);
+        let geometry = source_carriers.curve_geometry(curve)?;
         let evaluable = matches!(
             geometry,
             CurveGeometry::Solved(

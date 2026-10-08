@@ -1180,15 +1180,15 @@ fn round_placed_cylinder_radius(
         },
         "creo round placed cylinder surface",
     )?;
-    Ok(
-        surface.and_then(|surface| match source_carriers.surface_geometry(surface) {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let radius = cylinder_surface.radius().get();
-                Some(radius)
-            }
-            _ => None,
-        }),
-    )
+    let geometry = surface
+        .map(|surface| source_carriers.surface_geometry(surface))
+        .transpose()?;
+    Ok(match geometry {
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder))) => {
+            Some(cylinder.radius().get())
+        }
+        _ => None,
+    })
 }
 
 fn round_direct_radii(
@@ -1362,7 +1362,7 @@ fn chamfer_cone_equation(
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     row: &crate::surface::SurfaceRow,
-) -> Option<ConeEquation> {
+) -> Result<Option<ConeEquation>, cadmpeg_core::CodecError> {
     let mut parameter_records = scan
         .surfaces
         .parameters
@@ -1370,31 +1370,33 @@ fn chamfer_cone_equation(
         .filter(|record| record.offset == row.offset);
     let parameter_record = parameter_records.next();
     if parameter_records.next().is_some() {
-        return None;
+        return Ok(None);
     }
     if let Some(frame) =
         parameter_record.and_then(crate::surface::SurfaceParameterRecord::positional_cone_frame)
     {
-        return ConeEquation::new(
+        return Ok(ConeEquation::new(
             frame.frame().origin(),
             frame.frame().axis(),
             frame.frame().ref_direction(),
             0.0,
             1.0,
             frame.half_angle().get().get(),
-        );
+        ));
     }
-    let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| {
+    let Some(surface) = exactly_one(ir.model.surfaces.iter().filter(|surface| {
         crate::identity::matches_numbered_identity(
             surface.id.as_str(),
             "creo:visibgeom:surface#",
             row.id,
         )
-    }))?;
+    })) else {
+        return Ok(None);
+    };
     let Some(SolvedSurfaceGeometry::Cone(cone_surface)) =
-        source_carriers.surface_geometry(surface).solved()
+        source_carriers.surface_geometry(surface)?.solved()
     else {
-        return None;
+        return Ok(None);
     };
     let origin = cone_surface.origin().get();
     let axis = cone_surface.frame().axis().as_raw();
@@ -1402,14 +1404,14 @@ fn chamfer_cone_equation(
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
     let half_angle = cone_surface.half_angle().get();
-    ConeEquation::new(
+    Ok(ConeEquation::new(
         [origin.x, origin.y, origin.z],
         [axis.x, axis.y, axis.z],
         [ref_direction.x, ref_direction.y, ref_direction.z],
         radius,
         ratio,
         half_angle,
-    )
+    ))
 }
 
 pub(in super::super) fn chamfer_constant_distance(
@@ -1435,7 +1437,7 @@ pub(in super::super) fn chamfer_constant_distance(
         .admit_iter(&*scan.surfaces.rows, "creo chamfer generated surface rows")?
         .filter(|row| row.feature_id == feature_id)
     {
-        let Some(cone) = chamfer_cone_equation(scan, ir, source_carriers, row) else {
+        let Some(cone) = chamfer_cone_equation(scan, ir, source_carriers, row)? else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut cones, 1, "creo chamfer cone witnesses")?;
@@ -1475,7 +1477,7 @@ pub(in super::super) fn chamfer_constant_distance(
                 match (first, second) {
                     (None, None) => false,
                     (Some(surface), None) => matches!(
-                        source_carriers.surface_geometry(surface).solved(),
+                        source_carriers.surface_geometry(surface)?.solved(),
                         Some(SolvedSurfaceGeometry::Plane(_))
                     ),
                     _ => return Ok(None),

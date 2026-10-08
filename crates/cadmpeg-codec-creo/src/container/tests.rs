@@ -397,8 +397,18 @@ fn feature_geometry_table_aggregation_refuses_before_vec_growth() {
         super::feature_geometry_tables(&ctx, &[], std::slice::from_ref(&row))
             .map(|tables| tables.len())
     };
-    assert_eq!(run(5).expect("one aggregate table admitted"), 1);
-    let error = run(4).expect_err("aggregate table needs another item");
+    let admitted = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        None,
+        run,
+    );
+    assert_eq!(run(admitted).expect("one aggregate record admitted"), 1);
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo feature geometry table aggregation"),
+        run,
+    );
+    let error = run(boundary).expect_err("aggregate record growth needs admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo feature geometry table aggregation"));
@@ -483,8 +493,18 @@ fn revolution_extent_aggregation_refuses_before_vec_growth() {
         )
         .map(|records| records.len())
     };
-    assert_eq!(run(2).expect("one aggregate extent admitted"), 1);
-    let error = run(1).expect_err("aggregate extent needs another item");
+    let admitted = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        None,
+        run,
+    );
+    assert_eq!(run(admitted).expect("one aggregate record admitted"), 1);
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo revolution extent aggregation"),
+        run,
+    );
+    let error = run(boundary).expect_err("aggregate record growth needs admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo revolution extent aggregation"));
@@ -507,8 +527,18 @@ fn feature_definition_aggregation_refuses_before_vec_growth() {
             .expect("root feature input is admitted");
         super::feature_definitions(&ctx, std::slice::from_ref(&section)).map(|rows| rows.len())
     };
-    assert_eq!(run(7).expect("one definition admitted"), 1);
-    let error = run(6).expect_err("aggregate definition needs an item");
+    let admitted = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        None,
+        run,
+    );
+    assert_eq!(run(admitted).expect("one aggregate record admitted"), 1);
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo feature definitions"),
+        run,
+    );
+    let error = run(boundary).expect_err("aggregate record growth needs admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo feature definitions"));
@@ -561,7 +591,13 @@ fn depdb_recipe_row_refuses_before_vec_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let error = depdb_recipe_rows_with_limits(5, u64::MAX).expect_err("row needs a vector item");
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo DEPDB recipe rows"),
+        |items| depdb_recipe_rows_with_limits(items, u64::MAX),
+    );
+    let error = depdb_recipe_rows_with_limits(boundary, u64::MAX)
+        .expect_err("row needs a vector item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo DEPDB recipe rows"));
@@ -700,7 +736,7 @@ fn section_result_collector_refuses_before_output_vec_growth() {
             &ctx,
             sections.iter().map(Ok),
             |_| Ok(vec![42u32]),
-            |_, _| {},
+            |_, _| Ok(()),
             |_| 0,
         )
     };
@@ -898,8 +934,18 @@ fn feature_row_definition_refuses_before_vec_growth() {
             .expect("feature row is admitted");
         super::feature_row_definitions(&ctx, std::slice::from_ref(&row))
     };
-    assert_eq!(run(2).expect("one definition admitted").len(), 1);
-    let error = run(1).expect_err("one definition needs another item");
+    let admitted = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        None,
+        run,
+    );
+    assert_eq!(run(admitted).expect("one aggregate record admitted").len(), 1);
+    let boundary = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some("creo feature row definitions"),
+        run,
+    );
+    let error = run(boundary).expect_err("aggregate record growth needs admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo feature row definitions"));
@@ -929,12 +975,7 @@ fn append_definition_with_limit(
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("definition input is admitted");
     let mut definitions = Vec::new();
-    super::append_feature_definitions(
-        &ctx,
-        &mut definitions,
-        vec![one_feature_definition()],
-        operation,
-    )?;
+    ctx.extend_vec(&mut definitions, vec![one_feature_definition()], operation)?;
     Ok(definitions.len())
 }
 
@@ -1198,7 +1239,7 @@ fn container_framing_misses_and_text_copies_refuse_work() {
         &[
             "creo container model-name scan",
             "creo version line scan",
-            "creo version text work",
+            "creo version UTF-8 validation",
             "creo container header scans",
             "creo container TOC scans",
             "creo TOC discovery scan",
@@ -1333,21 +1374,6 @@ fn legacy_toc_array_utf8_refuses_before_invalid_fields() {
 }
 
 #[test]
-fn cmnm_length_utf8_refuses_before_invalid_hexadecimal_text() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo UTF-8 validation",
-        |ctx| super::cmnm_model_name(ctx, b"#- CMNM 00\xffx"),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation")
-    );
-}
-
-#[test]
 fn native_model_name_utf8_refuses_before_invalid_name() {
     let payload = b"model_name\0\xff\0";
     let section =
@@ -1358,37 +1384,6 @@ fn native_model_name_utf8_refuses_before_invalid_name() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
         |ctx| super::native_model_name(ctx, std::slice::from_ref(&section)),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo UTF-8 validation")
-    );
-}
-
-#[test]
-fn feature_reference_utf8_refuses_before_invalid_identity() {
-    let row = feature_row_for_aggregate(b"\xe0\x00");
-    let reference = crate::feature::operations::FeatureReferenceName {
-        feature_id: 7,
-        name_bytes: vec![0xff],
-        own_reference_id: 0,
-        reference_type: 0,
-        offset: 0,
-    };
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo UTF-8 validation",
-        |ctx| {
-            super::feature_row_has_model_identity(
-                ctx,
-                &row,
-                &std::collections::BTreeSet::new(),
-                &[],
-                std::slice::from_ref(&reference),
-            )
-        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -1442,3 +1437,5 @@ fn version_line_trim_refuses_work() {
             && resource.operation == "creo version line trim")
     );
 }
+
+mod identity_index;

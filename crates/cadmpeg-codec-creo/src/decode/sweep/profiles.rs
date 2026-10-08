@@ -161,6 +161,7 @@ pub(in super::super) fn connected_sketch_profile_vertices(
         for entity_use in profile {
             let Some(geometry) = unique_profile_entity(ctx, ir, sketch_id, &entity_use.entity)?
                 .map(|entity| source_carriers.sketch_geometry(entity))
+                .transpose()?
             else {
                 valid = false;
                 break;
@@ -869,7 +870,7 @@ pub(in super::super) fn resolved_sketch_profiles(
             else {
                 return Ok(None);
             };
-            let source_geometry = source_carriers.sketch_geometry(entity);
+            let source_geometry = source_carriers.sketch_geometry(entity)?;
             let source_geometry = match source_geometry.definition() {
                 SketchGeometryDefinition::Nurbs { curve } => {
                     let operation = "creo resolved profile NURBS copy";

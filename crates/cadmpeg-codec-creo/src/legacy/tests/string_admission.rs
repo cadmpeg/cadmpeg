@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::ResourceDimension;
 
 use super::super::{NullToken, ValueKind};
 
-fn assert_string_collection_refusal(data: &[u8], limit: u64, operation: &'static str) {
-    let (persistence, parents) = super::object_fixture_parts(data);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::super::string_records(&ctx, data, &persistence.scopes, &parents)
-        .expect_err("the next string collection item exceeds the limit");
+fn assert_string_collection_refusal(data: &[u8], operation: &'static str) {
+    let (scopes, parents) = super::object_fixture_parts(data);
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| super::super::string_records(ctx, data, &scopes, &parents),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
@@ -23,50 +22,45 @@ fn assert_string_collection_refusal(data: &[u8], limit: u64, operation: &'static
 const ONE_STRING_ELEMENT: &[u8] = b"@labels 1 10\n0 1 [1]\n1 1 W\n";
 
 #[test]
-fn active_string_array_refuses_before_btree_node() {
-    assert_string_collection_refusal(ONE_STRING_ELEMENT, 2, "creo legacy active string arrays");
+fn active_string_array_refuses_before_growth() {
+    assert_string_collection_refusal(ONE_STRING_ELEMENT, "creo legacy active string arrays");
 }
 
 #[test]
-fn string_array_child_refuses_before_btree_node() {
-    assert_string_collection_refusal(
-        ONE_STRING_ELEMENT,
-        3,
-        "creo legacy string array child nodes",
-    );
+fn string_array_child_refuses_before_hash_node() {
+    assert_string_collection_refusal(ONE_STRING_ELEMENT, "creo legacy string array child nodes");
 }
 
 #[test]
 fn string_array_child_rows_refuse_before_growth() {
-    assert_string_collection_refusal(ONE_STRING_ELEMENT, 4, "creo legacy string array child rows");
+    assert_string_collection_refusal(ONE_STRING_ELEMENT, "creo legacy string array child rows");
 }
 
 #[test]
-fn string_array_element_offset_refuses_before_btree_node() {
+fn string_array_element_offset_refuses_before_hash_node() {
     assert_string_collection_refusal(
         ONE_STRING_ELEMENT,
-        5,
         "creo legacy string array element offsets",
     );
 }
 
 #[test]
 fn string_array_values_refuse_before_growth() {
-    assert_string_collection_refusal(ONE_STRING_ELEMENT, 7, "creo legacy string array values");
+    assert_string_collection_refusal(ONE_STRING_ELEMENT, "creo legacy string array values");
 }
 
 #[test]
 fn string_records_refuse_before_growth() {
-    assert_string_collection_refusal(b"@name 1 10\n0 1 W\n", 1, "creo legacy string records");
+    assert_string_collection_refusal(b"@name 1 10\n0 1 W\n", "creo legacy string records");
 }
 
-fn assert_string_retained_refusal(data: &[u8], _limit: u64, operation: &'static str) {
-    let (persistence, parents) = super::object_fixture_parts(data);
+fn assert_string_retained_refusal(data: &[u8], operation: &'static str) {
+    let (scopes, parents) = super::object_fixture_parts(data);
     let error = crate::test_support::last_refusal_at(
         &[],
         ResourceDimension::RetainedBytes,
         operation,
-        |ctx| super::super::string_records(ctx, data, &persistence.scopes, &parents),
+        |ctx| super::super::string_records(ctx, data, &scopes, &parents),
     );
 
     assert!(
@@ -78,67 +72,32 @@ fn assert_string_retained_refusal(data: &[u8], _limit: u64, operation: &'static 
 
 #[test]
 fn string_record_name_refuses_before_retained_copy() {
-    assert_string_retained_refusal(b"@name 1 10\n0 1 W\n", 1, "creo legacy string record names");
+    assert_string_retained_refusal(b"@name 1 10\n0 1 W\n", "creo legacy string record names");
 }
 
 #[test]
 fn string_utf8_payload_refuses_before_retained_copy() {
-    assert_string_retained_refusal(
-        b"@name 1 10\n0 1 W\n",
-        0,
-        "creo legacy string UTF-8 payload",
-    );
+    assert_string_retained_refusal(b"@name 1 10\n0 1 W\n", "creo legacy string UTF-8 payload");
 }
 
 #[test]
 fn string_byte_payload_refuses_before_retained_copy() {
-    assert_string_retained_refusal(
-        b"@name 1 10\n0 1 \xff\n",
-        0,
-        "creo legacy string byte payload",
-    );
+    assert_string_retained_refusal(b"@name 1 10\n0 1 \xff\n", "creo legacy string byte payload");
 }
 
-fn assert_scalar_string_refusal(
-    collection_limit: Option<u64>,
-    retained_limit: Option<u64>,
-    operation: &'static str,
-    dimension: ResourceDimension,
-) {
+fn assert_scalar_string_refusal(operation: &'static str, dimension: ResourceDimension) {
     let data = b"@code 1 3\n0 1 TEXT\n";
-    let (persistence, parents) = super::object_fixture_parts(data);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    if let Some(limit) = collection_limit {
-        policy.limits.max_collection_items = limit;
-    }
-    if let Some(limit) = retained_limit {
-        policy.limits.max_retained_bytes = limit;
-    }
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = if dimension == ResourceDimension::RetainedBytes {
-        crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-            super::super::scalar_string_records(
-                ctx,
-                data,
-                &persistence.scopes,
-                ValueKind::TYPE3,
-                NullToken::RepresentsNull,
-                &parents,
-            )
-        })
-    } else {
+    let (scopes, parents) = super::object_fixture_parts(data);
+    let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
         super::super::scalar_string_records(
-            &ctx,
+            ctx,
             data,
-            &persistence.scopes,
+            &scopes,
             ValueKind::TYPE3,
             NullToken::RepresentsNull,
             &parents,
         )
-        .expect_err("the next scalar string allocation exceeds the limit")
-    };
+    });
 
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -149,8 +108,6 @@ fn assert_scalar_string_refusal(
 #[test]
 fn scalar_string_name_refuses_before_retained_copy() {
     assert_scalar_string_refusal(
-        None,
-        Some(4),
         "creo legacy scalar string names",
         ResourceDimension::RetainedBytes,
     );
@@ -159,8 +116,6 @@ fn scalar_string_name_refuses_before_retained_copy() {
 #[test]
 fn scalar_string_records_refuse_before_growth() {
     assert_scalar_string_refusal(
-        Some(1),
-        None,
         "creo legacy scalar string records",
         ResourceDimension::CollectionItems,
     );

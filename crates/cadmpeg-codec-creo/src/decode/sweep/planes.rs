@@ -279,7 +279,7 @@ fn cylinder_frame_agrees_with_model(
     let Some(surface) = found else {
         return Ok(true);
     };
-    let geometry = source_carriers.surface_geometry(surface);
+    let geometry = source_carriers.surface_geometry(surface)?;
     let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = geometry.solved() else {
         return Ok(matches!(
             geometry,
