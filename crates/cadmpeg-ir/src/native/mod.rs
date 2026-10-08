@@ -785,7 +785,9 @@ impl NativeNamespace {
         name: &str,
     ) -> Result<Vec<T>, NativeConvertError> {
         let mut typed = Vec::new();
-        if let Some((arena, records)) = self.arenas.get_key_value(name) {
+        if let Some((arena, records)) =
+            ctx.get_key_value_btree_map(&self.arenas, name, "select typed native arena")?
+        {
             for record in records {
                 ctx.reserve_vec(&mut typed, 1, "load typed native record")?;
                 typed.push(read_record(ctx, arena, record)?);
@@ -823,14 +825,20 @@ impl NativeNamespace {
         ctx: &'a DecodeContext<'_>,
         name: &str,
     ) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
-        self.arenas
-            .get_key_value(name)
+        let (selected, refusal) = match ctx.get_key_value_btree_map(
+            &self.arenas,
+            name,
+            "select typed native arena",
+        ) {
+            Ok(selected) => (selected, None),
+            Err(error) => (None, Some(NativeConvertError::Resource(error))),
+        };
+        refusal
             .into_iter()
-            .flat_map(move |(arena, records)| {
-                records
-                    .iter()
-                    .map(move |record| read_record(ctx, arena, record))
-            })
+            .map(Err)
+            .chain(selected.into_iter().flat_map(move |(arena, records)| {
+                records.iter().map(move |record| read_record(ctx, arena, record))
+            }))
     }
 }
 
