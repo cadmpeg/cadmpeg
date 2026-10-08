@@ -191,9 +191,9 @@ struct Index<'a> {
     object_by_id: BTreeMap<String, &'a ObjectRecord>,
     object_by_offset: BTreeMap<usize, &'a ObjectRecord>,
     objects_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a ObjectRecord>>,
-    integers_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerRecord>>,
-    reals_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a legacy::RealRecord>>,
-    strings_by_parent_name: BTreeMap<(usize, &'a str), Vec<&'a legacy::StringRecord>>,
+    integers_by_parent_name: BTreeMap<(usize, &'a str), Option<&'a legacy::IntegerRecord>>,
+    reals_by_parent_name: BTreeMap<(usize, &'a str), Option<&'a legacy::RealRecord>>,
+    strings_by_parent_name: BTreeMap<(usize, &'a str), Option<&'a legacy::StringRecord>>,
     typed_field_names: BTreeMap<usize, Vec<&'a str>>,
 }
 
@@ -371,10 +371,8 @@ fn optional_integer(index: &Index<'_>, parent: usize, name: &str) -> Result<Opti
     let Some(records) = index.integers_by_parent_name.get(&(parent, name)) else {
         return Ok(None);
     };
-    if records.len() != 1 {
-        return Err(());
-    }
-    match &records[0].payload {
+    let record = records.ok_or(())?;
+    match &record.payload {
         NumericPayload::Scalar { value } => Ok(Some(*value)),
         NumericPayload::Array(_) => Err(()),
     }
@@ -388,10 +386,8 @@ fn optional_string<'a>(
     let Some(records) = index.strings_by_parent_name.get(&(parent, name)) else {
         return Ok(None);
     };
-    if records.len() != 1 {
-        return Err(());
-    }
-    match &records[0].payload {
+    let record = records.ok_or(())?;
+    match &record.payload {
         StringPayload::Scalar { value } => Ok(Some(value)),
         StringPayload::Array { .. } => Err(()),
     }
@@ -441,15 +437,15 @@ fn typed_value(
             else {
                 return Ok(None);
             };
-            if records.len() != 1 {
+            let Some(record) = records else {
                 return Ok(None);
-            }
-            let value = match &records[0].payload {
+            };
+            let value = match &record.payload {
                 NumericPayload::Scalar { value } => *value,
                 NumericPayload::Array(_) => return Ok(None),
             };
             Ok(Some((
-                records[0].offset,
+                record.offset,
                 FamilyTableValuePayload::Real { value },
             )))
         }
@@ -460,15 +456,15 @@ fn typed_value(
             else {
                 return Ok(None);
             };
-            if records.len() != 1 {
+            let Some(record) = records else {
                 return Ok(None);
-            }
-            let value = match &records[0].payload {
+            };
+            let value = match &record.payload {
                 StringPayload::Scalar { value } => copy_string_value(ctx, value)?,
                 StringPayload::Array { .. } => return Ok(None),
             };
             Ok(Some((
-                records[0].offset,
+                record.offset,
                 FamilyTableValuePayload::String { value },
             )))
         }
@@ -479,15 +475,15 @@ fn typed_value(
             else {
                 return Ok(None);
             };
-            if records.len() != 1 {
+            let Some(record) = records else {
                 return Ok(None);
-            }
-            let value = match &records[0].payload {
+            };
+            let value = match &record.payload {
                 NumericPayload::Scalar { value } => *value,
                 NumericPayload::Array(_) => return Ok(None),
             };
             Ok(Some((
-                records[0].offset,
+                record.offset,
                 FamilyTableValuePayload::Integer { value },
             )))
         }
@@ -505,6 +501,13 @@ pub(crate) fn parse(
     ctx: &DecodeContext<'_>,
     persistence: &Persistence,
 ) -> Result<Option<FamilyTable>, CodecError> {
+    if !persistence
+        .objects
+        .iter()
+        .any(|object| object.name == FAMILY_ROOT)
+    {
+        return Ok(None);
+    }
     let Some(index) = Index::build(ctx, persistence)? else {
         return Ok(None);
     };
@@ -1215,6 +1218,18 @@ mod tests {
             &fixture,
             ResourceDimension::RetainedBytes,
             "creo legacy family string value",
+        );
+    }
+    #[test]
+    fn absent_family_root_does_not_build_model_wide_indices() {
+        let mut persistence = Persistence::default();
+        persistence
+            .objects
+            .push(object("unused", "Solid", None, ObjectPayload::Arrow, 1));
+        assert!(
+            parse_with_limit(&persistence, ResourceDimension::CollectionItems, 0)
+                .expect("no family root means no family index")
+                .is_none()
         );
     }
 }

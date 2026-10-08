@@ -15,8 +15,8 @@ use type_code::LegacyTypeCode;
 
 pub(crate) fn value_index<'a, K: LegacyCode>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    records: &'a [ValueRecord<K>],
-    index: &mut BTreeMap<(usize, &'a str), Vec<&'a ValueRecord<K>>>,
+    records: impl IntoIterator<Item = &'a ValueRecord<K>>,
+    index: &mut BTreeMap<(usize, &'a str), Option<&'a ValueRecord<K>>>,
 ) -> Result<(), CodecError> {
     for record in records {
         if let Some(parent) = record.parent {
@@ -24,15 +24,10 @@ pub(crate) fn value_index<'a, K: LegacyCode>(
             ctx.admit_btree_entry(index, &key, "creo legacy value index nodes")?;
             match index.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    let mut values = Vec::new();
-                    ctx.reserve_vec(&mut values, 1, "creo legacy value index rows")?;
-                    values.push(record);
-                    entry.insert(values);
+                    entry.insert(Some(record));
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let values = entry.get_mut();
-                    ctx.reserve_vec(values, 1, "creo legacy value index rows")?;
-                    values.push(record);
+                    entry.insert(None);
                 }
             }
         }
@@ -593,12 +588,15 @@ impl Persistence {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<(String, usize)>, CodecError> {
-        let mut objects = BTreeMap::new();
-        for object in &self.objects {
-            ctx.insert_btree_map(
-                &mut objects,
+        let mut root_solids = BTreeSet::new();
+        for object in self
+            .objects
+            .iter()
+            .filter(|object| object.parent.is_none() && object.name.eq_ignore_ascii_case("solid"))
+        {
+            ctx.insert_btree_set(
+                &mut root_solids,
                 object.offset,
-                object,
                 "creo legacy model name object nodes",
             )?;
         }
@@ -629,10 +627,7 @@ impl Persistence {
             let is_root_solid = record
                 .parent
                 .as_ref()
-                .and_then(|parent| objects.get(parent))
-                .is_some_and(|object| {
-                    object.parent.is_none() && object.name.eq_ignore_ascii_case("solid")
-                });
+                .is_some_and(|parent| root_solids.contains(parent));
             if is_root_solid {
                 match preferred {
                     None => preferred = Some((text, record.offset)),

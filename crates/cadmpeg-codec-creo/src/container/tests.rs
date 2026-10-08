@@ -1171,8 +1171,8 @@ fn expanded_section_local_ceiling_is_a_refusal() {
     )
     .expect("section extent");
     crate::decode::with_test_decode_ctx(|ctx| {
-        let error =
-            super::expanded_sections(ctx, bytes, &[section]).expect_err("expansion ceiling");
+        let error = super::expanded_sections(ctx, bytes, &[section], &mut Vec::new())
+            .expect_err("expansion ceiling");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo expanded section ceiling")
         );

@@ -168,6 +168,21 @@ pub(crate) fn complete_compact_int(data: &[u8], offset: usize) -> Option<(u32, u
     }
 }
 
+/// Parent-feature identities extend the compact integer with a 21-bit form.
+pub(crate) fn parent_feature_id(payload: &[u8], offset: usize) -> Option<(u32, usize)> {
+    match *payload.get(offset)? {
+        head @ 0xc0..=0xdf => {
+            let high = u32::from(*payload.get(offset + 1)?);
+            let low = u32::from(*payload.get(offset + 2)?);
+            Some((
+                (u32::from(head - 0xc0) << 16) | (high << 8) | low,
+                offset + 3,
+            ))
+        }
+        _ => complete_compact_int(payload, offset),
+    }
+}
+
 /// Decode a generic PSB compact integer at `offset` ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#21-compact-integers)).
 ///
 /// - `0x00..=0x7f`: one-byte direct value.
@@ -340,6 +355,23 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parent_feature_integer_extends_only_its_identity_lane() {
+        assert_eq!(
+            super::parent_feature_id(&[0xc0, 0x40, 0], 0),
+            Some((16_384, 3))
+        );
+        assert_eq!(
+            super::parent_feature_id(&[0xdf, 0xff, 0xff], 0),
+            Some((2_097_151, 3))
+        );
+        assert_eq!(super::parent_feature_id(&[0xc0, 0x40], 0), None);
+        assert_eq!(super::parent_feature_id(&[0xe0, 0, 0], 0), None);
+        assert_eq!(
+            super::reference_id(&[0xc0, 0x40, 0], 0),
+            Err("control byte cannot start a reference id")
+        );
+    }
     use super::{
         compact_int, complete_compact_int, is_short_form_float, reference_id, short_form_float,
         token, token_at, tokens, Token, TokenKind,

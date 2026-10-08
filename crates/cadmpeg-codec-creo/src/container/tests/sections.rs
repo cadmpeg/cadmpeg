@@ -317,6 +317,50 @@ fn one_compressed_section() -> Vec<u8> {
 }
 
 #[test]
+fn damaged_compressed_section_does_not_discard_an_independent_expansion() {
+    let mut bytes = b"#SolidPrimdata\n".to_vec();
+    bytes.extend_from_slice(&[0x1f, 0x9d, 0x10, 0x41, 0x58, 0x02]);
+    let split = bytes.len();
+    bytes.extend(one_compressed_section());
+    let sections = [
+        super::super::Section::scan("SolidPrimdata".into(), 0, split, Some(5), &bytes)
+            .expect("bad section extent"),
+        super::super::Section::scan("SolidPrimdata".into(), split, bytes.len(), Some(3), &bytes)
+            .expect("good section extent"),
+    ];
+    let mut losses = Vec::new();
+    let expanded = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::expanded_sections(ctx, &bytes, &sections, &mut losses)
+    })
+    .expect("independent section is readable");
+    assert_eq!(expanded.len(), 1);
+    assert_eq!(expanded[0].data, b"ABC");
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("undefined code"));
+    assert!(losses[0].message.contains("source bytes retained"));
+}
+
+#[test]
+fn compressed_section_recovery_propagates_resource_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let bytes = one_compressed_section();
+    let section =
+        super::super::Section::scan("SolidPrimdata".into(), 0, bytes.len(), Some(3), &bytes)
+            .expect("section");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_per_expand = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+    let mut losses = Vec::new();
+    let error = super::super::expanded_sections(&ctx, &bytes, &[section], &mut losses)
+        .expect_err("resource refusal");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::DecompressedBytes)
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn expanded_section_name_refuses_before_retained_copy() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
@@ -329,7 +373,14 @@ fn expanded_section_name_refuses_before_retained_copy() {
         &data,
         ResourceDimension::RetainedBytes,
         "creo expanded section names",
-        |ctx| super::super::expanded_sections(ctx, &data, std::slice::from_ref(&section)),
+        |ctx| {
+            super::super::expanded_sections(
+                ctx,
+                &data,
+                std::slice::from_ref(&section),
+                &mut Vec::new(),
+            )
+        },
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
@@ -353,8 +404,13 @@ fn expanded_section_record_refuses_before_vec_growth() {
     policy.limits.max_collection_items = 3 * (1 << 16);
     let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("compressed input is admitted");
-    let error = super::super::expanded_sections(&ctx, &data, std::slice::from_ref(&section))
-        .expect_err("expanded record needs another collection item");
+    let error = super::super::expanded_sections(
+        &ctx,
+        &data,
+        std::slice::from_ref(&section),
+        &mut Vec::new(),
+    )
+    .expect_err("expanded record needs another collection item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo expanded sections"));
@@ -370,8 +426,13 @@ fn expanded_section_record_succeeds_under_service_policy() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("compressed input is admitted");
-    let expanded = super::super::expanded_sections(&ctx, &data, std::slice::from_ref(&section))
-        .expect("expanded section is admitted");
+    let expanded = super::super::expanded_sections(
+        &ctx,
+        &data,
+        std::slice::from_ref(&section),
+        &mut Vec::new(),
+    )
+    .expect("expanded section is admitted");
     assert_eq!(expanded.len(), 1);
     assert_eq!(expanded[0].name, "SolidPrimdata");
     assert_eq!(expanded[0].data, b"ABC");
