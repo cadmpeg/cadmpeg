@@ -592,14 +592,13 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut rows = BTreeMap::new();
-    let unique_rows =
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
+    let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
     for row in ctx.admit_iter(&unique_rows, "creo split outline unique surface rows")? {
         ctx.insert_btree_map(&mut rows, row.id, row, "creo split cylinder row nodes")?;
     }
     let local_planes = placed_planes(ctx, scan)?;
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
-    let unique_topologies = crate::identity::uniquely_identified_rows_checked(
+    let (unique_topologies, _unique_topologies_storage) = crate::identity::uniquely_identified_rows_checked(
         ctx,
         &scan.curves.topology_rows,
         |row| row.id,
@@ -1204,8 +1203,7 @@ pub(in super::super) fn transfer_positional_cylinders(
     }
     let local_planes = placed_planes(ctx, scan)?;
     let mut unique_rows = BTreeMap::new();
-    let unique_surface_rows =
-        crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
+    let (unique_surface_rows, _unique_surface_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, &scan.surfaces.rows, |row| row.id)?;
     for row in ctx.admit_iter(&unique_surface_rows, "creo positional unique surface rows")? {
         ctx.insert_btree_map(
             &mut unique_rows,
@@ -1215,7 +1213,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         )?;
     }
     let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
-    let unique_topologies = crate::identity::uniquely_identified_rows_checked(
+    let (unique_topologies, _unique_topologies_storage) = crate::identity::uniquely_identified_rows_checked(
         ctx,
         &scan.curves.topology_rows,
         |row| row.id,

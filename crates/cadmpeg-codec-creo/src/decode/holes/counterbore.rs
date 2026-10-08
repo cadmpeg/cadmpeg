@@ -933,7 +933,7 @@ fn counterbore_source_boundary_circle(
     radius: f64,
 ) -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
     let local_planes = placed_planes(ctx, scan)?;
-    let unique_edges = crate::identity::uniquely_identified_rows_checked(
+    let (unique_edges, _unique_edges_storage) = crate::identity::uniquely_identified_rows_checked(
         ctx,
         &scan.curves.topology_rows,
         |row| row.id,

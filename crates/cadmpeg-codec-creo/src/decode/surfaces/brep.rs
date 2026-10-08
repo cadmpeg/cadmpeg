@@ -1637,8 +1637,7 @@ impl BrepEdgeIndexes {
         ir: &CadIr,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut edge_vertices = BTreeMap::new();
-        let unique_rows =
-            crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+        let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
         for row in ctx
             .admit_iter(&unique_rows, "creo B-rep unique edge row traversal")?
             .copied()
@@ -1780,8 +1779,7 @@ impl BrepEligibleFaceIndexes {
             )?;
         }
         let mut curve_faces = BTreeMap::new();
-        let unique_rows =
-            crate::identity::uniquely_identified_rows_checked(ctx, topology_rows, |row| row.id)?;
+        let (unique_rows, _unique_rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, topology_rows, |row| row.id)?;
         for row in ctx
             .admit_iter(&unique_rows, "creo B-rep unique topology row traversal")?
             .copied()

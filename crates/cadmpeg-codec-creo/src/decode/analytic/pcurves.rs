@@ -354,7 +354,7 @@ impl PcurvePathActivity {
             }
         }
         let mut topology_faces = BTreeMap::new();
-        let topology_rows = crate::identity::uniquely_identified_rows_checked(
+        let (topology_rows, _topology_rows_storage) = crate::identity::uniquely_identified_rows_checked(
             ctx,
             &scan.curves.topology_rows,
             |row| row.id,

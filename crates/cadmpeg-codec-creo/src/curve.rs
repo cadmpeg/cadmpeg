@@ -8435,9 +8435,11 @@ pub(crate) fn pcurve_endpoints(
     topology: &[CurveTopologyRow],
 ) -> Result<Vec<PcurveEndpoints>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
-    for record in crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+    {
+let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
         record.curve_id
-    })? {
+    })?;
+for record in unique_rows {
         if !matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
             continue;
         }
@@ -8460,6 +8462,7 @@ pub(crate) fn pcurve_endpoints(
             offset: record.offset,
         });
     }
+}
     ctx.stable_sort_by(
         result.as_mut_slice(),
         |value| &value.offset,
@@ -8685,9 +8688,11 @@ pub(crate) fn fc02_short_pcurve_endpoints(
     topology: &[CurveTopologyRow],
 ) -> Result<Vec<Fc02ShortPcurveEndpoints>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
-    for record in crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+    {
+let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
         record.curve_id
-    })? {
+    })?;
+for record in unique_rows {
         let Some(face_0_endpoints) = complete_fc02_short_pcurve_values(record) else {
             continue;
         };
@@ -8706,6 +8711,7 @@ pub(crate) fn fc02_short_pcurve_endpoints(
             offset: record.offset,
         });
     }
+}
     ctx.stable_sort_by(
         result.as_mut_slice(),
         |value| &value.offset,
@@ -8721,9 +8727,11 @@ pub(crate) fn fc_coordinates(
     parameters: &[CurveParameterRecord],
 ) -> Result<Vec<FcCurveCoordinates>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
-    for record in crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+    {
+let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
         record.curve_id
-    })? {
+    })?;
+for record in unique_rows {
         let Some((&0xfc, tail)) = record.body.split_first() else {
             continue;
         };
@@ -8788,6 +8796,7 @@ pub(crate) fn fc_coordinates(
             });
         }
     }
+}
     ctx.stable_sort_by(
         result.as_mut_slice(),
         |value| &value.offset,
@@ -8827,9 +8836,11 @@ pub(crate) fn fc05_circles(
     parameters: &[CurveParameterRecord],
 ) -> Result<Vec<Fc05Circle>, cadmpeg_core::CodecError> {
     let mut circles = Vec::new();
-    for record in crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
+    {
+let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| {
         record.curve_id
-    })? {
+    })?;
+for record in unique_rows {
         if record.body.get(..2) != Some(&[0xfc, 0x05]) {
             continue;
         }
@@ -8979,6 +8990,7 @@ pub(crate) fn fc05_circles(
             offset: record.offset,
         });
     }
+}
     ctx.stable_sort_by(
         circles.as_mut_slice(),
         |value| &value.offset,
@@ -8999,7 +9011,9 @@ pub(crate) fn fc05_cylinder_cap_pairs(
     use std::collections::BTreeMap;
 
     let mut faces = BTreeMap::<u32, [Option<NonZeroU32>; 2]>::new();
-    for row in crate::identity::uniquely_identified_rows_checked(ctx, topology, |row| row.id)? {
+    {
+let (unique_rows, _unique_storage) = crate::identity::uniquely_identified_rows_checked(ctx, topology, |row| row.id)?;
+for row in unique_rows {
         ctx.insert_btree_map(
             &mut faces,
             row.id,
@@ -9007,6 +9021,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
             "creo fc05 topology-face nodes",
         )?;
     }
+}
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {
         match ctx.entry_btree_map(
