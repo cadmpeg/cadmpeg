@@ -397,9 +397,9 @@ fn build_result(
     for record in ctx.admit_iter(annotation_records, "scan SAT annotation records")? {
         let named = match current.take() {
             Some((name, handle))
-                if ctx.equal(
-                    name.as_str(),
-                    record.stream.as_str(),
+                if ctx.equal_bytes(
+                    name.as_bytes(),
+                    record.stream.as_bytes(),
                     "compare SAT annotation stream",
                 )? =>
             {
