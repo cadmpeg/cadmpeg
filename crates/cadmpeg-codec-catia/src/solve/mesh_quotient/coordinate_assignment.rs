@@ -1334,13 +1334,16 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     "catia_coordinate_closure_support_domains",
                 )
             })?;
-            let coverage_matching = distinct_domain_matching_with_budget(
-                ctx,
-                support_domains.iter().copied(),
-                assigned.len(),
-                matching_budget.as_ref(),
-                None,
-            )?;
+            let (coverage_matching, _matching_storage) =
+                ctx.with_scoped_storage("catia_coordinate_coverage_matching", || {
+                    distinct_domain_matching_with_budget(
+                        ctx,
+                        support_domains.iter().copied(),
+                        assigned.len(),
+                        matching_budget.as_ref(),
+                        None,
+                    )
+                })?;
             let mut matching_forced = None;
             let mut unsupported_matches = HashSet::new();
             if let Some(matching) = &coverage_matching {
@@ -1348,15 +1351,22 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 while let Some((support, &root)) =
                     ctx.next_charged(&mut matches, "catia_coordinate_closure_forced_matches")?
                 {
-                    if distinct_domain_matching_with_budget(
-                        ctx,
-                        support_domains.iter().copied(),
-                        assigned.len(),
-                        matching_budget.as_ref(),
-                        Some(MatchingEdgeConstraint::Exclude(support, root)),
-                    )?
-                    .is_none()
-                    {
+                    if {
+                        let mut scratch =
+                            ctx.reserve_scoped(0, "catia_coordinate_matching_probe")?;
+                        scratch.with_storage(|| {
+                            Ok::<_, CodecError>(
+                                distinct_domain_matching_with_budget(
+                                    ctx,
+                                    support_domains.iter().copied(),
+                                    assigned.len(),
+                                    matching_budget.as_ref(),
+                                    Some(MatchingEdgeConstraint::Exclude(support, root)),
+                                )?
+                                .is_none(),
+                            )
+                        })?
+                    } {
                         if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                             break;
                         }
@@ -1378,15 +1388,22 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                             if matching[support] == root {
                                 continue;
                             }
-                            if distinct_domain_matching_with_budget(
-                                ctx,
-                                support_domains.iter().copied(),
-                                assigned.len(),
-                                matching_budget.as_ref(),
-                                Some(MatchingEdgeConstraint::Require(support, root)),
-                            )?
-                            .is_none()
-                            {
+                            if {
+                                let mut scratch =
+                                    ctx.reserve_scoped(0, "catia_coordinate_matching_probe")?;
+                                scratch.with_storage(|| {
+                                    Ok::<_, CodecError>(
+                                        distinct_domain_matching_with_budget(
+                                            ctx,
+                                            support_domains.iter().copied(),
+                                            assigned.len(),
+                                            matching_budget.as_ref(),
+                                            Some(MatchingEdgeConstraint::Require(support, root)),
+                                        )?
+                                        .is_none(),
+                                    )
+                                })?
+                            } {
                                 if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                                     break 'supports;
                                 }
@@ -1542,42 +1559,47 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     assigned.iter().flatten().copied(),
                     "catia_coordinate_closure_complete_branch",
                 )?;
-                let incidence_closed = (|| -> Result<bool, CodecError> {
-                    let Some(incidence) = incidence else {
-                        return Ok(true);
-                    };
-                    if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
-                        return Ok(false);
-                    }
-                    let mut degrees = FaceDegrees::new();
-                    for (edge, &[left, right]) in ctx
-                        .admit_iter(edges, "catia_coordinate_closure_completed_degrees")?
-                        .enumerate()
-                    {
-                        let [left, right] = [solution[left], solution[right]];
-                        for face in distinct_faces(incidence.edge_faces[edge]) {
-                            for point in [left, right] {
-                                let degree = ctx
-                                    .entry_btree_map(
-                                        &mut degrees,
-                                        (face, point),
-                                        "catia_coordinate_closure_completed_degrees",
-                                    )?
-                                    .or_default();
-                                let Some(next_degree) = degree.checked_add(1) else {
-                                    return Ok(false);
-                                };
-                                *degree = next_degree;
+                let mut incidence_storage =
+                    ctx.reserve_scoped(0, "catia_coordinate_completed_incidence")?;
+                let incidence_closed =
+                    incidence_storage.with_storage(|| -> Result<bool, CodecError> {
+                        let Some(incidence) = incidence else {
+                            return Ok(true);
+                        };
+                        if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
+                            return Ok(false);
+                        }
+                        let mut degrees = FaceDegrees::new();
+                        for (edge, &[left, right]) in ctx
+                            .admit_iter(edges, "catia_coordinate_closure_completed_degrees")?
+                            .enumerate()
+                        {
+                            let [left, right] = [solution[left], solution[right]];
+                            for face in distinct_faces(incidence.edge_faces[edge]) {
+                                for point in [left, right] {
+                                    let degree = ctx
+                                        .entry_btree_map(
+                                            &mut degrees,
+                                            (face, point),
+                                            "catia_coordinate_closure_completed_degrees",
+                                        )?
+                                        .or_default();
+                                    let Some(next_degree) = degree.checked_add(1) else {
+                                        return Ok(false);
+                                    };
+                                    *degree = next_degree;
+                                }
                             }
                         }
-                    }
-                    ctx.all_by(
+                        ctx.all_by(
                         &degrees,
                         |(&(face, _), &degree)| Ok(!incidence.closed_faces[face] || degree == 2),
                         "catia_coordinate_closure_completed_degrees",
                     )
-                })()?;
-                let boundaries_close =
+                    })?;
+                let mut boundary_storage =
+                    ctx.reserve_scoped(0, "catia_coordinate_completed_boundaries")?;
+                let boundaries_close = boundary_storage.with_storage(|| {
                     incidence.map_or(Ok(true), |incidence| -> Result<bool, CodecError> {
                         let closed_face_count = ctx.fold(
                             &incidence.closed_faces,
@@ -1626,7 +1648,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                             },
                             OPERATION,
                         )
-                    })?;
+                    })
+                })?;
                 if budget.is_some_and(WorkBudget::exhausted) {
                     *exhausted = true;
                 }

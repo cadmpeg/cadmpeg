@@ -73,15 +73,22 @@ fn orientation_fingerprint_preserves_exact_quotient_and_direction_equality() {
     );
 
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut seen_storage = ctx.reserve_scoped(0, "fixture orientation index")?;
         let mut seen = HashMap::new();
         let mut output = Vec::new();
         assert!(admit_orientation_option(
-            ctx, &mut seen, &output, &first, &left
+            ctx,
+            &mut seen,
+            &mut seen_storage,
+            &output,
+            &first,
+            &left
         )?);
         output.push((first.clone(), left.clone()));
         assert!(!admit_orientation_option(
             ctx,
             &mut seen,
+            &mut seen_storage,
             &output,
             &complement,
             &right
