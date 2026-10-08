@@ -85,7 +85,16 @@ impl<B> CountedPatternReferences<B> {
 }
 
 impl CountedPatternReferences<()> {
-    pub(crate) fn read(
+    pub(crate) fn read<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        record: OperationPayload<'_>,
+    ) -> Result<(Option<Self>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+        ctx.with_scoped_storage("NX counted pattern scratch", || {
+            Self::read_inner(ctx, record)
+        })
+    }
+
+    fn read_inner(
         ctx: &DecodeContext<'_>,
         record: OperationPayload<'_>,
     ) -> Result<Option<Self>, CodecError> {

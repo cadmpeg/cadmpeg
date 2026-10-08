@@ -1000,13 +1000,14 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let lane = match CountedPatternReferences::read(ctx, record.payload_view()) {
-                Ok(Some(lane)) => lane,
-                Ok(None) => continue,
-                Err(error) => {
-                    return Err(error);
-                }
-            };
+            let (lane, lane_storage) =
+                match CountedPatternReferences::read(ctx, record.payload_view()) {
+                    Ok((Some(lane), storage)) => (lane, storage),
+                    Ok((None, _)) => continue,
+                    Err(error) => {
+                        return Err(error);
+                    }
+                };
             let references = match lane.resolve(ctx, entry_offset, |token| {
                 charged_unique_offset_data_block(ctx, &indexed, token.value())
             }) {
@@ -1016,6 +1017,7 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
                     return Err(error);
                 }
             };
+            drop(lane_storage);
             let id = format_feature_history_id(
                 ctx,
                 "pattern-counted-reference-lane",

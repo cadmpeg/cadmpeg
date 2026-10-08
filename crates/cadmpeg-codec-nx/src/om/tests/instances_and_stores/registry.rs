@@ -102,6 +102,29 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
 }
 
 #[test]
+fn fixed_palette_roster_pays_only_for_variable_name_text() {
+    let bytes = sample_color_table_bytes();
+    // Background has 10 bytes. Color names have 7, 8, or 9 bytes by ordinal.
+    // Syntax reads each byte and an end probe; UTF-8 validation reads each byte.
+    let text_bytes = 10 + 9 * 7 + 90 * 8 + 117 * 9;
+    let work = 2 * text_bytes + 217;
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = work;
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let (table, end) = crate::om::color_table_at(ctx, &bytes, 0).unwrap().unwrap();
+            assert_eq!(end, bytes.len());
+            assert_eq!(table.definitions.len(), 216);
+            assert_eq!(table.definitions[215].name, "Color 216");
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}
+
+#[test]
 fn om_color_tables_refuse_collection_limit() {
     let bytes = sample_color_table_bytes();
 

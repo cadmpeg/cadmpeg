@@ -725,7 +725,7 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let lane = crate::om::draft_leading::scan(ctx, record.payload_view())?;
+            let (lane, lane_storage) = crate::om::draft_leading::scan(ctx, record.payload_view())?;
             let Some(lane) = lane else {
                 continue;
             };
@@ -774,11 +774,16 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                 continue;
             };
             let indices = match section_ordinal {
-                None => FeatureDraftConstructionIndices::Unresolved(frame),
+                None => {
+                    lane_storage.commit()?;
+                    FeatureDraftConstructionIndices::Unresolved(frame)
+                }
                 Some(section_ordinal) => {
-                    FeatureDraftConstructionIndices::Resolved(frame.resolve(ctx, |index| {
+                    let resolved = frame.resolve(ctx, |index| {
                         format_offset_data_block_id(ctx, section_ordinal, index)
-                    })?)
+                    })?;
+                    drop(lane_storage);
+                    FeatureDraftConstructionIndices::Resolved(resolved)
                 }
             };
             let id = format_feature_history_id(

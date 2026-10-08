@@ -52,7 +52,22 @@ pub(crate) struct OperationBodyScalarTriple {
 }
 
 /// Decode complete three-scalar clauses following ordered operation body fields.
-pub(crate) fn operation_body_scalar_triples(
+pub(crate) fn operation_body_scalar_triples<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    record: OperationBodyInput<'_>,
+) -> Result<
+    (
+        Vec<OperationBodyScalarTriple>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.with_scoped_storage("NX body scalar triple scratch", || {
+        read_operation_body_scalar_triples(ctx, record)
+    })
+}
+
+fn read_operation_body_scalar_triples(
     ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
 ) -> Result<Vec<OperationBodyScalarTriple>, CodecError> {
@@ -96,7 +111,7 @@ mod tests {
 
         crate::test_support::resource_refusal_at(bytes, dimension, operation, |ctx| {
             let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
-            super::operation_body_scalar_triples(ctx, record)
+            super::operation_body_scalar_triples(ctx, record).map(|(value, _storage)| value)
         })
     }
 
@@ -109,10 +124,13 @@ mod tests {
     }
 
     #[test]
-    fn operation_body_scalar_triples_refuse_retained_limit() {
-        let error = refusal(ResourceDimension::RetainedBytes, "NX body scalar triples");
+    fn operation_body_scalar_triples_refuse_scoped_limit() {
+        let error = refusal(
+            ResourceDimension::MaterializedBytes,
+            "NX body scalar triples",
+        );
         assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
         );
     }
 

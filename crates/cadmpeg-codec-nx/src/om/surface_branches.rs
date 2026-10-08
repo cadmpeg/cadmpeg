@@ -392,18 +392,25 @@ fn surface_feature_branch_paths<'a>(
 
 /// Decode the unique exactly framed counted branch group in a bounded `SKIN`
 /// or `Studio Surface` payload.
-pub(crate) fn surface_feature_payload_branches(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn surface_feature_payload_branches<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<SurfaceFeaturePayloadBranches>, CodecError> {
+) -> Result<
+    (
+        Option<SurfaceFeaturePayloadBranches>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     const SKIN_TERMINATOR: [u8; 11] = [
         0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01,
     ];
     const STUDIO_TERMINATOR: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01];
+    let mut storage = ctx.reserve_scoped(0, "NX surface branch scratch")?;
     let terminator = match record.name() {
         "SKIN" => &SKIN_TERMINATOR[..],
         "Studio Surface" => &STUDIO_TERMINATOR[..],
-        _ => return Ok(None),
+        _ => return Ok((None, storage)),
     };
     let mut candidate = None;
     if let Some(range_end) = record.payload().len().checked_sub(6) {
@@ -457,20 +464,23 @@ pub(crate) fn surface_feature_payload_branches(
                 continue;
             };
             if candidate.is_some() {
-                return Ok(None);
+                return Ok((None, storage));
             }
             candidate = Some((family, header_code, shapes, selected_storage));
         }
     }
     let Some((family, header_code, shapes, _selected_storage)) = candidate else {
-        return Ok(None);
+        return Ok((None, storage));
     };
-    let mut branches = ctx.collection_vec(shapes.len(), "NX surface branches")?;
+    let mut branches =
+        storage.with_storage(|| ctx.collection_vec(shapes.len(), "NX surface branches"))?;
     for shape in ctx.admit_iter(shapes, "NX surface selected branch materialization")? {
-        let mut members = ctx.collection_vec(
-            usize::from(shape.declared_count - 1),
-            "NX surface branch members",
-        )?;
+        let mut members = storage.with_storage(|| {
+            ctx.collection_vec(
+                usize::from(shape.declared_count - 1),
+                "NX surface branch members",
+            )
+        })?;
         let mut at = 0;
         for _ in ctx.admit_iter(
             &(1..shape.declared_count),
@@ -481,17 +491,17 @@ pub(crate) fn surface_feature_payload_branches(
                 .get(at..)
                 .and_then(PayloadIndexToken::read)
             else {
-                return Ok(None);
+                return Ok((None, storage));
             };
             at += token.raw().len();
             members.push((token, ()));
         }
         let Ok(members) = BranchItems::new(members) else {
-            return Ok(None);
+            return Ok((None, storage));
         };
         let suffix = ctx.copy_retained(shape.suffix, "NX surface suffix bytes")?;
         let Ok(suffix) = SurfaceSuffix::new(suffix) else {
-            return Ok(None);
+            return Ok((None, storage));
         };
         branches.push(SurfaceBranch {
             offset: shape.offset,
@@ -503,11 +513,14 @@ pub(crate) fn surface_feature_payload_branches(
             suffix,
         });
     }
-    Ok(Some(SurfaceFeaturePayloadBranches {
-        family,
-        header_code,
-        branches,
-    }))
+    Ok((
+        Some(SurfaceFeaturePayloadBranches {
+            family,
+            header_code,
+            branches,
+        }),
+        storage,
+    ))
 }
 
 #[cfg(test)]
@@ -523,6 +536,7 @@ mod tests {
                 ctx,
                 super::OperationPayload::new(&bytes, 0, "SKIN").unwrap(),
             )
+            .map(|(value, _storage)| value)
         };
         let group = crate::test_support::with_decode_context(decode)
             .unwrap()
@@ -542,10 +556,28 @@ mod tests {
             "NX surface selected path shapes",
             decode,
         );
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                // Four search slots and one selected shape set the scratch peak.
+                policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+                    5 * std::mem::size_of::<super::SurfaceBranchShape<'_>>(),
+                );
+                // Only the two suffix bytes survive native branch projection.
+                policy.limits.max_retained_bytes = 2;
+            },
+            |ctx| {
+                let group = decode(ctx).unwrap().unwrap();
+                assert_eq!(group.branches.len(), 1);
+                assert_eq!(group.branches[0].members.as_slice()[0].0.value(), 1);
+                assert_eq!(group.branches[0].terminal.0.value(), 2);
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
         crate::test_support::resource_refusal_at(
             &[],
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "NX surface branch members",
+            "NX surface suffix bytes",
             decode,
         );
         bytes.pop();
@@ -557,6 +589,7 @@ mod tests {
                     ctx,
                     super::OperationPayload::new(&bytes, 0, "SKIN").unwrap()
                 )
+                .map(|(value, _storage)| value)
                 .unwrap()
                 .is_none());
             },

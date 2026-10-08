@@ -12,6 +12,7 @@ fn thru_curve_payload_branch_group_for_test(
 ) -> Option<crate::om::thru_curve_branches::ThruCurveGroup<()>> {
     crate::test_support::with_decode_context(|ctx| {
         crate::om::thru_curve_branches::thru_curve_payload_branch_group(ctx, record)
+            .map(|(value, _storage)| value)
     })
     .unwrap()
 }
@@ -21,6 +22,7 @@ fn surface_feature_payload_branches_for_test(
 ) -> Option<crate::om::surface_branches::SurfaceFeaturePayloadBranches> {
     crate::test_support::with_decode_context(|ctx| {
         crate::om::surface_branches::surface_feature_payload_branches(ctx, record)
+            .map(|(value, _storage)| value)
     })
     .unwrap()
 }
@@ -82,7 +84,7 @@ fn extrude_payload_32_branch_test(
     record: crate::om::operation_record::OperationBodyInput<'_>,
 ) -> Option<crate::om::extrude_32::Extrude32Frame<()>> {
     crate::test_support::with_decode_context(|ctx| {
-        crate::om::extrude_32::extrude_payload_32_branch(ctx, record)
+        crate::om::extrude_32::extrude_payload_32_branch(ctx, record).map(|(value, _storage)| value)
     })
     .unwrap()
 }
@@ -113,7 +115,7 @@ fn sketch_payload_references(
     crate::test_support::with_decode_context_over(
         &[0],
         |_| {},
-        |ctx| crate::om::sketch_payload_references(ctx, record),
+        |ctx| crate::om::sketch_payload_references(ctx, record).map(|(value, _storage)| value),
     )
     .unwrap()
 }
@@ -256,6 +258,7 @@ fn extrude_profile_references_test(
 ) -> Option<crate::om::extrude_profile::ExtrudeProfileReferenceField> {
     crate::test_support::with_decode_context(|ctx| {
         crate::om::extrude_profile::extrude_profile_references(ctx, record)
+            .map(|(value, _storage)| value)
     })
     .unwrap()
 }
@@ -627,10 +630,11 @@ fn om_draft_feature_references_require_one_complete_graph() {
         field.references().map(|(_, offset)| offset),
         [230, 235, 273, 280]
     );
-    let lane =
-        crate::test_support::with_decode_context(|ctx| crate::om::draft_leading::scan(ctx, record))
-            .unwrap()
-            .expect("complete index lane");
+    let lane = crate::test_support::with_decode_context(|ctx| {
+        crate::om::draft_leading::scan(ctx, record).map(|(value, _storage)| value)
+    })
+    .unwrap()
+    .expect("complete index lane");
     assert_eq!(usize::from(lane.declared_count()), 3);
     assert_eq!(
         lane.indices()
@@ -685,7 +689,8 @@ fn om_draft_feature_references_require_one_complete_graph() {
                 record.name()
             )
             .unwrap()
-        ))
+        )
+        .map(|(value, _storage)| value))
         .unwrap()
         .is_none()
     );
@@ -1333,6 +1338,7 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
         crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
     let triples = crate::test_support::with_decode_context(|ctx| {
         crate::om::body_scalar_triple::operation_body_scalar_triples(ctx, record)
+            .map(|(value, _storage)| value)
     })
     .unwrap();
     assert_eq!(triples.len(), 2);
@@ -1391,6 +1397,7 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
             )
             .unwrap(),
         )
+        .map(|(value, _storage)| value)
     })
     .unwrap();
     assert_eq!(truncated_triples.len(), 1);

@@ -102,10 +102,19 @@ impl DatumIndexLane<usize> {
 }
 
 /// Decode unique datum-plane index lanes ending at the logical payload boundary.
-pub(crate) fn scan(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn scan<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Vec<DatumIndexLane>, CodecError> {
+) -> Result<
+    (
+        Vec<DatumIndexLane>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    let mut indices_storage = ctx.reserve_scoped(0, "NX datum index token storage")?;
+    let mut lanes_storage = ctx.reserve_scoped(0, "NX datum lane scratch")?;
     let mut lanes = Vec::new();
     if let Some(last) = bytes.len().checked_sub(7) {
         for start in ctx.admit_iter(&(0..last), "scan NX datum index lanes")? {
@@ -136,7 +145,8 @@ pub(crate) fn scan(
             }
             let member_count = usize::from(declared_count - 1);
             let operation = "NX datum index members";
-            let mut indices = ctx.collection_vec(member_count, operation)?;
+            let mut indices =
+                indices_storage.with_storage(|| ctx.collection_vec(member_count, operation))?;
             let mut at = start + 2;
             let mut rows = 0..member_count;
             while ctx
@@ -159,12 +169,11 @@ pub(crate) fn scan(
                 continue;
             };
             if let Some(lane) = DatumIndexLane::<usize>::from_wire(ctx, indices, trailer, start)? {
-                ctx.reserve_vec(&mut lanes, 1, "NX datum index lanes")?;
-                lanes.push(lane);
+                ctx.push_scoped_vec(&mut lanes_storage, &mut lanes, lane, "NX datum index lanes")?;
             }
         }
     }
-    Ok(lanes)
+    Ok((lanes, indices_storage, lanes_storage))
 }
 
 #[cfg(test)]
@@ -180,7 +189,7 @@ mod tests {
         ];
 
         crate::test_support::resource_refusal_at(&bytes, dimension, operation, |ctx| {
-            scan(ctx, &bytes)
+            scan(ctx, &bytes).map(|(value, _indices_storage, _lanes_storage)| value)
         })
     }
 
@@ -193,10 +202,10 @@ mod tests {
     }
 
     #[test]
-    fn om_datum_index_route_refuses_retained_limit() {
+    fn om_datum_index_route_refuses_scoped_limit() {
         assert!(
-            matches!(datum_index_limit_error(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "NX datum index members"), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            matches!(datum_index_limit_error(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, "NX datum index members"), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
         );
     }
 
@@ -226,11 +235,13 @@ mod tests {
                 }
             }
             bytes.extend_from_slice(&[0, 0x12, 0x34, 0x56, 0x78]);
-            let lane = crate::test_support::with_decode_context(|ctx| scan(ctx, &bytes))
-                .unwrap()
-                .into_iter()
-                .find(|lane| lane.offset() == 1)
-                .unwrap();
+            let lane = crate::test_support::with_decode_context(|ctx| {
+                scan(ctx, &bytes).map(|(value, _indices_storage, _lanes_storage)| value)
+            })
+            .unwrap()
+            .into_iter()
+            .find(|lane| lane.offset() == 1)
+            .unwrap();
             assert_eq!(
                 lane.indices().map(|token| token.offset).collect::<Vec<_>>(),
                 offsets
@@ -256,7 +267,10 @@ mod tests {
         let bytes = [
             0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
         ];
-        let lanes = crate::test_support::with_decode_context(|ctx| scan(ctx, &bytes)).unwrap();
+        let lanes = crate::test_support::with_decode_context(|ctx| {
+            scan(ctx, &bytes).map(|(value, _indices_storage, _lanes_storage)| value)
+        })
+        .unwrap();
         assert_eq!(lanes.len(), 1);
         assert_eq!(lanes[0].offset(), 2);
         assert_eq!(usize::from(lanes[0].declared_count()), 4);
@@ -278,10 +292,48 @@ mod tests {
 
         let mut trailing = bytes.to_vec();
         trailing.push(0);
-        assert!(
-            crate::test_support::with_decode_context(|ctx| scan(ctx, &trailing))
-                .unwrap()
-                .is_empty()
+        assert!(crate::test_support::with_decode_context(
+            |ctx| scan(ctx, &trailing).map(|(value, _indices_storage, _lanes_storage)| value)
+        )
+        .unwrap()
+        .is_empty());
+    }
+    #[test]
+    fn datum_lane_vector_slots_do_not_use_the_retained_token_budget() {
+        let bytes = [0x80, 0xab, 1, 4, 0x81, 1, 1, 1, 0, 0x12, 0x34, 0x56, 0x78];
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    u64::try_from(3 * std::mem::size_of::<super::CompactIndexAtom>()).unwrap();
+            },
+            |ctx| {
+                let (lanes, indices_storage, lanes_storage) = super::scan(ctx, &bytes).unwrap();
+                assert_eq!(lanes.len(), 1);
+                let [lane] = <[_; 1]>::try_from(lanes).unwrap();
+                assert_eq!(lane.indices().count(), 3);
+                drop(lanes_storage);
+                indices_storage.commit().unwrap();
+                assert_eq!(ctx.resource_refusal(), None);
+            },
+        );
+    }
+
+    #[test]
+    fn ambiguous_datum_lanes_need_no_retained_storage() {
+        let bytes = [1, 4, 1, 2, 42, 0, 0x12, 0x34, 0x56, 0x78];
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                let (lanes, indices_storage, lanes_storage) = super::scan(ctx, &bytes).unwrap();
+                assert_eq!(lanes.len(), 2);
+                assert_eq!(lanes[0].offset(), 0);
+                assert_eq!(lanes[1].offset(), 2);
+                assert!(<[_; 1]>::try_from(lanes).is_err());
+                drop((indices_storage, lanes_storage));
+                assert_eq!(ctx.resource_refusal(), None);
+            },
         );
     }
 }

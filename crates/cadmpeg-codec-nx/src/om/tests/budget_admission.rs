@@ -8,8 +8,8 @@ fn store_version_search_stops_before_the_unused_suffix() {
     crate::test_support::with_decode_context_over(
         &[],
         |policy| {
-            // One marker visit, three UTF-8 bytes, and three syntax bytes.
-            policy.limits.max_work_units = 7;
+            // One marker visit, three UTF-8 bytes, three characters, and the syntax end probe.
+            policy.limits.max_work_units = 8;
             policy.limits.max_retained_bytes = 0;
         },
         |ctx| {

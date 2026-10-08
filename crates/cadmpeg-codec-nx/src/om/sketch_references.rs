@@ -295,7 +295,7 @@ mod tests {
             bytes,
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             "nx sketch references",
-            |ctx| crate::om::sketch_payload_references(ctx, record),
+            |ctx| crate::om::sketch_payload_references(ctx, record).map(|(value, _storage)| value),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
@@ -303,18 +303,18 @@ mod tests {
     }
 
     #[test]
-    fn sketch_reference_field_refuses_retained_limit() {
+    fn sketch_reference_field_refuses_scoped_limit() {
         let bytes = b"\x01\x00\x01\x02\xf0\x42\x00\x00\xf0\x43\x01\x00\x00\x00";
 
         let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
         let error = crate::test_support::resource_refusal_at(
             bytes,
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
             "nx sketch references",
-            |ctx| crate::om::sketch_payload_references(ctx, record),
+            |ctx| crate::om::sketch_payload_references(ctx, record).map(|(value, _storage)| value),
         );
         assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
         );
     }
 
@@ -327,7 +327,7 @@ mod tests {
             bytes,
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             "NX sketch reference traversal",
-            |ctx| crate::om::sketch_payload_references(ctx, record),
+            |ctx| crate::om::sketch_payload_references(ctx, record).map(|(value, _storage)| value),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)

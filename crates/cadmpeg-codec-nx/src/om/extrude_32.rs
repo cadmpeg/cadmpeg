@@ -229,17 +229,19 @@ fn compact_positions<B>(
     })
 }
 
-pub(crate) fn extrude_payload_32_branch(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn extrude_payload_32_branch<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Result<Option<Extrude32Frame<()>>, CodecError> {
+) -> Result<
+    (
+        Option<Extrude32Frame<()>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let mut storage = ctx.reserve_scoped(0, "NX extrusion candidate storage")?;
     let candidate = storage.with_storage(|| read_extrude_payload_32_branch(ctx, record))?;
-    let Some(candidate) = candidate else {
-        return Ok(None);
-    };
-    storage.commit()?;
-    Ok(Some(candidate))
+    Ok((candidate, storage))
 }
 
 fn read_extrude_payload_32_branch(
@@ -357,7 +359,7 @@ mod tests {
 
         crate::test_support::resource_refusal_at(bytes, dimension, operation, |ctx| {
             let record = super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap();
-            super::extrude_payload_32_branch(ctx, record)
+            super::extrude_payload_32_branch(ctx, record).map(|(value, _storage)| value)
         })
     }
 
@@ -374,6 +376,7 @@ mod tests {
                     ctx,
                     super::OperationBodyInput::new(&malformed, 100, 0, "EXTRUDE").unwrap()
                 )
+                .map(|(value, _storage)| value)
                 .unwrap()
                 .is_none());
             },
@@ -387,6 +390,7 @@ mod tests {
                     ctx,
                     super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap(),
                 )
+                .map(|(value, _storage)| value)
             },
         );
     }
@@ -403,13 +407,13 @@ mod tests {
     }
 
     #[test]
-    fn extrude_32_branch_refuses_retained_limit() {
+    fn extrude_32_branch_refuses_scoped_limit() {
         let error = refusal(
-            ResourceDimension::RetainedBytes,
-            "NX extrusion candidate storage",
+            ResourceDimension::MaterializedBytes,
+            "NX extrude 32 counted lane",
         );
         assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
         );
     }
 

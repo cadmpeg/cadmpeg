@@ -420,20 +420,25 @@ fn control_class_route_refuses_work_limit() {
 
 #[test]
 fn data_block_control_form_route_refuses_collection_limit() {
-    let early = control_form_route_refusal(|policy| policy.limits.max_collection_items = 4);
-    assert!(
-        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "NX nonempty mapped entries")
-    );
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control route fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+        .expect("cached control section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_forms(ctx, &container)
+    })
+    .expect("route succeeds before refusal");
+    assert_eq!(values.len(), 1);
+    assert_eq!(values[0].id, "nx:om-data-block-control-forms:form#0");
+    let error = crate::test_support::resource_refusal_at(
+        &[],
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "NX data block control forms",
-        |limit| {
-            Err::<(), _>(control_form_route_refusal(|policy| {
-                policy.limits.max_collection_items = limit;
-            }))
-        },
+        |ctx| super::data_block_control_forms(ctx, &container),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -464,21 +469,25 @@ fn data_block_control_form_route_refuses_retained_limit() {
 
 #[test]
 fn data_block_control_form_route_refuses_work_limit() {
-    // The cached indexed-section traversal is admitted before control-field work.
-    let early = control_form_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "NX indexed OM section visits")
-    );
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control route fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+        .expect("cached control section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_forms(ctx, &container)
+    })
+    .expect("route succeeds before refusal");
+    assert_eq!(values.len(), 1);
+    assert_eq!(values[0].id, "nx:om-data-block-control-forms:form#0");
+    let error = crate::test_support::resource_refusal_at(
+        &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "retain NX control form id",
-        |limit| {
-            Err::<(), _>(control_form_route_refusal(|policy| {
-                policy.limits.max_work_units = limit;
-            }))
-        },
+        |ctx| super::data_block_control_forms(ctx, &container),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -563,23 +572,29 @@ fn data_block_control_reference_route_refuses_scoped_limit() {
 
 #[test]
 fn data_block_control_reference_route_refuses_work_limit() {
-    // The cached indexed-section traversal is admitted before control-field work.
-    let early = control_reference_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "NX indexed OM section visits"),
-        "{early:?}"
-    );
-
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_control(&[0xe0, 0, 0, 0, 1, 0xc0, 0, 0, 1]),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control route fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+        .expect("cached control section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_references(ctx, &container)
+    })
+    .expect("route succeeds before refusal");
+    assert_eq!(values.len(), 2);
+    assert!(values[0]
+        .id
+        .starts_with("nx:om-data-block-control-references-0:reference#"));
+    let error = crate::test_support::resource_refusal_at(
+        &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "NX control reference block id",
-        |limit| {
-            Err::<(), _>(control_reference_route_refusal(|policy| {
-                policy.limits.max_work_units = limit;
-            }))
-        },
+        |ctx| super::data_block_control_references(ctx, &container),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -617,20 +632,24 @@ fn control_value_route_refusal(
 
 #[test]
 fn data_block_control_value_route_refuses_collection_limit() {
-    let early = control_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
-    assert!(
-        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "NX nonempty mapped entries")
-    );
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control route fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+        .expect("cached control section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_values(ctx, &container)
+    })
+    .expect("route succeeds before refusal");
+    assert_eq!(values.len(), 2);
+    let error = crate::test_support::resource_refusal_at(
+        &[],
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "NX data block control values",
-        |limit| {
-            Err::<(), _>(control_value_route_refusal(|policy| {
-                policy.limits.max_collection_items = limit;
-            }))
-        },
+        |ctx| super::data_block_control_values(ctx, &container),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -661,7 +680,25 @@ fn data_block_control_value_route_refuses_retained_limit() {
 
 #[test]
 fn data_block_control_value_route_refuses_scoped_limit() {
-    let error = control_value_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control route fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+        .expect("cached control section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_values(ctx, &container)
+    })
+    .expect("route succeeds before refusal");
+    assert_eq!(values.len(), 2);
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX control value block id",
+        |ctx| super::data_block_control_values(ctx, &container),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -672,21 +709,24 @@ fn data_block_control_value_route_refuses_scoped_limit() {
 
 #[test]
 fn data_block_control_value_route_refuses_work_limit() {
-    // The cached indexed-section traversal is admitted before control-field work.
-    let early = control_value_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "NX indexed OM section visits")
-    );
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control route fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+        .expect("cached control section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_values(ctx, &container)
+    })
+    .expect("route succeeds before refusal");
+    assert_eq!(values.len(), 2);
+    let error = crate::test_support::resource_refusal_at(
+        &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "NX control value block id",
-        |limit| {
-            Err::<(), _>(control_value_route_refusal(|policy| {
-                policy.limits.max_work_units = limit;
-            }))
-        },
+        |ctx| super::data_block_control_values(ctx, &container),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -831,52 +871,32 @@ fn data_blocks_refuses_identity_work_at_caller_limit() {
     let container = crate::test_support::with_decode_context_over(
         &[0],
         |_| {},
-        |ctx| container::scan_bytes(ctx, &file),
+        |ctx| crate::container::scan_bytes(ctx, file.as_slice()),
     )
-    .unwrap();
+    .expect("control route fixture");
     crate::test_support::with_decode_context_over(
         &[0],
         |_| {},
         |ctx| container.indexed_om_sections(ctx),
     )
-    .unwrap();
-
-    // The section-count traversal precedes each data-block identity digest.
-    let early = crate::test_support::with_decode_context_over(
+    .expect("cached control section");
+    let values = crate::test_support::with_decode_context_over(
         &file,
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| super::data_blocks(ctx, &container).expect_err("work refusal"),
-    );
-    assert!(
-        matches!(
-            early,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "NX data block section count"
-        ),
-        "{early:?}"
-    );
-
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        |_| {},
+        |ctx| super::data_blocks(ctx, &container),
+    )
+    .expect("route succeeds before refusal");
+    assert!(!values.is_empty());
+    let error = crate::test_support::resource_refusal_at(
+        &file,
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "nx data block identity digest",
-        |limit| {
-            crate::test_support::with_decode_context_over(
-                &file,
-                |policy| policy.limits.max_work_units = limit,
-                |ctx| super::data_blocks(ctx, &container),
-            )
-        },
+        |ctx| super::data_blocks(ctx, &container),
     );
     assert!(
-        matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "nx data block identity digest"
-        ),
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "nx data block identity digest"),
         "{error:?}"
     );
 }
@@ -958,20 +978,26 @@ fn control_index_value_route_refusal(
 
 #[test]
 fn data_block_control_index_value_route_refuses_collection_limit() {
-    let early = control_index_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
-    assert!(
-        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "NX nonempty mapped entries")
-    );
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_index_values(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control route fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+        .expect("cached control section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_index_values(ctx, &container)
+    })
+    .expect("route succeeds before refusal");
+    assert_eq!(values.len(), 2);
+    let error = crate::test_support::resource_refusal_at(
+        &[],
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "NX data block control index values",
-        |limit| {
-            Err::<(), _>(control_index_value_route_refusal(|policy| {
-                policy.limits.max_collection_items = limit;
-            }))
-        },
+        |ctx| super::data_block_control_index_values(ctx, &container),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -993,8 +1019,27 @@ fn data_block_control_index_value_route_refuses_retained_limit() {
 
 #[test]
 fn data_block_control_index_value_route_refuses_scoped_limit() {
-    let error =
-        control_index_value_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_index_values(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control route fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+        .expect("cached control section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_index_values(ctx, &container)
+    })
+    .expect("route succeeds before refusal");
+    assert_eq!(values.len(), 2);
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX control index value block id",
+        |ctx| super::data_block_control_index_values(ctx, &container),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
@@ -1005,21 +1050,26 @@ fn data_block_control_index_value_route_refuses_scoped_limit() {
 
 #[test]
 fn data_block_control_index_value_route_refuses_work_limit() {
-    // The cached indexed-section traversal is admitted before control-field work.
-    let early = control_index_value_route_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(early, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && limit.operation == "NX indexed OM section visits")
-    );
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        offset_only_indexed_om_section_with_index_values(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("control route fixture");
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+        .expect("cached control section");
+    let values = crate::test_support::with_decode_context(|ctx| {
+        super::data_block_control_index_values(ctx, &container)
+    })
+    .expect("route succeeds before refusal");
+    assert_eq!(values.len(), 2);
+    let error = crate::test_support::resource_refusal_at(
+        &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "NX control index value block id",
-        |limit| {
-            Err::<(), _>(control_index_value_route_refusal(|policy| {
-                policy.limits.max_work_units = limit;
-            }))
-        },
+        |ctx| super::data_block_control_index_values(ctx, &container),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

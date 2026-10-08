@@ -72,7 +72,22 @@ impl ExtrudeProfileReferenceField {
 }
 
 /// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.
-pub(crate) fn extrude_profile_references(
+pub(crate) fn extrude_profile_references<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    record: OperationPayload<'_>,
+) -> Result<
+    (
+        Option<ExtrudeProfileReferenceField>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.with_scoped_storage("NX extrude profile scratch", || {
+        read_extrude_profile_references(ctx, record)
+    })
+}
+
+fn read_extrude_profile_references(
     ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
 ) -> Result<Option<ExtrudeProfileReferenceField>, CodecError> {
@@ -201,6 +216,7 @@ mod tests {
             |ctx| {
                 let record = super::OperationPayload::new(&bytes, 0, "EXTRUDE").unwrap();
                 assert!(super::extrude_profile_references(ctx, record)
+                    .map(|(value, _storage)| value)
                     .unwrap()
                     .is_none());
             },
@@ -218,6 +234,7 @@ mod tests {
                     ctx,
                     super::OperationPayload::new(&bytes, 100, "EXTRUDE").unwrap(),
                 )
+                .map(|(value, _storage)| value)
             })
             .unwrap()
             .unwrap();
@@ -243,6 +260,7 @@ mod tests {
                     ctx,
                     super::OperationPayload::new(shape, 0, "EXTRUDE").unwrap(),
                 )
+                .map(|(value, _storage)| value)
             },
         );
     }
@@ -251,7 +269,7 @@ mod tests {
         record: super::OperationPayload<'_>,
     ) -> Option<super::ExtrudeProfileReferenceField> {
         crate::test_support::with_decode_context(|ctx| {
-            super::extrude_profile_references(ctx, record)
+            super::extrude_profile_references(ctx, record).map(|(value, _storage)| value)
         })
         .unwrap()
     }
@@ -267,7 +285,7 @@ mod tests {
             bytes,
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             "NX extrude profile references",
-            |ctx| super::extrude_profile_references(ctx, record),
+            |ctx| super::extrude_profile_references(ctx, record).map(|(value, _storage)| value),
         );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)

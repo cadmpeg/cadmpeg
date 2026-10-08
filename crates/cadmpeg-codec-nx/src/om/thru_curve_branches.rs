@@ -352,17 +352,19 @@ fn thru_curve_payload_branch(
 
 /// Decode the exact counted branch group after a bounded `THRU_CURVE`
 /// reference envelope.
-pub(crate) fn thru_curve_payload_branch_group(
-    ctx: &DecodeContext<'_>,
+pub(crate) fn thru_curve_payload_branch_group<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<ThruCurveGroup<()>>, CodecError> {
+) -> Result<
+    (
+        Option<ThruCurveGroup<()>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let mut storage = ctx.reserve_scoped(0, "NX thru-curve candidate storage")?;
     let candidate = storage.with_storage(|| read_thru_curve_payload_branch_group(ctx, record))?;
-    let Some(candidate) = candidate else {
-        return Ok(None);
-    };
-    storage.commit()?;
-    Ok(Some(candidate))
+    Ok((candidate, storage))
 }
 
 fn read_thru_curve_payload_branch_group(
@@ -432,6 +434,7 @@ mod tests {
                     ctx,
                     super::OperationPayload::new(&payload, 100, "THRU_CURVE").unwrap(),
                 )
+                .map(|(value, _storage)| value)
                 .unwrap()
                 .unwrap();
                 assert_eq!(group.branches().len(), 1);
@@ -463,6 +466,7 @@ mod tests {
                 ctx,
                 super::OperationPayload::new(&payload, 100, "THRU_CURVE").unwrap(),
             )
+            .map(|(value, _storage)| value)
         };
         let group = crate::test_support::with_decode_context(decode)
             .unwrap()
@@ -482,11 +486,10 @@ mod tests {
             "NX thru-curve branch members",
             decode,
         );
-        crate::test_support::resource_refusal_at(
+        crate::test_support::with_decode_context_over(
             &[],
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "NX thru-curve candidate storage",
-            decode,
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| assert!(decode(ctx).unwrap().is_some()),
         );
         payload.pop();
         crate::test_support::with_decode_context_over(
@@ -497,6 +500,7 @@ mod tests {
                     ctx,
                     super::OperationPayload::new(&payload, 100, "THRU_CURVE").unwrap()
                 )
+                .map(|(value, _storage)| value)
                 .unwrap()
                 .is_none());
             },
