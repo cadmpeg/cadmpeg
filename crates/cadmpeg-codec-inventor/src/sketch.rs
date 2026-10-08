@@ -2672,7 +2672,7 @@ fn build_profiles(
         drop(component);
         drop(component_storage);
         if loop_uses.len() >= 3 && ctx.equal(point, start_point, "close Inventor profile loop")? {
-            loop_uses_storage.commit()?;
+            let loop_uses = loop_uses_storage.commit_value(loop_uses)?;
             profiles_storage.with_storage(|| {
                 ctx.push_vec(&mut profiles, loop_uses, "collect Inventor sketch items")
             })?;
