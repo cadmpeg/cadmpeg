@@ -996,3 +996,51 @@ fn duplicate_uv_payloads_are_scratch_until_an_identity_survives() {
         },
     );
 }
+
+#[test]
+fn intersection_candidates_refuse_scoped_storage_before_the_named_construction() {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let mut construction = crate::test_support::with_decode_context(|ctx| {
+        let graph = crate::topology::Graph::parse(ctx, &stream).unwrap();
+        let node = &graph.of_kind(crate::framing::node_kind::NodeKind::Intersection)[0];
+        stream[node.pos()..node.end()].to_vec()
+    });
+    // Keep the complete chart setup. The larger construction lane must raise
+    // the scratch peak after the chart parser's temporary data is released.
+    for identity in 100..228 {
+        put_ref(&mut construction, 2, identity);
+        stream.extend_from_slice(&construction);
+    }
+    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
+    assert_eq!(graph.of_kind(crate::framing::node_kind::NodeKind::Intersection).len(), 129);
+    crate::test_support::resource_refusal_at(
+        &stream,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX composite curves",
+        |ctx| super::scan_with_graph(ctx, &stream, &graph, super::ChartPointLayout::Xyz3),
+    );
+}
+
+#[test]
+fn intersection_twins_refuse_scoped_storage_before_the_named_construction() {
+    let stream = deltas_intersection_curve_stream();
+    crate::test_support::resource_refusal_at(
+        &stream,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX intersection data curves",
+        |ctx| {
+            super::scan_with_graph(ctx, &stream, &crate::topology::Graph::default(), super::ChartPointLayout::Ext11)
+        },
+    );
+}
+
+#[test]
+fn intersection_selected_source_constructions_refuse_retention_at_the_named_boundary() {
+    let stream = deltas_intersection_curve_stream();
+    crate::test_support::resource_refusal_at(
+        &stream,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX selected source constructions",
+        |ctx| super::scan_with_graph(ctx, &stream, &crate::topology::Graph::default(), super::ChartPointLayout::Ext11),
+    );
+}

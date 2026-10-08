@@ -200,7 +200,7 @@ fn container_cached_operation_labels_preserve_section_materialization() {
     let direct =
         crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &payload)).unwrap();
     let cached =
-        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx).map(|(sections, _storage)| sections)).unwrap();
     assert_eq!(cached.len(), direct.len());
     assert!(container.om_section_cache.get().is_some());
     for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
@@ -219,7 +219,7 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         );
     }
     let repeated =
-        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx).map(|(sections, _storage)| sections)).unwrap();
     assert_eq!(repeated, cached);
     assert!(std::sync::Arc::ptr_eq(
         &cached[0].1.types,
@@ -252,9 +252,9 @@ fn container_caches_owned_section_layouts() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    let first = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let first = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx).map(|(sections, _storage)| sections)).unwrap();
     let second =
-        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx).map(|(sections, _storage)| sections)).unwrap();
     assert_eq!(first.len(), 1);
     assert_eq!(second, first);
     assert_eq!(
@@ -294,7 +294,7 @@ fn framed_section_cache_reader_refuses_collection_limit() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    crate::test_support::with_decode_context(|ctx| container.om_sections(ctx).map(|(sections, _storage)| sections)).unwrap();
 
     crate::test_support::with_decode_context_over(
         &payload,
@@ -303,7 +303,7 @@ fn framed_section_cache_reader_refuses_collection_limit() {
         },
         |ctx| {
             let error = container
-                .om_sections(ctx)
+                .om_sections(ctx).map(|(sections, _storage)| sections)
                 .expect_err("one cached section exceeds zero items");
             assert!(
                 matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX framed section readers")
@@ -318,7 +318,7 @@ fn indexed_section_cache_reader_refuses_collection_limit() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
             .unwrap();
-    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|(sections, _storage)| sections)).unwrap();
 
     crate::test_support::with_decode_context_over(
         &file,
@@ -327,7 +327,7 @@ fn indexed_section_cache_reader_refuses_collection_limit() {
         },
         |ctx| {
             let error = container
-                .indexed_om_sections(ctx)
+                .indexed_om_sections(ctx).map(|(sections, _storage)| sections)
                 .expect_err("one cached section exceeds zero items");
             assert!(
                 matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX indexed section readers")
@@ -343,9 +343,9 @@ fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
             .unwrap();
     let first =
-        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|(sections, _storage)| sections)).unwrap();
     let second =
-        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|(sections, _storage)| sections)).unwrap();
     assert!(!first.is_empty());
     assert_eq!(first, second);
     assert!(std::sync::Arc::ptr_eq(
@@ -383,7 +383,7 @@ fn container_reuses_borrowed_offset_store_block_index() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
             .unwrap();
     let _ =
-        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx).map(|(sections, _storage)| sections)).unwrap();
     let first = container
         .cached_offset_data_block_bytes()
         .expect("borrowed indexed sections cache their offset-store blocks");
@@ -753,7 +753,7 @@ fn container_bounds_rmfastload_table_at_its_first_product_record() {
 fn external_reference_string_table_is_end_anchored() {
     let table = b"prefix\x01\x02\x00\x00\x00\x09\x00child.prt\x0c\x00nested/b.prt";
     let (_, strings) = crate::test_support::with_decode_context(|ctx| {
-        crate::container::parse_extref_string_table(ctx, table)
+        crate::container::parse_extref_string_table(ctx, table).map(|table| table.map(|(table, _storage)| table))
     })
     .expect("string table resources")
     .expect("string table");
@@ -768,12 +768,12 @@ fn external_reference_string_table_is_end_anchored() {
     let mut trailed = table.to_vec();
     trailed.push(0);
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::container::parse_extref_string_table(ctx, &trailed)
+        crate::container::parse_extref_string_table(ctx, &trailed).map(|table| table.map(|(table, _storage)| table))
     })
     .expect("string table resources")
     .is_none());
     assert!(crate::test_support::with_decode_context(|ctx| {
-        crate::container::parse_extref_string_table(ctx, b"\x01\xff\xff\xff\xff")
+        crate::container::parse_extref_string_table(ctx, b"\x01\xff\xff\xff\xff").map(|table| table.map(|(table, _storage)| table))
     })
     .expect("string table resources")
     .is_none());
@@ -787,7 +787,7 @@ fn external_reference_paths_refuse_collection_limit() {
         payload,
         ResourceDimension::CollectionItems,
         "nx external reference paths",
-        |ctx| container.external_reference_paths(ctx),
+        |ctx| container.external_reference_paths(ctx).map(|(paths, _storage)| paths),
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "nx external reference paths")
@@ -816,17 +816,17 @@ fn external_reference_path_container(payload: &[u8]) -> Container<'_> {
 }
 
 #[test]
-fn external_reference_paths_refuse_retained_limit() {
+fn external_reference_paths_refuse_retained_string_limit() {
     let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
     let container = external_reference_path_container(payload);
     let error = crate::test_support::resource_refusal_at(
         payload,
         ResourceDimension::RetainedBytes,
-        "nx external reference paths",
-        |ctx| container.external_reference_paths(ctx),
+        "nx external reference string",
+        |ctx| container.external_reference_paths(ctx).map(|(paths, _storage)| paths),
     );
     assert!(
-        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "nx external reference paths")
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "nx external reference string")
     );
 }
 
@@ -838,7 +838,7 @@ fn external_reference_paths_refuse_work_limit() {
         payload,
         ResourceDimension::WorkUnits,
         "project NX external reference paths",
-        |ctx| container.external_reference_paths(ctx),
+        |ctx| container.external_reference_paths(ctx).map(|(paths, _storage)| paths),
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "project NX external reference paths")
@@ -1015,32 +1015,28 @@ fn external_reference_routes_refuse_unadmitted_names() {
 }
 
 #[test]
-fn external_reference_materialization_refuses_each_string_byte_pass() {
+fn external_reference_table_refuses_validation_without_copying_strings() {
     let text = "A".repeat(1000);
     let mut bytes = vec![1];
     bytes.extend(1u32.to_le_bytes());
     bytes.extend(1000u16.to_le_bytes());
     bytes.extend(text.as_bytes());
-    for operation in [
-        "read NX external reference UTF-8",
-        "nx external reference string",
-    ] {
-        let error = crate::test_support::resource_refusal_at(
-            &bytes,
-            ResourceDimension::WorkUnits,
-            operation,
-            |ctx| super::parse_extref_string_table(ctx, &bytes),
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
-    }
+    let operation = "read NX external reference UTF-8";
+    let error = crate::test_support::resource_refusal_at(
+        &bytes,
+        ResourceDimension::WorkUnits,
+        operation,
+        |ctx| super::parse_extref_string_table(ctx, &bytes).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
     crate::test_support::with_decode_context_over(
         &bytes,
         |_| {},
         |ctx| {
-            let (_, values) = super::parse_extref_string_table(ctx, &bytes)
+            let (_, values) = super::parse_extref_string_table(ctx, &bytes).map(|table| table.map(|(table, _storage)| table))
                 .unwrap()
                 .unwrap();
-            assert_eq!(values, [(7, text)]);
+            assert_eq!(values, [(7, text.as_str())]);
         },
     );
 }
@@ -1051,12 +1047,109 @@ fn cached_section_reader_traversal_refuses_at_its_named_boundary() {
     let container =
         crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, &file)).unwrap();
     crate::test_support::with_decode_context(|ctx| {
-        assert!(!container.om_sections(ctx).unwrap().is_empty());
+        assert!(!container.om_sections(ctx).map(|(sections, _storage)| sections).unwrap().is_empty());
     });
     crate::test_support::resource_refusal_at(
         &[],
         ResourceDimension::WorkUnits,
         "visit NX framed cached section readers",
-        |ctx| container.om_sections(ctx),
+        |ctx| container.om_sections(ctx).map(|(sections, _storage)| sections),
     );
+}
+
+#[test]
+fn external_reference_table_storage_is_scoped_and_text_is_borrowed() {
+    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
+    let slot_bytes = cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<(usize, &str)>(),
+    );
+    crate::test_support::with_decode_context_over(
+        payload,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = slot_bytes;
+        },
+        |ctx| {
+            let ((marker, strings), storage) = super::parse_extref_string_table(ctx, payload)
+                .unwrap().unwrap();
+            assert_eq!(marker, 6);
+            assert_eq!(strings, [(13, "child.prt")]);
+            assert_eq!(strings[0].1.as_ptr(), payload[13..].as_ptr());
+            drop(strings);
+            drop(storage);
+            ctx.reserve_scoped(slot_bytes, "reused external reference table scratch").unwrap();
+        },
+    );
+}
+
+#[test]
+fn external_reference_projection_keeps_borrowed_text_under_its_scope() {
+    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
+    let container = external_reference_path_container(payload);
+    crate::test_support::with_decode_context_over(
+        payload,
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx| {
+            let (strings, _storage) = container.external_reference_strings(ctx).unwrap();
+            assert_eq!(strings.len(), 1);
+            assert_eq!(strings[0].1, 13);
+            assert_eq!(strings[0].2, "child.prt");
+            assert_eq!(strings[0].2.as_ptr(), payload[13..].as_ptr());
+        },
+    );
+    crate::test_support::resource_refusal_at(
+        payload,
+        ResourceDimension::MaterializedBytes,
+        "nx external reference strings",
+        |ctx| container.external_reference_strings(ctx).map(|_| ()),
+    );
+}
+
+#[test]
+fn cached_section_reader_vectors_are_scoped_and_reusable() {
+    let framed_file = crate::test_support::test_prt::prt_with_size_framed_om_section();
+    let indexed_file = prt_with_indexed_om_section();
+    let framed = crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, &framed_file)).unwrap();
+    let indexed = crate::test_support::with_decode_context(|ctx| super::scan_bytes(ctx, &indexed_file)).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        framed.om_sections(ctx).unwrap();
+        indexed.indexed_om_sections(ctx).unwrap();
+    });
+    let framed_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+        crate::container::entry_ref::EntryRef<'_>, crate::om::Section<'_>,
+    )>());
+    let indexed_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+        crate::container::entry_ref::EntryRef<'_>, crate::om::IndexedSection<'_>,
+    )>());
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = framed_bytes.max(indexed_bytes);
+        },
+        |ctx| {
+            for _ in 0..3 {
+                let (readers, storage) = framed.om_sections(ctx).unwrap();
+                assert_eq!(readers.len(), 1);
+                drop(readers);
+                drop(storage);
+                let (readers, storage) = indexed.indexed_om_sections(ctx).unwrap();
+                assert_eq!(readers.len(), 1);
+                drop(readers);
+                drop(storage);
+            }
+        },
+    );
+    for (container, operation, is_indexed) in [
+        (&framed, "NX framed section readers", false),
+        (&indexed, "NX indexed section readers", true),
+    ] {
+        crate::test_support::resource_refusal_at(
+            &[], ResourceDimension::MaterializedBytes, operation,
+            |ctx| {
+                if is_indexed { container.indexed_om_sections(ctx).map(|_| ()) }
+                else { container.om_sections(ctx).map(|_| ()) }
+            },
+        );
+    }
 }

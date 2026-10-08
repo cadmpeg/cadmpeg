@@ -210,7 +210,7 @@ fn attach_indexed_om_unknowns(
         cadmpeg_ir::stream_name!("nx:container"),
         "allocate annotation stream handle",
     )?;
-    let object_sections = scan.container.indexed_om_sections(ctx)?;
+    let (object_sections, _object_sections_storage) = scan.container.indexed_om_sections(ctx)?;
     for (section_index, (entry, section)) in ctx
         .admit_iter(&object_sections, "NX indexed unknown section traversal")?
         .enumerate()
@@ -300,7 +300,7 @@ pub(super) fn attach(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
-    let no_native_content = model.is_empty() && scan.container.indexed_om_sections(ctx)?.is_empty();
+    let no_native_content = model.is_empty() && scan.container.indexed_om_sections(ctx)?.0.is_empty();
     let annotation_stream = StreamHandle::new(
         ctx,
         cadmpeg_ir::stream_name!("nx:container"),
