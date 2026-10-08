@@ -2,8 +2,6 @@
 //! IR-writing attachment of the native object model.
 
 use crate::loss::NxLossCode;
-#[cfg(test)]
-use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
@@ -488,19 +486,8 @@ fn attach_part_attributes<'a, T: 'a>(
 ) -> Result<(), CodecError> {
     for attribute in ctx.admit_iter(attributes, "NX part attribute traversal")? {
         let (attribute_id, attribute_title, attribute_value, source_offset) = fields(attribute);
-        let id_bytes = attribute_id
-            .len()
-            .checked_mul(2)
-            .and_then(|bytes| bytes.checked_add(":neutral".len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX part attribute identity",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(attribute_id.len()),
-                )
-            })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_bytes),
+        ctx.charge_formatted_retained(
+            format_args!("{attribute_id}:neutral"),
             "NX part attribute identity",
         )?;
         annotations.note(
@@ -813,28 +800,17 @@ fn attach_rm_appearances(
             definition,
             &annotation_stream,
         )?;
-        let binding_id_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(
-                binding.source_id.len().checked_add(128).ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX RM source binding identity",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(binding.source_id.len()),
-                    )
-                })?,
-            ),
+        let binding_id: AppearanceBindingId = rm_color_identity(
+            ctx,
+            "nx:appearance-binding:rmfastload-color#",
+            &binding.source_id,
             "NX RM source binding identity",
-        )?;
-        let binding_id: AppearanceBindingId =
-            IdScope::native(cadmpeg_ir::identity_component!("appearance-binding")).id(
-                &cadmpeg_ir::identity_component!("rmfastload-color"),
-                native_entity_key(&binding.source_id).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "NX RMFASTLOAD_COLOR_ASSIGNMENT source id is not identity key text"
-                    ))
-                })?,
-            );
-        drop(binding_id_reservation);
+        )?
+        .ok_or_else(|| {
+            CodecError::malformed(
+                "NX RMFASTLOAD_COLOR_ASSIGNMENT source id is not identity key text",
+            )
+        })?;
         annotations.note(
             ctx,
             binding_id.as_str(),
@@ -848,22 +824,7 @@ fn attach_rm_appearances(
         annotations
             .derived(ctx, binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::from)?;
-        let binding_bytes = binding_id
-            .as_str()
-            .len()
-            .checked_add(appearance_id.as_str().len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX RM source appearance binding",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(binding.source_id.len()),
-                )
-            })?;
         ctx.charge_collection_items(1, "NX RM source appearance bindings")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(binding_bytes),
-            "NX RM source appearance binding",
-        )?;
         ctx.reserve_capacity(
             &mut ir.model.appearance_bindings,
             1,
@@ -940,28 +901,17 @@ fn attach_rm_appearances(
             definition,
             &annotation_stream,
         )?;
-        let binding_id_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(
-                binding.face_id.len().checked_add(128).ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX RM face binding identity",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(binding.face_id.len()),
-                    )
-                })?,
-            ),
+        let binding_id: AppearanceBindingId = rm_color_identity(
+            ctx,
+            "nx:appearance-binding:rmfastload-face-color#",
+            &binding.face_id,
             "NX RM face binding identity",
-        )?;
-        let binding_id: AppearanceBindingId =
-            IdScope::native(cadmpeg_ir::identity_component!("appearance-binding")).id(
-                &cadmpeg_ir::identity_component!("rmfastload-face-color"),
-                native_entity_key(&binding.face_id).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "NX RMFASTLOAD_FACE_COLOR_ASSIGNMENT face id is not identity key text"
-                    ))
-                })?,
-            );
-        drop(binding_id_reservation);
+        )?
+        .ok_or_else(|| {
+            CodecError::malformed(
+                "NX RMFASTLOAD_FACE_COLOR_ASSIGNMENT face id is not identity key text",
+            )
+        })?;
         annotations.note(
             ctx,
             binding_id.as_str(),
@@ -975,23 +925,7 @@ fn attach_rm_appearances(
         annotations
             .derived(ctx, binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::from)?;
-        let binding_bytes = binding_id
-            .as_str()
-            .len()
-            .checked_add(face_id.as_str().len())
-            .and_then(|bytes| bytes.checked_add(appearance_id.as_str().len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX RM face appearance binding",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(face_id.as_str().len()),
-                )
-            })?;
         ctx.charge_collection_items(1, "NX RM face appearance bindings")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(binding_bytes),
-            "NX RM face appearance binding",
-        )?;
         ctx.reserve_capacity(
             &mut ir.model.appearance_bindings,
             1,
@@ -1010,6 +944,22 @@ fn attach_rm_appearances(
         });
     }
     Ok(())
+}
+
+/// Flatten the native namespace separators into the appearance identity key.
+fn rm_color_identity<T: From<cadmpeg_ir::ids::Identity>>(
+    ctx: &DecodeContext<'_>,
+    prefix: &'static str,
+    source: &str,
+    operation: &'static str,
+) -> Result<Option<T>, CodecError> {
+    let (key, _key_storage) = ctx.with_scoped_storage(operation, || {
+        ctx.charge_formatted_retained(format_args!("{source}"), operation)?;
+        Ok::<_, CodecError>(native_entity_key(source))
+    })?;
+    let Some(key) = key else { return Ok(None) };
+    let text = ctx.format_retained(format_args!("{prefix}{key}"), operation)?;
+    Ok(cadmpeg_ir::ids::Identity::new(text).map(Into::into).ok())
 }
 
 fn ensure_rm_color_appearance(
@@ -1033,27 +983,17 @@ fn ensure_rm_color_appearance(
     {
         return id.try_clone_for_decode(ctx, "NX ensure rm color appearance id copy");
     }
-    let identity_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(definition.id.len().checked_add(128).ok_or_else(
-            || {
-                ctx.refuse_codec_limit(
-                    "NX RM color appearance identity",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(definition.id.len()),
-                )
-            },
-        )?),
+    let id: AppearanceId = rm_color_identity(
+        ctx,
+        "nx:appearance:rmfastload-color#",
+        &definition.id,
         "NX RM color appearance identity",
-    )?;
-    let id: AppearanceId = IdScope::native(cadmpeg_ir::identity_component!("appearance")).id(
-        &cadmpeg_ir::identity_component!("rmfastload-color"),
-        native_entity_key(&definition.id).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "NX RMFASTLOAD_COLOR_APPEARANCE definition id is not identity key text"
-            ))
-        })?,
-    );
-    drop(identity_reservation);
+    )?
+    .ok_or_else(|| {
+        CodecError::malformed(
+            "NX RMFASTLOAD_COLOR_APPEARANCE definition id is not identity key text",
+        )
+    })?;
     annotations.note(
         ctx,
         id.as_str(),
@@ -1424,6 +1364,10 @@ fn attach_jpeg_preview_assets(
         else {
             continue;
         };
+        ctx.charge_formatted_retained(
+            format_args!("nx:container:jpeg-preview#{ordinal}"),
+            "NX JPEG preview native identity",
+        )?;
         let native_ref: UnknownId =
             IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
         if crate::decode::jpeg::jpeg_dimensions(ctx, bytes)?.is_none() {
@@ -1447,6 +1391,10 @@ fn attach_jpeg_preview_assets(
             )?;
             continue;
         }
+        ctx.charge_formatted_retained(
+            format_args!("{native_ref}:asset"),
+            "NX JPEG preview asset identity",
+        )?;
         let id: AssetId = extended_id(native_ref.as_str(), &cadmpeg_ir::identity_key!("asset"))
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("NX JPEG preview id is not an identity"))
@@ -1552,20 +1500,8 @@ fn attach_material_texture_assets(
         .admit_iter(&sources, "NX material texture source traversal")?
         .copied()
     {
-        let id_bytes = texture
-            .id
-            .len()
-            .checked_mul(2)
-            .and_then(|bytes| bytes.checked_add(":asset".len()))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX material asset identity",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(texture.id.len()),
-                )
-            })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_bytes),
+        ctx.charge_formatted_retained(
+            format_args!("{}:asset", texture.id),
             "NX material asset identity",
         )?;
         ctx.reserve_scoped_vec(
@@ -6783,17 +6719,6 @@ struct FeatureResultGroupMembers {
     vertices: Vec<cadmpeg_core::text::NonBlankString>,
 }
 
-#[cfg(test)]
-impl DecodeCost for FeatureResultGroupMembers {
-    fn decode_cost(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<u64, CodecError> {
-        (&self.faces, &self.edges, &self.vertices).decode_cost(ctx, operation)
-    }
-}
-
 fn result_topology_id(
     ctx: &DecodeContext<'_>,
     key: &str,
@@ -6816,10 +6741,6 @@ fn result_topology_id(
         )
     })?;
     let mut key_reservation = ctx.reserve_scoped(0, "NX result topology key")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(suffix_len),
-        "NX result topology key formatting",
-    )?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(id_len),
         "NX result topology identity",
@@ -7174,6 +7095,7 @@ fn attach_sketch_graph(
     stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<Option<SketchId>, CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX sketch projection")?;
+    let mut text_storage = ctx.reserve_scoped(0, "NX accepted sketch text")?;
     let mut operation_groups = Vec::new();
     for group in ctx.admit_iter(sources.point_groups, "NX sketch point groups")? {
         if !(ctx.equal_bytes(
@@ -7196,38 +7118,12 @@ fn attach_sketch_graph(
         .id
         .strip_prefix("nx:feature-history:operation-label#")
         .unwrap_or(label.id.as_str());
-    let sketch_id_bytes = operation_key
-        .len()
-        .checked_mul(2)
-        .and_then(|bytes| bytes.checked_add(40))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX sketch identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(operation_key.len()),
-            )
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(sketch_id_bytes),
+    let sketch_text = ctx.format_scoped_text(
+        &mut text_storage,
+        format_args!("nx:feature-history:sketch#{operation_key}"),
         "NX sketch identity",
     )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(operation_key.len()),
-        "NX sketch identity",
-    )?;
-    let mut owned_operation_key = String::new();
-    ctx.try_reserve_retained_text(
-        &mut owned_operation_key,
-        operation_key.len(),
-        "allocate NX sketch identity",
-    )?;
-    owned_operation_key.push_str(operation_key);
-    let Some(sketch_id): Option<SketchId> =
-        IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id(
-            &cadmpeg_ir::identity_component!("sketch"),
-            owned_operation_key,
-        )
-    else {
+    let Ok(sketch_id) = SketchId::mint(sketch_text) else {
         return Ok(None);
     };
     let mut operation_fixed_points = Vec::new();
@@ -7313,12 +7209,15 @@ fn attach_sketch_graph(
             {
                 return Ok(None);
             }
-            let Some(entity_id) = sketch_entity_identity(ctx, "coordinate-pair-", pair_key)? else {
+            let Some(entity_id) = text_storage
+                .with_storage(|| sketch_entity_identity(ctx, "coordinate-pair-", pair_key))?
+            else {
                 return Ok(None);
             };
             let native_kind = cadmpeg_core::nonblank_literal!("nx-coordinate-pair");
-            let native_ref =
-                ctx.copy_retained_text(&pair.id, "NX attach sketch graph pair id copy")?;
+            let native_ref = text_storage.with_storage(|| {
+                ctx.copy_retained_text(&pair.id, "NX attach sketch graph pair id copy")
+            })?;
             push_sketch_entity(
                 ctx,
                 &mut reservation,
@@ -7326,7 +7225,9 @@ fn attach_sketch_graph(
                 pair.source_offset,
                 SketchEntity::new(
                     entity_id,
-                    sketch_id.try_clone_for_decode(ctx, "NX attach sketch graph sketch id copy")?,
+                    text_storage.with_storage(|| {
+                        sketch_id.try_clone_for_decode(ctx, "NX attach sketch graph sketch id copy")
+                    })?,
                     SketchGeometry::native(native_kind),
                 )
                 .with_native_ref(Some(native_ref)),
@@ -7336,6 +7237,7 @@ fn attach_sketch_graph(
             ctx,
             &mut reservation,
             &mut entities,
+            &mut text_storage,
             label,
             &sketch_id,
             &operation_fixed_points,
@@ -7379,6 +7281,7 @@ fn attach_sketch_graph(
             Some("SKETCH"),
         )?;
         annotations.exactness(ctx, sketch_id.as_str(), Exactness::Derived)?;
+        text_storage.commit()?;
         emit_sketch(ctx, ir, label, &sketch_id, entities)?;
         return Ok(Some(sketch_id));
     }
@@ -7490,13 +7393,17 @@ fn attach_sketch_graph(
                     .strip_prefix("nx:feature-history:sketch-point-group#")
             })
             .unwrap_or(group.id.as_str());
-        let Some(entity_id) = sketch_entity_identity(ctx, "point-", entity_key)? else {
+        let Some(entity_id) =
+            text_storage.with_storage(|| sketch_entity_identity(ctx, "point-", entity_key))?
+        else {
             return Ok(None);
         };
-        let native_ref = ctx.copy_retained_text(
-            native_ref_source,
-            "NX attach sketch graph native ref source copy",
-        )?;
+        let native_ref = text_storage.with_storage(|| {
+            ctx.copy_retained_text(
+                native_ref_source,
+                "NX attach sketch graph native ref source copy",
+            )
+        })?;
         let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
             position: Point2::new(group.coordinates[0], group.coordinates[1]),
         }) else {
@@ -7509,7 +7416,9 @@ fn attach_sketch_graph(
             source_offset,
             SketchEntity::new(
                 entity_id,
-                sketch_id.try_clone_for_decode(ctx, "NX attach sketch graph sketch id copy")?,
+                text_storage.with_storage(|| {
+                    sketch_id.try_clone_for_decode(ctx, "NX attach sketch graph sketch id copy")
+                })?,
                 geometry,
             )
             .with_native_ref(Some(native_ref)),
@@ -7519,6 +7428,7 @@ fn attach_sketch_graph(
         ctx,
         &mut reservation,
         &mut entities,
+        &mut text_storage,
         label,
         &sketch_id,
         &operation_fixed_points,
@@ -7575,6 +7485,7 @@ fn attach_sketch_graph(
         Some("SKETCH"),
     )?;
     annotations.exactness(ctx, sketch_id.as_str(), Exactness::Derived)?;
+    text_storage.commit()?;
     emit_sketch(ctx, ir, label, &sketch_id, entities)?;
     Ok(Some(sketch_id))
 }
@@ -7658,39 +7569,11 @@ fn sketch_entity_identity(
     prefix: &str,
     key: &str,
 ) -> Result<Option<SketchEntityId>, CodecError> {
-    let key_len = prefix.len().checked_add(key.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX sketch entity identity",
-            0,
-            cadmpeg_core::decode::u64_from_index(key.len()),
-        )
-    })?;
-    let charged_len = key_len
-        .checked_mul(2)
-        .and_then(|bytes| bytes.checked_add(48))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX sketch entity identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(key_len),
-            )
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(key_len),
+    let text = ctx.format_retained(
+        format_args!("nx:feature-history:sketch-entity#{prefix}{key}"),
         "NX sketch entity identity",
     )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(charged_len),
-        "NX sketch entity identity",
-    )?;
-    let mut text = String::new();
-    ctx.try_reserve_retained_text(&mut text, key_len, "allocate NX sketch entity identity")?;
-    text.push_str(prefix);
-    text.push_str(key);
-    Ok(
-        IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-            .try_id(&cadmpeg_ir::identity_component!("sketch-entity"), text),
-    )
+    Ok(SketchEntityId::mint(text).ok())
 }
 
 fn push_sketch_entity(
@@ -7739,6 +7622,7 @@ fn emit_sketch(
 fn native_fixed_point_entities(
     ctx: &DecodeContext<'_>,
     reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    text_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     label: &crate::native::features::FeatureOperationLabel,
     sketch_id: &SketchId,
     points: &[&crate::native::features::FeatureSketchFixedPoint],
@@ -7780,12 +7664,15 @@ fn native_fixed_point_entities(
         {
             return Ok(None);
         }
-        let Some(entity_id) = sketch_entity_identity(ctx, "fixed-point-", point_key)? else {
+        let Some(entity_id) =
+            text_storage.with_storage(|| sketch_entity_identity(ctx, "fixed-point-", point_key))?
+        else {
             return Ok(None);
         };
         let native_kind = cadmpeg_core::nonblank_literal!("nx-fixed-point");
-        let native_ref =
-            ctx.copy_retained_text(&point.id, "NX native fixed point entities point id copy")?;
+        let native_ref = text_storage.with_storage(|| {
+            ctx.copy_retained_text(&point.id, "NX native fixed point entities point id copy")
+        })?;
         push_sketch_entity(
             ctx,
             reservation,
@@ -7793,8 +7680,10 @@ fn native_fixed_point_entities(
             point.source_offset,
             SketchEntity::new(
                 entity_id,
-                sketch_id
-                    .try_clone_for_decode(ctx, "NX native fixed point entities sketch id copy")?,
+                text_storage.with_storage(|| {
+                    sketch_id
+                        .try_clone_for_decode(ctx, "NX native fixed point entities sketch id copy")
+                })?,
                 SketchGeometry::native(native_kind),
             )
             .with_native_ref(Some(native_ref)),
@@ -7807,12 +7696,19 @@ fn append_fixed_sketch_entities(
     ctx: &DecodeContext<'_>,
     reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     entities: &mut Vec<(u64, SketchEntity)>,
+    text_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     label: &crate::native::features::FeatureOperationLabel,
     sketch_id: &SketchId,
     fixed_points: &[&crate::native::features::FeatureSketchFixedPoint],
 ) -> Result<bool, CodecError> {
-    let Some(fixed_entities) =
-        native_fixed_point_entities(ctx, reservation, label, sketch_id, fixed_points)?
+    let Some(fixed_entities) = native_fixed_point_entities(
+        ctx,
+        reservation,
+        text_storage,
+        label,
+        sketch_id,
+        fixed_points,
+    )?
     else {
         return Ok(false);
     };
@@ -8129,16 +8025,12 @@ fn push_referenced_parameter(
     referenced: &mut Vec<ParameterId>,
     expression: &str,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(expression.len()),
-        "NX referenced parameter identity",
-    )?;
-    let bytes = expression.len();
-    ctx.charge_collection_items(1, "NX referenced parameters")?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-    let Some(id) = expressions::expression_parameter_id(expression) else {
+    let Some(id) =
+        reservation.with_storage(|| expressions::expression_parameter_id(ctx, expression))?
+    else {
         return Ok(());
     };
+    ctx.charge_collection_items(1, "NX referenced parameters")?;
     reservation.with_storage(|| ctx.reserve_capacity(referenced, 1, "NX referenced parameters"))?;
     referenced.push(id);
     Ok(())

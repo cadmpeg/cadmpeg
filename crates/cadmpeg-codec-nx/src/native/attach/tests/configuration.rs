@@ -1519,8 +1519,8 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
     );
 }
 
-fn native_parameter_with_limit(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+fn native_parameter_result(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let expression = crate::native::om::ParameterFormula {
         id: "expression".into(),
@@ -1544,46 +1544,56 @@ fn native_parameter_with_limit(
         bindings: Vec::new(),
     };
 
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            let parameters = native_feature_parameters(ctx, &[&use_], &[expression])
-                .map(|(parameters, _nodes)| parameters)?;
-            assert_eq!(parameters["length"], "12.5");
-            Ok(())
-        },
-    )
+    let (parameters, _nodes) = native_feature_parameters(ctx, &[&use_], &[expression])?;
+    assert_eq!(parameters["length"], "12.5");
+    Ok(())
 }
 
 #[test]
 fn native_parameter_refuses_collection_limit() {
-    let error =
-        native_parameter_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    crate::test_support::with_decode_context(native_parameter_result).unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX native feature parameter",
+        native_parameter_result,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX native feature parameter")
     );
 }
 
 #[test]
 fn native_parameter_refuses_retained_limit() {
-    let error =
-        native_parameter_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    crate::test_support::with_decode_context(native_parameter_result).unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX native feature parameter",
+        native_parameter_result,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "NX native feature parameter")
     );
 }
 
 #[test]
 fn native_parameter_refuses_work_limit() {
-    let error = native_parameter_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    crate::test_support::with_decode_context(native_parameter_result).unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX native feature parameter",
+        native_parameter_result,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX native feature parameter")
     );
 }
 

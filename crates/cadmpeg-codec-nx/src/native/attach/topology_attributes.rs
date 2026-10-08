@@ -323,7 +323,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
             definition.name.as_str(),
             "NX field name definition name append",
         )?;
-        ctx.push_retained_char(&mut name, '.', "NX Parasolid attribute field separator")?;
+        name.push('.');
         ctx.append_retained(&mut name, &field_name, "NX field name field name append")?;
         Ok(Some(name))
     }
@@ -342,7 +342,8 @@ fn topology_attribute_name(
     let mut name = String::new();
     if let Some(class_name) = class_name {
         ctx.append_retained(&mut name, class_name, "NX Parasolid attribute class name")?;
-        ctx.push_retained_char(&mut name, '.', "NX Parasolid attribute class separator")?;
+        ctx.try_reserve_retained_text(&mut name, 1, "NX Parasolid attribute class separator")?;
+        name.push('.');
     }
     ctx.append_formatted_retained(
         &mut name,
@@ -599,10 +600,11 @@ fn parasolid_topology_attribute_contexts<'a>(
     topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
     class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
 ) -> Result<Vec<ParasolidTopologyAttributeContext<'a>>, CodecError> {
+    let mut entity_index_storage = ctx.reserve_scoped(0, "NX attribute context entity index")?;
     let mut entities_by_reference = BTreeMap::<&str, BTreeSet<&str>>::new();
     for class_use in ctx.admit_iter(class_uses, "NX attribute context class uses")? {
         let key = class_use.topology_attribute_reference.as_str();
-        let entities = reservation
+        let entities = entity_index_storage
             .with_storage(|| {
                 ctx.entry_btree_map(
                     &mut entities_by_reference,
@@ -611,7 +613,7 @@ fn parasolid_topology_attribute_contexts<'a>(
                 )
             })?
             .or_default();
-        reservation.with_storage(|| {
+        entity_index_storage.with_storage(|| {
             ctx.insert_btree_set(
                 entities,
                 class_use.entity_51_record.as_str(),
@@ -619,18 +621,20 @@ fn parasolid_topology_attribute_contexts<'a>(
             )
         })?;
     }
+    let mut reference_index_storage =
+        ctx.reserve_scoped(0, "NX attribute context reference index")?;
     let mut references_by_target = BTreeMap::<String, Vec<_>>::new();
     for reference in ctx.admit_iter(topology_references, "NX attribute topology references")? {
         let kind = reference.topology_type.as_str();
         let key = ctx.format_scoped_text(
-            reservation,
+            &mut reference_index_storage,
             format_args!(
                 "nx:s{}:{kind}#{}",
                 reference.stream_ordinal, reference.topology_xmt
             ),
             "NX Parasolid topology reference key",
         )?;
-        let references = reservation
+        let references = reference_index_storage
             .with_storage(|| {
                 ctx.entry_btree_map(
                     &mut references_by_target,
@@ -639,11 +643,12 @@ fn parasolid_topology_attribute_contexts<'a>(
                 )
             })?
             .or_default();
-        reservation.with_storage(|| {
+        reference_index_storage.with_storage(|| {
             ctx.push_vec(references, reference, "NX Parasolid topology reference")
         })?;
     }
-    let emitted_targets = parasolid_topology_attribute_targets(ctx, reservation, ir)?;
+    let mut target_index_storage = ctx.reserve_scoped(0, "NX attribute context target index")?;
+    let emitted_targets = parasolid_topology_attribute_targets(ctx, &mut target_index_storage, ir)?;
     let mut contexts = Vec::new();
     for (target_key, references) in
         ctx.admit_iter(&references_by_target, "NX attribute reference targets")?
@@ -659,9 +664,10 @@ fn parasolid_topology_attribute_contexts<'a>(
         else {
             continue;
         };
+        let mut entity_storage = ctx.reserve_scoped(0, "NX attribute context entity set")?;
         let mut entities = BTreeSet::new();
         if let Some(entity) = reference.attribute_list_record.as_deref() {
-            reservation.with_storage(|| {
+            entity_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut entities, entity, "NX Parasolid reference entity")
             })?;
         }
@@ -671,7 +677,7 @@ fn parasolid_topology_attribute_contexts<'a>(
             "NX parasolid topology attribute contexts entities by reference lookup",
         )? {
             for entity in ctx.admit_iter(class_entities, "NX Parasolid class entity members")? {
-                reservation.with_storage(|| {
+                entity_storage.with_storage(|| {
                     ctx.insert_btree_set(&mut entities, entity, "NX Parasolid reference entity")
                 })?;
             }
@@ -707,41 +713,31 @@ fn topology_attribute_id(
     reference_ordinal: u32,
     entity_suffix: Option<&cadmpeg_ir::ids::IdentityKey>,
 ) -> Result<AttributeId, CodecError> {
-    let suffix_len = entity_suffix.map_or(0, |suffix| suffix.as_str().len());
-    let id_len = family
-        .as_str()
-        .len()
-        .checked_add(suffix_len)
-        .and_then(|bytes| bytes.checked_add(64))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
+    match entity_suffix {
+        Some(suffix) => {
+            let text = ctx.format_retained(
+                format_args!(
+                    "nx:s{}:{family}#{}-{}-{}-{suffix}",
+                    reference.stream_ordinal,
+                    reference.topology_type.code(),
+                    reference.topology_xmt,
+                    reference_ordinal
+                ),
                 "NX Parasolid attribute identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(suffix_len),
-            )
-        })?;
-    let bytes = id_len.checked_mul(4).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "NX Parasolid attribute identity",
-            0,
-            cadmpeg_core::decode::u64_from_index(id_len),
-        )
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(id_len),
-        "NX Parasolid attribute identity",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX Parasolid attribute identity",
-    )?;
-    let mut key = cadmpeg_ir::ids::IdentityKey::from(reference.topology_type.code())
-        .dash(reference.topology_xmt)
-        .dash(reference_ordinal);
-    if let Some(suffix) = entity_suffix {
-        key = key.dash(suffix);
+            )?;
+            AttributeId::mint(text).map_err(CodecError::malformed)
+        }
+        None => IdScope::stream(reference.stream_ordinal).id_charged(
+            ctx,
+            family,
+            format_args!(
+                "{}-{}-{}",
+                reference.topology_type.code(),
+                reference.topology_xmt,
+                reference_ordinal
+            ),
+        ),
     }
-    Ok(IdScope::stream(reference.stream_ordinal).id(family, key))
 }
 
 fn single_string_attribute_values(

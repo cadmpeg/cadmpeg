@@ -690,3 +690,56 @@ fn rm_face_colors_refuse_definition_lookup_work_limit() {
             && limit.operation == "NX RM face color definition lookup")
     );
 }
+
+#[test]
+fn rm_color_identity_charges_exact_output_and_releases_key() {
+    let source = "nx:test:color#μ";
+    for (prefix, expected) in [
+        (
+            "nx:appearance-binding:rmfastload-color#",
+            "nx:appearance-binding:rmfastload-color#nx-test-color-μ",
+        ),
+        (
+            "nx:appearance-binding:rmfastload-face-color#",
+            "nx:appearance-binding:rmfastload-face-color#nx-test-color-μ",
+        ),
+        (
+            "nx:appearance:rmfastload-color#",
+            "nx:appearance:rmfastload-color#nx-test-color-μ",
+        ),
+    ] {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(expected.len());
+                policy.limits.max_materialized_bytes =
+                    cadmpeg_core::decode::u64_from_index(source.len());
+            },
+            |ctx| {
+                let id = crate::native::attach::rm_color_identity::<cadmpeg_ir::ids::Identity>(
+                    ctx,
+                    prefix,
+                    source,
+                    "test RM identity text",
+                )
+                .unwrap()
+                .unwrap();
+                assert_eq!(id.as_str(), expected);
+                let _key_storage = ctx
+                    .reserve_scoped(
+                        cadmpeg_core::decode::u64_from_index(source.len()),
+                        "test RM key storage released",
+                    )
+                    .unwrap();
+                let error = ctx
+                    .charge_retained(1, "test complete RM identity storage")
+                    .unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.used == cadmpeg_core::decode::u64_from_index(expected.len()) && limit.additional == 1)
+                );
+            },
+        );
+    }
+}
