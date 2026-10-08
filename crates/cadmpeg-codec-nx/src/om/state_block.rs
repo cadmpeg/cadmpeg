@@ -537,6 +537,10 @@ pub(super) fn operation_state_block_before_boundary<'a, 'ctx>(
     let Some(offset) = base_offset.checked_add(offset) else {
         return Ok(None);
     };
+    drop(opaque_lane_starts);
+    drop(status_paths);
+    drop(message_paths);
+    drop(scratch);
     OperationStateBlock::from_parts(
         ctx,
         offset,

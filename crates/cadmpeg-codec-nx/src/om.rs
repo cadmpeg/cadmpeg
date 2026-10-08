@@ -1332,6 +1332,8 @@ impl<'a> Section<'a> {
         let Some(map_start) = map.offset().checked_sub(base_offset) else {
             return Ok(None);
         };
+        drop(map);
+        drop(map_storage);
         operation_state_group_table_before_counter_map(ctx, bytes, map_start, base_offset)
     }
 
@@ -1398,11 +1400,16 @@ impl<'a> Section<'a> {
         let Some(start) = start_offset.checked_sub(base_offset) else {
             return Ok(None);
         };
+        drop(records);
+        drop(record_storage);
+        let counter_offset = map.offset();
+        drop(map);
+        drop(map_storage);
         let mut group_storage = ctx.reserve_scoped(0, "NX state block group boundary workspace")?;
         let group = group_storage.with_storage(|| self.operation_state_group_table(ctx))?;
         let Some(terminal) = group
             .as_ref()
-            .map_or(map.offset(), OperationStateGroupTable::offset)
+            .map_or(counter_offset, OperationStateGroupTable::offset)
             .checked_sub(base_offset)
         else {
             return Ok(None);
@@ -1416,6 +1423,8 @@ impl<'a> Section<'a> {
         } else {
             None
         };
+        drop(group);
+        drop(group_storage);
         for end in overlap_end.into_iter().chain(std::iter::once(terminal)) {
             if let Some(block) =
                 operation_state_block_before_boundary(ctx, bytes, start, end, base_offset)?
@@ -3618,7 +3627,8 @@ fn operation_state_group_table_before_counter_map(
         "sort NX operation state group candidates",
     )?;
 
-    let mut predecessors = scratch.with_storage(|| {
+    let mut index_storage = ctx.reserve_scoped(0, "NX operation-state path index workspace")?;
+    let mut predecessors = index_storage.with_storage(|| {
         ctx.alloc_filled(
             candidates.len(),
             None,
@@ -3654,7 +3664,7 @@ fn operation_state_group_table_before_counter_map(
                     || (path.length == current.length && path.first_start < current.first_start)
             });
         if replace {
-            scratch.with_storage(|| {
+            index_storage.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut best_by_end,
                     *end,
@@ -3690,6 +3700,9 @@ fn operation_state_group_table_before_counter_map(
         candidate = predecessors[candidate_index];
     }
     ctx.reverse(&mut path, "NX operation-state group path reversal")?;
+    drop(predecessors);
+    drop(best_by_end);
+    drop(index_storage);
     let Some(&last) = path.last() else {
         return Ok(None);
     };
@@ -3715,6 +3728,9 @@ fn operation_state_group_table_before_counter_map(
     let Some(trailing) = bytes.get(candidates[last].1..map_start) else {
         return Ok(None);
     };
+    drop(path);
+    drop(candidates);
+    drop(scratch);
     let table = OperationStateGroupTable::new(ctx, groups, trailing)?;
     if table.is_some() {
         group_storage.commit()?;
