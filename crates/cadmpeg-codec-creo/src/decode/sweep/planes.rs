@@ -6,7 +6,6 @@ use super::super::uniqueness::exactly_one_by;
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
-use crate::surface::SurfaceParameterRecord;
 use crate::vecmath::dot;
 use crate::vecmath::unit_length;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
@@ -391,24 +390,17 @@ pub(in super::super) fn generated_cap_plane_extent(
 pub(in super::super) fn unique_available_positional_cylinder_frame_records(
     ctx: &DecodeContext<'_>,
     surface_ids: &BTreeSet<u32>,
-    parameters: &[crate::surface::SurfaceParameterRecord],
+    parameters: &crate::surface::SurfaceParameters,
 ) -> Result<Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>>, CodecError> {
     let mut frames = Vec::new();
-    if surface_ids.is_empty() { return Ok(Some(frames)); }
-    let mut storage = ctx.reserve_scoped(0, "creo positional cylinder parameter index")?;
-    let mut by_id = std::collections::HashMap::new();
-    let mut records = parameters.iter();
-    while let Some(record) = ctx.next_charged(&mut records, "creo positional cylinder parameter scan")? {
-        if !ctx.contains_btree_set(surface_ids, &record.surface_id, "creo positional cylinder ID lookup")? { continue; }
-        match storage.with_storage(|| ctx.entry_hash_map(&mut by_id, record.surface_id, "creo positional cylinder parameter index"))? {
-            std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(record); },
-            std::collections::hash_map::Entry::Occupied(_) => return Ok(None),
-        }
-    }
     let mut ids = surface_ids.iter();
     while let Some(surface_id) = ctx.next_charged(&mut ids, "creo positional cylinder frame ID scan")? {
-        let record = by_id.get(surface_id).copied();
-        if let Some(frame) = record.and_then(SurfaceParameterRecord::positional_cylinder_frame) {
+        let record = match parameters.unique(*surface_id) {
+            Some(record) => record,
+            None if parameters.contains_id(*surface_id) => return Ok(None),
+            None => continue,
+        };
+        if let Some(frame) = record.positional_cylinder_frame() {
             ctx.push_vec(&mut frames, (*surface_id, frame), "creo available positional cylinder frames")?;
         }
     }

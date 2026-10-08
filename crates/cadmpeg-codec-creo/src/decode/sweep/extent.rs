@@ -598,7 +598,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     let origin = cylinder_surface.origin().get();
                     let axis = *cylinder_surface.frame().axis();
                     let Some(parameters) =
-                        crate::decode::uniqueness::exactly_one_by(ctx, &scan.surfaces.parameters, |record| Ok(record.surface_id == row.id), "creo generated extent cylinder parameter search")?
+                        scan.surfaces.parameters.unique(row.id)
                     else {
                         return Ok(None);
                     };
