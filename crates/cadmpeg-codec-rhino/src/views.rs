@@ -854,14 +854,15 @@ fn parse_window_position(
     })
 }
 
-fn parse_attributes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn parse_attributes<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: MillimeterScale,
-) -> Result<(ViewAttributes, Vec<std::ops::Range<usize>>), FramingError> {
+) -> Result<(ViewAttributes, Vec<std::ops::Range<usize>>, cadmpeg_core::decode::ScopedReservation<'ctx>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let mut checksum_storage = ctx.reserve_scoped(0, "Rhino view attribute checksum ranges")?;
     let mut checksum_children = Vec::new();
     let packed = reader.u8()?;
     let version = [packed >> 4, packed & 0x0f];
@@ -950,12 +951,13 @@ fn parse_attributes(
         let margins_mm = [left, right, top, bottom];
         let printer_name = utf16_retained(ctx, &mut page, "Rhino view printer name")?;
         page.skip_remaining()?;
-        ctx.reserve_vec(
-            &mut checksum_children,
-            1,
-            "Rhino view attribute checksum children",
-        )
-        .map_err(crate::chunks::FramingError::from)?;
+        checksum_storage.with_storage(|| {
+            ctx.reserve_vec(
+                &mut checksum_children,
+                1,
+                "Rhino view attribute checksum children",
+            )
+        })?;
         checksum_children.push(chunk.range());
         reader.skip(chunk.next_offset() - reader.position())?;
         result.page_settings = Some(PageSettings {
@@ -1041,12 +1043,13 @@ fn parse_attributes(
                 depth_mm: depth,
                 depth_enabled,
             });
-            ctx.reserve_vec(
-                &mut checksum_children,
-                1,
-                "Rhino view attribute checksum children",
-            )
-            .map_err(crate::chunks::FramingError::from)?;
+            checksum_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut checksum_children,
+                    1,
+                    "Rhino view attribute checksum children",
+                )
+            })?;
             checksum_children.push(chunk.range());
             reader.skip(chunk.next_offset() - reader.position())?;
         }
@@ -1077,7 +1080,7 @@ fn parse_attributes(
         result.section_behavior = Some(reader.u8()?);
     }
     reader.skip_remaining()?;
-    Ok((result, checksum_children))
+    Ok((result, checksum_children, checksum_storage))
 }
 
 fn view_child_checksum_warning<I, R>(
@@ -1164,9 +1167,9 @@ fn scan_viewport_userdata<'ctx>(
                         "view viewport userdata item must be a long chunk",
                     ));
                 }
-                let mut warnings = Diagnostics::new();
                 let mut diagnostics_storage =
                     ctx.reserve_scoped(0, "Rhino viewport userdata diagnostics")?;
+                let mut warnings = Diagnostics::new();
                 let parsed = diagnostics_storage
                     .with_storage(|| {
                         Ok::<_, CodecError>(parse_userdata(
@@ -1242,24 +1245,24 @@ fn parse_view<'ctx>(
         index: list_index,
     } = source;
     let mut offset = record.body().start;
-    let mut name = String::new();
     let mut name_storage = None;
+    let mut name = String::new();
     let mut target = None;
     let mut window_position = None;
     let mut show_grid = true;
     let mut show_axes = true;
     let mut show_world_axes = true;
     let mut legacy_display_mode = None;
-    let mut attributes_detail = None;
     let mut attributes_storage = None;
-    let mut construction_plane = None;
+    let mut attributes_detail = None;
     let mut construction_plane_storage = None;
-    let mut viewport = None;
+    let mut construction_plane = None;
     let mut viewport_storage = None;
-    let mut trace_image = None;
+    let mut viewport = None;
     let mut trace_image_storage = None;
-    let mut wallpaper = None;
+    let mut trace_image = None;
     let mut wallpaper_storage = None;
+    let mut wallpaper = None;
     let mut children = Vec::new();
     let mut checksum_storage = ctx.reserve_scoped(0, "Rhino view checksum storage")?;
     let mut checksum_children = Vec::new();
@@ -1398,13 +1401,14 @@ fn parse_view<'ctx>(
                 wallpaper_storage = Some(storage);
             }
             VIEW_NAME if !child.short() => {
-                let (replacement, storage) = ctx.with_scoped_storage("Rhino view name", || {
+                let (replacement_buffer, storage) = ctx.with_scoped_storage("Rhino view name", || {
                     let mut reader =
                         BoundedReader::new(data, child.body().start, child.body().end)?;
                     let value = utf16_retained(ctx, &mut reader, "Rhino view name")?;
                     reader.skip_remaining()?;
                     Ok::<_, FramingError>(value)
                 })?;
+                let replacement = replacement_buffer;
                 name = replacement;
                 name_storage = Some(storage);
             }
@@ -1432,9 +1436,10 @@ fn parse_view<'ctx>(
             VIEW_V3_DISPLAY_MODE if child.short() => legacy_display_mode = Some(child.value()?),
             VIEW_ATTRIBUTES if !child.short() => {
                 let mut storage = ctx.reserve_scoped(0, "Rhino view attributes")?;
-                let (attributes, nested_children) = storage.with_storage(|| {
+                let (attributes, nested_children_buffer, _nested_children_storage) = storage.with_storage(|| {
                     parse_attributes(ctx, data, child.body().clone(), archive, scale)
                 })?;
+                let nested_children = nested_children_buffer;
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(ctx, data, &child, &nested_children)?
                 {
@@ -1782,8 +1787,8 @@ fn parse_named_cplanes<'ctx>(
         .ok_or_else(|| {
             FramingError::structural(count_offset, "named construction-plane count is invalid")
     })?;
-    let mut values = Vec::new();
     let mut staging = ctx.reserve_scoped(0, "Rhino named construction-plane list")?;
+    let mut values = Vec::new();
     for index in 0..count {
         ctx.charge_work(1, "Rhino views cursor traversal")?;
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
@@ -2191,7 +2196,7 @@ mod tests {
         });
         assert_resource(&error, "Rhino named construction planes");
         let service_context = cadmpeg_test_support::service_decode_context();
-        let (values, _values_storage) = super::parse_named_cplanes(
+        let (values_buffer, _values_storage) = super::parse_named_cplanes(
             &service_context,
             &bytes,
             &record,
@@ -2199,6 +2204,7 @@ mod tests {
             crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("service profile admits the named construction plane");
+        let values = values_buffer;
         assert_eq!(values.len(), 1);
     }
 
@@ -2232,7 +2238,7 @@ mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && limit.operation == "Rhino named construction plane ID"));
         let service_context = cadmpeg_test_support::service_decode_context();
-        let (values, _values_storage) = super::parse_named_cplanes(
+        let (values_buffer, _values_storage) = super::parse_named_cplanes(
             &service_context,
             &bytes,
             &record,
@@ -2240,6 +2246,7 @@ mod tests {
             crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("service profile admits the construction plane ID");
+        let values = values_buffer;
         assert_eq!(values.len(), 1);
     }
 
@@ -3315,7 +3322,7 @@ mod tests {
         body.extend(1_i32.to_le_bytes());
         body.extend(anonymous_chunk(archive, 4, &clipping_plane));
 
-        let (value, _) = parse_attributes(
+        let (value, _, _) = parse_attributes(
             &cadmpeg_test_support::service_decode_context(),
             &body,
             0..body.len(),
@@ -3399,7 +3406,7 @@ mod tests {
         body.push(1);
         body.extend([0xa1, 0xb2, 0xc3]);
 
-        let (value, _) = parse_attributes(
+        let (value, _, _) = parse_attributes(
             &cadmpeg_test_support::service_decode_context(),
             &body,
             0..body.len(),

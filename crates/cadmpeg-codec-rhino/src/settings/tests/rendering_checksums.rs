@@ -251,3 +251,86 @@ fn complete_object_rendering_reports_nested_crc_without_losing_geometry_or_sourc
         }
     }
 }
+
+
+fn mapping_only_rendering(archive: ArchiveVersion) -> Vec<u8> {
+    let mapping_body = [vec![0; 16], 0_i32.to_le_bytes().to_vec()].concat();
+    let mapping = anonymous(archive, 0, &mapping_body, &[], false);
+    let mut body = [0_i32.to_le_bytes(), 1_i32.to_le_bytes()].concat();
+    let mapping_start = body.len();
+    body.extend(mapping);
+    anonymous(
+        archive,
+        1,
+        &body,
+        std::slice::from_ref(&(mapping_start..body.len())),
+        false,
+    )
+}
+
+#[test]
+fn object_rendering_mapping_child_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for archive in [ArchiveVersion::V5, ArchiveVersion::V8] {
+        let bytes = mapping_only_rendering(archive);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+        let mut warnings = Diagnostics::new();
+        let error = settings::parse_rendering_attributes(
+            &ctx, &bytes, &mut reader, archive,
+            settings::RenderingAttributesKind::Object, &mut warnings,
+        ).expect_err("one mapping checksum range exceeds zero collection items");
+        let crate::chunks::FramingError::Resource(refusal) = error else {
+            panic!("mapping range resource refusal");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(refusal.operation, "Rhino rendering mapping references");
+        assert_eq!(refusal.used, 0);
+        assert_eq!(refusal.additional, 1);
+        assert_eq!(reader.position(), 0);
+        assert!(warnings.is_empty());
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+        assert!(matches!(ctx.finish_session(),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+    }
+}
+
+#[test]
+fn rendering_checksum_range_storage_is_scoped() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    for archive in [ArchiveVersion::V5, ArchiveVersion::V8] {
+        for (bytes, kind, collection_items) in [
+            (rendering(archive, false, "none"), settings::RenderingAttributesKind::Layer, 2),
+            (rendering(archive, true, "none"), settings::RenderingAttributesKind::Object, 4),
+            (mapping_only_rendering(archive), settings::RenderingAttributesKind::Object, 1),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = collection_items;
+            // Growth keeps four new outer slots and one old slot during reallocation.
+            let scratch_limit = u64::try_from(
+                5 * std::mem::size_of::<std::ops::Range<usize>>()
+            ).unwrap();
+            policy.limits.max_materialized_bytes = scratch_limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+            let mut warnings = Diagnostics::new();
+            let range = settings::parse_rendering_attributes(
+                &ctx, &bytes, &mut reader, archive, kind, &mut warnings,
+            ).expect("checksum ranges are temporary");
+            assert_eq!(range, 0..bytes.len());
+            assert_eq!(reader.remaining(), 0);
+            assert!(warnings.is_empty());
+            // The parser returns no range vector; all five slots are available again.
+            let recovered = ctx.reserve_scoped(scratch_limit, "checksum scratch release probe")
+                .expect("checksum range backing released before returning");
+            drop(recovered);
+            ctx.finish_session().unwrap();
+        }
+    }
+}

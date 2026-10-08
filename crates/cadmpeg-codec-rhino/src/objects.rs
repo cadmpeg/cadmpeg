@@ -784,7 +784,7 @@ pub(crate) fn parse_user_string_list<'ctx>(
     }
     let count = reader.i32()?;
     let count_bytes = bounded_count(&reader, count, 1)?;
-    let (mut values, mut workspace) = ctx.temporary_vec(
+    let (values_buffer, mut workspace) = ctx.temporary_vec(
         if matches!(selection, UserStringSelection::All) {
             count_bytes
         } else {
@@ -792,6 +792,7 @@ pub(crate) fn parse_user_string_list<'ctx>(
         },
         "Rhino user-string entries",
     )?;
+    let mut values = values_buffer;
     let mut omit_temporary = matches!(selection, UserStringSelection::ExcludeFirstTempObject);
     for _ in 0..count_bytes {
         ctx.charge_work(1, "Rhino objects cursor traversal")?;
@@ -2167,9 +2168,9 @@ pub(crate) fn resolve_identities(
     metadata: &DocumentMetadata,
     warnings: &mut Diagnostics,
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
+    let mut workspace = ctx.reserve_scoped(0, "Rhino identity lookup workspace")?;
     let mut seen_ids = HashSet::new();
     let mut layers = LayerLookup::new();
-    let mut workspace = ctx.reserve_scoped(0, "Rhino identity lookup workspace")?;
     for layer in ctx.admit_iter(&metadata.layers[..], "Rhino resolve identities traversal")? {
         workspace.with_storage(|| layers.insert(ctx, layer))?;
     }

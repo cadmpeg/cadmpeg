@@ -141,7 +141,7 @@ fn view_display_uuid_refuses_retained_limit() {
         .expect_err("display UUID exceeds retained limit")
     });
     assert_resource(&error, "Rhino view display UUID");
-    let (admitted, _) = parse_attributes(
+    let (admitted, _, _) = parse_attributes(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
@@ -250,7 +250,7 @@ fn view_clipping_planes_refuse_collection_limit() {
         .expect_err("clipping plane exceeds collection limit")
     });
     assert_resource(&error, "Rhino view clipping planes");
-    let (attributes, _) = parse_attributes(
+    let (attributes, _, _) = parse_attributes(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
@@ -332,4 +332,67 @@ fn viewport_userdata_children_ceiling_is_a_resource_refusal() {
             assert!(losses.is_empty());
         },
     );
+}
+
+
+#[test]
+fn view_attribute_checksum_ranges_release_after_use() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let bytes = view_attributes_with_page(2, "", false, [0; 16], [0; 16], [0; 16]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // reserve_vec allocates at least four slots for the first page range.
+    let backing_bytes = u64::try_from(4 * std::mem::size_of::<std::ops::Range<usize>>()).unwrap();
+    policy.limits.max_materialized_bytes = backing_bytes;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    {
+        let (attributes, ranges_buffer, _range_storage) = parse_attributes(
+            &ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5,
+            crate::settings::MillimeterScale::IDENTITY,
+        ).expect("only checksum range backing allocates");
+        let ranges = ranges_buffer;
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(attributes.page_settings.unwrap().printer_name, "");
+    }
+    let recovered = ctx.reserve_scoped(backing_bytes, "view checksum scratch release probe")
+        .expect("range backing is released after checksum use");
+    drop(recovered);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn view_attribute_checksum_ranges_hold_storage_until_drop() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let bytes = view_attributes_with_page(2, "", false, [0; 16], [0; 16], [0; 16]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    let backing_bytes = u64::try_from(4 * std::mem::size_of::<std::ops::Range<usize>>()).unwrap();
+    policy.limits.max_materialized_bytes = backing_bytes;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let refusal = {
+        let (attributes, ranges_buffer, _range_storage) = parse_attributes(
+            &ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5,
+            crate::settings::MillimeterScale::IDENTITY,
+        ).expect("page checksum range fits");
+        let ranges = ranges_buffer;
+        assert_eq!(ranges.len(), 1);
+        assert!(attributes.page_settings.is_some());
+        let error = ctx.reserve_scoped(1, "view live checksum storage probe")
+            .expect_err("live range backing occupies all materialized bytes");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("live checksum backing resource refusal");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(refusal.used, backing_bytes);
+        assert_eq!(refusal.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+        refusal
+    };
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
 }

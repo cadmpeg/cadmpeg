@@ -804,3 +804,56 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
         ["duplicate singleton metadata record 0xa0000038; later record wins"]
     );
 }
+
+
+fn assert_embedded_checksum_ranges_are_scoped(bytes: &[u8], section_style: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    // Four section-style range slots overlap one nested linetype slot.
+    let scratch_limit = u64::try_from(
+        5 * std::mem::size_of::<std::ops::Range<usize>>()
+    ).unwrap();
+    policy.limits.max_materialized_bytes = scratch_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut reader = BoundedReader::new(bytes, 0, bytes.len()).unwrap();
+    let mut warnings = Diagnostics::new();
+    let descriptor = if section_style {
+        settings::parse_direct_section_style(
+            &ctx, bytes, &mut reader, ArchiveVersion::V8, &mut warnings,
+        )
+    } else {
+        settings::parse_direct_linetype(
+            &ctx, bytes, &mut reader, ArchiveVersion::V8, &mut warnings,
+        )
+    }.expect("embedded checksum ranges are temporary");
+    assert_eq!(descriptor.source.range, 0..bytes.len());
+    assert_eq!(reader.remaining(), 0);
+    assert!(warnings.is_empty());
+    let recovered = ctx.reserve_scoped(scratch_limit, "embedded checksum scratch release probe")
+        .expect("embedded checksum backing released before returning");
+    drop(recovered);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn embedded_linetype_checksum_range_storage_is_scoped() {
+    assert_embedded_checksum_ranges_are_scoped(
+        &embedded_linetype_with_model_attributes(ArchiveVersion::V8), false,
+    );
+}
+
+#[test]
+fn embedded_section_style_checksum_range_storage_is_scoped() {
+    assert_embedded_checksum_ranges_are_scoped(
+        &embedded_section_style_with_model_attributes(ArchiveVersion::V8, false), true,
+    );
+}
+
+#[test]
+fn embedded_nested_linetype_checksum_range_storage_is_scoped() {
+    assert_embedded_checksum_ranges_are_scoped(
+        &embedded_section_style_with_model_attributes(ArchiveVersion::V8, true), true,
+    );
+}

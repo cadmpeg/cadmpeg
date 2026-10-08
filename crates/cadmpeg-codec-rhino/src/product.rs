@@ -205,12 +205,12 @@ pub(crate) fn install<'ctx>(
     ir: &mut CadIr,
 ) -> Result<ScratchVec<'ctx, LossNote>, CodecError> {
     let mut losses = ScratchVec::new(ctx, "Rhino product loss Vec")?;
-    let mut object_records = HashMap::<Uuid, Option<usize>>::new();
     let mut object_workspace = ctx.reserve_scoped(0, "Rhino product object workspace")?;
-    for (source_order, object) in ctx
-        .admit_iter(&scan.objects[..], "Rhino install traversal")?
-        .enumerate()
-    {
+    let mut object_records = HashMap::<Uuid, Option<usize>>::new();
+    let mut object_source = scan.objects.iter().enumerate();
+    for _ in 0..object_source.len() {
+        let (source_order, object) = ctx.next_charged(&mut object_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
         if let Some(identity) = object.identity() {
             object_workspace.with_storage(|| -> Result<(), CodecError> {
                 match ctx.entry_hash_map(
@@ -234,10 +234,10 @@ pub(crate) fn install<'ctx>(
     let mut definitions = Vec::new();
     let mut external = Vec::new();
     staging.with_storage(|| -> Result<(), CodecError> {
-        for definition in ctx.admit_iter(
-            scan.definitions.definitions(),
-            "Rhino install borrowed traversal",
-        )? {
+        let mut definition_source = scan.definitions.definitions().iter();
+        for _ in 0..definition_source.len() {
+            let definition = ctx.next_charged(&mut definition_source, "Rhino install borrowed traversal")?
+                .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
             let external_reference = external_record(ctx, definition.id(), &definition.link)?;
             let external_id = external_reference
                 .as_ref()
@@ -248,10 +248,13 @@ pub(crate) fn install<'ctx>(
                 external.push(value);
             }
             let mut links = Vec::new();
-            let mut member_seen = HashSet::new();
             let mut member_workspace =
                 ctx.reserve_scoped(0, "Rhino definition member workspace")?;
-            for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
+            let mut member_seen = HashSet::new();
+            let mut member_source = definition.members.iter();
+            for _ in 0..member_source.len() {
+                let member = ctx.next_charged(&mut member_source, "Rhino install traversal")?
+                    .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
                 if let Some(Some(source_order)) =
                     ctx.get_hash_map(&object_records, member, "Rhino definition member lookup")?
                 {
@@ -282,7 +285,10 @@ pub(crate) fn install<'ctx>(
                 "Rhino definition links sort",
             )?;
             let mut member_object_ids = Vec::new();
-            for id in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
+            let mut member_id_source = definition.members.iter();
+            for _ in 0..member_id_source.len() {
+                let id = ctx.next_charged(&mut member_id_source, "Rhino install traversal")?
+                    .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
                 ctx.reserve_vec(&mut member_object_ids, 1, "Rhino definition member UUIDs")?;
                 member_object_ids.push(
                     ctx.format_retained(format_args!("{id}"), "Rhino definition member UUID text")?,
@@ -317,20 +323,23 @@ pub(crate) fn install<'ctx>(
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     // Each member's parent definitions, ordered and unique by UUID; the
     // table only serves keyed lookups and is dropped before install returns.
+    let mut definition_workspace = ctx.reserve_scoped(0, "Rhino product definition workspace")?;
     let mut member_definitions = HashMap::<Uuid, BTreeSet<Uuid>>::new();
     let mut definition_ids = HashSet::new();
-    let mut definition_workspace = ctx.reserve_scoped(0, "Rhino product definition workspace")?;
-    for definition in ctx.admit_iter(
-        scan.definitions.definitions(),
-        "Rhino install borrowed traversal",
-    )? {
+    let mut definition_source = scan.definitions.definitions().iter();
+    for _ in 0..definition_source.len() {
+        let definition = ctx.next_charged(&mut definition_source, "Rhino install borrowed traversal")?
+            .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
         definition_workspace.with_storage(|| -> Result<(), CodecError> {
             ctx.insert_hash_set(
                 &mut definition_ids,
                 definition.id(),
                 "Rhino product definition keys",
             )?;
-            for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
+            let mut member_source = definition.members.iter();
+            for _ in 0..member_source.len() {
+                let member = ctx.next_charged(&mut member_source, "Rhino install traversal")?
+                    .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
                 let parents = ctx
                     .entry_hash_map(
                         &mut member_definitions,
@@ -344,10 +353,10 @@ pub(crate) fn install<'ctx>(
         })?;
     }
     let mut occurrences = Vec::new();
-    for (source_order, object) in ctx
-        .admit_iter(&scan.objects[..], "Rhino install traversal")?
-        .enumerate()
-    {
+    let mut object_source = scan.objects.iter().enumerate();
+    for _ in 0..object_source.len() {
+        let (source_order, object) = ctx.next_charged(&mut object_source, "Rhino install traversal")?
+            .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
         let Some(object) = object.framed() else {
             continue;
         };
@@ -412,14 +421,17 @@ pub(crate) fn install<'ctx>(
                     source_parents.len(),
                     "Rhino occurrence parents",
                 )?;
-                for parent in ctx.admit_iter(source_parents, "Rhino install borrowed traversal")? {
+                let mut parent_source = source_parents.iter();
+                for _ in 0..parent_source.len() {
+                    let parent = ctx.next_charged(&mut parent_source, "Rhino install borrowed traversal")?
+                        .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
                     parents.push(ctx.format_retained(
                         format_args!("{parent}"),
                         "Rhino occurrence parent UUID",
                     )?);
                 }
             }
-            let (key, _key_workspace) = if identity.object_id.is_nil()
+            let (key_buffer, _key_workspace) = if identity.object_id.is_nil()
                 || ctx
                     .get_hash_map(
                         &object_records,
@@ -438,6 +450,7 @@ pub(crate) fn install<'ctx>(
                     "Rhino occurrence key",
                 )?
             };
+            let key = key_buffer;
             let mut links = ctx.collection_vec(1, "Rhino occurrence links")?;
             links.push(object_record);
             if ctx.contains_hash_set(

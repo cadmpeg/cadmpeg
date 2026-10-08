@@ -34,8 +34,7 @@ fn c2_curve_to_nurbs_join(
         .messages(ctx)?
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    result_storage.commit()?;
-    Ok((joined, messages))
+    Ok((result_storage.commit_value(joined)?, messages))
 }
 
 #[test]

@@ -213,8 +213,9 @@ fn optional_localizer<T>(
     kind: &str,
     parse: impl FnOnce(&mut BoundedReader<'_>) -> Result<T, GeometryError>,
 ) -> Result<Option<T>, GeometryError> {
-    let (label, _label_storage) =
+    let (label_buffer, _label_storage) =
         ctx.format_scoped(format_args!("localizer {kind}"), "Rhino localizer label")?;
+    let label = label_buffer;
     let (mut child, next, major, minor) =
         anonymous(ctx, data, reader.position(), reader.end(), archive, &label)?;
     if major != 1 || minor < 0 {
@@ -846,10 +847,11 @@ pub(crate) fn project(
         .admit_iter(&morph.localizers[..], "Rhino project traversal")?
         .enumerate()
     {
-        let (prefix, _prefix_storage) = ctx.format_scoped(
+        let (prefix_buffer, _prefix_storage) = ctx.format_scoped(
             format_args!("localizer_{index}"),
             "Rhino morph localizer prefix",
         )?;
+        let prefix = prefix_buffer;
         insert_property(
             ctx,
             &mut properties,
@@ -875,17 +877,19 @@ pub(crate) fn project(
             format_args!("{}", CommaList(localizer.interval.get())),
         )?;
         if let Some(curve) = &localizer.curve {
-            let (curve_prefix, _curve_prefix_storage) = ctx.format_scoped(
+            let (curve_prefix_buffer, _curve_prefix_storage) = ctx.format_scoped(
                 format_args!("{prefix}_curve"),
                 "Rhino morph localizer prefix",
             )?;
+            let curve_prefix = curve_prefix_buffer;
             curve_properties(ctx, &curve_prefix, curve, &mut properties)?;
         }
         if let Some(surface) = &localizer.surface {
-            let (surface_prefix, _surface_prefix_storage) = ctx.format_scoped(
+            let (surface_prefix_buffer, _surface_prefix_storage) = ctx.format_scoped(
                 format_args!("{prefix}_surface"),
                 "Rhino morph localizer prefix",
             )?;
+            let surface_prefix = surface_prefix_buffer;
             surface_properties(ctx, &surface_prefix, surface, &mut properties)?;
         }
     }

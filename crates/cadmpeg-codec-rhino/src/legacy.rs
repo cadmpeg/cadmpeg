@@ -768,8 +768,9 @@ fn legacy_spline(
         ));
     }
     let knot_count = order + cv_count - 2;
-    let (mut stored_knots, stored_knots_storage) =
+    let (stored_knots_buffer, stored_knots_storage) =
         ctx.temporary_vec::<f64>(knot_count, "Rhino V1 spline stored knots")?;
+    let mut stored_knots = stored_knots_buffer;
     let first = reader.f64().or_else(|error| Err(malformed(ctx, &error)?))?;
     stored_knots.push(first);
     if clamped & 1 != 0 {
@@ -1639,14 +1640,16 @@ fn legacy_surface(
         .or_else(|error| Err(malformed(ctx, &error)?))?;
     let u_count = orders[0] + counts[0] - 2;
     let v_count = orders[1] + counts[1] - 2;
-    let (mut stored_u, stored_u_storage) =
+    let (stored_u_buffer, stored_u_storage) =
         ctx.temporary_vec::<f64>(u_count, "Rhino V1 surface stored U knots")?;
+    let mut stored_u = stored_u_buffer;
     for _ in 0..u_count {
         ctx.charge_work(1, "Rhino V1 counted record traversal")?;
         stored_u.push(reader.f64().or_else(|error| Err(malformed(ctx, &error)?))?);
     }
-    let (mut stored_v, stored_v_storage) =
+    let (stored_v_buffer, stored_v_storage) =
         ctx.temporary_vec::<f64>(v_count, "Rhino V1 surface stored V knots")?;
+    let mut stored_v = stored_v_buffer;
     for _ in 0..v_count {
         ctx.charge_work(1, "Rhino V1 counted record traversal")?;
         stored_v.push(reader.f64().or_else(|error| Err(malformed(ctx, &error)?))?);
@@ -1664,8 +1667,9 @@ fn legacy_surface(
     let pole_count = counts[0].checked_mul(counts[1]).ok_or_else(|| {
         CodecError::NotImplemented("V1 surface pole count exceeds address space".to_string())
     })?;
-    let (mut control_points, flat_poles_storage) =
+    let (control_points_buffer, flat_poles_storage) =
         ctx.temporary_vec::<FinitePoint3>(pole_count, "Rhino V1 surface poles")?;
+    let mut control_points = control_points_buffer;
     let mut weight_storage = ctx.reserve_scoped(0, "Rhino V1 surface weight workspace")?;
     let mut weights = if rational_mode != 0 {
         Some(weight_storage.with_storage(|| {
@@ -1770,12 +1774,8 @@ fn legacy_surface(
     )?;
     drop(weight_row_storage);
     match surface {
-        Ok(surface) => {
-            if rational_mode == 0 {
-                row_storage.commit()?;
-            }
-            Ok(surface)
-        }
+        Ok(surface) if rational_mode == 0 => row_storage.commit_value(surface),
+        Ok(surface) => Ok(surface),
         Err(error) => {
             drop(row_storage);
             Err(CodecError::Malformed(ctx.format_retained(
@@ -2822,8 +2822,7 @@ fn append_legacy_brep(
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 };
-                pcurve_storage.commit()?;
-                model.pcurves.push(pcurve);
+                model.pcurves.push(pcurve_storage.commit_value(pcurve)?);
                 let coedge_id = cadmpeg_ir::ids::CoedgeId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "coedge"),
                     legacy_identity_key(ctx.format_retained(
@@ -3283,8 +3282,9 @@ fn legacy_mesh(
             minimum.z + step[2] * f64::from(q[2]),
         ));
     }
-    let (mut faces, _faces_storage) =
+    let (faces_buffer, _faces_storage) =
         ctx.temporary_vec::<[u32; 4]>(face_count, "Rhino V1 mesh faces")?;
+    let mut faces = faces_buffer;
     for _ in 0..face_count {
         ctx.charge_work(1, "Rhino V1 counted record traversal")?;
         let face = if point_count < 65535 {
@@ -3408,7 +3408,8 @@ fn evaluate_nurbs(
     })?;
     let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, "Rhino V1 curve evaluation")?;
-    let (mut values, _workspace) = ctx.scoped_vector_storage(count, "Rhino V1 curve evaluation")?;
+    let (values_buffer, _workspace) = ctx.scoped_vector_storage(count, "Rhino V1 curve evaluation")?;
+    let mut values = values_buffer;
     let poles = curve.pole_rows();
     for j in ctx.admit_iter(0..count, "Rhino V1 curve evaluation")? {
         let index = span - degree + j;
@@ -3501,17 +3502,17 @@ pub(crate) fn decode_v1_with_header(
     let mut decoded_nurbs_curves = 0_usize;
     let mut decoded_nurbs_surfaces = 0_usize;
     let mut decoded_nurbs_breps = 0_usize;
+    let mut omitted_storage = ctx.reserve_scoped(0, "Rhino V1 omitted typecode workspace")?;
     let mut omitted = BTreeMap::<u32, usize>::new();
+    let mut source_storage = ctx.reserve_scoped(0, "Rhino V1 source record workspace")?;
     let mut opaque_records = Vec::new();
     let mut direct_storage = ctx.reserve_scoped(0, "Rhino V1 direct record workspace")?;
     let mut direct_record_storage = Vec::new();
     let mut direct_records = Vec::new();
-    let mut omitted_storage = ctx.reserve_scoped(0, "Rhino V1 omitted typecode workspace")?;
     let mut typed_source_records = Vec::new();
-    let mut source_storage = ctx.reserve_scoped(0, "Rhino V1 source record workspace")?;
     let mut retained_bytes = 0_usize;
-    let mut diagnostics = Vec::new();
     let mut diagnostic_storage = ctx.reserve_scoped(0, "Rhino V1 diagnostic workspace")?;
+    let mut diagnostics = Vec::new();
     let mut tolerance_losses = Vec::new();
     let mut scale = MillimeterScale::IDENTITY;
     while offset < data.len() {
@@ -3815,13 +3816,14 @@ pub(crate) fn decode_v1_with_header(
                             1,
                             "Rhino V1 curve topology collections",
                         )?;
-                        let (suffix, mut suffix_storage) =
+                        let (suffix_buffer, mut suffix_storage) =
                             ctx.with_scoped_storage("Rhino V1 curve identity workspace", || {
                                 ctx.format_retained(
                                     format_args!("legacy-{decoded_curves:06}"),
                                     "Rhino V1 curve identity",
                                 )
                             })?;
+                        let suffix = suffix_buffer;
                         let suffix_key = suffix_storage.with_storage(|| {
                             legacy_identity_key(
                                 ctx.copy_retained_text(&suffix, "Rhino V1 curve identity")?,
@@ -4020,13 +4022,14 @@ pub(crate) fn decode_v1_with_header(
         } else if matches!(chunk.typecode, TCODE_LEGACY_FAC | TCODE_LEGACY_SHL) && !chunk.short() {
             let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep parsing workspace")?;
             match legacy_brep(ctx, &mut workspace, data, &chunk, scale).and_then(|brep| {
-                let (suffix, _suffix_storage) =
+                let (suffix_buffer, _suffix_storage) =
                     ctx.with_scoped_storage("Rhino V1 Brep identity workspace", || {
                         ctx.format_retained(
                             format_args!("legacy-brep-{decoded_breps:06}"),
                             "Rhino V1 Brep identity",
                         )
                     })?;
+                let suffix = suffix_buffer;
                 append_legacy_brep(ctx, &mut ir, brep, &suffix)
             }) {
                 Ok(()) => {
