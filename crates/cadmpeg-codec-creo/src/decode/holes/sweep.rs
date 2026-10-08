@@ -646,6 +646,9 @@ pub(in crate::decode) fn extrusion_span(
     direction: [f64; 3],
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
 ) -> Result<Option<ExtrusionSpan>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     let Some(direction) = normalized_span_direction(direction) else {
         return Ok(None);
     };

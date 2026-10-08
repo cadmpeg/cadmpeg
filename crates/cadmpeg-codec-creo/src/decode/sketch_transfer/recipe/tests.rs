@@ -2,6 +2,30 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
+#[test]
+fn empty_feature_operation_routes_preserve_original_refusal_without_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(super::current_feature_operation(&ctx, &[], 40).expect("empty selection").is_none());
+    assert!(super::current_feature_recipe(&ctx, &[], 40).expect("empty recipe").is_none());
+    assert!(super::current_additive_feature_recipe(&ctx, &[], 40)
+        .expect("empty additive recipe").is_none());
+    assert!(super::current_feature_recipe_parent(&ctx, &[], 40)
+        .expect("empty recipe parent").is_none());
+    let original = ctx.charge_work_limit(1, "prior recipe refusal").expect_err("refusal");
+    for error in [
+        super::current_feature_operation(&ctx, &[], 40).map(|_| ()),
+        super::current_feature_recipe(&ctx, &[], 40).map(|_| ()),
+        super::current_additive_feature_recipe(&ctx, &[], 40).map(|_| ()),
+        super::current_feature_recipe_parent(&ctx, &[], 40).map(|_| ()),
+    ] {
+        assert!(matches!(error, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+            if refusal == original));
+    }
+}
+
 use super::{
     feature_row_schema_classes, feature_schema_class, row_feature_schema_classes,
     unique_feature_revolution_extent,

@@ -207,6 +207,9 @@ pub(in super::super) fn current_feature_operation<'operations>(
     operations: &'operations [crate::feature::operations::FeatureOperation],
     feature_id: u32,
 ) -> Result<Option<&'operations crate::feature::operations::FeatureOperation>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(refusal));
+    }
     if operations.is_empty() {
         return Ok(None);
     }
