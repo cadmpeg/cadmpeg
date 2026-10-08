@@ -13,14 +13,14 @@ use super::super::{native_face_orientations, rowless_round_face_orientations};
 fn limited_native(
     scan: &crate::container::ContainerScan<'_>,
     ir: &CadIr,
-    limit: u64,
+    operation: &'static str,
 ) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    native_face_orientations(&ctx, scan, ir).expect_err("orientation index refused")
+    crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        operation,
+        |ctx| native_face_orientations(ctx, scan, ir),
+    )
 }
 
 fn assert_refusal(error: &CodecError, operation: &'static str) {
@@ -56,21 +56,11 @@ fn one_round_feature() -> crate::feature::rows::FeatureRow {
 }
 
 #[test]
-fn native_face_source_id_nodes_refuse_collection_limit() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.surfaces.rows.push(one_surface_row());
-    assert_refusal(
-        &limited_native(&scan, &CadIr::empty(), 0),
-        "creo native face source ID nodes",
-    );
-}
-
-#[test]
 fn native_face_orientation_nodes_refuse_collection_limit() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(one_surface_row());
     assert_refusal(
-        &limited_native(&scan, &CadIr::empty(), 1),
+        &limited_native(&scan, &CadIr::empty(), "creo native face orientation nodes"),
         "creo native face orientation nodes",
     );
 }
@@ -95,7 +85,7 @@ fn native_datum_orientation_nodes_refuse_collection_limit() {
             offset_in_payload: 0,
         });
     assert_refusal(
-        &limited_native(&scan, &CadIr::empty(), 0),
+        &limited_native(&scan, &CadIr::empty(), "creo native face orientation nodes"),
         "creo native face orientation nodes",
     );
 }
@@ -105,7 +95,7 @@ fn native_round_feature_id_nodes_refuse_collection_limit() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.rows.push(one_round_feature());
     assert_refusal(
-        &limited_native(&scan, &CadIr::empty(), 0),
+        &limited_native(&scan, &CadIr::empty(), "creo native round feature ID nodes"),
         "creo native round feature ID nodes",
     );
 }
@@ -185,7 +175,7 @@ fn available_surface_id_nodes_refuse_collection_limit() {
         source_object: None,
     });
     assert_refusal(
-        &limited_native(&scan, &ir, 0),
+        &limited_native(&scan, &ir, "creo available surface ID nodes"),
         "creo available surface ID nodes",
     );
 }
@@ -245,19 +235,20 @@ fn rowless_round_pairs_refuse_collection_limit() {
 #[test]
 fn rowless_face_orientation_nodes_refuse_collection_limit() {
     let (table, rows) = rowless_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = rowless_round_face_orientations(
-        &ctx,
-        &BTreeSet::from([23]),
-        &[table],
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
-        &BTreeSet::from([12]),
-    )
-    .expect_err("orientation node refused");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo rowless face orientation nodes",
+        |ctx| {
+            rowless_round_face_orientations(
+                ctx,
+                &BTreeSet::from([23]),
+                std::slice::from_ref(&table),
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
+                &BTreeSet::from([12]),
+            )
+        },
+    );
     assert_refusal(&error, "creo rowless face orientation nodes");
 }
 

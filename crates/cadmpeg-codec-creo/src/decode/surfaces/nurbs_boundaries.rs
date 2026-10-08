@@ -971,7 +971,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
     // state.
     if cubic_value == 0.0 {
         let mut roots = CubicRoots::new();
-        let quadratic_roots = real_roots(ctx, quadratic, linear, constant)?;
+        let quadratic_roots = real_roots(quadratic, linear, constant);
         for root in ctx
             .admit_iter(
                 quadratic_roots.as_slice(),
@@ -992,11 +992,10 @@ pub(in super::super) fn cubic_unit_interval_roots(
     stations.push(0.0);
     stations.push(1.0);
     let stationary_roots = real_roots(
-        ctx,
         Coefficient::summed(3.0 * cubic_value, 3.0 * cubic.terms()),
         Coefficient::summed(2.0 * quadratic_value, 2.0 * quadratic.terms()),
         linear,
-    )?;
+    );
     for root in ctx
         .admit_iter(
             stationary_roots.as_slice(),

@@ -2054,7 +2054,7 @@ pub(in super::super) fn transfer_cross_section_planes(
         ) else {
             continue;
         };
-        if is_axis_aligned(ctx, normal)? {
+        if is_axis_aligned(normal) {
             continue;
         }
         let id = crate::identity::compose_checked::<SurfaceId>(
