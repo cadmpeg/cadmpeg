@@ -8751,7 +8751,7 @@ fn side_one_recipe_edge(
     match candidates.as_slice() {
         [edge] => Ok(Some(*edge)),
         _ => Ok(
-            crate::design::edge_resolve::resolved_edge_candidate_intersection(selectors, edge_sets),
+            crate::design::edge_resolve::resolved_edge_candidate_intersection(decode, selectors, edge_sets)?,
         ),
     }
 }
@@ -9175,10 +9175,10 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 &contexts,
             )?;
             operand.resolved_edge_slot =
-                crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces(
+                crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces(decode,
                     &operand.recipe_selectors,
                     reference_edge_sets.iter().map(Vec::as_slice),
-                );
+                )?;
             continue;
         }
         if crate::design::design_feature_family(&scope.kind())
@@ -9222,10 +9222,10 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 &contexts,
             )?;
             operand.resolved_edge_slot =
-                crate::design::edge_resolve::resolved_edge_candidate_intersection(
+                crate::design::edge_resolve::resolved_edge_candidate_intersection(decode,
                     &operand.recipe_selectors,
                     reference_edge_sets.iter().map(Vec::as_slice),
-                );
+                )?;
             let resolved_axis = if let Some(edge) = operand.resolved_edge_slot {
                 topology::historical_edge_axis(decode, edge, topology)?
                     .and_then(|(origin, direction)| design_axis(origin, direction))
@@ -9503,10 +9503,10 @@ fn bind_active_edge_operand_candidates(
                     })?;
                 let all_reference_edge_sets =
                     topology::collect_reference_edge_sets(decode, &all_reference_faces, topology)?;
-                let edge = crate::design::edge_resolve::resolved_edge_candidate_intersection(
+                let edge = crate::design::edge_resolve::resolved_edge_candidate_intersection(decode,
                     &selectors,
                     reference_edge_sets.iter().map(Vec::as_slice),
-                );
+                )?;
                 Ok(Some((
                     *state_id,
                     edge,

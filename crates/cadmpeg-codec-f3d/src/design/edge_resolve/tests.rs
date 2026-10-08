@@ -1921,6 +1921,7 @@ mod assignment_limits;
 
 #[test]
 fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
+    crate::test_support::with_decode_context(|ctx| {
     use crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces;
 
     let selector = |edges| crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
@@ -1932,34 +1933,35 @@ fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
     };
     let selectors = [selector(vec![11, 12]), selector(vec![13])];
     assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(
+        unique_incidence_edge_shared_by_reference_faces(ctx,
             &selectors,
             [&[10, 11][..], &[11, 12][..], &[13, 14][..]],
-        ),
+        ).unwrap(),
         Some(11)
     );
     assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(&selectors, [&[11, 13][..], &[11, 13][..]],),
+        unique_incidence_edge_shared_by_reference_faces(ctx, &selectors, [&[11, 13][..], &[11, 13][..]],).unwrap(),
         None
     );
     assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(&[selector(vec![11])], [&[10, 11][..]],),
+        unique_incidence_edge_shared_by_reference_faces(ctx, &[selector(vec![11])], [&[10, 11][..]],).unwrap(),
         None
     );
     assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(
+        unique_incidence_edge_shared_by_reference_faces(ctx,
             &[selector(vec![11])],
             [&[10, 11][..], &[10, 11][..]],
-        ),
+        ).unwrap(),
         None
     );
     assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(
+        unique_incidence_edge_shared_by_reference_faces(ctx,
             &[selector(vec![11])],
             [&[10, 11, 11][..], &[11, 10][..]],
-        ),
+        ).unwrap(),
         None
     );
+    });
 }
 
 mod candidate_intersection;

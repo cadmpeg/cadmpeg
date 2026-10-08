@@ -1898,9 +1898,7 @@ fn edge_assignment_candidates<'a>(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
     let slots = if !selector_contexts.is_empty()
-        && selector_contexts
-            .iter()
-            .all(|selector| !selector.incidence_matching_edge_slots.is_empty())
+        && ctx.all_by(selector_contexts, |selector| Ok(!selector.incidence_matching_edge_slots.is_empty()), "select F3D edge assignment evidence")?
     {
         SelectorSlots::Incidence
     } else {
@@ -2567,217 +2565,211 @@ pub(super) fn edge_operand_reference_edge_sets(
 }
 
 pub(crate) fn resolved_edge_candidate_intersection<'a, I>(
+    ctx: &DecodeContext<'_>,
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: I,
-) -> Option<i64>
+) -> Result<Option<i64>, CodecError>
 where
     I: IntoIterator<Item = &'a [i64]>,
-    I::IntoIter: Clone,
 {
-    let ordered = shared_edge_sets.into_iter();
-    let has_reference_sets = ordered.clone().next().is_some();
-    let shared_edge_sets = ordered.filter(|edges| !edges.is_empty());
-    let references_unavailable = has_reference_sets && shared_edge_sets.clone().next().is_none();
-    let reference_candidates = (shared_edge_sets.clone().take(2).count() == 2)
-        .then(|| unique_edge_set_intersection(&shared_edge_sets));
+    let mut storage = ctx.reserve_scoped(0, "collect F3D shared edge sets")?;
+    let mut sets = Vec::new();
+    let mut first_set = None;
+    let mut has_reference_sets = false;
+    let mut source = shared_edge_sets.into_iter();
+    while let Some(edges) = ctx.next_charged(&mut source, "scan F3D shared edge sets")? {
+        has_reference_sets = true;
+        if !edges.is_empty() {
+            if sets.is_empty() {
+                if let Some(first) = first_set {
+                    ctx.push_scoped_vec(&mut storage, &mut sets, first, "collect F3D shared edge sets")?;
+                    ctx.push_scoped_vec(&mut storage, &mut sets, edges, "collect F3D shared edge sets")?;
+                } else {
+                    first_set = Some(edges);
+                }
+            } else {
+                ctx.push_scoped_vec(&mut storage, &mut sets, edges, "collect F3D shared edge sets")?;
+            }
+        }
+    }
+    // A single reference needs no allocated list.
+    let single = [first_set.unwrap_or(&[])];
+    let sets = if sets.is_empty() {
+        if first_set.is_some() { &single[..] } else { &[][..] }
+    } else {
+        sets.as_slice()
+    };
+    let references_unavailable = has_reference_sets && sets.is_empty();
+    let reference_candidates = if sets.len() >= 2 {
+        Some(unique_edge_set_intersection(ctx, sets)?)
+    } else {
+        None
+    };
     if reference_candidates == Some(EdgeSetIntersection::Disjoint) {
-        return None;
+        return Ok(None);
     }
     let reference = match reference_candidates {
         Some(EdgeSetIntersection::Unique(edge)) => Some(edge),
         _ => None,
     };
-    let incidence = (!references_unavailable)
-        .then(|| {
-            corroborated_edge_intersection(
-                selector_contexts,
-                &shared_edge_sets,
-                SelectorSlots::Incidence,
-            )
-        })
-        .flatten();
-    let boundary_count = (!references_unavailable)
-        .then(|| {
-            corroborated_edge_intersection(
-                selector_contexts,
-                &shared_edge_sets,
-                SelectorSlots::BoundaryCount,
-            )
-        })
-        .flatten();
-    let common_triplet =
-        corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
-    let cross_clause_triplet =
-        corroborated_cross_clause_triplet_intersection(selector_contexts, &shared_edge_sets);
-    let mut proofs = [
-        reference,
-        incidence,
-        boundary_count,
-        common_triplet,
-        cross_clause_triplet,
-    ]
-    .into_iter()
-    .flatten();
-    let edge = proofs.next()?;
-    proofs.all(|proof| proof == edge).then_some(edge)
+    let (incidence, boundary_count) = if references_unavailable {
+        (None, None)
+    } else {
+        (
+            corroborated_edge_intersection(ctx, selector_contexts, sets, SelectorSlots::Incidence)?,
+            corroborated_edge_intersection(ctx, selector_contexts, sets, SelectorSlots::BoundaryCount)?,
+        )
+    };
+    let common_triplet = corroborated_triplet_intersection(ctx, selector_contexts, sets, TripletProof::Common)?;
+    let cross_clause_triplet = corroborated_triplet_intersection(ctx, selector_contexts, sets, TripletProof::CrossClause)?;
+    let mut proofs = [reference, incidence, boundary_count, common_triplet, cross_clause_triplet]
+        .into_iter().flatten();
+    let Some(edge) = proofs.next() else { return Ok(None); };
+    Ok(proofs.all(|proof| proof == edge).then_some(edge))
 }
 
 pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a, I>(
+    ctx: &DecodeContext<'_>,
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: I,
-) -> Option<i64>
+) -> Result<Option<i64>, CodecError>
 where
     I: IntoIterator<Item = &'a [i64]>,
-    I::IntoIter: Clone,
 {
-    let reference_edge_sets = reference_edge_sets.into_iter();
-    let mut candidate = None;
-    for edge in selector_contexts
-        .iter()
-        .flat_map(|selector| selector.incidence_matching_edge_slots.iter().copied())
-    {
-        if candidate == Some(edge) {
+    let Some(first_selector) = ctx.position_by(selector_contexts,
+        |selector| Ok(!selector.incidence_matching_edge_slots.is_empty()),
+        "find F3D active incidence selector")? else { return Ok(None); };
+    // Deduplicate support sets once, not once for each incidence candidate.
+    // Equality is set equality: order and repeated slots do not distinguish faces.
+    let mut storage = ctx.reserve_scoped(0, "collect F3D distinct reference edge sets")?;
+    let mut sets = Vec::<&[i64]>::new();
+    let mut source = reference_edge_sets.into_iter();
+    while let Some(edges) = ctx.next_charged(&mut source, "scan F3D reference edge sets")? {
+        if edges.is_empty() || ctx.any_by(&sets, |prior| {
+            Ok(ctx.all_by(*prior, |value| ctx.contains(edges, value, "compare F3D reference edge sets"), "scan F3D prior reference edges")?
+                && ctx.all_by(edges, |value| ctx.contains(prior, value, "compare F3D reference edge sets"), "scan F3D reference edges")?)
+        }, "find F3D duplicate reference edge set")? {
             continue;
         }
-        let mut distinct_matches = 0;
-        for (index, edges) in reference_edge_sets.clone().enumerate() {
-            if !edges.contains(&edge)
-                || reference_edge_sets.clone().take(index).any(|prior| {
-                    prior.iter().all(|value| edges.contains(value))
-                        && edges.iter().all(|value| prior.contains(value))
-                })
-            {
-                continue;
+        ctx.push_scoped_vec(&mut storage, &mut sets, edges, "collect F3D distinct reference edge sets")?;
+    }
+    let mut candidate = None;
+    let mut selectors = selector_contexts[first_selector..].iter();
+    while let Some(selector) = ctx.next_charged(&mut selectors, "scan F3D incidence selectors")? {
+        let mut edges = selector.incidence_matching_edge_slots.iter();
+        while let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D incidence edge candidates")? {
+            if candidate == Some(edge) { continue; }
+            let mut distinct_matches = 0;
+            let mut references = sets.iter();
+            while let Some(set) = ctx.next_charged(&mut references, "scan F3D incidence reference sets")? {
+                if ctx.contains(set, &edge, "find F3D incidence reference edge")? {
+                    distinct_matches += 1;
+                    if distinct_matches == 2 { break; }
+                }
             }
-            distinct_matches += 1;
             if distinct_matches == 2 {
-                break;
+                if candidate.is_some() { return Ok(None); }
+                candidate = Some(edge);
             }
-        }
-        if distinct_matches == 2 {
-            if candidate.is_some() {
-                return None;
-            }
-            candidate = Some(edge);
         }
     }
-    candidate
-}
-
-fn corroborated_common_triplet_intersection<'a>(
-    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: &(impl Iterator<Item = &'a [i64]> + Clone),
-) -> Option<i64> {
-    let edge_pairs = selector_contexts.iter().flat_map(|selector| {
-        selector.clauses.iter().flatten().filter_map(|clause| {
-            clause.entry.common_incident_edge_ordinal()?;
-            let [first, second] = &clause.triplet_edge_slots;
-            Some((first.as_slice(), second.as_slice()))
-        })
-    });
-    corroborated_edge_pair_intersection(edge_pairs, shared_edge_sets)
-}
-
-fn corroborated_cross_clause_triplet_intersection<'a>(
-    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: &(impl Iterator<Item = &'a [i64]> + Clone),
-) -> Option<i64> {
-    let edge_pairs = selector_contexts
-        .iter()
-        .filter_map(|selector| {
-            let [Some(left), Some(right)] = selector.clauses.as_slice() else {
-                return None;
-            };
-            Some(
-                left.triplet_edge_slots
-                    .iter()
-                    .zip(&right.triplet_edge_slots)
-                    .map(|(left, right)| (left.as_slice(), right.as_slice())),
-            )
-        })
-        .flatten();
-    corroborated_edge_pair_intersection(edge_pairs, shared_edge_sets)
-}
-
-fn corroborated_edge_pair_intersection<'a, 'b>(
-    edge_pairs: impl Iterator<Item = (&'a [i64], &'a [i64])> + Clone,
-    shared_edge_sets: &(impl Iterator<Item = &'b [i64]> + Clone),
-) -> Option<i64> {
-    let active_pairs =
-        edge_pairs.filter(|(left, right)| left.iter().any(|edge| right.contains(edge)));
-    let (first, second) = active_pairs.clone().next()?;
-    let mut candidate = None;
-    for &edge in first {
-        if second.contains(&edge)
-            && active_pairs
-                .clone()
-                .all(|(left, right)| left.contains(&edge) && right.contains(&edge))
-            && shared_edge_sets.clone().all(|set| set.contains(&edge))
-        {
-            if candidate.is_some_and(|selected| selected != edge) {
-                return None;
-            }
-            candidate = Some(edge);
-        }
-    }
-    candidate
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum EdgeSetIntersection {
-    Disjoint,
-    Unique(i64),
-    Ambiguous,
-}
-
-fn unique_edge_set_intersection<'a>(
-    edge_sets: &(impl Iterator<Item = &'a [i64]> + Clone),
-) -> EdgeSetIntersection {
-    let mut sets = edge_sets.clone();
-    let Some(first) = sets.next() else {
-        return EdgeSetIntersection::Disjoint;
-    };
-    let mut candidate = None;
-    for &edge in first {
-        if edge_sets.clone().all(|set| set.contains(&edge)) {
-            if candidate.is_some_and(|selected| selected != edge) {
-                return EdgeSetIntersection::Ambiguous;
-            }
-            candidate = Some(edge);
-        }
-    }
-    candidate.map_or(EdgeSetIntersection::Disjoint, EdgeSetIntersection::Unique)
+    Ok(candidate)
 }
 
 #[derive(Clone, Copy)]
-enum SelectorSlots {
-    Incidence,
-    BoundaryCount,
+enum TripletProof { Common, CrossClause }
+
+fn corroborated_triplet_intersection<'a>(
+    ctx: &DecodeContext<'_>,
+    selector_contexts: &'a [crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
+    shared_edge_sets: &[&[i64]],
+    proof: TripletProof,
+) -> Result<Option<i64>, CodecError> {
+    // Keep only borrowed active pairs. Test pair overlap once, before candidate queries.
+    let mut storage = ctx.reserve_scoped(0, "collect F3D active triplet edge pairs")?;
+    let mut pairs = Vec::new();
+    let mut add_pair = |left: &'a [i64], right: &'a [i64]| -> Result<(), CodecError> {
+        if ctx.any_by(left, |edge| ctx.contains(right, edge, "find F3D triplet pair overlap"), "scan F3D triplet pair overlap")? {
+            ctx.push_scoped_vec(&mut storage, &mut pairs, (left, right), "collect F3D active triplet edge pairs")?;
+        }
+        Ok(())
+    };
+    for selector in ctx.admit_iter(selector_contexts, "scan F3D triplet selectors")? {
+        match proof {
+            TripletProof::Common => {
+                for clause in ctx.admit_iter(&selector.clauses, "scan F3D triplet selector clauses")? {
+                    let Some(clause) = clause else { continue; };
+                    if clause.entry.common_incident_edge_ordinal().is_none() { continue; }
+                    let [first, second] = &clause.triplet_edge_slots;
+                    add_pair(first, second)?;
+                }
+            }
+            TripletProof::CrossClause => {
+                let [Some(left), Some(right)] = selector.clauses.as_slice() else { continue; };
+                for (left, right) in left.triplet_edge_slots.iter().zip(&right.triplet_edge_slots) {
+                    add_pair(left, right)?;
+                }
+            }
+        }
+    }
+    let Some(&(first, second)) = pairs.first() else { return Ok(None); };
+    let mut candidate = None;
+    let mut edges = first.iter();
+    while let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D triplet edge candidates")? {
+        if ctx.contains(second, &edge, "find F3D triplet second edge")?
+            && ctx.all_by(pairs.iter().skip(1), |(left, right)| {
+                Ok(ctx.contains(left, &edge, "find F3D corroborating triplet edge")?
+                    && ctx.contains(right, &edge, "find F3D corroborating triplet edge")?)
+            }, "scan F3D corroborating triplet pairs")?
+            && ctx.all_by(shared_edge_sets, |set| ctx.contains(set, &edge, "find F3D shared triplet edge"), "scan F3D shared triplet sets")?
+        {
+            if candidate.is_some_and(|selected| selected != edge) { return Ok(None); }
+            candidate = Some(edge);
+        }
+    }
+    Ok(candidate)
 }
 
-fn corroborated_edge_intersection<'a>(
-    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: &(impl Iterator<Item = &'a [i64]> + Clone),
-    slots: SelectorSlots,
-) -> Option<i64> {
-    let mut selectors = selector_contexts.iter();
-    let first = selectors.next()?;
+#[derive(Clone, Copy, PartialEq)]
+enum EdgeSetIntersection { Disjoint, Unique(i64), Ambiguous }
+
+fn unique_edge_set_intersection(
+    ctx: &DecodeContext<'_>,
+    edge_sets: &[&[i64]],
+) -> Result<EdgeSetIntersection, CodecError> {
+    let Some(first) = edge_sets.first() else { return Ok(EdgeSetIntersection::Disjoint); };
     let mut candidate = None;
-    for &edge in selector_candidate_edges(first, slots) {
-        if !selector_contexts
-            .iter()
-            .skip(1)
-            .all(|selector| selector_candidate_edges(selector, slots).contains(&edge))
-            || !shared_edge_sets.clone().all(|set| set.contains(&edge))
-        {
+    let mut edges = first.iter();
+    while let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D reference intersection candidates")? {
+        if ctx.all_by(edge_sets.iter().skip(1), |set| ctx.contains(set, &edge, "find F3D reference intersection edge"), "scan F3D reference intersection sets")? {
+            if candidate.is_some_and(|selected| selected != edge) { return Ok(EdgeSetIntersection::Ambiguous); }
+            candidate = Some(edge);
+        }
+    }
+    Ok(candidate.map_or(EdgeSetIntersection::Disjoint, EdgeSetIntersection::Unique))
+}
+
+#[derive(Clone, Copy)]
+enum SelectorSlots { Incidence, BoundaryCount }
+
+fn corroborated_edge_intersection(
+    ctx: &DecodeContext<'_>,
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
+    shared_edge_sets: &[&[i64]],
+    slots: SelectorSlots,
+) -> Result<Option<i64>, CodecError> {
+    let Some(first) = selector_contexts.first() else { return Ok(None); };
+    let mut candidate = None;
+    let mut edges = selector_candidate_edges(first, slots).iter();
+    while let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D selector intersection candidates")? {
+        if !ctx.all_by(selector_contexts.iter().skip(1), |selector| ctx.contains(selector_candidate_edges(selector, slots), &edge, "find F3D corroborating selector edge"), "scan F3D corroborating selectors")?
+            || !ctx.all_by(shared_edge_sets, |set| ctx.contains(set, &edge, "find F3D shared selector edge"), "scan F3D shared selector sets")? {
             continue;
         }
-        if candidate.is_some_and(|selected| selected != edge) {
-            return None;
-        }
+        if candidate.is_some_and(|selected| selected != edge) { return Ok(None); }
         candidate = Some(edge);
     }
-    candidate
+    Ok(candidate)
 }
 
 fn corroborated_edge_candidates<'a>(
@@ -2786,17 +2778,17 @@ fn corroborated_edge_candidates<'a>(
     slots: SelectorSlots,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    let mut selectors = selector_contexts.iter();
-    let Some(first_selector) = selectors.next() else {
+    let Some(first_selector) = selector_contexts.first() else {
         return Ok(None);
     };
     let first = selector_candidate_edges(first_selector, slots);
     if first.is_empty() {
         return Ok(None);
     }
+    let mut storage = ctx.reserve_scoped(0, "hold F3D corroborated edge candidates")?;
     let mut candidates = Vec::new();
-    for &edge in first {
-        ctx.push_vec(&mut candidates, edge, "f3d corroborated edge candidate")?;
+    for &edge in ctx.admit_iter(first, "scan F3D corroborated candidate source")? {
+        ctx.push_scoped_vec(&mut storage, &mut candidates, edge, "f3d corroborated edge candidate")?;
     }
     ctx.sort_unstable_by(
         &mut candidates,
@@ -2804,23 +2796,26 @@ fn corroborated_edge_candidates<'a>(
         Ord::cmp,
         "f3d corroborated edge candidate sort",
     )?;
-    candidates.dedup();
-    for selector in selectors {
+    ctx.dedup_vec(&mut candidates, "deduplicate F3D corroborated edge candidates")?;
+    let mut selectors = selector_contexts[1..].iter();
+    while let Some(selector) = ctx.next_charged(&mut selectors, "scan F3D corroborated candidate selectors")? {
         let selector_edges = selector_candidate_edges(selector, slots);
         if selector_edges.is_empty() {
             return Ok(None);
         }
-        candidates.retain(|candidate| selector_edges.contains(candidate));
+        ctx.retain_vec(&mut candidates, |candidate| ctx.contains(selector_edges, candidate, "find F3D corroborated selector candidate"), "retain F3D corroborated selector candidates")?;
         if candidates.is_empty() {
             return Ok(None);
         }
     }
-    for shared_edges in shared_edge_sets {
-        candidates.retain(|candidate| shared_edges.contains(candidate));
+    let mut shared = shared_edge_sets.into_iter();
+    while let Some(shared_edges) = ctx.next_charged(&mut shared, "scan F3D corroborated shared sets")? {
+        ctx.retain_vec(&mut candidates, |candidate| ctx.contains(shared_edges, candidate, "find F3D corroborated shared candidate"), "retain F3D corroborated shared candidates")?;
         if candidates.is_empty() {
             return Ok(None);
         }
     }
+    storage.commit()?;
     Ok(Some(candidates))
 }
 
