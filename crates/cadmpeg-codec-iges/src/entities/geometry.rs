@@ -1466,10 +1466,21 @@ pub(super) fn curve_geometry_coplanar(
                         .try_clone_for_decode(ctx, "iges coplanar active curve id")?;
                     ctx.insert_btree_set(active, active_id, "iges coplanar active curves")
                 })?;
-                let segment_valid = curve_geometry_coplanar(
-                    geometry, index, transform, plane, resolution, active, ctx,
-                )?;
-                ctx.remove_btree_set(active, &segment.curve, "iges coplanar active removal")?;
+                let result = (|| {
+                    let valid = curve_geometry_coplanar(
+                        geometry, index, transform, plane, resolution, active, ctx,
+                    )?;
+                    ctx.remove_btree_set(active, &segment.curve, "iges coplanar active removal")?;
+                    Ok(valid)
+                })();
+                let segment_valid = match result {
+                    Ok(valid) => valid,
+                    Err(error) => {
+                        // Destroy the path before this frame's storage expires.
+                        drop(std::mem::take(active));
+                        return Err(error);
+                    }
+                };
                 if !segment_valid {
                     valid = false;
                     break;
