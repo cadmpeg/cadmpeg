@@ -655,12 +655,12 @@ impl ArrayValues<'_> {
         let Some(raw) = count.checked_mul(2).and_then(|end| raw.get(..end)) else {
             return Ok(None);
         };
+        let (values, storage) = ctx.temporary_vec(count, "NX NURBS multiplicity prefix")?;
+        let mut prefix = ArrayPrefix { values, _storage: storage };
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(count),
             "read NX NURBS multiplicities",
         )?;
-        let (values, storage) = ctx.temporary_vec(count, "NX NURBS multiplicity prefix")?;
-        let mut prefix = ArrayPrefix { values, _storage: storage };
         for bytes in raw.chunks_exact(2) {
             let Some(value) = View::u16_be_at(bytes, 0) else {
                 return Ok(None);
@@ -680,12 +680,12 @@ impl ArrayValues<'_> {
         let Some(raw) = count.checked_mul(8).and_then(|end| raw.get(..end)) else {
             return Ok(None);
         };
+        let (values, storage) = ctx.temporary_vec(count, "NX NURBS knot prefix")?;
+        let mut prefix = ArrayPrefix { values, _storage: storage };
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(count),
             "read NX NURBS knots",
         )?;
-        let (values, storage) = ctx.temporary_vec(count, "NX NURBS knot prefix")?;
-        let mut prefix = ArrayPrefix { values, _storage: storage };
         for bytes in raw.chunks_exact(8) {
             let Some(value) = View::f64_be_at(bytes, 0) else {
                 return Ok(None);
