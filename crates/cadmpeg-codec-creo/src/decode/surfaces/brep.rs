@@ -1026,7 +1026,7 @@ fn model_typed_nonlinear_curve_ids(
             continue;
         };
         if source_carriers
-            .curve_geometry(curve)
+            .curve_geometry(curve)?
             .solved()
             .is_some_and(curve_geometry_is_typed_nonlinear)
         {
@@ -1072,43 +1072,43 @@ struct NativeCircleLoop {
 struct NativeCurveEvidence<'a> {
     typed_nonlinear_curve_ids: &'a BTreeSet<u32>,
     model_curves: &'a [Curve],
-    source_carriers: &'a crate::decode::source_carriers::SourceUnitCarriers,
+    source_carriers: &'a crate::decode::source_carriers::SourceUnitCarriers<'a, 'a>,
 }
 
 fn native_circle_loop_geometry(
     lp: &crate::topology::Loop,
     model_curves: &[Curve],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> Option<NativeCircleLoop> {
+) -> Result<Option<NativeCircleLoop>, cadmpeg_core::CodecError> {
     let [first, second] = lp.half_edges() else {
-        return None;
+        return Ok(None);
     };
     if first.curve_id == second.curve_id {
-        return None;
+        return Ok(None);
     }
-    let first = exactly_one(model_curves.iter().filter(|curve| {
+    let Some(first) = exactly_one(model_curves.iter().filter(|curve| {
         crate::identity::matches_numbered_identity(
             curve.id.as_str(),
             "creo:visibgeom:curve#",
             first.curve_id,
         )
-    }))?;
-    let second = exactly_one(model_curves.iter().filter(|curve| {
+    })) else { return Ok(None); };
+    let Some(second) = exactly_one(model_curves.iter().filter(|curve| {
         crate::identity::matches_numbered_identity(
             curve.id.as_str(),
             "creo:visibgeom:curve#",
             second.curve_id,
         )
-    }))?;
+    })) else { return Ok(None); };
     let (
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve_2)),
     ) = (
-        source_carriers.curve_geometry(first),
-        source_carriers.curve_geometry(second),
+        source_carriers.curve_geometry(first)?,
+        source_carriers.curve_geometry(second)?,
     )
     else {
-        return None;
+        return Ok(None);
     };
     let first_center = circle_curve.center();
     let first_axis = circle_curve.frame().axis().as_raw();
@@ -1120,13 +1120,13 @@ fn native_circle_loop_geometry(
         || !points_are_geometrically_coincident(first_center, second_center)
         || !vectors_are_parallel(*first_axis, *second_axis)
     {
-        return None;
+        return Ok(None);
     }
-    Some(NativeCircleLoop {
+    Ok(Some(NativeCircleLoop {
         center: first_center,
         axis: *first_axis,
         radius: first_radius,
-    })
+    }))
 }
 
 fn ordered_two_edge_circle_loops<'a>(
@@ -1147,7 +1147,7 @@ fn ordered_two_edge_circle_loops<'a>(
     let normal = plane_surface.frame().axis().as_raw();
     let mut circle_loops = Vec::new();
     for lp in ctx.admit_iter(loops, "creo B-rep loop traversal")? {
-        let Some(circle) = native_circle_loop_geometry(lp, model_curves, source_carriers) else {
+        let Some(circle) = native_circle_loop_geometry(lp, model_curves, source_carriers)? else {
             return Ok(None);
         };
         ctx.reserve_vec(&mut circle_loops, 1, "creo native circle loop geometry")?;
@@ -2549,7 +2549,7 @@ pub(in super::super) fn transfer_native_brep(
             if native_parameter_loop_polygon(
                 ctx,
                 lp,
-                (face_id, source_carriers.surface_geometry(surface)),
+                (face_id, source_carriers.surface_geometry(surface)?),
                 &incidence,
                 solved_vertices,
                 &native_pcurves,
@@ -2580,7 +2580,7 @@ pub(in super::super) fn transfer_native_brep(
                 ordered_native_parameter_face_loops(
                     ctx,
                     loops,
-                    (face_id, source_carriers.surface_geometry(surface)),
+                    (face_id, source_carriers.surface_geometry(surface)?),
                     &incidence,
                     solved_vertices,
                     &native_pcurves,
@@ -2821,7 +2821,7 @@ pub(in super::super) fn transfer_native_brep(
             let candidate = matching_curve.map(|index| &mut ir.model.curves[index]);
             if let Some(candidate) = candidate {
                 let mut geometry = source_carriers
-                    .curve_geometry(candidate)
+                    .curve_geometry(candidate)?
                     .try_clone_for_decode(ctx, "creo B-rep edge source curve geometry")?;
                 let derived_line =
                     ctx.contains_btree_set(
@@ -3346,7 +3346,7 @@ pub(in super::super) fn transfer_native_brep(
                             else {
                                 return Ok(None);
                             };
-                            Ok(Some((source_carriers.surface_geometry(surface), traversal)))
+                            Ok(Some((source_carriers.surface_geometry(surface)?, traversal)))
                         })()?;
                         match inputs {
                             Some((surface, traversal)) => {
@@ -3405,10 +3405,12 @@ pub(in super::super) fn transfer_native_brep(
                             ) else {
                                 return Ok(None);
                             };
+                            let source_surface = source_carriers.surface_geometry(surface)?;
+                            let source_curve = source_carriers.curve_geometry(curve)?;
                             let planar = planar_curve_pcurve(
                                 ctx,
-                                source_carriers.surface_geometry(surface),
-                                source_carriers.curve_geometry(curve),
+                                source_surface,
+                                source_curve,
                                 &format_args!(
                                     "VisibGeom curve-topology row {} on face {face_id}",
                                     half_edge.curve_id
@@ -3419,22 +3421,22 @@ pub(in super::super) fn transfer_native_brep(
                                 .map(|geometry| (geometry, "projected_planar_pcurve"))
                                 .or_else(|| {
                                     surface_of_revolution_parallel_pcurve(
-                                        source_carriers.surface_geometry(surface),
-                                        source_carriers.curve_geometry(curve),
+                                        source_surface,
+                                        source_curve,
                                     )
                                     .map(|geometry| (geometry, "projected_parallel_conic_pcurve"))
                                 })
                                 .or_else(|| {
                                     meridian_circle_pcurve(
-                                        source_carriers.surface_geometry(surface),
-                                        source_carriers.curve_geometry(curve),
+                                        source_surface,
+                                        source_curve,
                                     )
                                     .map(|geometry| (geometry, "projected_meridian_pcurve"))
                                 })
                                 .or_else(|| {
                                     ruled_generator_line_pcurve(
-                                        source_carriers.surface_geometry(surface),
-                                        source_carriers.curve_geometry(curve),
+                                        source_surface,
+                                        source_curve,
                                     )
                                     .map(|geometry| (geometry, "projected_ruled_generator_pcurve"))
                                 })
@@ -3443,7 +3445,7 @@ pub(in super::super) fn transfer_native_brep(
                             };
                             Ok(Some((
                                 geometry,
-                                source_carriers.source_edge_parameter_range(edge),
+                                source_carriers.source_edge_parameter_range(edge)?,
                                 row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
                                 tag,
                             )))

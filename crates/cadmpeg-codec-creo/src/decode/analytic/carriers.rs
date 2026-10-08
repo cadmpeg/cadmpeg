@@ -154,7 +154,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                             1,
                             "creo topology-bound boundary curves",
                         )?;
-                        boundary_curves.push(source_carriers.curve_geometry(curve));
+                        boundary_curves.push(source_carriers.curve_geometry(curve)?);
                     }
                 }
             }
@@ -218,7 +218,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 if let Some(surface) = matching_surface {
                     conflict = existing_plane_agrees_with_topology(
                         ctx,
-                        source_carriers.surface_geometry(surface),
+                        source_carriers.surface_geometry(surface)?,
                         plane,
                     )? == Some(false);
                 }
@@ -226,7 +226,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             if !conflict {
                 continue;
             }
-            source_carriers.remove_surface(&id);
+            source_carriers.remove_surface(&id)?;
             for surface in &mut ir.model.surfaces {
                 if ctx.equal(
                     &surface.id,
@@ -542,7 +542,7 @@ pub(in crate::decode) fn placed_carriers(
                 }
             };
             if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-                source_carriers.surface_geometry(surface)
+                source_carriers.surface_geometry(surface)?
             {
                 let origin = plane_surface.origin().get();
                 let normal = plane_surface.frame().axis().as_raw();
@@ -567,7 +567,7 @@ pub(in crate::decode) fn placed_carriers(
                 } else {
                     carriers.remove(&row.id);
                 }
-            } else if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface))
+            } else if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)?)
             {
                 ctx.insert_btree_map(&mut carriers, row.id, carrier, "creo placed carrier nodes")?;
             }
@@ -595,7 +595,7 @@ pub(in crate::decode) fn placed_carriers(
             carriers.remove(&datum.id);
             continue;
         };
-        if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
+        if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)?) {
             ctx.insert_btree_map(
                 &mut carriers,
                 datum.id,
@@ -636,7 +636,7 @@ pub(in crate::decode) fn placed_carriers(
             carriers.remove(id);
             continue;
         };
-        if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
+        if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)?) {
             ctx.insert_btree_map(&mut carriers, *id, carrier, "creo placed carrier nodes")?;
         }
     }
@@ -685,7 +685,7 @@ fn positional_cylinder_carrier(
             }
         }
         if let Some(surface) = model_surface.filter(|_| !duplicate_model_surface) {
-            if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
+            if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)?) {
                 return Ok(Some(carrier));
             }
         }

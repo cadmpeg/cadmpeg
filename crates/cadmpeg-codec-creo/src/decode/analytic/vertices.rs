@@ -791,7 +791,7 @@ pub(in crate::decode) fn solve_topological_vertices(
             continue;
         };
         let Some(points) =
-            nonperiodic_nurbs_endpoint_points(ctx, source_carriers.curve_geometry(geometry))?
+            nonperiodic_nurbs_endpoint_points(ctx, source_carriers.curve_geometry(geometry)?)?
         else {
             continue;
         };
@@ -813,7 +813,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         let Some(curve) = unique_model_curve(ctx, ir, &id)? else {
             continue;
         };
-        let geometry = source_carriers.curve_geometry(curve);
+        let geometry = source_carriers.curve_geometry(curve)?;
         let evaluable = matches!(
             geometry,
             CurveGeometry::Solved(

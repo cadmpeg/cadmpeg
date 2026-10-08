@@ -53,11 +53,10 @@ fn unique_source_surface_geometry<'a>(
             found = Some(surface);
         }
     }
-    Ok(Some(
-        found.map_or(SourceSurfaceGeometry::Missing, |surface| {
-            SourceSurfaceGeometry::Present(source_carriers.surface_geometry(surface))
-        }),
-    ))
+    Ok(Some(match found {
+        Some(surface) => SourceSurfaceGeometry::Present(source_carriers.surface_geometry(surface)?),
+        None => SourceSurfaceGeometry::Missing,
+    }))
 }
 
 fn blind_extrusion_from_carriers(

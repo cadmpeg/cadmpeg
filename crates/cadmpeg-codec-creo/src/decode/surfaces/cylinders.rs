@@ -395,16 +395,12 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                 selected_surface = Some(surface);
             }
         }
-        let Some(cylinder_surface) = selected_surface.filter(|_| !ambiguous_surface).and_then(
-            |surface| match source_carriers.surface_geometry(surface) {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
-                    Some(*cylinder)
-                }
-                _ => None,
-            },
-        ) else {
+        let geometry = selected_surface.filter(|_| !ambiguous_surface)
+            .map(|surface| source_carriers.surface_geometry(surface)).transpose()?;
+        let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) = geometry else {
             continue;
         };
+        let cylinder_surface = *cylinder_surface;
         let id = crate::identity::compose_checked::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,

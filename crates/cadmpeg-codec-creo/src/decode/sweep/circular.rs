@@ -592,7 +592,7 @@ fn resolved_circular_extrusion_profile(
                     exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                         entity.id() == &entity_use.entity && entity.sketch == *sketch_id
                     }))
-                    .map(|entity| source_carriers.sketch_geometry(entity).definition())
+                    .map(|entity| source_carriers.sketch_geometry(entity)).transpose()?.map(|geometry| geometry.definition())
                 {
                     return Ok(Some(([center.u, center.v], radius.get())));
                 }

@@ -1131,26 +1131,22 @@ fn reconciled_datum_plane_definition(
     };
     let normal = Vector3::from(plane.normal);
     let local_surfaces = placed_plane_surfaces(ctx, scan)?;
-    let u_axis = local_surfaces
-        .get(&surface_id)
-        .map(|surface| Vector3::from(surface.u_axis))
-        .or_else(|| {
-            let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| {
+    let u_axis = match local_surfaces.get(&surface_id) {
+        Some(surface) => Some(Vector3::from(surface.u_axis)),
+        None => {
+            match exactly_one(ir.model.surfaces.iter().filter(|surface| {
                 crate::identity::matches_numbered_identity(
-                    surface.id.as_str(),
-                    "creo:visibgeom:surface#",
-                    surface_id,
+                    surface.id.as_str(), "creo:visibgeom:surface#", surface_id,
                 )
-            }))?;
-            match source_carriers.surface_geometry(surface) {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                    let u_axis = plane_surface.frame().reference().as_raw();
-                    Some(*u_axis)
-                }
-                _ => None,
+            })) {
+                Some(surface) => match source_carriers.surface_geometry(surface)? {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(*plane.frame().reference().as_raw()),
+                    _ => None,
+                },
+                None => None,
             }
-        })
-        .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
+        }
+    }.unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
     Ok(cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
         Point3::from(plane.origin),
         normal,

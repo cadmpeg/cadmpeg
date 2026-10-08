@@ -544,7 +544,7 @@ pub(in crate::decode) fn reconciled_model_plane(
     let second = model_surfaces.next();
     let model_plane = match (first, second) {
         (None, None) => None,
-        (Some(surface), None) => match source_carriers.surface_geometry(surface) {
+        (Some(surface), None) => match source_carriers.surface_geometry(surface)? {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin().get();
                 let normal = plane_surface.frame().axis().as_raw();

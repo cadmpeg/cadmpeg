@@ -139,41 +139,25 @@ fn replacement_curve_refuses_source_node_and_id_copy_limits() {
         source_object: None,
     };
     let geometry = curve.geometry.clone();
-    let arena = DecodeArena::new();
-    let mut item_policy = DecodePolicy::service();
-    item_policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &item_policy).expect("empty root admitted");
-    let error = SourceUnitCarriers::default()
-        .replace_curve_geometry(&ctx, &mut curve, geometry.clone())
-        .expect_err("source curve node exceeds its limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo replacement source curve nodes"),
-        "{error:?}"
-    );
-    let mut byte_policy = DecodePolicy::service();
-    byte_policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &byte_policy).expect("empty root admitted");
-    let error = SourceUnitCarriers::default()
-        .replace_curve_geometry(&ctx, &mut curve, geometry.clone())
-        .expect_err("source curve ID exceeds its retained limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo replacement source curve IDs"),
-        "{error:?}"
-    );
+    for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "creo replacement source curve nodes"),
+        (ResourceDimension::MaterializedBytes, "creo replacement source curve IDs"),
+    ] {
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).replace_curve_geometry(ctx, &mut curve.clone(), geometry.clone())
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
+    }
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
     })
     .expect("service replacement");
-    assert_eq!(carriers.curve_geometry(&curve), &geometry);
+    assert_eq!(carriers.curve_geometry(&curve).expect("source carrier lookup"), &geometry);
 }
 
 #[test]
-fn replacement_curve_refuses_retained_geometry_copy() {
+fn replacement_curve_refuses_materialized_geometry_copy() {
     let id = CurveId::mint("creo:test:replacement-curve#1")
         .expect("valid test setup or admitted service result");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -187,25 +171,18 @@ fn replacement_curve_refuses_retained_geometry_copy() {
         geometry: geometry.clone(),
         source_object: None,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("valid test setup or admitted service result");
-    let error = SourceUnitCarriers::default()
-        .replace_curve_geometry(&ctx, &mut curve, geometry.clone())
-        .expect_err("source geometry copy exceeds retained limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo replacement source curve geometry"),
-        "{error:?}"
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::MaterializedBytes, "creo replacement source curve geometry", |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).replace_curve_geometry(ctx, &mut curve.clone(), geometry.clone())
+        },
     );
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo replacement source curve geometry"), "{error:?}");
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
     })
     .expect("valid test setup or admitted service result");
-    assert_eq!(carriers.curve_geometry(&curve), &geometry);
+    assert_eq!(carriers.curve_geometry(&curve).expect("source carrier lookup"), &geometry);
 }
 
 #[test]
@@ -216,41 +193,25 @@ fn replacement_surface_refuses_source_node_and_id_copy_limits() {
         source_object: None,
     };
     let geometry = surface.geometry.clone();
-    let arena = DecodeArena::new();
-    let mut item_policy = DecodePolicy::service();
-    item_policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &item_policy).expect("empty root admitted");
-    let error = SourceUnitCarriers::default()
-        .replace_surface_geometry(&ctx, &mut surface, geometry.clone())
-        .expect_err("source surface node exceeds its limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo replacement source surface nodes"),
-        "{error:?}"
-    );
-    let mut byte_policy = DecodePolicy::service();
-    byte_policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &byte_policy).expect("empty root admitted");
-    let error = SourceUnitCarriers::default()
-        .replace_surface_geometry(&ctx, &mut surface, geometry.clone())
-        .expect_err("source surface ID exceeds its retained limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo replacement source surface IDs"),
-        "{error:?}"
-    );
+    for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "creo replacement source surface nodes"),
+        (ResourceDimension::MaterializedBytes, "creo replacement source surface IDs"),
+    ] {
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).replace_surface_geometry(ctx, &mut surface.clone(), geometry.clone())
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
+    }
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
     })
     .expect("service replacement");
-    assert_eq!(carriers.surface_geometry(&surface), &geometry);
+    assert_eq!(carriers.surface_geometry(&surface).expect("source carrier lookup"), &geometry);
 }
 
 #[test]
-fn replacement_surface_refuses_retained_geometry_copy() {
+fn replacement_surface_refuses_materialized_geometry_copy() {
     let id = SurfaceId::mint("creo:test:replacement-surface#1")
         .expect("valid test setup or admitted service result");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -264,25 +225,18 @@ fn replacement_surface_refuses_retained_geometry_copy() {
         geometry: geometry.clone(),
         source_object: None,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("valid test setup or admitted service result");
-    let error = SourceUnitCarriers::default()
-        .replace_surface_geometry(&ctx, &mut surface, geometry.clone())
-        .expect_err("source geometry copy exceeds retained limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo replacement source surface geometry"),
-        "{error:?}"
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::MaterializedBytes, "creo replacement source surface geometry", |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).replace_surface_geometry(ctx, &mut surface.clone(), geometry.clone())
+        },
     );
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo replacement source surface geometry"), "{error:?}");
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
     })
     .expect("valid test setup or admitted service result");
-    assert_eq!(carriers.surface_geometry(&surface), &geometry);
+    assert_eq!(carriers.surface_geometry(&surface).expect("source carrier lookup"), &geometry);
 }
 
 #[test]
@@ -292,35 +246,16 @@ fn source_curve_admission_refuses_each_outer_boundary() {
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     };
-    let arena = DecodeArena::new();
-    for (limit, operation) in [(0, "creo source curve nodes"), (1, "creo model curves")] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let mut ir = CadIr::empty();
-        let mut carriers = SourceUnitCarriers::default();
-        let error = carriers
-            .admit_curve(&ctx, &mut ir, curve.clone())
-            .expect_err("curve collection boundary exceeds its limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
+    for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "creo source curve nodes"),
+        (ResourceDimension::CollectionItems, "creo model curves"),
+        (ResourceDimension::MaterializedBytes, "creo source curve IDs"),
+    ] {
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).admit_curve(ctx, &mut CadIr::empty(), curve.clone())
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
     }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = SourceUnitCarriers::default()
-        .admit_curve(&ctx, &mut CadIr::empty(), curve.clone())
-        .expect_err("source curve ID copy exceeds its limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo source curve IDs"),
-        "{error:?}"
-    );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -329,13 +264,13 @@ fn source_curve_admission_refuses_each_outer_boundary() {
     .expect("service curve admission");
     assert_eq!(ir.model.curves, vec![curve]);
     assert_eq!(
-        carriers.curve_geometry(&ir.model.curves[0]),
+        carriers.curve_geometry(&ir.model.curves[0]).expect("source carrier lookup"),
         &ir.model.curves[0].geometry
     );
 }
 
 #[test]
-fn source_curve_admission_refuses_retained_geometry_copy() {
+fn source_curve_admission_refuses_materialized_geometry_copy() {
     let id = CurveId::mint("creo:test:source-curve#1")
         .expect("valid test setup or admitted service result");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -349,26 +284,19 @@ fn source_curve_admission_refuses_retained_geometry_copy() {
         geometry: geometry.clone(),
         source_object: None,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("valid test setup or admitted service result");
-    let error = SourceUnitCarriers::default()
-        .admit_curve(&ctx, &mut CadIr::empty(), curve.clone())
-        .expect_err("source geometry copy exceeds retained limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo source curve geometry"),
-        "{error:?}"
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::MaterializedBytes, "creo source curve geometry", |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).admit_curve(ctx, &mut CadIr::empty(), curve.clone())
+        },
     );
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo source curve geometry"), "{error:?}");
     let mut carriers = SourceUnitCarriers::default();
     let mut ir = CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.admit_curve(ctx, &mut ir, curve.clone())
     })
     .expect("valid test setup or admitted service result");
-    assert_eq!(carriers.curve_geometry(&ir.model.curves[0]), &geometry);
+    assert_eq!(carriers.curve_geometry(&ir.model.curves[0]).expect("source carrier lookup"), &geometry);
 }
 
 #[test]
@@ -378,35 +306,16 @@ fn source_surface_admission_refuses_each_outer_boundary() {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     };
-    let arena = DecodeArena::new();
-    for (limit, operation) in [(0, "creo source surface nodes"), (1, "creo model surfaces")] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        let mut ir = CadIr::empty();
-        let mut carriers = SourceUnitCarriers::default();
-        let error = carriers
-            .admit_surface(&ctx, &mut ir, surface.clone())
-            .expect_err("surface collection boundary exceeds its limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(resource)
-            if resource.operation == operation),
-            "{error:?}"
-        );
+    for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "creo source surface nodes"),
+        (ResourceDimension::CollectionItems, "creo model surfaces"),
+        (ResourceDimension::MaterializedBytes, "creo source surface IDs"),
+    ] {
+        let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).admit_surface(ctx, &mut CadIr::empty(), surface.clone())
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == operation), "{error:?}");
     }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = SourceUnitCarriers::default()
-        .admit_surface(&ctx, &mut CadIr::empty(), surface.clone())
-        .expect_err("source surface ID copy exceeds its limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo source surface IDs"),
-        "{error:?}"
-    );
     let mut ir = CadIr::empty();
     let mut carriers = SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
@@ -415,13 +324,13 @@ fn source_surface_admission_refuses_each_outer_boundary() {
     .expect("service surface admission");
     assert_eq!(ir.model.surfaces, vec![surface]);
     assert_eq!(
-        carriers.surface_geometry(&ir.model.surfaces[0]),
+        carriers.surface_geometry(&ir.model.surfaces[0]).expect("source carrier lookup"),
         &ir.model.surfaces[0].geometry
     );
 }
 
 #[test]
-fn source_surface_admission_refuses_retained_geometry_copy() {
+fn source_surface_admission_refuses_materialized_geometry_copy() {
     let id = SurfaceId::mint("creo:test:source-surface#1")
         .expect("valid test setup or admitted service result");
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -435,26 +344,19 @@ fn source_surface_admission_refuses_retained_geometry_copy() {
         geometry: geometry.clone(),
         source_object: None,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("valid test setup or admitted service result");
-    let error = SourceUnitCarriers::default()
-        .admit_surface(&ctx, &mut CadIr::empty(), surface.clone())
-        .expect_err("source geometry copy exceeds retained limit");
-    assert!(
-        matches!(error, CodecError::ResourceLimit(resource)
-        if resource.operation == "creo source surface geometry"),
-        "{error:?}"
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::MaterializedBytes, "creo source surface geometry", |ctx| {
+            SourceUnitCarriers::for_decode(ctx, None).admit_surface(ctx, &mut CadIr::empty(), surface.clone())
+        },
     );
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == "creo source surface geometry"), "{error:?}");
     let mut carriers = SourceUnitCarriers::default();
     let mut ir = CadIr::empty();
     crate::decode::with_test_decode_ctx(|ctx| {
         carriers.admit_surface(ctx, &mut ir, surface.clone())
     })
     .expect("valid test setup or admitted service result");
-    assert_eq!(carriers.surface_geometry(&ir.model.surfaces[0]), &geometry);
+    assert_eq!(carriers.surface_geometry(&ir.model.surfaces[0]).expect("source carrier lookup"), &geometry);
 }
 
 #[test]
@@ -648,18 +550,15 @@ fn bounded_edge_admission_refuses_before_source_range_node() {
 
 #[test]
 fn bounded_edge_admission_refuses_before_source_range_id_copy() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut ir = CadIr::empty();
-    let error = SourceUnitCarriers::default()
-        .admit_edge(&ctx, &mut ir, admission_edge(Some([0.0, 1.0])))
-        .expect_err("source range key needs retained bytes");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::MaterializedBytes, "creo source edge range IDs", |ctx| {
+        let mut ir = CadIr::empty();
+        let result = SourceUnitCarriers::for_decode(ctx, None).admit_edge(ctx, &mut ir, admission_edge(Some([0.0, 1.0])));
+        if result.is_err() { assert!(ir.model.edges.is_empty()); }
+        result
+    });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::RetainedBytes
+        if resource.dimension == ResourceDimension::MaterializedBytes
             && resource.operation == "creo source edge range IDs"));
-    assert!(ir.model.edges.is_empty());
 }
 
 #[test]

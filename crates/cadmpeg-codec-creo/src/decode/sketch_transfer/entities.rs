@@ -141,7 +141,7 @@ fn placed_source_object(
 }
 
 /// Source sketch, resolved geometry, profiles, and destinations for entity transfer.
-pub(super) struct SectionEntityTransfer<'a> {
+pub(super) struct SectionEntityTransfer<'a, 'ctx, 'input> {
     pub scan: &'a ContainerScan<'a>,
     pub ir: &'a mut CadIr,
     pub annotations: &'a mut AnnotationBuilder,
@@ -164,12 +164,12 @@ pub(super) struct SectionEntityTransfer<'a> {
     pub profiles: Vec<Vec<SketchEntityUse>>,
     pub profile_entities: &'a BTreeSet<SketchEntityId>,
     pub losses: &'a mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    pub source_carriers: &'a mut crate::decode::source_carriers::SourceUnitCarriers,
+    pub source_carriers: &'a mut crate::decode::source_carriers::SourceUnitCarriers<'ctx, 'input>,
 }
 
 pub(super) fn transfer_section_entities(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    transfer: SectionEntityTransfer<'_>,
+    transfer: SectionEntityTransfer<'_, '_, '_>,
 ) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
     let SectionEntityTransfer {
         scan,

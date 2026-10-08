@@ -124,7 +124,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         let Some(surface) = surfaces.next().filter(|_| surfaces.next().is_none()) else {
             return Ok(None);
         };
-        match source_carriers.surface_geometry(surface) {
+        match source_carriers.surface_geometry(surface)? {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
                 ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
