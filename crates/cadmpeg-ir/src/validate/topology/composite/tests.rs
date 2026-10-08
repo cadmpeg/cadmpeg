@@ -158,8 +158,14 @@ fn composite_cycle_validation_deduplicates_roots_and_keeps_last_definition() {
     super::check(&ctx, &ir, &mut findings).unwrap();
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].entity.as_deref(), Some("test:model:curve#a"));
-    assert_eq!(findings[0].check, crate::report::check::Check::ReferentialIntegrity);
+    assert_eq!(
+        findings[0].check,
+        crate::report::check::Check::ReferentialIntegrity
+    );
     assert_eq!(findings[0].severity, crate::report::Severity::Error);
-    assert_eq!(findings[0].message, "composite curve graph contains a cycle");
+    assert_eq!(
+        findings[0].message,
+        "composite curve graph contains a cycle"
+    );
     ctx.finish_session().unwrap();
 }

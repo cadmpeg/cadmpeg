@@ -138,12 +138,15 @@ fn native_arena_lookup_admits_matches_and_misses_before_typed_reads() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             super::TYPED_RECORD_READ_COUNT.with(|count| count.set(0));
             let error = if lazy {
-                let mut records = namespace.arena_iter_as_for_decode::<serde_json::Value>(&ctx, name);
+                let mut records =
+                    namespace.arena_iter_as_for_decode::<serde_json::Value>(&ctx, name);
                 let error = records.next().unwrap().unwrap_err();
                 assert!(records.next().is_none());
                 error
             } else {
-                namespace.arena_as_for_decode::<serde_json::Value>(&ctx, name).unwrap_err()
+                namespace
+                    .arena_as_for_decode::<serde_json::Value>(&ctx, name)
+                    .unwrap_err()
             };
             super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 0));
             let CodecError::ResourceLimit(limit) = CodecError::from(error) else {
@@ -155,8 +158,14 @@ fn native_arena_lookup_admits_matches_and_misses_before_typed_reads() {
         }
     }
     let ctx = super::test_ctx();
-    assert!(namespace.arena_as_for_decode::<serde_json::Value>(&ctx, "missing").unwrap().is_empty());
-    assert!(namespace.arena_iter_as_for_decode::<serde_json::Value>(&ctx, "missing").next().is_none());
+    assert!(namespace
+        .arena_as_for_decode::<serde_json::Value>(&ctx, "missing")
+        .unwrap()
+        .is_empty());
+    assert!(namespace
+        .arena_iter_as_for_decode::<serde_json::Value>(&ctx, "missing")
+        .next()
+        .is_none());
 }
 
 #[test]
@@ -182,7 +191,10 @@ fn native_arena_iterator_borrows_lookup_key_and_reads_only_requested_records() {
     super::TYPED_RECORD_READ_COUNT.with(|count| count.set(0));
     let mut records = namespace.arena_iter_as_for_decode::<Record>(&ctx, &String::from("records"));
     super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 0));
-    assert_eq!(records.next().unwrap().unwrap().id, "test:native:record#first");
+    assert_eq!(
+        records.next().unwrap().unwrap().id,
+        "test:native:record#first"
+    );
     super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 1));
     drop(records);
     super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 1));

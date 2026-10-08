@@ -25,6 +25,8 @@ fn charged_procedural_curve_attachment_refuses_before_construction_copy() {
     let build = || {
         let owner = CurveId::mint("test:model:curve#charged").expect("valid curve identity");
         let mut model = Model::default();
+        // Existing output capacity isolates construction-identity admission.
+        model.procedural_curves.reserve(1);
         model.curves.push(Curve {
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -595,6 +597,8 @@ fn charged_procedural_surface_refuses_owner_copy_and_moves_solved_cache() {
     byte_policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy).unwrap();
     let mut refused = base.clone();
+    // Existing output capacity isolates owner-identity admission.
+    refused.model.procedural_surfaces.reserve(1);
     let error = refused
         .model
         .add_procedural_surface(&ctx, &owner, procedural.clone())
@@ -667,6 +671,8 @@ fn charged_procedural_curve_refuses_owner_copy_and_moves_solved_cache() {
     byte_policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy).unwrap();
     let mut refused = base.clone();
+    // Existing output capacity isolates construction-identity admission.
+    refused.model.procedural_curves.reserve(1);
     let error = refused
         .model
         .add_procedural_curve(&ctx, &owner, procedural.clone())

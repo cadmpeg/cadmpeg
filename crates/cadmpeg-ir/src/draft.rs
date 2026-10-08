@@ -1154,7 +1154,8 @@ mod tests {
                 panic!("comparison admission must retain its refusal");
             };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.additional, u64::try_from(target.len()).unwrap());
+            // The probe refuses the first byte pair before its comparison.
+            assert_eq!(limit.additional, 1);
             assert_eq!(
                 limit.operation,
                 if committed {
