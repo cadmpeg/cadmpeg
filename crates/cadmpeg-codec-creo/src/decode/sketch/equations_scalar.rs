@@ -215,19 +215,14 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = scratch.with_storage(|| section_equation_scalar_equality_values(ctx, definition))?;
-    let function_ten_points = if ctx.any_by(
-        &equations.rows,
-        |row| Ok(row.function_id == 10),
-        "creo function ten point scan",
-    )? {
-        Some(scratch.with_storage(|| variables.reconciled_points(ctx))?.points)
-    } else {
-        None
-    };
+    let mut function_ten_points = None;
     let mut rows = Vec::new();
     for equation in ctx.admit_iter(&equations.rows, "creo section source equation rows")? {
 
                 if equation.function_id == 10 {
+                    if function_ten_points.is_none() {
+                        function_ten_points = Some(scratch.with_storage(|| variables.reconciled_points(ctx))?.points);
+                    }
                     let Some(points) = function_ten_points.as_ref() else { continue; };
                     let Some((first, second, axis)) = section_equation_function_ten_axis_alignment(
                         ctx, equation,
