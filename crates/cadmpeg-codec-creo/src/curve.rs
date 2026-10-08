@@ -4040,11 +4040,28 @@ impl SimultaneousAffineValue {
                 variable,
                 "creo affine combined coefficient nodes",
             )? {
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let value = entry.get_mut();
-                    *value += sign * coefficient;
-                    if *value == 0.0 {
-                        entry.remove();
+                std::collections::btree_map::Entry::Occupied(entry) => {
+                    let value = *entry.get() + sign * coefficient;
+                    if value == 0.0 {
+                        let (key, key_storage) = ctx.with_scoped_storage(
+                            "creo affine combined coefficient removal key",
+                            || {
+                                ctx.copy_retained_text(
+                                    entry.key(),
+                                    "creo affine combined coefficient removal key",
+                                )
+                            },
+                        )?;
+                        drop(entry);
+                        ctx.remove_btree_map(
+                            &mut self.coefficients,
+                            &key,
+                            "creo affine combined coefficient removal work",
+                        )?;
+                        drop(key);
+                        drop(key_storage);
+                    } else {
+                        *entry.into_mut() = value;
                     }
                 }
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -4703,14 +4720,30 @@ impl DimensionForm {
                 name,
                 "creo dimension difference variable nodes",
             )? {
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                std::collections::btree_map::Entry::Occupied(entry) => {
                     let Some(value) = (*entry.get()).combine(coefficient, subtract) else {
                         return Ok(None);
                     };
                     if value.is_zero() {
-                        entry.remove();
+                        let (key, key_storage) = ctx.with_scoped_storage(
+                            "creo dimension difference variable removal key",
+                            || {
+                                ctx.copy_retained_text(
+                                    entry.key(),
+                                    "creo dimension difference variable removal key",
+                                )
+                            },
+                        )?;
+                        drop(entry);
+                        ctx.remove_btree_map(
+                            &mut self.variables,
+                            &key,
+                            "creo dimension difference variable removal work",
+                        )?;
+                        drop(key);
+                        drop(key_storage);
                     } else {
-                        *entry.get_mut() = value;
+                        *entry.into_mut() = value;
                     }
                 }
                 std::collections::btree_map::Entry::Vacant(entry) => {
