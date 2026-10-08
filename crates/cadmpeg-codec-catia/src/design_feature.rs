@@ -141,6 +141,8 @@ impl DesignFeatureTransfer {
         ir: &mut CadIr,
         sources: &DesignFeatureSources<'_, '_>,
     ) -> Result<(), CodecError> {
+        let mut resolved_owners = HashMap::new();
+        let mut resolved_owner_storage = ctx.reserve_scoped(0, "catia_feature_resolved_owners")?;
         let entities = &sources.entities;
         let object_records = &sources.object_records;
         let design_objects = &sources.design_objects;
@@ -171,6 +173,8 @@ impl DesignFeatureTransfer {
                 design_object,
                 design_objects,
                 &self.feature_ids,
+                &mut resolved_owners,
+                &mut resolved_owner_storage,
             )?
             else {
                 continue;
@@ -255,6 +259,8 @@ impl DesignFeatureTransfer {
         ir: &CadIr,
         sources: &DesignFeatureSources<'_, '_>,
     ) -> Result<BTreeMap<FeatureId, FeatureId>, CodecError> {
+        let mut resolved_owners = HashMap::new();
+        let mut resolved_owner_storage = ctx.reserve_scoped(0, "catia_feature_resolved_owners")?;
         let design_objects = &sources.design_objects;
         let (feature_ordinals, _ordinal_storage) =
             ctx.with_scoped_storage("catia_feature_parent_ordinals", || {
@@ -284,6 +290,8 @@ impl DesignFeatureTransfer {
                 parent_object,
                 design_objects,
                 &self.feature_ids,
+                &mut resolved_owners,
+                &mut resolved_owner_storage,
             )?
             else {
                 continue;
@@ -317,6 +325,8 @@ impl DesignFeatureTransfer {
         ir: &mut CadIr,
         sources: &DesignFeatureSources<'_, '_>,
     ) -> Result<(), CodecError> {
+        let mut resolved_owners = HashMap::new();
+        let mut resolved_owner_storage = ctx.reserve_scoped(0, "catia_feature_resolved_owners")?;
         let mut ordinal_storage = ctx.reserve_scoped(0, "catia_feature_dependency_ordinals")?;
         let mut feature_ordinals = HashMap::new();
         for feature in ctx.admit_iter(
@@ -375,6 +385,8 @@ impl DesignFeatureTransfer {
                     target_object,
                     &sources.design_objects,
                     &self.feature_ids,
+                    &mut resolved_owners,
+                    &mut resolved_owner_storage,
                 )?
                 else {
                     continue;
@@ -759,6 +771,7 @@ fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
         })?;
     }
     let mut used_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
+    let mut next_by_scope = HashMap::<Option<FeatureId>, HashMap<String, u32>>::new();
     for parameter in ctx.admit_iter(&mut ir.model.parameters, "catia_parameter_name_visits")? {
         storage.with_storage(|| {
             if !ctx.contains_key_hash_map(
@@ -817,7 +830,34 @@ fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
         } else {
             parameter.name.as_str()
         };
-        let mut suffix = 1u32;
+        storage.with_storage(|| -> Result<(), CodecError> {
+            if !ctx.contains_key_hash_map(
+                &next_by_scope,
+                &parameter.owner,
+                "catia_parameter_suffix_scope",
+            )? {
+                let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
+                ctx.insert_hash_map(
+                    &mut next_by_scope,
+                    scope,
+                    HashMap::new(),
+                    "catia_parameter_suffix_scopes",
+                )?;
+            }
+            Ok(())
+        })?;
+        let Some(next_suffixes) = ctx.get_mut_hash_map(
+            &mut next_by_scope,
+            &parameter.owner,
+            "catia_parameter_suffix_scope",
+        )?
+        else {
+            continue;
+        };
+        let mut suffix = ctx
+            .get_hash_map(next_suffixes, base, "catia_parameter_suffix_lookup")?
+            .copied()
+            .unwrap_or(1);
         let neutral_name = loop {
             ctx.charge_work(1, "catia_parameter_name_collision")?;
             let (candidate, candidate_storage) =
@@ -839,6 +879,10 @@ fn normalize_parameter_names(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
                 break candidate;
             }
         };
+        storage.with_storage(|| {
+            let key = ctx.copy_retained_text(base, "catia_parameter_suffix_base")?;
+            ctx.insert_hash_map(next_suffixes, key, suffix, "catia_parameter_next_suffix")
+        })?;
         let source_name = std::mem::replace(&mut parameter.name, neutral_name);
         ctx.insert_btree_map(
             &mut parameter.properties,
@@ -861,42 +905,47 @@ fn nearest_feature_for_design_object<'a>(
     start: &str,
     design_objects: &BTreeMap<&str, &CatiaDesignObject>,
     feature_ids: &'a HashMap<String, FeatureId>,
+    resolved: &mut HashMap<String, Option<&'a FeatureId>>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Option<&'a FeatureId>, CodecError> {
+    let mut path_storage = ctx.reserve_scoped(0, "catia_feature_owner_path")?;
+    let mut path = Vec::new();
+    let mut active = HashSet::new();
     let mut current = Some(start);
-    let mut traversed = 0usize;
-
-    while let Some(current_id) = current {
+    let owner = loop {
+        let Some(id) = current else {
+            break None;
+        };
         ctx.charge_work(1, "catia_feature_owner_chain")?;
-        traversed = traversed.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_feature_owner_chain", u64::MAX, u64::MAX)
-        })?;
-        if traversed > design_objects.len() {
-            return Ok(None);
+        if let Some(owner) =
+            ctx.get_hash_map(resolved, id, "catia_feature_resolved_owner_lookup")?
+        {
+            break *owner;
         }
+        if !path_storage
+            .with_storage(|| ctx.insert_hash_set(&mut active, id, "catia_feature_owner_path"))?
+        {
+            break None;
+        }
+        ctx.push_scoped_vec(&mut path_storage, &mut path, id, "catia_feature_owner_path")?;
         let Some(object) = ctx
-            .get_btree_map(design_objects, current_id, "catia_feature_lookup")?
+            .get_btree_map(design_objects, id, "catia_feature_lookup")?
             .copied()
         else {
-            return Ok(None);
+            break None;
         };
-        if let Some(feature) = ctx.get_hash_map(feature_ids, current_id, "catia_feature_lookup")? {
-            return Ok(Some(feature));
+        if let Some(feature) = ctx.get_hash_map(feature_ids, id, "catia_feature_lookup")? {
+            break Some(feature);
         }
-        current = match object.owner_design_object.as_deref() {
-            Some(parent)
-                if !ctx.equal_bytes(
-                    parent.as_bytes(),
-                    current_id.as_bytes(),
-                    "catia_feature_owner_parent_match",
-                )? =>
-            {
-                Some(parent)
-            }
-            _ => None,
-        };
+        current = object.owner_design_object.as_deref();
+    };
+    for id in ctx.admit_iter(path, "catia_feature_owner_path_results")? {
+        storage.with_storage(|| {
+            let key = ctx.copy_retained_text(id, "catia_feature_owner_key")?;
+            ctx.insert_hash_map(resolved, key, owner, "catia_feature_resolved_owners")
+        })?;
     }
-
-    Ok(None)
+    Ok(owner)
 }
 
 /// Transfer exact owner-bound reference history nodes.
@@ -935,11 +984,14 @@ pub(crate) fn transfer_design_features(
             }
             Ok::<_, CodecError>((ids, candidates))
         })?;
+    let (owned_objects, _owned_storage) = ctx
+        .with_scoped_storage("catia_feature_operation_groups", || {
+            native_operation_owned_objects(ctx, design_objects, &native_operation_object_ids)
+        })?;
     let operation_sources = NativeOperationSources {
         object_records: records,
         entities,
-        design_objects,
-        object_ids: &native_operation_object_ids,
+        owned_objects: &owned_objects,
     };
     let mut transfer = DesignFeatureTransfer::default();
 
@@ -1378,8 +1430,7 @@ fn is_admitted_native_reference_plane_class(name: &str) -> bool {
 struct NativeOperationSources<'a> {
     object_records: &'a HashMap<&'a str, &'a CatiaObjectRecord>,
     entities: &'a HashMap<&'a str, &'a CatiaEntityRecord>,
-    design_objects: &'a BTreeMap<&'a str, &'a CatiaDesignObject>,
-    object_ids: &'a HashSet<&'a str>,
+    owned_objects: &'a HashMap<&'a str, Vec<&'a CatiaDesignObject>>,
 }
 
 fn transfer_native_operation(
@@ -1407,8 +1458,12 @@ fn transfer_native_operation(
         object,
         sources.object_records,
         sources.entities,
-        sources.design_objects,
-        sources.object_ids,
+        ctx.get_hash_map(
+            sources.owned_objects,
+            object.id.as_str(),
+            "catia_feature_operation_group_lookup",
+        )?
+        .map_or(&[], Vec::as_slice),
     )?;
     let definition = native_operation_definition(ctx, kind, &object.id)?;
     let feature_id = FeatureId::from(neutral_history_id(
@@ -1590,8 +1645,7 @@ fn native_operation_definition_properties<'a>(
     object: &'a CatiaDesignObject,
     object_records: &HashMap<&'a str, &'a CatiaObjectRecord>,
     entities: &HashMap<&'a str, &'a CatiaEntityRecord>,
-    design_objects: &BTreeMap<&'a str, &'a CatiaDesignObject>,
-    native_operation_object_ids: &HashSet<&str>,
+    owned_objects: &[&'a CatiaDesignObject],
 ) -> Result<NativeOperationDefinitionProperties<'a>, CodecError> {
     let mut properties = BTreeMap::new();
     let mut definition_value_count = 0;
@@ -1608,17 +1662,11 @@ fn native_operation_definition_properties<'a>(
     let mut definition_values = Vec::new();
     let mut definition_chain_values = Vec::new();
     let mut range_intervals = Vec::new();
-    for (_, owned) in ctx.admit_iter(design_objects, "catia_feature_operation_object_visits")? {
+    for owned in ctx.admit_iter(owned_objects, "catia_feature_operation_object_visits")? {
         if !ctx.equal(
             &owned.parent,
             &object.parent,
             "catia_feature_operation_parent_match",
-        )? || !native_operation_owner_chain_reaches(
-            ctx,
-            &owned.id,
-            &object.id,
-            design_objects,
-            native_operation_object_ids,
         )? {
             continue;
         }
@@ -1871,61 +1919,83 @@ fn native_operation_definition_properties<'a>(
     })
 }
 
-/// Return whether a design object belongs to one operation's exact structural
-/// owner chain. A nearer admitted operation owns the value instead of an
-/// outer operation. Missing links and non-reflexive cycles reject the whole
-/// chain so a partial owner path cannot invent feature properties.
-fn native_operation_owner_chain_reaches(
+/// Group design objects by their nearest native operation, keeping source key order.
+fn native_operation_owned_objects<'a>(
     ctx: &DecodeContext<'_>,
-    design_object_id: &str,
-    operation_object_id: &str,
-    design_objects: &BTreeMap<&str, &CatiaDesignObject>,
-    native_operation_object_ids: &HashSet<&str>,
-) -> Result<bool, CodecError> {
-    let mut current = Some(design_object_id);
-    let mut traversed = 0usize;
-    while let Some(current_id) = current {
-        ctx.charge_work(1, "catia_feature_operation_owner_chain")?;
-        traversed = traversed.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_feature_operation_owner_chain", u64::MAX, u64::MAX)
-        })?;
-        if traversed > design_objects.len() {
-            return Ok(false);
-        }
-        if ctx.equal_bytes(
-            current_id.as_bytes(),
-            operation_object_id.as_bytes(),
-            "catia_feature_operation_owner_match",
-        )? {
-            return Ok(true);
-        }
-        if ctx.contains_hash_set(
-            native_operation_object_ids,
-            current_id,
-            "catia_feature_operation_owner_lookup",
-        )? {
-            return Ok(false);
-        }
-        let Some(object) = ctx
-            .get_btree_map(design_objects, current_id, "catia_feature_lookup")?
-            .copied()
-        else {
-            return Ok(false);
-        };
-        current = match object.owner_design_object.as_deref() {
-            Some(parent)
-                if !ctx.equal_bytes(
-                    parent.as_bytes(),
-                    current_id.as_bytes(),
-                    "catia_feature_owner_parent_match",
-                )? =>
-            {
-                Some(parent)
+    objects: &BTreeMap<&'a str, &'a CatiaDesignObject>,
+    operations: &HashSet<&'a str>,
+) -> Result<HashMap<&'a str, Vec<&'a CatiaDesignObject>>, CodecError> {
+    let mut cache_storage = ctx.reserve_scoped(0, "catia_feature_operation_owner_cache")?;
+    let mut resolved = HashMap::<&str, Option<&str>>::new();
+    let mut groups = HashMap::new();
+    for (id, object) in ctx.admit_iter(objects, "catia_feature_operation_owner_objects")? {
+        let mut path_storage = ctx.reserve_scoped(0, "catia_feature_operation_owner_path")?;
+        let mut path = Vec::new();
+        let mut active = HashSet::new();
+        let mut current = Some(*id);
+        let owner = loop {
+            let Some(current_id) = current else {
+                break None;
+            };
+            ctx.charge_work(1, "catia_feature_operation_owner_chain")?;
+            if let Some(owner) = ctx.get_hash_map(
+                &resolved,
+                current_id,
+                "catia_feature_operation_owner_lookup",
+            )? {
+                break *owner;
             }
-            _ => None,
+            if !path_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut active,
+                    current_id,
+                    "catia_feature_operation_owner_path",
+                )
+            })? {
+                break None;
+            }
+            ctx.push_scoped_vec(
+                &mut path_storage,
+                &mut path,
+                current_id,
+                "catia_feature_operation_owner_path",
+            )?;
+            if ctx.contains_hash_set(
+                operations,
+                current_id,
+                "catia_feature_operation_owner_lookup",
+            )? {
+                break Some(current_id);
+            }
+            let Some(current_object) = ctx
+                .get_btree_map(objects, current_id, "catia_feature_lookup")?
+                .copied()
+            else {
+                break None;
+            };
+            current = current_object.owner_design_object.as_deref();
         };
+        for item in ctx.admit_iter(path, "catia_feature_operation_owner_results")? {
+            cache_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut resolved,
+                    item,
+                    owner,
+                    "catia_feature_operation_owner_cache",
+                )
+            })?;
+        }
+        if let Some(owner) = owner {
+            ctx.push_hash_group(
+                &mut groups,
+                owner,
+                *object,
+                "catia_feature_operation_groups",
+                "catia_feature_operation_group_members",
+            )?;
+        }
     }
-    Ok(false)
+    Ok(groups)
 }
 
 struct OrdinalPropertyPrefix {

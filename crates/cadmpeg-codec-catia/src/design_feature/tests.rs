@@ -501,13 +501,11 @@ fn sketch_and_operation_feature_rows_refuse_collection_limit() {
     };
     let records = HashMap::from([(operation_record.id.as_str(), &operation_record)]);
     let entities = HashMap::new();
-    let objects = BTreeMap::from([(operation_object.id.as_str(), &operation_object)]);
-    let object_ids = HashSet::new();
+    let owned_objects = HashMap::from([(operation_object.id.as_str(), vec![&operation_object])]);
     let sources = super::NativeOperationSources {
         object_records: &records,
         entities: &entities,
-        design_objects: &objects,
-        object_ids: &object_ids,
+        owned_objects: &owned_objects,
     };
     let mut operation_ir = CadIr::empty();
     let mut operation_transfer = DesignFeatureTransfer::default();
@@ -687,12 +685,10 @@ fn feature_dependency_lookup_refuses_collection_limit() {
 #[test]
 fn native_operation_owner_selection_is_borrowed_and_refuses_work() {
     let object = design_object("synthetic:test:object#operation", None);
-    let objects = BTreeMap::from([(object.id.as_str(), &object)]);
     let records = HashMap::new();
     let entities = HashMap::new();
-    let operation_ids = HashSet::new();
     let refused =
-        crate::test_support::with_work_refusal("catia_feature_operation_owner_match", |ctx| {
+        crate::test_support::with_work_refusal("catia_feature_operation_parent_match", |ctx| {
             super::native_operation_definition_properties(
                 ctx,
                 &mut ctx
@@ -701,13 +697,12 @@ fn native_operation_owner_selection_is_borrowed_and_refuses_work() {
                 &object,
                 &records,
                 &entities,
-                &objects,
-                &operation_ids,
+                &[&object],
             )
         });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_feature_operation_owner_match")
+        if limit.operation == "catia_feature_operation_parent_match")
     );
     let admitted = crate::test_support::with_collection_limit(0, |ctx| {
         super::native_operation_definition_properties(
@@ -718,8 +713,7 @@ fn native_operation_owner_selection_is_borrowed_and_refuses_work() {
             &object,
             &records,
             &entities,
-            &objects,
-            &operation_ids,
+            &[&object],
         )
     })
     .expect("service profile admits operation owner search");
@@ -1993,4 +1987,5 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
 }
 
 mod feature_identity;
+mod owner_indexes;
 mod parentage;
