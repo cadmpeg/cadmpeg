@@ -327,12 +327,14 @@ fn b5_surface_id_map_refuses_collection_limit_before_growth() {
     let mut limited_plan = make_plan();
     let refused = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let mut storage = ctx.reserve_scoped(0, "test_surface_ids")?;
         super::surfaces::emit_surfaces(
             &mut cadmpeg_ir::CadIr::empty(),
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &graph,
             &mut limited_plan,
             &mut admission,
+            &mut storage,
         )
     });
     assert!(
@@ -342,13 +344,17 @@ fn b5_surface_id_map_refuses_collection_limit_before_growth() {
     let mut service_plan = make_plan();
     let admitted = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        super::surfaces::emit_surfaces(
+        let mut storage = ctx.reserve_scoped(0, "test_surface_ids")?;
+        let ids = super::surfaces::emit_surfaces(
             &mut cadmpeg_ir::CadIr::empty(),
             &mut cadmpeg_ir::AnnotationBuilder::new(),
             &graph,
             &mut service_plan,
             &mut admission,
-        )
+            &mut storage,
+        )?;
+        storage.commit()?;
+        Ok::<_, cadmpeg_core::CodecError>(ids)
     })
     .expect("service resource budget");
     assert!(!admitted.is_empty());

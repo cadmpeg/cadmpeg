@@ -103,3 +103,14 @@ fn loop_admission_refuses_before_seen_set_and_member_plan_growth() {
             .is_some()
     );
 }
+
+#[test]
+fn loop_admission_charges_coedge_identity_construction() {
+    let source = loop_record(&[1, 0]);
+    assert!(
+        matches!(crate::test_support::with_work_refusal("catia_e5_loop_plan_coedge_id", |ctx| {
+        E5LoopPlan::admit(ctx, &source)
+    }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_e5_loop_plan_coedge_id")
+    );
+}

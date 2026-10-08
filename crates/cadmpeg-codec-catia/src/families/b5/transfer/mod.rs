@@ -242,7 +242,9 @@ pub(in crate::families) fn transfer(
             },
             "catia_b5_incomplete_face_retain",
         )?;
-        let loop_owner_counts = face_loop_owner_counts(ctx, &graph.faces)?;
+        let mut owner_storage = ctx.reserve_scoped(0, "catia_b5_incomplete_loop_owners")?;
+        let loop_owner_counts =
+            owner_storage.with_storage(|| face_loop_owner_counts(ctx, &graph.faces))?;
         ctx.retain_vec(
             &mut graph.faces,
             |face| {
@@ -260,7 +262,8 @@ pub(in crate::families) fn transfer(
             },
             "catia_b5_unique_face_loop_owner_retain",
         )?;
-        retain_referenced_loops(ctx, &graph.faces, &mut graph.loops)?;
+        owner_storage
+            .with_storage(|| retain_referenced_loops(ctx, &graph.faces, &mut graph.loops))?;
         if graph.faces.is_empty() || graph.loops.is_empty() {
             return Ok(false);
         }
@@ -289,7 +292,14 @@ fn transfer_complete(
     if let Err(error) = vertices::emit_vertices(ir, annotations, graph, &plan, admission) {
         return semantic_fallthrough_or_resource(error);
     }
-    let surface_ids = match surfaces::emit_surfaces(ir, annotations, graph, &mut plan, admission) {
+    let surface_ids = match surfaces::emit_surfaces(
+        ir,
+        annotations,
+        graph,
+        &mut plan,
+        admission,
+        &mut plan_storage,
+    ) {
         Ok(ids) => ids,
         Err(error) => return semantic_fallthrough_or_resource(error),
     };
@@ -1674,13 +1684,17 @@ fn curve_on_parameter_range(
     let source_per_target = source_span / target_span;
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut curve)) => {
-            let mapped = ctx.collect_vec(
-                curve
-                    .knots()
-                    .iter()
-                    .map(|knot| target[0] + (*knot - source[0]) * target_per_source),
-                "catia_b5_reparameterized_curve_knots",
-            )?;
+            let mut mapped_storage =
+                ctx.reserve_scoped(0, "catia_b5_reparameterized_curve_scratch")?;
+            let mapped = mapped_storage.with_storage(|| {
+                ctx.collect_vec(
+                    curve
+                        .knots()
+                        .iter()
+                        .map(|knot| target[0] + (*knot - source[0]) * target_per_source),
+                    "catia_b5_reparameterized_curve_knots",
+                )
+            })?;
             let mapped = if ctx.all_by(
                 &mapped,
                 |knot| Ok(knot.is_finite()),
@@ -1688,19 +1702,21 @@ fn curve_on_parameter_range(
             )? {
                 mapped
             } else {
-                let mapped = ctx.collect_options(
-                    curve.knots().iter().map(|knot| {
-                        target_interval
-                            .map_from(
-                                source_interval,
-                                cadmpeg_ir::scalar::FiniteReal::new(*knot)?,
-                                false,
-                            )
-                            .ok()
-                            .map(cadmpeg_ir::scalar::FiniteReal::get)
-                    }),
-                    "catia_b5_reparameterized_curve_fallback_knots",
-                )?;
+                let mapped = mapped_storage.with_storage(|| {
+                    ctx.collect_options(
+                        curve.knots().iter().map(|knot| {
+                            target_interval
+                                .map_from(
+                                    source_interval,
+                                    cadmpeg_ir::scalar::FiniteReal::new(*knot)?,
+                                    false,
+                                )
+                                .ok()
+                                .map(cadmpeg_ir::scalar::FiniteReal::get)
+                        }),
+                        "catia_b5_reparameterized_curve_fallback_knots",
+                    )
+                })?;
                 let Some(mapped) = mapped else {
                     return Ok(None);
                 };
@@ -1720,27 +1736,20 @@ fn curve_on_parameter_range(
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             if source_per_target != 1.0 {
+                let mut knots = ctx.vector_storage(4, "catia_b5_reparameterized_line_knots")?;
+                knots.extend([target[0], target[0], target[1], target[1]]);
+                let mut points = ctx.vector_storage(2, "catia_b5_reparameterized_line_points")?;
+                points.extend(source.map(|parameter| {
+                    Point3::new(
+                        origin.x + parameter * direction.x,
+                        origin.y + parameter * direction.y,
+                        origin.z + parameter * direction.z,
+                    )
+                }));
                 return crate::nurbs::note_refusal(
                     ctx,
                     cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                        ctx,
-                        1,
-                        ctx.collect_vec(
-                            [target[0], target[0], target[1], target[1]],
-                            "catia_b5_reparameterized_line_knots",
-                        )?,
-                        ctx.collect_vec(
-                            source.into_iter().map(|parameter| {
-                                Point3::new(
-                                    origin.x + parameter * direction.x,
-                                    origin.y + parameter * direction.y,
-                                    origin.z + parameter * direction.z,
-                                )
-                            }),
-                            "catia_b5_reparameterized_line_points",
-                        )?,
-                        None,
-                        false,
+                        ctx, 1, knots, points, None, false,
                     )?,
                     refusal,
                     format_args!(

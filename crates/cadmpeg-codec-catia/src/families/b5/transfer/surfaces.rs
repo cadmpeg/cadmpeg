@@ -7,7 +7,7 @@ use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
@@ -335,27 +335,22 @@ fn profile_nurbs(
     Ok(match profile {
         B5Profile::Line {
             point, direction, ..
-        } => crate::nurbs::note_refusal(
-            ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        } => {
+            let mut knots = ctx.vector_storage(4, "catia_b5_revolution_line_profile_knots")?;
+            knots.extend([interval[0], interval[0], interval[1], interval[1]]);
+            let mut points = ctx.vector_storage(2, "catia_b5_revolution_line_profile_points")?;
+            points.extend(interval.map(|parameter| {
+                point3(add(coordinates(*point), scale(direction.get(), parameter)))
+            }));
+            crate::nurbs::note_refusal(
                 ctx,
-                1,
-                ctx.collect_vec(
-                    [interval[0], interval[0], interval[1], interval[1]],
-                    "catia_b5_revolution_line_profile_knots",
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    ctx, 1, knots, points, None, false,
                 )?,
-                ctx.collect_vec(
-                    interval.into_iter().map(|parameter| {
-                        point3(add(coordinates(*point), scale(direction.get(), parameter)))
-                    }),
-                    "catia_b5_revolution_line_profile_points",
-                )?,
-                None,
-                false,
-            )?,
-            refusal,
-            format_args!("b5 line profile of a revolution surface: {record}"),
-        )?,
+                refusal,
+                format_args!("b5 line profile of a revolution surface: {record}"),
+            )?
+        }
         B5Profile::Arc {
             center,
             direction_x,
@@ -704,6 +699,7 @@ pub(super) fn emit_surfaces(
     graph: &B5Graph,
     plan: &mut TransferPlan,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
+    id_storage: &mut ScopedReservation<'_>,
 ) -> Result<BTreeMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
     let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "surface");
@@ -720,30 +716,39 @@ pub(super) fn emit_surfaces(
                 u64::MAX,
             )
         })?;
-        let id = crate::resource::compose_index_id(
-            admission.context(),
-            &namespace,
-            index,
-            SurfaceId::mint,
-            "catia_b5_emitted_surface_id",
-        )?;
-        admission.context().insert_btree_map(
-            &mut surface_ids,
-            object_id,
-            id,
-            "catia_b5_emitted_surface_ids",
-        )?;
+        let id = id_storage.with_storage(|| {
+            crate::resource::compose_index_id(
+                admission.context(),
+                &namespace,
+                index,
+                SurfaceId::mint,
+                "catia_b5_emitted_surface_id",
+            )
+        })?;
+        id_storage.with_storage(|| {
+            admission.context().insert_btree_map(
+                &mut surface_ids,
+                object_id,
+                id,
+                "catia_b5_emitted_surface_ids",
+            )
+        })?;
     }
+    let mut face_storage = admission
+        .context()
+        .reserve_scoped(0, "catia_b5_face_surface_scratch")?;
     let mut face_surfaces = HashSet::new();
     for face in admission
         .context()
         .admit_iter(&graph.faces, "catia_b5_face_surface_scan")?
     {
-        admission.context().insert_hash_set(
-            &mut face_surfaces,
-            face.surface,
-            "catia_b5_face_surface_ids",
-        )?;
+        face_storage.with_storage(|| {
+            admission.context().insert_hash_set(
+                &mut face_surfaces,
+                face.surface,
+                "catia_b5_face_surface_ids",
+            )
+        })?;
     }
     const LOOKUP: &str = "catia_b5_emitted_surface_lookup";
     for (object_id, plan) in admission
@@ -910,7 +915,7 @@ pub(super) fn emit_surfaces(
                     ProceduralSurfaceId::mint,
                     "catia_b5_rolling_ball_id",
                 )?;
-                let carrier_tag = admission.context().format_retained(
+                let (carrier_tag, _tag_storage) = admission.context().format_scoped(
                     format_args!("result_carrier:{carrier_object_id:08x}"),
                     "catia_b5_rolling_ball_carrier_tag",
                 )?;
