@@ -2,7 +2,7 @@
 //! Typed accessors select identity markers in native wire fields.
 
 use super::{IdentityMap, RewriteIdentities};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde_json::Value;
 
@@ -21,12 +21,19 @@ pub fn rewrite_field<
     let Value::Object(fields) = value else {
         return Ok(());
     };
-    let work = u64_from_index(fields.len())
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(u64_from_index(name.len())))
-        .ok_or_else(|| ctx.refuse_codec_limit("find typed native field", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, "find typed native field")?;
-    if let Some(value) = fields.get_mut(name) {
+    if let Some(value) = ctx.find_map(
+        fields.iter_mut(),
+        |(key, value)| {
+            Ok(ctx
+                .equal_bytes(
+                    key.as_bytes(),
+                    name.as_bytes(),
+                    "compare typed native field",
+                )?
+                .then_some(value))
+        },
+        "find typed native field",
+    )? {
         if !value.is_null() {
             Field::rewrite_native_value(ctx, value, map)?;
         }

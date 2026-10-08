@@ -595,3 +595,226 @@ fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
         assert_eq!(target, before);
     }
 }
+
+#[test]
+fn decode_retention_preserves_wire_and_refuses_atomically() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "retain source record batch"),
+        (
+            ResourceDimension::RetainedBytes,
+            "retain source record owner",
+        ),
+        (ResourceDimension::MaterializedBytes, "stage source records"),
+        (ResourceDimension::CollectionItems, "stage source records"),
+    ] {
+        let run = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = 4096;
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let records = vec![
+                UnknownRecord::retained(id("first"), 2, vec![1, 2], vec![]),
+                UnknownRecord::unavailable(
+                    id("second"),
+                    5,
+                    1,
+                    Sha256Digest::digest(b"a").as_str(),
+                    vec![],
+                ),
+            ];
+            let mut expected = SourceFidelity::default();
+            expected
+                .retain_unknown_records("owner", records.clone())
+                .unwrap();
+            let mut actual = SourceFidelity::default();
+            let result = actual.retain_unknown_records_for_decode(&ctx, "owner", records);
+            match &result {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(actual, SourceFidelity::default());
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
+                    );
+                }
+                Ok(()) => {
+                    assert_eq!(actual, expected);
+                    drop(ctx.reserve_scoped_limit(
+                        policy.limits.max_materialized_bytes,
+                        "source staging released",
+                    )?);
+                    ctx.finish_session()?;
+                }
+                Err(error) => panic!("unexpected refusal: {error}"),
+            }
+            result
+        };
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, run);
+        run(if dimension == ResourceDimension::MaterializedBytes {
+            4096
+        } else {
+            u64::MAX
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn attachment_moves_incoming_link_buffers_and_admits_their_grammar() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let text = id("target").to_string();
+        let pointer = text.as_ptr();
+        let mut ir = CadIr::empty();
+        let mut fidelity = SourceFidelity::default();
+        let result = fidelity.attach_native_unknown_records(
+            &mut ir,
+            "synthetic",
+            vec![UnknownRecord::retained(
+                id("source"),
+                2,
+                vec![1, 2],
+                vec![text],
+            )],
+            &ctx,
+        );
+        match &result {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(ir, CadIr::empty());
+                assert_eq!(fidelity, SourceFidelity::default());
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
+                );
+            }
+            Ok(()) => {
+                let fields =
+                    ir.native.namespace("synthetic").unwrap().arenas()["unknowns"][0].fields();
+                let text = fields["links"][0].as_str().unwrap();
+                assert_eq!(text, id("target").as_str());
+                assert_eq!(text.as_ptr(), pointer);
+                assert_eq!(
+                    fidelity
+                        .retained_record(id("source").as_str())
+                        .unwrap()
+                        .data(),
+                    Some(&[1, 2][..])
+                );
+                ctx.finish_session()?;
+            }
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+        result
+    };
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "native unknown product link text",
+        run,
+    );
+    run(u64::MAX).unwrap();
+}
+
+#[test]
+fn invalid_digest_does_not_copy_an_unused_source_owner() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    let owner = "owner".repeat(16_384);
+    let records = vec![UnknownRecord::unavailable(
+        id("bad-digest"),
+        0,
+        1,
+        "invalid",
+        vec![],
+    )];
+    let expected = SourceFidelity::default()
+        .retain_unknown_records(owner.as_str(), records.clone())
+        .unwrap_err()
+        .to_string();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1024;
+    policy.limits.max_work_units = 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut fidelity = SourceFidelity::default();
+    let CodecError::Malformed(message) = fidelity
+        .retain_unknown_records_for_decode(&ctx, &owner, records)
+        .unwrap_err()
+    else {
+        panic!("invalid digest must report its evidence without copying the owner");
+    };
+    assert_eq!(message, expected);
+    assert_eq!(fidelity, SourceFidelity::default());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn source_annotation_collision_admits_its_final_diagnostic() {
+    use crate::annotations::{AnnotationBuilder, StreamHandle};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let fixture = cadmpeg_test_support::service_decode_context();
+    let mut annotations = AnnotationBuilder::new();
+    annotations
+        .note(
+            &fixture,
+            id("conflict"),
+            &StreamHandle::new(&fixture, crate::stream_name!("fixture"), "fixture stream").unwrap(),
+            0,
+            None,
+        )
+        .unwrap();
+    let annotations = annotations.build();
+    let run = |cap, dimension| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let mut target = SourceFidelity::with_annotations(annotations.clone());
+        let before = target.clone();
+        let incoming = SourceFidelity::with_annotations(annotations.clone());
+        let result = target.append(&ctx, incoming);
+        assert_eq!(target, before);
+        match &result {
+            Err(CodecError::ResourceLimit(limit)) => assert!(matches!(ctx.finish_session(),
+                Err(CodecError::ResourceLimit(original)) if original == *limit)),
+            Err(CodecError::Malformed(message)) => {
+                assert_eq!(
+                    message,
+                    &format!("annotation identity collision at {}", id("conflict"))
+                );
+                ctx.finish_session()?;
+            }
+            result => panic!("collision must refuse: {result:?}"),
+        }
+        result
+    };
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RetainedBytes,
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "report source annotation collision",
+            |cap| run(cap, dimension),
+        );
+        assert!(matches!(
+            run(u64::MAX, dimension),
+            Err(CodecError::Malformed(_))
+        ));
+    }
+}

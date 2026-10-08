@@ -265,6 +265,32 @@ impl TransferLedger {
         });
     }
 
+    /// Verifies produced targets, stopping at the first unresolved identity.
+    pub fn verify_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        index: &crate::index::ModelIndex<'_>,
+    ) -> Result<Result<(), String>, cadmpeg_core::CodecError> {
+        let unresolved = ctx.find_map(
+            &self.entries,
+            |entry| match entry.target() {
+                Some(target) if !index.contains(target, ctx)? => Ok(Some((entry, target))),
+                _ => Ok(None),
+            },
+            "decode transfer verification",
+        )?;
+        match unresolved {
+            Some((entry, target)) => Ok(Err(ctx.format_retained(
+                format_args!(
+                    "transfer source {:?} targets unresolved identity {:?}",
+                    entry.source, target
+                ),
+                "decode transfer refusal",
+            )?)),
+            None => Ok(Ok(())),
+        }
+    }
+
     /// Verifies every produced target against a finalized model index.
     pub fn verify(&self, index: &crate::index::ModelIndex<'_>) -> Result<(), String> {
         for entry in &self.entries {
@@ -345,8 +371,9 @@ impl Coverage {
         key: CoverageKey,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(key.0) {
+        if let Some(value) =
+            ctx.get_mut_btree_map(&mut self.entries, key.0, "decode coverage lookup")?
+        {
             *value = count;
             return Ok(());
         }
@@ -366,8 +393,9 @@ impl Coverage {
             format_args!("{}{index}{}", key.prefix, key.suffix),
             "decode indexed coverage name",
         )?;
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(&name) {
+        if let Some(value) =
+            ctx.get_mut_btree_map(&mut self.entries, name.as_str(), "decode coverage lookup")?
+        {
             *value = count;
             return Ok(());
         }
@@ -387,8 +415,9 @@ impl Coverage {
             format_args!("{}{:02x}{}", key.prefix, value, key.suffix),
             "decode hexadecimal coverage name",
         )?;
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(existing) = self.entries.get_mut(&name) {
+        if let Some(existing) =
+            ctx.get_mut_btree_map(&mut self.entries, name.as_str(), "decode coverage lookup")?
+        {
             *existing = count;
             return Ok(());
         }
@@ -406,11 +435,11 @@ impl Coverage {
         name: String,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(name.len()),
+        if !ctx.equal_bytes(
+            name.as_bytes(),
+            key.0.as_bytes(),
             "decode coverage name admission",
-        )?;
-        if name != key.0 {
+        )? {
             return Err(cadmpeg_core::CodecError::malformed(
                 "coverage name does not match its declared key",
             ));
@@ -424,23 +453,21 @@ impl Coverage {
         name: String,
         count: usize,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work(1, "decode coverage lookup")?;
-        if let Some(value) = self.entries.get_mut(&name) {
-            *value = count;
-            return Ok(());
-        }
-        ctx.charge_work(1, "decode coverage nodes")?;
         ctx.insert_btree_map(&mut self.entries, name, count, "decode coverage nodes")?;
         Ok(())
     }
 
     /// Build a coverage map through the charged insertion operation.
-    pub fn from_iter_for_decode(
+    pub fn from_iter_for_decode<S>(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        entries: impl IntoIterator<Item = (CoverageKey, usize)>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+        entries: S,
+    ) -> Result<Self, cadmpeg_core::CodecError>
+    where
+        S: cadmpeg_core::decode::iter_source::IterSource,
+        S::Iter: Iterator<Item = (CoverageKey, usize)>,
+    {
         let mut coverage = Self::default();
-        for (key, count) in entries {
+        for (key, count) in ctx.admit_iter(entries, "decode coverage entries")? {
             coverage.record(ctx, key, count)?;
         }
         Ok(coverage)
