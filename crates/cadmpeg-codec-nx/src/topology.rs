@@ -1167,6 +1167,41 @@ impl Graph {
         Ok((admitted_ownership, admitted_reservation))
     }
 
+    /// Admit one complete canonical record without building graph indices.
+    /// A typed root that occupies the complete input wins physical selection
+    /// in both node-ID domains and cannot contain a second selected record.
+    /// Ownership records and all other shapes retain full graph admission.
+    pub(crate) fn has_canonical_record(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        kind: NodeKind,
+        xmt: u32,
+    ) -> Result<bool, CodecError> {
+        if !matches!(kind, NodeKind::Body | NodeKind::Region)
+            && bytes.first() == Some(&0)
+            && bytes.get(1).and_then(|tag| NodeKind::try_from(*tag).ok()) == Some(kind)
+        {
+            let work = u64_from_index(bytes.len()).checked_mul(2).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "validate NX canonical record framing",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+            ctx.charge_work(work, "validate NX canonical record framing")?;
+            let root_matches = |full_node_id_domain| {
+                Self::fixed_record_candidates(bytes, 0, kind, full_node_id_domain)
+                    .into_iter()
+                    .flatten()
+                    .any(|candidate| candidate.xmt() == xmt && candidate.end == bytes.len())
+            };
+            if root_matches(false) && root_matches(true) {
+                return Ok(true);
+            }
+        }
+        Ok(Self::parse(ctx, bytes)?.get(kind, xmt).is_some())
+    }
+
     fn fixed_record_candidates(
         stream: &[u8],
         pos: usize,
@@ -1377,12 +1412,11 @@ impl Graph {
         ctx: &DecodeContext<'_>,
         kind: NodeKind,
     ) -> Result<impl Iterator<Item = &'graph Node>, CodecError> {
-        let count = self.by_kind.get(&kind).map_or(0, Vec::len);
-        let work = count.checked_mul(self.nodes.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit("iterate NX topology records", u64::MAX, u64::MAX)
-        })?;
+        // Each kind member performs one indexed identity lookup, not a scan
+        // of the complete graph.
+        let count = self.kind_count(kind);
         ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
+            cadmpeg_core::decode::u64_from_index(count),
             "iterate NX topology records",
         )?;
         Ok(self.of_kind(kind))
@@ -1730,14 +1764,12 @@ impl Graph {
         }
     }
 
-    /// Two complete node traversals and one lookup per node bound a census.
-    /// Each lookup compares at most the full node population.
+    /// Two face-index visits per face and one endpoint lookup bound a census.
+    /// Unrelated record kinds do not participate in shell ownership checks.
     fn shell_census_work_bound(&self) -> Option<usize> {
-        self.nodes
-            .len()
+        self.kind_count(NodeKind::Face)
             .checked_mul(2)?
-            .checked_add(1)?
-            .checked_mul(self.nodes.len())
+            .checked_add(1)
     }
 
     fn is_body_shape_shell(&self, shell: &Node) -> bool {
@@ -1775,7 +1807,7 @@ impl Graph {
         }
 
         let mut face_xmt = fields.first_face;
-        let face_limit = self.of_kind(NodeKind::Face).count();
+        let face_limit = self.kind_count(NodeKind::Face);
         let mut count = 0usize;
         while let Some(target) = face_xmt {
             let current = u32::from(target);

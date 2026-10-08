@@ -14,6 +14,7 @@ use super::blend::{
     BlendContactSeedCache, BlendParameterGrid, BoundaryInverseTarget, CircularBlendDefinition,
 };
 use super::geometry_work::GeometryWorkBudget;
+use super::nurbs_fit::{fit_nurbs_surface_parameter, fit_nurbs_surface_parameter_locally};
 use super::offset::{
     coarse_model_surface_parameters,
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache,
@@ -36,10 +37,7 @@ use crate::topology::Graph;
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::{
-    analytic_surface_parameters, finite_or_refusal,
-    nurbs_surface_parameter_within_tolerance_with_budget,
-};
+use cadmpeg_ir::eval::{analytic_surface_parameters, finite_or_refusal};
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -700,7 +698,7 @@ fn unseeded_nurbs_surface_parameters_with_index_and_budget(
             return Ok(Some(parameters));
         }
     }
-    nurbs_surface_parameter_within_tolerance_with_budget(
+    fit_nurbs_surface_parameter(
         geometry_budget.charges,
         nurbs,
         point,
@@ -1430,21 +1428,17 @@ fn complete_support_uv_wave(
                             continuation_seed,
                             linear_offset_surface,
                         )
-                        .into_iter();
-                        let mut attempted_without_seed = false;
+                        .into_iter()
+                        .flatten()
+                        .map(Some)
+                        .chain([None]);
                         let mut solved = None;
                         for seed in seed_candidates {
-                            if seed.is_none() {
-                                if attempted_without_seed {
-                                    continue;
-                                }
-                                attempted_without_seed = true;
-                            }
                             let sample_parameter = parameters[point_index];
                             let candidate = match &surface.geometry {
                                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                                     if let Some(seed) = seed {
-                                        nurbs_surface_parameter_within_tolerance_with_budget(
+                                        fit_nurbs_surface_parameter_locally(
                                             geometry_budget.charges,
                                             nurbs,
                                             *point,

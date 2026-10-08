@@ -4,6 +4,7 @@
 use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
+use super::nurbs_fit::fit_nurbs_surface_parameter;
 use super::offset::offset_surface_parameters_with_tolerance_with_index_and_budget;
 use super::offset::{
     coarse_model_surface_parameters, parameter_derivative_step,
@@ -14,7 +15,6 @@ use super::support_uv::parameterization_equivalent_surfaces_with_index;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::model_surface_partials_by_id;
 use cadmpeg_ir::eval::model_surface_point_by_id;
-use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 use cadmpeg_ir::eval::pcurve_tangent;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FiniteVector3;
@@ -4744,17 +4744,15 @@ fn surface_contact_direction_with_index_and_budget(
             | SurfaceGeometry::Procedural { .. }
     );
     let parameters = match carrier.geometry.solved() {
-        Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            nurbs_surface_parameter_within_tolerance_with_budget(
-                geometry_budget.charges,
-                nurbs,
-                center,
-                None,
-                radius + tolerance,
-                geometry_budget,
-            )?
-            .map(cadmpeg_ir::units::FinitePoint2::get)
-        }
+        Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => fit_nurbs_surface_parameter(
+            geometry_budget.charges,
+            nurbs,
+            center,
+            None,
+            radius + tolerance,
+            geometry_budget,
+        )?
+        .map(cadmpeg_ir::units::FinitePoint2::get),
         None => {
             let offset = offset_surface_parameters_with_tolerance_with_index_and_budget(
                 index,

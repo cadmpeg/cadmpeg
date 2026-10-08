@@ -8,6 +8,7 @@ use super::blend::{
 use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
+use super::nurbs_fit::fit_nurbs_surface_parameter;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
 use crate::topology::{Graph, Node};
@@ -18,7 +19,7 @@ use cadmpeg_ir::eval::model_surface_partials_by_id;
 use cadmpeg_ir::eval::model_surface_point_by_id;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, finite_or_refusal, nurbs_surface_closest_parameter_with_budget,
-    nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials,
+    nurbs_surface_partials,
 };
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
@@ -1727,7 +1728,7 @@ fn initial_surface_parameters_with_index_and_budget(
                 .map(|parameter| parameter.map(FinitePoint2::get))
             },
             |tolerance| {
-                nurbs_surface_parameter_within_tolerance_with_budget(
+                fit_nurbs_surface_parameter(
                     geometry_budget.charges,
                     nurbs,
                     point,
@@ -2065,7 +2066,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         let geometry = &carrier.geometry;
         match geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-                nurbs_surface_parameter_within_tolerance_with_budget(
+                fit_nurbs_surface_parameter(
                     geometry_budget.charges,
                     nurbs,
                     point,
