@@ -228,7 +228,9 @@ pub(crate) fn parse(
             maps: parsed.maps,
         });
     }
-    Ok((StringTables::try_from(tables)?, maps))
+    let string_tables = StringTables::from_records_with_admission(tables, ctx)?
+        .map_err(CodecError::from)?;
+    Ok((string_tables, maps))
 }
 
 fn string_table_header_count(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<usize, CodecError> {
