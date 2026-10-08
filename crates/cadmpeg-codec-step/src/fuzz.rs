@@ -13,7 +13,7 @@ pub fn lex(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let mut lexer = crate::lex::Lexer::new(data, &ctx);
     while lexer
         .next_token()
-        .map_err(crate::lex::LexError::into_codec_error)?
+        .map_err(|error| error.into_codec_error(&ctx))?
         .is_some()
     {}
     Ok(())

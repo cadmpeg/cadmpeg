@@ -42,7 +42,7 @@ fn lex_under_policy(
         }
         let token = lexer
             .next_token()
-            .map_err(super::LexError::into_codec_error)?;
+            .map_err(|error| error.into_codec_error(&ctx))?;
         Ok(token.expect("nonempty token input").kind)
     };
     if transient {
@@ -435,7 +435,9 @@ fn real_lexeme_rejects_binary64_overflow() {
         let error = crate::test_support::with_service_context(source, crate::lex::lex_with_context)
             .expect_err("overflow cannot enter a real token");
         assert!(error.message.contains("finite binary64 range"));
-        assert!(matches!(error.into_codec_error(), CodecError::Malformed(_)));
+        crate::test_support::with_service_context(source, |_, ctx| {
+            assert!(matches!(error.into_codec_error(ctx), CodecError::Malformed(_)));
+        });
     }
 }
 
@@ -480,7 +482,7 @@ fn occurrence_number_parse_preserves_refusal() {
                     .unwrap();
             let result = super::lex_with_context(b"#7", &ctx)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -503,7 +505,7 @@ fn real_number_parse_preserves_refusal() {
                     .unwrap();
             let result = super::lex_with_context(b"2.5", &ctx)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -526,7 +528,7 @@ fn integer_number_parse_preserves_refusal() {
                     .unwrap();
             let result = super::lex_with_context(b"7", &ctx)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -571,7 +573,7 @@ fn normalized_retained_character_preserves_refusal() {
             let result = lexer
                 .normalized(0, 2, super::LiteralStorage::Retained)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -594,7 +596,7 @@ fn normalized_temp_character_preserves_refusal() {
             let result = lexer
                 .normalized(0, 2, super::LiteralStorage::Transient)
                 .map(|_| ())
-                .map_err(super::LexError::into_codec_error);
+                .map_err(|error| error.into_codec_error(&ctx));
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
