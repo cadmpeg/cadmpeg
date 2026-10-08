@@ -327,8 +327,8 @@ fn inferred_partner_work_refusal(operation: &'static str) {
 }
 
 #[test]
-fn inferred_bound_partner_surface_lookup_propagates_work_refusal() {
-    inferred_partner_work_refusal("catia_freeform_bound_partner_surface_lookup");
+fn inferred_partner_surface_index_lookup_propagates_work_refusal() {
+    inferred_partner_work_refusal("catia_model_surface_lookup");
 }
 
 #[test]
