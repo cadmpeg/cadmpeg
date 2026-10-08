@@ -242,9 +242,18 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
     })
 }
 
+/// Validate `ir` under the caller's active decode policy and session.
+pub fn validate_neutral_with_context(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, CodecError> {
+    validate_model(ctx, ir, losses)
+}
+
 /// Validate one neutral product model under the standalone application policy.
 pub fn validate_neutral(ir: &CadIr, losses: Vec<LossNote>) -> Result<ValidationReport, CodecError> {
-    standalone_validation(|ctx| validate_model(ctx, ir, losses))
+    standalone_validation(|ctx| validate_neutral_with_context(ctx, ir, losses))
 }
 
 /// Validate an application-owned model together with borrowed annotations.
@@ -263,17 +272,28 @@ pub fn validate_neutral_with_source_fidelity(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
-        let index = crate::index::ModelIndex::build(ir, ctx)?;
-        let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
-        validate_annotations(
-            ctx,
-            &index,
-            &source_fidelity.annotations,
-            Some(source_fidelity),
-            &mut report.findings,
-        )?;
-        Ok(report)
+        validate_neutral_with_source_fidelity_and_context(ctx, ir, source_fidelity, losses)
     })
+}
+
+/// Validate `ir` and its decode-time source fidelity under the caller's active
+/// decode policy and session.
+pub fn validate_neutral_with_source_fidelity_and_context(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    source_fidelity: &SourceFidelity,
+    losses: Vec<LossNote>,
+) -> Result<ValidationReport, CodecError> {
+    let index = crate::index::ModelIndex::build(ir, ctx)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
+    validate_annotations(
+        ctx,
+        &index,
+        &source_fidelity.annotations,
+        Some(source_fidelity),
+        &mut report.findings,
+    )?;
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -288,6 +308,51 @@ mod tests {
     use crate::sketches::{Sketch, SketchId};
     use crate::CadIr;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn contextual_neutral_validation_keeps_the_callers_original_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty validation input is admitted");
+
+        let error = super::validate_neutral_with_context(&ctx, &CadIr::empty(), Vec::new())
+            .expect_err("the caller's zero-work policy refuses validation");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("validation should preserve a resource refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+
+    #[test]
+    fn contextual_source_fidelity_validation_keeps_the_callers_original_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty validation input is admitted");
+
+        let error = super::validate_neutral_with_source_fidelity_and_context(
+            &ctx,
+            &CadIr::empty(),
+            &crate::SourceFidelity::default(),
+            Vec::new(),
+        )
+        .expect_err("the caller's zero-work policy refuses validation");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("validation should preserve a resource refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
 
     #[test]
     fn source_fidelity_identities_resolve_annotations_without_admitting_neutral_references() {
