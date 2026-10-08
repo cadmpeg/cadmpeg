@@ -20,7 +20,7 @@ type NativePcurveLanesOutput = Result<
 
 use std::{
     borrow::Borrow,
-    collections::{BTreeSet, HashSet},
+    collections::{HashSet, VecDeque},
     ops::Range,
 };
 
@@ -109,9 +109,9 @@ pub(crate) fn family_pcurves_from_records(
     family: ConsolidatedFamily,
 ) -> Result<Vec<ConsolidatedPcurve>, CodecError> {
     let mut pcurves = Vec::new();
-    let mut frames =
+    let frames =
         family_frames_from_records(ctx, records, family, 0x20, "catia_consolidated_pcurve_scan")?;
-    while let Some(frame) = ctx.next_charged(&mut frames, "catia_pcurve_frame_visits")? {
+    for frame in frames {
         if let Some(pcurve) =
             parse_consolidated_pcurve(ctx, data, frame.pos, frame.payload, frame.end)?
         {
@@ -844,67 +844,86 @@ where
                 )
             })?;
         }
-        loop {
-            ctx.charge_work(1, "catia_records_iteration")?;
-            let mut added_storage = ctx.reserve_scoped(0, "catia_spanning_record_workspace")?;
-            let mut added = Vec::new();
-            let mut source_ends = BTreeSet::new();
-            for record in ctx.admit_iter(&source_records, "catia_spanning_record_inventory")? {
-                added_storage.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut source_ends,
+        let mut frontier = VecDeque::new();
+        let mut discovered_ends = HashSet::new();
+        for record in ctx.admit_iter(&source_records, "catia_spanning_record_inventory")? {
+            if workspace.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut discovered_ends,
+                    record.source_range.end,
+                    "catia_record_source_ends",
+                )
+            })? {
+                workspace.with_storage(|| {
+                    ctx.push_back(
+                        &mut frontier,
                         record.source_range.end,
-                        "catia_record_source_ends",
+                        "catia_record_source_frontier",
                     )
                 })?;
             }
-            for source_start in ctx.admit_iter(source_ends, "catia_spanning_record_lookup")? {
-                if ctx.contains_hash_set(
-                    &record_starts,
-                    &source_start,
-                    "catia_record_start_lookup",
-                )? {
-                    continue;
-                }
-                let Some(record) = parse_spanning_consolidated_record(
-                    data,
-                    ctx,
-                    &source_ranges,
-                    &logical_ends,
-                    source_index,
-                    source_start,
-                )?
-                else {
-                    continue;
-                };
-                if workspace.with_storage(|| {
-                    ctx.insert_hash_set(
-                        &mut record_ranges,
-                        (record.source_range.start, record.source_range.end),
-                        "catia_record_ranges",
-                    )
-                })? {
-                    workspace.with_storage(|| {
-                        ctx.insert_hash_set(
-                            &mut record_starts,
-                            record.source_range.start,
-                            "catia_record_starts",
-                        )
-                    })?;
-                    ctx.push_scoped_vec(
-                        &mut added_storage,
-                        &mut added,
-                        record,
-                        "catia_spanning_records",
-                    )?;
-                }
+        }
+        while let Some(source_start) = ctx.next_charged(
+            &mut std::iter::from_fn(|| frontier.pop_front()),
+            "catia_spanning_record_lookup",
+        )? {
+            if ctx.contains_hash_set(&record_starts, &source_start, "catia_record_start_lookup")? {
+                continue;
             }
-            if added.is_empty() {
-                break;
+            let Some(record) = parse_spanning_consolidated_record(
+                data,
+                ctx,
+                &source_ranges,
+                &logical_ends,
+                source_index,
+                source_start,
+            )?
+            else {
+                continue;
+            };
+            if !workspace.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut record_ranges,
+                    (record.source_range.start, record.source_range.end),
+                    "catia_record_ranges",
+                )
+            })? {
+                continue;
             }
             workspace.with_storage(|| {
-                ctx.append_vec(&mut source_records, &mut added, "catia_source_records")
+                ctx.insert_hash_set(
+                    &mut record_starts,
+                    record.source_range.start,
+                    "catia_record_starts",
+                )
             })?;
+            if workspace.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut discovered_ends,
+                    record.source_range.end,
+                    "catia_record_source_ends",
+                )
+            })? {
+                workspace.with_storage(|| {
+                    ctx.push_back(
+                        &mut frontier,
+                        record.source_range.end,
+                        "catia_record_source_frontier",
+                    )
+                })?;
+            }
+            ctx.push_scoped_vec(
+                &mut workspace,
+                &mut source_records,
+                record,
+                "catia_spanning_records",
+            )?;
+        }
+        if source_records.len() == 2 {
+            if source_records[0].source_range.start > source_records[1].source_range.start {
+                source_records.swap(0, 1);
+            }
+        } else if source_records.len() > 2 {
             ctx.stable_sort_by(
                 &mut source_records,
                 |value| &value.source_range.start,
@@ -1343,26 +1362,32 @@ mod tests {
     #[test]
     fn consolidated_record_inventory_refuses_each_contiguous_collection() {
         let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
-        for (limit, operation) in [
-            (0, "catia_record_source_ranges"),
-            (1, "catia_record_source_boundaries"),
-            (2, "catia_source_records"),
-            (3, "catia_record_starts"),
-            (4, "catia_record_ranges"),
-            (5, "catia_record_source_ends"),
-            (6, "catia_consolidated_records"),
+        for operation in [
+            "catia_record_source_ranges",
+            "catia_record_source_boundaries",
+            "catia_source_records",
+            "catia_record_starts",
+            "catia_record_ranges",
+            "catia_record_source_ends",
+            "catia_record_source_frontier",
+            "catia_consolidated_records",
         ] {
-            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-                super::consolidated_records_in_sources(
-                    ctx,
-                    &bytes,
-                    std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
-                )
-            });
+            let limited = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                operation,
+                |limit| {
+                    crate::test_support::with_collection_limit(limit, |ctx| {
+                        super::consolidated_records_in_sources(
+                            ctx,
+                            &bytes,
+                            std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))),
+                        )
+                    })
+                },
+            );
             assert!(
-                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-                if error.operation == operation),
-                "limit {limit}"
+                matches!(limited, cadmpeg_core::CodecError::ResourceLimit(error) if error.operation == operation),
+                "operation {operation}"
             );
         }
         let records = crate::test_support::with_service_context(|ctx| {
@@ -1413,32 +1438,71 @@ mod tests {
         bytes.extend_from_slice(&8u32.to_le_bytes());
         bytes.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
         let split = spanning_start + 10;
-        for (limit, operation) in [
-            (10, "catia_spanning_records"),
-            (11, "catia_source_records"),
-            (15, "catia_consolidated_records"),
+        for operation in [
+            "catia_record_source_ends",
+            "catia_record_source_frontier",
+            "catia_spanning_records",
+            "catia_consolidated_records",
         ] {
-            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-                super::consolidated_records_in_sources(
-                    ctx,
-                    &bytes,
-                    [[
-                        super::SourceExtent::within(&bytes, 0, split).expect("first extent"),
-                        super::SourceExtent::within(&bytes, split, bytes.len())
-                            .expect("second extent"),
-                    ]],
-                )
-            });
+            let limited = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                operation,
+                |limit| {
+                    crate::test_support::with_collection_limit(limit, |ctx| {
+                        super::consolidated_records_in_sources(
+                            ctx,
+                            &bytes,
+                            [[
+                                super::SourceExtent::within(&bytes, 0, split)
+                                    .expect("first extent"),
+                                super::SourceExtent::within(&bytes, split, bytes.len())
+                                    .expect("second extent"),
+                            ]],
+                        )
+                    })
+                },
+            );
             assert!(
-                matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                matches!(limited, cadmpeg_core::CodecError::ResourceLimit(error)
                 if error.operation == operation),
-                "limit {limit}"
+                "operation {operation}"
             );
         }
         let records =
             consolidated_records_in_range_sources(&bytes, [[0..split, split..bytes.len()]]);
         assert_eq!(records.len(), 2);
         assert_eq!(records[1].source_range, spanning_start..bytes.len());
+    }
+
+    #[test]
+    fn spanning_record_frontier_discovers_consecutive_split_frames() {
+        let mut bytes = vec![0xb2, 0x03, 0x20, 0x01, 0x05, 0];
+        let mut starts = Vec::new();
+        let mut splits = vec![0];
+        for _ in 0..256 {
+            let start = bytes.len();
+            starts.push(start);
+            bytes.extend_from_slice(&[0xa5, 0x03, 0x34]);
+            bytes.extend_from_slice(&8u32.to_le_bytes());
+            bytes.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
+            splits.push(start + 10);
+        }
+        splits.push(bytes.len());
+        let records = crate::test_support::with_work_limit(2_000_000, |ctx| {
+            let extents = splits
+                .windows(2)
+                .map(|pair| {
+                    super::SourceExtent::within(&bytes, pair[0], pair[1])
+                        .expect("successive extent")
+                })
+                .collect::<Vec<_>>();
+            super::consolidated_records_in_sources(ctx, &bytes, [extents])
+        })
+        .expect("each new end is processed once");
+        assert_eq!(records.len(), 257);
+        for (record, start) in records[1..].iter().zip(starts) {
+            assert_eq!(record.source_range, start..start + 16);
+        }
     }
 
     #[test]

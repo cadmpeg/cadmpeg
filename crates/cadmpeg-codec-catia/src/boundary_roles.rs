@@ -10,45 +10,6 @@ use cadmpeg_ir::topology::FaceLoops;
 
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
-fn strictly_inside_planar_polygon(
-    ctx: &DecodeContext<'_>,
-    point: Point2,
-    polygon: &[Point2],
-    tolerance: f64,
-) -> Result<bool, CodecError> {
-    let mut inside = false;
-    let strict = ctx.all_by(
-        polygon
-            .iter()
-            .zip(polygon.iter().cycle().skip(1))
-            .take(polygon.len()),
-        |(left, right)| {
-            let edge_u = right.u - left.u;
-            let edge_v = right.v - left.v;
-            let point_u = point.u - left.u;
-            let point_v = point.v - left.v;
-            let edge_length = edge_u.hypot(edge_v);
-            let cross = edge_u * point_v - edge_v * point_u;
-            let dot = point_u * (point.u - right.u) + point_v * (point.v - right.v);
-            if edge_length > 0.0
-                && cross.abs() <= tolerance * edge_length
-                && dot <= tolerance * tolerance
-            {
-                return Ok(false);
-            }
-            if (left.v > point.v) != (right.v > point.v) {
-                let intersection = left.u + (point.v - left.v) * edge_u / (right.v - left.v);
-                if intersection > point.u {
-                    inside = !inside;
-                }
-            }
-            Ok(true)
-        },
-        "catia_boundary_containment_edges",
-    )?;
-    Ok(strict && inside)
-}
-
 fn point_on_segment(point: Point2, left: Point2, right: Point2, tolerance: f64) -> bool {
     let edge_u = right.u - left.u;
     let edge_v = right.v - left.v;
@@ -110,44 +71,331 @@ fn segments_intersect_or_touch(
             || (right_left < -tolerance && right_right > tolerance))
 }
 
-fn polygon_boundaries_intersect(
-    ctx: &DecodeContext<'_>,
-    left: &[Point2],
-    right: &[Point2],
-    tolerance: f64,
-    same_polygon: bool,
-) -> Result<bool, CodecError> {
-    ctx.any_by(
-        left.iter()
-            .zip(left.iter().cycle().skip(1))
-            .take(left.len())
-            .enumerate(),
-        |(left_index, (&left_start, &left_end))| {
-            let first_right = if same_polygon { left_index + 1 } else { 0 };
-            ctx.any_by(
-                first_right..right.len(),
-                |right_index| {
-                    if same_polygon
-                        && ((left_index + 1) % left.len() == right_index
-                            || (right_index + 1) % right.len() == left_index)
-                    {
-                        return Ok(false);
+#[derive(Clone, Copy)]
+struct Bounds {
+    min_u: f64,
+    min_v: f64,
+    max_u: f64,
+    max_v: f64,
+}
+
+impl Bounds {
+    fn segment(left: Point2, right: Point2) -> Self {
+        Self {
+            min_u: left.u.min(right.u),
+            min_v: left.v.min(right.v),
+            max_u: left.u.max(right.u),
+            max_v: left.v.max(right.v),
+        }
+    }
+    fn union(self, other: Self) -> Self {
+        Self {
+            min_u: self.min_u.min(other.min_u),
+            min_v: self.min_v.min(other.min_v),
+            max_u: self.max_u.max(other.max_u),
+            max_v: self.max_v.max(other.max_v),
+        }
+    }
+    fn expanded(self, tolerance: f64) -> Self {
+        Self {
+            min_u: self.min_u - tolerance,
+            min_v: self.min_v - tolerance,
+            max_u: self.max_u + tolerance,
+            max_v: self.max_v + tolerance,
+        }
+    }
+    fn intersects(self, other: Self) -> bool {
+        self.min_u <= other.max_u
+            && other.min_u <= self.max_u
+            && self.min_v <= other.max_v
+            && other.min_v <= self.max_v
+    }
+}
+
+struct SpatialNode {
+    bounds: Bounds,
+    range: std::ops::Range<usize>,
+    children: Option<[usize; 2]>,
+}
+
+/// A balanced box hierarchy keeps exact geometry tests local to overlapping boxes.
+struct SpatialIndex {
+    items: Vec<(Bounds, usize)>,
+    nodes: Vec<SpatialNode>,
+}
+
+impl SpatialIndex {
+    fn new(ctx: &DecodeContext<'_>, items: Vec<(Bounds, usize)>) -> Result<Self, CodecError> {
+        let mut index = Self {
+            items,
+            nodes: Vec::new(),
+        };
+        if index.items.is_empty() {
+            return Ok(index);
+        }
+        let mut task_storage = ctx.reserve_scoped(0, "catia_boundary_index_tasks")?;
+        let mut tasks = Vec::new();
+        ctx.push_vec(
+            &mut index.nodes,
+            SpatialNode {
+                bounds: index.items[0].0,
+                range: 0..index.items.len(),
+                children: None,
+            },
+            "catia_boundary_index_nodes",
+        )?;
+        ctx.push_scoped_vec(
+            &mut task_storage,
+            &mut tasks,
+            0usize,
+            "catia_boundary_index_tasks",
+        )?;
+        while let Some(node) = ctx.next_charged(
+            &mut std::iter::from_fn(|| tasks.pop()),
+            "catia_boundary_index_build",
+        )? {
+            let range = index.nodes[node].range.clone();
+            let mut bounds = index.items[range.start].0;
+            for (item, _) in
+                ctx.admit_iter(&index.items[range.clone()], "catia_boundary_index_bounds")?
+            {
+                bounds = bounds.union(*item);
+            }
+            index.nodes[node].bounds = bounds;
+            if range.len() <= 8 {
+                continue;
+            }
+            let along_u = bounds.max_u - bounds.min_u >= bounds.max_v - bounds.min_v;
+            if !ctx.is_sorted_by(
+                &index.items[range.clone()],
+                |(bounds, _)| {
+                    if along_u {
+                        &bounds.min_u
+                    } else {
+                        &bounds.min_v
                     }
-                    let right_start = right[right_index];
-                    let right_end = right[(right_index + 1) % right.len()];
-                    Ok(segments_intersect_or_touch(
-                        left_start,
-                        left_end,
-                        right_start,
-                        right_end,
-                        tolerance,
-                    ))
                 },
-                "catia_boundary_segment_pairs",
-            )
-        },
-        "catia_boundary_segment_edges",
-    )
+                f64::total_cmp,
+                "catia_boundary_index_order",
+            )? {
+                ctx.stable_sort_by(
+                    &mut index.items[range.clone()],
+                    |(bounds, _)| {
+                        if along_u {
+                            &bounds.min_u
+                        } else {
+                            &bounds.min_v
+                        }
+                    },
+                    f64::total_cmp,
+                    "catia_boundary_index_sort",
+                )?;
+            }
+            let middle = range.start + range.len() / 2;
+            let left = index.nodes.len();
+            for child in [range.start..middle, middle..range.end] {
+                ctx.push_vec(
+                    &mut index.nodes,
+                    SpatialNode {
+                        bounds,
+                        range: child,
+                        children: None,
+                    },
+                    "catia_boundary_index_nodes",
+                )?;
+            }
+            index.nodes[node].children = Some([left, left + 1]);
+            for child in [left + 1, left] {
+                ctx.push_scoped_vec(
+                    &mut task_storage,
+                    &mut tasks,
+                    child,
+                    "catia_boundary_index_tasks",
+                )?;
+            }
+        }
+        Ok(index)
+    }
+
+    fn any_match(
+        &self,
+        ctx: &DecodeContext<'_>,
+        query: Bounds,
+        mut predicate: impl FnMut(usize) -> Result<bool, CodecError>,
+    ) -> Result<bool, CodecError> {
+        if self.nodes.is_empty() {
+            return Ok(false);
+        }
+        let mut storage = ctx.reserve_scoped(0, "catia_boundary_query_stack")?;
+        let mut stack = Vec::new();
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut stack,
+            0usize,
+            "catia_boundary_query_stack",
+        )?;
+        loop {
+            let Some(node) = ctx.next_charged(
+                &mut std::iter::from_fn(|| stack.pop()),
+                "catia_boundary_index_query",
+            )?
+            else {
+                return Ok(false);
+            };
+            let node = &self.nodes[node];
+            if !node.bounds.intersects(query) {
+                continue;
+            }
+            if let Some(children) = node.children {
+                for child in children.into_iter().rev() {
+                    ctx.push_scoped_vec(
+                        &mut storage,
+                        &mut stack,
+                        child,
+                        "catia_boundary_query_stack",
+                    )?;
+                }
+            } else if ctx.any_by(
+                &self.items[node.range.clone()],
+                |(bounds, id)| {
+                    if bounds.intersects(query) {
+                        predicate(*id)
+                    } else {
+                        Ok(false)
+                    }
+                },
+                "catia_boundary_index_candidates",
+            )? {
+                return Ok(true);
+            }
+        }
+    }
+}
+
+struct BoundaryEdge {
+    polygon: usize,
+    ordinal: usize,
+    start: Point2,
+    end: Point2,
+}
+struct BoundaryIndexes {
+    edges: Vec<BoundaryEdge>,
+    all_edges: SpatialIndex,
+    polygons: Vec<SpatialIndex>,
+}
+
+impl BoundaryIndexes {
+    fn new(ctx: &DecodeContext<'_>, polygons: &[Vec<Point2>]) -> Result<Self, CodecError> {
+        let mut edges = Vec::new();
+        let mut all_boxes = Vec::new();
+        let mut indexes = Vec::new();
+        for (polygon_id, polygon) in ctx
+            .admit_iter(polygons, "catia_boundary_index_polygons")?
+            .enumerate()
+        {
+            let mut boxes = Vec::new();
+            for (ordinal, start) in ctx
+                .admit_iter(polygon, "catia_boundary_index_edges")?
+                .enumerate()
+            {
+                let end = polygon[(ordinal + 1) % polygon.len()];
+                let bounds = Bounds::segment(*start, end);
+                let id = edges.len();
+                ctx.push_vec(
+                    &mut edges,
+                    BoundaryEdge {
+                        polygon: polygon_id,
+                        ordinal,
+                        start: *start,
+                        end,
+                    },
+                    "catia_boundary_index_edges",
+                )?;
+                ctx.push_vec(&mut boxes, (bounds, id), "catia_boundary_index_boxes")?;
+                ctx.push_vec(&mut all_boxes, (bounds, id), "catia_boundary_index_boxes")?;
+            }
+            ctx.push_vec(
+                &mut indexes,
+                SpatialIndex::new(ctx, boxes)?,
+                "catia_boundary_polygon_indexes",
+            )?;
+        }
+        Ok(Self {
+            edges,
+            all_edges: SpatialIndex::new(ctx, all_boxes)?,
+            polygons: indexes,
+        })
+    }
+
+    fn intersect(
+        &self,
+        ctx: &DecodeContext<'_>,
+        polygons: &[Vec<Point2>],
+        tolerance: f64,
+    ) -> Result<bool, CodecError> {
+        ctx.any_by(
+            self.edges.iter().enumerate(),
+            |(id, edge)| {
+                self.all_edges.any_match(
+                    ctx,
+                    Bounds::segment(edge.start, edge.end).expanded(tolerance),
+                    |other| {
+                        if other <= id {
+                            return Ok(false);
+                        }
+                        let other = &self.edges[other];
+                        if edge.polygon == other.polygon
+                            && ((edge.ordinal + 1) % polygons[edge.polygon].len() == other.ordinal
+                                || (other.ordinal + 1) % polygons[edge.polygon].len()
+                                    == edge.ordinal)
+                        {
+                            return Ok(false);
+                        }
+                        Ok(segments_intersect_or_touch(
+                            edge.start,
+                            edge.end,
+                            other.start,
+                            other.end,
+                            tolerance,
+                        ))
+                    },
+                )
+            },
+            "catia_boundary_segment_edges",
+        )
+    }
+
+    fn strictly_inside(
+        &self,
+        ctx: &DecodeContext<'_>,
+        point: Point2,
+        polygon: usize,
+        tolerance: f64,
+    ) -> Result<bool, CodecError> {
+        let mut inside = false;
+        let query = Bounds {
+            min_u: point.u - tolerance,
+            max_u: f64::INFINITY,
+            min_v: point.v - tolerance,
+            max_v: point.v + tolerance,
+        };
+        let touches = self.polygons[polygon].any_match(ctx, query, |id| {
+            let edge = &self.edges[id];
+            if point_on_segment(point, edge.start, edge.end, tolerance) {
+                return Ok(true);
+            }
+            if (edge.start.v > point.v) != (edge.end.v > point.v) {
+                let intersection = edge.start.u
+                    + (point.v - edge.start.v) * (edge.end.u - edge.start.u)
+                        / (edge.end.v - edge.start.v);
+                if intersection > point.u {
+                    inside = !inside;
+                }
+            }
+            Ok(false)
+        })?;
+        Ok(!touches && inside)
+    }
 }
 
 /// Classify complete planar boundary polygons by strict containment.
@@ -264,28 +512,10 @@ pub(crate) fn classify_planar_boundaries(
     let Some((outer, outer_area)) = largest else {
         return unspecified();
     };
-    if ctx.any_by(
-        polygons.iter().enumerate(),
-        |(index, polygon)| {
-            Ok(
-                polygon_boundaries_intersect(ctx, polygon, polygon, coordinate_tolerance, true)?
-                    || ctx.any_by(
-                        &polygons[index + 1..],
-                        |other| {
-                            polygon_boundaries_intersect(
-                                ctx,
-                                polygon,
-                                other,
-                                coordinate_tolerance,
-                                false,
-                            )
-                        },
-                        "catia_boundary_polygon_pairs",
-                    )?,
-            )
-        },
-        "catia_boundary_polygon_intersections",
-    )? {
+    let (indexes, _index_storage) = ctx.with_scoped_storage("catia_boundary_indexes", || {
+        BoundaryIndexes::new(ctx, &polygons)
+    })?;
+    if indexes.intersect(ctx, &polygons, coordinate_tolerance)? {
         return unspecified();
     }
     if ctx.any_by(
@@ -295,51 +525,50 @@ pub(crate) fn classify_planar_boundaries(
     )? {
         return unspecified();
     }
+    // Disjoint connected boundaries cannot cross between inside and outside.
+    // Intersection admission also rejects tolerance contacts, so one vertex
+    // determines each complete polygon's strict containment.
     if ctx.any_by(
         polygons.iter().enumerate(),
         |(index, polygon)| {
             Ok(index != outer
-                && ctx.any_by(
-                    polygon,
-                    |point| {
-                        Ok(!strictly_inside_planar_polygon(
-                            ctx,
-                            *point,
-                            &polygons[outer],
-                            coordinate_tolerance,
-                        )?)
-                    },
-                    "catia_boundary_outer_point_search",
-                )?)
+                && !indexes.strictly_inside(ctx, polygon[0], outer, coordinate_tolerance)?)
         },
         "catia_boundary_outer_containment",
     )? {
         return unspecified();
     }
+    let (holes, _hole_storage) = ctx.with_scoped_storage("catia_boundary_hole_index", || {
+        let mut boxes = Vec::new();
+        for (index, polygon) in ctx
+            .admit_iter(&indexes.polygons, "catia_boundary_hole_boxes")?
+            .enumerate()
+        {
+            if index != outer {
+                ctx.push_vec(
+                    &mut boxes,
+                    (polygon.nodes[0].bounds, index),
+                    "catia_boundary_hole_boxes",
+                )?;
+            }
+        }
+        SpatialIndex::new(ctx, boxes)
+    })?;
     if ctx.any_by(
         polygons.iter().enumerate(),
         |(index, polygon)| {
-            Ok(index != outer
-                && ctx.any_by(
-                    polygons.iter().enumerate(),
-                    |(other_index, other)| {
-                        Ok(other_index != outer
-                            && other_index != index
-                            && ctx.any_by(
-                                polygon,
-                                |point| {
-                                    strictly_inside_planar_polygon(
-                                        ctx,
-                                        *point,
-                                        other,
-                                        coordinate_tolerance,
-                                    )
-                                },
-                                "catia_boundary_hole_point_search",
-                            )?)
-                    },
-                    "catia_boundary_hole_pairs",
-                )?)
+            if index == outer {
+                return Ok(false);
+            }
+            let point = polygon[0];
+            holes.any_match(
+                ctx,
+                Bounds::segment(point, point).expanded(coordinate_tolerance),
+                |other| {
+                    Ok(other != index
+                        && indexes.strictly_inside(ctx, point, other, coordinate_tolerance)?)
+                },
+            )
         },
         "catia_boundary_hole_containment",
     )? {
@@ -415,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn self_intersection_visits_each_unordered_edge_pair_once() {
+    fn self_intersection_uses_indexed_candidates() {
         use cadmpeg_ir::math::Point2;
         let square = [
             Point2::new(0.0, 0.0),
@@ -423,16 +652,19 @@ mod tests {
             Point2::new(1.0, 1.0),
             Point2::new(0.0, 1.0),
         ];
-        // Four outer visits and their end probe; six unordered pairs and
-        // the four inner end probes. Adjacent pairs need only a fixed check.
-        let result = crate::test_support::with_work_limit(15, |ctx| {
-            super::polygon_boundaries_intersect(ctx, &square, &square, 0.0, true)
-        })
-        .expect("one visit per unordered pair and end probe");
+        let check = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let polygons = vec![square.to_vec()];
+            let (indexes, _storage) = ctx
+                .with_scoped_storage("catia_test_boundary_index", || {
+                    super::BoundaryIndexes::new(ctx, &polygons)
+                })?;
+            indexes.intersect(ctx, &polygons, 0.0)
+        };
+        let result = crate::test_support::with_service_context(check).expect("indexed square");
         assert!(!result);
         let refusal =
-            crate::test_support::with_work_refusal("catia_boundary_segment_pairs", |ctx| {
-                let result = super::polygon_boundaries_intersect(ctx, &square, &square, 0.0, true);
+            crate::test_support::with_work_refusal("catia_boundary_index_candidates", |ctx| {
+                let result = check(ctx);
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
                     assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
                 }
@@ -441,7 +673,7 @@ mod tests {
         assert!(
             matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "catia_boundary_segment_pairs")
+                && limit.operation == "catia_boundary_index_candidates")
         );
     }
 
@@ -452,7 +684,7 @@ mod tests {
             square(2.0, 2.0, 3.0, 3.0),
         ]);
         let result =
-            crate::test_support::with_work_refusal("catia_boundary_segment_pairs", |ctx| {
+            crate::test_support::with_work_refusal("catia_boundary_index_candidates", |ctx| {
                 let result = super::classify_planar_boundaries(ctx, &plane(), &boundaries);
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
                     assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
@@ -460,7 +692,7 @@ mod tests {
                 result
             });
         assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_boundary_segment_pairs")
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_boundary_index_candidates")
         );
     }
 
@@ -549,5 +781,139 @@ mod tests {
             ),
             unspecified
         );
+    }
+    #[test]
+    fn boundary_index_admits_large_convex_outer_and_disjoint_holes() {
+        let work = |point_count: u32| {
+            let outer = (0..point_count)
+                .map(|index| {
+                    let angle = f64::from(index) * std::f64::consts::TAU / f64::from(point_count);
+                    Point3::new(100.0 * angle.cos(), 100.0 * angle.sin(), 0.0)
+                })
+                .collect();
+            let mut boundaries = vec![outer];
+            let hole_count = point_count / 8;
+            for index in 0..hole_count {
+                let u = f64::from(index % 16) * 3.0 - 24.0;
+                let v = f64::from(index / 16) * 3.0 - 12.0;
+                boundaries.push(vec![
+                    Point3::new(u, v, 0.0),
+                    Point3::new(u + 1.0, v, 0.0),
+                    Point3::new(u, v + 1.0, 0.0),
+                ]);
+            }
+            let boundaries = rows(boundaries);
+            let result = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+                let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                    "catia_test_boundary_complete",
+                    None,
+                );
+                let result = super::classify_planar_boundaries(ctx, &plane(), &boundaries)?;
+                assert_eq!(
+                    result,
+                    FaceLoops::classified(
+                        loop_id(0),
+                        (1..=hole_count)
+                            .map(|index| loop_id(usize::try_from(index).expect("hole index")))
+                            .collect()
+                    )
+                );
+                ctx.charge_work(1, "catia_test_boundary_complete")
+            });
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+                panic!("complete classification must reach the cost probe");
+            };
+            assert_eq!(limit.operation, "catia_test_boundary_complete");
+            limit.used
+        };
+        // Doubling n raises n log^2(n) by less than three at these sizes.
+        // Doubling both edge and hole populations exposes quadratic searches.
+        assert!(work(1024) <= 3 * work(512));
+    }
+
+    #[test]
+    fn boundary_indexes_match_exhaustive_geometry_predicates() {
+        use cadmpeg_ir::math::Point2;
+        let shapes = [
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(4.0, 0.0),
+                Point2::new(4.0, 4.0),
+                Point2::new(0.0, 4.0),
+            ],
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(4.0, 0.0),
+                Point2::new(2.0, 1.0),
+                Point2::new(4.0, 4.0),
+                Point2::new(0.0, 4.0),
+            ],
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(4.0, 4.0),
+                Point2::new(0.0, 4.0),
+                Point2::new(4.0, 0.0),
+            ],
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(0.0, 0.0),
+                Point2::new(4.0, 0.0),
+                Point2::new(0.0, 4.0),
+            ],
+        ];
+        for tolerance in [0.0, super::EPS_PLANAR_COORDINATE, 0.25] {
+            for shape in &shapes {
+                let polygons = vec![shape.clone()];
+                crate::test_support::with_service_context(|ctx| {
+                    let (index, _storage) = ctx
+                        .with_scoped_storage("catia_test_boundary_indexes", || {
+                            super::BoundaryIndexes::new(ctx, &polygons)
+                        })?;
+                    let expected = (0..shape.len()).any(|left| {
+                        ((left + 1)..shape.len()).any(|right| {
+                            (left + 1) % shape.len() != right
+                                && (right + 1) % shape.len() != left
+                                && super::segments_intersect_or_touch(
+                                    shape[left],
+                                    shape[(left + 1) % shape.len()],
+                                    shape[right],
+                                    shape[(right + 1) % shape.len()],
+                                    tolerance,
+                                )
+                        })
+                    });
+                    assert_eq!(index.intersect(ctx, &polygons, tolerance)?, expected);
+                    for u in -2..11 {
+                        for v in -2..11 {
+                            let point = Point2::new(f64::from(u) * 0.5, f64::from(v) * 0.5);
+                            let mut inside = false;
+                            let strict = (0..shape.len()).all(|edge| {
+                                let left = shape[edge];
+                                let right = shape[(edge + 1) % shape.len()];
+                                if super::point_on_segment(point, left, right, tolerance) {
+                                    return false;
+                                }
+                                if (left.v > point.v) != (right.v > point.v) {
+                                    let intersection = left.u
+                                        + (point.v - left.v) * (right.u - left.u)
+                                            / (right.v - left.v);
+                                    if intersection > point.u {
+                                        inside = !inside;
+                                    }
+                                }
+                                true
+                            });
+                            assert_eq!(
+                                index.strictly_inside(ctx, point, 0, tolerance)?,
+                                strict && inside
+                            );
+                        }
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(())
+                })
+                .expect("indexed geometry matches exact predicates");
+            }
+        }
     }
 }

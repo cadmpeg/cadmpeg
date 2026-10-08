@@ -18,31 +18,8 @@ fn surface_tail_continuation_refusal_propagates_unchanged() {
     });
 }
 
-fn work_refusals<T>(
-    run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
-) -> std::collections::HashSet<&'static str> {
-    let mut operations = std::collections::HashSet::new();
-    let mut cap = 0;
-    for _ in 0..1024 {
-        match crate::test_support::with_work_limit(cap, &run) {
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits =>
-            {
-                operations.insert(limit.operation);
-                cap = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("finite fixture work");
-            }
-            Ok(_) => return operations,
-            Err(error) => panic!("unexpected refusal: {error}"),
-        }
-    }
-    panic!("fixture did not finish its admitted work");
-}
-
 fn require_sticky_work_refusal<T>(
-    operation: &'static str,
+    operation: &str,
     run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
@@ -63,18 +40,11 @@ fn require_sticky_work_refusal<T>(
 }
 
 #[test]
-fn a5_knots_refuse_multiplicity_scan_and_expansion_work() {
-    let operations = work_refusals(|ctx| a5_knots(ctx, &[0.0, 1.0], 1));
-    for operation in [
-        "catia_a5_multiplicity_emit",
-        "catia_a5_knot_expansion_scan",
-        "catia_a5_knot_expansion_emit",
-    ] {
-        assert!(
-            operations.contains(operation),
-            "missing work refusal for {operation}"
-        );
-    }
+fn a5_knots_refuse_distinct_knot_traversal_work() {
+    require_work_operations(
+        |ctx| a5_knots(ctx, &[0.0, 1.0], 1),
+        &["catia_a5_knot_expansion_scan"],
+    );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| a5_knots(ctx, &[0.0, 1.0], 1))
             .expect("service work"),
@@ -83,18 +53,12 @@ fn a5_knots_refuse_multiplicity_scan_and_expansion_work() {
 }
 
 #[test]
-fn a5_nurbs_knots_refuse_scan_and_expansion_work() {
+fn a5_nurbs_knots_refuse_distinct_knot_traversal_work() {
     let bytes = super::curve_and_guide_records::a5_nurbs_curve_stream();
-    let operations = work_refusals(|ctx| a5_nurbs_curves(ctx, &bytes));
-    for operation in [
-        "catia_a5_nurbs_knot_expansion_scan",
-        "catia_a5_nurbs_knot_expansion_emit",
-    ] {
-        assert!(
-            operations.contains(operation),
-            "missing work refusal for {operation}"
-        );
-    }
+    require_work_operations(
+        |ctx| a5_nurbs_curves(ctx, &bytes),
+        &["catia_a5_nurbs_knot_expansion_scan"],
+    );
     assert_eq!(
         crate::test_support::with_service_context(|ctx| a5_nurbs_curves(ctx, &bytes))
             .expect("service work")
@@ -122,12 +86,8 @@ fn require_work_operations<T>(
     run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
     required: &[&str],
 ) {
-    let operations = work_refusals(run);
     for operation in required {
-        assert!(
-            operations.contains(operation),
-            "missing work refusal for {operation}"
-        );
+        require_sticky_work_refusal(operation, &run);
     }
 }
 
@@ -138,7 +98,6 @@ fn a5_nurbs_preflight_and_materialization_refuse_caller_work() {
         |ctx| a5_nurbs_curves(ctx, &bytes),
         &[
             "catia_a5_nurbs_record_scan",
-            "catia_a5_nurbs_preflight",
             "catia_a5_nurbs_knot_preflight_scan",
             "catia_a5_nurbs_control_preflight_scan",
             "catia_a5_nurbs_knot_materialization",
@@ -173,7 +132,6 @@ fn a5_jet_preflight_materialization_and_projection_refuse_caller_work() {
         |ctx| super::super::a5_freeform_curves(ctx, &bytes),
         &[
             "catia_a5_jet_record_scan",
-            "catia_a5_jet_preflight",
             "catia_a5_jet_knot_preflight_scan",
             "catia_a5_jet_materialization",
         ],
@@ -196,7 +154,7 @@ fn a5_jet_preflight_materialization_and_projection_refuse_caller_work() {
         &[
             "catia_a5_limit_jet_projection",
             "catia_a5_jet_knot_projection",
-            "catia_a5_limit_pole_projection",
+            "catia_quintic_control_visits",
         ],
     );
 }
@@ -208,7 +166,6 @@ fn a8_jet_preflight_materialization_and_projection_refuse_caller_work() {
         |ctx| super::super::a8_freeform_curves(ctx, &bytes),
         &[
             "catia_a8_frame_scan",
-            "catia_a8_jet_preflight",
             "catia_a8_jet_multiplicity_preflight_scan",
             "catia_a8_jet_knot_preflight_scan",
             "catia_a8_jet_materialization",
@@ -245,7 +202,6 @@ fn object_stream_pcurve_preflight_materialization_and_projection_refuse_caller_w
         |ctx| super::super::object_stream_pcurves(ctx, &bytes),
         &[
             "catia_object_stream_frame_scan",
-            "catia_object_stream_pcurve_preflight",
             "catia_object_stream_pcurve_multiplicity_preflight_scan",
             "catia_object_stream_pcurve_lane_scan",
             "catia_object_stream_pcurve_materialization",
@@ -269,7 +225,7 @@ fn object_stream_pcurve_preflight_materialization_and_projection_refuse_caller_w
     );
     require_work_operations(|ctx| curve.knots(ctx), &["catia_a8_pcurve_knot_projection"]);
     require_work_operations(
-        |ctx| curve.bspline(ctx),
+        |ctx| curve.bspline(ctx, true),
         &["catia_a8_pcurve_jet_projection"],
     );
 }
@@ -284,7 +240,6 @@ fn a8_lane_preflight_and_inline_grid_materialization_refuse_caller_work() {
         |ctx| super::super::a8_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new()),
         &[
             "catia_a8_frame_scan",
-            "catia_a8_lane_preflight",
             "catia_a8_distinct_knot_preflight_scan",
             "catia_a8_surface_multiplicity_preflight_scan",
             "catia_a8_distinct_materialization",
@@ -292,7 +247,6 @@ fn a8_lane_preflight_and_inline_grid_materialization_refuse_caller_work() {
             "catia_a8_pole_count_scan",
             "catia_a8_inline_pole_materialization",
             "catia_a8_inline_weight_materialization",
-            "catia_a8_surface_suffix_scan",
             "catia_a8_inline_pole_rows",
             "catia_a8_inline_weight_rows",
         ],
@@ -356,7 +310,6 @@ fn external_grid_inspection_and_materialization_preserve_work_refusals() {
             )
         },
         &[
-            "catia_external_grid_frame_scan",
             "catia_a8_external_grid_candidate_scan",
             "catia_a8_external_pole_materialization",
             "catia_a8_external_pole_rows",
@@ -364,10 +317,7 @@ fn external_grid_inspection_and_materialization_preserve_work_refusals() {
     );
     require_work_operations(
         |ctx| super::super::a8_external_grid_ranges(ctx, &bytes),
-        &[
-            "catia_a8_lane_preflight",
-            "catia_a8_external_grid_candidate_scan",
-        ],
+        &["catia_a8_external_grid_candidate_scan"],
     );
 }
 
@@ -544,13 +494,47 @@ fn a5_distinct_knots_refuse_collection_limit_before_materialization() {
 }
 
 #[test]
-fn a5_multiplicities_refuse_collection_limit_before_materialization() {
+fn a5_expanded_knots_refuse_collection_limit_before_materialization() {
     let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 4, "catia_a5_knot_multiplicities");
+    assert_a5_surface_collection_refusal(&bytes, 4, "catia_a5_expanded_knots");
 }
 
 #[test]
-fn a5_expanded_knots_refuse_collection_limit_before_materialization() {
-    let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 6, "catia_a5_expanded_knots");
+fn rejected_a5_scalar_and_weight_candidates_release_storage() {
+    let scalar = f64::NAN.to_le_bytes();
+    let mut weights = vec![0x00];
+    weights.extend_from_slice(&scalar);
+    crate::test_support::with_retained_limit(0, |ctx| {
+        for _ in 0..64 {
+            assert!(
+                super::super::a5_distinct_values(ctx, &scalar, &mut 0, 1, scalar.len())
+                    .expect("rejected scalar scratch")
+                    .is_none()
+            );
+            assert!(
+                super::super::a5_weights(ctx, &weights, &mut 0, 1, 1, weights.len())
+                    .expect("rejected weight scratch")
+                    .is_none()
+            );
+        }
+    });
+}
+
+#[test]
+fn rejected_rolling_ball_stations_release_storage() {
+    let bytes = crate::test_support::test_a5a8::a8_freeform_curve_stream();
+    let mut curve = crate::test_support::with_service_context(|ctx| {
+        super::super::a8_freeform_curves(ctx, &bytes)
+    })
+    .expect("service parse")
+    .pop()
+    .expect("one jet");
+    curve.sites[1].knot = curve.sites[0].knot;
+    crate::test_support::with_retained_limit(0, |ctx| {
+        for _ in 0..64 {
+            assert!(super::super::rolling_ball_jet_definition(ctx, &curve)
+                .expect("rejected station scratch")
+                .is_none());
+        }
+    });
 }

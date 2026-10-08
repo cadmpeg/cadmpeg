@@ -53,17 +53,16 @@ fn formula_local_unary_depth_refuses_instead_of_returning_absence() {
 #[test]
 fn formula_bound_string_operations_admit_operand_work() {
     use super::super::{EvaluatedFormulaString, EvaluatedFormulaValue};
-    for (source, operation, literal_bytes) in [
-        ("#1_.Length()", "catia_formula_string_length", 0),
-        ("#1_.Search(\"x\")", "catia_formula_string_search", 1),
-        ("#1_.Extract(0,1)", "catia_formula_string_boundary", 0),
-        ("#1_.ToReal()", "catia_formula_string_real", 0),
+    for (source, operation) in [
+        ("#1_.Length()", "catia_formula_string_length"),
+        ("#1_.Search(\"x\")", "catia_formula_string_search"),
+        ("#1_.Extract(0,1)", "catia_formula_string_boundary"),
+        ("#1_.ToReal()", "catia_formula_string_real"),
         (
             "ReplaceSubText(#1_,\"x\",\"y\")",
             "catia_formula_replace_subtext",
-            2,
         ),
-        ("ToUpper(#1_)", "catia_formula_string_case", 0),
+        ("ToUpper(#1_)", "catia_formula_string_case"),
     ] {
         let bindings = BTreeMap::from([(
             "#1_",
@@ -72,12 +71,16 @@ fn formula_bound_string_operations_admit_operand_work() {
                 true,
             )),
         )]);
-        let _ = literal_bytes;
-        let refusal = crate::test_support::with_work_refusal(operation, |ctx| {
-            super::super::evaluate_formula_expression_charged(ctx, source, &bindings)
+        let result = crate::test_support::with_work_refusal(operation, |ctx| {
+            let result = super::super::evaluate_formula_expression_charged(ctx, source, &bindings);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
         });
         assert!(
-            matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == operation)
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation)
         );
     }
 }

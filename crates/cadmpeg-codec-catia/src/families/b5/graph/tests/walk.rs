@@ -211,7 +211,7 @@ fn object_population_selection_refuses_before_indexing_runs() {
                     .checked_add(error.additional)
                     .expect("bounded fixture");
             }
-            Ok(_) => panic!("selection admitted before its index limit"),
+            Ok(()) => panic!("selection admitted before its index limit"),
             Err(error) => panic!("unexpected selection refusal: {error}"),
         }
     }
@@ -325,8 +325,9 @@ fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
     let payload = a8_class21_test_payload();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Two knots use forty-six items before the retained multiplicity vector.
-    policy.limits.max_collection_items = 46;
+    // Two distinct knots, two raw knots, twelve scalar-lane slots, six
+    // projected jet slots, and two six-control nets use 34 items.
+    policy.limits.max_collection_items = 34;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("fixture fits the input limit");
     let error = parse_a8_class21_pcurve(&ctx, 7, &payload)
@@ -1966,7 +1967,7 @@ fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
     let refused = crate::test_support::with_work_refusal("IR strict knot order", |ctx| {
         let result = parse_a8_class21_pcurve(ctx, 7, &payload);
         if let Err(CodecError::ResourceLimit(limit)) = &result {
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
         }
         result
     });
@@ -1978,3 +1979,5 @@ fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
 }
 
 mod topology_walk;
+
+mod jet_admission;

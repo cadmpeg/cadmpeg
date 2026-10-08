@@ -3672,6 +3672,12 @@ impl CatiaObjectRecord {
     pub(crate) fn subtype(&self) -> PayloadSubtype {
         object_graph::classify(&self.payload.fields)
     }
+    pub(crate) fn subtype_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<PayloadSubtype, CodecError> {
+        object_graph::classify_charged(ctx, &self.payload.fields)
+    }
     /// Counted reference suffix of the payload.
     pub(crate) fn repeated_reference_suffix(
         &self,
@@ -3776,7 +3782,7 @@ impl From<CatiaObjectRecord> for CatiaObjectRecordWire {
 
 impl CatiaObjectRecordWire {
     fn from_charged(ctx: &DecodeContext<'_>, value: CatiaObjectRecord) -> Result<Self, CodecError> {
-        let subtype = value.subtype();
+        let subtype = value.subtype_charged(ctx)?;
         let suffix = object_graph::repeated_reference_suffix_charged(ctx, &value.payload)?;
         Ok(Self::from_parts(value, subtype, suffix))
     }
