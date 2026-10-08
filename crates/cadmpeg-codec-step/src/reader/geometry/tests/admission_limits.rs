@@ -102,18 +102,21 @@ fn surface_scale_refusal(
     let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#1").expect("valid identity");
     let (mut index, mut workspace) =
         super::super::SurfaceScaleIndex::build(&ir, &ctx).expect("empty model index");
-    workspace.with_storage(|| super::super::procedural_surface_parameter_scales(
-        &ir,
-        &mut index,
-        &id,
-        &cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
-        ),
-        [1.0, 1.0],
-        &BTreeMap::new(),
-        &ctx,
-    ))
-    .expect_err("surface scale exceeds limit")
+    workspace
+        .with_storage(|| {
+            super::super::procedural_surface_parameter_scales(
+                &ir,
+                &mut index,
+                &id,
+                &cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+                ),
+                [1.0, 1.0],
+                &BTreeMap::new(),
+                &ctx,
+            )
+        })
+        .expect_err("surface scale exceeds limit")
 }
 
 #[test]
@@ -680,32 +683,43 @@ fn composite_segment_scratch_is_scoped_and_released() {
         .expect("scratch needs no retained bytes and releases its reservation");
 }
 
-
 #[test]
 fn deferred_composite_wakes_only_after_all_missing_edges() {
     crate::test_support::with_service_context(b"dependency graph", |_, ctx| {
         let mut waiting = super::super::DeferredDependencies::default();
         let mut queue = VecDeque::new();
-        let mut storage = ctx.reserve_scoped(0, "test deferred storage").expect("scope");
-        storage.with_storage(|| -> Result<(), CodecError> {
-            for dependency in 1..=20 {
-                waiting.register(ctx, dependency, 100, "test groups", "test members")?;
-            }
-            // Repeated segments preserve their separate edges without an early wake.
-            waiting.register(ctx, 20, 100, "test groups", "test members")?;
-            for dependency in 1..20 {
+        let mut storage = ctx
+            .reserve_scoped(0, "test deferred storage")
+            .expect("scope");
+        storage
+            .with_storage(|| -> Result<(), CodecError> {
+                for dependency in 1..=20 {
+                    waiting.register(ctx, dependency, 100, "test groups", "test members")?;
+                }
+                // Repeated segments preserve their separate edges without an early wake.
+                waiting.register(ctx, 20, 100, "test groups", "test members")?;
+                for dependency in 1..20 {
+                    super::super::wake_deferred_dependents(
+                        dependency,
+                        &mut waiting,
+                        &mut queue,
+                        ctx,
+                        "test queue",
+                    )?;
+                    assert!(queue.is_empty());
+                }
                 super::super::wake_deferred_dependents(
-                    dependency, &mut waiting, &mut queue, ctx, "test queue",
+                    20,
+                    &mut waiting,
+                    &mut queue,
+                    ctx,
+                    "test queue",
                 )?;
-                assert!(queue.is_empty());
-            }
-            super::super::wake_deferred_dependents(
-                20, &mut waiting, &mut queue, ctx, "test queue",
-            )?;
-            assert_eq!(queue, VecDeque::from([100]));
-            assert!(waiting.waiting_on.is_empty());
-            assert!(waiting.remaining.is_empty());
-            Ok(())
-        }).expect("resolve dependency graph");
+                assert_eq!(queue, VecDeque::from([100]));
+                assert!(waiting.waiting_on.is_empty());
+                assert!(waiting.remaining.is_empty());
+                Ok(())
+            })
+            .expect("resolve dependency graph");
     });
 }

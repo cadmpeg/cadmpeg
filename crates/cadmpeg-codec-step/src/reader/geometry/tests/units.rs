@@ -493,22 +493,26 @@ fn uncertainty_name_refuses_materialized_limit() {
     use cadmpeg_core::CodecError;
 
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));ENDSEC;END-ISO-10303-21;";
-    let (original, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
-        .expect("valid uncertainty exchange");
+    let (original, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid uncertainty exchange");
     crate::test_support::with_service_context(SOURCE, |_, ctx| {
-        let (measures, unresolved) = super::super::context_length_uncertainties(
-            &original.records()[&3], &original, ctx,
-        ).expect("original production uncertainty route");
+        let (measures, unresolved) =
+            super::super::context_length_uncertainties(&original.records()[&3], &original, ctx)
+                .expect("original production uncertainty route");
         assert_eq!(measures.len(), 1);
         assert_eq!(measures[0].get(), 0.2);
         assert_eq!(unresolved, 0);
     });
     // The original name is smaller than the earlier freed unit-active tree.
     // A longer name makes the production text allocation raise that peak.
-    let source = std::str::from_utf8(SOURCE).expect("ASCII fixture")
-        .replace("'distance_accuracy_value'", &format!("'{}'", "x".repeat(4096)));
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-        .expect("long uncertainty name exchange");
+    let source = std::str::from_utf8(SOURCE).expect("ASCII fixture").replace(
+        "'distance_accuracy_value'",
+        &format!("'{}'", "x".repeat(4096)),
+    );
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("long uncertainty name exchange");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::MaterializedBytes,
         "step_string_text",
@@ -518,9 +522,8 @@ fn uncertainty_name_refuses_materialized_limit() {
             policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                 .expect("root fits materialized policy");
-            super::super::context_length_uncertainties(
-                &exchange.records()[&3], &exchange, &ctx,
-            ).map(|_| ())
+            super::super::context_length_uncertainties(&exchange.records()[&3], &exchange, &ctx)
+                .map(|_| ())
         },
     );
     assert!(

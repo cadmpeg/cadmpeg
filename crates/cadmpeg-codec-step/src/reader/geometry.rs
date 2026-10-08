@@ -1508,7 +1508,8 @@ pub(super) fn decode<'ctx>(
                 .copied()
             else {
                 scratch.with_storage(|| {
-                    waiting_on.register(ctx,
+                    waiting_on.register(
+                        ctx,
                         parent_step,
                         id,
                         "step_deferred_curve_groups",
@@ -1624,7 +1625,8 @@ pub(super) fn decode<'ctx>(
                 "step_geometry_lookup",
             )? {
                 scratch.with_storage(|| {
-                    waiting_on.register(ctx,
+                    waiting_on.register(
+                        ctx,
                         basis_step,
                         id,
                         "step_deferred_curve_groups",
@@ -1774,7 +1776,8 @@ pub(super) fn decode<'ctx>(
                     "step_geometry_lookup",
                 )? {
                     scratch.with_storage(|| {
-                        waiting_on.register(ctx,
+                        waiting_on.register(
+                            ctx,
                             dependency,
                             id,
                             "step_deferred_curve_groups",
@@ -1897,7 +1900,8 @@ pub(super) fn decode<'ctx>(
             "step_geometry_lookup",
         )? {
             scratch.with_storage(|| {
-                waiting_on.register(ctx,
+                waiting_on.register(
+                    ctx,
                     source_step,
                     id,
                     "step_deferred_curve_groups",
@@ -2515,7 +2519,8 @@ pub(super) fn decode<'ctx>(
                 .map(|surface| &surface.geometry)
             else {
                 scratch.with_storage(|| {
-                    surface_waiting_on.register(ctx,
+                    surface_waiting_on.register(
+                        ctx,
                         support_step,
                         id,
                         "step_deferred_surface_groups",
@@ -2528,15 +2533,17 @@ pub(super) fn decode<'ctx>(
                 continue;
             };
 
-            let Some(parameter_scales) = worklist_scale_storage.with_storage(|| procedural_surface_parameter_scales(
-                ir,
-                &mut worklist_scale_index,
-                &SurfaceId::from(ids::data(kind!("surface"), support_step)),
-                geometry,
-                [record_scale, record_angle_scale],
-                &source_curve_parameter_scales,
-                ctx,
-            ))?
+            let Some(parameter_scales) = worklist_scale_storage.with_storage(|| {
+                procedural_surface_parameter_scales(
+                    ir,
+                    &mut worklist_scale_index,
+                    &SurfaceId::from(ids::data(kind!("surface"), support_step)),
+                    geometry,
+                    [record_scale, record_angle_scale],
+                    &source_curve_parameter_scales,
+                    ctx,
+                )
+            })?
             else {
                 ctx.push_vec(
                     &mut losses,
@@ -2652,7 +2659,8 @@ pub(super) fn decode<'ctx>(
                 .copied()
             else {
                 scratch.with_storage(|| {
-                    surface_waiting_on.register(ctx,
+                    surface_waiting_on.register(
+                        ctx,
                         support_step,
                         id,
                         "step_deferred_surface_groups",
@@ -2801,7 +2809,8 @@ pub(super) fn decode<'ctx>(
                 "step_geometry_lookup",
             )? {
                 scratch.with_storage(|| {
-                    surface_waiting_on.register(ctx,
+                    surface_waiting_on.register(
+                        ctx,
                         support_step,
                         id,
                         "step_deferred_surface_groups",
@@ -2871,7 +2880,8 @@ pub(super) fn decode<'ctx>(
                 .copied()
             else {
                 scratch.with_storage(|| {
-                    surface_waiting_on.register(ctx,
+                    surface_waiting_on.register(
+                        ctx,
                         parent_step,
                         id,
                         "step_deferred_surface_groups",
@@ -3196,18 +3206,20 @@ pub(super) fn decode<'ctx>(
         let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
             continue;
         };
-        if let Some(scales) = scale_index_workspace.with_storage(|| procedural_surface_parameter_scales(
-            ir,
-            &mut scale_index,
-            &surface.id,
-            &surface.geometry,
-            [
-                unit_scales.length([id], ctx)?.get(),
-                unit_scales.angle([id], ctx)?.get(),
-            ],
-            &source_curve_parameter_scales,
-            ctx,
-        ))? {
+        if let Some(scales) = scale_index_workspace.with_storage(|| {
+            procedural_surface_parameter_scales(
+                ir,
+                &mut scale_index,
+                &surface.id,
+                &surface.geometry,
+                [
+                    unit_scales.length([id], ctx)?.get(),
+                    unit_scales.angle([id], ctx)?.get(),
+                ],
+                &source_curve_parameter_scales,
+                ctx,
+            )
+        })? {
             scratch.with_storage(|| {
                 ctx.insert_btree_map(
                     &mut surface_parameter_scales,
@@ -6135,16 +6147,25 @@ impl DeferredDependencies {
         member_operation: &'static str,
     ) -> Result<(), CodecError> {
         if let Some(remaining) = ctx.get_mut_hash_map(
-            &mut self.remaining, &dependent, "step deferred dependency count",
+            &mut self.remaining,
+            &dependent,
+            "step deferred dependency count",
         )? {
             *remaining += 1;
         } else {
             ctx.insert_hash_map(
-                &mut self.remaining, dependent, 1, "step deferred dependency count",
+                &mut self.remaining,
+                dependent,
+                1,
+                "step deferred dependency count",
             )?;
         }
         ctx.push_hash_group(
-            &mut self.waiting_on, dependency, dependent, group_operation, member_operation,
+            &mut self.waiting_on,
+            dependency,
+            dependent,
+            group_operation,
+            member_operation,
         )
     }
 }
@@ -6156,17 +6177,24 @@ fn wake_deferred_dependents(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    if let Some(dependents) = ctx.remove_hash_map(&mut waiting_on.waiting_on, &id, "step_geometry_remove")? {
+    if let Some(dependents) =
+        ctx.remove_hash_map(&mut waiting_on.waiting_on, &id, "step_geometry_remove")?
+    {
         for dependent in ctx.admit_iter(dependents, "step deferred dependent traversal")? {
             let Some(remaining) = ctx.get_mut_hash_map(
-                &mut waiting_on.remaining, &dependent, "step deferred dependency count",
-            )? else {
+                &mut waiting_on.remaining,
+                &dependent,
+                "step deferred dependency count",
+            )?
+            else {
                 continue;
             };
             *remaining -= 1;
             if *remaining == 0 {
                 ctx.remove_hash_map(
-                    &mut waiting_on.remaining, &dependent, "step deferred dependency count",
+                    &mut waiting_on.remaining,
+                    &dependent,
+                    "step deferred dependency count",
                 )?;
                 ctx.push_back(queue, dependent, operation)?;
             }
@@ -6587,7 +6615,7 @@ fn nurbs_curve_definition<'a>(
     record: &'a RawRecord,
     losses: &mut Vec<LossNote>,
     periodicity_field: &str,
-    mut storage: Option<&mut ScopedReservation<'_>>,
+    storage: Option<&mut ScopedReservation<'_>>,
     weight_storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<NurbsCurveDefinition<'a>>, CodecError> {
@@ -6639,7 +6667,7 @@ fn nurbs_curve_definition<'a>(
         .and_then(|count| count.checked_add(1)));
     let knots = if let Some(knot_leaf) = record.partial(ctx, "B_SPLINE_CURVE_WITH_KNOTS")? {
         let tail = geometry_or_none!(knot_leaf.parameters.len().checked_sub(3));
-        geometry_or_none!(if let Some(storage) = storage.as_deref_mut() {
+        geometry_or_none!(if let Some(storage) = storage {
             storage.with_storage(|| {
                 expand_knots(
                     geometry_or_none!(knot_leaf.parameters.get(tail)),
@@ -6666,7 +6694,7 @@ fn nurbs_curve_definition<'a>(
         } else {
             return Ok(None);
         };
-        geometry_or_none!(if let Some(storage) = storage.as_deref_mut() {
+        geometry_or_none!(if let Some(storage) = storage {
             storage.with_storage(|| default_nurbs_knots(control_points.len(), degree, kind, ctx))
         } else {
             default_nurbs_knots(control_points.len(), degree, kind, ctx)
@@ -6730,7 +6758,12 @@ fn default_nurbs_knots(
                     cadmpeg_core::convert::f64_from_index(index)
                 )));
                 for _ in ctx.admit_iter(0..multiplicity, "STEP repeated knot traversal")? {
-                    ctx.push_scoped_vec(&mut staging, &mut knots, knot, "step_default_nurbs_knots")?;
+                    ctx.push_scoped_vec(
+                        &mut staging,
+                        &mut knots,
+                        knot,
+                        "step_default_nurbs_knots",
+                    )?;
                 }
             }
         }
@@ -6757,7 +6790,12 @@ fn default_nurbs_knots(
                     cadmpeg_core::convert::f64_from_index(index)
                 )));
                 for _ in ctx.admit_iter(0..multiplicity, "STEP repeated knot traversal")? {
-                    ctx.push_scoped_vec(&mut staging, &mut knots, knot, "step_default_nurbs_knots")?;
+                    ctx.push_scoped_vec(
+                        &mut staging,
+                        &mut knots,
+                        knot,
+                        "step_default_nurbs_knots",
+                    )?;
                 }
             }
         }
@@ -6794,10 +6832,17 @@ fn nurbs_curve(
             .copied());
         if definition.weights.is_some() {
             ctx.push_scoped_vec(
-                &mut staging, &mut control_points, point, "step_nurbs_curve_control_points",
+                &mut staging,
+                &mut control_points,
+                point,
+                "step_nurbs_curve_control_points",
             )?;
         } else {
-            ctx.push_vec(&mut control_points, point, "step_nurbs_curve_control_points")?;
+            ctx.push_vec(
+                &mut control_points,
+                point,
+                "step_nurbs_curve_control_points",
+            )?;
         }
     }
     let curve = NurbsCurve::from_lanes(
@@ -7384,16 +7429,29 @@ fn procedural_surface_parameter_scales(
     let mut geometry = geometry;
     let (scales, terminal) = loop {
         ctx.charge_work(1, "step surface parameter scale walk")?;
-        let position = ctx.get_btree_map(
-            &index.surfaces, surface_id.as_str(), "step surface scale lookup",
-        )?.copied().filter(|&position| {
-            ir.model.surfaces.get(position).is_some_and(|carrier| {
-                std::ptr::eq(&carrier.geometry, geometry)
+        let position = ctx
+            .get_btree_map(
+                &index.surfaces,
+                surface_id.as_str(),
+                "step surface scale lookup",
+            )?
+            .copied()
+            .filter(|&position| {
+                ir.model.surfaces.get(position).is_some_and(|carrier| {
+                    std::ptr::eq(
+                        std::ptr::from_ref(&carrier.geometry),
+                        std::ptr::from_ref(geometry),
+                    )
+                })
+            });
+        if let Some((generation, terminal)) = position
+            .map(|position| {
+                ctx.get_btree_map(&index.terminals, &position, "step surface scale memo")
             })
-        });
-        if let Some((generation, terminal)) = position.map(|position| {
-            ctx.get_btree_map(&index.terminals, &position, "step surface scale memo")
-        }).transpose()?.flatten().copied() {
+            .transpose()?
+            .flatten()
+            .copied()
+        {
             if generation == index.generation {
                 let Some(terminal) = terminal else {
                     break (None, None);
@@ -7406,8 +7464,13 @@ fn procedural_surface_parameter_scales(
                 };
                 // Apply this requester's units at the terminal, never cache numeric scales.
                 match surface_geometry_parameter_scales(
-                    ir, index, &carrier.id, solved, unit_scales,
-                    source_curve_parameter_scales, ctx,
+                    ir,
+                    index,
+                    &carrier.id,
+                    solved,
+                    unit_scales,
+                    source_curve_parameter_scales,
+                    ctx,
                 )? {
                     SurfaceScaleStep::Value(scales) => break (scales, Some(terminal)),
                     // A first procedure can turn a previously unknown terminal into a support.
@@ -7419,14 +7482,24 @@ fn procedural_surface_parameter_scales(
             break (None, None);
         }
         active_storage.with_storage(|| {
-            ctx.insert_btree_map(&mut active, surface_id, position, "step_surface_scale_active")
+            ctx.insert_btree_map(
+                &mut active,
+                surface_id,
+                position,
+                "step_surface_scale_active",
+            )
         })?;
         let Some(solved) = geometry.solved() else {
             break (None, position);
         };
         match surface_geometry_parameter_scales(
-            ir, index, surface_id, solved, unit_scales,
-            source_curve_parameter_scales, ctx,
+            ir,
+            index,
+            surface_id,
+            solved,
+            unit_scales,
+            source_curve_parameter_scales,
+            ctx,
         )? {
             SurfaceScaleStep::Value(scales) => break (scales, position),
             SurfaceScaleStep::Support(support) => {
@@ -7439,12 +7512,14 @@ fn procedural_surface_parameter_scales(
         }
     };
     for (_, position) in ctx.admit_iter(active, "step surface scale memo traversal")? {
-            if let Some(position) = position {
-                ctx.insert_btree_map(
-                    &mut index.terminals, position, (index.generation, terminal),
-                    "step surface scale memo",
-                )?;
-            }
+        if let Some(position) = position {
+            ctx.insert_btree_map(
+                &mut index.terminals,
+                position,
+                (index.generation, terminal),
+                "step surface scale memo",
+            )?;
+        }
     }
     Ok(scales)
 }
@@ -7620,7 +7695,9 @@ impl SurfaceScaleIndex {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         if ctx.contains_key_btree_map(
-            &self.procedurals, procedural.id.as_str(), "step surface scale procedurals",
+            &self.procedurals,
+            procedural.id.as_str(),
+            "step surface scale procedurals",
         )? {
             // Additional procedures can change a unique terminal into an ambiguous owner.
             self.generation += 1;
@@ -8133,13 +8210,23 @@ fn nurbs_surface(
                 .transpose()?
                 .flatten());
             if rational_leaf.is_some() {
-                ctx.push_scoped_vec(&mut staging, &mut decoded_row, point, "step_nurbs_surface_control_points")?;
+                ctx.push_scoped_vec(
+                    &mut staging,
+                    &mut decoded_row,
+                    point,
+                    "step_nurbs_surface_control_points",
+                )?;
             } else {
                 ctx.push_vec(&mut decoded_row, point, "step_nurbs_surface_control_points")?;
             }
         }
         if rational_leaf.is_some() {
-            ctx.push_scoped_vec(&mut staging, &mut control_points, decoded_row, "step_nurbs_surface_rows")?;
+            ctx.push_scoped_vec(
+                &mut staging,
+                &mut control_points,
+                decoded_row,
+                "step_nurbs_surface_rows",
+            )?;
         } else {
             ctx.push_vec(&mut control_points, decoded_row, "step_nurbs_surface_rows")?;
         }
@@ -8247,9 +8334,19 @@ fn nurbs_surface(
                 ctx.next_charged(&mut source_values, "STEP nurbs surface borrowed traversal")?
             {
                 let number = geometry_or_none!(value.number());
-                ctx.push_scoped_vec(&mut staging, &mut decoded_row, number, "step_nurbs_surface_weight_values")?;
+                ctx.push_scoped_vec(
+                    &mut staging,
+                    &mut decoded_row,
+                    number,
+                    "step_nurbs_surface_weight_values",
+                )?;
             }
-            ctx.push_scoped_vec(&mut staging, &mut values, decoded_row, "step_nurbs_surface_weight_rows")?;
+            ctx.push_scoped_vec(
+                &mut staging,
+                &mut values,
+                decoded_row,
+                "step_nurbs_surface_weight_rows",
+            )?;
         }
         Some(values)
     } else {
