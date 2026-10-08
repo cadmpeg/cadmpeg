@@ -1854,6 +1854,7 @@ pub(crate) fn scan_legacy<'a>(
     }
     let part_id = part.id();
     let mut workspace = ctx.reserve_scoped(0, "legacy NX stream index")?;
+    let mut view_storage = ctx.reserve_scoped(0, "legacy NX stream view storage")?;
     let mut stream_views = Vec::new();
     let mut stream_spans = BTreeMap::new();
     let mut logical_offset = 0_u64;
@@ -1882,11 +1883,13 @@ pub(crate) fn scan_legacy<'a>(
                 "legacy NX stream spans",
             )
         })?;
-        workspace
+        view_storage
             .with_storage(|| ctx.reserve_vec(&mut stream_views, 1, "legacy NX stream views"))?;
         stream_views.push(view);
     }
     let logical_data = ctx.concat_views(&stream_views)?;
+    drop(stream_views);
+    drop(view_storage);
     let mut entries = Vec::new();
     let mut visits = snapshot.entries().iter();
     while visits.len() != 0 {
@@ -1916,6 +1919,8 @@ pub(crate) fn scan_legacy<'a>(
             body,
         });
     }
+    drop(stream_spans);
+    drop(workspace);
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
     let mut container = Container {
         data: SourceImage::Borrowed(logical_data),

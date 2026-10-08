@@ -5479,9 +5479,10 @@ impl<'ctx, T> JtSceneFamily<'ctx, T> {
     }
 
     fn finish(self) -> Result<Vec<T>, CodecError> {
-        let Some((records, storage)) = self.candidate else {
+        let Some((candidate_records, storage)) = self.candidate else {
             return Ok(Vec::new());
         };
+        let records = candidate_records;
         if !records.is_empty() {
             storage.commit()?;
         }

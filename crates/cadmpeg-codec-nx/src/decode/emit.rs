@@ -2526,7 +2526,7 @@ pub(super) fn source_meta(
         "plain_streams",
         scan.count(ctx, StreamKind::Plain)?,
     )?;
-    let (external_reference_paths, _paths_storage) =
+    let (external_reference_paths, paths_storage) =
         scan.container.external_reference_paths(ctx)?;
     for (index, path) in ctx
         .admit_iter(external_reference_paths, "nx external reference attributes")?
@@ -2538,6 +2538,7 @@ pub(super) fn source_meta(
         )?;
         ctx.insert_btree_map(&mut attributes, key, path, "nx source attributes")?;
     }
+    drop(paths_storage);
     if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
         insert_source_attribute(
             ctx,

@@ -1672,7 +1672,8 @@ fn operation_records_with_labels_and_ordinals<'a>(
     let mut header_storage = ctx.reserve_scoped(0, "NX labeled operation header storage")?;
     let headers =
         header_storage.with_storage(|| validated_operation_headers(ctx, bytes, base_offset))?;
-    let (labels, _label_storage) = operation_label_index(ctx, labels)?;
+    let (indexed_labels, _label_storage) = operation_label_index(ctx, labels)?;
+    let labels = indexed_labels;
     let mut records = Vec::new();
     for (ordinal, header) in ctx
         .admit_iter(&headers, "NX labeled operation record headers")?
@@ -1715,7 +1716,8 @@ fn unlabeled_operation_records_with_ordinals<'a>(
     let mut header_storage = ctx.reserve_scoped(0, "NX unlabeled operation header storage")?;
     let headers =
         header_storage.with_storage(|| validated_operation_headers(ctx, bytes, base_offset))?;
-    let (labels, _label_storage) = operation_label_index(ctx, labels)?;
+    let (indexed_labels, _label_storage) = operation_label_index(ctx, labels)?;
+    let labels = indexed_labels;
     let mut records = Vec::new();
     for (ordinal, header) in ctx
         .admit_iter(&headers, "NX unlabeled operation record headers")?
@@ -1996,9 +1998,10 @@ fn unique_payload_candidate<T, I: IntoIterator>(
         },
         scan,
     )?;
-    let Some((candidate, storage)) = first else {
+    let Some((first_candidate, storage)) = first else {
         return Ok(None);
     };
+    let candidate = first_candidate;
     if ctx
         .find_map(
             &mut source,
@@ -5136,14 +5139,15 @@ pub(crate) fn indexed_sections<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
 ) -> Result<Vec<IndexedSection<'a>>, CodecError> {
-    let mut temporary = ctx.reserve_scoped(0, "nx indexed OM candidate scan")?;
+    let mut discovery_storage = ctx.reserve_scoped(0, "nx indexed OM candidate scan")?;
+    let mut candidate_storage = ctx.reserve_scoped(0, "nx indexed OM candidate storage")?;
     let mut candidates = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
     let mut product_record_ranges = Vec::new();
     for offset in ctx.admit_iter(0..bytes.len(), "NX indexed product record discovery")? {
         if let Some(range) = product_record_range_at(ctx, bytes, offset)? {
             ctx.reserve_scoped_vec(
-                &mut temporary,
+                &mut discovery_storage,
                 &mut product_record_ranges,
                 1,
                 "nx product record ranges",
@@ -5151,7 +5155,7 @@ pub(crate) fn indexed_sections<'a>(
             product_record_ranges.push(range);
         }
     }
-    let descending_u32_edges = DescendingU32Edges::new(ctx, &mut temporary, bytes)?;
+    let descending_u32_edges = DescendingU32Edges::new(ctx, &mut discovery_storage, bytes)?;
     if let Some(range_end) = bytes.len().checked_sub(4) {
         for table in ctx.admit_iter(&(0..range_end), "NX fixed index table traversal")? {
             let Some(count) =
@@ -5193,7 +5197,7 @@ pub(crate) fn indexed_sections<'a>(
             else {
                 continue;
             };
-            if !temporary.with_storage(|| {
+            if !discovery_storage.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut seen_record_starts,
                     table_end,
@@ -5203,7 +5207,7 @@ pub(crate) fn indexed_sections<'a>(
                 continue;
             }
             ctx.reserve_scoped_vec(
-                &mut temporary,
+                &mut candidate_storage,
                 &mut candidates,
                 1,
                 "nx indexed OM candidates",
@@ -5287,7 +5291,7 @@ pub(crate) fn indexed_sections<'a>(
             else {
                 continue;
             };
-            if !temporary.with_storage(|| {
+            if !discovery_storage.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut seen_record_starts,
                     second,
@@ -5297,7 +5301,7 @@ pub(crate) fn indexed_sections<'a>(
                 continue;
             }
             ctx.reserve_scoped_vec(
-                &mut temporary,
+                &mut candidate_storage,
                 &mut candidates,
                 1,
                 "nx indexed OM candidates",
@@ -5308,6 +5312,10 @@ pub(crate) fn indexed_sections<'a>(
             });
         }
     }
+    drop(product_record_ranges);
+    drop(seen_record_starts);
+    drop(descending_u32_edges);
+    drop(discovery_storage);
     let mut sections = Vec::new();
     for candidate in ctx.admit_iter(
         select_outer_indexed_candidates(ctx, candidates)?,
@@ -5454,6 +5462,9 @@ pub(crate) fn offset_store_control_class_ordinals(
     let Some(boundary) = boundary else {
         return Ok(None);
     };
+    drop(suffix_minima);
+    drop(identities);
+    drop(scratch);
     let mut ordinals = ctx.collection_vec(boundary, "nx offset-store class ordinals")?;
     for index in ctx.admit_iter(&(0..boundary), "NX offset-store class ordinal projection")? {
         let Some(identity) = value_at(index) else {
