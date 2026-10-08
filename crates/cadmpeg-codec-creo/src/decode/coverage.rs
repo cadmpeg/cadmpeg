@@ -15,18 +15,6 @@ use crate::container::ContainerScan;
 
 use super::feature_history::link::surface_kind_for_geometry;
 
-fn charged_map_entry<'a, K: Ord + cadmpeg_core::decode::cost::DecodeCost, V: Default>(
-    ctx: &DecodeContext<'_>,
-    map: &'a mut BTreeMap<K, V>,
-    key: K,
-    operation: &'static str,
-) -> Result<&'a mut V, CodecError> {
-    match ctx.entry_btree_map(map, key, operation)? {
-        std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
-        std::collections::btree_map::Entry::Vacant(entry) => Ok(entry.insert(V::default())),
-    }
-}
-
 pub(super) fn source_section(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -196,19 +184,17 @@ impl CurveTransferCoverage {
         type_byte: u8,
     ) -> Result<(), CodecError> {
         self.unique_rows += 1;
-        charged_map_entry(
-            ctx,
+        ctx.entry_btree_map(
             &mut self.by_type,
             type_byte,
             "creo curve coverage type nodes",
-        )?
+        )?.or_default()
         .0 += 1;
-        charged_map_entry(
-            ctx,
+        ctx.entry_btree_map(
             &mut self.unknown_by_type,
             type_byte,
             "creo curve coverage unknown type nodes",
-        )?;
+        )?.or_default();
         Ok(())
     }
 
@@ -218,12 +204,11 @@ impl CurveTransferCoverage {
         type_byte: u8,
     ) -> Result<(), CodecError> {
         self.transferred_rows += 1;
-        charged_map_entry(
-            ctx,
+        ctx.entry_btree_map(
             &mut self.by_type,
             type_byte,
             "creo curve coverage type nodes",
-        )?
+        )?.or_default()
         .1 += 1;
         Ok(())
     }
@@ -234,12 +219,11 @@ impl CurveTransferCoverage {
         type_byte: u8,
     ) -> Result<(), CodecError> {
         self.retained_unknown_rows += 1;
-        *charged_map_entry(
-            ctx,
+        *ctx.entry_btree_map(
             &mut self.unknown_by_type,
             type_byte,
             "creo curve coverage unknown type nodes",
-        )? += 1;
+        )?.or_default() += 1;
         Ok(())
     }
 
@@ -359,14 +343,14 @@ impl DesignConstraintTransferCoverage {
     }
 }
 
-pub(super) fn design_constraint_transfer_coverage(
+pub(super) fn design_constraint_transfer_coverage<const N: usize>(
     ctx: &DecodeContext<'_>,
     constraints: &[SketchConstraint],
-    id_marker: &str,
-    native_kind_prefix: &str,
-) -> Result<DesignConstraintTransferCoverage, CodecError> {
-    let mut coverage = DesignConstraintTransferCoverage::default();
+    selectors: [(&str, &str); N],
+) -> Result<[DesignConstraintTransferCoverage; N], CodecError> {
+    let mut coverages = std::array::from_fn(|_| DesignConstraintTransferCoverage::default());
     for constraint in ctx.admit_iter(constraints, "creo constraint coverage traversal")? {
+        for ((id_marker, native_kind_prefix), coverage) in selectors.into_iter().zip(&mut coverages) {
         if !ctx.contains_text(constraint.id.as_str(), id_marker, "creo constraint identity marker")? {
             continue;
         }
@@ -389,19 +373,17 @@ pub(super) fn design_constraint_transfer_coverage(
             coverage.native += 1;
         }
         if let Some(native_kind) = native_kind {
-            *charged_map_entry(
-                ctx,
+            *ctx.entry_btree_map(
                 &mut coverage.native_by_kind,
                 native_kind,
                 "creo native constraint kind nodes",
-            )? += 1;
+            )?.or_default() += 1;
             if constraint.active == Some(true) {
-                *charged_map_entry(
-                    ctx,
+                *ctx.entry_btree_map(
                     &mut coverage.active_native_by_kind,
                     native_kind,
                     "creo active native constraint kind nodes",
-                )? += 1;
+                )?.or_default() += 1;
             }
         }
         if constraint.active == Some(true) {
@@ -411,40 +393,39 @@ pub(super) fn design_constraint_transfer_coverage(
             }
         }
     }
-    Ok(coverage)
+        }
+    Ok(coverages)
 }
 
-pub(super) fn constraint_kind_breakdown<'a>(
-    coverage: &'a cadmpeg_ir::report::decode::Coverage,
-    prefix: &'a str,
-) -> impl std::fmt::Display + 'a {
-    struct Breakdown<'a> {
-        coverage: &'a cadmpeg_ir::report::decode::Coverage,
-        prefix: &'a str,
-    }
-    impl std::fmt::Display for Breakdown<'_> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            let mut first = true;
-            for (key, count) in self.coverage.iter() {
-                let Some(kind) = key
-                    .strip_prefix(self.prefix)
-                    .and_then(|name| name.strip_suffix("_constraint_count"))
-                else {
-                    continue;
-                };
-                if *count == 0 {
-                    continue;
-                }
-                if !first {
-                    f.write_str(", ")?;
-                }
-                write!(f, "type {kind}={count}")?;
-                first = false;
-            }
-            Ok(())
+pub(super) struct ConstraintKindBreakdown<'a, 'ctx> {
+    rows: Vec<(&'a str, usize)>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl std::fmt::Display for ConstraintKindBreakdown<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (kind, count)) in self.rows.iter().enumerate() {
+            if index != 0 { f.write_str(", ")?; }
+            write!(f, "type {kind}={count}")?;
         }
+        Ok(())
     }
-    Breakdown { coverage, prefix }
+}
+
+pub(super) fn constraint_kind_breakdown<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    coverage: &'a cadmpeg_ir::report::decode::Coverage,
+    prefix: &str,
+) -> Result<ConstraintKindBreakdown<'a, 'ctx>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo constraint kind breakdown storage")?;
+    let mut rows = Vec::new();
+    for (key, count) in ctx.admit_iter(&**coverage, "creo constraint kind breakdown traversal")? {
+        if *count == 0 { continue; }
+        let Some(name) = ctx.strip_prefix(key, prefix, "creo constraint kind breakdown prefix")? else { continue; };
+        let Some(kind) = ctx.strip_suffix(name, "_constraint_count", "creo constraint kind breakdown suffix")? else { continue; };
+        ctx.push_scoped_vec(&mut storage, &mut rows, (kind, *count), "creo constraint kind breakdown rows")?;
+    }
+    Ok(ConstraintKindBreakdown { rows, _storage: storage })
 }
 
 pub(super) fn curve_transfer_coverage(

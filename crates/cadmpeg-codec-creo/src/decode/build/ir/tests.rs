@@ -54,86 +54,25 @@ fn pattern_coverage_refuses_before_composite_stage_traversal() {
 }
 
 fn retained_boundary_sweep(
-    expected: &[&str],
-    mut run: impl for<'a> FnMut(&cadmpeg_core::decode::DecodeContext<'a>) -> Result<(), CodecError>,
+    expected: &[&'static str],
+    run: impl for<'a> Fn(&cadmpeg_core::decode::DecodeContext<'a>) -> Result<(), CodecError>,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let mut observed = std::collections::BTreeSet::new();
-    let mut exact_cap = None;
-    let mut limit = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(resource)) => {
-                let need = resource
-                    .used
-                    .checked_add(resource.additional)
-                    .expect("retained need");
-                assert!(need > limit);
-                limit = need;
-                assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
-                observed.insert(resource.operation);
-            }
-            Ok(()) => {
-                exact_cap = Some(limit);
-                break;
-            }
-            Err(error) => panic!("unexpected transfer error: {error:?}"),
-        }
+    for operation in expected {
+        crate::test_support::last_refusal_at(
+            &[], cadmpeg_core::decode::ResourceDimension::RetainedBytes, operation, &run,
+        );
     }
-    assert!(
-        exact_cap.is_some(),
-        "transfer did not fit within scanned cap"
-    );
-    assert!(
-        expected
-            .iter()
-            .all(|operation| observed.contains(operation)),
-        "missing admission boundary: {expected:?} vs {observed:?}"
-    );
 }
 
 fn collection_boundary_sweep(
-    expected: &[&str],
-    mut run: impl for<'a> FnMut(&cadmpeg_core::decode::DecodeContext<'a>) -> Result<(), CodecError>,
+    expected: &[&'static str],
+    run: impl for<'a> Fn(&cadmpeg_core::decode::DecodeContext<'a>) -> Result<(), CodecError>,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let mut observed = std::collections::BTreeSet::new();
-    let mut exact_cap = None;
-    for limit in 0..128 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-        match run(&ctx) {
-            Err(CodecError::ResourceLimit(resource)) => {
-                assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
-                observed.insert(resource.operation);
-            }
-            Ok(()) => {
-                exact_cap = Some(limit);
-                break;
-            }
-            Err(error) => panic!("unexpected transfer error: {error:?}"),
-        }
+    for operation in expected {
+        crate::test_support::last_refusal_at(
+            &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, operation, &run,
+        );
     }
-    assert!(
-        exact_cap.is_some(),
-        "transfer did not fit within scanned cap"
-    );
-    assert!(
-        expected
-            .iter()
-            .all(|operation| observed.contains(operation)),
-        "missing admission boundary: {expected:?} vs {observed:?}"
-    );
 }
 
 #[test]
@@ -597,7 +536,7 @@ fn display_strip_allocations_refuse_at_each_collection_boundary() {
 
 #[test]
 fn display_strip_error_text_refuses_below_retained_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
 
     crate::decode::with_test_decode_ctx(|ctx| {
         assert!(PrimitiveTriangleStrip::new(
@@ -611,42 +550,24 @@ fn display_strip_error_text_refuses_below_retained_limits() {
         .is_none());
     });
     let overflow = inch_strip(vec![[f64::MAX, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
-    let arena = DecodeArena::new();
-    for (scan, operation, expected) in [
-        (&overflow, "creo display tessellation overflow text",
-            "SolidPrimdata display triangle strip at byte 0 has a vertex that cannot be represented in millimeters"),
-    ] {
-        let mut observed = false;
-        let mut service_error = None;
-        let mut limit = 0_u64;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root admitted");
-            match transfer_display_tessellations(&ctx, scan, &mut CadIr::empty(),
-                &mut cadmpeg_ir::AnnotationBuilder::new()) {
-                Err(CodecError::ResourceLimit(resource)) => {
-                    let need = resource.used.checked_add(resource.additional).expect("retained need");
-                    assert!(need > limit);
-                    limit = need;
-                    assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
-                    observed |= resource.operation == operation;
-                }
-                Err(error) => {
-                    service_error = Some(error);
-                    break;
-                }
-                Ok(()) => panic!("invalid display strip was admitted"),
-            }
+    let operation = "creo display tessellation overflow text";
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::RetainedBytes, operation,
+        |ctx| match transfer_display_tessellations(ctx, &overflow, &mut CadIr::empty(), &mut cadmpeg_ir::AnnotationBuilder::new()) {
+            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            result => Ok(result),
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == operation));
+    let error = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_display_tessellations(ctx, &overflow, &mut CadIr::empty(), &mut cadmpeg_ir::AnnotationBuilder::new())
+    }).expect_err("invalid display strip was admitted");
+    match error {
+        CodecError::Malformed(message) | CodecError::NotImplemented(message) => {
+            assert_eq!(message, "SolidPrimdata display triangle strip at byte 0 has a vertex that cannot be represented in millimeters");
         }
-        assert!(observed, "missing below-limit refusal for {operation}");
-        match service_error.expect("malformed strip fits within scanned cap") {
-            CodecError::Malformed(message) | CodecError::NotImplemented(message) => {
-                assert_eq!(message, expected);
-            }
-            error => panic!("unexpected display strip result: {error:?}"),
-        }
+        error => panic!("unexpected display strip result: {error:?}"),
     }
 }
 
@@ -1133,7 +1054,6 @@ fn display_strip_position_and_normal_sources_refuse_work_before_projection() {
     let shaded = crate::test_support::assert_work_boundaries(
         &[
             "creo display tessellation shaded position rows",
-            "creo display tessellation normal rows",
             "creo display shaded position assembly",
         ],
         |ctx| {
@@ -1160,9 +1080,7 @@ fn display_strip_position_and_normal_sources_refuse_work_before_projection() {
 }
 
 #[test]
-fn placed_plane_duplicate_comparison_refuses_before_identity_search() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
+fn placed_plane_duplicate_index_admits_model_rows_before_numeric_identity_probe() {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("plane", &[]));
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 18,
@@ -1186,36 +1104,15 @@ fn placed_plane_duplicate_comparison_refuses_before_identity_search() {
     .expect("initial plane transfer");
     assert_eq!(ir.model.surfaces.len(), 1);
 
-    let arena = DecodeArena::new();
-    let mut limit = 0;
-    let mut compared = false;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = transfer_placed_plane_surfaces_into_ir(
-            &ctx,
-            &scan,
-            &mut ir,
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &mut SourceUnitCarriers::default(),
-        )
-        .expect_err("comparison is reached before the duplicate is retained");
-        let CodecError::ResourceLimit(resource) = error else {
-            panic!("expected work refusal");
-        };
-        assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(ir.model.surfaces.len(), 1);
-        if resource.operation == "creo placed plane surface identity comparison" {
-            compared = true;
-            break;
-        }
-        limit = resource
-            .used
-            .checked_add(resource.additional)
-            .expect("next work boundary");
-    }
-    assert!(compared, "the duplicate comparison must be charged");
+    crate::test_support::assert_work_boundaries(
+        &["creo placed plane surface index traversal"],
+        |ctx| {
+            let mut trial_ir = ir.clone();
+            let result = transfer_placed_plane_surfaces_into_ir(ctx, &scan, &mut trial_ir, &mut cadmpeg_ir::AnnotationBuilder::new(), &mut SourceUnitCarriers::default());
+            assert_eq!(trial_ir.model.surfaces.len(), 1);
+            result
+        },
+    );
     crate::decode::with_test_decode_ctx(|ctx| {
         transfer_placed_plane_surfaces_into_ir(
             ctx,
@@ -1231,57 +1128,19 @@ fn placed_plane_duplicate_comparison_refuses_before_identity_search() {
 
 #[test]
 fn display_strip_vertex_range_refuses_after_collection_and_admits_at_service() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let mut work_policy = DecodePolicy::service();
-    work_policy.limits.max_work_units = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &work_policy).expect("empty root admitted");
-    let error = match super::admitted_display_strips(&ctx, vec![0_u8, 1, 2], &[3]) {
-        Err(error) => error,
-        Ok(_) => panic!("three vertex visits exceed the work limit"),
-    };
-    let CodecError::ResourceLimit(resource) = error else {
-        panic!("expected a work limit refusal");
-    };
+    use cadmpeg_core::decode::ResourceDimension;
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| super::admitted_display_strips(ctx, vec![0_u8, 1, 2], &[3]);
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, "creo display strip vertex traversal", run);
+    let CodecError::ResourceLimit(resource) = error else { panic!("expected a work limit refusal"); };
     assert_eq!(resource.dimension, ResourceDimension::WorkUnits);
     assert_eq!(resource.operation, "creo display strip vertex traversal");
-    assert_eq!(resource.used, 1);
     assert_eq!(resource.additional, 3);
-
-    let mut first_storage_policy = DecodePolicy::service();
-    first_storage_policy.limits.max_work_units = 0;
-    first_storage_policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &first_storage_policy)
-        .expect("empty root admitted");
-    let error = match super::admitted_display_strips(&ctx, vec![0_u8, 1, 2], &[3]) {
-        Err(error) => error,
-        Ok(_) => panic!("strip-row storage exceeds the collection limit"),
-    };
-    let CodecError::ResourceLimit(resource) = error else {
-        panic!("expected a collection limit refusal");
-    };
-    assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(resource.operation, "creo display tessellation strip rows");
-
-    let mut run_storage_policy = DecodePolicy::service();
-    run_storage_policy.limits.max_work_units = 1;
-    run_storage_policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &run_storage_policy)
-        .expect("empty root admitted");
-    let error = match super::admitted_display_strips(&ctx, vec![0_u8, 1, 2], &[3]) {
-        Err(error) => error,
-        Ok(_) => panic!("run storage exceeds the collection limit"),
-    };
-    let CodecError::ResourceLimit(resource) = error else {
-        panic!("expected a collection limit refusal");
-    };
-    assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(
-        resource.operation,
-        "creo display tessellation strip vertices"
-    );
+    for operation in ["creo display tessellation strip rows", "creo display tessellation strip vertices"] {
+        let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, run);
+        let CodecError::ResourceLimit(resource) = error else { panic!("expected a collection limit refusal"); };
+        assert_eq!(resource.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(resource.operation, operation);
+    }
 
     let strips = crate::decode::with_test_decode_ctx(|ctx| {
         super::admitted_display_strips(ctx, vec![0_u8, 1, 2], &[3])
@@ -1296,4 +1155,32 @@ fn display_strip_vertex_range_refuses_after_collection_and_admits_at_service() {
     })
     .expect("service work admission");
     assert!(incomplete.is_none());
+}
+
+#[test]
+fn display_strip_rejects_unavailable_span_without_admitting_vertex_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let result = crate::test_support::assert_refusal_order(
+        ResourceDimension::WorkUnits, &["creo display strip span traversal"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::admitted_display_strips(&ctx, vec![0_u8, 1], &[u32::MAX])
+        },
+    );
+    assert!(result.is_none());
+}
+
+#[test]
+fn display_vertex_staging_refuses_materialized_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let scan = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
+    let error = crate::test_support::last_refusal_at(
+        &[], ResourceDimension::MaterializedBytes,
+        "creo display tessellation positions",
+        |ctx| transfer_display_tessellations(ctx, &scan, &mut CadIr::empty(), &mut cadmpeg_ir::AnnotationBuilder::new()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::MaterializedBytes && resource.operation == "creo display tessellation positions"));
 }

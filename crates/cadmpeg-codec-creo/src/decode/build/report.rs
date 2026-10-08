@@ -131,6 +131,7 @@ pub(in super::super) fn build_report(
             };
             Ok::<_, cadmpeg_core::CodecError>(placed.then_some(source.surface_id))
         });
+    let mut lookup_storage = ctx.reserve_scoped(0, "creo report placed plane lookup storage")?;
     let mut placed_plane_ids = BTreeSet::new();
     for id in placed_frames
         .chain(
@@ -148,13 +149,15 @@ pub(in super::super) fn build_report(
         let Some(id) = id? else {
             continue;
         };
-        ctx.insert_btree_set(
+        lookup_storage.with_storage(|| ctx.insert_btree_set(
             &mut placed_plane_ids,
             id,
             "creo report placed plane ID nodes",
-        )?;
+        ))?;
     }
     let placed_plane_count = placed_plane_ids.len();
+    drop(placed_plane_ids);
+    drop(lookup_storage);
     let mut losses = Vec::new();
 
     // The admission charge, first: it describes how the whole document was

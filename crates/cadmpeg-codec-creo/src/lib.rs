@@ -106,14 +106,10 @@ impl CodecBackend for CreoCodec {
 
     fn detect_impl(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         prefix: cadmpeg_core::decode::View<'_>,
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect input",
-        )?;
         // The `#UGC:2` ASCII magic is unique to the Creo/Pro-E PSB container and
         // distinguishes it from a Siemens NX `.prt` sharing the extension.
         if container::looks_like_creo(prefix) {

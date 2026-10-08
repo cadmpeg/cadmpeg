@@ -272,7 +272,7 @@ fn constraint_coverage_with_limit(
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    design_constraint_transfer_coverage(&ctx, &[constraint], ":relation:", "creo:relation:")
+    design_constraint_transfer_coverage(&ctx, &[constraint], [(":relation:", "creo:relation:")]).map(|[coverage]| coverage)
 }
 
 #[test]
@@ -491,7 +491,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     constraints[2].active = Some(false);
 
     let coverage = crate::decode::with_test_decode_ctx(|ctx| {
-        design_constraint_transfer_coverage(ctx, &constraints, ":relation:", "creo:relation:")
+        design_constraint_transfer_coverage(ctx, &constraints, [(":relation:", "creo:relation:")]).map(|[coverage]| coverage)
     })
     .expect("service constraint coverage");
 
@@ -542,8 +542,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         report_coverage
     });
     assert_eq!(
-        constraint_kind_breakdown(&report_coverage, "active_native_feature_relation_type_",)
-            .to_string(),
+        crate::decode::with_test_decode_ctx(|ctx| constraint_kind_breakdown(ctx, &report_coverage, "active_native_feature_relation_type_").expect("breakdown").to_string()),
         "type 1=2, type 9=1"
     );
 }
