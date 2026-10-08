@@ -9524,31 +9524,41 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
             }
             changed |= face.len() != before;
         }
+        let mut incident_faces = ctx.alloc_filled(
+            edge_candidates.len(),
+            Vec::new(),
+            "catia_prune_incident_rows",
+        )?;
+        for (face, choices) in assignments.iter().enumerate() {
+            for use_ in choices
+                .iter()
+                .flat_map(|assignment| assignment.boundaries.iter().flatten())
+            {
+                ctx.charge_work(1, "catia_prune_incident_index")?;
+                let Some(faces) = incident_faces.get_mut(use_.edge) else {
+                    continue;
+                };
+                if faces.last() != Some(&face) {
+                    ctx.push_vec(faces, face, "catia_prune_incident_faces")?;
+                }
+            }
+        }
         for edge in 0..edge_candidates.len() {
             if edge_candidates[edge].is_empty() {
                 continue;
             }
-            let mut incident_faces = Vec::new();
-            for (face, choices) in assignments.iter().enumerate() {
-                if choices.iter().any(|assignment| {
-                    assignment
-                        .boundaries
-                        .iter()
-                        .flatten()
-                        .any(|use_| use_.edge == edge)
-                }) {
-                    ctx.push_vec(&mut incident_faces, face, "catia_prune_incident_faces")?;
-                }
-            }
+            let incident_faces = &incident_faces[edge];
             let before = edge_candidates[edge].len();
-            let snapshot = ctx.copy_retained_rows(
-                edge_candidates,
-                "catia_prune_snapshot_rows",
-                "catia_prune_snapshot_pairs",
-            )?;
+            let mut decisions = ctx.alloc_filled(before, false, "catia_prune_pair_decisions")?;
+            let decision_work = u64_from_index(before).checked_mul(2).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_prune_pair_decisions", u64::MAX - 1, u64::MAX)
+            })?;
+            ctx.charge_work(decision_work, "catia_prune_pair_decisions")?;
             let mut refusal = None;
-            edge_candidates[edge].retain(|pair| {
-                incident_faces.iter().all(|face| {
+            // Read the unchanged candidate table, then apply this row's decisions.
+            // A complete table copy per row repeats all unrelated storage.
+            for (pair, decision) in edge_candidates[edge].iter().zip(&mut decisions) {
+                *decision = incident_faces.iter().all(|face| {
                     assignments[*face].iter().any(|assignment| {
                         assignment
                             .boundaries
@@ -9558,7 +9568,7 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                             && mesh_assignment_endpoint_cycles_viable_with(
                                 ctx,
                                 assignment,
-                                &snapshot,
+                                edge_candidates,
                                 Some((edge, *pair)),
                                 Some(&budget),
                             )
@@ -9570,7 +9580,13 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                                 |result| result.unwrap_or(true),
                             )
                     })
-                })
+                });
+            }
+            let mut position = 0;
+            edge_candidates[edge].retain(|_| {
+                let supported = decisions[position];
+                position += 1;
+                supported
             });
             if let Some(error) = refusal {
                 return Err(error);
@@ -14035,4 +14051,36 @@ fn boundary_component_exhausted_slice_refuses_instead_of_absence() {
         assert_eq!(limit.operation, "catia_boundary_component_work");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
+}
+
+#[cfg(test)]
+mod pair_support_tests {
+    use super::prune_mesh_endpoint_pair_support;
+    use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
+
+    #[test]
+    fn endpoint_pair_pruning_does_not_copy_unrelated_candidate_rows() {
+        const EDGES: usize = 512;
+        let mut assignments = (0..EDGES)
+            .map(|edge| {
+                vec![MeshFaceBoundaryAssignment {
+                    boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                        edge,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    }]],
+                }]
+            })
+            .collect::<Vec<_>>();
+        let mut candidates = vec![vec![[0, 0]]; EDGES];
+        crate::test_support::with_collection_limit(128_000, |ctx| {
+            assert!(
+                prune_mesh_endpoint_pair_support(ctx, &mut assignments, &mut candidates)
+                    .expect("independent one-edge faces require linear candidate storage")
+            );
+        });
+        assert!(assignments.iter().all(|choices| choices.len() == 1));
+        assert!(candidates.iter().all(|pairs| pairs == &[[0, 0]]));
+    }
 }
