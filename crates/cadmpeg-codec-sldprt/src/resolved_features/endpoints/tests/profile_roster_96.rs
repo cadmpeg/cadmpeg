@@ -145,7 +145,8 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -180,7 +181,8 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -209,7 +211,8 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -256,7 +259,8 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }

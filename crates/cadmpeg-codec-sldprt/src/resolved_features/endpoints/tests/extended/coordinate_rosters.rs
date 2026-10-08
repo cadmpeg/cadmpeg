@@ -850,7 +850,8 @@ fn wide_profile_curves_index_the_coordinate_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -878,7 +879,8 @@ fn wide_profile_curves_index_the_coordinate_roster() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1007,7 +1009,8 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }

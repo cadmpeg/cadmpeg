@@ -1681,7 +1681,14 @@ fn profile_roster_construction_axis_in(
             return Ok(None);
         }
         let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, marker, markers, &geometry, None)
+            roster_curve_endpoint_markers(
+                ctx,
+                &lane.native_payload,
+                marker,
+                markers,
+                &geometry,
+                None,
+            )
         })?;
         Ok(match endpoints.as_slice() {
             [start, end] => Some([*start, *end]),
@@ -1839,7 +1846,14 @@ fn profile_generated_surface_axis(
     let mut negative = false;
     for curve in ctx.admit_iter(owned, OPERATION)? {
         let (curve_endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers, &geometry, None)
+            roster_curve_endpoint_markers(
+                ctx,
+                &lane.native_payload,
+                curve,
+                markers,
+                &geometry,
+                None,
+            )
         })?;
         for endpoint in ctx.admit_iter(curve_endpoints, OPERATION)? {
             if endpoint.object_index().is_none()
@@ -1995,7 +2009,14 @@ fn profile_curve_endpoint_ids<'a>(
     let mut ids = BTreeSet::new();
     for curve in ctx.admit_iter(owned, OPERATION)? {
         let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers, &geometry, None)
+            roster_curve_endpoint_markers(
+                ctx,
+                &lane.native_payload,
+                curve,
+                markers,
+                &geometry,
+                None,
+            )
         })?;
         for endpoint in ctx.admit_iter(endpoints, OPERATION)? {
             if indexed_only && endpoint.object_index().is_none() {
@@ -2375,7 +2396,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             &lane.native_payload,
             candidate,
             markers,
-            &geometry, None,
+            &geometry,
+            None,
         )?;
         let [start, end] = endpoints.as_slice() else {
             continue;
@@ -2412,7 +2434,14 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         return Ok(None);
     };
     let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(OPERATION, || {
-        roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, markers, &geometry, None)
+        roster_curve_endpoint_markers(
+            ctx,
+            &lane.native_payload,
+            candidate,
+            markers,
+            &geometry,
+            None,
+        )
     })?;
     let [start, end] = endpoints.as_slice() else {
         return Ok(None);

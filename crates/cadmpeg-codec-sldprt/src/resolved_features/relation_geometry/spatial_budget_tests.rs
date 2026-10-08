@@ -122,14 +122,25 @@ fn missing_spatial_point_does_not_build_line_rosters() {
     lane.sketch_entities.push(marker);
     lane.relation_instances[0].family = FeatureInputRelationFamily::PointLineDistance;
     lane.relation_instances[0].operands = vec![FeatureInputOperand {
-        offset: 0, reference_ref: "reference".into(), kind: FeatureInputOperandKind::D6,
-        entity_index: 0, entity_ref: None,
+        offset: 0,
+        reference_ref: "reference".into(),
+        kind: FeatureInputOperandKind::D6,
+        entity_index: 0,
+        entity_ref: None,
     }];
     let parameter = DesignParameter {
-        id: ParameterId::mint("synthetic:test:id#parameter").unwrap(), owner: None, ordinal: 0,
-        name: "distance".into(), expression: "1mm".into(), display: None,
-        value: Some(ParameterValue::Length(cadmpeg_ir::scalar::Length::new(1.0).unwrap())),
-        dependencies: DistinctMembers::default(), properties: BTreeMap::new(), pmi: None,
+        id: ParameterId::mint("synthetic:test:id#parameter").unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: "distance".into(),
+        expression: "1mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+        )),
+        dependencies: DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
         native_ref: None,
     };
     let arena = DecodeArena::new();
@@ -139,16 +150,28 @@ fn missing_spatial_point_does_not_build_line_rosters() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = SpatialRelationMarkers::new(&ctx, &lane).unwrap();
     {
-        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits,
-            "index SLDPRT spatial relation line markers", None);
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "index SLDPRT spatial relation line markers",
+            None,
+        );
         let mut entities = Vec::new();
-        assert!(spatial_relation_point_line_entities(&ctx, &lane.relation_instances[0],
-            &SpatialSketchId::mint("synthetic:test:id#sketch").unwrap(), &parameter, &mut index,
-            &mut entities).unwrap().is_none());
+        assert!(spatial_relation_point_line_entities(
+            &ctx,
+            &lane.relation_instances[0],
+            &SpatialSketchId::mint("synthetic:test:id#sketch").unwrap(),
+            &parameter,
+            &mut index,
+            &mut entities
+        )
+        .unwrap()
+        .is_none());
         assert!(entities.is_empty());
     }
     assert!(index.lines.is_empty());
-    let lines = index.roster(&ctx, "feature", super::SpatialCarrier::Line).unwrap();
+    let lines = index
+        .roster(&ctx, "feature", super::SpatialCarrier::Line)
+        .unwrap();
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0].0.id(), "line");
 }
@@ -159,8 +182,13 @@ fn solved_line_fallback_rosters_only_collect_queried_features() {
     use crate::records::{SketchInputEntity, SketchInputKind};
     let mut lane = relation_lane();
     for (index, feature) in ["queried", "unrelated", "queried"].into_iter().enumerate() {
-        let mut marker = SketchInputEntity::new(format!("point-{index}"), "lane", 0,
-            u64::try_from(3 - index).unwrap(), SketchInputKind::Point);
+        let mut marker = SketchInputEntity::new(
+            format!("point-{index}"),
+            "lane",
+            0,
+            u64::try_from(3 - index).unwrap(),
+            SketchInputKind::Point,
+        );
         marker.feature_ref = Some(feature.into());
         marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
         lane.sketch_entities.push(marker);
@@ -172,12 +200,22 @@ fn solved_line_fallback_rosters_only_collect_queried_features() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = SolvedLinePoints::new(&ctx).unwrap();
     assert!(index.by_feature.is_empty());
-    assert_eq!(index.roster(&ctx, &lane, "queried").unwrap().iter().map(|marker| marker.id()).collect::<Vec<_>>(),
-        ["point-2", "point-0"]);
+    assert_eq!(
+        index
+            .roster(&ctx, &lane, "queried")
+            .unwrap()
+            .iter()
+            .map(|marker| marker.id())
+            .collect::<Vec<_>>(),
+        ["point-2", "point-0"]
+    );
     assert_eq!(index.by_feature.len(), 1);
     {
-        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits,
-            "index SLDPRT solved-line point markers", Some(3));
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "index SLDPRT solved-line point markers",
+            Some(3),
+        );
         assert_eq!(index.roster(&ctx, &lane, "queried").unwrap().len(), 2);
     }
 }

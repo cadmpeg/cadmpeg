@@ -3718,9 +3718,10 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
         return Ok(None);
     };
     let selected = Some((curve.feature_ref.as_deref(), curve_index));
-    let (index, _storage) = ctx.with_scoped_storage("index SLDPRT reverse incidence endpoints", || {
-        ReverseIncidenceIndex::build(ctx, payload, markers, selected)
-    })?;
+    let (index, _storage) = ctx
+        .with_scoped_storage("index SLDPRT reverse incidence endpoints", || {
+            ReverseIncidenceIndex::build(ctx, payload, markers, selected)
+        })?;
     current_reverse_incidence_endpoint_offsets_in(ctx, payload, curve, &index)
 }
 
@@ -3744,7 +3745,10 @@ pub(super) fn current_reverse_incidence_endpoint_offsets_cached<'ctx, 'a>(
     current_reverse_incidence_endpoint_offsets_in(ctx, payload, curve, index)
 }
 
-pub(super) fn reverse_incidence_curve_index(payload: &[u8], curve: &SketchInputEntity) -> Option<u16> {
+pub(super) fn reverse_incidence_curve_index(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+) -> Option<u16> {
     let offset = usize::try_from(curve.offset()).ok()?;
     let curve_index = u16::try_from(curve.object_index()?).ok()?;
     (payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
@@ -3771,62 +3775,67 @@ impl<'a> ReverseIncidenceIndex<'a> {
     }
 
     pub(super) fn build(
-        ctx: &DecodeContext<'_>, payload: &[u8], markers: &[&'a SketchInputEntity],
+        ctx: &DecodeContext<'_>,
+        payload: &[u8],
+        markers: &[&'a SketchInputEntity],
         selected: Option<(Option<&str>, u16)>,
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT reverse incidence endpoints";
-            let mut selectors_storage = ctx.reserve_scoped(0, OPERATION)?;
-            let mut selectors =
-                BTreeMap::<(Option<&str>, u16, u16), ReverseIncidenceOffsets>::new();
-            let mut index = Self {
-                by_curve: HashMap::new(),
-                invalid_features: std::collections::BTreeSet::new(),
+        let mut selectors_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut selectors = BTreeMap::<(Option<&str>, u16, u16), ReverseIncidenceOffsets>::new();
+        let mut index = Self {
+            by_curve: HashMap::new(),
+            invalid_features: std::collections::BTreeSet::new(),
+        };
+        for &marker in ctx.admit_iter(markers, OPERATION)? {
+            let feature = marker.feature_ref.as_deref();
+            if let Some((selected_feature, _)) = selected {
+                if !ctx.equal(&feature, &selected_feature, OPERATION)? {
+                    continue;
+                }
+            }
+            let Ok(offset) = usize::try_from(marker.offset()) else {
+                ctx.insert_btree_set(&mut index.invalid_features, feature, OPERATION)?;
+                continue;
             };
-            for &marker in ctx.admit_iter(markers, OPERATION)? {
-                let feature = marker.feature_ref.as_deref();
-                if let Some((selected_feature, _)) = selected {
-                    if !ctx.equal(&feature, &selected_feature, OPERATION)? { continue; }
+            let Some((_, links)) = linked_profile_point(payload, offset) else {
+                continue;
+            };
+            for (selector, curve) in links {
+                if selected.is_some_and(|(_, selected_curve)| selected_curve != curve) {
+                    continue;
                 }
-                let Ok(offset) = usize::try_from(marker.offset()) else {
-                    ctx.insert_btree_set(&mut index.invalid_features, feature, OPERATION)?;
-                    continue;
-                };
-                let Some((_, links)) = linked_profile_point(payload, offset) else {
-                    continue;
-                };
-                for (selector, curve) in links {
-                    if selected.is_some_and(|(_, selected_curve)| selected_curve != curve) { continue; }
-                    selectors_storage.with_storage(|| {
-                        match ctx.entry_btree_map(
-                            &mut selectors,
-                            (feature, curve, selector),
-                            OPERATION,
-                        )? {
-                            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                                entry.get_mut().include_offset(marker.offset());
-                            }
-                            std::collections::btree_map::Entry::Vacant(entry) => {
-                                entry.insert(ReverseIncidenceOffsets::One(marker.offset()));
-                            }
+                selectors_storage.with_storage(|| {
+                    match ctx.entry_btree_map(
+                        &mut selectors,
+                        (feature, curve, selector),
+                        OPERATION,
+                    )? {
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            entry.get_mut().include_offset(marker.offset());
                         }
-                        Ok::<_, CodecError>(())
-                    })?;
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(ReverseIncidenceOffsets::One(marker.offset()));
+                        }
+                    }
+                    Ok::<_, CodecError>(())
+                })?;
+            }
+        }
+        for ((feature, curve, _), offsets) in ctx.admit_iter(selectors, OPERATION)? {
+            let ReverseIncidenceOffsets::Pair(pair) = offsets else {
+                continue;
+            };
+            match ctx.entry_hash_map(&mut index.by_curve, (feature, curve), OPERATION)? {
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(pair));
                 }
             }
-            for ((feature, curve, _), offsets) in ctx.admit_iter(selectors, OPERATION)? {
-                let ReverseIncidenceOffsets::Pair(pair) = offsets else {
-                    continue;
-                };
-                match ctx.entry_hash_map(&mut index.by_curve, (feature, curve), OPERATION)? {
-                    std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        entry.insert(None);
-                    }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(Some(pair));
-                    }
-                }
-            }
-            Ok(index)
+        }
+        Ok(index)
     }
 }
 

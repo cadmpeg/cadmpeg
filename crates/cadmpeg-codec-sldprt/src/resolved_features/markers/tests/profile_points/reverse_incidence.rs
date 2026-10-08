@@ -90,25 +90,72 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let cache = std::cell::OnceCell::new();
-    assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(&ctx, &payload, &entities[1], &markers, &cache).unwrap(), None);
+    assert_eq!(
+        crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(
+            &ctx,
+            &payload,
+            &entities[1],
+            &markers,
+            &cache
+        )
+        .unwrap(),
+        None
+    );
     assert!(cache.get().is_none());
-    let expected = current_reverse_incidence_endpoint_offsets(&ctx, &payload, &entities[0], &markers).unwrap();
-    assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(&ctx, &payload, &entities[0], &markers, &cache).unwrap(), expected);
+    let expected =
+        current_reverse_incidence_endpoint_offsets(&ctx, &payload, &entities[0], &markers).unwrap();
+    assert_eq!(
+        crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(
+            &ctx,
+            &payload,
+            &entities[0],
+            &markers,
+            &cache
+        )
+        .unwrap(),
+        expected
+    );
     {
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "index SLDPRT reverse incidence endpoints", None);
-        assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(&ctx, &payload, &entities[0], &markers, &cache).unwrap(), expected);
+            "index SLDPRT reverse incidence endpoints",
+            None,
+        );
+        assert_eq!(
+            crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_cached(
+                &ctx,
+                &payload,
+                &entities[0],
+                &markers,
+                &cache
+            )
+            .unwrap(),
+            expected
+        );
     }
-    let curves = crate::resolved_features::typed_relations::CurveMarkers::new(&ctx, &markers).unwrap();
-    assert_eq!(curves.reverse_endpoint_offsets(&ctx, &payload, &entities[0]).unwrap(), expected);
+    let curves =
+        crate::resolved_features::typed_relations::CurveMarkers::new(&ctx, &markers).unwrap();
+    assert_eq!(
+        curves
+            .reverse_endpoint_offsets(&ctx, &payload, &entities[0])
+            .unwrap(),
+        expected
+    );
     {
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "index SLDPRT reverse incidence endpoints", None);
-        assert_eq!(curves.reverse_endpoint_offsets(&ctx, &payload, &entities[0]).unwrap(), expected);
+            "index SLDPRT reverse incidence endpoints",
+            None,
+        );
+        assert_eq!(
+            curves
+                .reverse_endpoint_offsets(&ctx, &payload, &entities[0])
+                .unwrap(),
+            expected
+        );
     }
     let duplicated = [&entities[2], &entities[1], &entities[1], &entities[0]];
     let (index, _storage) =
@@ -157,4 +204,3 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
         None
     );
 }
-

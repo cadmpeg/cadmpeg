@@ -98,7 +98,8 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -133,7 +134,8 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -170,7 +172,8 @@ fn current_compact_84_line_falls_back_to_zero_based_point_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }

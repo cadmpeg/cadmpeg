@@ -473,7 +473,8 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -587,7 +588,8 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -1287,7 +1289,8 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -1314,7 +1317,8 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
@@ -1704,7 +1708,8 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
                 )
                 .unwrap(),
             )
-            .unwrap(), None,
+            .unwrap(),
+            None,
         );
         result
     }
@@ -1804,7 +1809,8 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
                     )
                     .unwrap(),
                 )
-                .unwrap(), None,
+                .unwrap(),
+                None,
             );
             result
         }
