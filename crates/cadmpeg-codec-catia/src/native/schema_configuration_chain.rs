@@ -109,14 +109,15 @@ impl ChainWire {
         ctx: &DecodeContext<'_>,
         chain: CatiaSchemaConfigurationRowChain,
     ) -> Result<Self, CodecError> {
-        let mut remaining = chain.links.into_iter().peekable();
+        let mut remaining = chain.links.into_iter();
         let mut links = Vec::new();
-        while let Some(link) =
-            ctx.next_charged(&mut remaining, "catia_configuration_chain_wire_visits")?
-        {
+        let mut current =
+            ctx.next_charged(&mut remaining, "catia_configuration_chain_wire_visits")?;
+        while let Some(link) = current.take() {
+            current = ctx.next_charged(&mut remaining, "catia_configuration_chain_wire_visits")?;
             let successor = copy_reference(
                 ctx,
-                remaining.peek().map_or(&chain.terminal, |next| &next.row),
+                current.as_ref().map_or(&chain.terminal, |next| &next.row),
             )?;
             ctx.push_vec(
                 &mut links,
@@ -435,6 +436,13 @@ mod tests {
         assert!(
             matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_configuration_chain_wire_links")
+        );
+        let refused = crate::test_support::with_work_refusal(
+            "catia_configuration_chain_wire_visits",
+            |ctx| super::ChainWire::from_charged(ctx, chain.clone()),
+        );
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_configuration_chain_wire_visits")
         );
         let charged = crate::test_support::with_service_context(|ctx| {
             super::ChainWire::from_charged(ctx, chain.clone())

@@ -16,6 +16,7 @@ fn outer_container_in_scope(
 }
 use crate::native::CatiaOuterContainerBinding;
 
+mod budget_repairs;
 mod evaluate;
 mod expression_admission;
 mod legacy_admission;

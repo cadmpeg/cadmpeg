@@ -42,8 +42,9 @@ pub(crate) fn consolidated_owner_packets(
         )
     })?;
     let mut owner_charts = HashMap::new();
-    let owner_chart_rows =
-        crate::families::b2::records::b2_owner_charts_from_records(ctx, bytes, records)?;
+    let owner_chart_rows = scratch.with_storage(|| {
+        crate::families::b2::records::b2_owner_charts_from_records(ctx, bytes, records)
+    })?;
     for chart in ctx.admit_iter(&owner_chart_rows, "catia_native_owner_chart_visits")? {
         let native_reference =
             |reference: crate::families::b2::records::B2OwnerChartBridgeReference| {
@@ -117,10 +118,11 @@ pub(crate) fn consolidated_owner_packets(
         })?;
     }
     let mut boundary_cycles = HashMap::new();
-    let boundary_cycle_rows =
+    let boundary_cycle_rows = scratch.with_storage(|| {
         crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
             ctx, bytes, records,
-        )?;
+        )
+    })?;
     for cycle in ctx.admit_iter(
         &boundary_cycle_rows,
         "catia_native_owner_boundary_cycle_visits",
@@ -160,13 +162,15 @@ pub(crate) fn consolidated_owner_packets(
             )
         })?;
     }
-    let adjacent_counted =
+    let adjacent_counted = scratch.with_storage(|| {
         crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
             ctx, bytes, records,
-        )?;
+        )
+    })?;
     let mut face_nodes = HashMap::new();
-    let adjacent_face_owners =
-        crate::families::b2::records::b2_adjacent_face_owners_from_records(ctx, bytes, records)?;
+    let adjacent_face_owners = scratch.with_storage(|| {
+        crate::families::b2::records::b2_adjacent_face_owners_from_records(ctx, bytes, records)
+    })?;
     for linked in ctx.admit_iter(
         &adjacent_face_owners,
         "catia_native_adjacent_face_owner_visits",
@@ -203,8 +207,9 @@ pub(crate) fn consolidated_owner_packets(
             )
         })?;
     }
-    let counted_owners =
-        crate::families::b2::records::b2_counted_owners_from_records(ctx, bytes, records)?;
+    let counted_owners = scratch.with_storage(|| {
+        crate::families::b2::records::b2_counted_owners_from_records(ctx, bytes, records)
+    })?;
     let row_count = fixed
         .len()
         .checked_add(counted_owners.len())
@@ -261,8 +266,12 @@ pub(crate) fn consolidated_owner_packets(
             packet.source_index,
             packet.header_token,
             CatiaOwnerPacketPayload::Counted {
-                references: packet.references,
-                tail: packet.tail,
+                references: ctx
+                    .copy_slice(&packet.references, "catia_native_owner_counted_references")?,
+                tail: crate::families::b2::counted_owner_tail::CountedOwnerTail::new(
+                    ctx.copy_slice(packet.tail.as_slice(), "catia_native_owner_counted_tail")?,
+                )
+                .ok_or_else(|| CodecError::malformed("CATIA counted owner tail is empty"))?,
             },
         ));
     }
@@ -287,7 +296,7 @@ pub(crate) fn consolidated_owner_packets(
                     let key = (source_index, pos);
                     if let Some(targets) = ctx.remove_hash_map(&mut identity_targets, &key, LOOKUP)? {
                         *stored_targets = ctx.collect_vec(
-                            ctx.admit_iter(targets, "catia_native_owner_emitted_target_visits")?.map(|target| CatiaOwnerIdentityTarget {
+                            targets.into_iter().map(|target| CatiaOwnerIdentityTarget {
                                 slot: target.slot, distance: target.distance,
                                 target_byte_offset: u64_from_index(target.target_pos), target_class: target.target_class,
                             }), "catia_native_owner_emitted_targets",

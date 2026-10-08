@@ -4746,6 +4746,7 @@ fn graph_design_objects(
         };
         let mut field_ids = Vec::new();
         let mut field_classes = Vec::new();
+        let mut class_storage = ctx.reserve_scoped(0, "catia_design_field_class_scratch")?;
         let mut seen_classes = std::collections::BTreeSet::new();
         let mut definition_values = Vec::new();
         let mut definition_chain_values = Vec::new();
@@ -4757,7 +4758,7 @@ fn graph_design_objects(
                 "catia_design_fields",
             )?;
             if let (Some(entry), Some(name)) = (record.class_entry(), record.class_name()) {
-                if scratch.with_storage(|| {
+                if class_storage.with_storage(|| {
                     ctx.insert_btree_set(
                         &mut seen_classes,
                         (entry, name),
@@ -5616,99 +5617,118 @@ fn relation_type_signature_charged(
     placeholder: Option<&str>,
     source: &str,
 ) -> Result<Option<CatiaRelationTypeSignature>, CodecError> {
-    const OPERATION: &str = "catia_native_signature_scan";
-    let source = source.strip_suffix('\n').unwrap_or(source);
-    let Some((input_clause, result_type)) = ctx.rsplit_once(source, ") : ", OPERATION)? else {
-        return Ok(None);
-    };
-    let Some(input_clause) = input_clause.strip_prefix('(') else {
-        return Ok(None);
-    };
-    if result_type.is_empty() || ctx.trim_text(result_type, OPERATION)?.len() != result_type.len() {
-        return Ok(None);
-    }
-    let mut inputs = Vec::new();
-    let parse_clause = |clause: &str| -> Result<Option<CatiaRelationTypeInput>, CodecError> {
-        let Some((parameter, input_type)) = ctx.split_once(clause, ":", OPERATION)? else {
-            return Ok(None);
-        };
-        let parameter = ctx.trim_text(parameter, OPERATION)?;
-        let Some(input_type) = ctx.trim_text(input_type, OPERATION)?.strip_prefix("#In") else {
-            return Ok(None);
-        };
-        let input_type = ctx.trim_text(input_type, OPERATION)?;
-        let Some(digits) = parameter
-            .strip_prefix('#')
-            .and_then(|parameter| parameter.strip_suffix('_'))
-        else {
-            return Ok(None);
-        };
-        if digits.is_empty()
-            || !ctx.all_by(
-                digits.as_bytes(),
-                |byte| Ok(byte.is_ascii_digit()),
-                "catia_native_signature_parameter_digits",
-            )?
-            || input_type.is_empty()
-        {
-            return Ok(None);
-        }
-        Ok(Some(CatiaRelationTypeInput {
-            parameter: ctx.copy_retained_text(parameter, "catia_native_signature_parameter")?,
-            input_type: ctx.copy_retained_text(input_type, "catia_native_signature_input_type")?,
-        }))
-    };
-    if !input_clause.is_empty() {
-        let mut clause_start = 0;
-        let mut clause_bytes = input_clause.as_bytes().iter().enumerate();
-        while let Some((offset, byte)) =
-            ctx.next_charged(&mut clause_bytes, "catia_native_signature_clause_visits")?
-        {
-            if *byte == b',' {
-                let Some(input) = parse_clause(&input_clause[clause_start..offset])? else {
+    let (signature, storage) = ctx.with_scoped_storage(
+        "catia_native_signature_scratch",
+        || -> Result<_, CodecError> {
+            const OPERATION: &str = "catia_native_signature_scan";
+            let source = source.strip_suffix('\n').unwrap_or(source);
+            let Some((input_clause, result_type)) = ctx.rsplit_once(source, ") : ", OPERATION)?
+            else {
+                return Ok(None);
+            };
+            let Some(input_clause) = input_clause.strip_prefix('(') else {
+                return Ok(None);
+            };
+            if result_type.is_empty()
+                || ctx.trim_text(result_type, OPERATION)?.len() != result_type.len()
+            {
+                return Ok(None);
+            }
+            let mut inputs = Vec::new();
+            let parse_clause =
+                |clause: &str| -> Result<Option<CatiaRelationTypeInput>, CodecError> {
+                    let Some((parameter, input_type)) = ctx.split_once(clause, ":", OPERATION)?
+                    else {
+                        return Ok(None);
+                    };
+                    let parameter = ctx.trim_text(parameter, OPERATION)?;
+                    let Some(input_type) =
+                        ctx.trim_text(input_type, OPERATION)?.strip_prefix("#In")
+                    else {
+                        return Ok(None);
+                    };
+                    let input_type = ctx.trim_text(input_type, OPERATION)?;
+                    let Some(digits) = parameter
+                        .strip_prefix('#')
+                        .and_then(|parameter| parameter.strip_suffix('_'))
+                    else {
+                        return Ok(None);
+                    };
+                    if digits.is_empty()
+                        || !ctx.all_by(
+                            digits.as_bytes(),
+                            |byte| Ok(byte.is_ascii_digit()),
+                            "catia_native_signature_parameter_digits",
+                        )?
+                        || input_type.is_empty()
+                    {
+                        return Ok(None);
+                    }
+                    Ok(Some(CatiaRelationTypeInput {
+                        parameter: ctx
+                            .copy_retained_text(parameter, "catia_native_signature_parameter")?,
+                        input_type: ctx
+                            .copy_retained_text(input_type, "catia_native_signature_input_type")?,
+                    }))
+                };
+            if !input_clause.is_empty() {
+                let mut clause_start = 0;
+                let mut clause_bytes = input_clause.as_bytes().iter().enumerate();
+                while let Some((offset, byte)) =
+                    ctx.next_charged(&mut clause_bytes, "catia_native_signature_clause_visits")?
+                {
+                    if *byte == b',' {
+                        let Some(input) = parse_clause(&input_clause[clause_start..offset])? else {
+                            return Ok(None);
+                        };
+                        ctx.push_vec(&mut inputs, input, "catia_native_signature_inputs")?;
+                        clause_start = offset + 1;
+                    }
+                }
+                let Some(input) = parse_clause(&input_clause[clause_start..])? else {
                     return Ok(None);
                 };
                 ctx.push_vec(&mut inputs, input, "catia_native_signature_inputs")?;
-                clause_start = offset + 1;
             }
-        }
-        let Some(input) = parse_clause(&input_clause[clause_start..])? else {
-            return Ok(None);
-        };
-        ctx.push_vec(&mut inputs, input, "catia_native_signature_inputs")?;
+            if let Some(placeholder) = placeholder {
+                let placeholder = ctx.trim_text(placeholder, OPERATION)?;
+                let mismatched = match inputs.first() {
+                    None => !placeholder.is_empty(),
+                    Some(input) => !ctx.equal_bytes(
+                        input.parameter.as_bytes(),
+                        placeholder.as_bytes(),
+                        OPERATION,
+                    )?,
+                };
+                if mismatched {
+                    return Ok(None);
+                }
+            }
+            let mut parameter_storage =
+                ctx.reserve_scoped(0, "catia_native_signature_prior_input_checks")?;
+            let mut parameters = std::collections::BTreeSet::new();
+            for input in ctx.admit_iter(&inputs, "catia_native_signature_duplicate_input_rows")? {
+                if !parameter_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut parameters,
+                        input.parameter.as_str(),
+                        "catia_native_signature_prior_input_checks",
+                    )
+                })? {
+                    return Ok(None);
+                }
+            }
+            Ok(Some(CatiaRelationTypeSignature {
+                inputs,
+                result_type: ctx
+                    .copy_retained_text(result_type, "catia_native_signature_result_type")?,
+            }))
+        },
+    )?;
+    if signature.is_some() {
+        storage.commit()?;
     }
-    if let Some(placeholder) = placeholder {
-        let placeholder = ctx.trim_text(placeholder, OPERATION)?;
-        let mismatched = match inputs.first() {
-            None => !placeholder.is_empty(),
-            Some(input) => !ctx.equal_bytes(
-                input.parameter.as_bytes(),
-                placeholder.as_bytes(),
-                OPERATION,
-            )?,
-        };
-        if mismatched {
-            return Ok(None);
-        }
-    }
-    let mut parameter_storage =
-        ctx.reserve_scoped(0, "catia_native_signature_prior_input_checks")?;
-    let mut parameters = std::collections::BTreeSet::new();
-    for input in ctx.admit_iter(&inputs, "catia_native_signature_duplicate_input_rows")? {
-        if !parameter_storage.with_storage(|| {
-            ctx.insert_btree_set(
-                &mut parameters,
-                input.parameter.as_str(),
-                "catia_native_signature_prior_input_checks",
-            )
-        })? {
-            return Ok(None);
-        }
-    }
-    Ok(Some(CatiaRelationTypeSignature {
-        inputs,
-        result_type: ctx.copy_retained_text(result_type, "catia_native_signature_result_type")?,
-    }))
+    Ok(signature)
 }
 
 fn relation_parameter_symbol(parameter: &str) -> bool {
