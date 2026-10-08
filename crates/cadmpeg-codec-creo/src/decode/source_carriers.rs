@@ -169,7 +169,7 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         entities: Vec<SketchEntity>,
     ) -> Result<(), CodecError> {
-        for mut entity in entities {
+        for mut entity in ctx.admit_iter(entities, "creo source sketch entity traversal")? {
             let source_id = SketchEntityId::mint(
                 ctx.copy_retained_text(entity.id().as_str(), "creo source sketch entity IDs")?,
             )
@@ -219,7 +219,7 @@ impl SourceUnitCarriers {
             constraints.len(),
             "creo model sketch constraints",
         )?;
-        for mut constraint in constraints {
+        for mut constraint in ctx.admit_iter(constraints, "creo source sketch constraint traversal")? {
             if let Some(scale) = self.length_scale_mm {
                 constraint.definition.scale_lengths(scale).map_err(|error| match error {
                     cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
@@ -437,7 +437,9 @@ impl SourceUnitCarriers {
         if let (Some(scale), EdgeCarrier::Bounded(curve_id, interval)) =
             (self.length_scale_mm, &mut edge.carrier)
         {
-            let curve = ir.model.curves.iter().find(|curve| curve.id == *curve_id);
+            let curve = ctx.find_by(&ir.model.curves,
+                |curve| ctx.equal(&curve.id, curve_id, "creo source edge curve ID comparison"),
+                "creo source edge curve search")?;
             let parameter_scale = curve
                 .and_then(|curve| self.curve_geometry(curve).solved())
                 .map(|geometry| {
@@ -486,11 +488,9 @@ impl SourceUnitCarriers {
         mut coedge: Coedge,
     ) -> Result<(), CodecError> {
         if let (Some(scale), Some(use_curve)) = (self.length_scale_mm, &mut coedge.use_curve) {
-            let curve = ir
-                .model
-                .curves
-                .iter()
-                .find(|curve| curve.id == use_curve.curve);
+            let curve = ctx.find_by(&ir.model.curves,
+                |curve| ctx.equal(&curve.id, &use_curve.curve, "creo source coedge curve ID comparison"),
+                "creo source coedge curve search")?;
             let parameter_scale = curve
                 .and_then(|curve| self.curve_geometry(curve).solved())
                 .map(|geometry| {
@@ -519,11 +519,9 @@ impl SourceUnitCarriers {
         pcurve: Pcurve,
         surface_id: &SurfaceId,
     ) -> Result<(), CodecError> {
-        let surface = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| &surface.id == surface_id)
+        let surface = ctx.find_by(&ir.model.surfaces,
+            |surface| ctx.equal(&surface.id, surface_id, "creo source pcurve surface ID comparison"),
+            "creo source pcurve surface search")?
             .ok_or_else(|| malformed_refusal(ctx, "Creo pcurve has no owning surface"))?;
         let scales = self
             .length_scale_mm

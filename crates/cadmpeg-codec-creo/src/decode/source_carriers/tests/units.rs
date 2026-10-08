@@ -1041,3 +1041,34 @@ fn source_sketch_nurbs_copy_refuses_knots_and_poles_separately() {
     }
 }
 
+
+#[test]
+fn source_sketch_input_traversals_refuse_work() {
+    crate::test_support::assert_work_boundaries(&["creo source sketch entity traversal"], |ctx| {
+        SourceUnitCarriers::default().admit_sketch_entities(ctx, &mut CadIr::empty(), vec![source_sketch_line(1.0)])
+    });
+    crate::test_support::assert_work_boundaries(&["creo source sketch constraint traversal"], |ctx| {
+        SourceUnitCarriers::default().admit_sketch_constraints(ctx, &mut CadIr::empty(), vec![source_distance_constraint(2.0)])
+    });
+}
+
+#[test]
+fn source_pcurve_surface_search_stops_at_first_match() {
+    let target = SurfaceId::mint("creo:test:surface#1").expect("source ID");
+    let surface = Surface { id: target.clone(), geometry: admission_plane(), source_object: None };
+    let short = vec![surface.clone()];
+    let mut long = short.clone();
+    long.extend(std::iter::repeat_n(surface, 64));
+    let run = |ctx: &DecodeContext<'_>, surfaces: &[Surface]| {
+        let mut ir = CadIr::empty();
+        ir.model.surfaces = surfaces.to_vec();
+        SourceUnitCarriers::default().admit_pcurve(ctx, &mut ir, admission_pcurve(), &target)
+    };
+    crate::test_support::assert_work_boundaries(&["creo source pcurve surface search", "creo source pcurve surface ID comparison"], |ctx| run(ctx, &short));
+    let refusal = |surfaces: &[Surface]| crate::test_support::last_refusal_at(b"", ResourceDimension::WorkUnits,
+        "creo source pcurve surface search", |ctx| run(ctx, surfaces));
+    let CodecError::ResourceLimit(short_refusal) = refusal(&short) else { panic!("work refusal") };
+    let CodecError::ResourceLimit(long_refusal) = refusal(&long) else { panic!("work refusal") };
+    assert_eq!(short_refusal, long_refusal);
+    crate::decode::with_test_decode_ctx(|ctx| run(ctx, &long)).expect("first source surface admits pcurve");
+}
