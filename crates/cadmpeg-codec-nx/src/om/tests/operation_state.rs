@@ -372,3 +372,52 @@ fn state_group_path_reversal_refusal_propagates() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX operation-state group path reversal" && limit.additional == 2 + 3 * 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()))
     );
 }
+
+#[test]
+fn state_group_materialization_releases_the_predecessor_index() {
+    use cadmpeg_core::decode::{u64_from_index, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = [0x01, 0x00, 0x00, 0x01, 0x00, 0x00];
+    // The two candidates use the initial four-slot allocation. Their chosen
+    // path has two exact slots. Two map entries need one admitted B-tree node:
+    // 11 (usize, three-usize GroupPath) lanes, 16 pointer-width metadata/child
+    // slots, and two alignment slots. The predecessor vector has two slots.
+    let candidates = 4 * std::mem::size_of::<(usize, usize)>();
+    let predecessors = 2 * std::mem::size_of::<Option<usize>>();
+    let index = 11 * 4 * std::mem::size_of::<usize>()
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<usize>();
+    let path = 2 * std::mem::size_of::<usize>();
+    let peak = u64_from_index(candidates + predecessors + index + path);
+    let groups = 2 * std::mem::size_of::<crate::om::roll_forward::OperationStateGroup>();
+    assert!(candidates + path + groups <= usize::try_from(peak).unwrap());
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = peak - 1,
+        |ctx| {
+            let error = operation_state_group_table_before_counter_map(ctx, &bytes, bytes.len(), 0)
+                .expect_err("one byte below the live index/path peak must refuse");
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("path storage must be admitted before allocation");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+            assert_eq!(limit.operation, "NX operation-state group path");
+            assert_eq!(limit.used, u64_from_index(candidates + predecessors + index));
+            assert_eq!(limit.additional, u64_from_index(path));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        },
+    );
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_materialized_bytes = peak,
+        |ctx| {
+            let table = operation_state_group_table_before_counter_map(ctx, &bytes, bytes.len(), 0)
+                .expect("each lifetime phase fits the source-derived peak")
+                .expect("two adjacent empty groups are valid");
+            assert_eq!(table.groups().len(), 2);
+            assert_eq!((table.offset(), table.end_offset()), (0, bytes.len()));
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+}
