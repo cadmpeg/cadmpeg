@@ -8657,6 +8657,7 @@ fn complete_two_chart_samples(
     body: &[u8],
     start: usize,
     count: Option<u32>,
+    sample_operation: &'static str,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<[[f64; 2]; 2]>>, cadmpeg_core::CodecError> {
     let Some(remaining) = body.len().checked_sub(start) else {
@@ -8689,7 +8690,7 @@ fn complete_two_chart_samples(
             *value = decoded;
             cursor = next;
         }
-        ctx.push_vec(&mut samples, sample, "creo two-chart sample points")?;
+        ctx.push_vec(&mut samples, sample, sample_operation)?;
     }
     Ok((cursor == body.len()
         && samples.len() >= 2
@@ -8725,9 +8726,19 @@ pub(crate) fn two_chart_pcurve_samples(
         if start <= 1 {
             continue;
         }
-        let (samples, storage) = ctx.with_scoped_storage("creo two-chart sample points", || {
-            complete_two_chart_samples(ctx, body, start, Some(count), &cache)
-        })?;
+        let (samples, storage) = ctx.with_scoped_storage(
+            "creo two-chart counted sample points",
+            || {
+                complete_two_chart_samples(
+                    ctx,
+                    body,
+                    start,
+                    Some(count),
+                    "creo two-chart counted sample points",
+                    &cache,
+                )
+            },
+        )?;
         let Some(samples) = samples else {
             continue;
         };
@@ -8774,9 +8785,19 @@ pub(crate) fn two_chart_pcurve_samples(
         else {
             continue;
         };
-        let (samples, storage) = ctx.with_scoped_storage("creo two-chart sample points", || {
-            complete_two_chart_samples(ctx, body, 0, None, &cache)
-        })?;
+        let (samples, storage) = ctx.with_scoped_storage(
+            "creo two-chart replay sample points",
+            || {
+                complete_two_chart_samples(
+                    ctx,
+                    body,
+                    0,
+                    None,
+                    "creo two-chart replay sample points",
+                    &cache,
+                )
+            },
+        )?;
         let Some(samples) = samples else {
             continue;
         };

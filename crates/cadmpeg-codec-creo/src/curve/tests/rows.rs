@@ -417,12 +417,31 @@ fn two_chart_limit_error(operation: &'static str) -> CodecError {
     )
 }
 
+fn two_chart_samples_with_collection_limit(
+    payload: &[u8],
+    face_ids: &BTreeSet<u32>,
+    limit: u64,
+) -> Result<Vec<crate::curve::TwoChartPcurveSamples>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("root input is admitted");
+    two_chart_pcurve_samples(&ctx, payload, Some(face_ids))
+}
+
 #[test]
 fn two_chart_counted_samples_refuse_collection_limit() {
-    let error = two_chart_limit_error("creo two-chart sample points");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo two-chart sample points"));
+    let (payload, face_ids) = canonical_and_positional_two_chart_input();
+    let decoded = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &["creo two-chart counted sample points"; 3],
+        |limit| two_chart_samples_with_collection_limit(&payload, &face_ids, limit),
+    );
+    assert_eq!(
+        decoded,
+        two_chart_samples_service(&payload, Some(&face_ids))
+    );
 }
 
 #[test]
@@ -451,10 +470,16 @@ fn two_chart_sample_row_refuses_collection_limit() {
 
 #[test]
 fn two_chart_replay_samples_refuse_collection_limit() {
-    let error = two_chart_limit_error("creo two-chart sample points");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo two-chart sample points"));
+    let (payload, face_ids) = canonical_and_positional_two_chart_input();
+    let decoded = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &["creo two-chart replay sample points"; 3],
+        |limit| two_chart_samples_with_collection_limit(&payload, &face_ids, limit),
+    );
+    assert_eq!(
+        decoded,
+        two_chart_samples_service(&payload, Some(&face_ids))
+    );
 }
 
 #[test]
