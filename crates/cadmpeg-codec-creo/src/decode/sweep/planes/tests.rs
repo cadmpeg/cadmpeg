@@ -866,3 +866,16 @@ fn feature_plane_storage_stays_live_until_its_collection_is_dropped() {
     });
     assert!(limit(true) > limit(false));
 }
+
+#[test]
+fn plane_carrier_index_borrows_rows_and_keeps_unrelated_ambiguity() {
+    let records = [plane_outline(7, 2.0), plane_outline(8, 3.0), plane_outline(8, 4.0)];
+    let index = crate::test_support::assert_work_boundaries(&["creo plane carrier index scan", "creo plane carrier index"], |ctx| super::plane_carrier_index(ctx, &records, |plane| plane.surface_id));
+    assert!(std::ptr::eq(index.get(&7).copied().flatten().expect("unique carrier"), &records[0]));
+    assert!(index.get(&8).expect("ambiguous carrier").is_none());
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.surfaces.rows.push(plane_row(7));
+    scan.planes.outlines.extend(records);
+    let planes = crate::decode::with_test_decode_ctx(|ctx| super::feature_outline_planes(ctx, &scan, 917).map(|result| result.map(|(planes, _storage)| planes))).expect("service resources").expect("complete plane");
+    assert_eq!(planes, [(7, [0.0, 0.0, 2.0], [0.0, 0.0, 1.0])]);
+}

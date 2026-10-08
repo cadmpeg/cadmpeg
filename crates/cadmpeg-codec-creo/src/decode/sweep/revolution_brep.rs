@@ -218,7 +218,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 )?;
                 let mut diagnostics =
                     crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
-                let Some(row) = PrevalidatedRevolutionBoundary::new(
+                let Some(geometry) = revolution_profile_boundary_pcurve(
                     ctx,
                     transform,
                     segment,
@@ -231,6 +231,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     complete = false;
                     break;
                 };
+                let row = PrevalidatedRevolutionBoundary { boundary, geometry };
                 ctx.reserve_scoped_vec(
                     &mut boundary_storage,
                     &mut segment_boundaries,
@@ -548,34 +549,6 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
 struct PrevalidatedRevolutionBoundary {
     boundary: RevolutionBoundary,
     geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry,
-}
-
-impl PrevalidatedRevolutionBoundary {
-    fn new(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        transform: &crate::placement::FeatureSectionTransform,
-        segment: &super::profiles::ProfileEntity,
-        surface: &cadmpeg_ir::geometry::SurfaceGeometry,
-        axis: &cadmpeg_ir::features::RevolutionAxis,
-        boundary_point: ([f64; 2], RevolutionBoundary),
-        diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
-    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let (section_point, boundary) = boundary_point;
-
-        let Some(geometry) = revolution_profile_boundary_pcurve(
-            ctx,
-            transform,
-            segment,
-            surface,
-            axis,
-            (section_point, boundary),
-            diagnostics,
-        )?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(Self { boundary, geometry }))
-    }
 }
 
 #[cfg(test)]
