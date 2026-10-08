@@ -5,10 +5,10 @@ use super::curve_conversion::angularly_equal;
 use super::geometry::{
     admit, declared_unit_vector, resolve_transform, source_object, WireProjectionOutcome,
 };
-use crate::directory::DirectoryEntry;
+use crate::directory::{entry_by_sequence, DirectoryEntry};
 use crate::global::ProjectedGlobal;
-use crate::parameter::{ParameterRecord, TokenValue};
-use cadmpeg_core::decode::DecodeContext;
+use crate::parameter::{record_by_sequence, ParameterRecord, TokenValue};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
@@ -17,7 +17,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, ProceduralCurve,
     ProceduralCurveDefinition, SolvedCurveGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, VertexId};
+use cadmpeg_ir::ids::{CurveId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use cadmpeg_ir::topology::{Edge, IncreasingParameterInterval, Point, Vertex};
@@ -34,7 +34,7 @@ fn admit_offset_controls(
     operation: &'static str,
 ) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
     let mut admitted = ctx.collection_vec(controls.len(), operation)?;
-    for point in controls {
+    for point in ctx.admit_iter(controls, "iges offset control admission")? {
         let Some(point) = FinitePoint3::new(point) else {
             return Ok(None);
         };
@@ -117,9 +117,26 @@ fn coordinate(point: Point3, index: u8) -> Option<f64> {
     }
 }
 
-fn greville(knots: &[f64], degree: usize, control: usize) -> Option<f64> {
-    let values = knots.get(control + 1..=control + degree)?;
-    Some(values.iter().sum::<f64>() / cadmpeg_core::convert::f64_from_index(degree)?)
+fn greville(
+    knots: &[f64],
+    degree: usize,
+    control: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    let Some(values) = knots.get(control + 1..=control + degree) else {
+        return Ok(None);
+    };
+    let Some(divisor) = cadmpeg_core::convert::f64_from_index(degree) else {
+        return Ok(None);
+    };
+    Ok(Some(
+        ctx.fold(
+            values,
+            -0.0,
+            |sum, value| Ok(sum + value),
+            "iges offset Greville knots",
+        )? / divisor,
+    ))
 }
 
 fn omitted_or_integer_zero(record: &ParameterRecord, index: usize) -> bool {
@@ -217,63 +234,216 @@ fn source_parameter_map(
     ))
 }
 
+#[derive(Default)]
+struct OffsetSourceIndex {
+    curves: BTreeMap<CurveId, usize>,
+    points: BTreeMap<PointId, usize>,
+    vertices: BTreeMap<VertexId, usize>,
+    edges: BTreeMap<CurveId, Vec<usize>>,
+    curve_count: usize,
+    point_count: usize,
+    vertex_count: usize,
+    edge_count: usize,
+}
+
+impl OffsetSourceIndex {
+    fn update(
+        &mut self,
+        ir: &CadIr,
+        ctx: &DecodeContext<'_>,
+        storage: &mut ScopedReservation<'_>,
+    ) -> Result<(), CodecError> {
+        for (offset, curve) in ctx
+            .admit_iter(
+                &ir.model.curves[self.curve_count..],
+                "iges offset source curve scan",
+            )?
+            .enumerate()
+        {
+            if !ctx.contains_key_btree_map(
+                &self.curves,
+                &curve.id,
+                "iges offset source curve query",
+            )? {
+                let key = storage.with_storage(|| {
+                    curve
+                        .id
+                        .try_clone_for_decode(ctx, "iges offset source curve key")
+                })?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut self.curves,
+                        key,
+                        self.curve_count + offset,
+                        "iges offset source curve index",
+                    )
+                })?;
+            }
+        }
+        self.curve_count = ir.model.curves.len();
+        for (offset, point) in ctx
+            .admit_iter(
+                &ir.model.points[self.point_count..],
+                "iges offset source point scan",
+            )?
+            .enumerate()
+        {
+            if !ctx.contains_key_btree_map(
+                &self.points,
+                &point.id,
+                "iges offset source point query",
+            )? {
+                let key = storage.with_storage(|| {
+                    point
+                        .id
+                        .try_clone_for_decode(ctx, "iges offset source point key")
+                })?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut self.points,
+                        key,
+                        self.point_count + offset,
+                        "iges offset source point index",
+                    )
+                })?;
+            }
+        }
+        self.point_count = ir.model.points.len();
+        for (offset, vertex) in ctx
+            .admit_iter(
+                &ir.model.vertices[self.vertex_count..],
+                "iges offset source vertex scan",
+            )?
+            .enumerate()
+        {
+            if !ctx.contains_key_btree_map(
+                &self.vertices,
+                &vertex.id,
+                "iges offset source vertex query",
+            )? {
+                let key = storage.with_storage(|| {
+                    vertex
+                        .id
+                        .try_clone_for_decode(ctx, "iges offset source vertex key")
+                })?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut self.vertices,
+                        key,
+                        self.vertex_count + offset,
+                        "iges offset source vertex index",
+                    )
+                })?;
+            }
+        }
+        self.vertex_count = ir.model.vertices.len();
+        for (offset, edge) in ctx
+            .admit_iter(
+                &ir.model.edges[self.edge_count..],
+                "iges offset source edge scan",
+            )?
+            .enumerate()
+        {
+            let Some(curve) = edge.curve() else {
+                continue;
+            };
+            let position = self.edge_count + offset;
+            if let Some(group) =
+                ctx.get_mut_btree_map(&mut self.edges, curve, "iges offset source edge query")?
+            {
+                storage.with_storage(|| {
+                    ctx.push_vec(group, position, "iges offset source edge references")
+                })?;
+            } else {
+                let key = storage.with_storage(|| {
+                    curve.try_clone_for_decode(ctx, "iges offset source edge key")
+                })?;
+                let mut group = storage
+                    .with_storage(|| ctx.collection_vec(1, "iges offset source edge references"))?;
+                group.push(position);
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut self.edges,
+                        key,
+                        group,
+                        "iges offset source edge index",
+                    )
+                })?;
+            }
+        }
+        self.edge_count = ir.model.edges.len();
+        Ok(())
+    }
+}
+
 fn source_parameter_range(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
+    index: &OffsetSourceIndex,
     source_id: &CurveId,
     geometry: &SolvedCurveGeometry,
     tolerance: f64,
 ) -> Result<Option<FiniteVector<2>>, CodecError> {
-    let point_position = |vertex: &VertexId| {
-        let point_id = &ir
-            .model
-            .vertices
-            .iter()
-            .find(|item| item.id == *vertex)?
-            .point;
-        ir.model
-            .points
-            .iter()
-            .find(|item| &item.id == point_id)
-            .map(|point| point.position().get())
+    let point_position = |vertex: &VertexId| -> Result<Option<Point3>, CodecError> {
+        let Some(position) =
+            ctx.get_btree_map(&index.vertices, vertex, "iges offset source vertex query")?
+        else {
+            return Ok(None);
+        };
+        let point_id = &ir.model.vertices[*position].point;
+        Ok(ctx
+            .get_btree_map(&index.points, point_id, "iges offset source point query")?
+            .and_then(|position| ir.model.points.get(*position))
+            .map(|point| point.position().get()))
     };
     let mut chosen = None;
-    let mut disagreement = false;
-    for edge in ir
-        .model
-        .edges
-        .iter()
-        .filter(|edge| edge.curve() == Some(source_id))
-    {
-        let (Some(range), Some(start), Some(end)) = (
-            edge.param_range(),
-            point_position(&edge.start),
-            point_position(&edge.end),
-        ) else {
-            continue;
-        };
-        let Some(evaluated_start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-            cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[0]),
-        )?)?
-        else {
-            continue;
-        };
-        let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
-            cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[1]),
-        )?)?
-        else {
-            continue;
-        };
-        if evaluated_start.distance(start) > tolerance || evaluated_end.distance(end) > tolerance {
-            continue;
-        }
-        match chosen {
-            Some(previous) if previous != range => disagreement = true,
-            None => chosen = Some(range),
-            _ => {}
-        }
+    let Some(edges) =
+        ctx.get_btree_map(&index.edges, source_id, "iges offset source edge query")?
+    else {
+        return Ok(None);
+    };
+    let disagreement = ctx.any_by(
+        edges,
+        |position| {
+            let edge = &ir.model.edges[*position];
+            let (Some(range), Some(start), Some(end)) = (
+                edge.param_range(),
+                point_position(&edge.start)?,
+                point_position(&edge.end)?,
+            ) else {
+                return Ok(false);
+            };
+            let Some(evaluated_start) =
+                finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                    cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[0]),
+                )?)?
+            else {
+                return Ok(false);
+            };
+            let Some(evaluated_end) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, range[1]),
+            )?)?
+            else {
+                return Ok(false);
+            };
+            if evaluated_start.distance(start) > tolerance
+                || evaluated_end.distance(end) > tolerance
+            {
+                return Ok(false);
+            }
+            match chosen {
+                Some(previous) if previous != range => return Ok(true),
+                None => chosen = Some(range),
+                _ => {}
+            }
+            Ok(false)
+        },
+        "iges offset source range traversal",
+    )?;
+    if disagreement {
+        return Ok(None);
     }
-    Ok(if disagreement { None } else { chosen })
+    Ok(chosen)
 }
 
 pub(super) fn project(
@@ -284,34 +454,20 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges offsets parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges offsets directory index",
-        )?;
-    }
+    let mut transform_tables = None;
+    let mut transform_storage = ctx.reserve_scoped(0, "iges offsets transform lookup")?;
+    let mut index = OffsetSourceIndex::default();
+    let mut index_storage = ctx.reserve_scoped(0, "iges offsets source lookup")?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
 
-    for entry in directory
-        .iter()
+    for entry in ctx
+        .admit_iter(directory, "iges offsets directory traversal")?
         .filter(|entry| entry.entity_type == 130 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -400,13 +556,14 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let source_id =
-            crate::ids::curve_admitted(&crate::ids::Stem::directory(source_sequence), ctx)?;
-        let Some(source_geometry) = ir
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id == source_id)
+        let mut identity_storage = ctx.reserve_scoped(0, "iges offset temporary identities")?;
+        let source_id = identity_storage.with_storage(|| {
+            crate::ids::curve_admitted(&crate::ids::Stem::directory(source_sequence), ctx)
+        })?;
+        index.update(ir, ctx, &mut index_storage)?;
+        let Some(source_geometry) = ctx
+            .get_btree_map(&index.curves, &source_id, "iges offset source curve query")?
+            .and_then(|position| ir.model.curves.get(*position))
             .and_then(|curve| curve.geometry.solved())
         else {
             super::push_entity_loss(
@@ -420,6 +577,7 @@ pub(super) fn project(
         let source_range = source_parameter_range(
             ctx,
             ir,
+            &index,
             &source_id,
             source_geometry,
             global.minimum_resolution_mm(),
@@ -436,7 +594,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(source_entry) = entries.get(&source_sequence).copied() else {
+        let Some(source_entry) = entry_by_sequence(directory, source_sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -445,7 +603,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(source_record) = records.get(&source_sequence).copied() else {
+        let Some(source_record) = record_by_sequence(parameters, source_sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -481,19 +639,53 @@ pub(super) fn project(
             )?;
             continue;
         }
-        let mut offset_source_id =
-            source_id.try_clone_for_decode(ctx, "iges offset source identity copy")?;
+        let mut offset_source_id = Cow::Borrowed(&source_id);
         let mut offset_source_geometry = Cow::Borrowed(source_geometry);
         if entry.transform != 0 {
-            let transform = match resolve_transform(
-                entry.transform,
-                &entries,
-                &records,
-                factor,
-                global.real_precision(),
-                &mut BTreeSet::new(),
-                ctx,
-            ) {
+            if transform_tables.is_none() {
+                let mut entries = BTreeMap::new();
+                for entry in
+                    ctx.admit_iter(directory, "iges offsets transform directory traversal")?
+                {
+                    transform_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut entries,
+                            entry.sequence,
+                            entry,
+                            "iges offsets transform directory index",
+                        )
+                    })?;
+                }
+                let mut records = BTreeMap::new();
+                for record in
+                    ctx.admit_iter(parameters, "iges offsets transform parameter traversal")?
+                {
+                    transform_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut records,
+                            record.directory_sequence,
+                            record,
+                            "iges offsets transform parameter index",
+                        )
+                    })?;
+                }
+                transform_tables = Some((entries, records));
+            }
+            let (entries, records) = transform_tables
+                .as_ref()
+                .ok_or_else(|| CodecError::malformed("offset transform lookup is absent"))?;
+            let mut path_storage = ctx.reserve_scoped(0, "iges offsets transform path")?;
+            let transform = match path_storage.with_storage(|| {
+                resolve_transform(
+                    entry.transform,
+                    entries,
+                    records,
+                    factor,
+                    global.real_precision(),
+                    &mut BTreeSet::new(),
+                    ctx,
+                )
+            }) {
                 Ok(transform) => transform,
                 Err(error) => {
                     let message = error.non_resource()?;
@@ -524,10 +716,13 @@ pub(super) fn project(
                 continue;
             };
             normal = placed_normal;
-            offset_source_id = crate::ids::curve_admitted(
-                &crate::ids::Stem::directory(entry.sequence).tail(crate::ids::Word::PlacedSource),
-                ctx,
-            )?;
+            offset_source_id = Cow::Owned(identity_storage.with_storage(|| {
+                crate::ids::curve_admitted(
+                    &crate::ids::Stem::directory(entry.sequence)
+                        .tail(crate::ids::Word::PlacedSource),
+                    ctx,
+                )
+            })?);
             offset_source_geometry = Cow::Owned(placed_source_geometry);
         }
         let normal_direction = *normal.as_raw();
@@ -806,7 +1001,8 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                let mut controls = ctx.collection_vec(2, "iges linear-offset controls")?;
+                let (mut controls, _control_storage) =
+                    ctx.temporary_vec(2, "iges linear-offset controls")?;
                 controls.extend([
                     source_start.translated(offset_direction, evaluate_distance(start)),
                     source_end.translated(offset_direction, evaluate_distance(end)),
@@ -900,7 +1096,13 @@ pub(super) fn project(
                     &crate::ids::Stem::directory(function_sequence),
                     ctx,
                 )?;
-                let Some(function) = ir.model.curves.iter().find(|curve| curve.id == function_id)
+                let Some(function) = ctx
+                    .get_btree_map(
+                        &index.curves,
+                        &function_id,
+                        "iges offset function curve query",
+                    )?
+                    .and_then(|position| ir.model.curves.get(*position))
                 else {
                     super::push_entity_loss(
                         ctx,
@@ -1007,14 +1209,18 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let mut controls = ctx
-                    .collection_vec(function_nurbs.pole_count(), "iges function-offset controls")?;
-                for index in 0..function_nurbs.pole_count() {
+                let (mut controls, _control_storage) = ctx
+                    .temporary_vec(function_nurbs.pole_count(), "iges function-offset controls")?;
+                for index in ctx.admit_iter(
+                    0..function_nurbs.pole_count(),
+                    "iges function-offset control traversal",
+                )? {
                     let Some(function_control) = function_nurbs.pole_rows().point_at(index) else {
-                        controls.clear();
+                        ctx.clear_vec(&mut controls, "iges offset rejected controls")?;
                         break;
                     };
-                    let Some(function_parameter) = greville(function_nurbs.knots(), degree, index)
+                    let Some(function_parameter) =
+                        greville(function_nurbs.knots(), degree, index, ctx)?
                     else {
                         super::push_entity_loss(
                             ctx,
@@ -1022,7 +1228,7 @@ pub(super) fn project(
                             entry,
                             format_args!("{}", "offset function Greville parameter is missing"),
                         )?;
-                        controls.clear();
+                        ctx.clear_vec(&mut controls, "iges offset rejected controls")?;
                         break;
                     };
                     let independent = inverse_parameter(function_parameter);
@@ -1034,12 +1240,12 @@ pub(super) fn project(
                         ),
                     )?)?
                     else {
-                        controls.clear();
+                        ctx.clear_vec(&mut controls, "iges offset rejected controls")?;
                         break;
                     };
                     let Some(distance) = coordinate(function_control.get(), coordinate_index.get())
                     else {
-                        controls.clear();
+                        ctx.clear_vec(&mut controls, "iges offset rejected controls")?;
                         break;
                     };
                     controls.push(base.translated(offset_direction, distance));
@@ -1056,10 +1262,11 @@ pub(super) fn project(
                 let mut knots =
                     ctx.collection_vec(function_nurbs.knots().len(), "iges function-offset knots")?;
                 knots.extend(
-                    function_nurbs
-                        .knots()
-                        .iter()
-                        .map(|value| source_parameter(inverse_parameter(*value))),
+                    ctx.admit_iter(
+                        &function_nurbs.knots()[..],
+                        "iges function-offset knot mapping",
+                    )?
+                    .map(|value| source_parameter(inverse_parameter(*value))),
                 );
                 let Some(function_start) =
                     finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
@@ -1166,8 +1373,9 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let curve_id =
-            crate::ids::curve_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let curve_id = identity_storage.with_storage(|| {
+            crate::ids::curve_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)
+        })?;
         let start_point = crate::ids::point_admitted(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
             ctx,
@@ -1227,7 +1435,11 @@ pub(super) fn project(
             )?,
             ProceduralCurveDefinition::Offset(admitted_payload),
         );
-        if offset_source_id != source_id {
+        if !ctx.equal_bytes(
+            offset_source_id.as_str().as_bytes(),
+            source_id.as_str().as_bytes(),
+            "iges offset placed identity comparison",
+        )? {
             let placed_geometry = match offset_source_geometry {
                 Cow::Owned(geometry) => geometry,
                 Cow::Borrowed(_) => {
