@@ -716,7 +716,7 @@ fn e5_topology_emission_refuses_retained_identity_copies() {
     for operation in [
         "catia_e5_edge_start_id",
         "catia_e5_vertex_use_id",
-        "catia_e5_face_id",
+        "catia_e5_face_record_id",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }

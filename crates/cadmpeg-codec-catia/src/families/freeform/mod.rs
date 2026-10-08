@@ -355,13 +355,15 @@ pub(super) fn try_decode_freeform_surfaces(
             Ok(streams) => streams,
             Err(error) => return Some(Err(error)),
         };
-        let selection_budget = ctx.work_budget(u64_from_index(
+        let selection_budget = cadmpeg_core::decode::WorkBudget::new(
             crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK,
-        ));
+        );
+        let mut selection_storage = admitted!(ctx.reserve_scoped(0, "catia_b5_selection_scratch"));
         let object_selection = crate::families::b5::graph::select_object_stream_population(
             ctx,
-            &logical_streams,
+            &logical_streams.streams,
             Some(&selection_budget),
+            &mut selection_storage,
         );
         let object_selection = match object_selection {
             Ok(selection) => selection,
@@ -4713,8 +4715,13 @@ mod tests {
 
         let streams = [unrelated, topology.clone()];
         let (run_count, selected, source) = crate::test_support::with_service_context(|ctx| {
-            let selection =
-                crate::families::b5::graph::select_object_stream_population(ctx, &streams, None)?;
+            let mut storage = ctx.reserve_scoped(0, "test_b5_selection")?;
+            let selection = crate::families::b5::graph::select_object_stream_population(
+                ctx,
+                &streams,
+                None,
+                &mut storage,
+            )?;
             Ok::<_, cadmpeg_core::CodecError>((
                 selection.run_count(),
                 selection.selected(),
@@ -4733,8 +4740,12 @@ mod tests {
         let streams = [topology.clone(), topology];
         let (run_count, selected, source_empty) =
             crate::test_support::with_service_context(|ctx| {
+                let mut storage = ctx.reserve_scoped(0, "test_b5_selection")?;
                 let selection = crate::families::b5::graph::select_object_stream_population(
-                    ctx, &streams, None,
+                    ctx,
+                    &streams,
+                    None,
+                    &mut storage,
                 )?;
                 Ok::<_, cadmpeg_core::CodecError>((
                     selection.run_count(),
@@ -4756,10 +4767,12 @@ mod tests {
 
         let streams = [topology];
         let observed = crate::test_support::with_service_context(|ctx| {
+            let mut storage = ctx.reserve_scoped(0, "test_b5_selection")?;
             let selection = crate::families::b5::graph::select_object_stream_population(
                 ctx,
                 &streams,
                 Some(&budget),
+                &mut storage,
             )?;
             Ok::<_, cadmpeg_core::CodecError>((
                 selection.run_count(),
