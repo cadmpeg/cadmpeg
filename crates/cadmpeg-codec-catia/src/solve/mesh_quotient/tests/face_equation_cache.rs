@@ -167,8 +167,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,

@@ -47,8 +47,7 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -98,8 +97,7 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -142,8 +140,7 @@ fn remaining_equation_components_require_a_coordinate_matching() {
         selected: Vec::new(),
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -186,8 +183,7 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -232,8 +228,7 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
         selected: Vec::new(),
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Solved((
@@ -350,8 +345,7 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
         selected: Vec::new(),
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -417,8 +411,7 @@ fn mesh_selection_finishes_the_active_face_component_first() {
         selected,
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -475,8 +468,7 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -539,8 +531,7 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -603,8 +594,7 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -681,8 +671,7 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -747,8 +736,7 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,
@@ -820,8 +808,7 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         selected: vec![None],
         visited_states: std::collections::HashMap::new(),
         memo_storage: RefCell::new(
-            (&ctx)
-                .reserve_scoped(0, "catia_selection_memo_storage")
+            ctx.reserve_scoped(0, "catia_selection_memo_storage")
                 .expect("memo storage"),
         ),
         outcome: SearchOutcome::Open,

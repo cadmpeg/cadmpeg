@@ -853,7 +853,7 @@ impl<'storage> MeshQuotient<'storage> {
     /// A test quotient outside any decode session.
     #[cfg(test)]
     pub(crate) fn new(domains: Vec<Arc<HashSet<usize>>>) -> Self {
-        Self {
+        let quotient = Self {
             union: UnionFind::new(domains.len()),
             members: (0..domains.len())
                 .map(|node| ScopedValue {
@@ -865,7 +865,9 @@ impl<'storage> MeshQuotient<'storage> {
             empty_domain: Rc::new(ScopedValue::default()),
             session: None,
             _storage: None,
-        }
+        };
+        drop(domains);
+        quotient
     }
 
     /// Holds the ascending points `build` returns as a domain of this state.
@@ -1826,8 +1828,7 @@ impl<'storage> MeshQuotient<'storage> {
                 Ok::<_, CodecError>(gaugeable_edges)
             })?;
         let mut oriented = OrientedEdges::new(ctx, oriented_edges)?;
-        if self
-            .orientation_variable_count(ctx, assignment, &mut oriented, &gaugeable_edges)?
+        if Self::orientation_variable_count(ctx, assignment, &mut oriented, &gaugeable_edges)?
             .is_some_and(|variables| variables <= 8)
         {
             return self.enumerate_orientation_masks(
@@ -1873,7 +1874,6 @@ impl<'storage> MeshQuotient<'storage> {
     /// edge is already oriented, or is not gauge-fixed at its first use.
     /// Stops counting once the count passes eight.
     fn orientation_variable_count(
-        &self,
         ctx: &DecodeContext<'_>,
         assignment: &MeshFaceBoundaryAssignment,
         oriented: &mut OrientedEdges<'_, '_>,
@@ -3040,12 +3040,16 @@ fn common_supported_corner_equations<'storage>(
                         if !forward[index][left] {
                             continue;
                         }
-                        for right in 0..directions[index + 1].len() {
+                        for (right, reachable) in forward[index + 1]
+                            .iter_mut()
+                            .enumerate()
+                            .take(directions[index + 1].len())
+                        {
                             let Some(joined) = corner(index, left, index + 1, right)? else {
                                 return Ok(None);
                             };
                             if joined {
-                                forward[index + 1][right] = true;
+                                *reachable = true;
                             }
                         }
                     }
@@ -3165,7 +3169,7 @@ fn common_supported_corner_equations<'storage>(
                 common = Some(ScopedValue {
                     value: forced,
                     storage: Some(forced_storage),
-                })
+                });
             }
         }
     }
@@ -7182,7 +7186,7 @@ fn copy_endpoint_relation_branch(
         .enumerate()
     {
         let choices = if face == selected_face {
-            &choices[selected_choice..selected_choice + 1]
+            &choices[selected_choice..=selected_choice]
         } else {
             choices.as_slice()
         };
@@ -8955,7 +8959,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
             let edge_pairs = ctx.collect_vec(
                 edge_candidates
                     .iter()
-                    .flat_map(|candidates| candidates.first().copied()),
+                    .filter_map(|candidates| candidates.first().copied()),
                 "catia_fixed_endpoint_pairs",
             )?;
             let (fixed_face_directions, use_fixed_direction_search) = {
@@ -10191,6 +10195,7 @@ where
     FP: Fn(&[Option<[usize; 2]>]) -> Result<bool, CodecError>,
     FC: Fn(&[Option<[usize; 2]>]) -> Result<bool, CodecError>,
 {
+    const CARDINALITY: &str = "catia_mesh_input_cardinality";
     let budget = inputs.budget;
     let outcome = (|| -> Result<MeshCandidateSolve, CodecError> {
         let ParseStandardMeshCandidateOutcomeInputs {
@@ -10290,7 +10295,6 @@ where
             edge_identity_evidence,
             coordinate_gauge: Some(&coordinate_gauge),
         });
-        const CARDINALITY: &str = "catia_mesh_input_cardinality";
         let dependency_outside = |dependencies: &[Vec<usize>]| -> Result<bool, CodecError> {
             Ok(dependencies.len() != edge_rows.len()
                 || ctx.any_by(
@@ -10700,7 +10704,7 @@ where
     F: FnMut(&[[usize; 2]], &WorkBudget<'_>) -> Result<MeshCandidateSolve, CodecError>,
 {
     let outcome = (|| -> Result<MeshFaceDomainCandidateSolve, CodecError> {
-        let mut solution: Option<(Vec<[usize; 2]>, (StandardTopologyDraft, Vec<usize>))> = None;
+        let mut solution = None;
         let mut rejection = None;
         let mut ambiguity = None;
         let mut exhaustion = None;
