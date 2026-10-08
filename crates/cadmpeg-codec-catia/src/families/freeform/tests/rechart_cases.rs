@@ -227,7 +227,7 @@ fn inferred_partner_work_refusal(operation: &'static str) {
             )),
             source_object: None,
         });
-        for side in 0..2 {
+        for (side, standard_surface_id) in standard_surface_ids.iter().enumerate() {
             let face_id = FaceId::mint(format!("catia:test:face#partner%23{side}"))
                 .expect("identity grammar");
             let loop_id = LoopId::mint(format!("catia:test:loop#partner%23{side}"))
@@ -240,7 +240,7 @@ fn inferred_partner_work_refusal(operation: &'static str) {
                 id: face_id.clone(),
                 shell: ShellId::mint("catia:test:shell#partner".to_owned())
                     .expect("identity grammar"),
-                surface: standard_surface_ids[side].clone(),
+                surface: standard_surface_id.clone(),
                 sense: Sense::Forward,
                 loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
                 name: None,
@@ -341,6 +341,9 @@ fn freeform_complete_run_owned_source_preserves_work_refusal() {
 }
 
 fn cone_pole_work_refusal(rational: bool) {
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
+
+    const OPERATION: &str = "catia_freeform_rechart_pole_updates";
     let cone = |origin, radius| {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
             cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -383,7 +386,6 @@ fn cone_pole_work_refusal(rational: bool) {
     let PcurveGeometry::Nurbs { nurbs } = shifted else {
         panic!("NURBS rechart");
     };
-    use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
     match nurbs.pole_rows() {
         PcurveNurbsPoles::Polynomial { points } => {
             assert!(!rational);
@@ -398,7 +400,6 @@ fn cone_pole_work_refusal(rational: bool) {
             assert_eq!(points[1].weight.get(), 2.0);
         }
     }
-    const OPERATION: &str = "catia_freeform_rechart_pole_updates";
     let refused = crate::test_support::with_work_refusal(OPERATION, |ctx| {
         let result = run(ctx);
         if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {

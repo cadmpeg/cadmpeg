@@ -451,7 +451,7 @@ fn adjacent_counted_owner_parse_propagates_work_refusal() {
         }
         result
     };
-    let admitted = crate::test_support::with_service_context(&mut run).expect("service budget");
+    let admitted = crate::test_support::with_service_context(run).expect("service budget");
     assert!(!admitted.is_empty());
     let refused = crate::test_support::with_work_refusal(operation, &mut run);
     assert!(matches!(

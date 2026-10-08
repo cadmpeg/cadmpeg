@@ -3335,6 +3335,7 @@ mod tests {
 
     #[test]
     fn zero_entity_fixed_support_construction_propagates_caller_work_refusals() {
+        const OPERATION: &str = "IR NURBS knot order";
         let bytes = support_pcurve_record(0x99);
         let record = super::ZeroEntityRecord {
             pos: 0,
@@ -3342,7 +3343,6 @@ mod tests {
             tag: [0x21, 0x99],
             ordinal: 1,
         };
-        const OPERATION: &str = "IR NURBS knot order";
         let result = crate::test_support::with_work_refusal(OPERATION, |ctx| {
             let result = super::zero_entity_support_pcurve(
                 ctx,

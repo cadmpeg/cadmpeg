@@ -2836,7 +2836,6 @@ pub(crate) struct B2EmbeddedCylinder {
 }
 
 /// Decode `0x5a` cylinder frames following type-3 `b2 03 60` group openers.
-#[must_use]
 #[cfg(test)]
 fn b2_embedded_cylinders(
     ctx: &DecodeContext<'_>,
@@ -3024,9 +3023,7 @@ pub(crate) fn b2_cones_from_records<'a>(
         if frame.end - p != 0xb8 {
             return None;
         }
-        let Some(stored) = read_f64_array::<23>(data, p) else {
-            return None;
-        };
+        let stored = read_f64_array::<23>(data, p)?;
         let apex = FinitePoint3::from_coordinates(stored[0], stored[1], stored[2]);
         let half_angle = Angle::from_assigned_real(stored[12]);
         let reference_radius = stored[13];
@@ -3075,13 +3072,11 @@ pub(crate) fn b2_cones_from_records<'a>(
         };
         let axial = slant_start.get() * half_angle.get().cos();
         let (apex_point, axis) = (apex.get(), axis.get());
-        let Some(origin) = FinitePoint3::new(Point3::new(
+        let origin = FinitePoint3::new(Point3::new(
             apex_point.x + axial * axis[0],
             apex_point.y + axial * axis[1],
             apex_point.z + axial * axis[2],
-        )) else {
-            return None;
-        };
+        ))?;
         Some(B2Cone {
             pos,
             apex,
@@ -3146,21 +3141,11 @@ pub(crate) fn b2_revolutions_from_records<'a>(
         {
             return None;
         }
-        let Some(profile_allocation_id) = View::u16_le_at(data, p + 1) else {
-            return None;
-        };
-        let Some(axis_frame) = read_f64_array::<12>(data, p + 3) else {
-            return None;
-        };
-        let Some(bounds) = read_f64_array::<4>(data, p + 99) else {
-            return None;
-        };
-        let Some(angular_scale) = f64_le(data, p + 133) else {
-            return None;
-        };
-        let Some(mean_angle_parameter) = f64_le(data, p + 166) else {
-            return None;
-        };
+        let profile_allocation_id = View::u16_le_at(data, p + 1)?;
+        let axis_frame = read_f64_array::<12>(data, p + 3)?;
+        let bounds = read_f64_array::<4>(data, p + 99)?;
+        let angular_scale = f64_le(data, p + 133)?;
+        let mean_angle_parameter = f64_le(data, p + 166)?;
         let origin = FinitePoint3::from_coordinates(axis_frame[0], axis_frame[1], axis_frame[2]);
         let axis_frame = axis_frame.map(FiniteReal::get);
         let bounds = bounds.map(FiniteReal::get);
@@ -3177,9 +3162,7 @@ pub(crate) fn b2_revolutions_from_records<'a>(
         // The cyclic form of the right-handed frame (direction_x,
         // direction_y, axis): direction_y is perpendicular to the axis and
         // their cross product is direction_x.
-        let Some(profile_frame) = UnitFrame3::right_handed(direction_x, direction_y, axis) else {
-            return None;
-        };
+        let profile_frame = UnitFrame3::right_handed(direction_x, direction_y, axis)?;
         let (Some(angular_range), Some(profile_range), Some(angular_scale)) = (
             IncreasingParameterInterval::new([bounds[0], bounds[1]]),
             IncreasingParameterInterval::new([bounds[2], bounds[3]]),
@@ -3187,12 +3170,10 @@ pub(crate) fn b2_revolutions_from_records<'a>(
         ) else {
             return None;
         };
-        let Some(angular_interval) = IncreasingParameterInterval::new([
+        let angular_interval = IncreasingParameterInterval::new([
             bounds[0] / angular_scale.get(),
             bounds[1] / angular_scale.get(),
-        ]) else {
-            return None;
-        };
+        ])?;
         if profile_allocation_id == 0
             || angular_interval.lower() != 0.5
             || (bounds[1] - bounds[0]) / angular_scale.get() != std::f64::consts::TAU
@@ -3612,9 +3593,7 @@ pub(crate) fn b2_cylinders_from_records<'a>(
         if failed {
             return None;
         }
-        let Some(cylinder) = parse_b2_cylinder(data, frame) else {
-            return None;
-        };
+        let cylinder = parse_b2_cylinder(data, frame)?;
         loop {
             match embedded.peek() {
                 Some(Err(_)) => {
@@ -3765,29 +3744,20 @@ pub(crate) fn b2_circle_from_record(data: &[u8], record: &ConsolidatedRecord) ->
     let payload = record.payload()?.start;
     let end = record.range()?.end;
     let header_token = record.header_token();
-    let Some(layout) = u8::try_from(end - payload)
+    let layout = u8::try_from(end - payload)
         .ok()
-        .and_then(|layout| crate::native::CatiaCircleLayout::try_from(layout).ok())
-    else {
-        return None;
-    };
+        .and_then(|layout| crate::native::CatiaCircleLayout::try_from(layout).ok())?;
     let Ok(frame_token) = u8::try_from(header_token) else {
         return None;
     };
     let mut at = payload;
-    let Some(record_id) = compact_int(data, &mut at) else {
-        return None;
-    };
-    let Some(values) = read_f64_array::<5>(data, at) else {
-        return None;
-    };
+    let record_id = compact_int(data, &mut at)?;
+    let values = read_f64_array::<5>(data, at)?;
     let values_end = at + 5 * size_of::<f64>();
     if values_end + 9 != end || data.get(values_end) != Some(&0x01) {
         return None;
     }
-    let Some(chart_shift) = f64_le(data, values_end + 1) else {
-        return None;
-    };
+    let chart_shift = f64_le(data, values_end + 1)?;
     let center_pair = FiniteVector::from([values[0], values[1]]);
     let [c1, c2, radius, lo, hi] = values.map(FiniteReal::get);
     let (Some(radius), Some(range)) = (
