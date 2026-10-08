@@ -337,15 +337,45 @@ pub(super) fn bind_circular_profile_by_dimension(
     Ok(())
 }
 
+fn parameter_identity_lanes<'a>(
+    ctx: &DecodeContext<'_>,
+    lanes: &'a [crate::records::FeatureInputLane],
+) -> Result<Vec<&'a crate::records::FeatureInputLane>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT parameter identity lanes";
+    let mut selected = Vec::new();
+    let mut eligible_count = 0;
+    let mut scoped = None;
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        if crate::resolved_features::assembly::is_supplemental_config_lane(lane) {
+            continue;
+        }
+        eligible_count += 1;
+        if lane.configuration.is_none() {
+            ctx.push_vec(&mut selected, lane, OPERATION)?;
+        } else {
+            scoped = Some(lane);
+        }
+    }
+    if selected.is_empty() && eligible_count == 1 {
+        if let Some(lane) = scoped {
+            ctx.push_vec(&mut selected, lane, OPERATION)?;
+        }
+    }
+    Ok(selected)
+}
+
 /// Bind neutral parameters to uniquely owned native scalar records.
-pub(crate) fn bind_parameter_scalars<'a>(
+pub(crate) fn bind_parameter_scalars(
     ctx: &DecodeContext<'_>,
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
-    lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
+    lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "bind SLDPRT parameter scalars";
+    if parameters.is_empty() || lanes.is_empty() {
+        return Ok(());
+    }
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut neutral_owners = HashMap::new();
     for feature in ctx.admit_iter(features, OPERATION)? {
@@ -378,6 +408,13 @@ pub(crate) fn bind_parameter_scalars<'a>(
     if parameters_by_native.is_empty() {
         return Ok(());
     }
+    let (identity_lanes, _identity_lane_storage) = ctx.with_scoped_storage(
+        "SLDPRT parameter identity lane workspace",
+        || parameter_identity_lanes(ctx, lanes),
+    )?;
+    if identity_lanes.is_empty() {
+        return Ok(());
+    }
     let mut native_features = BTreeMap::new();
     for history in ctx.admit_iter(histories, OPERATION)? {
         for feature in ctx.admit_iter(&history.features, OPERATION)? {
@@ -391,7 +428,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
             })?;
         }
     }
-    let mut lanes = lanes.into_iter();
+    let mut lanes = identity_lanes.into_iter();
     while let Some(lane) = ctx.next_charged(&mut lanes, OPERATION)? {
         let names = ObjectNames::new(ctx, lane)?;
         let mut lane_storage = ctx.reserve_scoped(0, OPERATION)?;

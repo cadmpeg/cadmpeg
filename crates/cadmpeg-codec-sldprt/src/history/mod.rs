@@ -558,17 +558,25 @@ fn dimension(
 pub(crate) fn enrich_scene_classes(
     ctx: &DecodeContext<'_>,
     histories: &mut [FeatureHistory],
-    scene_classes: &HashMap<u32, String>,
+    mut build_scene_classes: impl FnMut() -> Result<HashMap<u32, String>, CodecError>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "retain SLDPRT scene feature class";
+    let mut scene_classes = None;
     for history in ctx.admit_iter(histories, OPERATION)? {
         for feature in ctx.admit_iter(&mut history.features, OPERATION)? {
             let Some(source) = feature.source_value() else {
                 continue;
             };
-            if feature.input_class.is_none() && classless_builtin_node(feature) {
+            if classless_builtin_node(feature) {
+                let (classes, _storage) = match &scene_classes {
+                    Some(classes) => classes,
+                    None => scene_classes.insert(ctx.with_scoped_storage(
+                        "SLDPRT scene feature class workspace",
+                        &mut build_scene_classes,
+                    )?),
+                };
                 feature.input_class = ctx
-                    .get_hash_map(scene_classes, &source, OPERATION)?
+                    .get_hash_map(classes, &source, OPERATION)?
                     .map(|name| ctx.copy_retained_text(name, OPERATION))
                     .transpose()?;
             }

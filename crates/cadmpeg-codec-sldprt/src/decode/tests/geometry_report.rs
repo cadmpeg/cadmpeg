@@ -433,6 +433,48 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         ..SldprtNative::default()
     };
     {
+        let mut without_classes = native.clone();
+        without_classes.feature_input_lanes[0].classes.clear();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::MAX;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
+        let storage_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "count SLDPRT unbound feature-input operation objects",
+            None,
+        );
+        assert_eq!(unbound_feature_input_operation_objects(&ctx, &without_classes).unwrap(), 0);
+        ctx.finish_session().unwrap();
+        drop(storage_probe);
+        policy.limits.max_work_units = u64::MAX;
+        let (work_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
+        let _work_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "count SLDPRT unbound feature-input operation objects",
+            None,
+        );
+        assert_eq!(unbound_feature_input_operation_objects(&work_ctx, &without_classes).unwrap(), 0);
+        work_ctx.finish_session().unwrap();
+    }
+    {
+        let mut two_lanes = native.clone();
+        two_lanes.feature_input_lanes.push(lane.clone());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        // A one-key standard hash table holds four buckets, control bytes,
+        // trailing control bytes, and alignment padding. Only one lane's
+        // offset table remains live at a time.
+        let table_bytes = 4 * std::mem::size_of::<(u64, &FeatureInputName)>() + 15 + 4 + 16;
+        policy.limits.max_materialized_bytes = u64::try_from(table_bytes).unwrap();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
+        assert_eq!(unbound_feature_input_operation_objects(&ctx, &two_lanes).unwrap(), 2);
+        ctx.finish_session().unwrap();
+    }
+    {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
