@@ -423,3 +423,45 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
 }
+
+#[test]
+fn scalar_synchronization_skips_unchanged_parameters() {
+    let (histories, mut lane) = parameter_limit_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    sync_changed_feature_scalars(
+        &ctx,
+        &histories,
+        std::slice::from_mut(&mut lane),
+        &HashSet::new(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn scalar_synchronization_uses_scoped_workspace() {
+    let (mut histories, mut lane) = parameter_limit_fixture();
+    histories[0].features[0]
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "8.0".into());
+    lane.native_payload.resize(28, 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    sync_changed_feature_scalars(
+        &ctx,
+        &histories,
+        std::slice::from_mut(&mut lane),
+        &HashSet::from([("feature".into(), cadmpeg_core::nonblank_literal!("D1"))]),
+    )
+    .unwrap();
+    assert_eq!(lane.scalars[0].value.get(), 8.0);
+    assert_eq!(&lane.native_payload[20..28], &8.0f64.to_le_bytes());
+}
