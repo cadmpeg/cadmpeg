@@ -258,7 +258,7 @@ fn plan_at<K: CarrierKind, A: ModelAdmission>(
             construction,
             cached: false,
         } if admission.equal(construction, id, K::COMPARE_CONSTRUCTIONS)? => {
-            if K::has_cache_tolerance(&procedural) {
+            if K::has_cache_tolerance(procedural) {
                 return refuse::<K, A, _>(
                     admission,
                     format_args!(
