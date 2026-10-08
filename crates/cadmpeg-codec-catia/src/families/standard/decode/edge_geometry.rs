@@ -3696,16 +3696,25 @@ impl<'ctx> BoundsIndex<'ctx> {
 
     /// Each advance does constant work; the caller admits each visited node.
     pub(super) fn overlapping(&self, bounds: [[f64; 2]; 3]) -> impl Iterator<Item = &BoundsNode> {
+        self.pruned(bounds, |_, _| false).map(|(_, node)| node)
+    }
+
+    /// Skip a whole subtree when its bounds or caller-owned summary settle it.
+    fn pruned(
+        &self,
+        bounds: [[f64; 2]; 3],
+        settled: impl Fn(usize, &BoundsNode) -> bool,
+    ) -> impl Iterator<Item = (usize, &BoundsNode)> {
         std::iter::successors((!self.nodes.is_empty()).then_some(0), move |&at| {
             let node = &self.nodes[at];
-            let next = if bounds_overlap(node.bounds, bounds) {
+            let next = if bounds_overlap(node.bounds, bounds) && !settled(at, node) {
                 at + 1
             } else {
                 node.after
             };
             (next < self.nodes.len()).then_some(next)
         })
-        .map(|at| &self.nodes[at])
+        .map(|at| (at, &self.nodes[at]))
     }
 }
 
@@ -4485,6 +4494,7 @@ impl StandardLinePairConstraint {
                 let mut by_segment = HashMap::<[[u64; 3]; 2], usize>::new();
                 let mut segments = Vec::<(StandardLineSegment, usize, usize)>::new();
                 let mut entries = Vec::new();
+                let mut projection = None;
                 {
                     let mut visits = (edges).into_iter().enumerate();
                     while let Some((ordinal, &edge)) =
@@ -4527,19 +4537,42 @@ impl StandardLinePairConstraint {
                                 (segment, ordinal, ordinal),
                                 "catia_standard_line_segment_index",
                             )?;
-                            let start = [segment.start.x, segment.start.y, segment.start.z];
-                            let end = [segment.end.x, segment.end.y, segment.end.z];
+                            let (origin, axes) = projection.get_or_insert_with(|| {
+                                let axes = canonical_unoriented_axis(
+                                    segment.end.vector_from(segment.start),
+                                )
+                                .map(|axis| {
+                                    let axis = *axis.as_raw();
+                                    let perpendicular =
+                                        cadmpeg_ir::geometry::derive_reference_direction(axis);
+                                    [axis, perpendicular, axis.cross(perpendicular)]
+                                })
+                                .unwrap_or([
+                                    Vector3::new(1.0, 0.0, 0.0),
+                                    Vector3::new(0.0, 1.0, 0.0),
+                                    Vector3::new(0.0, 0.0, 1.0),
+                                ]);
+                                (segment.start, axes)
+                            });
+                            let start =
+                                axes.map(|axis| axis.dot(segment.start.vector_from(*origin)));
+                            let end = axes.map(|axis| axis.dot(segment.end.vector_from(*origin)));
                             let length = segment.end.vector_from(segment.start).norm();
-                            let scale = start
+                            let scale = [segment.start, segment.end, *origin]
                                 .into_iter()
+                                .flat_map(|point| [point.x, point.y, point.z])
+                                .chain(start)
                                 .chain(end)
                                 .fold(0.0_f64, |scale, value| scale.max(value.abs()));
-                            // Include floating-point projection error as well as the
-                            // geometric tolerance. Unbounded arithmetic keeps every
-                            // candidate for the exact predicate.
+                            // A common line frame separates parallel supports even
+                            // when their world-coordinate boxes overlap. Include
+                            // subtraction/projection error in the tolerance margin.
                             let margin =
-                                LINE_SEGMENT_GEOMETRY_TOLERANCE + 64.0 * f64::EPSILON * scale;
-                            let bounds = if length.is_finite() && margin.is_finite() {
+                                LINE_SEGMENT_GEOMETRY_TOLERANCE + 128.0 * f64::EPSILON * scale;
+                            let bounds = if length.is_finite()
+                                && margin.is_finite()
+                                && start.into_iter().chain(end).all(f64::is_finite)
+                            {
                                 std::array::from_fn(|axis| {
                                     [
                                         start[axis].min(end[axis]) - margin,
@@ -4562,6 +4595,31 @@ impl StandardLinePairConstraint {
                 }
                 let tree =
                     BoundsIndex::new(ctx, &mut entries, "catia_standard_line_segment_index")?;
+                let mut endpoint_bounds = ctx.alloc_filled(
+                    tree.nodes.len(),
+                    None::<LineEndpointBounds>,
+                    "catia_standard_line_endpoint_bounds",
+                )?;
+                for at in ctx
+                    .admit_iter(0..tree.nodes.len(), "catia_standard_line_endpoint_bounds")?
+                    .rev()
+                {
+                    let node = &tree.nodes[at];
+                    endpoint_bounds[at] = Some(match node.item {
+                        Some(item) => LineEndpointBounds::from_segment(segments[item].0),
+                        None => {
+                            let left = at + 1;
+                            let right = tree.nodes[left].after;
+                            let Some(left_bounds) = endpoint_bounds[left] else {
+                                return Ok(false);
+                            };
+                            let Some(right_bounds) = endpoint_bounds[right] else {
+                                return Ok(false);
+                            };
+                            left_bounds.union(right_bounds)
+                        }
+                    });
+                }
                 // Save each group's bounds before the tree's in-place ordering.
                 let mut bounds = ctx.alloc_filled(
                     segments.len(),
@@ -4577,8 +4635,11 @@ impl StandardLinePairConstraint {
                         ctx.next_charged(&mut visits, "catia_standard_line_left_edges")?
                     {
                         if ctx.any_by(
-                            tree.overlapping(bounds[group]),
-                            |node| {
+                            tree.pruned(bounds[group], |at, _| {
+                                endpoint_bounds[at]
+                                    .is_some_and(|summary| summary.coincides_with(left))
+                            }),
+                            |(_, node)| {
                                 let Some(other) = node.item.filter(|&other| other > group) else {
                                     return Ok(false);
                                 };
@@ -4629,6 +4690,84 @@ pub(super) mod line_edge_pairs {
 }
 
 use line_edge_pairs::StandardLineEdgePairs;
+
+#[derive(Clone, Copy)]
+struct LineEndpointBounds {
+    ends: [[[f64; 2]; 3]; 2],
+    min_length: f64,
+    max_length: f64,
+}
+
+impl LineEndpointBounds {
+    fn from_segment(segment: StandardLineSegment) -> Self {
+        let length = segment.end.vector_from(segment.start).norm();
+        let mut points = [segment.start, segment.end].map(|point| [point.x, point.y, point.z]);
+        if (0..3)
+            .find_map(|axis| {
+                let order = points[0][axis].total_cmp(&points[1][axis]);
+                (!order.is_eq()).then_some(order)
+            })
+            .is_some_and(|order| order.is_gt())
+        {
+            points.swap(0, 1);
+        }
+        Self {
+            ends: points.map(|point| point.map(|value| [value, value])),
+            min_length: length,
+            max_length: length,
+        }
+    }
+
+    fn union(self, other: Self) -> Self {
+        Self {
+            ends: std::array::from_fn(|endpoint| {
+                std::array::from_fn(|axis| {
+                    [
+                        self.ends[endpoint][axis][0].min(other.ends[endpoint][axis][0]),
+                        self.ends[endpoint][axis][1].max(other.ends[endpoint][axis][1]),
+                    ]
+                })
+            }),
+            min_length: self.min_length.min(other.min_length),
+            max_length: self.max_length.max(other.max_length),
+        }
+    }
+
+    fn coincides_with(self, segment: StandardLineSegment) -> bool {
+        let length = segment.end.vector_from(segment.start).norm();
+        if !length.is_finite()
+            || !self.max_length.is_finite()
+            || length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+            || self.min_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+        {
+            return false;
+        }
+        let points = Self::from_segment(segment)
+            .ends
+            .map(|endpoint| endpoint.map(|[low, _]| low));
+        let scale = self
+            .ends
+            .into_iter()
+            .flatten()
+            .flatten()
+            .chain(points.into_iter().flatten())
+            .fold(length.max(self.max_length), |scale, value| {
+                scale.max(value.abs())
+            });
+        // Endpoint distance bounds imply both directed interval predicates.
+        // Shrink the acceptance bound to cover the exact predicate's rounding.
+        let tolerance = LINE_SEGMENT_GEOMETRY_TOLERANCE - 512.0 * f64::EPSILON * scale;
+        tolerance > 0.0
+            && (0..2).all(|endpoint| {
+                let delta: [f64; 3] = std::array::from_fn(|axis| {
+                    (self.ends[endpoint][axis][0] - points[endpoint][axis])
+                        .abs()
+                        .max((self.ends[endpoint][axis][1] - points[endpoint][axis]).abs())
+                });
+                delta[0].hypot(delta[1]).hypot(delta[2]) <= tolerance
+            })
+    }
+}
 
 fn standard_line_segment(points: &[Point3], pair: [usize; 2]) -> Option<StandardLineSegment> {
     Some(StandardLineSegment {

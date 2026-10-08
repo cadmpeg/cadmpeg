@@ -879,3 +879,132 @@ fn unselected_e5_surface_carriers_use_only_temporary_storage() {
         .is_empty());
     });
 }
+
+const LINE_COINCIDENCE_OFFSET_STEP: f64 = 1e-7;
+
+#[test]
+fn line_segment_projection_filters_overlapping_boxes_and_tolerance_coincidence() {
+    use crate::families::standard::decode::edge_geometry::StandardLinePairConstraint;
+    use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
+    use cadmpeg_ir::{ids::PointId, topology::Point};
+    for separated in [true, false] {
+        let points = (0..1024_u32)
+            .flat_map(|row| {
+                let y = if separated {
+                    f64::from(row)
+                } else {
+                    f64::from(row) * LINE_COINCIDENCE_OFFSET_STEP
+                };
+                {
+                    let mut endpoints = [
+                        Point3::new(0.0, y, 0.0),
+                        Point3::new(10_000.0, 10_000.0 + y, 0.0),
+                    ];
+                    if row % 2 != 0 {
+                        endpoints.swap(0, 1);
+                    }
+                    endpoints
+                }
+                .into_iter()
+                .enumerate()
+                .map(move |(endpoint, position)| {
+                    Point::new(
+                        PointId::mint(format!("catia:test:point#{row}-{endpoint}")).expect("id"),
+                        crate::test_support::test_b5::point(position.into()),
+                        None,
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let supports = (0..1024_usize)
+            .map(|row| StandardCurveSupport {
+                pos: row,
+                tag: 0,
+                faces: [0, 0],
+                geometry: StandardCurveGeometry::Line,
+            })
+            .collect::<Vec<_>>();
+        let options = (0..1024_usize)
+            .map(|row| vec![[2 * row, 2 * row + 1], [2 * row + 1, 2 * row]])
+            .collect::<Vec<_>>();
+        let pairs = options.iter().map(|row| Some(row[0])).collect::<Vec<_>>();
+        assert!(
+            crate::families::standard::decode::edge_geometry::standard_line_pair_solution_is_simple(
+                &points, &supports, &options, &pairs,
+            )
+        );
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let constraint = StandardLinePairConstraint::new(ctx, &points, &supports, &options)?;
+            constraint.is_simple(ctx, &constraint.edge_pairs(&pairs).expect("matching roles"))
+        };
+        let error = crate::test_support::with_work_refusal("catia_standard_line_right_edges", run)
+            .expect_err("first query");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("work refusal")
+        };
+        crate::test_support::with_work_limit(limit.used + 400_000, |ctx| {
+            assert!(run(ctx).expect("indexed segments"));
+        });
+    }
+}
+
+#[test]
+fn projected_line_validation_matches_pair_predicate_at_tolerance_boundaries() {
+    use crate::families::standard::decode::edge_geometry::{
+        standard_line_pair_solution_is_simple, standard_line_pair_solution_is_simple_cached,
+    };
+    use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
+    use cadmpeg_ir::{ids::PointId, topology::Point};
+    for origin in [-100_000_000.0, 0.0, 100_000_000.0] {
+        for length in [0.003, 1.0, 10_000.0] {
+            for offset in [0.0, 0.0019, 0.002, 0.0021] {
+                for angle in [0.0, 0.0002] {
+                    let points = (0..8_u32)
+                        .flat_map(|row| {
+                            let shift = f64::from(row) * offset;
+                            let turn = f64::from(row) * angle;
+                            let mut ends = [
+                                Point3::new(origin, origin + shift, 0.0),
+                                Point3::new(
+                                    origin + length,
+                                    origin + shift + length * (1.0 + turn),
+                                    0.0,
+                                ),
+                            ];
+                            if row % 2 != 0 {
+                                ends.swap(0, 1);
+                            }
+                            ends.into_iter().enumerate().map(move |(end, position)| {
+                                Point::new(
+                                    PointId::mint(format!("catia:test:point#{row}-{end}"))
+                                        .expect("id"),
+                                    crate::test_support::test_b5::point(position.into()),
+                                    None,
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    let supports = (0..8_usize)
+                        .map(|row| StandardCurveSupport {
+                            pos: row,
+                            tag: 0,
+                            faces: [0, 0],
+                            geometry: StandardCurveGeometry::Line,
+                        })
+                        .collect::<Vec<_>>();
+                    let options = (0..8_usize)
+                        .map(|row| vec![[2 * row, 2 * row + 1], [2 * row + 1, 2 * row]])
+                        .collect::<Vec<_>>();
+                    let pairs = options.iter().map(|row| Some(row[0])).collect::<Vec<_>>();
+                    assert_eq!(
+                        standard_line_pair_solution_is_simple_cached(
+                            &points, &supports, &options, &pairs
+                        ),
+                        standard_line_pair_solution_is_simple(&points, &supports, &options, &pairs),
+                        "origin={origin} length={length} offset={offset} angle={angle}"
+                    );
+                }
+            }
+        }
+    }
+}
