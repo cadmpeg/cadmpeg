@@ -26,7 +26,11 @@ fn refuse_with_context(
     dimension: ResourceDimension,
     operation: &'static str,
 ) -> CodecError {
-    crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| crate::curve::parse_relation_expression::<DimensionProbeValue>(ctx, expression, values, context))
+    crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
+        crate::curve::parse_relation_expression::<DimensionProbeValue>(
+            ctx, expression, values, context,
+        )
+    })
 }
 
 #[test]
@@ -78,7 +82,8 @@ fn dimension_model_name_refuses_retained_copy() {
             model_name: Some("widget"),
             ..RelationEvaluationContext::default()
         },
-        ResourceDimension::RetainedBytes, "creo dimension model name text",
+        ResourceDimension::RetainedBytes,
+        "creo dimension model name text",
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -87,7 +92,12 @@ fn dimension_model_name_refuses_retained_copy() {
 
 #[test]
 fn dimension_model_type_refuses_retained_copy() {
-    let error = refuse("rel_model_type()", &BTreeMap::new(), ResourceDimension::RetainedBytes, "creo dimension model type text");
+    let error = refuse(
+        "rel_model_type()",
+        &BTreeMap::new(),
+        ResourceDimension::RetainedBytes,
+        "creo dimension model type text",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo dimension model type text"));
@@ -140,7 +150,12 @@ fn dimension_search_refuses_scan_work() {
 #[test]
 fn dimension_extract_refuses_control_constraint_growth() {
     assert_collection(
-        &refuse("extract('abc',2,1)", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension constraint growth"),
+        &refuse(
+            "extract('abc',2,1)",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension constraint growth",
+        ),
         "creo dimension constraint growth",
     );
 }
@@ -228,7 +243,12 @@ fn dimension_conditional_refuses_retained_text() {
 #[test]
 fn dimension_numeric_function_refuses_constraint_growth() {
     assert_collection(
-        &refuse("sin(1)", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension operation constraints"),
+        &refuse(
+            "sin(1)",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension operation constraints",
+        ),
         "creo dimension operation constraints",
     );
 }
@@ -236,7 +256,12 @@ fn dimension_numeric_function_refuses_constraint_growth() {
 #[test]
 fn dimension_round_control_refuses_constraint_growth() {
     assert_collection(
-        &refuse("ceil(1,2)", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension constraint growth"),
+        &refuse(
+            "ceil(1,2)",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension constraint growth",
+        ),
         "creo dimension constraint growth",
     );
 }
@@ -263,7 +288,12 @@ fn assert_collection(error: &CodecError, operation: &str) {
 #[test]
 fn dimension_unit_refuses_constraint_growth() {
     assert_collection(
-        &refuse("1[mm]", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension unit constraints"),
+        &refuse(
+            "1[mm]",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension unit constraints",
+        ),
         "creo dimension unit constraints",
     );
 }
@@ -271,7 +301,12 @@ fn dimension_unit_refuses_constraint_growth() {
 #[test]
 fn dimension_sum_refuses_constraint_growth() {
     assert_collection(
-        &refuse("1+2", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension operation constraints"),
+        &refuse(
+            "1+2",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension operation constraints",
+        ),
         "creo dimension operation constraints",
     );
 }
@@ -279,7 +314,12 @@ fn dimension_sum_refuses_constraint_growth() {
 #[test]
 fn dimension_difference_refuses_constraint_growth() {
     assert_collection(
-        &refuse("1-2", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension operation constraints"),
+        &refuse(
+            "1-2",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension operation constraints",
+        ),
         "creo dimension operation constraints",
     );
 }
@@ -287,7 +327,12 @@ fn dimension_difference_refuses_constraint_growth() {
 #[test]
 fn dimension_comparison_refuses_constraint_growth() {
     assert_collection(
-        &refuse("1==2", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension operation constraints"),
+        &refuse(
+            "1==2",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension operation constraints",
+        ),
         "creo dimension operation constraints",
     );
 }
@@ -295,7 +340,12 @@ fn dimension_comparison_refuses_constraint_growth() {
 #[test]
 fn dimension_logical_and_refuses_constraint_growth() {
     assert_collection(
-        &refuse("1&2", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension operation constraints"),
+        &refuse(
+            "1&2",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension operation constraints",
+        ),
         "creo dimension operation constraints",
     );
 }
@@ -303,7 +353,12 @@ fn dimension_logical_and_refuses_constraint_growth() {
 #[test]
 fn dimension_logical_or_refuses_constraint_growth() {
     assert_collection(
-        &refuse("1|2", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension operation constraints"),
+        &refuse(
+            "1|2",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension operation constraints",
+        ),
         "creo dimension operation constraints",
     );
 }
@@ -311,7 +366,12 @@ fn dimension_logical_or_refuses_constraint_growth() {
 #[test]
 fn dimension_logical_not_refuses_constraint_growth() {
     assert_collection(
-        &refuse("!1", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension negation constraints"),
+        &refuse(
+            "!1",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension negation constraints",
+        ),
         "creo dimension negation constraints",
     );
 }
@@ -319,7 +379,12 @@ fn dimension_logical_not_refuses_constraint_growth() {
 #[test]
 fn dimension_power_refuses_constraint_growth() {
     assert_collection(
-        &refuse("2^2", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension operation constraints"),
+        &refuse(
+            "2^2",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension operation constraints",
+        ),
         "creo dimension operation constraints",
     );
 }
@@ -327,7 +392,12 @@ fn dimension_power_refuses_constraint_growth() {
 #[test]
 fn dimension_existing_constraints_refuse_merge_copy() {
     assert_collection(
-        &refuse("1[mm]+2", &BTreeMap::new(), ResourceDimension::CollectionItems, "creo dimension merged constraints"),
+        &refuse(
+            "1[mm]+2",
+            &BTreeMap::new(),
+            ResourceDimension::CollectionItems,
+            "creo dimension merged constraints",
+        ),
         "creo dimension merged constraints",
     );
 }
@@ -335,7 +405,12 @@ fn dimension_existing_constraints_refuse_merge_copy() {
 #[test]
 fn dimension_multiplication_refuses_new_variable_node() {
     assert_collection(
-        &refuse("driver*other", &variables(), ResourceDimension::CollectionItems, "creo dimension difference variable nodes"),
+        &refuse(
+            "driver*other",
+            &variables(),
+            ResourceDimension::CollectionItems,
+            "creo dimension difference variable nodes",
+        ),
         "creo dimension difference variable nodes",
     );
 }
@@ -343,14 +418,24 @@ fn dimension_multiplication_refuses_new_variable_node() {
 #[test]
 fn dimension_division_refuses_new_variable_node() {
     assert_collection(
-        &refuse("driver/other", &variables(), ResourceDimension::CollectionItems, "creo dimension difference variable nodes"),
+        &refuse(
+            "driver/other",
+            &variables(),
+            ResourceDimension::CollectionItems,
+            "creo dimension difference variable nodes",
+        ),
         "creo dimension difference variable nodes",
     );
 }
 
 #[test]
 fn dimension_text_sum_refuses_left_copy() {
-    let error = refuse("'a'+'b'", &BTreeMap::new(), ResourceDimension::RetainedBytes, "creo dimension text sum left");
+    let error = refuse(
+        "'a'+'b'",
+        &BTreeMap::new(),
+        ResourceDimension::RetainedBytes,
+        "creo dimension text sum left",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo dimension text sum left"));
@@ -358,7 +443,12 @@ fn dimension_text_sum_refuses_left_copy() {
 
 #[test]
 fn dimension_text_sum_refuses_right_growth() {
-    let error = refuse("'a'+'b'", &BTreeMap::new(), ResourceDimension::RetainedBytes, "creo dimension text sum right");
+    let error = refuse(
+        "'a'+'b'",
+        &BTreeMap::new(),
+        ResourceDimension::RetainedBytes,
+        "creo dimension text sum right",
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo dimension text sum right"));
@@ -416,7 +506,7 @@ fn dimension_conversion_result(
         ),
     )]);
     crate::decode::with_test_decode_ctx(|ctx| {
-        crate::curve::infer_solve_variable_dimensions(
+        crate::curve::solve::infer_solve_variable_dimensions(
             ctx,
             &block,
             &values,

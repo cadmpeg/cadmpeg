@@ -15,9 +15,6 @@ use crate::psb::{self, compact_int, reference_id};
 use crate::scalar;
 
 const EPS_RELATION_ROUND: f64 = 1.0e-9;
-const EPS_DIMENSION_SOLUTION: f64 = 1.0e-9;
-const EPS_LINEAR_SYSTEM_COEFFICIENT: f64 = 1.0e-12;
-const EPS_LINEAR_SYSTEM_RESIDUAL: f64 = 1.0e-9;
 const EPS_ORDINATE_AGREEMENT: f64 = 1.0e-9;
 const EPS_CIRCLE_RESIDUAL: f64 = 1.0e-9;
 const EPS_ANGLE_AGREEMENT: f64 = 1.0e-6;
@@ -25,12 +22,8 @@ const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
 mod solve;
 use solve::{
-    eliminate_pivot_column, evaluate_affine_program, solve_nonlinear_expression_block,
-    solve_unique_affine_system, AffineEquationRow, MAX_NONLINEAR_SOLVE_VARIABLES,
-};
-#[cfg(test)]
-use solve::{
-    nonlinear_initial_guesses, refine_nonlinear_solution, NONLINEAR_SOLVE_SOLUTION_TOLERANCE,
+    evaluate_affine_program, infer_solve_variable_dimensions, solve_affine_expression_block,
+    solve_nonlinear_expression_block, MAX_NONLINEAR_SOLVE_VARIABLES,
 };
 
 /// A labeled curve namespace entry.
@@ -1012,8 +1005,12 @@ fn unique_curve_index<'a, T>(
     let mut index = std::collections::HashMap::new();
     for row in ctx.admit_iter(rows, operation)? {
         match ctx.entry_hash_map(&mut index, id(row), operation)? {
-            std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(Some(row)); }
-            std::collections::hash_map::Entry::Occupied(mut entry) => { *entry.get_mut() = None; }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(row));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
         }
     }
     Ok(index)
@@ -1034,26 +1031,78 @@ pub(crate) fn prototype_topology_rows(
     face_ids: &BTreeSet<u32>,
 ) -> Result<Vec<CurveTopologyRow>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo prototype topology scratch")?;
-    let prototype_index = scratch.with_storage(|| unique_curve_index(ctx, prototypes, |row| row.id, "creo prototype ID count nodes"))?;
-    let topology_index = scratch.with_storage(|| unique_curve_index(ctx, prototype_topology, |row| row.curve_id, "creo prototype topology count nodes"))?;
+    let prototype_index = scratch.with_storage(|| {
+        unique_curve_index(
+            ctx,
+            prototypes,
+            |row| row.id,
+            "creo prototype ID count nodes",
+        )
+    })?;
+    let topology_index = scratch.with_storage(|| {
+        unique_curve_index(
+            ctx,
+            prototype_topology,
+            |row| row.curve_id,
+            "creo prototype topology count nodes",
+        )
+    })?;
     let mut positional_ids = std::collections::HashSet::new();
     let mut referenced_ids = std::collections::HashSet::new();
     for row in ctx.admit_iter(positional_rows, "creo positional topology traversal")? {
-        scratch.with_storage(|| ctx.insert_hash_set(&mut positional_ids, row.id, "creo positional topology ID nodes"))?;
-        for id in row.next_edges { if id != 0 { scratch.with_storage(|| ctx.insert_hash_set(&mut referenced_ids, id, "creo referenced topology ID nodes"))?; } }
+        scratch.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut positional_ids,
+                row.id,
+                "creo positional topology ID nodes",
+            )
+        })?;
+        for id in row.next_edges {
+            if id != 0 {
+                scratch.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut referenced_ids,
+                        id,
+                        "creo referenced topology ID nodes",
+                    )
+                })?;
+            }
+        }
     }
     for row in ctx.admit_iter(prototype_topology, "creo prototype reference traversal")? {
-        for id in row.next_edges { if id != 0 { scratch.with_storage(|| ctx.insert_hash_set(&mut referenced_ids, id, "creo referenced topology ID nodes"))?; } }
+        for id in row.next_edges {
+            if id != 0 {
+                scratch.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut referenced_ids,
+                        id,
+                        "creo referenced topology ID nodes",
+                    )
+                })?;
+            }
+        }
     }
     let mut rows = Vec::new();
     for topology in ctx.admit_iter(prototype_topology, "creo prototype topology traversal")? {
-        if positional_ids.contains(&topology.curve_id) || !matches!(topology_index.get(&topology.curve_id), Some(Some(_))) || !referenced_ids.contains(&topology.curve_id) { continue; }
+        if positional_ids.contains(&topology.curve_id)
+            || !matches!(topology_index.get(&topology.curve_id), Some(Some(_)))
+            || !referenced_ids.contains(&topology.curve_id)
+        {
+            continue;
+        }
         let mut valid_faces = true;
         for face in topology.faces.into_iter().flatten() {
-            if !ctx.contains_btree_set(face_ids, &face.get(), "creo prototype face lookup")? { valid_faces = false; break; }
+            if !ctx.contains_btree_set(face_ids, &face.get(), "creo prototype face lookup")? {
+                valid_faces = false;
+                break;
+            }
         }
-        if !valid_faces { continue; }
-        let Some(Some(prototype)) = prototype_index.get(&topology.curve_id) else { continue; };
+        if !valid_faces {
+            continue;
+        }
+        let Some(Some(prototype)) = prototype_index.get(&topology.curve_id) else {
+            continue;
+        };
         let Some(directions) = prototype.directions else {
             continue;
         };
@@ -1101,7 +1150,13 @@ pub(crate) fn expression_records_with_model_name(
     let mut labels = Vec::new();
     for (label, backup) in [(PRIMARY, false), (BACKUP, true)] {
         for offset in ctx.find_bytes_iter(payload, label, "find Creo curve marker")? {
-            scratch.with_storage(|| ctx.push_vec(&mut labels, (offset, label.len(), backup), "creo expression record labels"))?;
+            scratch.with_storage(|| {
+                ctx.push_vec(
+                    &mut labels,
+                    (offset, label.len(), backup),
+                    "creo expression record labels",
+                )
+            })?;
         }
     }
     ctx.sort_unstable_by(
@@ -1113,7 +1168,10 @@ pub(crate) fn expression_records_with_model_name(
 
     let cache = scratch.with_storage(|| scalar::ScalarCache::from_section_checked(ctx, payload))?;
     let mut records = Vec::new();
-    for (index, &(offset, label_len, backup)) in ctx.admit_iter(&labels, "creo expression record traversal")?.enumerate() {
+    for (index, &(offset, label_len, backup)) in ctx
+        .admit_iter(&labels, "creo expression record traversal")?
+        .enumerate()
+    {
         let end = labels
             .get(index + 1)
             .map_or(payload.len(), |(next, _, _)| *next);
@@ -1149,8 +1207,16 @@ pub(crate) fn expression_records_with_model_name(
         let mut line_vector_storage = ctx.reserve_scoped(0, "creo expression record lines")?;
         let mut lines = Vec::new();
         let mut slots = 0..count;
-        while ctx.next_charged(&mut slots, "creo expression line traversal")?.is_some() {
-            let Some(relative_end) = ctx.position_by(&payload[cursor..end], |byte| Ok(*byte == 0), "creo expression line terminator scan")? else {
+        while ctx
+            .next_charged(&mut slots, "creo expression line traversal")?
+            .is_some()
+        {
+            let Some(relative_end) = ctx.position_by(
+                &payload[cursor..end],
+                |byte| Ok(*byte == 0),
+                "creo expression line terminator scan",
+            )?
+            else {
                 lines.clear();
                 break;
             };
@@ -1161,9 +1227,12 @@ pub(crate) fn expression_records_with_model_name(
                 lines.clear();
                 break;
             };
-            line_vector_storage.with_storage(|| ctx.reserve_vec(&mut lines, 1, "creo expression record lines"))?;
+            line_vector_storage
+                .with_storage(|| ctx.reserve_vec(&mut lines, 1, "creo expression record lines"))?;
             lines.push(CurveExpressionLine {
-                text: line_storage.with_storage(|| ctx.copy_retained_text(text, "creo expression record line text"))?,
+                text: line_storage.with_storage(|| {
+                    ctx.copy_retained_text(text, "creo expression record line text")
+                })?,
                 offset: cursor,
             });
             cursor = line_end + 1;
@@ -1173,16 +1242,25 @@ pub(crate) fn expression_records_with_model_name(
             line_vector_storage.commit()?;
             let local_system = expression_local_system(ctx, payload, after_id, end, &cache)?;
             let prohibited_constructs = curve_equation_prohibited_constructs(ctx, &lines)?;
-            let mut program_index_storage = ctx.reserve_scoped(0, "creo solve program index scratch")?;
-            let mut solve_program = curve_expression_solve_program(ctx, &lines, &mut program_index_storage)?;
+            let mut program_index_storage =
+                ctx.reserve_scoped(0, "creo solve program index scratch")?;
+            let mut solve_program =
+                curve_expression_solve_program(ctx, &lines, &mut program_index_storage)?;
             let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?;
-        let mut evaluation = evaluate_expression_program_details(
+            let mut evaluation = evaluate_expression_program_details(
                 ctx,
                 &lines,
                 model_name,
-                &ExternalRelationSymbols::default(), &mut solution_storage, &solve_program, prohibited_constructs.is_empty() && !solve_program.unresolved_control)?;
+                &ExternalRelationSymbols::default(),
+                &mut solution_storage,
+                &solve_program,
+                prohibited_constructs.is_empty() && !solve_program.unresolved_control,
+            )?;
             if !prohibited_constructs.is_empty() || solve_program.unresolved_control {
-                for assignment in ctx.admit_iter(&mut evaluation.assignments, "creo disabled expression assignment traversal")? {
+                for assignment in ctx.admit_iter(
+                    &mut evaluation.assignments,
+                    "creo disabled expression assignment traversal",
+                )? {
                     assignment.value = None;
                 }
                 evaluation.solve_solutions.clear();
@@ -1211,41 +1289,49 @@ pub(crate) fn expression_records_with_model_name(
     Ok(records)
 }
 
-fn expression_local_system(ctx: &cadmpeg_core::decode::DecodeContext<'_>, payload: &[u8], after_id: usize, end: usize, cache: &scalar::ScalarCache) -> Result<Option<CurveExpressionLocalSystem>, cadmpeg_core::CodecError> {
-                let Some(offset) = ctx.find_bytes_in(
-                    payload,
-                    b"\xe0\x02local_sys\0\xf9",
-                    after_id,
-                    end,
-                    "find Creo curve marker",
-                )?
-                else {
-                    return Ok(None);
-                };
-                let extents_start = offset + b"\xe0\x02local_sys\0\xf9".len();
-                let (dimensions, dimensions_end) = compact_int(payload, extents_start);
-                let (count, body_start) = compact_int(payload, dimensions_end);
-                if dimensions_end <= extents_start
-                    || body_start <= dimensions_end
-                    || body_start > end
-                {
-                    return Ok(None);
-                }
-                let body_end = ctx.position_by(&payload[body_start..end], |byte| Ok(*byte == psb::token::NAMED_RECORD), "creo expression local-system boundary scan")?.map_or(end, |relative| body_start + relative);
-                let body = ctx.copy_retained(
-                    &payload[body_start..body_end],
-                    "creo expression local-system body",
-                )?;
-                Ok(Some(CurveExpressionLocalSystem {
-                    dimensions,
-                    count,
-                    explicit_slots: ((dimensions, count) == (4, 3))
-                        .then(|| scalar::decode_explicit_local_system_slots(&body, cache))
-                        .flatten(),
-                    body,
-                    offset,
-                }))
-
+fn expression_local_system(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+    after_id: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Result<Option<CurveExpressionLocalSystem>, cadmpeg_core::CodecError> {
+    let Some(offset) = ctx.find_bytes_in(
+        payload,
+        b"\xe0\x02local_sys\0\xf9",
+        after_id,
+        end,
+        "find Creo curve marker",
+    )?
+    else {
+        return Ok(None);
+    };
+    let extents_start = offset + b"\xe0\x02local_sys\0\xf9".len();
+    let (dimensions, dimensions_end) = compact_int(payload, extents_start);
+    let (count, body_start) = compact_int(payload, dimensions_end);
+    if dimensions_end <= extents_start || body_start <= dimensions_end || body_start > end {
+        return Ok(None);
+    }
+    let body_end = ctx
+        .position_by(
+            &payload[body_start..end],
+            |byte| Ok(*byte == psb::token::NAMED_RECORD),
+            "creo expression local-system boundary scan",
+        )?
+        .map_or(end, |relative| body_start + relative);
+    let body = ctx.copy_retained(
+        &payload[body_start..body_end],
+        "creo expression local-system body",
+    )?;
+    Ok(Some(CurveExpressionLocalSystem {
+        dimensions,
+        count,
+        explicit_slots: ((dimensions, count) == (4, 3))
+            .then(|| scalar::decode_explicit_local_system_slots(&body, cache))
+            .flatten(),
+        body,
+        offset,
+    }))
 }
 
 pub(crate) fn reevaluate_expression_records(
@@ -1256,13 +1342,26 @@ pub(crate) fn reevaluate_expression_records(
 ) -> Result<(), cadmpeg_core::CodecError> {
     for record in ctx.admit_iter(records, "creo expression reevaluation traversal")? {
         let mut program_storage = ctx.reserve_scoped(0, "creo solve program scratch")?;
-        let mut program_index_storage = ctx.reserve_scoped(0, "creo solve program index scratch")?;
-        let solve_program = program_storage.with_storage(|| curve_expression_solve_program(ctx, &record.lines, &mut program_index_storage))?;
+        let mut program_index_storage =
+            ctx.reserve_scoped(0, "creo solve program index scratch")?;
+        let solve_program = program_storage.with_storage(|| {
+            curve_expression_solve_program(ctx, &record.lines, &mut program_index_storage)
+        })?;
         let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?;
-        let mut evaluation =
-            evaluate_expression_program_details(ctx, &record.lines, model_name, external_symbols, &mut solution_storage, &solve_program, record.prohibited_constructs.is_empty() && !record.unresolved_solve_control)?;
+        let mut evaluation = evaluate_expression_program_details(
+            ctx,
+            &record.lines,
+            model_name,
+            external_symbols,
+            &mut solution_storage,
+            &solve_program,
+            record.prohibited_constructs.is_empty() && !record.unresolved_solve_control,
+        )?;
         if !record.prohibited_constructs.is_empty() || record.unresolved_solve_control {
-            for assignment in ctx.admit_iter(&mut evaluation.assignments, "creo disabled expression assignment traversal")? {
+            for assignment in ctx.admit_iter(
+                &mut evaluation.assignments,
+                "creo disabled expression assignment traversal",
+            )? {
                 assignment.value = None;
             }
             evaluation.solve_solutions.clear();
@@ -1284,22 +1383,51 @@ fn synchronize_solve_blocks(
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if blocks.is_empty() { return Ok(()); }
+    if blocks.is_empty() {
+        return Ok(());
+    }
     let mut scratch = ctx.reserve_scoped(0, "creo synchronized assignment scratch")?;
     let mut by_offset = HashMap::new();
     for assignment in ctx.admit_iter(assignments, "creo synchronized assignment index traversal")? {
-        scratch.with_storage(|| ctx.entry_hash_map(&mut by_offset, assignment.offset, "creo synchronized assignment index nodes"))?.or_insert(assignment);
+        scratch
+            .with_storage(|| {
+                ctx.entry_hash_map(
+                    &mut by_offset,
+                    assignment.offset,
+                    "creo synchronized assignment index nodes",
+                )
+            })?
+            .or_insert(assignment);
     }
     for block in ctx.admit_iter(blocks, "creo solve block synchronization traversal")? {
-        for assignment in ctx.admit_iter(&mut block.assignments, "creo solve assignment synchronization traversal")? {
+        for assignment in ctx.admit_iter(
+            &mut block.assignments,
+            "creo solve assignment synchronization traversal",
+        )? {
             if let Some(evaluated) = by_offset.get(&assignment.offset) {
-                assignment.value = evaluated.value.as_ref().map(|value| copy_expression_value(ctx, value, "creo synchronized assignment values")).transpose()?;
+                assignment.value = evaluated
+                    .value
+                    .as_ref()
+                    .map(|value| {
+                        copy_expression_value(ctx, value, "creo synchronized assignment values")
+                    })
+                    .transpose()?;
                 assignment.activation = evaluated.activation;
             }
         }
-        let values = ctx.get_btree_map(solutions, &block.offset, "creo synchronized solve lookup")?;
-        for (index, unknown) in ctx.admit_iter(&mut block.unknowns, "creo solve unknown synchronization traversal")?.enumerate() {
-            unknown.solution = values.and_then(|values| values.get(index)).map(|value| copy_expression_value(ctx, value, "creo synchronized solve values")).transpose()?;
+        let values =
+            ctx.get_btree_map(solutions, &block.offset, "creo synchronized solve lookup")?;
+        for (index, unknown) in ctx
+            .admit_iter(
+                &mut block.unknowns,
+                "creo solve unknown synchronization traversal",
+            )?
+            .enumerate()
+        {
+            unknown.solution = values
+                .and_then(|values| values.get(index))
+                .map(|value| copy_expression_value(ctx, value, "creo synchronized solve values"))
+                .transpose()?;
         }
     }
     Ok(())
@@ -1319,9 +1447,17 @@ fn curve_equation_prohibited_constructs(
             continue;
         }
         for keyword in ["if", "else", "endif"] {
-            if starts_relation_keyword(ctx, source, keyword)? && !ctx.contains_btree_set(&prohibited, keyword, "creo prohibited keyword lookup")? {
+            if starts_relation_keyword(ctx, source, keyword)?
+                && !ctx.contains_btree_set(
+                    &prohibited,
+                    keyword,
+                    "creo prohibited keyword lookup",
+                )?
+            {
                 let name = ctx.copy_retained_text(keyword, "creo prohibited construct names")?;
-                node_storage.with_storage(|| ctx.insert_btree_set(&mut prohibited, name, "creo prohibited construct nodes"))?;
+                node_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut prohibited, name, "creo prohibited construct nodes")
+                })?;
             }
         }
         let bytes = source.as_bytes();
@@ -1332,7 +1468,13 @@ fn curve_equation_prohibited_constructs(
                 let delimiter = bytes[cursor];
                 cursor += 1;
                 let tail = &bytes[cursor..];
-                cursor += ctx.position_by(tail, |byte| Ok(*byte == delimiter), "creo relation quoted dependency scan")?.unwrap_or(tail.len());
+                cursor += ctx
+                    .position_by(
+                        tail,
+                        |byte| Ok(*byte == delimiter),
+                        "creo relation quoted dependency scan",
+                    )?
+                    .unwrap_or(tail.len());
                 cursor += usize::from(bytes.get(cursor) == Some(&delimiter));
                 continue;
             }
@@ -1345,13 +1487,34 @@ fn curve_equation_prohibited_constructs(
                 cursor = end;
                 let mut following = cursor;
                 let tail = &bytes[following..];
-                following += ctx.position_by(tail, |byte| Ok(!byte.is_ascii_whitespace()), "creo relation following whitespace scan")?.unwrap_or(tail.len());
+                following += ctx
+                    .position_by(
+                        tail,
+                        |byte| Ok(!byte.is_ascii_whitespace()),
+                        "creo relation following whitespace scan",
+                    )?
+                    .unwrap_or(tail.len());
                 let name = &source[start..end];
                 if bytes.get(following) == Some(&b'(') {
-                    if let Some(canonical) = PROHIBITED_FUNCTIONS.iter().copied().find(|candidate| name.eq_ignore_ascii_case(candidate)) {
-                        if !ctx.contains_btree_set(&prohibited, canonical, "creo prohibited keyword lookup")? {
-                            let name = ctx.copy_retained_text(canonical, "creo prohibited construct names")?;
-                            node_storage.with_storage(|| ctx.insert_btree_set(&mut prohibited, name, "creo prohibited construct nodes"))?;
+                    if let Some(canonical) = PROHIBITED_FUNCTIONS
+                        .iter()
+                        .copied()
+                        .find(|candidate| name.eq_ignore_ascii_case(candidate))
+                    {
+                        if !ctx.contains_btree_set(
+                            &prohibited,
+                            canonical,
+                            "creo prohibited keyword lookup",
+                        )? {
+                            let name = ctx
+                                .copy_retained_text(canonical, "creo prohibited construct names")?;
+                            node_storage.with_storage(|| {
+                                ctx.insert_btree_set(
+                                    &mut prohibited,
+                                    name,
+                                    "creo prohibited construct nodes",
+                                )
+                            })?;
                         }
                     }
                 }
@@ -1399,10 +1562,15 @@ impl ExternalRelationSymbols {
             }
             Entry::Occupied(mut entry) => {
                 let same = match (entry.get(), &value) {
-                    (Some(CurveExpressionValue::String(left)), Some(CurveExpressionValue::String(right))) => ctx.equal(left, right, "creo external relation value comparison")?,
+                    (
+                        Some(CurveExpressionValue::String(left)),
+                        Some(CurveExpressionValue::String(right)),
+                    ) => ctx.equal(left, right, "creo external relation value comparison")?,
                     (left, right) => left == right,
                 };
-                if !same { entry.insert(None); }
+                if !same {
+                    entry.insert(None);
+                }
             }
         }
         Ok(())
@@ -1440,26 +1608,64 @@ fn expression_assignment(
     {
         ctx.reserve_vec(&mut dependencies, 1, "creo expression dependency names")?;
         dependencies.push(ctx.copy_retained_text(parameter, "creo expression dependency text")?);
-        let mut key = dependency_storage.with_storage(|| ctx.copy_retained_text(parameter, "creo dependency index key"))?;
+        let mut key = dependency_storage
+            .with_storage(|| ctx.copy_retained_text(parameter, "creo dependency index key"))?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        dependency_storage.with_storage(|| ctx.insert_hash_set(&mut seen_dependencies, key, "creo dependency index nodes"))?;
-        if extend_expression_dependencies(ctx, &mut dependencies, &mut seen_dependencies, &mut dependency_storage, row)?.is_none() {
+        dependency_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut seen_dependencies, key, "creo dependency index nodes")
+        })?;
+        if extend_expression_dependencies(
+            ctx,
+            &mut dependencies,
+            &mut seen_dependencies,
+            &mut dependency_storage,
+            row,
+        )?
+        .is_none()
+        {
             return Ok(None);
         }
         if let Some(column) = column {
-            if extend_expression_dependencies(ctx, &mut dependencies, &mut seen_dependencies, &mut dependency_storage, column)?.is_none() {
+            if extend_expression_dependencies(
+                ctx,
+                &mut dependencies,
+                &mut seen_dependencies,
+                &mut dependency_storage,
+                column,
+            )?
+            .is_none()
+            {
                 return Ok(None);
             }
         }
     } else if let CurveExpressionTarget::FunctionWrite { arguments, .. } = &target {
         let mut argument_steps = arguments.iter();
-        while let Some(argument) = ctx.next_charged(&mut argument_steps, "creo function target dependency traversal")? {
-            if extend_expression_dependencies(ctx, &mut dependencies, &mut seen_dependencies, &mut dependency_storage, argument)?.is_none() {
+        while let Some(argument) = ctx.next_charged(
+            &mut argument_steps,
+            "creo function target dependency traversal",
+        )? {
+            if extend_expression_dependencies(
+                ctx,
+                &mut dependencies,
+                &mut seen_dependencies,
+                &mut dependency_storage,
+                argument,
+            )?
+            .is_none()
+            {
                 return Ok(None);
             }
         }
     }
-    if extend_expression_dependencies(ctx, &mut dependencies, &mut seen_dependencies, &mut dependency_storage, expression)?.is_none() {
+    if extend_expression_dependencies(
+        ctx,
+        &mut dependencies,
+        &mut seen_dependencies,
+        &mut dependency_storage,
+        expression,
+    )?
+    .is_none()
+    {
         return Ok(None);
     }
     Ok(Some(CurveExpressionAssignment {
@@ -1482,12 +1688,18 @@ fn extend_expression_dependencies(
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
-            ctx.next_charged(&mut bytes[cursor..].iter(), "creo relation dependency scan")?;
+        ctx.next_charged(&mut bytes[cursor..].iter(), "creo relation dependency scan")?;
         if matches!(bytes[cursor], b'\'' | b'"') {
             let delimiter = bytes[cursor];
             cursor += 1;
             let tail = &bytes[cursor..];
-            cursor += ctx.position_by(tail, |byte| Ok(*byte == delimiter), "creo relation quoted dependency scan")?.unwrap_or(tail.len());
+            cursor += ctx
+                .position_by(
+                    tail,
+                    |byte| Ok(*byte == delimiter),
+                    "creo relation quoted dependency scan",
+                )?
+                .unwrap_or(tail.len());
             if bytes.get(cursor) == Some(&delimiter) {
                 cursor += 1;
             }
@@ -1495,7 +1707,13 @@ fn extend_expression_dependencies(
             || (bytes[cursor] == b'.' && bytes.get(cursor + 1).is_some_and(u8::is_ascii_digit))
         {
             let tail = &bytes[cursor..];
-            cursor += ctx.position_by(tail, |byte| Ok(!(byte.is_ascii_digit() || *byte == b'.')), "creo dependency number scan")?.unwrap_or(tail.len());
+            cursor += ctx
+                .position_by(
+                    tail,
+                    |byte| Ok(!(byte.is_ascii_digit() || *byte == b'.')),
+                    "creo dependency number scan",
+                )?
+                .unwrap_or(tail.len());
             if bytes
                 .get(cursor)
                 .is_some_and(|byte| matches!(byte, b'e' | b'E'))
@@ -1513,10 +1731,20 @@ fn extend_expression_dependencies(
                     cursor += 1;
                 }
                 let tail = &bytes[cursor..];
-                cursor += ctx.position_by(tail, |byte| Ok(!byte.is_ascii_digit()), "creo dependency exponent scan")?.unwrap_or(tail.len());
+                cursor += ctx
+                    .position_by(
+                        tail,
+                        |byte| Ok(!byte.is_ascii_digit()),
+                        "creo dependency exponent scan",
+                    )?
+                    .unwrap_or(tail.len());
             }
         } else if bytes[cursor] == b'[' {
-            if let Some(end) = ctx.position_by(&bytes[cursor + 1..], |byte| Ok(*byte == b']'), "creo dependency unit bracket scan")? {
+            if let Some(end) = ctx.position_by(
+                &bytes[cursor + 1..],
+                |byte| Ok(*byte == b']'),
+                "creo dependency unit bracket scan",
+            )? {
                 cursor += end + 2;
             } else {
                 cursor += 1;
@@ -1530,16 +1758,33 @@ fn extend_expression_dependencies(
             let dependency = &expression[start..cursor];
             let mut following = cursor;
             let tail = &bytes[following..];
-            following += ctx.position_by(tail, |byte| Ok(!byte.is_ascii_whitespace()), "creo relation following whitespace scan")?.unwrap_or(tail.len());
+            following += ctx
+                .position_by(
+                    tail,
+                    |byte| Ok(!byte.is_ascii_whitespace()),
+                    "creo relation following whitespace scan",
+                )?
+                .unwrap_or(tail.len());
             let function = bytes.get(following) == Some(&b'(')
                 && creo_relation_function(ctx, dependency)?.is_some();
             let constant = reserved_relation_scalar(dependency).is_some();
             if !function && !constant {
-                let (mut key, _key_storage) = ctx.format_scoped(format_args!("{dependency}"), "creo dependency lookup key")?;
+                let (mut key, _key_storage) =
+                    ctx.format_scoped(format_args!("{dependency}"), "creo dependency lookup key")?;
                 ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
                 if !ctx.contains_hash_set(seen, &key, "creo dependency index lookup")? {
-                    storage.with_storage(|| ctx.insert_hash_set(seen, ctx.copy_retained_text(&key, "creo dependency index key")?, "creo dependency index nodes"))?;
-                    ctx.push_vec(dependencies, ctx.copy_retained_text(dependency, "creo expression dependency text")?, "creo expression dependency names")?;
+                    storage.with_storage(|| {
+                        ctx.insert_hash_set(
+                            seen,
+                            ctx.copy_retained_text(&key, "creo dependency index key")?,
+                            "creo dependency index nodes",
+                        )
+                    })?;
+                    ctx.push_vec(
+                        dependencies,
+                        ctx.copy_retained_text(dependency, "creo expression dependency text")?,
+                        "creo expression dependency names",
+                    )?;
                 }
             }
         } else {
@@ -1549,21 +1794,44 @@ fn extend_expression_dependencies(
     Ok(Some(()))
 }
 
-fn split_expression_assignment<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, source: &'a str) -> Result<Option<(&'a str, &'a str)>, cadmpeg_core::CodecError> {
+fn split_expression_assignment<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &'a str,
+) -> Result<Option<(&'a str, &'a str)>, cadmpeg_core::CodecError> {
     let bytes = source.as_bytes();
     let mut nesting = 0usize;
     let mut delimiter = None;
     let mut input = bytes.iter().enumerate();
-    while let Some((cursor, &byte)) = ctx.next_charged(&mut input, "creo assignment separator scan")? {
+    while let Some((cursor, &byte)) =
+        ctx.next_charged(&mut input, "creo assignment separator scan")?
+    {
         if let Some(quote) = delimiter {
-            if byte == quote { delimiter = None; }
+            if byte == quote {
+                delimiter = None;
+            }
             continue;
         }
         match byte {
             quote @ (b'\'' | b'"') => delimiter = Some(quote),
-            b'(' => { let Some(next) = nesting.checked_add(1) else { return Ok(None); }; nesting = next; },
-            b')' => { let Some(next) = nesting.checked_sub(1) else { return Ok(None); }; nesting = next; },
-            b'=' if nesting == 0 && !bytes.get(..cursor).and_then(|prefix| prefix.last()).is_some_and(|byte| matches!(byte, b'=' | b'!' | b'~' | b'<' | b'>')) && bytes.get(cursor + 1) != Some(&b'=') => {
+            b'(' => {
+                let Some(next) = nesting.checked_add(1) else {
+                    return Ok(None);
+                };
+                nesting = next;
+            }
+            b')' => {
+                let Some(next) = nesting.checked_sub(1) else {
+                    return Ok(None);
+                };
+                nesting = next;
+            }
+            b'=' if nesting == 0
+                && !bytes
+                    .get(..cursor)
+                    .and_then(|prefix| prefix.last())
+                    .is_some_and(|byte| matches!(byte, b'=' | b'!' | b'~' | b'<' | b'>'))
+                && bytes.get(cursor + 1) != Some(&b'=') =>
+            {
                 return Ok(Some((&source[..cursor], &source[cursor + 1..])));
             }
             _ => {}
@@ -1613,11 +1881,20 @@ fn curve_expression_solve_program(
 ) -> Result<CurveExpressionSolveProgram, cadmpeg_core::CodecError> {
     let mut program = CurveExpressionSolveProgram::default();
     let mut pending = None::<PendingCurveExpressionSolveBlock<'_, '_>>;
-    for (index, line) in ctx.admit_iter(lines, "creo solve source line traversal")?.enumerate() {
+    for (index, line) in ctx
+        .admit_iter(lines, "creo solve source line traversal")?
+        .enumerate()
+    {
         let source = ctx.trim_text(&line.text, "creo solve source line trim")?;
         let Some(block) = pending.as_mut() else {
             if starts_relation_keyword(ctx, source, "solve")? {
-                index_storage.with_storage(|| ctx.insert_btree_set(&mut program.line_indices, index, "creo solve line index nodes"))?;
+                index_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut program.line_indices,
+                        index,
+                        "creo solve line index nodes",
+                    )
+                })?;
                 pending = Some(PendingCurveExpressionSolveBlock {
                     statements: Vec::new(),
                     storage: ctx.reserve_scoped(0, "creo pending solve statements")?,
@@ -1625,12 +1902,24 @@ fn curve_expression_solve_program(
                     valid: source.eq_ignore_ascii_case("solve"),
                 });
             } else if starts_relation_keyword(ctx, source, "for")? {
-                index_storage.with_storage(|| ctx.insert_btree_set(&mut program.line_indices, index, "creo solve line index nodes"))?;
+                index_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut program.line_indices,
+                        index,
+                        "creo solve line index nodes",
+                    )
+                })?;
                 program.unresolved_control = true;
             }
             continue;
         };
-        index_storage.with_storage(|| ctx.insert_btree_set(&mut program.line_indices, index, "creo solve line index nodes"))?;
+        index_storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut program.line_indices,
+                index,
+                "creo solve line index nodes",
+            )
+        })?;
         if starts_relation_keyword(ctx, source, "solve")? {
             program.unresolved_control = true;
             block.valid = false;
@@ -1642,12 +1931,15 @@ fn curve_expression_solve_program(
                 pending = None;
                 continue;
             }
-            let (unknowns, unknown_storage) = ctx.with_scoped_storage("creo solve unknown names", || -> Result<_, cadmpeg_core::CodecError> {
-                match conditional_keyword_expression(ctx, source, "for")? {
-                    Some(unknowns) => curve_expression_solve_unknowns(ctx, unknowns),
-                    None => Ok(None),
-                }
-            })?;
+            let (unknowns, unknown_storage) = ctx.with_scoped_storage(
+                "creo solve unknown names",
+                || -> Result<_, cadmpeg_core::CodecError> {
+                    match conditional_keyword_expression(ctx, source, "for")? {
+                        Some(unknowns) => curve_expression_solve_unknowns(ctx, unknowns),
+                        None => Ok(None),
+                    }
+                },
+            )?;
             let Some(unknowns) = unknowns else {
                 program.unresolved_control = true;
                 pending = None;
@@ -1656,47 +1948,99 @@ fn curve_expression_solve_program(
             let mut scratch = ctx.reserve_scoped(0, "creo solve block index scratch")?;
             let mut unknown_names = HashSet::new();
             for unknown in ctx.admit_iter(&unknowns, "creo solve unknown index traversal")? {
-                let mut key = scratch.with_storage(|| ctx.copy_retained_text(&unknown.name, "creo solve unknown index key"))?;
+                let mut key = scratch.with_storage(|| {
+                    ctx.copy_retained_text(&unknown.name, "creo solve unknown index key")
+                })?;
                 ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-                scratch.with_storage(|| ctx.insert_hash_set(&mut unknown_names, key, "creo solve unknown index nodes"))?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_set(&mut unknown_names, key, "creo solve unknown index nodes")
+                })?;
             }
             let mut selected = Vec::new();
             let mut equation_count = 0;
             let mut assignment_count = 0;
             let mut statements = std::mem::take(&mut block.statements).into_iter();
-            while let Some(statement) = ctx.next_charged(&mut statements, "creo pending solve statement traversal")? {
-        let (dependencies, dependency_storage) = ctx.with_scoped_storage("creo solve equation dependencies", || -> Result<_, cadmpeg_core::CodecError> {
-            let mut index_storage = ctx.reserve_scoped(0, "creo dependency name index scratch")?;
-            let mut seen = HashSet::new();
-            let mut dependencies = Vec::new();
-            if extend_expression_dependencies(ctx, &mut dependencies, &mut seen, &mut index_storage, statement.left)?.is_none()
-                || extend_expression_dependencies(ctx, &mut dependencies, &mut seen, &mut index_storage, statement.right)?.is_none() {
-                return Ok(None);
-            }
-            Ok(Some(dependencies))
-        })?;
-        let Some(dependencies) = dependencies else {
-            program.unresolved_control = true;
-            block.valid = false;
-            break;
-        };
-                let equation = ctx.any_by(&dependencies, |dependency| {
-                    let (mut key, _storage) = ctx.format_scoped(format_args!("{dependency}"), "creo solve dependency lookup key")?;
-                    ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-                    ctx.contains_hash_set(&unknown_names, &key, "creo solve dependency unknown lookup")
-                }, "creo relation comparison traversal")?;
+            while let Some(statement) =
+                ctx.next_charged(&mut statements, "creo pending solve statement traversal")?
+            {
+                let (dependencies, dependency_storage) = ctx.with_scoped_storage(
+                    "creo solve equation dependencies",
+                    || -> Result<_, cadmpeg_core::CodecError> {
+                        let mut index_storage =
+                            ctx.reserve_scoped(0, "creo dependency name index scratch")?;
+                        let mut seen = HashSet::new();
+                        let mut dependencies = Vec::new();
+                        if extend_expression_dependencies(
+                            ctx,
+                            &mut dependencies,
+                            &mut seen,
+                            &mut index_storage,
+                            statement.left,
+                        )?
+                        .is_none()
+                            || extend_expression_dependencies(
+                                ctx,
+                                &mut dependencies,
+                                &mut seen,
+                                &mut index_storage,
+                                statement.right,
+                            )?
+                            .is_none()
+                        {
+                            return Ok(None);
+                        }
+                        Ok(Some(dependencies))
+                    },
+                )?;
+                let Some(dependencies) = dependencies else {
+                    program.unresolved_control = true;
+                    block.valid = false;
+                    break;
+                };
+                let equation = ctx.any_by(
+                    &dependencies,
+                    |dependency| {
+                        let (mut key, _storage) = ctx.format_scoped(
+                            format_args!("{dependency}"),
+                            "creo solve dependency lookup key",
+                        )?;
+                        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
+                        ctx.contains_hash_set(
+                            &unknown_names,
+                            &key,
+                            "creo solve dependency unknown lookup",
+                        )
+                    },
+                    "creo relation comparison traversal",
+                )?;
                 let statement = if equation {
                     equation_count += 1;
-                    SelectedCurveExpressionSolveStatement::Equation { statement, dependencies, storage: dependency_storage }
+                    SelectedCurveExpressionSolveStatement::Equation {
+                        statement,
+                        dependencies,
+                        storage: dependency_storage,
+                    }
                 } else {
                     drop(dependencies);
                     drop(dependency_storage);
-                    let (assignment, storage) = ctx.with_scoped_storage("creo expression assignment text", || expression_assignment(ctx, &lines[statement.line_index]))?;
-                    let Some(assignment) = assignment else { block.valid = false; break; };
+                    let (assignment, storage) = ctx
+                        .with_scoped_storage("creo expression assignment text", || {
+                            expression_assignment(ctx, &lines[statement.line_index])
+                        })?;
+                    let Some(assignment) = assignment else {
+                        block.valid = false;
+                        break;
+                    };
                     assignment_count += 1;
-                    SelectedCurveExpressionSolveStatement::Assignment { assignment, storage, line_index: statement.line_index }
+                    SelectedCurveExpressionSolveStatement::Assignment {
+                        assignment,
+                        storage,
+                        line_index: statement.line_index,
+                    }
                 };
-                scratch.with_storage(|| ctx.push_vec(&mut selected, statement, "creo selected solve statements"))?;
+                scratch.with_storage(|| {
+                    ctx.push_vec(&mut selected, statement, "creo selected solve statements")
+                })?;
             }
             drop(statements);
             if block.valid && equation_count != 0 {
@@ -1704,35 +2048,67 @@ fn curve_expression_solve_program(
                 let mut assignments = Vec::new();
                 ctx.reserve_vec(&mut equations, equation_count, "creo solve equations")?;
                 ctx.reserve_vec(&mut assignments, assignment_count, "creo solve assignments")?;
-                for statement in ctx.admit_iter(selected, "creo selected solve statement traversal")? {
+                for statement in
+                    ctx.admit_iter(selected, "creo selected solve statement traversal")?
+                {
                     match statement {
-                        SelectedCurveExpressionSolveStatement::Equation { statement, dependencies, storage } => {
+                        SelectedCurveExpressionSolveStatement::Equation {
+                            statement,
+                            dependencies,
+                            storage,
+                        } => {
                             storage.commit()?;
                             equations.push(CurveExpressionEquation {
-                                left: ctx.copy_retained_text(statement.left, "creo solve equation left")?,
-                                right: ctx.copy_retained_text(statement.right, "creo solve equation right")?,
+                                left: ctx.copy_retained_text(
+                                    statement.left,
+                                    "creo solve equation left",
+                                )?,
+                                right: ctx.copy_retained_text(
+                                    statement.right,
+                                    "creo solve equation right",
+                                )?,
                                 dependencies,
                                 offset: lines[statement.line_index].offset,
                             });
                         }
-                        SelectedCurveExpressionSolveStatement::Assignment { assignment, storage, line_index } => {
+                        SelectedCurveExpressionSolveStatement::Assignment {
+                            assignment,
+                            storage,
+                            line_index,
+                        } => {
                             storage.commit()?;
-                            index_storage.with_storage(|| ctx.insert_btree_set(&mut program.executable_line_indices, line_index, "creo executable solve line index nodes"))?;
+                            index_storage.with_storage(|| {
+                                ctx.insert_btree_set(
+                                    &mut program.executable_line_indices,
+                                    line_index,
+                                    "creo executable solve line index nodes",
+                                )
+                            })?;
                             assignments.push(assignment);
                         }
                     }
                 }
                 unknown_storage.commit()?;
-                ctx.push_vec(&mut program.blocks, CurveExpressionSolveBlock {
-                    equations, assignments, unknowns, offset: block.offset, for_offset: line.offset,
-                }, "creo solve blocks")?;
+                ctx.push_vec(
+                    &mut program.blocks,
+                    CurveExpressionSolveBlock {
+                        equations,
+                        assignments,
+                        unknowns,
+                        offset: block.offset,
+                        for_offset: line.offset,
+                    },
+                    "creo solve blocks",
+                )?;
             } else {
                 program.unresolved_control = true;
             }
             pending = None;
             continue;
         }
-        if !block.valid || source.is_empty() || source.starts_with("/*") { continue; }
+        if !block.valid || source.is_empty() || source.starts_with("/*") {
+            continue;
+        }
         let Some((left, right)) = split_expression_assignment(ctx, source)? else {
             program.unresolved_control = true;
             block.valid = false;
@@ -1740,16 +2116,27 @@ fn curve_expression_solve_program(
         };
         let left = ctx.trim_text(left, "creo solve left operand trim")?;
         let right = ctx.trim_text(right, "creo solve right operand trim")?;
-        if left.is_empty() || right.is_empty() || split_expression_assignment(ctx, right)?.is_some() {
+        if left.is_empty() || right.is_empty() || split_expression_assignment(ctx, right)?.is_some()
+        {
             program.unresolved_control = true;
             block.valid = false;
             continue;
         }
-        block.storage.with_storage(|| ctx.push_vec(&mut block.statements, PendingCurveExpressionSolveStatement {
-            left, right, line_index: index,
-        }, "creo pending solve statements"))?;
+        block.storage.with_storage(|| {
+            ctx.push_vec(
+                &mut block.statements,
+                PendingCurveExpressionSolveStatement {
+                    left,
+                    right,
+                    line_index: index,
+                },
+                "creo pending solve statements",
+            )
+        })?;
     }
-    if pending.is_some() { program.unresolved_control = true; }
+    if pending.is_some() {
+        program.unresolved_control = true;
+    }
     Ok(program)
 }
 
@@ -1765,21 +2152,58 @@ fn curve_expression_solve_unknowns(
     let mut cursor = 0;
     while cursor < source.len() {
         let tail = &source.as_bytes()[cursor..];
-        cursor += ctx.position_by(tail, |byte| Ok(*byte != b',' && !byte.is_ascii_whitespace()), "creo solve unknown separator scan")?.unwrap_or(tail.len());
-        if cursor == source.len() { break; }
+        cursor += ctx
+            .position_by(
+                tail,
+                |byte| Ok(*byte != b',' && !byte.is_ascii_whitespace()),
+                "creo solve unknown separator scan",
+            )?
+            .unwrap_or(tail.len());
+        if cursor == source.len() {
+            break;
+        }
         let start = cursor;
         let tail = &source.as_bytes()[cursor..];
-        cursor += ctx.position_by(tail, |byte| Ok(*byte == b',' || byte.is_ascii_whitespace()), "creo solve unknown name scan")?.unwrap_or(tail.len());
+        cursor += ctx
+            .position_by(
+                tail,
+                |byte| Ok(*byte == b',' || byte.is_ascii_whitespace()),
+                "creo solve unknown name scan",
+            )?
+            .unwrap_or(tail.len());
         let name = &source[start..cursor];
-        if !valid_scoped_expression_identifier(ctx, name)? { return Ok(None); }
-        let (mut key, _key_storage) = ctx.format_scoped(format_args!("{name}"), "creo solve unknown lookup key")?;
+        if !valid_scoped_expression_identifier(ctx, name)? {
+            return Ok(None);
+        }
+        let (mut key, _key_storage) =
+            ctx.format_scoped(format_args!("{name}"), "creo solve unknown lookup key")?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        if ctx.contains_hash_set(&seen, &key, "creo solve unknown duplicate checks")? { return Ok(None); }
-        scratch.with_storage(|| ctx.insert_hash_set(&mut seen, ctx.copy_retained_text(&key, "creo solve unknown index key")?, "creo solve unknown index nodes"))?;
-        let name = name_storage.with_storage(|| ctx.copy_retained_text(name, "creo solve unknown names"))?;
-        row_storage.with_storage(|| ctx.push_vec(&mut unknowns, SolveUnknown { name, solution: None }, "creo solve unknowns"))?;
+        if ctx.contains_hash_set(&seen, &key, "creo solve unknown duplicate checks")? {
+            return Ok(None);
+        }
+        scratch.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut seen,
+                ctx.copy_retained_text(&key, "creo solve unknown index key")?,
+                "creo solve unknown index nodes",
+            )
+        })?;
+        let name = name_storage
+            .with_storage(|| ctx.copy_retained_text(name, "creo solve unknown names"))?;
+        row_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut unknowns,
+                SolveUnknown {
+                    name,
+                    solution: None,
+                },
+                "creo solve unknowns",
+            )
+        })?;
     }
-    if unknowns.is_empty() { return Ok(None); }
+    if unknowns.is_empty() {
+        return Ok(None);
+    }
     name_storage.commit()?;
     row_storage.commit()?;
     Ok(Some(unknowns))
@@ -1840,7 +2264,10 @@ fn expression_assignment_target(
         let Some(name) = source.get(..unit_start) else {
             return Ok(None);
         };
-        (ctx.trim_end_text(name, "creo target name trim")?, Some(unit))
+        (
+            ctx.trim_end_text(name, "creo target name trim")?,
+            Some(unit),
+        )
     } else {
         (source, None)
     };
@@ -1878,7 +2305,8 @@ fn expression_target_function_call<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &'a str,
 ) -> Result<Option<(&'a str, Vec<&'a str>)>, cadmpeg_core::CodecError> {
-    let Some(argument_start) = ctx.find_text(source, "(", "creo target function bracket scan")? else {
+    let Some(argument_start) = ctx.find_text(source, "(", "creo target function bracket scan")?
+    else {
         return Ok(None);
     };
     if !source.ends_with(')') {
@@ -1908,11 +2336,26 @@ fn expression_target_function_call<'a>(
     Ok(Some((name, arguments)))
 }
 
-fn valid_expression_identifier(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(!name.is_empty() && ctx.all_by(name.bytes().enumerate(), |(index, byte)| Ok(byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())), "creo relation identifier validation")?)
+fn valid_expression_identifier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(!name.is_empty()
+        && ctx.all_by(
+            name.bytes().enumerate(),
+            |(index, byte)| {
+                Ok(byte == b'_'
+                    || byte.is_ascii_alphabetic()
+                    || (index > 0 && byte.is_ascii_digit()))
+            },
+            "creo relation identifier validation",
+        )?)
 }
 
-fn valid_scoped_expression_identifier(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: &str) -> Result<bool, cadmpeg_core::CodecError> {
+fn valid_scoped_expression_identifier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    name: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
     Ok(expression_identifier_end(ctx, name.as_bytes(), 0)? == Some(name.len()))
 }
 
@@ -1920,32 +2363,51 @@ fn expression_system_symbol_family(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     name: &str,
 ) -> Result<Option<CurveExpressionSystemSymbolFamily>, cadmpeg_core::CodecError> {
-    let Some(digit_start) = ctx.position_by(name.bytes(), |byte| Ok(byte.is_ascii_digit()), "creo system symbol prefix scan")?
-            .filter(|digit_start| *digit_start != 0) else { return Ok(None); };
-    let Some(digits) = name.get(digit_start..) else { return Ok(None); };
-    if !ctx.all_by(digits.bytes(), |byte| Ok(byte.is_ascii_digit()), "creo system symbol suffix scan")? { return Ok(None); }
-    let Some(prefix) = name.get(..digit_start) else { return Ok(None); };
-    Ok(
-        if prefix.eq_ignore_ascii_case("d") {
-            Some(CurveExpressionSystemSymbolFamily::Dimension)
-        } else if prefix.eq_ignore_ascii_case("sd") {
-            Some(CurveExpressionSystemSymbolFamily::SectionDimension)
-        } else if prefix.eq_ignore_ascii_case("rd") {
-            Some(CurveExpressionSystemSymbolFamily::ReferenceDimension)
-        } else if prefix.eq_ignore_ascii_case("rsd") {
-            Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension)
-        } else if prefix.eq_ignore_ascii_case("kd") {
-            Some(CurveExpressionSystemSymbolFamily::KnownDimension)
-        } else if prefix.eq_ignore_ascii_case("ad") {
-            Some(CurveExpressionSystemSymbolFamily::DrivenDimension)
-        } else if prefix.eq_ignore_ascii_case("p") {
-            Some(CurveExpressionSystemSymbolFamily::PatternCount)
-        } else if ["tpm", "tp", "tm"].iter().any(|family| prefix.eq_ignore_ascii_case(family)) {
-            Some(CurveExpressionSystemSymbolFamily::Tolerance)
-        } else {
-            None
-        },
-    )
+    let Some(digit_start) = ctx
+        .position_by(
+            name.bytes(),
+            |byte| Ok(byte.is_ascii_digit()),
+            "creo system symbol prefix scan",
+        )?
+        .filter(|digit_start| *digit_start != 0)
+    else {
+        return Ok(None);
+    };
+    let Some(digits) = name.get(digit_start..) else {
+        return Ok(None);
+    };
+    if !ctx.all_by(
+        digits.bytes(),
+        |byte| Ok(byte.is_ascii_digit()),
+        "creo system symbol suffix scan",
+    )? {
+        return Ok(None);
+    }
+    let Some(prefix) = name.get(..digit_start) else {
+        return Ok(None);
+    };
+    Ok(if prefix.eq_ignore_ascii_case("d") {
+        Some(CurveExpressionSystemSymbolFamily::Dimension)
+    } else if prefix.eq_ignore_ascii_case("sd") {
+        Some(CurveExpressionSystemSymbolFamily::SectionDimension)
+    } else if prefix.eq_ignore_ascii_case("rd") {
+        Some(CurveExpressionSystemSymbolFamily::ReferenceDimension)
+    } else if prefix.eq_ignore_ascii_case("rsd") {
+        Some(CurveExpressionSystemSymbolFamily::SectionReferenceDimension)
+    } else if prefix.eq_ignore_ascii_case("kd") {
+        Some(CurveExpressionSystemSymbolFamily::KnownDimension)
+    } else if prefix.eq_ignore_ascii_case("ad") {
+        Some(CurveExpressionSystemSymbolFamily::DrivenDimension)
+    } else if prefix.eq_ignore_ascii_case("p") {
+        Some(CurveExpressionSystemSymbolFamily::PatternCount)
+    } else if ["tpm", "tp", "tm"]
+        .iter()
+        .any(|family| prefix.eq_ignore_ascii_case(family))
+    {
+        Some(CurveExpressionSystemSymbolFamily::Tolerance)
+    } else {
+        None
+    })
 }
 
 fn split_assignment_target_arguments<'a>(
@@ -2009,20 +2471,47 @@ fn split_assignment_target_arguments<'a>(
 }
 
 fn reserved_relation_scalar(name: &str) -> Option<f64> {
-    if name.eq_ignore_ascii_case("pi") { Some(std::f64::consts::PI) }
-    else if name.eq_ignore_ascii_case("g") { Some(9_800.0) }
-    else if name.eq_ignore_ascii_case("true") || name.eq_ignore_ascii_case("yes") { Some(1.0) }
-    else if name.eq_ignore_ascii_case("false") || name.eq_ignore_ascii_case("no") { Some(0.0) }
-    else { None }
+    if name.eq_ignore_ascii_case("pi") {
+        Some(std::f64::consts::PI)
+    } else if name.eq_ignore_ascii_case("g") {
+        Some(9_800.0)
+    } else if name.eq_ignore_ascii_case("true") || name.eq_ignore_ascii_case("yes") {
+        Some(1.0)
+    } else if name.eq_ignore_ascii_case("false") || name.eq_ignore_ascii_case("no") {
+        Some(0.0)
+    } else {
+        None
+    }
 }
 
-fn expression_identifier_end(ctx: &cadmpeg_core::decode::DecodeContext<'_>, source: &[u8], start: usize) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    if !source.get(start).is_some_and(|byte| *byte == b'_' || byte.is_ascii_alphabetic()) { return Ok(None); }
+fn expression_identifier_end(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &[u8],
+    start: usize,
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    if !source
+        .get(start)
+        .is_some_and(|byte| *byte == b'_' || byte.is_ascii_alphabetic())
+    {
+        return Ok(None);
+    }
     let mut cursor = start + 1;
     loop {
         let tail = &source[cursor..];
-        cursor += ctx.position_by(tail, |byte| Ok(!(*byte == b'_' || byte.is_ascii_alphabetic() || byte.is_ascii_digit())), "creo relation identifier scan")?.unwrap_or(tail.len());
-        if source.get(cursor) != Some(&b':') || !source.get(cursor + 1).is_some_and(|byte| *byte == b'_' || byte.is_ascii_alphabetic() || byte.is_ascii_digit()) { return Ok(Some(cursor)); }
+        cursor += ctx
+            .position_by(
+                tail,
+                |byte| Ok(!(*byte == b'_' || byte.is_ascii_alphabetic() || byte.is_ascii_digit())),
+                "creo relation identifier scan",
+            )?
+            .unwrap_or(tail.len());
+        if source.get(cursor) != Some(&b':')
+            || !source.get(cursor + 1).is_some_and(|byte| {
+                *byte == b'_' || byte.is_ascii_alphabetic() || byte.is_ascii_digit()
+            })
+        {
+            return Ok(Some(cursor));
+        }
         cursor += 2;
     }
 }
@@ -2096,13 +2585,22 @@ fn conditional_keyword_expression<'a>(
     keyword: &str,
 ) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
     let source = ctx.trim_text(source, "creo relation condition trim")?;
-    let Some(prefix) = source.get(..keyword.len()) else { return Ok(None); };
-    if !(prefix.eq_ignore_ascii_case(keyword)) { return Ok(None); }
+    let Some(prefix) = source.get(..keyword.len()) else {
+        return Ok(None);
+    };
+    if !(prefix.eq_ignore_ascii_case(keyword)) {
+        return Ok(None);
+    }
     if !(source
-            .as_bytes()
-            .get(keyword.len())
-            .is_some_and(u8::is_ascii_whitespace)) { return Ok(None); }
-    let Some(expression) = source.get(keyword.len()..) else { return Ok(None); };
+        .as_bytes()
+        .get(keyword.len())
+        .is_some_and(u8::is_ascii_whitespace))
+    {
+        return Ok(None);
+    }
+    let Some(expression) = source.get(keyword.len()..) else {
+        return Ok(None);
+    };
     let expression = ctx.trim_start_text(expression, "creo relation condition expression trim")?;
     Ok((!expression.is_empty()).then_some(expression))
 }
@@ -2114,9 +2612,7 @@ fn starts_relation_keyword(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let source = ctx.trim_text(source, "creo relation keyword trim")?;
     Ok(match source.get(..keyword.len()) {
-        Some(prefix) => {
-            prefix.eq_ignore_ascii_case(keyword)
-        }
+        Some(prefix) => prefix.eq_ignore_ascii_case(keyword),
         None => false,
     } && source
         .as_bytes()
@@ -2131,13 +2627,17 @@ fn expression_program_control_is_valid(
     let mut scratch = ctx.reserve_scoped(0, "creo conditional validation scratch")?;
     let mut else_seen = Vec::new();
     let mut line_steps = lines.iter();
-    while let Some(line) = ctx.next_charged(&mut line_steps, "creo relation control line traversal")? {
+    while let Some(line) =
+        ctx.next_charged(&mut line_steps, "creo relation control line traversal")?
+    {
         let source = ctx.trim_text(&line.text, "creo relation control line trim")?;
         if starts_relation_keyword(ctx, source, "if")? {
             if conditional_keyword_expression(ctx, source, "if")?.is_none() {
                 return Ok(false);
             }
-            scratch.with_storage(|| ctx.reserve_vec(&mut else_seen, 1, "creo expression conditional validation"))?;
+            scratch.with_storage(|| {
+                ctx.reserve_vec(&mut else_seen, 1, "creo expression conditional validation")
+            })?;
             else_seen.push(false);
         } else if starts_relation_keyword(ctx, source, "else")? {
             if !source.eq_ignore_ascii_case("else") {
@@ -2151,8 +2651,7 @@ fn expression_program_control_is_valid(
             }
             *seen = true;
         } else if starts_relation_keyword(ctx, source, "endif")?
-            && (!source.eq_ignore_ascii_case("endif")
-                || else_seen.pop().is_none())
+            && (!source.eq_ignore_ascii_case("endif") || else_seen.pop().is_none())
         {
             return Ok(false);
         }
@@ -2208,7 +2707,10 @@ fn expression_program_symbols(
             "creo existing external symbol nodes",
         )?;
     }
-    for assignment in ctx.admit_iter(parsed_assignments, "creo parsed assignment traversal")?.flatten() {
+    for assignment in ctx
+        .admit_iter(parsed_assignments, "creo parsed assignment traversal")?
+        .flatten()
+    {
         if let Some((name, _)) = assignment.scalar_target() {
             let mut key = ctx.copy_retained_text(name, "creo existing assignment symbol names")?;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
@@ -2220,15 +2722,16 @@ fn expression_program_symbols(
         }
     }
     for block in ctx.admit_iter(&solve_program.blocks, "creo solve symbol block traversal")? {
-      for unknown in ctx.admit_iter(&block.unknowns, "creo solve symbol traversal")? {
-        let mut key = ctx.copy_retained_text(&unknown.name, "creo existing solve symbol names")?;
-        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        ctx.insert_btree_set(
-            &mut existing_symbols,
-            key,
-            "creo existing solve symbol nodes",
-        )?;
-    }
+        for unknown in ctx.admit_iter(&block.unknowns, "creo solve symbol traversal")? {
+            let mut key =
+                ctx.copy_retained_text(&unknown.name, "creo existing solve symbol names")?;
+            ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
+            ctx.insert_btree_set(
+                &mut existing_symbols,
+                key,
+                "creo existing solve symbol nodes",
+            )?;
+        }
     }
     Ok(existing_symbols)
 }
@@ -2244,33 +2747,49 @@ fn evaluate_expression_program_details(
 ) -> Result<CurveExpressionEvaluation, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo relation evaluation scratch")?;
     let solve_line_is_executable = |index: &usize| -> Result<bool, cadmpeg_core::CodecError> {
-        Ok(!ctx.contains_btree_set(&solve_program.line_indices, index, "creo solve line lookup")?
-            || ctx.contains_btree_set(&solve_program.executable_line_indices, index, "creo executable solve line lookup")?)
+        Ok(
+            !ctx.contains_btree_set(&solve_program.line_indices, index, "creo solve line lookup")?
+                || ctx.contains_btree_set(
+                    &solve_program.executable_line_indices,
+                    index,
+                    "creo executable solve line lookup",
+                )?,
+        )
     };
     let mut block_starts = std::collections::HashMap::new();
     let mut block_ends = std::collections::HashMap::new();
     for block in ctx.admit_iter(&solve_program.blocks, "creo solve block index traversal")? {
         scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
-            ctx.entry_hash_map(&mut block_starts, block.offset, "creo solve start index")?.or_insert(block);
-            ctx.entry_hash_map(&mut block_ends, block.for_offset, "creo solve end index")?.or_insert(block);
+            ctx.entry_hash_map(&mut block_starts, block.offset, "creo solve start index")?
+                .or_insert(block);
+            ctx.entry_hash_map(&mut block_ends, block.for_offset, "creo solve end index")?
+                .or_insert(block);
             Ok(())
         })?;
     }
     let mut assignment_indices = std::collections::HashMap::<String, Vec<usize>>::new();
     let control_is_valid = expression_program_control_is_valid(ctx, lines)?;
-    let mut parsed_assignments = scratch.with_storage(|| ctx.collect_indexed_vec(
-        lines.len(),
-        "creo parsed expression assignment slots",
-        |_| Ok(None::<CurveExpressionAssignment>),
-    ))?;
-    for (index, line) in ctx.admit_iter(lines, "creo relation line traversal")?.enumerate() {
+    let mut parsed_assignments = scratch.with_storage(|| {
+        ctx.collect_indexed_vec(
+            lines.len(),
+            "creo parsed expression assignment slots",
+            |_| Ok(None::<CurveExpressionAssignment>),
+        )
+    })?;
+    for (index, line) in ctx
+        .admit_iter(lines, "creo relation line traversal")?
+        .enumerate()
+    {
         if solve_line_is_executable(&index)? {
             parsed_assignments[index] = expression_assignment(ctx, line)?;
         }
     }
     if !control_is_valid {
         let mut assignments = Vec::new();
-        for mut assignment in ctx.admit_iter(parsed_assignments, "creo conditional assignment traversal")?.flatten() {
+        for mut assignment in ctx
+            .admit_iter(parsed_assignments, "creo conditional assignment traversal")?
+            .flatten()
+        {
             assignment.activation = CurveExpressionActivation::Conditional;
             ctx.reserve_vec(
                 &mut assignments,
@@ -2285,26 +2804,34 @@ fn evaluate_expression_program_details(
         });
     }
 
-    let existing_symbols = scratch.with_storage(|| expression_program_symbols(ctx, external_symbols, &parsed_assignments, solve_program))?;
+    let existing_symbols = scratch.with_storage(|| {
+        expression_program_symbols(ctx, external_symbols, &parsed_assignments, solve_program)
+    })?;
     let context = RelationEvaluationContext {
         model_name,
         existing_symbols: Some(&existing_symbols),
     };
     let mut values = BTreeMap::new();
     let mut defined_symbols = BTreeSet::new();
-    for (name, value) in ctx.admit_iter(&external_symbols.values, "creo external value traversal")? {
-        scratch.with_storage(|| ctx.insert_btree_set(
-            &mut defined_symbols,
-            ctx.copy_retained_text(name, "creo defined external symbol names")?,
-            "creo defined external symbol nodes",
-        ))?;
+    for (name, value) in
+        ctx.admit_iter(&external_symbols.values, "creo external value traversal")?
+    {
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut defined_symbols,
+                ctx.copy_retained_text(name, "creo defined external symbol names")?,
+                "creo defined external symbol nodes",
+            )
+        })?;
         if let Some(value) = value {
-            scratch.with_storage(|| ctx.insert_btree_map(
-                &mut values,
-                ctx.copy_retained_text(name, "creo external value names")?,
-                copy_expression_value(ctx, value, "creo external string values")?,
-                "creo external value nodes",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut values,
+                    ctx.copy_retained_text(name, "creo external value names")?,
+                    copy_expression_value(ctx, value, "creo external string values")?,
+                    "creo external value nodes",
+                )
+            })?;
         }
     }
     let mut stack = ConditionalStack::default();
@@ -2313,17 +2840,32 @@ fn evaluate_expression_program_details(
     let mut solve_solutions = BTreeMap::new();
     let mut solve_block_dimensions = BTreeMap::new();
     let mut solve_block_initial_values = BTreeMap::new();
-    for (index, line) in ctx.admit_iter(lines, "creo relation line traversal")?.enumerate() {
+    for (index, line) in ctx
+        .admit_iter(lines, "creo relation line traversal")?
+        .enumerate()
+    {
         if let Some(&block) = block_starts.get(&line.offset) {
-            let mut dimensions =
-                scratch.with_storage(|| ctx.alloc_filled(block.unknowns.len(), None, "creo solve dimension snapshots"))?;
-            let mut initial_values = scratch.with_storage(|| ctx.collect_indexed_vec(
-                block.unknowns.len(),
-                "creo solve initial value snapshots",
-                |_| Ok(None),
-            ))?;
-            let mut snapshots = dimensions.iter_mut().zip(&mut initial_values).zip(&block.unknowns);
-            while let Some(((dimension, initial), unknown)) = if block.unknowns.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { snapshots.next() } else { ctx.next_charged(&mut snapshots, "creo solve snapshot traversal")? } {
+            let mut dimensions = scratch.with_storage(|| {
+                ctx.alloc_filled(block.unknowns.len(), None, "creo solve dimension snapshots")
+            })?;
+            let mut initial_values = scratch.with_storage(|| {
+                ctx.collect_indexed_vec(
+                    block.unknowns.len(),
+                    "creo solve initial value snapshots",
+                    |_| Ok(None),
+                )
+            })?;
+            let mut snapshots = dimensions
+                .iter_mut()
+                .zip(&mut initial_values)
+                .zip(&block.unknowns);
+            while let Some(((dimension, initial), unknown)) =
+                if block.unknowns.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+                    snapshots.next()
+                } else {
+                    ctx.next_charged(&mut snapshots, "creo solve snapshot traversal")?
+                }
+            {
                 let (mut key, _key_guard) = ctx.format_scoped(
                     format_args!("{}", unknown.name),
                     "creo solve snapshot lookup",
@@ -2335,48 +2877,59 @@ fn evaluate_expression_program_details(
                     .map(|(_, dimension)| dimension);
                 *initial = value
                     .map(|value| {
-                        scratch.with_storage(|| copy_expression_value(ctx, value, "creo solve initial string values"))
+                        scratch.with_storage(|| {
+                            copy_expression_value(ctx, value, "creo solve initial string values")
+                        })
                     })
                     .transpose()?;
                 ctx.remove_btree_map(&mut values, &key, "creo evaluated value removal")?;
                 if !ctx.contains_btree_set(&defined_symbols, &key, "creo defined symbol lookup")? {
-                    scratch.with_storage(|| ctx.insert_btree_set(
-                        &mut defined_symbols,
-                        ctx.copy_retained_text(&key, "creo defined solve symbol names")?,
-                        "creo defined solve symbol nodes",
-                    ))?;
+                    scratch.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut defined_symbols,
+                            ctx.copy_retained_text(&key, "creo defined solve symbol names")?,
+                            "creo defined solve symbol nodes",
+                        )
+                    })?;
                 }
-                if let Some(indices) = ctx.get_hash_map(&assignment_indices, &key, "creo prior assignment lookup")? {
+                if let Some(indices) =
+                    ctx.get_hash_map(&assignment_indices, &key, "creo prior assignment lookup")?
+                {
                     for &index in ctx.admit_iter(indices, "creo prior assignment invalidation")? {
                         assignments[index].value = None;
                     }
                 }
             }
-            scratch.with_storage(|| ctx.insert_btree_map(
-                &mut solve_block_dimensions,
-                block.offset,
-                dimensions,
-                "creo solve dimension snapshot nodes",
-            ))?;
-            scratch.with_storage(|| ctx.insert_btree_map(
-                &mut solve_block_initial_values,
-                block.offset,
-                initial_values,
-                "creo solve initial snapshot nodes",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut solve_block_dimensions,
+                    block.offset,
+                    dimensions,
+                    "creo solve dimension snapshot nodes",
+                )
+            })?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut solve_block_initial_values,
+                    block.offset,
+                    initial_values,
+                    "creo solve initial snapshot nodes",
+                )
+            })?;
         }
         if let Some(&block) = block_ends.get(&line.offset) {
-            let affine_solution = match ctx.get_btree_map(&solve_block_dimensions, &block.offset, "creo solve dimension snapshot lookup")? {
+            let affine_solution = match ctx.get_btree_map(
+                &solve_block_dimensions,
+                &block.offset,
+                "creo solve dimension snapshot lookup",
+            )? {
                 Some(dimensions) => {
-                    match scratch.with_storage(|| infer_solve_variable_dimensions(ctx, block, &values, dimensions, context))?
-                    {
-                        Some(dimensions) => solution_storage.with_storage(|| solve_affine_expression_block(
-                            ctx,
-                            block,
-                            &values,
-                            &dimensions,
-                            context,
-                        ))?,
+                    match scratch.with_storage(|| {
+                        infer_solve_variable_dimensions(ctx, block, &values, dimensions, context)
+                    })? {
+                        Some(dimensions) => solution_storage.with_storage(|| {
+                            solve_affine_expression_block(ctx, block, &values, &dimensions, context)
+                        })?,
                         None => None,
                     }
                 }
@@ -2385,28 +2938,50 @@ fn evaluate_expression_program_details(
             let solution = match affine_solution {
                 Some(solution) => Some(solution),
                 None => match (
-                    ctx.get_btree_map(&solve_block_dimensions, &block.offset, "creo solve dimension snapshot lookup")?,
-                    ctx.get_btree_map(&solve_block_initial_values, &block.offset, "creo solve initial snapshot lookup")?,
+                    ctx.get_btree_map(
+                        &solve_block_dimensions,
+                        &block.offset,
+                        "creo solve dimension snapshot lookup",
+                    )?,
+                    ctx.get_btree_map(
+                        &solve_block_initial_values,
+                        &block.offset,
+                        "creo solve initial snapshot lookup",
+                    )?,
                 ) {
-                    (Some(dimensions), Some(initial_values)) => solution_storage.with_storage(|| solve_nonlinear_expression_block(
-                        ctx,
-                        block,
-                        &values,
-                        dimensions,
-                        initial_values,
-                        context,
-                    ))?,
+                    (Some(dimensions), Some(initial_values)) => {
+                        solution_storage.with_storage(|| {
+                            solve_nonlinear_expression_block(
+                                ctx,
+                                block,
+                                &values,
+                                dimensions,
+                                initial_values,
+                                context,
+                            )
+                        })?
+                    }
                     _ => None,
                 },
             };
             if let Some(solution) = solution {
-                install_solve_solution(ctx, block, &solution, &mut assignments, &assignment_indices, &mut values, &mut scratch)?;
-                solution_storage.with_storage(|| ctx.insert_btree_map(
-                    &mut solve_solutions,
-                    block.offset,
-                    solution,
-                    "creo solve solution nodes",
-                ))?;
+                install_solve_solution(
+                    ctx,
+                    block,
+                    &solution,
+                    &mut assignments,
+                    &assignment_indices,
+                    &mut values,
+                    &mut scratch,
+                )?;
+                solution_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut solve_solutions,
+                        block.offset,
+                        solution,
+                        "creo solve solution nodes",
+                    )
+                })?;
             }
         }
         if !solve_line_is_executable(&index)? {
@@ -2415,13 +2990,16 @@ fn evaluate_expression_program_details(
         let source = ctx.trim_text(&line.text, "creo evaluated relation line trim")?;
         if let Some(condition_source) = conditional_keyword_expression(ctx, source, "if")? {
             let condition = if activity == CurveExpressionActivation::Active {
-                scratch.with_storage(|| parse_relation_expression::<CurveExpressionValue>(
-                    ctx,
-                    condition_source,
-                    &values,
-                    context,
-                ))?
-                .and_then(|value| value.truth())
+                scratch
+                    .with_storage(|| {
+                        parse_relation_expression::<CurveExpressionValue>(
+                            ctx,
+                            condition_source,
+                            &values,
+                            context,
+                        )
+                    })?
+                    .and_then(|value| value.truth())
             } else {
                 None
             };
@@ -2447,34 +3025,52 @@ fn evaluate_expression_program_details(
             assignments.push(assignment);
             continue;
         };
-        let mut key = scratch.with_storage(|| ctx.copy_retained_text(name, "creo evaluated symbol names"))?;
+        let mut key =
+            scratch.with_storage(|| ctx.copy_retained_text(name, "creo evaluated symbol names"))?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        if !solve_program.blocks.is_empty() { scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
-            let name = ctx.copy_retained_text(&key, "creo assignment index key")?;
-            let indices = ctx.entry_hash_map(&mut assignment_indices, name, "creo assignment index nodes")?.or_default();
-            ctx.push_vec(indices, assignments.len(), "creo assignment index slots")?;
-            Ok(())
-        })?; }
-        let declaration_is_valid = declared_unit.is_none() || !ctx.contains_btree_set(&defined_symbols, &key, "creo defined symbol lookup")?;
+        if !solve_program.blocks.is_empty() {
+            scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+                let name = ctx.copy_retained_text(&key, "creo assignment index key")?;
+                let indices = ctx
+                    .entry_hash_map(&mut assignment_indices, name, "creo assignment index nodes")?
+                    .or_default();
+                ctx.push_vec(indices, assignments.len(), "creo assignment index slots")?;
+                Ok(())
+            })?;
+        }
+        let declaration_is_valid = declared_unit.is_none()
+            || !ctx.contains_btree_set(&defined_symbols, &key, "creo defined symbol lookup")?;
         if !ctx.contains_btree_set(&defined_symbols, &key, "creo defined symbol lookup")? {
-            scratch.with_storage(|| ctx.insert_btree_set(
-                &mut defined_symbols,
-                ctx.copy_retained_text(&key, "creo defined assignment symbol names")?,
-                "creo defined assignment symbol nodes",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut defined_symbols,
+                    ctx.copy_retained_text(&key, "creo defined assignment symbol names")?,
+                    "creo defined assignment symbol nodes",
+                )
+            })?;
         }
         match activity {
             CurveExpressionActivation::Active => {
                 assignment.value = if declaration_is_valid {
-                    let (value, storage) = ctx.with_scoped_storage("creo evaluated expression scratch", || -> Result<_, cadmpeg_core::CodecError> {
-                        parse_relation_expression::<CurveExpressionValue>(ctx, &assignment.expression, &values, context)?
+                    let (value, storage) = ctx.with_scoped_storage(
+                        "creo evaluated expression scratch",
+                        || -> Result<_, cadmpeg_core::CodecError> {
+                            parse_relation_expression::<CurveExpressionValue>(
+                                ctx,
+                                &assignment.expression,
+                                &values,
+                                context,
+                            )?
                             .map(|value| apply_declared_relation_unit(ctx, value, declared_unit))
                             .transpose()
                             .map(Option::flatten)
-                    })?;
+                        },
+                    )?;
                     if let Some(CurveExpressionValue::String(text)) = &value {
                         let bytes = cadmpeg_core::decode::u64_from_index(text.len());
-                        solution_storage.with_storage(|| ctx.charge_retained(bytes, "creo evaluated assignment string"))?;
+                        solution_storage.with_storage(|| {
+                            ctx.charge_retained(bytes, "creo evaluated assignment string")
+                        })?;
                     }
                     drop(storage);
                     value
@@ -2483,11 +3079,17 @@ fn evaluate_expression_program_details(
                 };
                 if let Some(value) = assignment.value.as_ref() {
                     scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
-                        let entry = ctx.entry_btree_map(&mut values, key, "creo evaluated value nodes")?;
-                        let value = copy_expression_value(ctx, value, "creo evaluated string values")?;
+                        let entry =
+                            ctx.entry_btree_map(&mut values, key, "creo evaluated value nodes")?;
+                        let value =
+                            copy_expression_value(ctx, value, "creo evaluated string values")?;
                         match entry {
-                            std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(value); }
-                            std::collections::btree_map::Entry::Occupied(mut entry) => { entry.insert(value); }
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                entry.insert(value);
+                            }
+                            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                                entry.insert(value);
+                            }
                         }
                         Ok(())
                     })?;
@@ -2504,9 +3106,14 @@ fn evaluate_expression_program_details(
         assignments.push(assignment);
     }
     if retain_assignment_values {
-        for assignment in ctx.admit_iter(&assignments, "creo retained assignment value traversal")? {
+        for assignment in
+            ctx.admit_iter(&assignments, "creo retained assignment value traversal")?
+        {
             if let Some(CurveExpressionValue::String(text)) = &assignment.value {
-                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(text.len()), "creo evaluated assignment string")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(text.len()),
+                    "creo evaluated assignment string",
+                )?;
             }
         }
     }
@@ -2525,23 +3132,34 @@ fn install_solve_solution(
     values: &mut BTreeMap<String, CurveExpressionValue>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-                for (variable, value) in ctx.admit_iter(&block.unknowns, "creo solved variable traversal")?
-                    .map(|unknown| &unknown.name).zip(solution)
-                {
-                    let mut key = scratch.with_storage(|| ctx.copy_retained_text(variable, "creo solved value names"))?;
-                    ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-                    if let Some(indices) = ctx.get_hash_map(assignment_indices, &key, "creo prior assignment lookup")? {
-                        for &index in ctx.admit_iter(indices, "creo solved assignment traversal")? {
-                            assignments[index].value = Some(copy_expression_value(ctx, value, "creo assigned solve string values")?);
-                        }
-                    }
-                    scratch.with_storage(|| ctx.insert_btree_map(
-                        values,
-                        key,
-                        copy_expression_value(ctx, value, "creo solved string values")?,
-                        "creo solved value nodes",
-                    ))?;
-                }
+    for (variable, value) in ctx
+        .admit_iter(&block.unknowns, "creo solved variable traversal")?
+        .map(|unknown| &unknown.name)
+        .zip(solution)
+    {
+        let mut key =
+            scratch.with_storage(|| ctx.copy_retained_text(variable, "creo solved value names"))?;
+        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
+        if let Some(indices) =
+            ctx.get_hash_map(assignment_indices, &key, "creo prior assignment lookup")?
+        {
+            for &index in ctx.admit_iter(indices, "creo solved assignment traversal")? {
+                assignments[index].value = Some(copy_expression_value(
+                    ctx,
+                    value,
+                    "creo assigned solve string values",
+                )?);
+            }
+        }
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                values,
+                key,
+                copy_expression_value(ctx, value, "creo solved string values")?,
+                "creo solved value nodes",
+            )
+        })?;
+    }
     Ok(())
 }
 
@@ -2561,11 +3179,41 @@ struct RelationDimension {
 }
 
 impl RelationDimension {
-    const AREA: Self = Self { length: 2, mass: 0, time: 0, angle: 0, temperature: 0 };
-    const VOLUME: Self = Self { length: 3, mass: 0, time: 0, angle: 0, temperature: 0 };
-    const ENERGY: Self = Self { length: 2, mass: 1, time: -2, angle: 0, temperature: 0 };
-    const POWER: Self = Self { length: 2, mass: 1, time: -3, angle: 0, temperature: 0 };
-    const PRESSURE: Self = Self { length: -1, mass: 1, time: -2, angle: 0, temperature: 0 };
+    const AREA: Self = Self {
+        length: 2,
+        mass: 0,
+        time: 0,
+        angle: 0,
+        temperature: 0,
+    };
+    const VOLUME: Self = Self {
+        length: 3,
+        mass: 0,
+        time: 0,
+        angle: 0,
+        temperature: 0,
+    };
+    const ENERGY: Self = Self {
+        length: 2,
+        mass: 1,
+        time: -2,
+        angle: 0,
+        temperature: 0,
+    };
+    const POWER: Self = Self {
+        length: 2,
+        mass: 1,
+        time: -3,
+        angle: 0,
+        temperature: 0,
+    };
+    const PRESSURE: Self = Self {
+        length: -1,
+        mass: 1,
+        time: -2,
+        angle: 0,
+        temperature: 0,
+    };
 
     const LENGTH: Self = Self {
         length: 1,
@@ -2714,7 +3362,9 @@ struct RelationUnitParser<'a> {
 
 impl RelationUnitParser<'_> {
     fn expression(&mut self) -> Result<Option<RelationUnit>, cadmpeg_core::CodecError> {
-        let Some(mut unit) = self.power()? else { return Ok(None); };
+        let Some(mut unit) = self.power()? else {
+            return Ok(None);
+        };
         loop {
             self.whitespace()?;
             let divide = match self.source.get(self.cursor) {
@@ -2723,14 +3373,20 @@ impl RelationUnitParser<'_> {
                 _ => return Ok(Some(unit)),
             };
             self.cursor += 1;
-            let Some(right) = self.power()? else { return Ok(None); };
-            let Some(next) = unit.combine(right, divide) else { return Ok(None); };
+            let Some(right) = self.power()? else {
+                return Ok(None);
+            };
+            let Some(next) = unit.combine(right, divide) else {
+                return Ok(None);
+            };
             unit = next;
         }
     }
 
     fn power(&mut self) -> Result<Option<RelationUnit>, cadmpeg_core::CodecError> {
-        let Some(unit) = self.primary()? else { return Ok(None); };
+        let Some(unit) = self.primary()? else {
+            return Ok(None);
+        };
         self.whitespace()?;
         if self.source.get(self.cursor) != Some(&b'^') {
             return Ok(Some(unit));
@@ -2742,8 +3398,17 @@ impl RelationUnitParser<'_> {
             self.cursor += 1;
         }
         let start = self.cursor;
-        { let tail = &self.source[self.cursor..];
-            self.cursor += self.ctx.position_by(tail, |byte| Ok(!(byte.is_ascii_digit())), "creo relation unit source scan")?.unwrap_or(tail.len()); }
+        {
+            let tail = &self.source[self.cursor..];
+            self.cursor += self
+                .ctx
+                .position_by(
+                    tail,
+                    |byte| Ok(!(byte.is_ascii_digit())),
+                    "creo relation unit source scan",
+                )?
+                .unwrap_or(tail.len());
+        }
         let Some(digits) = self.source.get(start..self.cursor) else {
             return Ok(None);
         };
@@ -2757,7 +3422,9 @@ impl RelationUnitParser<'_> {
             return Ok(None);
         };
         let exponent = if negative { -magnitude } else { magnitude };
-        let Ok(exponent) = i8::try_from(exponent) else { return Ok(None); };
+        let Ok(exponent) = i8::try_from(exponent) else {
+            return Ok(None);
+        };
         Ok(unit.power(exponent))
     }
 
@@ -2775,48 +3442,66 @@ impl RelationUnitParser<'_> {
             let _depth = self.ctx.enter_nested("creo relation unit depth")?;
             self.cursor += 1;
             self.nesting += 1;
-            let Some(unit) = self.expression()? else { return Ok(None); };
+            let Some(unit) = self.expression()? else {
+                return Ok(None);
+            };
             self.nesting -= 1;
             self.whitespace()?;
-            if self.source.get(self.cursor) != Some(&b')') { return Ok(None); }
+            if self.source.get(self.cursor) != Some(&b')') {
+                return Ok(None);
+            }
             self.cursor += 1;
             return Ok(Some(unit));
         }
         let start = self.cursor;
-        { let tail = &self.source[self.cursor..];
-            self.cursor += self.ctx.position_by(tail, |byte| Ok(!(byte.is_ascii_alphabetic() || *byte == b'_')), "creo relation unit source scan")?.unwrap_or(tail.len()); }
-        let Some(bytes) = self.source.get(start..self.cursor) else { return Ok(None); };
-        let Ok(symbol) = self.ctx.validate_utf8(bytes, "creo UTF-8 validation")? else { return Ok(None); };
+        {
+            let tail = &self.source[self.cursor..];
+            self.cursor += self
+                .ctx
+                .position_by(
+                    tail,
+                    |byte| Ok(!(byte.is_ascii_alphabetic() || *byte == b'_')),
+                    "creo relation unit source scan",
+                )?
+                .unwrap_or(tail.len());
+        }
+        let Some(bytes) = self.source.get(start..self.cursor) else {
+            return Ok(None);
+        };
+        let Ok(symbol) = self.ctx.validate_utf8(bytes, "creo UTF-8 validation")? else {
+            return Ok(None);
+        };
         Ok(relation_unit_symbol(symbol))
     }
 
     fn whitespace(&mut self) -> Result<(), cadmpeg_core::CodecError> {
         let tail = &self.source[self.cursor..];
-        self.cursor += self.ctx.position_by(tail, |byte| Ok(!byte.is_ascii_whitespace()), "creo relation unit source scan")?.unwrap_or(tail.len());
+        self.cursor += self
+            .ctx
+            .position_by(
+                tail,
+                |byte| Ok(!byte.is_ascii_whitespace()),
+                "creo relation unit source scan",
+            )?
+            .unwrap_or(tail.len());
         Ok(())
     }
 }
 
-fn relation_unit_symbol(
-    symbol: &str,
-) -> Option<RelationUnit> {
+fn relation_unit_symbol(symbol: &str) -> Option<RelationUnit> {
     let (scale, offset, dimension) = match symbol {
-        _ if symbol.eq_ignore_ascii_case("k") => {
-            (1.0, 0.0, RelationDimension::TEMPERATURE)
-        }
-        _ if symbol.eq_ignore_ascii_case("c") => {
-            (1.0, 273.15, RelationDimension::TEMPERATURE)
-        }
+        _ if symbol.eq_ignore_ascii_case("k") => (1.0, 0.0, RelationDimension::TEMPERATURE),
+        _ if symbol.eq_ignore_ascii_case("c") => (1.0, 273.15, RelationDimension::TEMPERATURE),
         _ if symbol.eq_ignore_ascii_case("f") => (
             5.0 / 9.0,
             459.67 * 5.0 / 9.0,
             RelationDimension::TEMPERATURE,
         ),
-        _ if symbol.eq_ignore_ascii_case("r") => {
-            (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE)
-        }
+        _ if symbol.eq_ignore_ascii_case("r") => (5.0 / 9.0, 0.0, RelationDimension::TEMPERATURE),
         symbol => {
-            let Some((scale, dimension)) = multiplicative_relation_unit_symbol(symbol) else { return None; };
+            let Some((scale, dimension)) = multiplicative_relation_unit_symbol(symbol) else {
+                return None;
+            };
             (scale, 0.0, dimension)
         }
     };
@@ -2827,148 +3512,70 @@ fn relation_unit_symbol(
     })
 }
 
-fn multiplicative_relation_unit_symbol(
-    symbol: &str,
-) -> Option<(f64, RelationDimension)> {
+fn multiplicative_relation_unit_symbol(symbol: &str) -> Option<(f64, RelationDimension)> {
     Some(match symbol {
-        _ if symbol.eq_ignore_ascii_case("mm") => {
-            (1.0, RelationDimension::LENGTH)
-        }
-        _ if symbol.eq_ignore_ascii_case("cm") => {
-            (10.0, RelationDimension::LENGTH)
-        }
-        _ if symbol.eq_ignore_ascii_case("m") => {
-            (1_000.0, RelationDimension::LENGTH)
-        }
-        _ if symbol.eq_ignore_ascii_case("in")
-            || symbol.eq_ignore_ascii_case("inch") =>
-        {
+        _ if symbol.eq_ignore_ascii_case("mm") => (1.0, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("cm") => (10.0, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("m") => (1_000.0, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("in") || symbol.eq_ignore_ascii_case("inch") => {
             (25.4, RelationDimension::LENGTH)
         }
-        _ if symbol.eq_ignore_ascii_case("ft")
-            || symbol.eq_ignore_ascii_case("foot") =>
-        {
+        _ if symbol.eq_ignore_ascii_case("ft") || symbol.eq_ignore_ascii_case("foot") => {
             (304.8, RelationDimension::LENGTH)
         }
-        _ if symbol.eq_ignore_ascii_case("micron") => {
-            (0.001, RelationDimension::LENGTH)
-        }
-        _ if symbol.eq_ignore_ascii_case("sq_mm") => {
-            (1.0, RelationDimension::AREA)
-        }
-        _ if symbol.eq_ignore_ascii_case("sq_cm") => {
-            (100.0, RelationDimension::AREA)
-        }
-        _ if symbol.eq_ignore_ascii_case("sq_m") => {
-            (1_000_000.0, RelationDimension::AREA)
-        }
-        _ if symbol.eq_ignore_ascii_case("sq_in") => {
-            (645.16, RelationDimension::AREA)
-        }
-        _ if symbol.eq_ignore_ascii_case("sq_ft") => {
-            (92_903.04, RelationDimension::AREA)
-        }
-        _ if symbol.eq_ignore_ascii_case("cu_mm") => {
-            (1.0, RelationDimension::VOLUME)
-        }
-        _ if symbol.eq_ignore_ascii_case("cu_cm") => {
-            (1_000.0, RelationDimension::VOLUME)
-        }
-        _ if symbol.eq_ignore_ascii_case("cu_m") => {
-            (1_000_000_000.0, RelationDimension::VOLUME)
-        }
-        _ if symbol.eq_ignore_ascii_case("cu_in") => {
-            (16_387.064, RelationDimension::VOLUME)
-        }
-        _ if symbol.eq_ignore_ascii_case("cu_ft") => {
-            (28_316_846.592, RelationDimension::VOLUME)
-        }
-        _ if symbol.eq_ignore_ascii_case("kg") => {
-            (1.0, RelationDimension::MASS)
-        }
-        _ if symbol.eq_ignore_ascii_case("g") => {
-            (0.001, RelationDimension::MASS)
-        }
-        _ if symbol.eq_ignore_ascii_case("mg") => {
-            (0.000_001, RelationDimension::MASS)
-        }
-        _ if symbol.eq_ignore_ascii_case("lb")
-            || symbol.eq_ignore_ascii_case("lbm") =>
-        {
+        _ if symbol.eq_ignore_ascii_case("micron") => (0.001, RelationDimension::LENGTH),
+        _ if symbol.eq_ignore_ascii_case("sq_mm") => (1.0, RelationDimension::AREA),
+        _ if symbol.eq_ignore_ascii_case("sq_cm") => (100.0, RelationDimension::AREA),
+        _ if symbol.eq_ignore_ascii_case("sq_m") => (1_000_000.0, RelationDimension::AREA),
+        _ if symbol.eq_ignore_ascii_case("sq_in") => (645.16, RelationDimension::AREA),
+        _ if symbol.eq_ignore_ascii_case("sq_ft") => (92_903.04, RelationDimension::AREA),
+        _ if symbol.eq_ignore_ascii_case("cu_mm") => (1.0, RelationDimension::VOLUME),
+        _ if symbol.eq_ignore_ascii_case("cu_cm") => (1_000.0, RelationDimension::VOLUME),
+        _ if symbol.eq_ignore_ascii_case("cu_m") => (1_000_000_000.0, RelationDimension::VOLUME),
+        _ if symbol.eq_ignore_ascii_case("cu_in") => (16_387.064, RelationDimension::VOLUME),
+        _ if symbol.eq_ignore_ascii_case("cu_ft") => (28_316_846.592, RelationDimension::VOLUME),
+        _ if symbol.eq_ignore_ascii_case("kg") => (1.0, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("g") => (0.001, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("mg") => (0.000_001, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("lb") || symbol.eq_ignore_ascii_case("lbm") => {
             (0.453_592_37, RelationDimension::MASS)
         }
-        _ if symbol.eq_ignore_ascii_case("slug") => {
-            (14.593_902_937_206_4, RelationDimension::MASS)
-        }
-        _ if symbol.eq_ignore_ascii_case("tonne") => {
-            (1_000.0, RelationDimension::MASS)
-        }
+        _ if symbol.eq_ignore_ascii_case("slug") => (14.593_902_937_206_4, RelationDimension::MASS),
+        _ if symbol.eq_ignore_ascii_case("tonne") => (1_000.0, RelationDimension::MASS),
         _ if symbol.eq_ignore_ascii_case("s")
             || symbol.eq_ignore_ascii_case("sec")
             || symbol.eq_ignore_ascii_case("second") =>
         {
             (1.0, RelationDimension::TIME)
         }
-        _ if symbol.eq_ignore_ascii_case("msec") => {
-            (0.001, RelationDimension::TIME)
-        }
-        _ if symbol.eq_ignore_ascii_case("min")
-            || symbol.eq_ignore_ascii_case("minute") =>
-        {
+        _ if symbol.eq_ignore_ascii_case("msec") => (0.001, RelationDimension::TIME),
+        _ if symbol.eq_ignore_ascii_case("min") || symbol.eq_ignore_ascii_case("minute") => {
             (60.0, RelationDimension::TIME)
         }
-        _ if symbol.eq_ignore_ascii_case("hr")
-            || symbol.eq_ignore_ascii_case("hour") =>
-        {
+        _ if symbol.eq_ignore_ascii_case("hr") || symbol.eq_ignore_ascii_case("hour") => {
             (3_600.0, RelationDimension::TIME)
         }
-        _ if symbol.eq_ignore_ascii_case("day") => {
-            (86_400.0, RelationDimension::TIME)
-        }
-        _ if symbol.eq_ignore_ascii_case("deg")
-            || symbol.eq_ignore_ascii_case("degree") =>
-        {
+        _ if symbol.eq_ignore_ascii_case("day") => (86_400.0, RelationDimension::TIME),
+        _ if symbol.eq_ignore_ascii_case("deg") || symbol.eq_ignore_ascii_case("degree") => {
             (1.0, RelationDimension::ANGLE)
         }
-        _ if symbol.eq_ignore_ascii_case("rad")
-            || symbol.eq_ignore_ascii_case("radian") =>
-        {
+        _ if symbol.eq_ignore_ascii_case("rad") || symbol.eq_ignore_ascii_case("radian") => {
             (180.0 / std::f64::consts::PI, RelationDimension::ANGLE)
         }
-        _ if symbol.eq_ignore_ascii_case("n")
-            || symbol.eq_ignore_ascii_case("newton") =>
-        {
+        _ if symbol.eq_ignore_ascii_case("n") || symbol.eq_ignore_ascii_case("newton") => {
             (1_000.0, RelationDimension::FORCE)
         }
-        _ if symbol.eq_ignore_ascii_case("kn") => {
-            (1_000_000.0, RelationDimension::FORCE)
-        }
-        _ if symbol.eq_ignore_ascii_case("dyne") => {
-            (0.01, RelationDimension::FORCE)
-        }
-        _ if symbol.eq_ignore_ascii_case("lbf") => {
-            (4_448.221_615_260_5, RelationDimension::FORCE)
-        }
-        _ if symbol.eq_ignore_ascii_case("ton") => {
-            (9_806_650.0, RelationDimension::FORCE)
-        }
+        _ if symbol.eq_ignore_ascii_case("kn") => (1_000_000.0, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("dyne") => (0.01, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("lbf") => (4_448.221_615_260_5, RelationDimension::FORCE),
+        _ if symbol.eq_ignore_ascii_case("ton") => (9_806_650.0, RelationDimension::FORCE),
         _ if symbol.eq_ignore_ascii_case("erg") => (0.1, RelationDimension::ENERGY),
-        _ if symbol.eq_ignore_ascii_case("joule") => {
-            (1_000_000.0, RelationDimension::ENERGY)
-        }
-        _ if symbol.eq_ignore_ascii_case("kw") => {
-            (1_000_000_000.0, RelationDimension::POWER)
-        }
-        _ if symbol.eq_ignore_ascii_case("mw") => {
-            (1_000_000_000_000.0, RelationDimension::POWER)
-        }
+        _ if symbol.eq_ignore_ascii_case("joule") => (1_000_000.0, RelationDimension::ENERGY),
+        _ if symbol.eq_ignore_ascii_case("kw") => (1_000_000_000.0, RelationDimension::POWER),
+        _ if symbol.eq_ignore_ascii_case("mw") => (1_000_000_000_000.0, RelationDimension::POWER),
         _ if symbol.eq_ignore_ascii_case("pa") => (0.001, RelationDimension::PRESSURE),
-        _ if symbol.eq_ignore_ascii_case("mpa") => {
-            (1_000.0, RelationDimension::PRESSURE)
-        }
-        _ if symbol.eq_ignore_ascii_case("gpa") => {
-            (1_000_000.0, RelationDimension::PRESSURE)
-        }
+        _ if symbol.eq_ignore_ascii_case("mpa") => (1_000.0, RelationDimension::PRESSURE),
+        _ if symbol.eq_ignore_ascii_case("gpa") => (1_000_000.0, RelationDimension::PRESSURE),
         _ if symbol.eq_ignore_ascii_case("psi") => {
             (6.894_757_293_168_361, RelationDimension::PRESSURE)
         }
@@ -3055,7 +3662,10 @@ trait ExpressionValue: Sized {
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError>;
-    fn finite(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<bool, cadmpeg_core::CodecError>;
+    fn finite(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<bool, cadmpeg_core::CodecError>;
 }
 
 impl ExpressionValue for f64 {
@@ -3157,7 +3767,9 @@ impl ExpressionValue for f64 {
         _context: RelationEvaluationContext<'_>,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if scope.is_some() { return Ok(None); }
+        if scope.is_some() {
+            return Ok(None);
+        }
         Ok(evaluate_creo_math_function(name, arguments))
     }
 
@@ -3168,7 +3780,12 @@ impl ExpressionValue for f64 {
         Ok(Some(-self))
     }
 
-    fn finite(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<bool, cadmpeg_core::CodecError> { Ok(self.is_finite()) }
+    fn finite(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(self.is_finite())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -3254,9 +3871,16 @@ impl ExpressionValue for AffineValue {
         right: Self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if right.linear == 0.0 && right.constant == 1.0 { return Ok(Some(self)); }
-        if right.linear == 0.0 && right.constant == 0.0 { return Ok(Self::number(1.0)); }
-        Ok((self.linear == 0.0 && right.linear == 0.0).then(|| self.constant.powf(right.constant)).filter(|value| value.is_finite()).and_then(Self::number))
+        if right.linear == 0.0 && right.constant == 1.0 {
+            return Ok(Some(self));
+        }
+        if right.linear == 0.0 && right.constant == 0.0 {
+            return Ok(Self::number(1.0));
+        }
+        Ok((self.linear == 0.0 && right.linear == 0.0)
+            .then(|| self.constant.powf(right.constant))
+            .filter(|value| value.is_finite())
+            .and_then(Self::number))
     }
 
     fn compare_checked(
@@ -3306,10 +3930,14 @@ impl ExpressionValue for AffineValue {
         _context: RelationEvaluationContext<'_>,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if scope.is_some() || arguments.len() > 3 { return Ok(None); }
+        if scope.is_some() || arguments.len() > 3 {
+            return Ok(None);
+        }
         let mut constants = [0.0; 3];
         for (slot, argument) in constants.iter_mut().zip(arguments) {
-            if argument.linear != 0.0 { return Ok(None); }
+            if argument.linear != 0.0 {
+                return Ok(None);
+            }
             *slot = argument.constant;
         }
         Ok(evaluate_creo_math_function(name, &constants[..arguments.len()]).and_then(Self::number))
@@ -3325,7 +3953,12 @@ impl ExpressionValue for AffineValue {
         }))
     }
 
-    fn finite(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<bool, cadmpeg_core::CodecError> { Ok(self.constant.is_finite() && self.linear.is_finite()) }
+    fn finite(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(self.constant.is_finite() && self.linear.is_finite())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -3344,12 +3977,22 @@ impl SimultaneousAffineValue {
         }
     }
 
-    fn scale(mut self, factor: f64, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
+    fn scale(
+        mut self,
+        factor: f64,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         self.constant *= factor;
         if self.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
-            for coefficient in self.coefficients.values_mut() { *coefficient *= factor; }
+            for coefficient in self.coefficients.values_mut() {
+                *coefficient *= factor;
+            }
         } else {
-            for (_, coefficient) in ctx.admit_iter(&mut self.coefficients, "creo affine arithmetic work")? { *coefficient *= factor; }
+            for (_, coefficient) in
+                ctx.admit_iter(&mut self.coefficients, "creo affine arithmetic work")?
+            {
+                *coefficient *= factor;
+            }
         }
         Ok(self)
     }
@@ -3367,14 +4010,36 @@ impl SimultaneousAffineValue {
         self.constant += sign * right.constant;
         let bounded = right.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
         let mut coefficients = right.coefficients.into_iter();
-        while let Some((variable, coefficient)) = if bounded { coefficients.next() } else { ctx.next_charged(&mut coefficients, "creo affine coefficient combination work")? } {
+        while let Some((variable, coefficient)) = if bounded {
+            coefficients.next()
+        } else {
+            ctx.next_charged(
+                &mut coefficients,
+                "creo affine coefficient combination work",
+            )?
+        } {
             if coefficient == 0.0 {
-                if ctx.get_btree_map(&self.coefficients, &variable, "creo affine combined coefficient nodes")?.is_some_and(|value| *value == 0.0) {
-                    ctx.remove_btree_map(&mut self.coefficients, &variable, "creo affine combined coefficient nodes")?;
+                if ctx
+                    .get_btree_map(
+                        &self.coefficients,
+                        &variable,
+                        "creo affine combined coefficient nodes",
+                    )?
+                    .is_some_and(|value| *value == 0.0)
+                {
+                    ctx.remove_btree_map(
+                        &mut self.coefficients,
+                        &variable,
+                        "creo affine combined coefficient nodes",
+                    )?;
                 }
                 continue;
             }
-            match ctx.entry_btree_map(&mut self.coefficients, variable, "creo affine combined coefficient nodes")? {
+            match ctx.entry_btree_map(
+                &mut self.coefficients,
+                variable,
+                "creo affine combined coefficient nodes",
+            )? {
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     let value = entry.get_mut();
                     *value += sign * coefficient;
@@ -3400,43 +4065,96 @@ impl SimultaneousAffineValue {
             .flatten()
     }
 
-    fn constant_difference_admitted(&self, right: &Self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-        if self.dimension != right.dimension { return Ok(None); }
-        let bounded = self.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES && right.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
+    fn constant_difference_admitted(
+        &self,
+        right: &Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+        if self.dimension != right.dimension {
+            return Ok(None);
+        }
+        let bounded = self.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES
+            && right.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
         let mut left_iter = self.coefficients.iter();
         let mut right_iter = right.coefficients.iter();
         let operation = "creo affine coefficient comparison work";
-        let mut left = if bounded { left_iter.next() } else { ctx.next_charged(&mut left_iter, operation)? };
-        let mut right_value = if bounded { right_iter.next() } else { ctx.next_charged(&mut right_iter, operation)? };
+        let mut left = if bounded {
+            left_iter.next()
+        } else {
+            ctx.next_charged(&mut left_iter, operation)?
+        };
+        let mut right_value = if bounded {
+            right_iter.next()
+        } else {
+            ctx.next_charged(&mut right_iter, operation)?
+        };
         while left.is_some() || right_value.is_some() {
             match (left, right_value) {
-                (Some((left_name, left_value)), Some((right_name, right_coefficient))) => match ctx.compare(left_name, right_name, operation)? {
-                    std::cmp::Ordering::Equal => {
-                        if left_value != right_coefficient { return Ok(None); }
-                        left = if bounded { left_iter.next() } else { ctx.next_charged(&mut left_iter, operation)? };
-                        right_value = if bounded { right_iter.next() } else { ctx.next_charged(&mut right_iter, operation)? };
+                (Some((left_name, left_value)), Some((right_name, right_coefficient))) => {
+                    match ctx.compare(left_name, right_name, operation)? {
+                        std::cmp::Ordering::Equal => {
+                            if left_value != right_coefficient {
+                                return Ok(None);
+                            }
+                            left = if bounded {
+                                left_iter.next()
+                            } else {
+                                ctx.next_charged(&mut left_iter, operation)?
+                            };
+                            right_value = if bounded {
+                                right_iter.next()
+                            } else {
+                                ctx.next_charged(&mut right_iter, operation)?
+                            };
+                        }
+                        std::cmp::Ordering::Less => {
+                            if *left_value != 0.0 {
+                                return Ok(None);
+                            }
+                            left = if bounded {
+                                left_iter.next()
+                            } else {
+                                ctx.next_charged(&mut left_iter, operation)?
+                            };
+                        }
+                        std::cmp::Ordering::Greater => {
+                            if *right_coefficient != 0.0 {
+                                return Ok(None);
+                            }
+                            right_value = if bounded {
+                                right_iter.next()
+                            } else {
+                                ctx.next_charged(&mut right_iter, operation)?
+                            };
+                        }
                     }
-                    std::cmp::Ordering::Less => {
-                        if *left_value != 0.0 { return Ok(None); }
-                        left = if bounded { left_iter.next() } else { ctx.next_charged(&mut left_iter, operation)? };
-                    }
-                    std::cmp::Ordering::Greater => {
-                        if *right_coefficient != 0.0 { return Ok(None); }
-                        right_value = if bounded { right_iter.next() } else { ctx.next_charged(&mut right_iter, operation)? };
-                    }
-                },
+                }
                 (Some((_, coefficient)), None) => {
-                    if *coefficient != 0.0 { return Ok(None); }
-                    left = if bounded { left_iter.next() } else { ctx.next_charged(&mut left_iter, operation)? };
+                    if *coefficient != 0.0 {
+                        return Ok(None);
+                    }
+                    left = if bounded {
+                        left_iter.next()
+                    } else {
+                        ctx.next_charged(&mut left_iter, operation)?
+                    };
                 }
                 (None, Some((_, coefficient))) => {
-                    if *coefficient != 0.0 { return Ok(None); }
-                    right_value = if bounded { right_iter.next() } else { ctx.next_charged(&mut right_iter, operation)? };
+                    if *coefficient != 0.0 {
+                        return Ok(None);
+                    }
+                    right_value = if bounded {
+                        right_iter.next()
+                    } else {
+                        ctx.next_charged(&mut right_iter, operation)?
+                    };
                 }
                 (None, None) => break,
             }
         }
-        Ok((self.constant - right.constant).is_finite().then_some(self.constant - right.constant))
+        Ok((self.constant - right.constant)
+            .is_finite()
+            .then_some(self.constant - right.constant))
     }
 
     fn constant_truth(&self) -> Option<bool> {
@@ -3452,7 +4170,15 @@ impl ExpressionValue for SimultaneousAffineValue {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut coefficients = BTreeMap::new();
         let mut coefficient_entries = self.coefficients.iter();
-        while let Some((name, value)) = if self.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { coefficient_entries.next() } else { ctx.next_charged(&mut coefficient_entries, "creo affine coefficient clone traversal")? } {
+        while let Some((name, value)) = if self.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES
+        {
+            coefficient_entries.next()
+        } else {
+            ctx.next_charged(
+                &mut coefficient_entries,
+                "creo affine coefficient clone traversal",
+            )?
+        } {
             ctx.insert_btree_map(
                 &mut coefficients,
                 ctx.copy_retained_text(name, "creo relation affine clone coefficient names")?,
@@ -3475,8 +4201,12 @@ impl ExpressionValue for SimultaneousAffineValue {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         name: &str,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some(value) = CurveExpressionValue::reserved(ctx, name)? else { return Ok(None); };
-        let Some((value, dimension)) = quantity_parts_ref(&value) else { return Ok(None); };
+        let Some(value) = CurveExpressionValue::reserved(ctx, name)? else {
+            return Ok(None);
+        };
+        let Some((value, dimension)) = quantity_parts_ref(&value) else {
+            return Ok(None);
+        };
         Ok(Some(Self::constant(value, dimension)))
     }
 
@@ -3599,10 +4329,16 @@ impl ExpressionValue for SimultaneousAffineValue {
             }
             _ => {}
         }
-            if arguments.len() > 3 { return Ok(None); }
-        let mut numeric_arguments: [CurveExpressionValue; 3] = std::array::from_fn(|_| CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::ZERO));
+        if arguments.len() > 3 {
+            return Ok(None);
+        }
+        let mut numeric_arguments: [CurveExpressionValue; 3] = std::array::from_fn(|_| {
+            CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::ZERO)
+        });
         for (slot, argument) in numeric_arguments.iter_mut().zip(arguments) {
-            let Some(value) = argument.as_curve_value() else { return Ok(None); };
+            let Some(value) = argument.as_curve_value() else {
+                return Ok(None);
+            };
             *slot = value;
         }
         if matches!(
@@ -3614,8 +4350,13 @@ impl ExpressionValue for SimultaneousAffineValue {
         ) {
             return Ok(None);
         }
-        let Some(result) =
-            CurveExpressionValue::function_checked(name, None, &numeric_arguments[..arguments.len()], context, ctx)?
+        let Some(result) = CurveExpressionValue::function_checked(
+            name,
+            None,
+            &numeric_arguments[..arguments.len()],
+            context,
+            ctx,
+        )?
         else {
             return Ok(None);
         };
@@ -3625,8 +4366,14 @@ impl ExpressionValue for SimultaneousAffineValue {
         Ok(Some(Self::constant(value, dimension)))
     }
 
-    fn with_unit_checked(self, unit: RelationUnit, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if self.dimension != RelationDimension::default() { return Ok(None); }
+    fn with_unit_checked(
+        self,
+        unit: RelationUnit,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if self.dimension != RelationDimension::default() {
+            return Ok(None);
+        }
         let mut value = self.scale(unit.scale, ctx)?;
         value.dimension = unit.dimension;
         value.constant += unit.offset;
@@ -3649,23 +4396,41 @@ impl ExpressionValue for SimultaneousAffineValue {
         self.combine_admitted(right, true, ctx)
     }
 
-    fn multiply_checked(self, right: Self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+    fn multiply_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         if self.coefficients.is_empty() {
-            let Some(dimension) = self.dimension.combine(right.dimension, false) else { return Ok(None); };
+            let Some(dimension) = self.dimension.combine(right.dimension, false) else {
+                return Ok(None);
+            };
             let mut result = right.scale(self.constant, ctx)?;
             result.dimension = dimension;
             Ok(Some(result))
         } else if right.coefficients.is_empty() {
-            let Some(dimension) = self.dimension.combine(right.dimension, false) else { return Ok(None); };
+            let Some(dimension) = self.dimension.combine(right.dimension, false) else {
+                return Ok(None);
+            };
             let mut result = self.scale(right.constant, ctx)?;
             result.dimension = dimension;
             Ok(Some(result))
-        } else { Ok(None) }
+        } else {
+            Ok(None)
+        }
     }
 
-    fn divide_checked(self, right: Self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if !right.coefficients.is_empty() || right.constant == 0.0 { return Ok(None); }
-        let Some(dimension) = self.dimension.combine(right.dimension, true) else { return Ok(None); };
+    fn divide_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if !right.coefficients.is_empty() || right.constant == 0.0 {
+            return Ok(None);
+        }
+        let Some(dimension) = self.dimension.combine(right.dimension, true) else {
+            return Ok(None);
+        };
         let mut result = self.scale(1.0 / right.constant, ctx)?;
         result.dimension = dimension;
         Ok(Some(result))
@@ -3676,13 +4441,27 @@ impl ExpressionValue for SimultaneousAffineValue {
         right: Self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if !right.coefficients.is_empty() || right.dimension != RelationDimension::default() { return Ok(None); }
-        if right.constant == 1.0 { return Ok(Some(self)); }
-        if right.constant == 0.0 { return Ok(Self::number(1.0)); }
-        let Some(value) = self.as_curve_value() else { return Ok(None); };
-        let Some(exponent) = cadmpeg_ir::scalar::FiniteReal::new(right.constant) else { return Ok(None); };
-        let Some(result) = quantity_power(&value, &CurveExpressionValue::Number(exponent)) else { return Ok(None); };
-        let Some((value, dimension)) = quantity_parts_ref(&result) else { return Ok(None); };
+        if !right.coefficients.is_empty() || right.dimension != RelationDimension::default() {
+            return Ok(None);
+        }
+        if right.constant == 1.0 {
+            return Ok(Some(self));
+        }
+        if right.constant == 0.0 {
+            return Ok(Self::number(1.0));
+        }
+        let Some(value) = self.as_curve_value() else {
+            return Ok(None);
+        };
+        let Some(exponent) = cadmpeg_ir::scalar::FiniteReal::new(right.constant) else {
+            return Ok(None);
+        };
+        let Some(result) = quantity_power(&value, &CurveExpressionValue::Number(exponent)) else {
+            return Ok(None);
+        };
+        let Some((value, dimension)) = quantity_parts_ref(&result) else {
+            return Ok(None);
+        };
         Ok(value.is_finite().then(|| Self::constant(value, dimension)))
     }
 
@@ -3703,10 +4482,22 @@ impl ExpressionValue for SimultaneousAffineValue {
         right: Self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if self.constant_truth() == Some(false) || right.constant_truth() == Some(false) { return Ok(Self::number(0.0)); }
-        let Some(left) = self.as_curve_value() else { return Ok(None); };
-        let Some(right) = right.as_curve_value() else { return Ok(None); };
-        let Some(CurveExpressionValue::Number(value)) = numeric_binary(left, right, |left, right| f64::from(left != 0.0 && right != 0.0)) else { return Ok(None); };
+        if self.constant_truth() == Some(false) || right.constant_truth() == Some(false) {
+            return Ok(Self::number(0.0));
+        }
+        let Some(left) = self.as_curve_value() else {
+            return Ok(None);
+        };
+        let Some(right) = right.as_curve_value() else {
+            return Ok(None);
+        };
+        let Some(CurveExpressionValue::Number(value)) =
+            numeric_binary(left, right, |left, right| {
+                f64::from(left != 0.0 && right != 0.0)
+            })
+        else {
+            return Ok(None);
+        };
         Ok(Self::number(value.get()))
     }
 
@@ -3715,10 +4506,22 @@ impl ExpressionValue for SimultaneousAffineValue {
         right: Self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if self.constant_truth() == Some(true) || right.constant_truth() == Some(true) { return Ok(Self::number(1.0)); }
-        let Some(left) = self.as_curve_value() else { return Ok(None); };
-        let Some(right) = right.as_curve_value() else { return Ok(None); };
-        let Some(CurveExpressionValue::Number(value)) = numeric_binary(left, right, |left, right| f64::from(left != 0.0 || right != 0.0)) else { return Ok(None); };
+        if self.constant_truth() == Some(true) || right.constant_truth() == Some(true) {
+            return Ok(Self::number(1.0));
+        }
+        let Some(left) = self.as_curve_value() else {
+            return Ok(None);
+        };
+        let Some(right) = right.as_curve_value() else {
+            return Ok(None);
+        };
+        let Some(CurveExpressionValue::Number(value)) =
+            numeric_binary(left, right, |left, right| {
+                f64::from(left != 0.0 || right != 0.0)
+            })
+        else {
+            return Ok(None);
+        };
         Ok(Self::number(value.get()))
     }
 
@@ -3726,17 +4529,40 @@ impl ExpressionValue for SimultaneousAffineValue {
         self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some(value) = self.as_curve_value() else { return Ok(None); };
-        let Some(CurveExpressionValue::Number(value)) = numeric_binary(value, CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::ZERO), |left, _| f64::from(left == 0.0)) else { return Ok(None); };
+        let Some(value) = self.as_curve_value() else {
+            return Ok(None);
+        };
+        let Some(CurveExpressionValue::Number(value)) = numeric_binary(
+            value,
+            CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::ZERO),
+            |left, _| f64::from(left == 0.0),
+        ) else {
+            return Ok(None);
+        };
         Ok(Self::number(value.get()))
     }
 
-    fn negate_checked(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> { Ok(Some(self.scale(-1.0, ctx)?)) }
+    fn negate_checked(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(Some(self.scale(-1.0, ctx)?))
+    }
 
-    fn finite(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<bool, cadmpeg_core::CodecError> {
-        Ok(self.constant.is_finite() && if self.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
-            self.coefficients.values().all(|value| value.is_finite())
-        } else { ctx.all_by(&self.coefficients, |(_, value)| Ok(value.is_finite()), "creo affine coefficient finite scan")? })
+    fn finite(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(self.constant.is_finite()
+            && if self.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+                self.coefficients.values().all(|value| value.is_finite())
+            } else {
+                ctx.all_by(
+                    &self.coefficients,
+                    |(_, value)| Ok(value.is_finite()),
+                    "creo affine coefficient finite scan",
+                )?
+            })
     }
 }
 
@@ -3835,26 +4661,66 @@ struct DimensionForm {
 }
 
 impl DimensionForm {
-    fn combine_admitted(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, right: Self, subtract: bool) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some(constant) = self.constant.combine(right.constant, subtract) else { return Ok(None); };
+    fn combine_admitted(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        right: Self,
+        subtract: bool,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Some(constant) = self.constant.combine(right.constant, subtract) else {
+            return Ok(None);
+        };
         self.constant = constant;
         let bounded = right.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
         let mut variables = right.variables.into_iter();
-        while let Some((name, coefficient)) = if bounded { variables.next() } else { ctx.next_charged(&mut variables, "creo dimension coefficient combination work")? } {
+        while let Some((name, coefficient)) = if bounded {
+            variables.next()
+        } else {
+            ctx.next_charged(
+                &mut variables,
+                "creo dimension coefficient combination work",
+            )?
+        } {
             if coefficient.is_zero() {
-                if ctx.get_btree_map(&self.variables, &name, "creo dimension difference variable nodes")?.is_some_and(|value| value.is_zero()) {
-                    ctx.remove_btree_map(&mut self.variables, &name, "creo dimension difference variable nodes")?;
+                if ctx
+                    .get_btree_map(
+                        &self.variables,
+                        &name,
+                        "creo dimension difference variable nodes",
+                    )?
+                    .is_some_and(|value| value.is_zero())
+                {
+                    ctx.remove_btree_map(
+                        &mut self.variables,
+                        &name,
+                        "creo dimension difference variable nodes",
+                    )?;
                 }
                 continue;
             }
-            match ctx.entry_btree_map(&mut self.variables, name, "creo dimension difference variable nodes")? {
+            match ctx.entry_btree_map(
+                &mut self.variables,
+                name,
+                "creo dimension difference variable nodes",
+            )? {
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let Some(value) = (*entry.get()).combine(coefficient, subtract) else { return Ok(None); };
-                    if value.is_zero() { entry.remove(); } else { *entry.get_mut() = value; }
+                    let Some(value) = (*entry.get()).combine(coefficient, subtract) else {
+                        return Ok(None);
+                    };
+                    if value.is_zero() {
+                        entry.remove();
+                    } else {
+                        *entry.get_mut() = value;
+                    }
                 }
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    let Some(value) = DimensionRational::default().combine(coefficient, subtract) else { return Ok(None); };
-                    if !value.is_zero() { entry.insert(value); }
+                    let Some(value) = DimensionRational::default().combine(coefficient, subtract)
+                    else {
+                        return Ok(None);
+                    };
+                    if !value.is_zero() {
+                        entry.insert(value);
+                    }
                 }
             }
         }
@@ -3867,7 +4733,14 @@ impl DimensionForm {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut variables = BTreeMap::new();
         let mut variable_entries = self.variables.iter();
-        while let Some((name, value)) = if self.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { variable_entries.next() } else { ctx.next_charged(&mut variable_entries, "creo dimension clone variable traversal")? } {
+        while let Some((name, value)) = if self.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
+            variable_entries.next()
+        } else {
+            ctx.next_charged(
+                &mut variable_entries,
+                "creo dimension clone variable traversal",
+            )?
+        } {
             ctx.insert_btree_map(
                 &mut variables,
                 ctx.copy_retained_text(name, "creo relation dimension clone variable names")?,
@@ -3888,35 +4761,78 @@ impl DimensionForm {
         }
     }
 
-    fn variable(ctx: &cadmpeg_core::decode::DecodeContext<'_>, name: String) -> Result<Self, cadmpeg_core::CodecError> {
+    fn variable(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        name: String,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut variables = BTreeMap::new();
-        ctx.insert_btree_map(&mut variables, name, DimensionRational::one(), "creo dimension variable nodes")?;
-        Ok(Self { constant: DimensionRational::default(), variables })
+        ctx.insert_btree_map(
+            &mut variables,
+            name,
+            DimensionRational::one(),
+            "creo dimension variable nodes",
+        )?;
+        Ok(Self {
+            constant: DimensionRational::default(),
+            variables,
+        })
     }
 
-    fn scale(mut self, factor: i8, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some(constant) = self.constant.scale(factor) else { return Ok(None); };
+    fn scale(
+        mut self,
+        factor: i8,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Some(constant) = self.constant.scale(factor) else {
+            return Ok(None);
+        };
         self.constant = constant;
         let bounded = self.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
         let mut coefficients = self.variables.iter_mut();
-        while let Some((_, coefficient)) = if bounded { coefficients.next() } else { ctx.next_charged(&mut coefficients, "creo dimension coefficient scaling")? } {
-            let Some(value) = (*coefficient).scale(factor) else { return Ok(None); };
+        while let Some((_, coefficient)) = if bounded {
+            coefficients.next()
+        } else {
+            ctx.next_charged(&mut coefficients, "creo dimension coefficient scaling")?
+        } {
+            let Some(value) = (*coefficient).scale(factor) else {
+                return Ok(None);
+            };
             *coefficient = value;
         }
-        ctx.retain_btree_map(&mut self.variables, |_, coefficient| Ok(!coefficient.is_zero()), "creo dimension zero coefficient removal")?;
+        ctx.retain_btree_map(
+            &mut self.variables,
+            |_, coefficient| Ok(!coefficient.is_zero()),
+            "creo dimension zero coefficient removal",
+        )?;
         Ok(Some(self))
     }
 
-    fn divide_exact(mut self, divisor: i16, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some(constant) = self.constant.divide(divisor) else { return Ok(None); };
+    fn divide_exact(
+        mut self,
+        divisor: i16,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Some(constant) = self.constant.divide(divisor) else {
+            return Ok(None);
+        };
         self.constant = constant;
         let bounded = self.variables.len() <= MAX_NONLINEAR_SOLVE_VARIABLES;
         let mut coefficients = self.variables.iter_mut();
-        while let Some((_, coefficient)) = if bounded { coefficients.next() } else { ctx.next_charged(&mut coefficients, "creo dimension coefficient scaling")? } {
-            let Some(value) = (*coefficient).divide(divisor) else { return Ok(None); };
+        while let Some((_, coefficient)) = if bounded {
+            coefficients.next()
+        } else {
+            ctx.next_charged(&mut coefficients, "creo dimension coefficient scaling")?
+        } {
+            let Some(value) = (*coefficient).divide(divisor) else {
+                return Ok(None);
+            };
             *coefficient = value;
         }
-        ctx.retain_btree_map(&mut self.variables, |_, coefficient| Ok(!coefficient.is_zero()), "creo dimension zero coefficient removal")?;
+        ctx.retain_btree_map(
+            &mut self.variables,
+            |_, coefficient| Ok(!coefficient.is_zero()),
+            "creo dimension zero coefficient removal",
+        )?;
         Ok(Some(self))
     }
 
@@ -4018,26 +4934,59 @@ impl SymbolicRelationDimension {
         }))
     }
 
-    fn scale(self, factor: i8, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        
+    fn scale(
+        self,
+        factor: i8,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let [length, mass, time, angle, temperature] = self.axes;
-        let Some(length) = length.scale(factor, ctx)? else { return Ok(None); };
-        let Some(mass) = mass.scale(factor, ctx)? else { return Ok(None); };
-        let Some(time) = time.scale(factor, ctx)? else { return Ok(None); };
-        let Some(angle) = angle.scale(factor, ctx)? else { return Ok(None); };
-        let Some(temperature) = temperature.scale(factor, ctx)? else { return Ok(None); };
-        Ok(Some(Self { axes: [length, mass, time, angle, temperature] }))
+        let Some(length) = length.scale(factor, ctx)? else {
+            return Ok(None);
+        };
+        let Some(mass) = mass.scale(factor, ctx)? else {
+            return Ok(None);
+        };
+        let Some(time) = time.scale(factor, ctx)? else {
+            return Ok(None);
+        };
+        let Some(angle) = angle.scale(factor, ctx)? else {
+            return Ok(None);
+        };
+        let Some(temperature) = temperature.scale(factor, ctx)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            axes: [length, mass, time, angle, temperature],
+        }))
     }
 
-    fn root(self, degree: i16, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if degree <= 0 { return Ok(None); }
+    fn root(
+        self,
+        degree: i16,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if degree <= 0 {
+            return Ok(None);
+        }
         let [length, mass, time, angle, temperature] = self.axes;
-        let Some(length) = length.divide_exact(degree, ctx)? else { return Ok(None); };
-        let Some(mass) = mass.divide_exact(degree, ctx)? else { return Ok(None); };
-        let Some(time) = time.divide_exact(degree, ctx)? else { return Ok(None); };
-        let Some(angle) = angle.divide_exact(degree, ctx)? else { return Ok(None); };
-        let Some(temperature) = temperature.divide_exact(degree, ctx)? else { return Ok(None); };
-        Ok(Some(Self { axes: [length, mass, time, angle, temperature] }))
+        let Some(length) = length.divide_exact(degree, ctx)? else {
+            return Ok(None);
+        };
+        let Some(mass) = mass.divide_exact(degree, ctx)? else {
+            return Ok(None);
+        };
+        let Some(time) = time.divide_exact(degree, ctx)? else {
+            return Ok(None);
+        };
+        let Some(angle) = angle.divide_exact(degree, ctx)? else {
+            return Ok(None);
+        };
+        let Some(temperature) = temperature.divide_exact(degree, ctx)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            axes: [length, mass, time, angle, temperature],
+        }))
     }
 
     fn is_zero(&self) -> bool {
@@ -4181,7 +5130,10 @@ impl DimensionProbeValue {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Vec<DimensionEquality>, cadmpeg_core::CodecError> {
         let mut constraints = Vec::new();
-        for constraint in ctx.admit_iter(&left.constraints, "creo dimension constraint traversal")?.chain(ctx.admit_iter(&right.constraints, "creo dimension constraint traversal")?) {
+        for constraint in ctx
+            .admit_iter(&left.constraints, "creo dimension constraint traversal")?
+            .chain(ctx.admit_iter(&right.constraints, "creo dimension constraint traversal")?)
+        {
             ctx.reserve_vec(&mut constraints, 1, "creo dimension merged constraints")?;
             constraints.push(constraint.copy_admitted(ctx)?);
         }
@@ -4194,10 +5146,12 @@ impl DimensionProbeValue {
     ) -> Result<Vec<DimensionEquality>, cadmpeg_core::CodecError> {
         let mut constraints = Vec::new();
         for argument in ctx.admit_iter(arguments, "creo dimension argument traversal")? {
-        for constraint in ctx.admit_iter(&argument.constraints, "creo dimension constraint traversal")? {
-            ctx.reserve_vec(&mut constraints, 1, "creo dimension function constraints")?;
-            constraints.push(constraint.copy_admitted(ctx)?);
-        }
+            for constraint in
+                ctx.admit_iter(&argument.constraints, "creo dimension constraint traversal")?
+            {
+                ctx.reserve_vec(&mut constraints, 1, "creo dimension function constraints")?;
+                constraints.push(constraint.copy_admitted(ctx)?);
+            }
         }
         Ok(constraints)
     }
@@ -4576,7 +5530,10 @@ impl DimensionProbeValue {
                 let decimal_places = decimal_places
                     .clone_admitted(ctx)?
                     .constrain_to_admitted(SymbolicRelationDimension::default(), ctx)?;
-                for constraint in ctx.admit_iter(&decimal_places.constraints, "creo dimension control constraint traversal")? {
+                for constraint in ctx.admit_iter(
+                    &decimal_places.constraints,
+                    "creo dimension control constraint traversal",
+                )? {
                     ctx.reserve_vec(
                         &mut constraints,
                         1,
@@ -4620,7 +5577,9 @@ impl ExpressionValue for DimensionProbeValue {
             self.constraints.len(),
             "creo relation dimension clone constraints",
         )?;
-        for constraint in ctx.admit_iter(&self.constraints, "creo dimension constraint traversal")? {
+        for constraint in
+            ctx.admit_iter(&self.constraints, "creo dimension constraint traversal")?
+        {
             constraints.push(constraint.copy_admitted(ctx)?);
         }
         Ok(Self {
@@ -4816,7 +5775,8 @@ impl ExpressionValue for DimensionProbeValue {
                         )
                     })?,
                     ctx,
-                )? else {
+                )?
+                else {
                     return Ok(None);
                 };
                 dimension
@@ -4841,11 +5801,19 @@ impl ExpressionValue for DimensionProbeValue {
                     ComparisonOperator::Equal => left
                         .as_ref()
                         .zip(right_value.as_ref())
-                        .map(|(left, right)| ctx.equal(left, right, "creo dimension text equality").map(f64::from)).transpose()?,
+                        .map(|(left, right)| {
+                            ctx.equal(left, right, "creo dimension text equality")
+                                .map(f64::from)
+                        })
+                        .transpose()?,
                     ComparisonOperator::NotEqual => left
                         .as_ref()
                         .zip(right_value.as_ref())
-                        .map(|(left, right)| ctx.equal(left, right, "creo dimension text equality").map(|equal| f64::from(!equal))).transpose()?,
+                        .map(|(left, right)| {
+                            ctx.equal(left, right, "creo dimension text equality")
+                                .map(|equal| f64::from(!equal))
+                        })
+                        .transpose()?,
                     _ => return Ok(None),
                 };
                 Ok(Some(Self::numeric_result(
@@ -4990,7 +5958,10 @@ impl ExpressionValue for DimensionProbeValue {
                     let control = control
                         .clone_admitted(ctx)?
                         .constrain_to_admitted(SymbolicRelationDimension::default(), ctx)?;
-                    for constraint in ctx.admit_iter(&control.constraints, "creo dimension control constraint traversal")? {
+                    for constraint in ctx.admit_iter(
+                        &control.constraints,
+                        "creo dimension control constraint traversal",
+                    )? {
                         ctx.reserve_vec(
                             &mut constraints,
                             1,
@@ -5044,7 +6015,8 @@ impl ExpressionValue for DimensionProbeValue {
                             "creo dimension exists lookup key",
                         )?;
                         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-                        ctx.contains_btree_set(symbols, &key, "creo dimension exists lookup")?.then_some(1.0)
+                        ctx.contains_btree_set(symbols, &key, "creo dimension exists lookup")?
+                            .then_some(1.0)
                     }
                     _ => None,
                 };
@@ -5056,9 +6028,9 @@ impl ExpressionValue for DimensionProbeValue {
             }
             (CreoMathFunction::Search, [value, needle]) => {
                 let value = match value.text_value().zip(needle.text_value()) {
-                    Some((value, needle)) => {
-                        Some(
-                            cadmpeg_core::convert::f64_from_index(match ctx.find_text(value, needle, "creo dimension text search work")? {
+                    Some((value, needle)) => Some(
+                        cadmpeg_core::convert::f64_from_index(
+                            match ctx.find_text(value, needle, "creo dimension text search work")? {
                                 Some(byte) => ctx
                                     .admit_iter(
                                         &value[..byte],
@@ -5074,14 +6046,14 @@ impl ExpressionValue for DimensionProbeValue {
                                         )
                                     })?,
                                 None => 0,
-                            })
-                            .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed(
-                                    "Creo numeric value cannot be represented exactly",
-                                )
-                            })?,
+                            },
                         )
-                    }
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo numeric value cannot be represented exactly",
+                            )
+                        })?,
+                    ),
                     None => None,
                 };
                 Ok(Some(Self::numeric_result(
@@ -5095,7 +6067,10 @@ impl ExpressionValue for DimensionProbeValue {
                     let control = control
                         .clone_admitted(ctx)?
                         .constrain_to_admitted(SymbolicRelationDimension::default(), ctx)?;
-                    for constraint in ctx.admit_iter(&control.constraints, "creo dimension control constraint traversal")? {
+                    for constraint in ctx.admit_iter(
+                        &control.constraints,
+                        "creo dimension control constraint traversal",
+                    )? {
                         ctx.reserve_vec(
                             &mut constraints,
                             1,
@@ -5104,26 +6079,32 @@ impl ExpressionValue for DimensionProbeValue {
                         constraints.push(constraint.copy_admitted(ctx)?);
                     }
                 }
-                let value =
-                    match value
-                        .text_value()
-                        .zip(position.numeric_value())
-                        .zip(length.numeric_value())
-                    {
-                        Some(((value, position), length)) => {
-                            if !position.is_finite()
-                                || !length.is_finite()
-                                || position.fract() != 0.0
-                                || length.fract() != 0.0
-                                || position <= 0.0
-                                || length < 0.0
-                            {
-                                return Ok(None);
-                            }
-                            Some(extract_relation_text(ctx, value, position, length, "creo dimension text extract work", "creo dimension extracted text")?)
+                let value = match value
+                    .text_value()
+                    .zip(position.numeric_value())
+                    .zip(length.numeric_value())
+                {
+                    Some(((value, position), length)) => {
+                        if !position.is_finite()
+                            || !length.is_finite()
+                            || position.fract() != 0.0
+                            || length.fract() != 0.0
+                            || position <= 0.0
+                            || length < 0.0
+                        {
+                            return Ok(None);
                         }
-                        None => None,
-                    };
+                        Some(extract_relation_text(
+                            ctx,
+                            value,
+                            position,
+                            length,
+                            "creo dimension text extract work",
+                            "creo dimension extracted text",
+                        )?)
+                    }
+                    None => None,
+                };
                 Ok(Some(Self::text_result(value, constraints)))
             }
             (CreoMathFunction::StringLength, [value]) => {
@@ -5152,7 +6133,11 @@ impl ExpressionValue for DimensionProbeValue {
                 value
                     .text_value()
                     .zip(prefix.text_value())
-                    .map(|(value, prefix)| ctx.starts_with(value, prefix, "creo dimension text prefix").map(f64::from)).transpose()?,
+                    .map(|(value, prefix)| {
+                        ctx.starts_with(value, prefix, "creo dimension text prefix")
+                            .map(f64::from)
+                    })
+                    .transpose()?,
                 constraints,
             ))),
             (CreoMathFunction::StringEnds, [value, suffix]) => Ok(Some(Self::numeric_result(
@@ -5160,7 +6145,11 @@ impl ExpressionValue for DimensionProbeValue {
                 value
                     .text_value()
                     .zip(suffix.text_value())
-                    .map(|(value, suffix)| ctx.ends_with(value, suffix, "creo dimension text suffix").map(f64::from)).transpose()?,
+                    .map(|(value, suffix)| {
+                        ctx.ends_with(value, suffix, "creo dimension text suffix")
+                            .map(f64::from)
+                    })
+                    .transpose()?,
                 constraints,
             ))),
             (CreoMathFunction::StringMatch, [value, expected]) => Ok(Some(Self::numeric_result(
@@ -5168,7 +6157,11 @@ impl ExpressionValue for DimensionProbeValue {
                 value
                     .text_value()
                     .zip(expected.text_value())
-                    .map(|(value, expected)| ctx.equal(value, expected, "creo dimension text match").map(f64::from)).transpose()?,
+                    .map(|(value, expected)| {
+                        ctx.equal(value, expected, "creo dimension text match")
+                            .map(f64::from)
+                    })
+                    .transpose()?,
                 constraints,
             ))),
             (CreoMathFunction::StringPattern, [value, pattern]) => {
@@ -5193,13 +6186,22 @@ impl ExpressionValue for DimensionProbeValue {
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let kind = match self.kind {
-            DimensionProbeKind::Numeric(value) => DimensionProbeKind::Numeric(value.map(|value| -value)),
+            DimensionProbeKind::Numeric(value) => {
+                DimensionProbeKind::Numeric(value.map(|value| -value))
+            }
             DimensionProbeKind::Text(_) => return Ok(None),
         };
-        Ok(Some(Self { dimension: self.dimension, kind, constraints: self.constraints }))
+        Ok(Some(Self {
+            dimension: self.dimension,
+            kind,
+            constraints: self.constraints,
+        }))
     }
 
-    fn finite(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<bool, cadmpeg_core::CodecError> {
+    fn finite(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         Ok(match &self.kind {
             DimensionProbeKind::Numeric(Some(value)) => value.is_finite(),
             DimensionProbeKind::Numeric(None) | DimensionProbeKind::Text(_) => true,
@@ -5208,7 +6210,12 @@ impl ExpressionValue for DimensionProbeValue {
 }
 
 impl ExpressionValue for CurveExpressionValue {
-    fn finite(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<bool, cadmpeg_core::CodecError> { Ok(true) }
+    fn finite(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(true)
+    }
 
     fn clone_admitted(
         &self,
@@ -5229,13 +6236,11 @@ impl ExpressionValue for CurveExpressionValue {
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         name: &str,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        Ok(
-            if name.eq_ignore_ascii_case("g") {
-                quantity_value(9_800.0, RelationDimension::ACCELERATION)
-            } else {
-                reserved_relation_scalar(name).and_then(Self::number)
-            },
-        )
+        Ok(if name.eq_ignore_ascii_case("g") {
+            quantity_value(9_800.0, RelationDimension::ACCELERATION)
+        } else {
+            reserved_relation_scalar(name).and_then(Self::number)
+        })
     }
 
     fn with_unit_checked(
@@ -5243,8 +6248,13 @@ impl ExpressionValue for CurveExpressionValue {
         unit: RelationUnit,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Self::Number(value) = self else { return Ok(None); };
-        Ok(quantity_value(value.get() * unit.scale + unit.offset, unit.dimension))
+        let Self::Number(value) = self else {
+            return Ok(None);
+        };
+        Ok(quantity_value(
+            value.get() * unit.scale + unit.offset,
+            unit.dimension,
+        ))
     }
 
     fn add_checked(
@@ -5274,9 +6284,15 @@ impl ExpressionValue for CurveExpressionValue {
         right: Self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some((left, left_dimension)) = quantity_parts_ref(&self) else { return Ok(None); };
-        let Some((right, right_dimension)) = quantity_parts_ref(&right) else { return Ok(None); };
-        let Some(dimension) = left_dimension.combine(right_dimension, false) else { return Ok(None); };
+        let Some((left, left_dimension)) = quantity_parts_ref(&self) else {
+            return Ok(None);
+        };
+        let Some((right, right_dimension)) = quantity_parts_ref(&right) else {
+            return Ok(None);
+        };
+        let Some(dimension) = left_dimension.combine(right_dimension, false) else {
+            return Ok(None);
+        };
         Ok(quantity_value(left * right, dimension))
     }
 
@@ -5285,9 +6301,15 @@ impl ExpressionValue for CurveExpressionValue {
         right: Self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Some((left, left_dimension)) = quantity_parts_ref(&self) else { return Ok(None); };
-        let Some((right, right_dimension)) = quantity_parts_ref(&right) else { return Ok(None); };
-        let Some(dimension) = left_dimension.combine(right_dimension, true) else { return Ok(None); };
+        let Some((left, left_dimension)) = quantity_parts_ref(&self) else {
+            return Ok(None);
+        };
+        let Some((right, right_dimension)) = quantity_parts_ref(&right) else {
+            return Ok(None);
+        };
+        let Some(dimension) = left_dimension.combine(right_dimension, true) else {
+            return Ok(None);
+        };
         Ok(quantity_value(left / right, dimension))
     }
 
@@ -5307,17 +6329,31 @@ impl ExpressionValue for CurveExpressionValue {
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         if let (Self::String(left), Self::String(right)) = (&self, &right) {
             let equal = match operator {
-                ComparisonOperator::Equal | ComparisonOperator::NotEqual => ctx.equal(left, right, "creo relation text equality")?,
+                ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
+                    ctx.equal(left, right, "creo relation text equality")?
+                }
                 _ => return Ok(None),
             };
-            return Ok(Self::number(f64::from(if matches!(operator, ComparisonOperator::Equal) { equal } else { !equal })));
+            return Ok(Self::number(f64::from(
+                if matches!(operator, ComparisonOperator::Equal) {
+                    equal
+                } else {
+                    !equal
+                },
+            )));
         }
         let result = match (self, right) {
             (Self::Number(left), Self::Number(right)) => operator.evaluate(left.get(), right.get()),
             (left, right) => {
-                let Some((left, left_dimension)) = quantity_parts_ref(&left) else { return Ok(None); };
-                let Some((right, right_dimension)) = quantity_parts_ref(&right) else { return Ok(None); };
-                if left_dimension != right_dimension { return Ok(None); }
+                let Some((left, left_dimension)) = quantity_parts_ref(&left) else {
+                    return Ok(None);
+                };
+                let Some((right, right_dimension)) = quantity_parts_ref(&right) else {
+                    return Ok(None);
+                };
+                if left_dimension != right_dimension {
+                    return Ok(None);
+                }
                 operator.evaluate(left, right)
             }
         };
@@ -5348,7 +6384,9 @@ impl ExpressionValue for CurveExpressionValue {
         self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        let Self::Number(value) = self else { return Ok(None); };
+        let Self::Number(value) = self else {
+            return Ok(None);
+        };
         Ok(Self::number(f64::from(value.get() == 0.0)))
     }
 
@@ -5415,23 +6453,26 @@ impl ExpressionValue for CurveExpressionValue {
                 let (mut key, _reservation) =
                     ctx.format_scoped(format_args!("{name}"), "creo relation exists lookup key")?;
                 ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-                Ok(ctx.contains_btree_set(symbols, &key, "creo relation existing symbol lookup")?.then_some(Number(cadmpeg_ir::scalar::FiniteReal::ONE)))
+                Ok(ctx
+                    .contains_btree_set(symbols, &key, "creo relation existing symbol lookup")?
+                    .then_some(Number(cadmpeg_ir::scalar::FiniteReal::ONE)))
             }
             (CreoMathFunction::Search, [String(value), String(needle)]) => {
-                let position = match ctx.find_text(value, needle, "creo relation text search work")? {
-                    Some(byte) => ctx
-                        .admit_iter(&value[..byte], "creo relation text search prefix count")?
-                        .count()
-                        .checked_add(1)
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit(
-                                "creo relation text search prefix count",
-                                u64::MAX,
-                                u64::MAX,
-                            )
-                        })?,
-                    None => 0,
-                };
+                let position =
+                    match ctx.find_text(value, needle, "creo relation text search work")? {
+                        Some(byte) => ctx
+                            .admit_iter(&value[..byte], "creo relation text search prefix count")?
+                            .count()
+                            .checked_add(1)
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "creo relation text search prefix count",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })?,
+                        None => 0,
+                    };
                 Ok(Self::number(
                     cadmpeg_core::convert::f64_from_index(position).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
@@ -5448,7 +6489,14 @@ impl ExpressionValue for CurveExpressionValue {
                 {
                     return Ok(None);
                 }
-                Ok(Some(String(extract_relation_text(ctx, value, position.get(), length.get(), "creo relation extract scan", "creo relation extracted text")?)))
+                Ok(Some(String(extract_relation_text(
+                    ctx,
+                    value,
+                    position.get(),
+                    length.get(),
+                    "creo relation extract scan",
+                    "creo relation extracted text",
+                )?)))
             }
             (CreoMathFunction::If, [Number(condition), String(when_true), String(when_false)]) => {
                 let selected = if condition.get() == 0.0 {
@@ -5472,15 +6520,15 @@ impl ExpressionValue for CurveExpressionValue {
                     )
                 })?,
             )),
-            (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
-                Ok(Self::number(f64::from(ctx.starts_with(value, prefix, "creo relation text prefix work")?)))
-            }
-            (CreoMathFunction::StringEnds, [String(value), String(suffix)]) => {
-                Ok(Self::number(f64::from(ctx.ends_with(value, suffix, "creo relation text suffix work")?)))
-            }
-            (CreoMathFunction::StringMatch, [String(value), String(expected)]) => {
-                Ok(Self::number(f64::from(ctx.equal(value, expected, "creo relation text match work")?)))
-            }
+            (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => Ok(Self::number(
+                f64::from(ctx.starts_with(value, prefix, "creo relation text prefix work")?),
+            )),
+            (CreoMathFunction::StringEnds, [String(value), String(suffix)]) => Ok(Self::number(
+                f64::from(ctx.ends_with(value, suffix, "creo relation text suffix work")?),
+            )),
+            (CreoMathFunction::StringMatch, [String(value), String(expected)]) => Ok(Self::number(
+                f64::from(ctx.equal(value, expected, "creo relation text match work")?),
+            )),
             (CreoMathFunction::StringPattern, [String(value), String(pattern)]) => {
                 Ok(relation_string_pattern_admitted(ctx, value, pattern)?
                     .and_then(|matched| Self::number(f64::from(matched))))
@@ -5499,8 +6547,6 @@ impl ExpressionValue for CurveExpressionValue {
         Ok(quantity_parts_ref(&self)
             .and_then(|(value, dimension)| quantity_value(-value, dimension)))
     }
-
-
 }
 
 fn quantity_additive(
@@ -5600,18 +6646,34 @@ impl ComparisonOperator {
 }
 
 impl<V: ExpressionValue> ExpressionParser<'_, V> {
-    fn finite_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: V) -> Result<Option<V>, cadmpeg_core::CodecError> {
+    fn finite_value(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: V,
+    ) -> Result<Option<V>, cadmpeg_core::CodecError> {
         Ok(value.finite(ctx)?.then_some(value))
     }
 
     /// The finite value of a checked operation.
-    fn finite_result(ctx: &cadmpeg_core::decode::DecodeContext<'_>, result: Result<Option<V>, cadmpeg_core::CodecError>) -> Parsed<V> {
-        Ok(result?.map(|value| Self::finite_value(ctx, value)).transpose()?.flatten())
+    fn finite_result(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        result: Result<Option<V>, cadmpeg_core::CodecError>,
+    ) -> Parsed<V> {
+        Ok(result?
+            .map(|value| Self::finite_value(ctx, value))
+            .transpose()?
+            .flatten())
     }
 
     fn whitespace(&mut self) -> Result<(), Box<cadmpeg_core::CodecError>> {
         let tail = &self.source[self.cursor..];
-        self.cursor += self.ctx.position_by(tail, |byte| Ok(!byte.is_ascii_whitespace()), "creo relation source scan")?.unwrap_or(tail.len());
+        self.cursor += self
+            .ctx
+            .position_by(
+                tail,
+                |byte| Ok(!byte.is_ascii_whitespace()),
+                "creo relation source scan",
+            )?
+            .unwrap_or(tail.len());
         Ok(())
     }
 
@@ -5628,7 +6690,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             let Some(right) = self.logical_and()? else {
                 return Ok(None);
             };
-            let Some(next) = Self::finite_result(self.ctx, value.logical_or_checked(right, self.ctx))? else {
+            let Some(next) =
+                Self::finite_result(self.ctx, value.logical_or_checked(right, self.ctx))?
+            else {
                 return Ok(None);
             };
             value = next;
@@ -5648,7 +6712,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             let Some(right) = self.comparison()? else {
                 return Ok(None);
             };
-            let Some(next) = Self::finite_result(self.ctx, value.logical_and_checked(right, self.ctx))?
+            let Some(next) =
+                Self::finite_result(self.ctx, value.logical_and_checked(right, self.ctx))?
             else {
                 return Ok(None);
             };
@@ -5735,7 +6800,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         self.whitespace()?;
         let start = self.cursor;
         while let Some(b'+' | b'-' | b'!' | b'~') = self.source.get(self.cursor) {
-            self.ctx.next_charged(&mut self.source[self.cursor..].iter(), "creo relation source scan")?;
+            self.ctx.next_charged(
+                &mut self.source[self.cursor..].iter(),
+                "creo relation source scan",
+            )?;
             self.cursor += 1;
             self.whitespace()?;
         }
@@ -5744,7 +6812,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             return Ok(None);
         };
         let mut operators = (start..end).rev();
-        while let Some(index) = self.ctx.next_charged(&mut operators, "creo relation unary replay")? {
+        while let Some(index) = self
+            .ctx
+            .next_charged(&mut operators, "creo relation unary replay")?
+        {
             let result = match self.source[index] {
                 b'-' => value.negate_checked(self.ctx),
                 b'!' | b'~' => value.logical_not_checked(self.ctx),
@@ -5825,7 +6896,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             let Some(unit) = relation_unit(self.ctx, unit)? else {
                 return Ok(None);
             };
-            let Some(next) = Self::finite_result(self.ctx, value.with_unit_checked(unit, self.ctx))? else {
+            let Some(next) =
+                Self::finite_result(self.ctx, value.with_unit_checked(unit, self.ctx))?
+            else {
                 return Ok(None);
             };
             value = next;
@@ -5859,7 +6932,14 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         self.cursor += 1;
         let start = self.cursor;
         let tail = &self.source[self.cursor..];
-        self.cursor += self.ctx.position_by(tail, |byte| Ok(*byte == delimiter), "creo relation source scan")?.unwrap_or(tail.len());
+        self.cursor += self
+            .ctx
+            .position_by(
+                tail,
+                |byte| Ok(*byte == delimiter),
+                "creo relation source scan",
+            )?
+            .unwrap_or(tail.len());
         if self.source.get(self.cursor) != Some(&delimiter) {
             return Ok(None);
         }
@@ -5878,8 +6958,17 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
 
     fn number(&mut self) -> Parsed<V> {
         let start = self.cursor;
-        { let tail = &self.source[self.cursor..];
-            self.cursor += self.ctx.position_by(tail, |byte| Ok(!(byte.is_ascii_digit() || *byte == b'.')), "creo relation source scan")?.unwrap_or(tail.len()); }
+        {
+            let tail = &self.source[self.cursor..];
+            self.cursor += self
+                .ctx
+                .position_by(
+                    tail,
+                    |byte| Ok(!(byte.is_ascii_digit() || *byte == b'.')),
+                    "creo relation source scan",
+                )?
+                .unwrap_or(tail.len());
+        }
         if self
             .source
             .get(self.cursor)
@@ -5893,8 +6982,17 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             {
                 self.cursor += 1;
             }
-            { let tail = &self.source[self.cursor..];
-            self.cursor += self.ctx.position_by(tail, |byte| Ok(!(byte.is_ascii_digit())), "creo relation source scan")?.unwrap_or(tail.len()); }
+            {
+                let tail = &self.source[self.cursor..];
+                self.cursor += self
+                    .ctx
+                    .position_by(
+                        tail,
+                        |byte| Ok(!(byte.is_ascii_digit())),
+                        "creo relation source scan",
+                    )?
+                    .unwrap_or(tail.len());
+            }
         }
         let Ok(text) = self
             .ctx
@@ -6027,9 +7125,7 @@ enum CreoMathFunction {
     ContextDependent,
 }
 
-fn creo_math_function(
-    name: &str,
-) -> Option<CreoMathFunction> {
+fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
     const FUNCTIONS: &[(&str, CreoMathFunction)] = &[
         ("sin", CreoMathFunction::Sin),
         ("cos", CreoMathFunction::Cos),
@@ -6100,10 +7196,14 @@ fn creo_math_function(
         "count_rows",
     ];
     for (spelling, function) in FUNCTIONS {
-        if name.eq_ignore_ascii_case(spelling) { return Some(*function); }
+        if name.eq_ignore_ascii_case(spelling) {
+            return Some(*function);
+        }
     }
     for spelling in CONTEXT_DEPENDENT {
-        if name.eq_ignore_ascii_case(spelling) { return Some(CreoMathFunction::ContextDependent); }
+        if name.eq_ignore_ascii_case(spelling) {
+            return Some(CreoMathFunction::ContextDependent);
+        }
     }
     None
 }
@@ -6112,14 +7212,22 @@ fn creo_relation_function<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     name: &'a str,
 ) -> Result<Option<(CreoMathFunction, Option<&'a str>)>, cadmpeg_core::CodecError> {
-    Ok(if let Some((function, scope)) = ctx.split_once(name, ":", "creo relation function scope scan")? {
-        (function.eq_ignore_ascii_case("rel_model_name")
-            && !scope.is_empty()
-            && ctx.all_by(scope.bytes(), |byte| Ok(byte.is_ascii_digit()), "creo relation function scope validation")?)
-        .then_some((CreoMathFunction::RelModelName, Some(scope)))
-    } else {
-        creo_math_function(name).map(|function| (function, None))
-    })
+    Ok(
+        if let Some((function, scope)) =
+            ctx.split_once(name, ":", "creo relation function scope scan")?
+        {
+            (function.eq_ignore_ascii_case("rel_model_name")
+                && !scope.is_empty()
+                && ctx.all_by(
+                    scope.bytes(),
+                    |byte| Ok(byte.is_ascii_digit()),
+                    "creo relation function scope validation",
+                )?)
+            .then_some((CreoMathFunction::RelModelName, Some(scope)))
+        } else {
+            creo_math_function(name).map(|function| (function, None))
+        },
+    )
 }
 
 fn evaluate_creo_math_function(name: CreoMathFunction, arguments: &[f64]) -> Option<f64> {
@@ -6426,13 +7534,40 @@ fn extract_relation_text(
     copy_operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut characters = value.char_indices().enumerate();
-    let Some((_, (start, _))) = ctx.find_by(characters.by_ref(), |(ordinal, _)| {
-        Ok(cadmpeg_core::convert::f64_from_index(*ordinal + 1).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))? == position)
-    }, scan_operation)? else { return Ok(String::new()); };
-    let end = if length == 0.0 { start } else {
-        ctx.find_by(characters, |(ordinal, _)| {
-            Ok(cadmpeg_core::convert::f64_from_index(*ordinal + 1).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))? - position >= length)
-        }, scan_operation)?.map_or(value.len(), |(_, (end, _))| end)
+    let Some((_, (start, _))) = ctx.find_by(
+        characters.by_ref(),
+        |(ordinal, _)| {
+            Ok(
+                cadmpeg_core::convert::f64_from_index(*ordinal + 1).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "Creo numeric value cannot be represented exactly",
+                    )
+                })? == position,
+            )
+        },
+        scan_operation,
+    )?
+    else {
+        return Ok(String::new());
+    };
+    let end = if length == 0.0 {
+        start
+    } else {
+        ctx.find_by(
+            characters,
+            |(ordinal, _)| {
+                Ok(
+                    cadmpeg_core::convert::f64_from_index(*ordinal + 1).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })? - position
+                        >= length,
+                )
+            },
+            scan_operation,
+        )?
+        .map_or(value.len(), |(_, (end, _))| end)
     };
     ctx.copy_retained_text(&value[start..end], copy_operation)
 }
@@ -6508,7 +7643,9 @@ fn format_relation_real_admitted(
         format_args!("{value:.decimals$e}"),
         "creo relation scientific scratch",
     )?;
-    let Some((mantissa, exponent)) = ctx.split_once(&formatted, "e", "creo relation scientific exponent scan")? else {
+    let Some((mantissa, exponent)) =
+        ctx.split_once(&formatted, "e", "creo relation scientific exponent scan")?
+    else {
         return Ok(None);
     };
     let Ok(exponent) = ctx.parse_text::<i32>(exponent, "creo scalar text parsing")? else {
@@ -6541,7 +7678,9 @@ fn parse_relation_expression<V: ExpressionValue>(
     let value = parser.logical_or().map_err(|error| *error)?;
     parser.whitespace().map_err(|error| *error)?;
     match value {
-        Some(value) if parser.cursor == parser.source.len() => Ok(value.finite(ctx)?.then_some(value)),
+        Some(value) if parser.cursor == parser.source.len() => {
+            Ok(value.finite(ctx)?.then_some(value))
+        }
         _ => Ok(None),
     }
 }
@@ -6570,372 +7709,6 @@ fn apply_declared_relation_unit(
     })
 }
 
-fn infer_solve_variable_dimensions(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    block: &CurveExpressionSolveBlock,
-    values: &BTreeMap<String, CurveExpressionValue>,
-    known_dimensions: &[Option<RelationDimension>],
-    context: RelationEvaluationContext<'_>,
-) -> Result<Option<Vec<RelationDimension>>, cadmpeg_core::CodecError> {
-    if known_dimensions.len() != block.unknowns.len() {
-        return Ok(None);
-    }
-    let mut scratch = ctx.reserve_scoped(0, "creo solve matrix scratch")?;
-    let mut variable_keys = Vec::new();
-    let mut known_keys = HashSet::new();
-    let mut unknowns = block.unknowns.iter();
-    while let Some(unknown) = if block.unknowns.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { unknowns.next() } else { ctx.next_charged(&mut unknowns, "creo solve variable traversal")? } {
-        scratch.with_storage(|| ctx.reserve_vec(&mut variable_keys, 1, "creo dimension variable keys"))?;
-        let mut key = scratch.with_storage(|| ctx.copy_retained_text(&unknown.name, "creo dimension variable key text"))?;
-        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        if ctx.contains_hash_set(&known_keys, &key, "creo dimension duplicate checks")? { return Ok(None); }
-        scratch.with_storage(|| ctx.insert_hash_set(&mut known_keys, ctx.copy_retained_text(&key, "creo dimension key index text")?, "creo dimension key index nodes"))?;
-        variable_keys.push(key);
-    }
-
-    let mut probe_values = BTreeMap::new();
-    for (name, value) in ctx.admit_iter(values, "creo solve known value traversal")? {
-        let probe = match value {
-            CurveExpressionValue::String(value) => DimensionProbeValue::text(Some(
-                scratch.with_storage(|| ctx.copy_retained_text(value, "creo dimension known text"))?,
-            )),
-            _ => match DimensionProbeValue::from_relation_value(value) {
-                Some(probe) => probe,
-                None => continue,
-            },
-        };
-        scratch.with_storage(|| ctx.insert_btree_map(
-            &mut probe_values,
-            ctx.copy_retained_text(name, "creo dimension known value names")?,
-            probe,
-            "creo dimension known value nodes",
-        ))?;
-    }
-    let mut dimension_variables = variable_keys.iter().zip(known_dimensions);
-        while let Some((key, dimension)) = if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { dimension_variables.next() } else { ctx.next_charged(&mut dimension_variables, "creo dimension variable traversal")? } {
-        let value = match dimension {
-            Some(dimension) => DimensionProbeValue {
-                dimension: SymbolicRelationDimension::from_relation_dimension(*dimension),
-                kind: DimensionProbeKind::Numeric(None),
-                constraints: Vec::new(),
-            },
-            None => scratch.with_storage(|| DimensionProbeValue::variable(ctx, key))?,
-        };
-        scratch.with_storage(|| ctx.insert_btree_map(
-            &mut probe_values,
-            ctx.copy_retained_text(key, "creo dimension unknown value names")?,
-            value,
-            "creo dimension unknown value nodes",
-        ))?;
-    }
-
-    let mut constraints = Vec::new();
-    let mut equations = block.equations.iter();
-    while let Some(equation) = ctx.next_charged(&mut equations, "creo solve equation traversal")? {
-        let Some(left) = scratch.with_storage(|| parse_relation_expression::<DimensionProbeValue>(
-            ctx,
-            &equation.left,
-            &probe_values,
-            context,
-        ))?
-        else {
-            return Ok(None);
-        };
-        let Some(right) = scratch.with_storage(|| parse_relation_expression::<DimensionProbeValue>(
-            ctx,
-            &equation.right,
-            &probe_values,
-            context,
-        ))?
-        else {
-            return Ok(None);
-        };
-        for constraint in ctx.admit_iter(left.constraints, "creo dimension constraint traversal")?.chain(ctx.admit_iter(right.constraints, "creo dimension constraint traversal")?) {
-            scratch.with_storage(|| ctx.push_vec(&mut constraints, constraint, "creo dimension constraint rows"))?;
-        }
-        scratch.with_storage(|| ctx.reserve_vec(&mut constraints, 1, "creo dimension constraint rows"))?;
-        constraints.push(DimensionEquality {
-            left: left.dimension,
-            right: right.dimension,
-        });
-    }
-
-    let mut axis_rows: [Vec<AffineEquationRow>; 5] =
-        std::array::from_fn(|_| Vec::<AffineEquationRow>::new());
-    let mut axis_variable_keys: [Vec<String>; 5] = std::array::from_fn(|_| Vec::new());
-    for (axis, keys) in axis_variable_keys.iter_mut().enumerate() {
-        let mut axis_keys = variable_keys.iter();
-        while let Some(variable) = if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { axis_keys.next() } else { ctx.next_charged(&mut axis_keys, "creo dimension axis key traversal")? } {
-            scratch.with_storage(|| ctx.reserve_vec(keys, 1, "creo dimension axis variable keys"))?;
-            keys.push(scratch.with_storage(|| dimension_variable_key(
-                ctx,
-                variable,
-                axis,
-                "creo dimension axis variable names",
-            ))?);
-        }
-    }
-    let mut equalities = constraints.into_iter();
-    while let Some(equality) = ctx.next_charged(&mut equalities, "creo dimension equality traversal")? {
-        for ((rows, keys), (left, right)) in axis_rows.iter_mut().zip(&axis_variable_keys).zip(equality.left.axes.into_iter().zip(equality.right.axes)) {
-            let Some(difference) = scratch.with_storage(|| left.combine_admitted(ctx, right, true))? else {
-                return Ok(None);
-            };
-            let mut coefficients = scratch.with_storage(|| ctx.alloc_filled(
-                keys.len(),
-                0.0,
-                "creo dimension equation coefficients",
-            ))?;
-            let mut coefficient_rows = coefficients.iter_mut().zip(keys);
-            let mut has_coefficients = false;
-            while let Some((coefficient, variable)) = if keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { coefficient_rows.next() } else { ctx.next_charged(&mut coefficient_rows, "creo dimension equation coefficient work")? } {
-                *coefficient = ctx.get_btree_map(&difference.variables, variable, "creo dimension coefficient lookup")?.copied()
-                    .unwrap_or_default()
-                    .as_f64()
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed(
-                            "Creo dimension coefficient cannot be represented exactly",
-                        )
-                    })?;
-                has_coefficients |= *coefficient != 0.0;
-            }
-            let rhs = -difference.constant.as_f64().ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(
-                    "Creo dimension constant cannot be represented exactly",
-                )
-            })?;
-            if has_coefficients || rhs != 0.0 {
-                scratch.with_storage(|| ctx.reserve_vec(rows, 1, "creo dimension equation rows"))?;
-                rows.push(AffineEquationRow { coefficients, rhs });
-            }
-        }
-    }
-
-    let axis_len = variable_keys.len();
-    let mut components: [Vec<i8>; 5] = std::array::from_fn(|_| Vec::new());
-    for component in &mut components {
-        *component = scratch.with_storage(|| ctx.alloc_filled(axis_len, 0i8, "creo_solve_dimension_components"))?;
-    }
-    let mut required_columns = BTreeSet::new();
-    let mut known_components = known_dimensions.iter().enumerate();
-        while let Some((index, dimension)) = if known_dimensions.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { known_components.next() } else { ctx.next_charged(&mut known_components, "creo known dimension traversal")? } {
-        if let Some(dimension) = dimension {
-            components[0][index] = dimension.length;
-            components[1][index] = dimension.mass;
-            components[2][index] = dimension.time;
-            components[3][index] = dimension.angle;
-            components[4][index] = dimension.temperature;
-        } else {
-            scratch.with_storage(|| ctx.insert_btree_set(&mut required_columns, index, "creo dimension required column nodes"))?;
-        }
-    }
-    for (axis, rows) in axis_rows.iter_mut().enumerate() {
-        let Some(solution) =
-            scratch.with_storage(|| solve_dimension_axis(ctx, rows, variable_keys.len(), &required_columns))?
-        else {
-            return Ok(None);
-        };
-        let mut solution_values = solution.into_iter().enumerate();
-        while let Some((index, value)) = if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { solution_values.next() } else { ctx.next_charged(&mut solution_values, "creo inferred component traversal")? } {
-            if known_dimensions[index].is_some() {
-                continue;
-            }
-            let rounded = value.round();
-            if !value.is_finite()
-                || (value - rounded).abs() > EPS_DIMENSION_SOLUTION
-                || rounded < f64::from(i8::MIN)
-                || rounded > f64::from(i8::MAX)
-            {
-                return Ok(None);
-            }
-            components[axis][index] = i8::try_from(
-                cadmpeg_core::convert::truncate_f64_to_i32(rounded).ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(
-                        "Creo numeric value cannot be represented exactly",
-                    )
-                })?,
-            )
-            .map_err(|_| {
-                cadmpeg_core::CodecError::malformed("Creo numeric value exceeds dimension range")
-            })?;
-        }
-    }
-    let mut dimensions = ctx.alloc_filled(
-        variable_keys.len(),
-        RelationDimension::default(),
-        "creo inferred variable dimensions",
-    )?;
-    let mut dimension_rows = dimensions.iter_mut().enumerate();
-        while let Some((index, dimension)) = if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { dimension_rows.next() } else { ctx.next_charged(&mut dimension_rows, "creo inferred dimension traversal")? } {
-        *dimension = RelationDimension {
-            length: components[0][index],
-            mass: components[1][index],
-            time: components[2][index],
-            angle: components[3][index],
-            temperature: components[4][index],
-        };
-    }
-    Ok(Some(dimensions))
-}
-
-fn solve_dimension_axis(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    rows: &mut [AffineEquationRow],
-    variable_count: usize,
-    required_columns: &BTreeSet<usize>,
-) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo dimension pivot scratch")?;
-    let mut pivot_row = 0;
-    let mut pivot_rows = Vec::new();
-    let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
-    let mut columns = 0..variable_count;
-    while let Some(column) = if variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES { columns.next() } else { ctx.next_charged(&mut columns, "creo matrix column traversal")? } {
-        let Some(selected) = ctx.admit_iter(pivot_row..rows.len(), "creo matrix pivot scan")?.max_by(|&first, &second| {
-            rows[first].coefficients[column]
-                .abs()
-                .total_cmp(&rows[second].coefficients[column].abs())
-        }) else {
-            break;
-        };
-        let divisor = rows[selected].coefficients[column];
-        if divisor.abs() <= coefficient_tolerance {
-            continue;
-        }
-        rows.swap(pivot_row, selected);
-        if rows[pivot_row].coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
-            for coefficient in &mut rows[pivot_row].coefficients { *coefficient /= divisor; }
-        } else {
-            for coefficient in ctx.admit_iter(&mut rows[pivot_row].coefficients, "creo matrix pivot normalization")? { *coefficient /= divisor; }
-        }
-        rows[pivot_row].rhs /= divisor;
-        eliminate_pivot_column(ctx, rows, pivot_row, column, coefficient_tolerance)?;
-        scratch.with_storage(|| ctx.reserve_vec(&mut pivot_rows, 1, "creo solve dimension pivot rows"))?;
-        pivot_rows.push((column, pivot_row));
-        pivot_row += 1;
-    }
-    let residual_tolerance = EPS_LINEAR_SYSTEM_RESIDUAL * ctx.admit_iter(&*rows, "creo matrix rhs scale")?.map(|row| row.rhs.abs()).fold(1.0, f64::max);
-    if !ctx.all_by(&*rows, |row| {
-        Ok((if row.coefficients.len() <= MAX_NONLINEAR_SOLVE_VARIABLES {
-            row.coefficients.iter().any(|coefficient| coefficient.abs() > coefficient_tolerance)
-        } else {
-            ctx.any_by(&row.coefficients, |coefficient| Ok(coefficient.abs() > coefficient_tolerance), "creo matrix residual coefficients")?
-        }) || row.rhs.abs() <= residual_tolerance)
-    }, "creo matrix residual scan")? { return Ok(None); }
-    if !ctx.all_by(required_columns, |required| Ok(ctx.binary_search_by_key(&pivot_rows, required, |&(column, _)| Ok(column), "creo dimension pivot column lookup")?.is_ok()), "creo required dimension column traversal")? { return Ok(None); }
-    let mut solution = ctx.alloc_filled(variable_count, 0.0, "creo_solve_dimension_axis")?;
-    let mut dimension_solution = pivot_rows.into_iter();
-        while let Some((column, row)) = if variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES { dimension_solution.next() } else { ctx.next_charged(&mut dimension_solution, "creo dimension solution traversal")? } {
-        solution[column] = rows[row].rhs;
-    }
-    Ok(Some(solution))
-}
-
-fn solve_affine_expression_block(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    block: &CurveExpressionSolveBlock,
-    values: &BTreeMap<String, CurveExpressionValue>,
-    variable_dimensions: &[RelationDimension],
-    context: RelationEvaluationContext<'_>,
-) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
-    if variable_dimensions.len() != block.unknowns.len() {
-        return Ok(None);
-    }
-    let mut scratch = ctx.reserve_scoped(0, "creo solve matrix scratch")?;
-    let mut variable_keys = Vec::new();
-    let mut unknowns = block.unknowns.iter();
-    while let Some(unknown) = if block.unknowns.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { unknowns.next() } else { ctx.next_charged(&mut unknowns, "creo solve variable traversal")? } {
-        scratch.with_storage(|| ctx.reserve_vec(&mut variable_keys, 1, "creo affine variable keys"))?;
-        let mut key = scratch.with_storage(|| ctx.copy_retained_text(&unknown.name, "creo affine variable names"))?;
-        ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        variable_keys.push(key);
-    }
-    let mut affine_values = BTreeMap::new();
-    for (name, value) in ctx.admit_iter(values, "creo solve known value traversal")? {
-        let Some((value, dimension)) = quantity_parts_ref(value) else {
-            continue;
-        };
-        scratch.with_storage(|| ctx.insert_btree_map(
-            &mut affine_values,
-            ctx.copy_retained_text(name, "creo affine known value names")?,
-            SimultaneousAffineValue::constant(value, dimension),
-            "creo affine known value nodes",
-        ))?;
-    }
-    let mut affine_variables = variable_keys.iter().zip(variable_dimensions);
-        while let Some((variable, dimension)) = if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { affine_variables.next() } else { ctx.next_charged(&mut affine_variables, "creo affine variable traversal")? } {
-        let mut coefficients = BTreeMap::new();
-        scratch.with_storage(|| ctx.insert_btree_map(
-            &mut coefficients,
-            ctx.copy_retained_text(variable, "creo affine coefficient names")?,
-            1.0,
-            "creo affine coefficient nodes",
-        ))?;
-        scratch.with_storage(|| ctx.insert_btree_map(
-            &mut affine_values,
-            ctx.copy_retained_text(variable, "creo affine unknown value names")?,
-            SimultaneousAffineValue {
-                dimension: *dimension,
-                constant: 0.0,
-                coefficients,
-            },
-            "creo affine unknown value nodes",
-        ))?;
-    }
-    let mut rows = Vec::new();
-    let mut equations = block.equations.iter();
-    while let Some(equation) = ctx.next_charged(&mut equations, "creo solve equation traversal")? {
-        let Some(left) = scratch.with_storage(|| parse_relation_expression::<SimultaneousAffineValue>(
-            ctx,
-            &equation.left,
-            &affine_values,
-            context,
-        ))?
-        else {
-            return Ok(None);
-        };
-        let Some(right) = scratch.with_storage(|| parse_relation_expression::<SimultaneousAffineValue>(
-            ctx,
-            &equation.right,
-            &affine_values,
-            context,
-        ))?
-        else {
-            return Ok(None);
-        };
-        let Some(difference) = scratch.with_storage(|| left.combine_admitted(right, true, ctx))? else {
-            return Ok(None);
-        };
-        let mut coefficients = scratch.with_storage(|| ctx.alloc_filled(
-            variable_keys.len(),
-            0.0,
-            "creo affine equation coefficients",
-        ))?;
-        let mut affine_coefficients = coefficients.iter_mut().zip(&variable_keys);
-        while let Some((coefficient, variable)) = if variable_keys.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { affine_coefficients.next() } else { ctx.next_charged(&mut affine_coefficients, "creo affine coefficient traversal")? } {
-            *coefficient = ctx.get_btree_map(&difference.coefficients, variable, "creo affine coefficient lookup")?.copied()
-                .unwrap_or(0.0);
-        }
-        scratch.with_storage(|| ctx.reserve_vec(&mut rows, 1, "creo affine equation rows"))?;
-        rows.push(AffineEquationRow {
-            coefficients,
-            rhs: -difference.constant,
-        });
-    }
-    let Some(solution) = scratch.with_storage(|| solve_unique_affine_system(ctx, &mut rows, variable_keys.len()))? else {
-        return Ok(None);
-    };
-    let mut values = Vec::new();
-    ctx.reserve_vec(&mut values, solution.len(), "creo affine solved values")?;
-    let mut solved_values = solution.into_iter().zip(variable_dimensions);
-    while let Some((value, dimension)) = if variable_dimensions.len() <= MAX_NONLINEAR_SOLVE_VARIABLES { solved_values.next() } else { ctx.next_charged(&mut solved_values, "creo affine solved value traversal")? } {
-        let Some(value) = quantity_value(value, *dimension) else {
-            return Ok(None);
-        };
-        values.push(value);
-    }
-    Ok(Some(values))
-}
-
 /// Recognize an exact cylindrical helix program expressed by the conventional
 /// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
 pub(crate) fn expression_helix(
@@ -6950,23 +7723,46 @@ pub(crate) fn expression_helix(
     }
     let mut present = [false; 3];
     let mut assignments = record.assignments.iter();
-    while let Some(assignment) = ctx.next_charged(&mut assignments, "creo helix output scan work")? {
+    while let Some(assignment) =
+        ctx.next_charged(&mut assignments, "creo helix output scan work")?
+    {
         if let Some((name, _)) = assignment.parameter_target() {
             for (slot, output) in present.iter_mut().zip(["r", "theta", "z"]) {
-                if !*slot { *slot = name.eq_ignore_ascii_case(output); }
+                if !*slot {
+                    *slot = name.eq_ignore_ascii_case(output);
+                }
             }
         }
-        if present == [true; 3] { break; }
+        if present == [true; 3] {
+            break;
+        }
     }
-    if present != [true; 3] { return Ok(None); }
+    if present != [true; 3] {
+        return Ok(None);
+    }
     let mut scratch = ctx.reserve_scoped(0, "creo helix affine scratch")?;
     let values = scratch.with_storage(|| evaluate_affine_program(ctx, record))?;
-    let Some(radius) = ctx.get_btree_map(&values, "r", "creo helix radius lookup")? else { return Ok(None); };
-    let Some(theta) = ctx.get_btree_map(&values, "theta", "creo helix angle lookup")? else { return Ok(None); };
-    let Some(z) = ctx.get_btree_map(&values, "z", "creo helix height lookup")? else { return Ok(None); };
-    if radius.linear != 0.0 { return Ok(None); }
+    let Some(radius) = ctx.get_btree_map(&values, "r", "creo helix radius lookup")? else {
+        return Ok(None);
+    };
+    let Some(theta) = ctx.get_btree_map(&values, "theta", "creo helix angle lookup")? else {
+        return Ok(None);
+    };
+    let Some(z) = ctx.get_btree_map(&values, "z", "creo helix height lookup")? else {
+        return Ok(None);
+    };
+    if radius.linear != 0.0 {
+        return Ok(None);
+    }
     let angular_travel = theta.linear;
-    Ok(CurveExpressionHelix::new(radius.constant, z.linear, z.constant, angular_travel.abs() / 360.0, theta.constant.to_radians(), angular_travel < 0.0))
+    Ok(CurveExpressionHelix::new(
+        radius.constant,
+        z.linear,
+        z.constant,
+        angular_travel.abs() / 360.0,
+        theta.constant.to_radians(),
+        angular_travel < 0.0,
+    ))
 }
 
 /// Decode positional `crv_array` rows whose terminal suffix has one
@@ -7062,7 +7858,8 @@ pub(crate) fn depdb_cross_section_rows(
     };
     let mut rows = Vec::new();
     let mut row_storage = ctx.reserve_scoped(0, "creo cross-section curve rows")?;
-    row_storage.with_storage(|| ctx.reserve_vec(&mut rows, capacity, "creo cross-section curve rows"))?;
+    row_storage
+        .with_storage(|| ctx.reserve_vec(&mut rows, capacity, "creo cross-section curve rows"))?;
     let mut boundaries = Vec::new();
     for (marker, length) in [
         (b"\xe1\xe3".as_slice(), 2),
@@ -7073,7 +7870,9 @@ pub(crate) fn depdb_cross_section_rows(
         while let Some(offset) =
             ctx.find_bytes_from(payload, marker, search, "find Creo curve marker")?
         {
-            scratch.with_storage(|| ctx.reserve_vec(&mut boundaries, 1, "creo cross-section row boundaries"))?;
+            scratch.with_storage(|| {
+                ctx.reserve_vec(&mut boundaries, 1, "creo cross-section row boundaries")
+            })?;
             boundaries.push((offset, length));
             search = offset + marker.len();
         }
@@ -7086,13 +7885,20 @@ pub(crate) fn depdb_cross_section_rows(
     )?;
     ctx.dedup_vec(&mut boundaries, "creo curve boundary deduplication")?;
     while rows.len() < positional_count {
-        let first_candidate = ctx.partition_point(&boundaries, |(end, _)| Ok(*end < cursor), "creo curve boundary search")?;
+        let first_candidate = ctx.partition_point(
+            &boundaries,
+            |(end, _)| Ok(*end < cursor),
+            "creo curve boundary search",
+        )?;
         let mut selected = None;
         let mut candidates = boundaries[first_candidate..].iter().copied();
-        while let Some((end, length)) = ctx.next_charged(&mut candidates, "creo cross-section boundary candidate traversal")? {
-            if let Some(row) =
-                row_storage.with_storage(|| parse_depdb_curve_segment(ctx, &payload[cursor..end], cursor, &cache))?
-            {
+        while let Some((end, length)) = ctx.next_charged(
+            &mut candidates,
+            "creo cross-section boundary candidate traversal",
+        )? {
+            if let Some(row) = row_storage.with_storage(|| {
+                parse_depdb_curve_segment(ctx, &payload[cursor..end], cursor, &cache)
+            })? {
                 selected = Some((row, end, length));
                 break;
             }
@@ -7234,11 +8040,23 @@ fn row_terminator(
     start: usize,
     end: usize,
 ) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
-    let Some(bytes) = payload.get(start..end) else { return Ok(None); };
-    ctx.find_map(bytes.windows(2).enumerate(), |(offset, prefix)| {
-        let length = if prefix == b"\xe1\xe3" { 2 } else if bytes.get(offset..offset + 5) == Some(b"\xe1\xf5\x05\xf6\xe3") { 5 } else { return Ok(None); };
-        Ok(Some((start + offset, length)))
-    }, "find Creo curve row terminator")
+    let Some(bytes) = payload.get(start..end) else {
+        return Ok(None);
+    };
+    ctx.find_map(
+        bytes.windows(2).enumerate(),
+        |(offset, prefix)| {
+            let length = if prefix == b"\xe1\xe3" {
+                2
+            } else if bytes.get(offset..offset + 5) == Some(b"\xe1\xf5\x05\xf6\xe3") {
+                5
+            } else {
+                return Ok(None);
+            };
+            Ok(Some((start + offset, length)))
+        },
+        "find Creo curve row terminator",
+    )
 }
 
 const CURVE_NAMESPACE_BOUNDARIES: [&[u8]; 4] = [
@@ -7257,13 +8075,22 @@ fn framed_rows_with_face_ids(
     let mut result = Vec::new();
     let mut arrays = Vec::new();
     for array in ctx.find_bytes_iter(payload, b"crv_array\0", "find Creo curve marker")? {
-        scratch.with_storage(|| ctx.push_vec(&mut arrays, array + b"crv_array\0".len(), "creo curve namespace starts"))?;
+        scratch.with_storage(|| {
+            ctx.push_vec(
+                &mut arrays,
+                array + b"crv_array\0".len(),
+                "creo curve namespace starts",
+            )
+        })?;
     }
     if arrays.is_empty() {
         scratch.with_storage(|| ctx.reserve_vec(&mut arrays, 1, "creo curve namespace starts"))?;
         arrays.push(0);
     }
-    for (index, &namespace_start) in ctx.admit_iter(&arrays, "creo curve namespace traversal")?.enumerate() {
+    for (index, &namespace_start) in ctx
+        .admit_iter(&arrays, "creo curve namespace traversal")?
+        .enumerate()
+    {
         let namespace_end = match arrays.get(index + 1) {
             Some(next) => next - b"crv_array\0".len(),
             None => {
@@ -7297,33 +8124,44 @@ fn framed_rows_with_face_ids(
         let mut segments = Vec::new();
         while let Some((terminator, length)) = row_terminator(ctx, payload, cursor, namespace_end)?
         {
-            segment_storage.with_storage(|| ctx.reserve_vec(&mut segments, 1, "creo framed curve segments"))?;
+            segment_storage
+                .with_storage(|| ctx.reserve_vec(&mut segments, 1, "creo framed curve segments"))?;
             segments.push((cursor, terminator, boundary_anchored));
             cursor = terminator + length;
             boundary_anchored = true;
         }
         if cursor < namespace_end {
-            segment_storage.with_storage(|| ctx.reserve_vec(&mut segments, 1, "creo framed curve segments"))?;
+            segment_storage
+                .with_storage(|| ctx.reserve_vec(&mut segments, 1, "creo framed curve segments"))?;
             segments.push((cursor, namespace_end, boundary_anchored));
         }
         let known_face_ids = if let Some(face_ids) = face_ids {
             let mut known = BTreeSet::new();
             for id in ctx.admit_iter(face_ids, "creo known curve face traversal")? {
-                segment_storage.with_storage(|| ctx.insert_btree_set(&mut known, *id, "creo known curve face ID nodes"))?;
+                segment_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut known, *id, "creo known curve face ID nodes")
+                })?;
             }
-            for &(start, end, _) in ctx.admit_iter(&segments, "creo curve segment evidence traversal")? {
-                let Some(suffix) = unique_topology_suffix_in_segment(ctx, &payload[start..end])? else {
+            for &(start, end, _) in
+                ctx.admit_iter(&segments, "creo curve segment evidence traversal")?
+            {
+                let Some(suffix) = unique_topology_suffix_in_segment(ctx, &payload[start..end])?
+                else {
                     continue;
                 };
                 for id in suffix.faces.into_iter().flatten().map(NonZeroU32::get) {
-                    segment_storage.with_storage(|| ctx.insert_btree_set(&mut known, id, "creo known curve face ID nodes"))?;
+                    segment_storage.with_storage(|| {
+                        ctx.insert_btree_set(&mut known, id, "creo known curve face ID nodes")
+                    })?;
                 }
             }
             Some(known)
         } else {
             None
         };
-        for &(start, end, boundary_anchored) in ctx.admit_iter(&segments, "creo curve segment traversal")? {
+        for &(start, end, boundary_anchored) in
+            ctx.admit_iter(&segments, "creo curve segment traversal")?
+        {
             if let Some(row) = framed_segment_with_face_ids(
                 ctx,
                 payload,
@@ -7370,7 +8208,8 @@ fn framed_segment_with_face_ids(
     let mut prefixes = Vec::new();
     for row_start in ctx.admit_iter(0..segment.len(), "creo framed curve prefix scan")? {
         if let Some(prefix) = topology_prefix_fields(segment, row_start) {
-            scratch.with_storage(|| ctx.reserve_vec(&mut prefixes, 1, "creo framed curve prefixes"))?;
+            scratch
+                .with_storage(|| ctx.reserve_vec(&mut prefixes, 1, "creo framed curve prefixes"))?;
             prefixes.push((row_start, prefix.end));
         }
     }
@@ -7381,17 +8220,23 @@ fn framed_segment_with_face_ids(
         "creo framed curve prefixes sort",
     )?;
     let mut closes = segment.iter().enumerate().rev();
-    while let Some((close, &byte)) = ctx.next_charged(&mut closes, "creo framed curve close scan")? {
-        if byte != psb::token::COMPOUND_CLOSE { continue; }
+    while let Some((close, &byte)) =
+        ctx.next_charged(&mut closes, "creo framed curve close scan")?
+    {
+        if byte != psb::token::COMPOUND_CLOSE {
+            continue;
+        }
         let row_end = close + 1;
         if !complete_curve_row_linkage(ctx, &segment[row_end..])? {
             continue;
         }
         let Some(candidate) = topology_suffix_with_face_ids(
-            ctx, &segment[..row_end],
+            ctx,
+            &segment[..row_end],
             materialized_face_ids,
             known_face_ids,
-        )? else {
+        )?
+        else {
             continue;
         };
         let suffix_start = candidate.start;
@@ -7409,7 +8254,11 @@ fn framed_segment_with_face_ids(
                 reference_geometry,
             }));
         }
-        let eligible = ctx.partition_point(&prefixes, |(_, prefix_end)| Ok(*prefix_end <= suffix_start), "creo eligible curve prefix search")?;
+        let eligible = ctx.partition_point(
+            &prefixes,
+            |(_, prefix_end)| Ok(*prefix_end <= suffix_start),
+            "creo eligible curve prefix search",
+        )?;
         if eligible == 1 {
             return Ok(Some(FramedRow {
                 namespace_start,
@@ -7434,7 +8283,10 @@ fn generic_compact_at(bytes: &[u8], offset: usize) -> Option<(u32, usize)> {
 /// its row terminator. The linkage has an optional entity link, an optional
 /// counted link list, and up to four terminal compact links. The final row may
 /// append the enclosing array close before the next namespace boundary.
-fn complete_curve_row_linkage(ctx: &cadmpeg_core::decode::DecodeContext<'_>, bytes: &[u8]) -> Result<bool, cadmpeg_core::CodecError> {
+fn complete_curve_row_linkage(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<bool, cadmpeg_core::CodecError> {
     let bytes = bytes
         .strip_suffix(&[0xe1, 0xf5, 0x05, 0xf6, 0xe0, 0x00])
         .or_else(|| bytes.strip_suffix(&[0xe1, 0xe0, 0x00]))
@@ -7458,7 +8310,10 @@ fn complete_curve_row_linkage(ctx: &cadmpeg_core::decode::DecodeContext<'_>, byt
         };
         cursor = next;
         let mut links = 0..count;
-        while ctx.next_charged(&mut links, "creo counted curve row linkage")?.is_some() {
+        while ctx
+            .next_charged(&mut links, "creo counted curve row linkage")?
+            .is_some()
+        {
             let Some((_, next)) = generic_compact_at(bytes, cursor) else {
                 return Ok(false);
             };
@@ -7467,7 +8322,9 @@ fn complete_curve_row_linkage(ctx: &cadmpeg_core::decode::DecodeContext<'_>, byt
     }
     let mut terminal_count = 0;
     while cursor < bytes.len() {
-        if terminal_count == 4 { return Ok(false); }
+        if terminal_count == 4 {
+            return Ok(false);
+        }
         let Some((_, next)) = generic_compact_at(bytes, cursor) else {
             return Ok(false);
         };
@@ -7497,21 +8354,74 @@ fn curve_scalar_lane(
     let mut cursor = 0;
     while cursor < body.len() {
         ctx.next_charged(&mut body[cursor..].iter(), "creo curve scalar dispatch")?;
-        let reference = if body[cursor] == psb::token::ENTITY_REF { reference_id(body, cursor + 1).ok() } else { None };
-        let zero = body[cursor] == 0x18 && cursor + 1 == body.len() && matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08) && scalars.len() < 8;
-        let decoded = if reference.is_some() { None } else if zero { Some((0.0, cursor + 1)) } else if matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08) { scalar::decode_in_pcurve_lane(body, cursor, cache) } else { scalar::decode_in_row_lane(body, cursor, cache) };
-        if reference.is_none() && decoded.is_none() { cursor += 1; continue; }
+        let reference = if body[cursor] == psb::token::ENTITY_REF {
+            reference_id(body, cursor + 1).ok()
+        } else {
+            None
+        };
+        let zero = body[cursor] == 0x18
+            && cursor + 1 == body.len()
+            && matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08)
+            && scalars.len() < 8;
+        let decoded = if reference.is_some() {
+            None
+        } else if zero {
+            Some((0.0, cursor + 1))
+        } else if matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
+            scalar::decode_in_pcurve_lane(body, cursor, cache)
+        } else {
+            scalar::decode_in_row_lane(body, cursor, cache)
+        };
+        if reference.is_none() && decoded.is_none() {
+            cursor += 1;
+            continue;
+        }
         if opaque_start < cursor {
-            let raw = ctx.copy_retained(&body[opaque_start..cursor], "creo curve opaque raw span")?;
-            ctx.push_vec(&mut opaque_spans, CurveParameterOpaqueSpan { raw, offset: opaque_start }, "creo curve opaque spans")?;
+            let raw =
+                ctx.copy_retained(&body[opaque_start..cursor], "creo curve opaque raw span")?;
+            ctx.push_vec(
+                &mut opaque_spans,
+                CurveParameterOpaqueSpan {
+                    raw,
+                    offset: opaque_start,
+                },
+                "creo curve opaque spans",
+            )?;
         }
         let next = if let Some((entity_id, next)) = reference {
-            ctx.push_vec(&mut references, CurveParameterReference { entity_id, offset: cursor, length: next - cursor }, "creo curve parameter references")?;
+            ctx.push_vec(
+                &mut references,
+                CurveParameterReference {
+                    entity_id,
+                    offset: cursor,
+                    length: next - cursor,
+                },
+                "creo curve parameter references",
+            )?;
             next
         } else {
-            let Some((value, next)) = decoded else { return Err(cadmpeg_core::CodecError::malformed("curve scalar dispatch has no token")); };
-            let raw = ctx.copy_retained(&body[cursor..next], if zero { "creo curve zero raw token" } else { "creo curve scalar raw token" })?;
-            ctx.push_vec(&mut scalars, CurveParameterScalar { value, raw, offset: cursor }, "creo curve parameter scalars")?;
+            let Some((value, next)) = decoded else {
+                return Err(cadmpeg_core::CodecError::malformed(
+                    "curve scalar dispatch has no token",
+                ));
+            };
+            let raw = ctx.copy_retained(
+                &body[cursor..next],
+                if zero {
+                    "creo curve zero raw token"
+                } else {
+                    "creo curve scalar raw token"
+                },
+            )?;
+            ctx.push_vec(
+                &mut scalars,
+                CurveParameterScalar {
+                    value,
+                    raw,
+                    offset: cursor,
+                },
+                "creo curve parameter scalars",
+            )?;
             next
         };
         cursor = next;
@@ -7519,9 +8429,20 @@ fn curve_scalar_lane(
     }
     if opaque_start < body.len() {
         let raw = ctx.copy_retained(&body[opaque_start..], "creo curve opaque raw span")?;
-        ctx.push_vec(&mut opaque_spans, CurveParameterOpaqueSpan { raw, offset: opaque_start }, "creo curve opaque spans")?;
+        ctx.push_vec(
+            &mut opaque_spans,
+            CurveParameterOpaqueSpan {
+                raw,
+                offset: opaque_start,
+            },
+            "creo curve opaque spans",
+        )?;
     }
-    Ok(CurveScalarLane { scalar_tokens: scalars, references, opaque_spans })
+    Ok(CurveScalarLane {
+        scalar_tokens: scalars,
+        references,
+        opaque_spans,
+    })
 }
 
 /// Decode analytic bodies from positional curve rows with one valid terminal
@@ -7636,11 +8557,25 @@ pub(crate) fn pcurve_endpoints(
     topology: &[CurveTopologyRow],
 ) -> Result<Vec<PcurveEndpoints>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo pcurve topology scratch")?;
-    let topology_index = scratch.with_storage(|| unique_curve_index(ctx, topology, |row| row.id, "creo pcurve topology index"))?;
+    let topology_index = scratch.with_storage(|| {
+        unique_curve_index(ctx, topology, |row| row.id, "creo pcurve topology index")
+    })?;
     let mut result = Vec::new();
-    let parameter_index = scratch.with_storage(|| unique_curve_index(ctx, parameters, |record| record.curve_id, "creo unique-row count nodes"))?;
+    let parameter_index = scratch.with_storage(|| {
+        unique_curve_index(
+            ctx,
+            parameters,
+            |record| record.curve_id,
+            "creo unique-row count nodes",
+        )
+    })?;
     for record in ctx.admit_iter(parameters, "creo unique parameter traversal")? {
-        if !parameter_index.get(&record.curve_id).is_some_and(Option::is_some) { continue; }
+        if !parameter_index
+            .get(&record.curve_id)
+            .is_some_and(Option::is_some)
+        {
+            continue;
+        }
         if !matches!(record.type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
             continue;
         }
@@ -7688,14 +8623,25 @@ fn decode_two_chart_scalar(
 }
 
 fn complete_two_chart_samples(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>, body: &[u8], start: usize, count: Option<u32>, cache: &scalar::ScalarCache,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    body: &[u8],
+    start: usize,
+    count: Option<u32>,
+    cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<[[f64; 2]; 2]>>, cadmpeg_core::CodecError> {
-    let Some(remaining) = body.len().checked_sub(start) else { return Ok(None); };
+    let Some(remaining) = body.len().checked_sub(start) else {
+        return Ok(None);
+    };
     let limit = match count {
-        Some(count) => match bounded_len(u64::from(count), 4, remaining) { Some(count) => count, None => return Ok(None) },
+        Some(count) => match bounded_len(u64::from(count), 4, remaining) {
+            Some(count) => count,
+            None => return Ok(None),
+        },
         None => remaining / 4,
     };
-    if limit < 2 { return Ok(None); }
+    if limit < 2 {
+        return Ok(None);
+    }
     let mut cursor = start;
     let mut samples = Vec::new();
     let mut steps = 0..limit;
@@ -7703,14 +8649,22 @@ fn complete_two_chart_samples(
         ctx.next_charged(&mut steps, "creo two-chart sample traversal")?;
         let mut sample = [[0.0; 2]; 2];
         for (slot, value) in sample.iter_mut().flatten().enumerate() {
-            let Some((decoded, next)) = decode_two_chart_scalar(body, cursor, slot % 2 == 0, cache) else { return Ok(None); };
-            if next <= cursor || !decoded.is_finite() { return Ok(None); }
+            let Some((decoded, next)) = decode_two_chart_scalar(body, cursor, slot % 2 == 0, cache)
+            else {
+                return Ok(None);
+            };
+            if next <= cursor || !decoded.is_finite() {
+                return Ok(None);
+            }
             *value = decoded;
             cursor = next;
         }
         ctx.push_vec(&mut samples, sample, "creo two-chart sample points")?;
     }
-    Ok((cursor == body.len() && samples.len() >= 2 && count.is_none_or(|count| samples.len() == index_from_u32(count))).then_some(samples))
+    Ok((cursor == body.len()
+        && samples.len() >= 2
+        && count.is_none_or(|count| samples.len() == index_from_u32(count)))
+    .then_some(samples))
 }
 
 /// Decode byte-complete two-chart sample bodies from one curve namespace.
@@ -7730,46 +8684,121 @@ pub(crate) fn two_chart_pcurve_samples(
     let mut candidates = Vec::new();
     for row in ctx.admit_iter(&framed, "creo two-chart canonical row traversal")? {
         let bytes = &payload[row.start..row.end];
-        let Some(prefix) = topology_prefix(bytes, 0, row.suffix_start) else { continue; };
+        let Some(prefix) = topology_prefix(bytes, 0, row.suffix_start) else {
+            continue;
+        };
         let body = &bytes[prefix.end..row.suffix_start];
-        if body.first() != Some(&0xfc) || body.get(1) == Some(&0x05) { continue; }
+        if body.first() != Some(&0xfc) || body.get(1) == Some(&0x05) {
+            continue;
+        }
         let (count, start) = compact_int(body, 1);
-        if start <= 1 { continue; }
-        let (samples, storage) = ctx.with_scoped_storage("creo two-chart sample points", || complete_two_chart_samples(ctx, body, start, Some(count), &cache))?;
-        let Some(samples) = samples else { continue; };
+        if start <= 1 {
+            continue;
+        }
+        let (samples, storage) = ctx.with_scoped_storage("creo two-chart sample points", || {
+            complete_two_chart_samples(ctx, body, start, Some(count), &cache)
+        })?;
+        let Some(samples) = samples else {
+            continue;
+        };
         if prefix.feature_id != 0 {
             scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
-                let counts = ctx.entry_hash_map(&mut canonical_counts, (row.namespace_start, prefix.feature_id, prefix.type_byte), "creo two-chart canonical group nodes")?.or_default();
+                let counts = ctx
+                    .entry_hash_map(
+                        &mut canonical_counts,
+                        (row.namespace_start, prefix.feature_id, prefix.type_byte),
+                        "creo two-chart canonical group nodes",
+                    )?
+                    .or_default();
                 ctx.insert_hash_set(counts, count, "creo two-chart canonical count nodes")?;
                 Ok(())
             })?;
         }
-        scratch.with_storage(|| ctx.push_vec(&mut candidates, (TwoChartPcurveSamples { curve_id: prefix.id, faces: [row.suffix[0], row.suffix[1]], samples, offset: row.start }, storage), "creo two-chart candidate rows"))?;
+        scratch.with_storage(|| {
+            ctx.push_vec(
+                &mut candidates,
+                (
+                    TwoChartPcurveSamples {
+                        curve_id: prefix.id,
+                        faces: [row.suffix[0], row.suffix[1]],
+                        samples,
+                        offset: row.start,
+                    },
+                    storage,
+                ),
+                "creo two-chart candidate rows",
+            )
+        })?;
     }
     for row in ctx.admit_iter(&framed, "creo two-chart replay row traversal")? {
         let bytes = &payload[row.start..row.end];
-        let Some(prefix) = topology_prefix(bytes, 0, row.suffix_start) else { continue; };
+        let Some(prefix) = topology_prefix(bytes, 0, row.suffix_start) else {
+            continue;
+        };
         let body = &bytes[prefix.end..row.suffix_start];
-        if body.first() == Some(&0xfc) { continue; }
-        let Some(counts) = canonical_counts.get(&(row.namespace_start, prefix.feature_id, prefix.type_byte)) else { continue; };
-        let (samples, storage) = ctx.with_scoped_storage("creo two-chart sample points", || complete_two_chart_samples(ctx, body, 0, None, &cache))?;
-        let Some(samples) = samples else { continue; };
-        let Ok(count) = u32::try_from(samples.len()) else { continue; };
-        if !counts.contains(&count) { continue; }
-        scratch.with_storage(|| ctx.push_vec(&mut candidates, (TwoChartPcurveSamples { curve_id: prefix.id, faces: [row.suffix[0], row.suffix[1]], samples, offset: row.start }, storage), "creo two-chart candidate rows"))?;
+        if body.first() == Some(&0xfc) {
+            continue;
+        }
+        let Some(counts) =
+            canonical_counts.get(&(row.namespace_start, prefix.feature_id, prefix.type_byte))
+        else {
+            continue;
+        };
+        let (samples, storage) = ctx.with_scoped_storage("creo two-chart sample points", || {
+            complete_two_chart_samples(ctx, body, 0, None, &cache)
+        })?;
+        let Some(samples) = samples else {
+            continue;
+        };
+        let Ok(count) = u32::try_from(samples.len()) else {
+            continue;
+        };
+        if !counts.contains(&count) {
+            continue;
+        }
+        scratch.with_storage(|| {
+            ctx.push_vec(
+                &mut candidates,
+                (
+                    TwoChartPcurveSamples {
+                        curve_id: prefix.id,
+                        faces: [row.suffix[0], row.suffix[1]],
+                        samples,
+                        offset: row.start,
+                    },
+                    storage,
+                ),
+                "creo two-chart candidate rows",
+            )
+        })?;
     }
     let mut counts = HashMap::new();
     for (record, _) in ctx.admit_iter(&candidates, "creo two-chart result count traversal")? {
-        let count = scratch.with_storage(|| ctx.entry_hash_map(&mut counts, record.curve_id, "creo two-chart result count nodes"))?.or_insert(0usize);
+        let count = scratch
+            .with_storage(|| {
+                ctx.entry_hash_map(
+                    &mut counts,
+                    record.curve_id,
+                    "creo two-chart result count nodes",
+                )
+            })?
+            .or_insert(0usize);
         *count += 1;
     }
     let mut result = Vec::new();
     for (record, storage) in ctx.admit_iter(candidates, "creo two-chart selected row traversal")? {
-        if counts.get(&record.curve_id) != Some(&1) { continue; }
+        if counts.get(&record.curve_id) != Some(&1) {
+            continue;
+        }
         storage.commit()?;
         ctx.push_vec(&mut result, record, "creo two-chart sample rows")?;
     }
-    ctx.stable_sort_by(result.as_mut_slice(), |value| &value.offset, Ord::cmp, "creo two chart pcurve samples result ordering")?;
+    ctx.stable_sort_by(
+        result.as_mut_slice(),
+        |value| &value.offset,
+        Ord::cmp,
+        "creo two chart pcurve samples result ordering",
+    )?;
     Ok(result)
 }
 
@@ -7821,11 +8850,25 @@ pub(crate) fn fc02_short_pcurve_endpoints(
     topology: &[CurveTopologyRow],
 ) -> Result<Vec<Fc02ShortPcurveEndpoints>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo pcurve topology scratch")?;
-    let topology_index = scratch.with_storage(|| unique_curve_index(ctx, topology, |row| row.id, "creo pcurve topology index"))?;
+    let topology_index = scratch.with_storage(|| {
+        unique_curve_index(ctx, topology, |row| row.id, "creo pcurve topology index")
+    })?;
     let mut result = Vec::new();
-    let parameter_index = scratch.with_storage(|| unique_curve_index(ctx, parameters, |record| record.curve_id, "creo unique-row count nodes"))?;
+    let parameter_index = scratch.with_storage(|| {
+        unique_curve_index(
+            ctx,
+            parameters,
+            |record| record.curve_id,
+            "creo unique-row count nodes",
+        )
+    })?;
     for record in ctx.admit_iter(parameters, "creo unique parameter traversal")? {
-        if !parameter_index.get(&record.curve_id).is_some_and(Option::is_some) { continue; }
+        if !parameter_index
+            .get(&record.curve_id)
+            .is_some_and(Option::is_some)
+        {
+            continue;
+        }
         let Some(face_0_endpoints) = complete_fc02_short_pcurve_values(record) else {
             continue;
         };
@@ -7859,9 +8902,21 @@ pub(crate) fn fc_coordinates(
 ) -> Result<Vec<FcCurveCoordinates>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo curve parameter index scratch")?;
     let mut result = Vec::new();
-    let parameter_index = scratch.with_storage(|| unique_curve_index(ctx, parameters, |record| record.curve_id, "creo unique-row count nodes"))?;
+    let parameter_index = scratch.with_storage(|| {
+        unique_curve_index(
+            ctx,
+            parameters,
+            |record| record.curve_id,
+            "creo unique-row count nodes",
+        )
+    })?;
     for record in ctx.admit_iter(parameters, "creo unique parameter traversal")? {
-        if !parameter_index.get(&record.curve_id).is_some_and(Option::is_some) { continue; }
+        if !parameter_index
+            .get(&record.curve_id)
+            .is_some_and(Option::is_some)
+        {
+            continue;
+        }
         let Some((&0xfc, tail)) = record.body.split_first() else {
             continue;
         };
@@ -7875,10 +8930,14 @@ pub(crate) fn fc_coordinates(
             ctx.next_charged(&mut lane[cursor..].iter(), "creo fc coordinate scan")?;
             if matches!(lane[cursor], 0x46 | 0x2d) {
                 if let Some((value, next)) = scalar::decode(lane, cursor) {
-                    token_storage.with_storage(|| ctx.reserve_vec(&mut tokens, 1, "creo fc coordinate tokens"))?;
+                    token_storage.with_storage(|| {
+                        ctx.reserve_vec(&mut tokens, 1, "creo fc coordinate tokens")
+                    })?;
                     tokens.push(FcCurveCoordinateToken {
                         value_mm: value,
-                        raw: token_storage.with_storage(|| ctx.copy_retained(&lane[cursor..next], "creo fc coordinate token bytes"))?,
+                        raw: token_storage.with_storage(|| {
+                            ctx.copy_retained(&lane[cursor..next], "creo fc coordinate token bytes")
+                        })?,
                         offset: cursor + 2,
                     });
                     cursor = next;
@@ -7914,7 +8973,9 @@ pub(crate) fn fc_coordinates(
             }
             let mut values_mm = Vec::new();
             ctx.reserve_vec(&mut values_mm, tokens.len(), "creo fc coordinate values")?;
-            for token in ctx.admit_iter(&tokens, "creo fc coordinate value traversal")? { values_mm.push(token.value_mm); }
+            for token in ctx.admit_iter(&tokens, "creo fc coordinate value traversal")? {
+                values_mm.push(token.value_mm);
+            }
             let body = ctx.copy_retained(&record.body, "creo fc coordinate body")?;
             ctx.reserve_vec(&mut result, 1, "creo fc coordinate rows")?;
             result.push(FcCurveCoordinates {
@@ -7968,9 +9029,21 @@ pub(crate) fn fc05_circles(
 ) -> Result<Vec<Fc05Circle>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo fc05 parameter index scratch")?;
     let mut circles = Vec::new();
-    let parameter_index = scratch.with_storage(|| unique_curve_index(ctx, parameters, |record| record.curve_id, "creo unique-row count nodes"))?;
+    let parameter_index = scratch.with_storage(|| {
+        unique_curve_index(
+            ctx,
+            parameters,
+            |record| record.curve_id,
+            "creo unique-row count nodes",
+        )
+    })?;
     for record in ctx.admit_iter(parameters, "creo unique parameter traversal")? {
-        if !parameter_index.get(&record.curve_id).is_some_and(Option::is_some) { continue; }
+        if !parameter_index
+            .get(&record.curve_id)
+            .is_some_and(Option::is_some)
+        {
+            continue;
+        }
         if record.body.get(..2) != Some(&[0xfc, 0x05]) {
             continue;
         }
@@ -8005,7 +9078,8 @@ pub(crate) fn fc05_circles(
             let Some((ordinate, next)) = fc05_scalar(&record.body, next) else {
                 break;
             };
-            point_storage.with_storage(|| ctx.reserve_vec(&mut points, 1, "creo fc05 point rows"))?;
+            point_storage
+                .with_storage(|| ctx.reserve_vec(&mut points, 1, "creo fc05 point rows"))?;
             points.push((x, z, parameter, ordinate));
             cursor = next;
         }
@@ -8016,7 +9090,11 @@ pub(crate) fn fc05_circles(
             continue;
         }
         let ordinate = points[0].3;
-        if ctx.any_by(&points, |point| Ok((point.3 - ordinate).abs() > EPS_ORDINATE_AGREEMENT), "creo fc05 ordinate agreement scan")? {
+        if ctx.any_by(
+            &points,
+            |point| Ok((point.3 - ordinate).abs() > EPS_ORDINATE_AGREEMENT),
+            "creo fc05 ordinate agreement scan",
+        )? {
             continue;
         }
         let first = points[0];
@@ -8053,7 +9131,8 @@ pub(crate) fn fc05_circles(
         if ![center_x, center_z, radius].into_iter().all(f64::is_finite) || radius <= 0.0 {
             continue;
         }
-        let max_residual = ctx.admit_iter(&points, "creo fc05 residual traversal")?
+        let max_residual = ctx
+            .admit_iter(&points, "creo fc05 residual traversal")?
             .map(|point| ((point.0 - center_x).hypot(point.1 - center_z) - radius).abs())
             .fold(0.0, f64::max);
         if max_residual > EPS_CIRCLE_RESIDUAL * radius {
@@ -8071,14 +9150,18 @@ pub(crate) fn fc05_circles(
                 })
         };
         let sign_matches = |sign: f64| {
-            ctx.all_by(&points, |point| {
-                let (Some(parameter), Some(parameter_0)) = (point.2, parameter_0) else {
-                    return Ok(false);
-                };
-                let angle = (point.1 - center_z).atan2(point.0 - center_x);
-                let expected = angle_0 + sign * (parameter - parameter_0);
-                Ok(wrapped_distance(angle, expected) <= EPS_ANGLE_AGREEMENT)
-            }, "creo fc05 angle parameter scan")
+            ctx.all_by(
+                &points,
+                |point| {
+                    let (Some(parameter), Some(parameter_0)) = (point.2, parameter_0) else {
+                        return Ok(false);
+                    };
+                    let angle = (point.1 - center_z).atan2(point.0 - center_x);
+                    let expected = angle_0 + sign * (parameter - parameter_0);
+                    Ok(wrapped_distance(angle, expected) <= EPS_ANGLE_AGREEMENT)
+                },
+                "creo fc05 angle parameter scan",
+            )
         };
         let positive = sign_matches(1.0)?;
         let negative = sign_matches(-1.0)?;
@@ -8136,11 +9219,23 @@ pub(crate) fn fc05_cylinder_cap_pairs(
     surfaces: &crate::surface::SurfaceRows,
 ) -> Result<Vec<Fc05CylinderCapPair>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo fc05 cap group scratch")?;
-    let faces = scratch.with_storage(|| unique_curve_index(ctx, topology, |row| row.id, "creo fc05 topology-face nodes"))?;
-    let circle_counts = scratch.with_storage(|| unique_curve_index(ctx, circles, |circle| circle.curve_id, "creo fc05 circle-count nodes"))?;
+    let faces = scratch.with_storage(|| {
+        unique_curve_index(ctx, topology, |row| row.id, "creo fc05 topology-face nodes")
+    })?;
+    let circle_counts = scratch.with_storage(|| {
+        unique_curve_index(
+            ctx,
+            circles,
+            |circle| circle.curve_id,
+            "creo fc05 circle-count nodes",
+        )
+    })?;
     let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32, f64)>>::new();
     for circle in ctx.admit_iter(circles, "creo fc05 circle grouping traversal")? {
-        if !circle_counts.get(&circle.curve_id).is_some_and(Option::is_some) {
+        if !circle_counts
+            .get(&circle.curve_id)
+            .is_some_and(Option::is_some)
+        {
             continue;
         }
         let Some(Some(topology)) = faces.get(&circle.curve_id) else {
@@ -8172,7 +9267,10 @@ pub(crate) fn fc05_cylinder_cap_pairs(
         ) else {
             continue;
         };
-        let group = scratch.with_storage(|| ctx.entry_btree_map(&mut groups, cylinder, "creo fc05 cylinder group nodes"))?
+        let group = scratch
+            .with_storage(|| {
+                ctx.entry_btree_map(&mut groups, cylinder, "creo fc05 cylinder group nodes")
+            })?
             .or_default();
         scratch.with_storage(|| ctx.reserve_vec(group, 1, "creo fc05 cylinder group members"))?;
         group.push((circle, plane, ordinate));
@@ -8195,29 +9293,43 @@ pub(crate) fn fc05_cylinder_cap_pairs(
             continue;
         };
         let tolerance = EPS_RADIUS_AGREEMENT * first.radius_mm;
-        if !ctx.all_by(&group, |(circle, _, _)| {
-            let Fc05AngleParameterRelation::Consistent {
-                sense,
-                reference_direction_row_frame: direction,
-            } = circle.angle_parameter
-            else {
-                return Ok(false);
-            };
-            Ok((circle.radius_mm - first.radius_mm).abs() <= tolerance
-                && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance
-                && (circle.center_row_frame[1] - first.center_row_frame[1]).abs() <= tolerance
-                && sense == parameter_sense
-                && (direction[0] - reference_direction_row_frame[0]).abs() <= EPS_RADIUS_AGREEMENT
-                && (direction[1] - reference_direction_row_frame[1]).abs() <= EPS_RADIUS_AGREEMENT)
-        }, "creo fc05 cap agreement scan")? {
+        if !ctx.all_by(
+            &group,
+            |(circle, _, _)| {
+                let Fc05AngleParameterRelation::Consistent {
+                    sense,
+                    reference_direction_row_frame: direction,
+                } = circle.angle_parameter
+                else {
+                    return Ok(false);
+                };
+                Ok((circle.radius_mm - first.radius_mm).abs() <= tolerance
+                    && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance
+                    && (circle.center_row_frame[1] - first.center_row_frame[1]).abs() <= tolerance
+                    && sense == parameter_sense
+                    && (direction[0] - reference_direction_row_frame[0]).abs()
+                        <= EPS_RADIUS_AGREEMENT
+                    && (direction[1] - reference_direction_row_frame[1]).abs()
+                        <= EPS_RADIUS_AGREEMENT)
+            },
+            "creo fc05 cap agreement scan",
+        )? {
             continue;
         }
         let mut ordinate_storage = ctx.reserve_scoped(0, "creo fc05 ordinate scratch")?;
         let mut ordinates = Vec::new();
-        for ordinate in ctx.admit_iter(&group, "creo fc05 ordinate traversal")?.map(|(_, _, ordinate)| *ordinate) {
-            if ctx.all_by(&ordinates, |existing: &f64| Ok((*existing - ordinate).abs() > tolerance), "creo fc05 distinct ordinate scan")?
-            {
-                ordinate_storage.with_storage(|| ctx.reserve_vec(&mut ordinates, 1, "creo fc05 distinct cap ordinates"))?;
+        for ordinate in ctx
+            .admit_iter(&group, "creo fc05 ordinate traversal")?
+            .map(|(_, _, ordinate)| *ordinate)
+        {
+            if ctx.all_by(
+                &ordinates,
+                |existing: &f64| Ok((*existing - ordinate).abs() > tolerance),
+                "creo fc05 distinct ordinate scan",
+            )? {
+                ordinate_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut ordinates, 1, "creo fc05 distinct cap ordinates")
+                })?;
                 ordinates.push(ordinate);
             }
         }
@@ -8227,11 +9339,13 @@ pub(crate) fn fc05_cylinder_cap_pairs(
         ordinate_storage.commit()?;
         let mut cap_edges = Vec::new();
         ctx.reserve_vec(&mut cap_edges, group.len(), "creo fc05 cap edges")?;
-        cap_edges.extend(ctx.admit_iter(&group, "creo fc05 cap edge traversal")?.map(|(circle, plane, ordinate)| Fc05CapEdge {
-            curve_id: circle.curve_id,
-            cap_plane_id: *plane,
-            cap_ordinate_row_frame: *ordinate,
-        }));
+        cap_edges.extend(ctx.admit_iter(&group, "creo fc05 cap edge traversal")?.map(
+            |(circle, plane, ordinate)| Fc05CapEdge {
+                curve_id: circle.curve_id,
+                cap_plane_id: *plane,
+                cap_ordinate_row_frame: *ordinate,
+            },
+        ));
         ctx.reserve_vec(&mut result, 1, "creo fc05 cylinder cap pairs")?;
         result.push(Fc05CylinderCapPair {
             surface_id,
@@ -8411,12 +9525,30 @@ pub(crate) fn bind_prototype_pcurves(
     topology: &[CurvePrototypeTopology],
 ) -> Result<Vec<BoundPrototypePcurve>, cadmpeg_core::CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo bound prototype pcurve scratch")?;
-    let pcurve_index = scratch.with_storage(|| unique_curve_index(ctx, pcurves, |row| row.curve_id, "creo prototype pcurve count nodes"))?;
-    let topology_index = scratch.with_storage(|| unique_curve_index(ctx, topology, |row| row.curve_id, "creo prototype topology count nodes"))?;
+    let pcurve_index = scratch.with_storage(|| {
+        unique_curve_index(
+            ctx,
+            pcurves,
+            |row| row.curve_id,
+            "creo prototype pcurve count nodes",
+        )
+    })?;
+    let topology_index = scratch.with_storage(|| {
+        unique_curve_index(
+            ctx,
+            topology,
+            |row| row.curve_id,
+            "creo prototype topology count nodes",
+        )
+    })?;
     let mut result = Vec::new();
     for pcurve in ctx.admit_iter(pcurves, "creo prototype pcurve binding traversal")? {
-        if !matches!(pcurve_index.get(&pcurve.curve_id), Some(Some(_))) { continue; }
-        let Some(Some(topology)) = topology_index.get(&pcurve.curve_id) else { continue; };
+        if !matches!(pcurve_index.get(&pcurve.curve_id), Some(Some(_))) {
+            continue;
+        }
+        let Some(Some(topology)) = topology_index.get(&pcurve.curve_id) else {
+            continue;
+        };
         ctx.reserve_vec(&mut result, 1, "creo bound prototype pcurves")?;
         result.push(BoundPrototypePcurve {
             curve_id: pcurve.curve_id,
@@ -8488,34 +9620,60 @@ fn topology_suffix_with_face_ids(
     materialized_face_ids: Option<&BTreeSet<u32>>,
     known_face_ids: Option<&BTreeSet<u32>>,
 ) -> Result<Option<TopologySuffixCandidate>, cadmpeg_core::CodecError> {
-    let Some(candidates) = topology_suffix_candidates(row) else { return Ok(None); };
+    let Some(candidates) = topology_suffix_candidates(row) else {
+        return Ok(None);
+    };
     let mut initial = candidates.iter().flatten().copied();
-    if let (Some(candidate), None) = (initial.next(), initial.next()) { return Ok(Some(candidate)); }
+    if let (Some(candidate), None) = (initial.next(), initial.next()) {
+        return Ok(Some(candidate));
+    }
     // The fixed candidate array has at most 24 rows and two faces per row.
-    for ids in [materialized_face_ids, known_face_ids].into_iter().flatten().filter(|ids| !ids.is_empty()) {
+    for ids in [materialized_face_ids, known_face_ids]
+        .into_iter()
+        .flatten()
+        .filter(|ids| !ids.is_empty())
+    {
         let mut selected = None;
         for candidate in candidates.iter().flatten() {
             let mut valid = true;
             for id in candidate.faces.into_iter().flatten() {
-                if !ctx.contains_btree_set(ids, &id.get(), "creo topology suffix face lookup")? { valid = false; break; }
+                if !ctx.contains_btree_set(ids, &id.get(), "creo topology suffix face lookup")? {
+                    valid = false;
+                    break;
+                }
             }
             if valid {
-                if selected.is_some() { return Ok(None); }
+                if selected.is_some() {
+                    return Ok(None);
+                }
                 selected = Some(*candidate);
             }
         }
-        if selected.is_some() { return Ok(selected); }
+        if selected.is_some() {
+            return Ok(selected);
+        }
     }
     Ok(None)
 }
 
-fn unique_topology_suffix_in_segment(ctx: &cadmpeg_core::decode::DecodeContext<'_>, segment: &[u8]) -> Result<Option<TopologySuffixCandidate>, cadmpeg_core::CodecError> {
+fn unique_topology_suffix_in_segment(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    segment: &[u8],
+) -> Result<Option<TopologySuffixCandidate>, cadmpeg_core::CodecError> {
     let mut closes = segment.windows(3).enumerate().rev();
-    while let Some((close, bytes)) = ctx.next_charged(&mut closes, "creo unique topology suffix close scan")? {
-        if bytes != [0, 0, psb::token::COMPOUND_CLOSE] { continue; }
-        let Some(candidates) = topology_suffix_candidates(&segment[..close + 3]) else { continue; };
+    while let Some((close, bytes)) =
+        ctx.next_charged(&mut closes, "creo unique topology suffix close scan")?
+    {
+        if bytes != [0, 0, psb::token::COMPOUND_CLOSE] {
+            continue;
+        }
+        let Some(candidates) = topology_suffix_candidates(&segment[..close + 3]) else {
+            continue;
+        };
         let mut unique = candidates.into_iter().flatten();
-        if let (Some(candidate), None) = (unique.next(), unique.next()) { return Ok(Some(candidate)); }
+        if let (Some(candidate), None) = (unique.next(), unique.next()) {
+            return Ok(Some(candidate));
+        }
     }
     Ok(None)
 }
