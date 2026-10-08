@@ -899,36 +899,9 @@ fn validate_element_maps(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "FreeCAD validation element maps";
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    // Each table's string identities, built once.
-    let mut known_ids = Vec::new();
-    let mut table_sources = string_tables.iter();
-    while table_sources.len() != 0 {
-        let Some(table) = ctx.next_charged(&mut table_sources, OPERATION)? else {
-            break;
-        };
-        let ids = storage.with_storage(|| {
-            ctx.collect_hash_set(
-                table.entries().iter().map(|entry| entry.string_id),
-                OPERATION,
-            )
-        })?;
-        ctx.push_scoped_vec(&mut storage, &mut known_ids, ids, OPERATION)?;
-    }
-    let model = &ir.model;
-    let topology_ids = storage.with_storage(|| {
-        ctx.collect_hash_set(
-            model
-                .vertices
-                .iter()
-                .map(|entity| entity.id.as_str())
-                .chain(model.edges.iter().map(|entity| entity.id.as_str()))
-                .chain(model.loops.iter().map(|entity| entity.id.as_str()))
-                .chain(model.faces.iter().map(|entity| entity.id.as_str()))
-                .chain(model.shells.iter().map(|entity| entity.id.as_str()))
-                .chain(model.bodies.iter().map(|entity| entity.id.as_str())),
-            OPERATION,
-        )
-    })?;
+    // Each queried table owns one identity set; unqueried tables have no index.
+    let mut known_ids = HashMap::<usize, HashSet<i64>>::new();
+    let mut topology_ids = None;
     let mut map_sources = element_maps.iter();
     while map_sources.len() != 0 {
         let Some(map) = ctx.next_charged(&mut map_sources, OPERATION)? else {
@@ -955,7 +928,6 @@ fn validate_element_maps(
                 Some(&map.id),
             )?;
         }
-        let known = map.hasher_index.and_then(|index| known_ids.get(index));
         let mut group_sources = map.maps.root().groups.iter();
         while group_sources.len() != 0 {
             let Some(group) = ctx.next_charged(&mut group_sources, OPERATION)? else {
@@ -971,8 +943,25 @@ fn validate_element_maps(
                     let Some(name) = ctx.next_charged(&mut name_sources, OPERATION)? else {
                         break;
                     };
-                    if let Some(known) = known {
-                        if ctx.any_by(
+                    if let Some(index) = map.hasher_index.filter(|_| !name.string_ids.is_empty()) {
+                        if let Some(table) = string_tables.get(index) {
+                            let known = match storage.with_storage(|| ctx.entry_hash_map(&mut known_ids, index, OPERATION))? {
+                                std::collections::hash_map::Entry::Occupied(slot) => slot.into_mut(),
+                                std::collections::hash_map::Entry::Vacant(slot) => {
+                                    let mut ids = HashSet::new();
+                                    let mut entries = table.entries().iter();
+                                    while entries.len() != 0 {
+                                        let Some(entry) = ctx.next_charged(&mut entries, OPERATION)? else {
+                                            break;
+                                        };
+                                        storage.with_storage(|| ctx.insert_hash_set(
+                                            &mut ids, entry.string_id, OPERATION,
+                                        ))?;
+                                    }
+                                    slot.insert(ids)
+                                }
+                            };
+                            if ctx.any_by(
                             &name.string_ids,
                             |id| Ok(!ctx.contains_hash_set(known, id, OPERATION)?),
                             OPERATION,
@@ -987,11 +976,33 @@ fn validate_element_maps(
                                 ),
                                 Some(&map.id),
                             )?;
+                            }
                         }
                     }
-                    if ctx.any_by(
+                    if !name.topology_ids.is_empty() {
+                        let topology_ids = match topology_ids {
+                            Some(ref ids) => ids,
+                            None => {
+                                let model = &ir.model;
+                                let mut sources = model.vertices.iter().map(|entity| entity.id.as_str())
+                                    .chain(model.edges.iter().map(|entity| entity.id.as_str()))
+                                    .chain(model.loops.iter().map(|entity| entity.id.as_str()))
+                                    .chain(model.faces.iter().map(|entity| entity.id.as_str()))
+                                    .chain(model.shells.iter().map(|entity| entity.id.as_str()))
+                                    .chain(model.bodies.iter().map(|entity| entity.id.as_str()));
+                                let mut ids = HashSet::new();
+                                while sources.size_hint().1 != Some(0) {
+                                    let Some(id) = ctx.next_charged(&mut sources, OPERATION)? else {
+                                        break;
+                                    };
+                                    storage.with_storage(|| ctx.insert_hash_set(&mut ids, id, OPERATION))?;
+                                }
+                                topology_ids.insert(ids)
+                            }
+                        };
+                        if ctx.any_by(
                         &name.topology_ids,
-                        |id| Ok(!ctx.contains_hash_set(&topology_ids, id.as_str(), OPERATION)?),
+                        |id| Ok(!ctx.contains_hash_set(topology_ids, id.as_str(), OPERATION)?),
                         OPERATION,
                     )? {
                         push_finding(
@@ -1001,6 +1012,7 @@ fn validate_element_maps(
                             format_args!("{} references missing neutral topology", map.id),
                             Some(&map.id),
                         )?;
+                        }
                     }
                 }
             }
@@ -1181,69 +1193,9 @@ fn validate_logical_ledger(
             )
         })?;
     }
-    let string_table_ids = storage.with_storage(|| {
-        ctx.try_collect_vec(
-            records
-                .string_tables
-                .iter()
-                .map(|table| table.id_with_admission(ctx)),
-            OPERATION,
-        )
-    })?;
-    let mut owner_ids = HashSet::new();
-    let mut add_owner = |owner| {
-        storage
-            .with_storage(|| ctx.insert_hash_set(&mut owner_ids, owner, OPERATION))
-            .map(drop)
-    };
-    let mut record_sources = records.gui_properties.iter();
-    while record_sources.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_sources, OPERATION)? else {
-            break;
-        };
-        add_owner(record.id.as_str())?;
-    }
-    let mut document_sources = records.gui_documents.iter();
-    while document_sources.len() != 0 {
-        let Some(document) = ctx.next_charged(&mut document_sources, OPERATION)? else {
-            break;
-        };
-        let mut state_sources = document.states.iter();
-        while state_sources.len() != 0 {
-            let Some(state) = ctx.next_charged(&mut state_sources, OPERATION)? else {
-                break;
-            };
-            add_owner(state.id.as_str())?;
-        }
-    }
-    let mut record_sources = records.shape_payloads.iter();
-    while record_sources.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_sources, OPERATION)? else {
-            break;
-        };
-        add_owner(record.id.as_str())?;
-    }
-    let mut id_sources = string_table_ids.iter();
-    while id_sources.len() != 0 {
-        let Some(id) = ctx.next_charged(&mut id_sources, OPERATION)? else {
-            break;
-        };
-        add_owner(id.as_str())?;
-    }
-    let mut record_sources = records.element_maps.iter();
-    while record_sources.len() != 0 {
-        let Some(record) = ctx.next_charged(&mut record_sources, OPERATION)? else {
-            break;
-        };
-        add_owner(record.id.as_str())?;
-    }
-    let mut entry_sources = entries.iter();
-    while entry_sources.len() != 0 {
-        let Some(entry) = ctx.next_charged(&mut entry_sources, OPERATION)? else {
-            break;
-        };
-        add_owner(entry.id())?;
-    }
+    let mut owner_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut owner_ids = None;
+    let mut string_table_ids = None;
     let mut group_index_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut by_entry = BTreeMap::<&str, Option<LedgerSpanGroup<'_, '_>>>::new();
     let mut span_sources = logical.iter();
@@ -1265,8 +1217,69 @@ fn validate_logical_ledger(
             native::LogicalClassification::Structural => true,
             native::LogicalClassification::Typed { owner }
             | native::LogicalClassification::NamedOpaque { owner } => {
-                ctx.contains_hash_set(property_ids, owner.as_str(), OPERATION)?
-                    || ctx.contains_hash_set(&owner_ids, owner.as_str(), OPERATION)?
+                if ctx.contains_hash_set(property_ids, owner.as_str(), OPERATION)? {
+                    true
+                } else {
+                    let known = match owner_ids {
+                        Some(ref ids) => ids,
+                        None => {
+                            let mut ids = HashSet::new();
+                            let mut add_owner = |owner| {
+                                owner_storage.with_storage(|| ctx.insert_hash_set(&mut ids, owner, OPERATION)).map(drop)
+                            };
+                            let mut sources = records.gui_properties.iter();
+                            while sources.len() != 0 {
+                                let Some(record) = ctx.next_charged(&mut sources, OPERATION)? else { break; };
+                                add_owner(record.id.as_str())?;
+                            }
+                            let mut sources = records.gui_documents.iter();
+                            while sources.len() != 0 {
+                                let Some(document) = ctx.next_charged(&mut sources, OPERATION)? else { break; };
+                                let mut states = document.states.iter();
+                                while states.len() != 0 {
+                                    let Some(state) = ctx.next_charged(&mut states, OPERATION)? else { break; };
+                                    add_owner(state.id.as_str())?;
+                                }
+                            }
+                            let mut sources = records.shape_payloads.iter();
+                            while sources.len() != 0 {
+                                let Some(record) = ctx.next_charged(&mut sources, OPERATION)? else { break; };
+                                add_owner(record.id.as_str())?;
+                            }
+                            let mut sources = records.element_maps.iter();
+                            while sources.len() != 0 {
+                                let Some(record) = ctx.next_charged(&mut sources, OPERATION)? else { break; };
+                                add_owner(record.id.as_str())?;
+                            }
+                            let mut sources = entries.iter();
+                            while sources.len() != 0 {
+                                let Some(entry) = ctx.next_charged(&mut sources, OPERATION)? else { break; };
+                                add_owner(entry.id())?;
+                            }
+                            owner_ids.insert(ids)
+                        }
+                    };
+                    if ctx.contains_hash_set(known, owner.as_str(), OPERATION)? {
+                        true
+                    } else {
+                        let known = match string_table_ids {
+                            Some(ref ids) => ids,
+                            None => {
+                                let mut ids = HashSet::new();
+                                let mut sources = records.string_tables.iter();
+                                while sources.len() != 0 {
+                                    let Some(table) = ctx.next_charged(&mut sources, OPERATION)? else { break; };
+                                    owner_storage.with_storage(|| {
+                                        let id = table.id_with_admission(ctx)?;
+                                        ctx.insert_hash_set(&mut ids, id, OPERATION)
+                                    })?;
+                                }
+                                string_table_ids.insert(ids)
+                            }
+                        };
+                        ctx.contains_hash_set(known, owner.as_str(), OPERATION)?
+                    }
+                }
             }
         };
         if !ctx.contains_key_hash_map(&entry_lengths, span.entry.as_str(), OPERATION)?
@@ -1281,6 +1294,9 @@ fn validate_logical_ledger(
             )?;
         }
     }
+    drop(string_table_ids);
+    drop(owner_ids);
+    drop(owner_storage);
     let mut entry_sources = entries.iter();
     while entry_sources.len() != 0 {
         let Some(entry) = ctx.next_charged(&mut entry_sources, OPERATION)? else {
