@@ -1097,14 +1097,13 @@ fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
     tables
         .insert_bridge(&ctx, bridge(11, 200, 10))
         .expect("bridge");
+    let mut entity_facts = super::entity::FactsSource::empty(&ctx).expect("entity facts");
+    entity_facts.entity_count = 1;
     let decoded = super::decode_graph(
         &ctx,
         &crate::brep::index::CarrierIndex::default(),
         &tables,
-        super::entity::Facts {
-            entity_count: 1,
-            ..Default::default()
-        },
+        entity_facts,
         &super::typed::Facts::default(),
         &cadmpeg_ir::stream_name!("empty"),
     )

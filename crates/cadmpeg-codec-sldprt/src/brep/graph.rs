@@ -1533,36 +1533,6 @@ fn selected_typed_face_offsets(
     Ok(offsets)
 }
 
-fn append_entity_facts(
-    ctx: &DecodeContext<'_>,
-    target: &mut entity::Facts,
-    mut source: entity::Facts,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.append_vec(
-        &mut target.face_colors,
-        &mut source.face_colors,
-        "merge Parasolid face colors",
-    )?;
-    ctx.append_vec(
-        &mut target.face_color_versions,
-        &mut source.face_color_versions,
-        "merge Parasolid face color versions",
-    )?;
-    ctx.append_vec(
-        &mut target.face_atoms,
-        &mut source.face_atoms,
-        "merge Parasolid face atoms",
-    )?;
-    ctx.append_vec(
-        &mut target.body_modifiers,
-        &mut source.body_modifiers,
-        "merge Parasolid body modifiers",
-    )?;
-    target.entity_count += source.entity_count;
-    target.unresolved_face_colors += source.unresolved_face_colors;
-    Ok(())
-}
-
 /// Decode related partition and deltas streams as one record source.
 ///
 /// Partition records are the base set. Deltas records fill missing subordinate
@@ -1576,7 +1546,7 @@ pub(crate) fn decode_bodies(
     let mut index_storage = ctx.reserve_scoped(0, "hold Parasolid source indexes")?;
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
-    let mut facts = entity::Facts::default();
+    let mut facts = entity::FactsSource::empty(ctx)?;
     let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
     enum ScannedTables<'ctx> {
@@ -1634,8 +1604,8 @@ pub(crate) fn decode_bodies(
         )
     })?;
     for (body, _) in ctx.admit_iter(&entity_streams, "scan SLDPRT decode_bodies values")? {
-        let stream_facts = index_storage.with_storage(|| typed::scan(body, ctx))?;
         typed_streams_storage.with_storage(|| {
+            let stream_facts = typed::scan(body, ctx)?;
             ctx.push_vec(
                 &mut (typed_streams),
                 stream_facts,
@@ -1643,9 +1613,10 @@ pub(crate) fn decode_bodies(
             )
         })?;
     }
+    drop((entity_streams, entity_streams_storage));
     for stream_typed_facts in ctx.admit_iter(&typed_streams, "scan SLDPRT decode_bodies values")? {
         index_storage
-            .with_storage(|| typed_facts.merge_missing(ctx, stream_typed_facts.try_clone(ctx)?))?;
+            .with_storage(|| typed_facts.merge_missing(ctx, stream_typed_facts))?;
     }
     let typed_bridge_attrs =
         index_storage.with_storage(|| typed_facts.valid_ownership_face_attrs(ctx))?;
@@ -1688,8 +1659,7 @@ pub(crate) fn decode_bodies(
                 ScannedTables::Primary(index_storage.with_storage(scan_tables)?)
             }
         };
-        let mut scanned_facts =
-            index_storage.with_storage(|| entity::scan_metadata(ctx, body, is_deltas))?;
+        let mut scanned_facts = entity::scan_metadata(ctx, body, is_deltas)?;
         for color in ctx.admit_iter(
             &mut scanned_facts.face_colors,
             "order Parasolid face colors by stream",
@@ -1712,10 +1682,11 @@ pub(crate) fn decode_bodies(
                 index_storage.with_storage(|| {
                     source.merge_into(ctx, &mut tables, selected_bridge_attrs)
                 })?;
-                index_storage.with_storage(|| append_entity_facts(ctx, &mut facts, scanned_facts))?;
+                facts.append(ctx, scanned_facts)?;
             }
         }
     }
+    drop((typed_streams, typed_streams_storage, ordered, ordered_storage));
     decode_graph(ctx, &carriers, &tables, facts, &typed_facts, stream)
 }
 
@@ -1736,7 +1707,7 @@ fn decode_body(
     let t = index_storage.with_storage(|| {
         topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)
     })?;
-    let entity_facts = index_storage.with_storage(|| entity::scan_metadata(ctx, body, false))?;
+    let entity_facts = entity::scan_metadata(ctx, body, false)?;
     decode_graph(ctx, &carriers, &t, entity_facts, &typed_facts, stream)
 }
 
@@ -2154,10 +2125,11 @@ fn decode_graph(
     ctx: &DecodeContext<'_>,
     carriers: &CarrierIndex,
     t: &topology::Tables,
-    entity_facts: entity::Facts,
+    entity_facts: entity::FactsSource<'_>,
     typed_facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    let (entity_facts, _entity_fact_storage) = entity_facts.into_parts();
     let (typed_records, _body_record_storage) = ctx
         .with_scoped_storage("hold Parasolid body records", || {
             typed_body_records(ctx, typed_facts, t)
@@ -3483,7 +3455,7 @@ fn decode_graph(
     }
     let mut bound_faces = BTreeSet::new();
     for atom in ctx.admit_iter(entity_facts.face_atoms, "bind Parasolid face atoms")? {
-        let Some(mut identity) = atom.identity else {
+        let Some(identity) = atom.identity.as_ref() else {
             continue;
         };
         if !ctx.contains_btree_set(
@@ -3500,15 +3472,11 @@ fn decode_graph(
                 "track bound Parasolid faces",
             )
         })? {
-            identity.trailing_fields = ctx.copy_slice(
-                &identity.trailing_fields,
-                "retain Parasolid face identity fields",
-            )?;
             ctx.push_vec(
                 &mut out.face_atoms,
                 attrib::FaceAtom {
                     face: id_face(atom.face_attr),
-                    identity,
+                    identity: identity.copy_to_retained(ctx)?,
                 },
                 "collect Parasolid face atoms",
             )?;
