@@ -53,3 +53,35 @@ fn invalid_first_archive_name_does_not_admit_later_entries() {
     };
     assert_eq!(work(1), work(1024));
 }
+
+#[test]
+fn stored_root_directory_storage_is_temporary_until_drop() {
+    let root = b"ISO-10303-21;";
+    let bytes = super::step_zip(&[(super::ROOT_NAME, root.as_slice(), CompressionMethod::Stored)]);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 65_536;
+    crate::test_support::with_policy_context(&bytes, &policy, |source, ctx| {
+        let opened = crate::archive::open_root(ctx, cadmpeg_core::decode::View::over_retained(source))
+            .expect("directory scratch needs no retained allowance");
+        assert_eq!(opened.view.window(), root);
+        assert_eq!(opened.archive.entries().len(), 1);
+        drop(opened);
+        ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released directory")
+            .expect("directory storage is released with the snapshot");
+    });
+}
+
+#[test]
+fn directory_errors_preserve_retained_admission() {
+    let source = b"PK\x03\x04";
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "STEP ZIP directory error", |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            crate::test_support::with_policy_context(source, &policy, |source, ctx| {
+                crate::archive::open_root(ctx, cadmpeg_core::decode::View::over_retained(source)).map(|_| ())
+            })
+        });
+}

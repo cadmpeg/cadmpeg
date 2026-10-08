@@ -5,7 +5,7 @@ use cadmpeg_core::container::ContainerRole;
 use std::collections::BTreeMap;
 
 use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 
 /// The required root member name from Part 21 Annex A.4.
@@ -44,18 +44,27 @@ pub(crate) fn has_root_marker(
 }
 
 /// One STEP ZIP container whose required root member is proven present.
-pub(crate) struct OpenedRoot<'a> {
+pub(crate) struct OpenedRoot<'a, 'ctx> {
     pub(crate) archive: ArchiveSnapshot<'a>,
     pub(crate) view: View<'a>,
     pub(crate) data_start: u64,
+    _storage: ScopedReservation<'ctx>,
 }
 
 /// Opens and validates the required root member of one STEP ZIP container.
-pub(crate) fn open_root<'a>(
-    ctx: &DecodeContext<'a>,
+pub(crate) fn open_root<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'a>,
     root: View<'a>,
-) -> Result<OpenedRoot<'a>, CodecError> {
-    let archive = ArchiveSnapshot::new(ctx, root)?;
+ ) -> Result<OpenedRoot<'a, 'ctx>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "STEP ZIP directory storage")?;
+    let archive = storage.with_storage(|| ArchiveSnapshot::new(ctx, root))
+        .or_else(|error| match error {
+            CodecError::Malformed(message) => Err(CodecError::Malformed(
+                ctx.copy_retained_text(&message, "STEP ZIP directory error")?)),
+            CodecError::NotImplemented(message) => Err(CodecError::NotImplemented(
+                ctx.copy_retained_text(&message, "STEP ZIP directory error")?)),
+            error => Err(error),
+        })?;
     let mut entries = archive.entries().iter();
     while let Some(entry) = ctx.next_charged(&mut entries, "STEP open root borrowed traversal")? {
         validate_entry_name(ctx, &entry.name)?;
@@ -79,6 +88,7 @@ pub(crate) fn open_root<'a>(
         archive,
         view: root_view,
         data_start,
+        _storage: storage,
     })
 }
 
