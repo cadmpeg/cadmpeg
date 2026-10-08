@@ -15,6 +15,9 @@ pub(crate) fn decode(
     data: &[u8],
     expected_length: usize,
 ) -> Result<Option<Vec<u8>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if data.get(unix_compress::MAGIC..unix_compress::FLAGS) != Some(&[0x1f, 0x9d]) {
         return Ok(None);
     }
@@ -186,8 +189,7 @@ fn finish_expansion(
     reservation: ScopedReservation<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     let bytes = output.finalize_owned()?;
-    reservation.commit()?;
-    Ok(bytes)
+    reservation.commit_value(bytes)
 }
 
 struct CodeReader<'a> {
@@ -291,6 +293,56 @@ mod tests {
             Err(cadmpeg_core::CodecError::Malformed(_)) => None,
             Err(error) => panic!("test stream resource refusal: {error}"),
         }
+    }
+
+    #[test]
+    fn invalid_fixed_lzw_headers_are_free_and_preserve_original_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let headers = [
+            &[][..],
+            &[0x1f][..],
+            &[0x1f, 0x9d][..],
+            &[0xff, 0x9d, 0x10][..],
+            &[0x1f, 0x9d, 0x08][..],
+            &[0x1f, 0x9d, 0x30][..],
+        ];
+        for header in headers {
+            assert_eq!(super::decode(&ctx, header, 0).expect("fixed header rejection"), None);
+        }
+        let original = ctx.charge_work_limit(1, "seed LZW header refusal")
+            .expect_err("zero work limit");
+        for header in headers {
+            assert!(matches!(super::decode(&ctx, header, 0),
+                Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+        }
+    }
+
+    #[test]
+    fn lzw_owned_output_promotes_into_its_parent_scope() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut parent = ctx.reserve_scoped(0, "LZW output parent").expect("empty parent");
+        let stream = [0x1f, 0x9d, 0x10, 0x41, 0x84, 0x0c, 0x01];
+        let bytes = parent.with_storage(|| super::decode(&ctx, &stream, 3))
+            .expect("output belongs to parent")
+            .expect("valid literal stream");
+        assert_eq!(bytes, b"ABC");
+        drop(bytes);
+        drop(parent);
+        assert!(ctx.resource_refusal().is_none());
     }
 
     #[test]

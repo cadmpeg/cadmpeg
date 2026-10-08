@@ -57,22 +57,21 @@ fn report_cubic_generator_loss(
 /// A solved curve whose storage becomes retained at model admission.
 #[derive(Debug)]
 pub(in super::super) struct NurbsCurveCandidate<'ctx> {
-    storage: ScopedReservation<'ctx>,
     curve: NurbsCurve,
+    storage: ScopedReservation<'ctx>,
 }
 
 impl NurbsCurveCandidate<'_> {
     pub(in super::super) fn into_geometry(self) -> Result<CurveGeometry, CodecError> {
-        self.storage.commit()?;
-        Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            self.curve,
-        )))
+        self.storage.commit_value(CurveGeometry::Solved(
+            SolvedCurveGeometry::Nurbs(self.curve),
+        ))
     }
 }
 
 struct NurbsSurfaceBoundary<'ctx> {
-    storage: ScopedReservation<'ctx>,
     curve: NurbsCurve,
+    storage: ScopedReservation<'ctx>,
     along_u: bool,
     fixed_index: usize,
     transverse_periodic: bool,
@@ -81,14 +80,13 @@ struct NurbsSurfaceBoundary<'ctx> {
 impl<'ctx> NurbsSurfaceBoundary<'ctx> {
     #[cfg(test)]
     fn into_curve(self) -> Result<NurbsCurve, CodecError> {
-        self.storage.commit()?;
-        Ok(self.curve)
+        self.storage.commit_value(self.curve)
     }
 
     fn into_candidate(self) -> NurbsCurveCandidate<'ctx> {
         NurbsCurveCandidate {
-            storage: self.storage,
             curve: self.curve,
+            storage: self.storage,
         }
     }
 
@@ -994,6 +992,9 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve<'ctx>(
     plane: PlaneEquation,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<NurbsCurveCandidate<'ctx>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     fn recognize<'ctx>(
         ctx: &'ctx DecodeContext<'_>,
         nurbs: &NurbsSurface,
@@ -1233,7 +1234,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve<'ctx>(
                 return None;
             }
         };
-        Some(Ok(NurbsCurveCandidate { storage, curve }))
+        Some(Ok(NurbsCurveCandidate { curve, storage }))
     }
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let recognized = recognize(ctx, nurbs, surface_id, plane, &mut refusal).transpose();
@@ -1765,6 +1766,109 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
         );
+    }
+
+    // Two rational poles use the core four-slot growth floor; knots are an exact copy.
+    const RATIONAL_BOUNDARY_BYTES: u64 = 4 * (3 * 8 + 8) + 4 * 8;
+    const FOUR_RATIONAL_BOUNDARIES_BYTES: u64 = 4 * RATIONAL_BOUNDARY_BYTES;
+
+    #[test]
+    fn fixed_cubic_generator_shape_rejection_is_free_and_preserves_refusal() {
+        let (surface, _) = shared_generator_surfaces();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let plane = super::PlaneEquation { origin: [0.0; 3], normal: [1.0, 0.0, 0.0] };
+        let mut losses = Vec::new();
+        assert!(super::cubic_extrusion_plane_generator_curve(
+            &ctx, &surface, 7, plane, &mut losses,
+        ).expect("degree-one surface has no cubic generator").is_none());
+        assert!(losses.is_empty());
+        let original = ctx.charge_work_limit(1, "seed cubic generator refusal")
+            .expect_err("zero work limit");
+        assert!(matches!(super::cubic_extrusion_plane_generator_curve(
+            &ctx, &surface, 7, plane, &mut losses,
+        ), Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
+        assert!(losses.is_empty());
+    }
+
+    #[test]
+    fn nurbs_boundary_promotion_retains_only_the_selected_curve_backing() {
+        let (surface, _) = shared_generator_surfaces();
+        for retained in [RATIONAL_BOUNDARY_BYTES - 1, RATIONAL_BOUNDARY_BYTES] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = FOUR_RATIONAL_BOUNDARIES_BYTES;
+            policy.limits.max_retained_bytes = retained;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let [first, second, third, fourth] = super::nurbs_surface_boundaries(
+                &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
+            ).expect("four scoped boundaries").expect("rational surface");
+            drop((second, third, fourth));
+            let result = first.into_curve();
+            if retained < RATIONAL_BOUNDARY_BYTES {
+                let cadmpeg_core::CodecError::ResourceLimit(original) = result
+                    .expect_err("selected curve exceeds retained capacity") else {
+                        panic!("expected resource refusal");
+                    };
+                assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(original.operation, "creo NURBS boundary curve storage");
+                assert_eq!((original.used, original.additional), (0, RATIONAL_BOUNDARY_BYTES));
+                assert_eq!(ctx.resource_refusal(), Some(original));
+            } else {
+                let curve = result.expect("one selected curve fits retained capacity");
+                assert_eq!(curve.degree(), 1);
+                assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
+                assert_eq!(curve.control_points().into_iter()
+                    .map(cadmpeg_ir::features::FinitePoint3::get).collect::<Vec<_>>(),
+                    [Point3::new(-1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 1.0)]);
+            }
+        }
+    }
+
+    #[test]
+    fn nurbs_boundary_vector_peak_refuses_before_the_fourth_knot_copy() {
+        let (surface, _) = shared_generator_surfaces();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = FOUR_RATIONAL_BOUNDARIES_BYTES - 1;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = super::nurbs_surface_boundaries(
+            &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
+        ).err().expect("fourth exact knot copy exceeds the live vector peak");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::MaterializedBytes
+                && refusal.operation == "creo NURBS boundary knots"
+                && (refusal.used, refusal.additional) == (FOUR_RATIONAL_BOUNDARIES_BYTES - 4 * 8, 4 * 8)));
+    }
+
+    #[test]
+    fn nurbs_boundary_owned_geometry_promotes_into_its_parent_scope() {
+        let (surface, _) = shared_generator_surfaces();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = FOUR_RATIONAL_BOUNDARIES_BYTES;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let mut parent = ctx.reserve_scoped(0, "NURBS boundary parent").expect("empty parent");
+        let geometry = parent.with_storage(|| {
+            let [first, second, third, fourth] = super::nurbs_surface_boundaries(
+                &ctx, &surface, 7, &mut crate::lane_refusal::LaneRefusals::new(),
+            )?.expect("four rational boundaries");
+            drop((second, third, fourth));
+            first.into_candidate().into_geometry()
+        }).expect("selected geometry remains under parent storage");
+        assert!(matches!(geometry,
+            super::CurveGeometry::Solved(super::SolvedCurveGeometry::Nurbs(_))));
+        drop(geometry);
+        drop(parent);
+        ctx.reserve_scoped(FOUR_RATIONAL_BOUNDARIES_BYTES, "after NURBS boundary parent")
+            .expect("parent and geometry released all boundary backing");
     }
 
     #[test]
