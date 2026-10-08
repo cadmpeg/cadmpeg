@@ -36,61 +36,53 @@ fn native_entity(entity_type: i64, form: i64, parameters: &str) -> OwnedTestEnti
 }
 
 fn assert_collection_refusal_at(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            Ok(_) => panic!("did not reach {operation} at collection cap {cap}: decode succeeded"),
-            other => panic!("did not reach {operation} at collection cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
 }
 
 fn assert_retained_refusal_at(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            Ok(_) => panic!("did not reach {operation} at retained cap {cap}: decode succeeded"),
-            other => panic!("did not reach {operation} at retained cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation));
 }
 
 fn assert_native_arena(bytes: &[u8], arena: &str) {
@@ -312,21 +304,32 @@ fn native_display_definition_refuses_retained_limit() {
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
-    let (directory, _) = crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx).unwrap();
+    let (directory, _) =
+        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+            .unwrap();
     let graph = crate::graph::build(&directory, &parse_ctx).unwrap();
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        super::super::resolve_display_ref(
-            &ctx, &graph, 1, -3, crate::graph::ReferenceKind::Color, "color"
-        ),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "iges native display definition"
-    ));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges native display definition",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::resolve_display_ref(
+                &ctx,
+                &graph,
+                1,
+                -3,
+                crate::graph::ReferenceKind::Color,
+                "color",
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "iges native display definition"));
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -977,7 +980,6 @@ fn native_occurrence_indexes_paths_and_copied_links_refuse_limits() {
     let bytes = nested_subfigure_file();
     for operation in [
         "iges contained occurrence instances",
-        "iges admitted occurrence definition nodes",
         "iges occurrence neutral link map nodes",
         "iges occurrence neutral link slots",
         "iges occurrence expansion path slots",
@@ -990,7 +992,6 @@ fn native_occurrence_indexes_paths_and_copied_links_refuse_limits() {
         assert_collection_refusal_at(&bytes, operation);
     }
     for operation in [
-        "iges occurrence neutral link id",
         "iges native occurrence id",
         "iges native occurrence member",
         "iges native occurrence instance",

@@ -4,20 +4,19 @@
 //! builder, and the pass that fills the `annotations` arena while recording
 //! counted-tail verdicts.
 
-use super::{collect_native_items, OverdeclaredCounts};
+use super::OverdeclaredCounts;
 
-use crate::directory::{DirectoryEntry, UseFlag};
+use crate::directory::{entry_by_sequence, DirectoryEntry, UseFlag};
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
 use crate::global::GlobalTable;
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{record_by_sequence, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::Serialize;
-use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(super) struct NativeTextRun {
@@ -193,7 +192,7 @@ struct Subject<'a, 'ctx> {
     form: i64,
     record: Option<&'a ParameterRecord>,
     primary_end: usize,
-    entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
+    entries: &'a [DirectoryEntry],
     parameter_resolver: &'a ParameterResolver<'a, 'ctx>,
     ctx: &'a DecodeContext<'ctx>,
     v5_null_string_rule: bool,
@@ -232,8 +231,8 @@ impl Subject<'_, '_> {
         &self,
         count_index: usize,
         stride: usize,
-        overdeclared: &mut OverdeclaredCounts,
-    ) -> usize {
+        overdeclared: &mut OverdeclaredCounts<'_, '_>,
+    ) -> Result<usize, CodecError> {
         overdeclared.counted_tail(
             self.sequence,
             self.record,
@@ -248,8 +247,8 @@ impl Subject<'_, '_> {
         count_index: usize,
         item_start: usize,
         stride: usize,
-        overdeclared: &mut OverdeclaredCounts,
-    ) -> usize {
+        overdeclared: &mut OverdeclaredCounts<'_, '_>,
+    ) -> Result<usize, CodecError> {
         overdeclared.counted_tail_at(
             self.sequence,
             self.record,
@@ -336,9 +335,9 @@ impl Subject<'_, '_> {
         &self,
         count_index: usize,
         leader_start: usize,
-        overdeclared: &mut OverdeclaredCounts,
+        overdeclared: &mut OverdeclaredCounts<'_, '_>,
     ) -> Result<Vec<Option<String>>, CodecError> {
-        let count = self.counted_tail_at(count_index, leader_start, 1, overdeclared);
+        let count = self.counted_tail_at(count_index, leader_start, 1, overdeclared)?;
         self.ctx
             .collect_indexed_vec(count, "iges native annotation leader slots", |offset| {
                 self.leader_link(leader_start + offset)
@@ -395,8 +394,7 @@ impl Subject<'_, '_> {
                 },
             )?
             .map(|sequence| {
-                self.entries
-                    .get(&sequence)
+                entry_by_sequence(self.entries, sequence, self.ctx)?
                     .filter(|target| target.entity_type == 214)
                     .map_or_else(
                         || self.entity_link_id(sequence),
@@ -475,10 +473,10 @@ impl Subject<'_, '_> {
 fn general_note(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let count = subject.counted_tail(1, 12, overdeclared);
+    let count = subject.counted_tail(1, 12, overdeclared)?;
     Ok(NativeAnnotation::GeneralNote {
         id: subject.id()?,
         source_entity: subject.source_entity()?,
@@ -496,10 +494,10 @@ fn general_note(
 fn new_general_note(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let count = subject.counted_tail(12, 20, overdeclared);
+    let count = subject.counted_tail(12, 20, overdeclared)?;
     Ok(NativeAnnotation::NewGeneralNote {
         id: subject.id()?,
         source_entity: subject.source_entity()?,
@@ -557,10 +555,10 @@ fn new_general_note(
 fn leader(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let count = subject.counted_tail_at(1, 7, 2, overdeclared);
+    let count = subject.counted_tail_at(1, 7, 2, overdeclared)?;
     let z = record.and_then(|record| record.number(4));
     Ok(NativeAnnotation::Leader {
         id: subject.id()?,
@@ -594,7 +592,7 @@ fn leader(
 fn flag_note(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let leaders = subject.leader_list(6, 7, overdeclared)?;
@@ -617,7 +615,7 @@ fn flag_note(
 fn general_label(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let leaders = subject.leader_list(2, 3, overdeclared)?;
@@ -685,10 +683,10 @@ fn general_symbol(
 fn sectioned_area(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let island_count = subject.counted_tail_at(8, 9, 1, overdeclared);
+    let island_count = subject.counted_tail_at(8, 9, 1, overdeclared)?;
     Ok(NativeAnnotation::SectionedArea {
         id: subject.id()?,
         source_entity: subject.source_entity()?,
@@ -714,31 +712,25 @@ fn sectioned_area(
 
 pub(super) fn build(
     directory: &[DirectoryEntry],
-    indexes: (
-        &BTreeMap<u32, &ParameterRecord>,
-        &BTreeMap<u32, &DirectoryEntry>,
-    ),
+    records: &[ParameterRecord],
     parameter_resolver: &ParameterResolver<'_, '_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
-    overdeclared_counts: &mut OverdeclaredCounts,
+    overdeclared_counts: &mut OverdeclaredCounts<'_, '_>,
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
-    let (by_directory, entries) = indexes;
-    collect_native_items(
-        ctx,
-        directory
-            .iter()
+    ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native annotation scan")?
             .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind))),
         "iges native annotation slots",
         |(entry, kind)| -> Result<NativeAnnotation, CodecError> {
-            let record = by_directory.get(&entry.sequence).copied();
+            let record = record_by_sequence(records, entry.sequence, ctx)?;
             let subject = Subject {
                 sequence: entry.sequence,
                 form: entry.form,
                 record,
                 primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
-                entries,
+                entries: directory,
                 parameter_resolver,
                 ctx,
                 v5_null_string_rule: global_table == GlobalTable::V5_0
