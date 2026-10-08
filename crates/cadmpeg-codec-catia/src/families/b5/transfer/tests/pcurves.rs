@@ -1852,3 +1852,5 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     assert_eq!(angle_range.get(), [0.0, tiny]);
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
 }
+
+mod knot_admission;
