@@ -3322,15 +3322,15 @@ fn parse_binary_prefix(
             Vec::new()
         } else {
             let root = TextShapeUse {
-                shape: checked_binary_reference(shape, tshape_count, false, "root shape")?,
-                location: checked_binary_reference(
+                shape: checked_binary_reference(cursor.ctx, shape, tshape_count, false, "root shape")?,
+                location: checked_binary_reference(cursor.ctx,
                     location,
                     locations.len(),
                     true,
                     "root location",
                 )?
                 .into(),
-                orientation: binary_orientation(orientation)?,
+                orientation: binary_orientation(cursor.ctx, orientation)?,
             };
             let mut roots = ctx.collection_vec(1, "FreeCAD binary root records")?;
             roots.push(root);
@@ -3415,13 +3415,13 @@ fn parse_binary_tshape(
                 let representation = match representation_kind {
                     1 => TextPointRepresentation::Curve3d {
                         parameter,
-                        curve: checked_binary_reference(
+                        curve: checked_binary_reference(cursor.ctx,
                             cursor.i32("binary vertex curve")?,
                             curve_count,
                             false,
                             "vertex curve",
                         )?,
-                        location: checked_binary_reference(
+                        location: checked_binary_reference(cursor.ctx,
                             cursor.i32("binary vertex location")?,
                             location_count,
                             true,
@@ -3430,19 +3430,19 @@ fn parse_binary_tshape(
                     },
                     2 => TextPointRepresentation::Pcurve {
                         parameter,
-                        curve: checked_binary_reference(
+                        curve: checked_binary_reference(cursor.ctx,
                             cursor.i32("binary vertex pcurve")?,
                             curve2d_count,
                             false,
                             "vertex pcurve",
                         )?,
-                        surface: checked_binary_reference(
+                        surface: checked_binary_reference(cursor.ctx,
                             cursor.i32("binary vertex surface")?,
                             surface_count,
                             false,
                             "vertex surface",
                         )?,
-                        location: checked_binary_reference(
+                        location: checked_binary_reference(cursor.ctx,
                             cursor.i32("binary vertex location")?,
                             location_count,
                             true,
@@ -3453,13 +3453,13 @@ fn parse_binary_tshape(
                         parameter,
                         second_parameter: cursor
                             .finite_f64("binary vertex second surface parameter")?,
-                        surface: checked_binary_reference(
+                        surface: checked_binary_reference(cursor.ctx,
                             cursor.i32("binary vertex surface")?,
                             surface_count,
                             false,
                             "vertex surface",
                         )?,
-                        location: checked_binary_reference(
+                        location: checked_binary_reference(cursor.ctx,
                             cursor.i32("binary vertex location")?,
                             location_count,
                             true,
@@ -3524,13 +3524,13 @@ fn parse_binary_tshape(
         TextShapeKind::Face => {
             let natural_restriction = cursor.bool("binary face natural-restriction flag")?;
             let tolerance = cursor.finite_f64("binary face tolerance")?;
-            let surface = checked_binary_reference(
+            let surface = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary face surface")?,
                 surface_count,
                 true,
                 "face surface",
             )?;
-            let location = checked_binary_reference(
+            let location = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary face location")?,
                 location_count,
                 true,
@@ -3538,7 +3538,7 @@ fn parse_binary_tshape(
             )?;
             let triangulation = match cursor.u8("binary face triangulation marker")? {
                 0 | 1 => None,
-                2 => Some(checked_binary_reference(
+                2 => Some(checked_binary_reference(cursor.ctx,
                     cursor.i32("binary face triangulation")?,
                     triangulation_count,
                     false,
@@ -3577,7 +3577,7 @@ fn parse_binary_tshape(
         if orientation == b'*' {
             break;
         }
-        let reverse_index = checked_binary_reference(
+        let reverse_index = checked_binary_reference(cursor.ctx,
             cursor.i32("binary child reverse index")?,
             tshape_count,
             false,
@@ -3594,8 +3594,8 @@ fn parse_binary_tshape(
             .reserve_vec(&mut children, 1, "FreeCAD binary shape children")?;
         children.push(TextShapeUse {
             shape,
-            orientation: binary_orientation(i32::from(orientation))?,
-            location: checked_binary_reference(
+            orientation: binary_orientation(cursor.ctx, i32::from(orientation))?,
+            location: checked_binary_reference(cursor.ctx,
                 cursor.i32("binary child location")?,
                 location_count,
                 true,
@@ -3628,13 +3628,13 @@ fn parse_binary_edge_representation(
     } = counts;
     match kind {
         1 => {
-            let curve = checked_binary_reference(
+            let curve = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge curve")?,
                 curve_count,
                 false,
                 "edge curve",
             )?;
-            let location = checked_binary_reference(
+            let location = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge curve location")?,
                 location_count,
                 true,
@@ -3651,14 +3651,14 @@ fn parse_binary_edge_representation(
             })
         }
         2 | 3 => {
-            let curve = checked_binary_reference(
+            let curve = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge pcurve")?,
                 curve2d_count,
                 false,
                 "edge pcurve",
             )?;
             let secondary = if kind == 3 {
-                let secondary = checked_binary_reference(
+                let secondary = checked_binary_reference(cursor.ctx,
                     cursor.i32("binary edge secondary pcurve")?,
                     curve2d_count,
                     false,
@@ -3671,13 +3671,13 @@ fn parse_binary_edge_representation(
             } else {
                 None
             };
-            let surface = checked_binary_reference(
+            let surface = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge surface")?,
                 surface_count,
                 false,
                 "edge surface",
             )?;
-            let location = checked_binary_reference(
+            let location = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge surface location")?,
                 location_count,
                 true,
@@ -3719,25 +3719,25 @@ fn parse_binary_edge_representation(
             let continuity = cursor.ctx.format_retained(
                 format_args!("{continuity}"), "FreeCAD binary edge continuity",
             )?;
-            let first_surface = checked_binary_reference(
+            let first_surface = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge regularity surface")?,
                 surface_count,
                 false,
                 "edge regularity surface",
             )?;
-            let location = checked_binary_reference(
+            let location = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge regularity location")?,
                 location_count,
                 true,
                 "edge regularity location",
             )?;
-            let second_surface = checked_binary_reference(
+            let second_surface = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge second regularity surface")?,
                 surface_count,
                 false,
                 "edge second regularity surface",
             )?;
-            let second_location = checked_binary_reference(
+            let second_location = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge second regularity location")?,
                 location_count,
                 true,
@@ -3750,13 +3750,13 @@ fn parse_binary_edge_representation(
             })
         }
         5 => {
-            let polygon = checked_binary_reference(
+            let polygon = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge 3D polygon")?,
                 polygon3d_count,
                 false,
                 "edge 3D polygon",
             )?;
-            let location = checked_binary_reference(
+            let location = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge polygon location")?,
                 location_count,
                 true,
@@ -3765,14 +3765,14 @@ fn parse_binary_edge_representation(
             Ok(TextEdgeRepresentation::Polygon3d { polygon, location })
         }
         6 | 7 => {
-            let polygon = checked_binary_reference(
+            let polygon = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge indexed polygon")?,
                 indexed_polygon_count,
                 false,
                 "edge indexed polygon",
             )?;
             let secondary = if kind == 7 {
-                Some(checked_binary_reference(
+                Some(checked_binary_reference(cursor.ctx,
                     cursor.i32("binary edge secondary indexed polygon")?,
                     indexed_polygon_count,
                     false,
@@ -3781,13 +3781,13 @@ fn parse_binary_edge_representation(
             } else {
                 None
             };
-            let triangulation = checked_binary_reference(
+            let triangulation = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge triangulation")?,
                 triangulation_count,
                 false,
                 "edge triangulation",
             )?;
-            let location = checked_binary_reference(
+            let location = checked_binary_reference(cursor.ctx,
                 cursor.i32("binary edge triangulation location")?,
                 location_count,
                 true,
@@ -3814,30 +3814,41 @@ fn parse_binary_edge_representation(
 }
 
 fn checked_binary_reference(
+    ctx: &DecodeContext<'_>,
     value: i32,
     count: usize,
     allow_zero: bool,
     label: &str,
 ) -> Result<usize, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let value = usize::try_from(value)
-        .map_err(|_| CodecError::malformed(format_args!("negative binary {label}")))?;
+        .map_err(|_| crate::resource::malformed_charged(
+            ctx, format_args!("negative binary {label}"), "FreeCAD binary reference diagnostic",
+        ))?;
     if value > count || (!allow_zero && value == 0) {
-        return Err(CodecError::malformed(format_args!(
-            "binary {label} index {value} exceeds table count {count}"
-        )));
+        return Err(crate::resource::malformed_charged(
+            ctx, format_args!("binary {label} index {value} exceeds table count {count}"),
+            "FreeCAD binary reference diagnostic",
+        ));
     }
     Ok(value)
 }
 
-fn binary_orientation(value: i32) -> Result<TextOrientation, CodecError> {
+fn binary_orientation(ctx: &DecodeContext<'_>, value: i32) -> Result<TextOrientation, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     match value {
         0 => Ok(TextOrientation::Forward),
         1 => Ok(TextOrientation::Reversed),
         2 => Ok(TextOrientation::Internal),
         3 => Ok(TextOrientation::External),
-        other => Err(CodecError::malformed(format_args!(
-            "invalid binary orientation {other}"
-        ))),
+        other => Err(crate::resource::malformed_charged(
+            ctx, format_args!("invalid binary orientation {other}"),
+            "FreeCAD binary orientation diagnostic",
+        )),
     }
 }
 
