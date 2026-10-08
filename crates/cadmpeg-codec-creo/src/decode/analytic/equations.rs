@@ -495,71 +495,73 @@ fn polynomial_interval_value_bound(
     parameter: f64,
     parameter_error: f64,
 ) -> Result<f64, CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo polynomial interval value bound scratch")?;
-    scratch.with_storage(|| {
-        let (_, mut bound) = polynomial_value_and_bound(ctx, coefficients, parameter)?;
-        let mut derivative = Vec::new();
-        ctx.extend_from_slice(
-            &mut derivative,
-            coefficients,
-            "creo polynomial interval coefficients",
-        )?;
-        let mut parameter_error_power = 1.0;
-        let mut factorial = 1.0;
-        for order_offset in ctx
-            .admit_iter(
-                &coefficients[1..],
-                "creo polynomial interval derivative orders",
+    let mut derivative_storage = ctx.reserve_scoped(0, "creo polynomial interval value bound scratch")?;
+    let (_, mut bound) = polynomial_value_and_bound(ctx, coefficients, parameter)?;
+    let mut derivative = Vec::new();
+    derivative_storage.with_storage(|| ctx.extend_from_slice(
+        &mut derivative,
+        coefficients,
+        "creo polynomial interval coefficients",
+    ))?;
+    let mut parameter_error_power = 1.0;
+    let mut factorial = 1.0;
+    for order_offset in ctx
+        .admit_iter(
+            &coefficients[1..],
+            "creo polynomial interval derivative orders",
+        )?
+        .enumerate()
+        .map(|(order_offset, _)| order_offset)
+    {
+        let order = order_offset + 1;
+        let mut next_storage = ctx.reserve_scoped(0, "creo polynomial interval value bound scratch")?;
+        let mut next_derivative = Vec::new();
+        next_storage.with_storage(|| ctx.reserve_vec(
+            &mut next_derivative,
+            derivative.len() - 1,
+            "creo polynomial interval derivatives",
+        ))?;
+        next_derivative.extend(
+            ctx.admit_iter(
+                &derivative[1..],
+                "creo polynomial interval derivative coefficients",
             )?
             .enumerate()
-            .map(|(order_offset, _)| order_offset)
-        {
-            let order = order_offset + 1;
-            let mut next_derivative = Vec::new();
-            ctx.reserve_vec(
-                &mut next_derivative,
-                derivative.len() - 1,
-                "creo polynomial interval derivatives",
-            )?;
-            next_derivative.extend(
-                ctx.admit_iter(
-                    &derivative[1..],
-                    "creo polynomial interval derivative coefficients",
-                )?
-                .enumerate()
-                .map(|(power_offset, coefficient)| {
-                    let power = power_offset + 1;
-                    let Ok(power) = u32::try_from(power) else {
-                        return BoundedCoefficient {
-                            value: f64::INFINITY,
-                            bound: f64::INFINITY,
-                        };
+            .map(|(power_offset, coefficient)| {
+                let power = power_offset + 1;
+                let Ok(power) = u32::try_from(power) else {
+                    return BoundedCoefficient {
+                        value: f64::INFINITY,
+                        bound: f64::INFINITY,
                     };
-                    let factor = f64::from(power);
-                    let value = coefficient.value * factor;
-                    BoundedCoefficient {
-                        value,
-                        bound: inflate_positive_bound(
-                            coefficient.bound * factor + operation_rounding_bound(value),
-                        ),
-                    }
-                }),
-            );
-            derivative = next_derivative;
-            let Ok(order) = u32::try_from(order) else {
-                return Ok(f64::INFINITY);
-            };
-            parameter_error_power *= parameter_error;
-            factorial *= f64::from(order);
-            let (derivative_value, derivative_bound) =
-                polynomial_value_and_bound(ctx, &derivative, parameter)?;
-            let term = inflate_positive_bound(
-                (derivative_value.abs() + derivative_bound) * parameter_error_power / factorial,
-            );
-            bound = inflate_positive_bound(bound + term);
-        }
-        Ok(bound)
-    })
+                };
+                let factor = f64::from(power);
+                let value = coefficient.value * factor;
+                BoundedCoefficient {
+                    value,
+                    bound: inflate_positive_bound(
+                        coefficient.bound * factor + operation_rounding_bound(value),
+                    ),
+                }
+            }),
+        );
+        derivative = next_derivative;
+        derivative_storage = next_storage;
+        let Ok(order) = u32::try_from(order) else {
+            return Ok(f64::INFINITY);
+        };
+        parameter_error_power *= parameter_error;
+        factorial *= f64::from(order);
+        let (derivative_value, derivative_bound) =
+            polynomial_value_and_bound(ctx, &derivative, parameter)?;
+        let term = inflate_positive_bound(
+            (derivative_value.abs() + derivative_bound) * parameter_error_power / factorial,
+        );
+        bound = inflate_positive_bound(bound + term);
+    }
+    drop(derivative);
+    drop(derivative_storage);
+    Ok(bound)
 }
 
 fn polynomial_sign(
@@ -1082,7 +1084,12 @@ fn sylvester_polynomial(
                 .as_ref()
                 .map(SylvesterEntry::as_slice)
         }) {
-            term = term_storage.with_storage(|| polynomial_product(ctx, &term, factor))?;
+            let (next_term, next_storage) = ctx.with_scoped_storage(
+                "creo Sylvester product storage",
+                || polynomial_product(ctx, &term, factor),
+            )?;
+            term = next_term;
+            term_storage = next_storage;
         }
         if determinant.len() < term.len() {
             let additional = term.len() - determinant.len();
@@ -1100,6 +1107,8 @@ fn sylvester_polynomial(
         {
             determinant[index] += sign(permutation_sign) * coefficient;
         }
+        drop(term);
+        drop(term_storage);
     }
     Ok(determinant)
 }
@@ -1907,6 +1916,7 @@ pub(in crate::decode) fn plane_cone_conic(
 #[cfg(test)]
 mod tests {
     mod plane_solver;
+    mod polynomial_storage;
 
     use super::{
         BoundedCoefficient, CarrierEquation, ConeEquation, PlaneConicEquation, PlaneEquation,
