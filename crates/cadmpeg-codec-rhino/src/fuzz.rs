@@ -104,8 +104,12 @@ pub fn object_record(data: &[u8]) {
     else {
         return;
     };
+    let Ok(mut workspace) = ctx.reserve_scoped(0, "Rhino fuzz object workspace") else {
+        return;
+    };
     let _probe = crate::objects::parse_object_record(
         &ctx,
+        &mut workspace,
         data,
         &record,
         selected_archive(data[0]),
