@@ -243,6 +243,21 @@ fn absent_or_nonpositive_significance_fields_substitute_seventeen_digits() {
 }
 
 #[test]
+fn v5_0_supplied_double_significance_is_preserved() {
+    let mut fields = valid_global_fields();
+    fields[22] = "8".into();
+    fields.truncate(25);
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(parsed.real_precision().double_significance, 15);
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+        0,
+        "{losses:#?}"
+    );
+}
+
+#[test]
 fn readable_numeric_capabilities_are_retained_separately_from_projection_precision() {
     let (parsed, losses) = resolve_global_fields(&valid_global_fields());
 

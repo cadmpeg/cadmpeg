@@ -207,6 +207,71 @@ fn parameter_token_scan_refuses_work_before_token_probe() {
 }
 
 #[test]
+fn double_precision_real_word_zero_fill_refuses_work_before_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let bytes = double_precision_bitset_input();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges double-precision real words",
+        |cap| {
+            with_work_limit(&bytes, cap, |ctx| {
+                super::super::tokenize_with_limits(
+                    &bytes,
+                    &[],
+                    b',',
+                    b';',
+                    GlobalTable::V5_0,
+                    declared_numeric_limits(),
+                    ctx,
+                )
+                .map(|_| ())
+                .map_err(|failure| match failure {
+                    TokenizeFailure::Refusal(error) => error,
+                    TokenizeFailure::Defect(defect, _) => panic!("{defect:?}"),
+                })
+            })
+        },
+    );
+    assert_work_limit(&error, "iges double-precision real words", 1);
+}
+
+#[test]
+fn double_precision_real_bitset_grows_through_late_words() {
+    let bytes = double_precision_bitset_input();
+    crate::test_support::with_service_context(&bytes, |ctx| {
+        let result = super::super::tokenize_with_limits(
+            &bytes,
+            &[],
+            b',',
+            b';',
+            GlobalTable::V5_0,
+            declared_numeric_limits(),
+            ctx,
+        );
+        let (tokens, end, words) = match result {
+            Ok(tokenized) => tokenized,
+            Err(TokenizeFailure::Refusal(error)) => {
+                panic!("the late double-precision token was refused: {error:?}")
+            }
+            Err(TokenizeFailure::Defect(defect, offset)) => {
+                panic!("the late double-precision token failed at {offset}: {defect:?}")
+            }
+        };
+        assert_eq!(tokens.len(), 65);
+        assert_eq!(end, bytes.len());
+        assert_eq!(words, [0, 1]);
+    });
+}
+
+fn double_precision_bitset_input() -> Vec<u8> {
+    let mut values = vec!["116"];
+    values.extend(std::iter::repeat_n("0", 63));
+    values.push("1D0");
+    format!("{};", values.join(",")).into_bytes()
+}
+
+#[test]
 fn parameter_leading_space_scan_refuses_work_after_token_admission() {
     let error = with_work_limit(b"1;", 1, |ctx| {
         tokenize(b"1;", &[], b',', b';', GlobalTable::V5Later, ctx).unwrap_err()

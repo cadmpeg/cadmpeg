@@ -3912,14 +3912,13 @@ fn tokenize_with_limits(
                 if double_precision {
                     // One word per 64 tokens, grown only up to the last set bit.
                     let word = tokens.len() / 64;
-                    while double_precision_reals.len() <= word {
-                        ctx.push_vec(
-                            &mut double_precision_reals,
-                            0_u64,
-                            "iges double-precision real words",
-                        )
-                        .map_err(TokenizeFailure::Refusal)?;
-                    }
+                    ctx.resize_vec(
+                        &mut double_precision_reals,
+                        word + 1,
+                        0_u64,
+                        "iges double-precision real words",
+                    )
+                    .map_err(TokenizeFailure::Refusal)?;
                     double_precision_reals[word] |= 1 << (tokens.len() % 64);
                 }
                 (token, end)

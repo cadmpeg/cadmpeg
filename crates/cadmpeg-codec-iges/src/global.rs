@@ -551,7 +551,7 @@ pub(crate) fn layout_global_cards(
         } else {
             None
         };
-        let minimum = header_end.map_or(field.len(), |end| leading + end);
+        let minimum = header_end.unwrap_or(field.len());
         if minimum > 72 {
             return Err(malformed("Global field exceeds one card"));
         }
@@ -1285,7 +1285,16 @@ impl Resolution<'_, '_, '_> {
     }
 
     fn significance(&mut self, index: usize) -> Result<Supplied<u32>, CodecError> {
-        let defect = match self.supplied_integer(index)? {
+        let supplied = self.supplied_integer(index)?;
+        self.significance_from_supplied(index, supplied)
+    }
+
+    fn significance_from_supplied(
+        &mut self,
+        index: usize,
+        supplied: Supplied<i64>,
+    ) -> Result<Supplied<u32>, CodecError> {
+        let defect = match supplied {
             Supplied::Absent => Defect::Absent,
             Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
                 Some(value) => return Ok(Supplied::Value(value)),
@@ -1606,12 +1615,13 @@ fn resolve<'ctx>(
     let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE)?.value();
     let double_magnitude =
         resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true)?;
-    let double_significance = if global_table == GlobalTable::V5_0
-        && matches!(
-            resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE)?,
+    let double_significance = if global_table == GlobalTable::V5_0 {
+        let supplied = resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE)?;
+        if matches!(supplied, Supplied::Absent) {
             Supplied::Absent
-        ) {
-        Supplied::Absent
+        } else {
+            resolution.significance_from_supplied(FIELD_DOUBLE_SIGNIFICANCE, supplied)?
+        }
     } else {
         resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)?
     };

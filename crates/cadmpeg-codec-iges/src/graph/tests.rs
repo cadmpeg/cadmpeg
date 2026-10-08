@@ -20,6 +20,43 @@ use crate::test_support::test_cards::{
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
+fn work_limit_at_amount(
+    operation: &'static str,
+    additional: u64,
+    mut run: impl FnMut(u64) -> Result<(), cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+
+    let probed = {
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, Some(additional));
+        run(u64::MAX)
+    };
+    let limit = match probed {
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+        Err(error) => panic!("unexpected refusal while probing {operation}: {error:?}"),
+        Ok(()) => panic!("missing work boundary for {operation} with cost {additional}"),
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, operation);
+    assert_eq!(limit.additional, additional);
+
+    let need = limit
+        .used
+        .checked_add(limit.additional)
+        .expect("work boundary fits");
+    let error = run(need - 1)
+        .err()
+        .expect("the replay one unit below the boundary refuses");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == operation
+                && refusal.used + refusal.additional == need
+    ));
+    error
+}
+
 #[test]
 fn reference_summary_refuses_note_limit_without_heap_group_index() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -113,6 +150,66 @@ fn parameter_resolver_edges_refuse_each_collection_limit_before_storage() {
     let mut graph = BTreeMap::new();
     let _storage = resolver.append_to(&mut graph).unwrap();
     assert_eq!(graph[&1].len(), 1);
+}
+
+#[test]
+fn parameter_resolver_nonempty_edge_group_lookup_refuses_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let directory = [directory_target(1, 116), directory_target(3, 116)];
+    let one_comparison_work =
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
+    let error = work_limit_at_amount(
+        "iges parameter resolver edge groups",
+        one_comparison_work,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let resolver = ParameterResolver::new(&directory, &ctx)?;
+            assert_eq!(resolver.resolve_any(1, 0, 3)?, Some(3));
+            assert_eq!(resolver.resolve_any(3, 0, 1)?, Some(1));
+            Ok(())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "iges parameter resolver edge groups"
+                && limit.additional == one_comparison_work
+    ));
+}
+
+#[test]
+fn parameter_resolver_nonempty_graph_group_lookup_refuses_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let one_comparison_work =
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>());
+    let error = work_limit_at_amount(
+        "iges parameter resolver graph groups",
+        one_comparison_work,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let directory = [directory_target(1, 116)];
+            let (mut graph, _directory_storage) = build(&directory, &ctx)?;
+            let resolver = ParameterResolver::new(&directory, &ctx)?;
+            assert_eq!(resolver.resolve_any(1, 0, 3)?, None);
+            resolver.append_to(&mut graph).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "iges parameter resolver graph groups"
+                && limit.additional == one_comparison_work
+    ));
 }
 
 #[test]
