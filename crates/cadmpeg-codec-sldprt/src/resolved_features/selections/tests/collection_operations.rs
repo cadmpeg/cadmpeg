@@ -181,3 +181,48 @@ fn rejected_sketch_surface_trailer_releases_component_storage() {
         );
     }
 }
+
+#[test]
+fn short_edge_ids_admit_each_output_item_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut payload = vec![1, 0, 2, 0];
+    payload.extend([0; 16]);
+    payload.extend([0xff, 0xfe, 0xff]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        super::super::compact_u16_edge_ids(&ctx, &payload, 0, 2).unwrap(),
+        Some(vec![1, 2])
+    );
+}
+
+#[test]
+fn curve_path_admits_each_output_item_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut payload = vec![0; 70];
+    payload[..4].copy_from_slice(&2u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[4, 2, 0, 0]);
+    payload[12..28].copy_from_slice(&super::super::COMPACT_EDGE_VECTOR_MARKER);
+    let signature = [0x38, 0x80, 0x3b, 0, 20, 0, 0, 0, 100, 0, 0, 0];
+    for (cursor, local_id) in [(30, 7u32), (50, 8)] {
+        payload[cursor..cursor + 2].copy_from_slice(&0x8130u16.to_le_bytes());
+        payload[cursor + 4..cursor + 16].copy_from_slice(&signature);
+        payload[cursor + 16..cursor + 20].copy_from_slice(&local_id.to_le_bytes());
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let components = super::super::component_reference_curve_path_at(&ctx, &payload, 12)
+        .unwrap().expect("two curve components");
+    assert_eq!(components, vec![
+        crate::records::FeatureInputComponentPathEntry {
+            instance: Some(0x8130), type_signature: signature, local_id: Some(7),
+        },
+        crate::records::FeatureInputComponentPathEntry {
+            instance: Some(0x8130), type_signature: signature, local_id: Some(8),
+        },
+    ]);
+}

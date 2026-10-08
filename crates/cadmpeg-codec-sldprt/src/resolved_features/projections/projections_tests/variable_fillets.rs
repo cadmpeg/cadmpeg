@@ -186,6 +186,24 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         ),
         native_ref: Some("variable".into()),
     }];
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect SLDPRT variable fillet groups",
+        |limit| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            )?;
+            super::super::project_compact_edge_selections(
+                &ctx, &mut projected.clone(),
+                std::slice::from_ref(&history), std::slice::from_ref(&lane),
+            )
+        },
+    );
+    assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.additional == 1));
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
