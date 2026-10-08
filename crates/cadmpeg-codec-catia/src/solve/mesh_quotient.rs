@@ -5527,7 +5527,7 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
         };
         let mut boundary_support_storage =
             ctx.reserve_scoped(0, "catia_endpoint_boundary_support")?;
-        let mut boundary_support = BTreeMap::<usize, Vec<[usize; 2]>>::new();
+        let mut boundary_support = BTreeMap::<usize, ScopedValue<'_, Vec<[usize; 2]>>>::new();
         for (layer, (edge, candidates, _)) in ctx
             .admit_iter(layers, "catia_endpoint_layer_support")?
             .enumerate()
@@ -5535,55 +5535,62 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
             // A pair is supported when one orientation closes a cycle: some
             // anchor reaches its start through the prefix and is reached from
             // its end through the suffix.
-            let mut layer_support = Vec::new();
-            for pair in ctx.admit_iter(candidates, "catia_endpoint_layer_support")? {
-                let mut supported = false;
-                for (rank, (start, end)) in [(pair[0], pair[1]), (pair[1], pair[0])]
-                    .into_iter()
-                    .enumerate()
-                {
-                    if supported || (rank == 1 && pair[0] == pair[1]) {
-                        continue;
-                    }
-                    let Some(anchors) = ctx.get_btree_map(
-                        &suffixes[layer + 1],
-                        &end,
-                        "catia_endpoint_layer_support",
-                    )?
-                    else {
-                        continue;
-                    };
-                    supported = ctx.any_by(
-                        anchors,
-                        |anchor| {
-                            if !charge() {
-                                return Ok(false);
+            let (layer_support, layer_storage) =
+                ctx.with_scoped_storage("catia_endpoint_layer_support_storage", || {
+                    let mut layer_support = Vec::new();
+                    for pair in ctx.admit_iter(candidates, "catia_endpoint_layer_support")? {
+                        let mut supported = false;
+                        for (rank, (start, end)) in [(pair[0], pair[1]), (pair[1], pair[0])]
+                            .into_iter()
+                            .enumerate()
+                        {
+                            if supported || (rank == 1 && pair[0] == pair[1]) {
+                                continue;
                             }
-                            Ok(
-                                match ctx.get_btree_map(
-                                    &prefixes[layer],
-                                    anchor,
-                                    "catia_endpoint_layer_support",
-                                )? {
-                                    Some(ends) => ctx.contains_btree_set(
-                                        ends,
-                                        &start,
-                                        "catia_endpoint_layer_support",
-                                    )?,
-                                    None => false,
+                            let Some(anchors) = ctx.get_btree_map(
+                                &suffixes[layer + 1],
+                                &end,
+                                "catia_endpoint_layer_support",
+                            )?
+                            else {
+                                continue;
+                            };
+                            supported = ctx.any_by(
+                                anchors,
+                                |anchor| {
+                                    if !charge() {
+                                        return Ok(false);
+                                    }
+                                    Ok(
+                                        match ctx.get_btree_map(
+                                            &prefixes[layer],
+                                            anchor,
+                                            "catia_endpoint_layer_support",
+                                        )? {
+                                            Some(ends) => ctx.contains_btree_set(
+                                                ends,
+                                                &start,
+                                                "catia_endpoint_layer_support",
+                                            )?,
+                                            None => false,
+                                        },
+                                    )
                                 },
-                            )
-                        },
-                        "catia_endpoint_layer_support",
-                    )?;
-                }
-                if budget.is_some_and(WorkBudget::exhausted) {
-                    return Ok(None);
-                }
-                if supported {
-                    ctx.push_vec(&mut layer_support, pair, "catia_endpoint_layer_support")?;
-                }
-            }
+                                "catia_endpoint_layer_support",
+                            )?;
+                        }
+                        if budget.is_some_and(WorkBudget::exhausted) {
+                            return Ok(None);
+                        }
+                        if supported {
+                            ctx.push_vec(&mut layer_support, pair, "catia_endpoint_layer_support")?;
+                        }
+                    }
+                    Ok::<_, CodecError>(Some(layer_support))
+                })?;
+            let Some(layer_support) = layer_support else {
+                return Ok(None);
+            };
             match ctx.get_mut_btree_map(
                 &mut boundary_support,
                 &edge,
@@ -5591,7 +5598,7 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
             )? {
                 Some(retained) => retain_supported_pairs(
                     ctx,
-                    retained,
+                    &mut retained.value,
                     &layer_support,
                     "catia_endpoint_boundary_support",
                 )?,
@@ -5600,7 +5607,10 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                         ctx.insert_btree_map(
                             &mut boundary_support,
                             edge,
-                            layer_support,
+                            ScopedValue {
+                                value: layer_support,
+                                storage: Some(layer_storage),
+                            },
                             "catia_endpoint_boundary_support",
                         )
                     })?;
@@ -5616,13 +5626,13 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                         &use_.edge,
                         "catia_endpoint_boundary_support",
                     )?
-                    .is_none_or(Vec::is_empty))
+                    .is_none_or(|pairs| pairs.is_empty()))
             },
             "catia_endpoint_boundary_support",
         )? {
             return Ok(Some(unsupported()));
         }
-        for (edge, supported) in
+        for (edge, mut supported) in
             ctx.admit_iter(boundary_support, "catia_endpoint_assignment_support")?
         {
             match ctx.get_mut_btree_map(
@@ -5637,10 +5647,15 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                     "catia_endpoint_assignment_support",
                 )?,
                 None => {
+                    supported
+                        .storage
+                        .take()
+                        .ok_or_else(|| CodecError::malformed("endpoint support owns storage"))?
+                        .commit()?;
                     ctx.insert_btree_map(
                         &mut assignment_support,
                         edge,
-                        supported,
+                        supported.value,
                         "catia_endpoint_assignment_support",
                     )?;
                 }
@@ -6684,92 +6699,96 @@ fn build_endpoint_relation_constraints(
     domains: &[Vec<MeshEndpointRelationChoice>],
     budget: &WorkBudget<'_>,
 ) -> Result<Option<MeshEndpointRelationConstraints>, CodecError> {
-    // (edge, face) for every edge a face's choices name, ascending.
-    let mut edge_faces = Vec::new();
-    for (face, choices) in ctx
-        .admit_iter(domains, "catia_endpoint_relation_edge_faces")?
-        .enumerate()
-    {
-        for choice in ctx.admit_iter(choices, "catia_endpoint_relation_edge_faces")? {
-            for &(edge, _) in ctx.admit_iter(
-                choice.selection.edge_pairs(),
-                "catia_endpoint_relation_edge_faces",
-            )? {
-                ctx.push_vec(
-                    &mut edge_faces,
-                    (edge, face),
-                    "catia_endpoint_relation_edge_faces",
-                )?;
-            }
-        }
-    }
-    ctx.sort_unstable_by(
-        &mut edge_faces,
-        |entry| entry,
-        Ord::cmp,
-        "catia_endpoint_relation_sorted_faces_sort",
-    )?;
-    ctx.dedup_vec(&mut edge_faces, "catia_endpoint_relation_sorted_faces")?;
-    // ((face, neighbor), edge) for every edge two faces share, both ways.
-    let mut shared_edges = Vec::new();
-    let mut start = 0;
-    while start < edge_faces.len() {
-        ctx.charge_work(1, "catia_endpoint_relation_shared_edges")?;
-        let edge = edge_faces[start].0;
-        let length = ctx.partition_point(
-            &edge_faces[start..],
-            |entry| Ok(entry.0 == edge),
-            "catia_endpoint_relation_shared_edges",
-        )?;
-        let faces = &edge_faces[start..start + length];
-        start += length;
-        for (left_index, &(_, left)) in ctx
-            .admit_iter(faces, "catia_endpoint_relation_shared_edges")?
-            .enumerate()
-        {
-            for &(_, right) in ctx.admit_iter(
-                &faces[left_index + 1..],
-                "catia_endpoint_relation_shared_edges",
-            )? {
-                for pair in [(left, right), (right, left)] {
-                    ctx.push_vec(
-                        &mut shared_edges,
-                        (pair, edge),
-                        "catia_endpoint_relation_shared_edges",
-                    )?;
+    let (shared_rows, _shared_storage) =
+        ctx.with_scoped_storage("catia_endpoint_relation_join_storage", || {
+            // (edge, face) for every edge a face's choices name, ascending.
+            let mut edge_faces = Vec::new();
+            for (face, choices) in ctx
+                .admit_iter(domains, "catia_endpoint_relation_edge_faces")?
+                .enumerate()
+            {
+                for choice in ctx.admit_iter(choices, "catia_endpoint_relation_edge_faces")? {
+                    for &(edge, _) in ctx.admit_iter(
+                        choice.selection.edge_pairs(),
+                        "catia_endpoint_relation_edge_faces",
+                    )? {
+                        ctx.push_vec(
+                            &mut edge_faces,
+                            (edge, face),
+                            "catia_endpoint_relation_edge_faces",
+                        )?;
+                    }
                 }
             }
-        }
-    }
-    ctx.sort_unstable_by(
-        &mut shared_edges,
-        |entry| entry,
-        Ord::cmp,
-        "catia_endpoint_relation_shared_rows_sort",
-    )?;
-    let mut shared_rows = Vec::new();
-    let mut start = 0;
-    while start < shared_edges.len() {
-        ctx.charge_work(1, "catia_endpoint_relation_shared_rows")?;
-        let pair = shared_edges[start].0;
-        let length = ctx.partition_point(
-            &shared_edges[start..],
-            |entry| Ok(entry.0 == pair),
-            "catia_endpoint_relation_shared_rows",
-        )?;
-        let edges = ctx.collect_vec(
-            shared_edges[start..start + length]
-                .iter()
-                .map(|entry| entry.1),
-            "catia_endpoint_relation_shared_rows",
-        )?;
-        start += length;
-        ctx.push_vec(
-            &mut shared_rows,
-            (pair, edges),
-            "catia_endpoint_relation_shared_rows",
-        )?;
-    }
+            ctx.sort_unstable_by(
+                &mut edge_faces,
+                |entry| entry,
+                Ord::cmp,
+                "catia_endpoint_relation_sorted_faces_sort",
+            )?;
+            ctx.dedup_vec(&mut edge_faces, "catia_endpoint_relation_sorted_faces")?;
+            // ((face, neighbor), edge) for every edge two faces share, both ways.
+            let mut shared_edges = Vec::new();
+            let mut start = 0;
+            while start < edge_faces.len() {
+                ctx.charge_work(1, "catia_endpoint_relation_shared_edges")?;
+                let edge = edge_faces[start].0;
+                let length = ctx.partition_point(
+                    &edge_faces[start..],
+                    |entry| Ok(entry.0 == edge),
+                    "catia_endpoint_relation_shared_edges",
+                )?;
+                let faces = &edge_faces[start..start + length];
+                start += length;
+                for (left_index, &(_, left)) in ctx
+                    .admit_iter(faces, "catia_endpoint_relation_shared_edges")?
+                    .enumerate()
+                {
+                    for &(_, right) in ctx.admit_iter(
+                        &faces[left_index + 1..],
+                        "catia_endpoint_relation_shared_edges",
+                    )? {
+                        for pair in [(left, right), (right, left)] {
+                            ctx.push_vec(
+                                &mut shared_edges,
+                                (pair, edge),
+                                "catia_endpoint_relation_shared_edges",
+                            )?;
+                        }
+                    }
+                }
+            }
+            ctx.sort_unstable_by(
+                &mut shared_edges,
+                |entry| entry,
+                Ord::cmp,
+                "catia_endpoint_relation_shared_rows_sort",
+            )?;
+            let mut shared_rows = Vec::new();
+            let mut start = 0;
+            while start < shared_edges.len() {
+                ctx.charge_work(1, "catia_endpoint_relation_shared_rows")?;
+                let pair = shared_edges[start].0;
+                let length = ctx.partition_point(
+                    &shared_edges[start..],
+                    |entry| Ok(entry.0 == pair),
+                    "catia_endpoint_relation_shared_rows",
+                )?;
+                let edges = ctx.collect_vec(
+                    shared_edges[start..start + length]
+                        .iter()
+                        .map(|entry| entry.1),
+                    "catia_endpoint_relation_shared_rows",
+                )?;
+                start += length;
+                ctx.push_vec(
+                    &mut shared_rows,
+                    (pair, edges),
+                    "catia_endpoint_relation_shared_rows",
+                )?;
+            }
+            Ok::<_, CodecError>(shared_rows)
+        })?;
     let mut arcs =
         ctx.collect_indexed_vec(domains.len(), "catia_endpoint_relation_arcs", |_| {
             Ok(Vec::new())
@@ -6794,20 +6813,28 @@ fn build_endpoint_relation_constraints(
         if !budget.charge_by(index_work) {
             return Ok(None);
         }
-        let (left_complete, left_choices) =
-            complete_endpoint_relation_keys(ctx, &domains[face], &edges)?;
-        let (right_complete, right_choices) =
-            complete_endpoint_relation_keys(ctx, &domains[neighbor], &edges)?;
+        let ((left_complete, left_choices, right_complete, right_choices), _key_storage) = ctx
+            .with_scoped_storage("catia_endpoint_relation_comparison_key_storage", || {
+                let (left_complete, left_choices) =
+                    complete_endpoint_relation_keys(ctx, &domains[face], &edges)?;
+                let (right_complete, right_choices) =
+                    complete_endpoint_relation_keys(ctx, &domains[neighbor], &edges)?;
+                Ok::<_, CodecError>((left_complete, left_choices, right_complete, right_choices))
+            })?;
         let supports = if left_complete && right_complete {
-            let mut index = HashMap::<EndpointRelationKey, Vec<usize>>::new();
-            for (choice, key) in
-                ctx.admit_iter(right_choices, "catia_endpoint_relation_index_keys")?
-            {
-                let others = ctx
-                    .entry_hash_map(&mut index, key, "catia_endpoint_relation_index_keys")?
-                    .or_default();
-                ctx.push_vec(others, choice.id, "catia_endpoint_relation_index_values")?;
-            }
+            let (index, _index_storage) =
+                ctx.with_scoped_storage("catia_endpoint_relation_key_index_storage", || {
+                    let mut index = HashMap::<EndpointRelationKey, Vec<usize>>::new();
+                    for (choice, key) in
+                        ctx.admit_iter(right_choices, "catia_endpoint_relation_index_keys")?
+                    {
+                        let others = ctx
+                            .entry_hash_map(&mut index, key, "catia_endpoint_relation_index_keys")?
+                            .or_default();
+                        ctx.push_vec(others, choice.id, "catia_endpoint_relation_index_values")?;
+                    }
+                    Ok::<_, CodecError>(index)
+                })?;
             let mut supports = Vec::new();
             for (_, key) in ctx.admit_iter(&left_choices, "catia_endpoint_relation_support_rows")? {
                 let mut mask = ctx.alloc_filled(
@@ -9582,49 +9609,78 @@ fn resolve_singleton_mesh_endpoint_candidates(
                 "catia_singleton_selected_directions",
             )?;
             for face in ctx.admit_iter(assignments, "catia_singleton_selected_assignments")? {
-                let mut seen = HashSet::new();
+                let mut seen_storage =
+                    ctx.reserve_scoped(0, "catia_singleton_signature_index_storage")?;
+                let mut seen = HashMap::new();
                 let mut first = None;
-                for assignment in ctx.admit_iter(face, "catia_singleton_signatures")? {
-                    let mut directions = Vec::new();
-                    ctx.reserve_vec(
-                        &mut directions,
-                        assignment.boundaries.len(),
-                        "catia_singleton_direction_rows",
+                let mut options = face.iter();
+                while let Some(assignment) =
+                    ctx.next_charged(&mut options, "catia_singleton_signatures")?
+                {
+                    let ((valid, directions), direction_storage) = ctx.with_scoped_storage(
+                        "catia_singleton_candidate_direction_storage",
+                        || {
+                            let mut directions = Vec::new();
+                            ctx.reserve_vec(
+                                &mut directions,
+                                assignment.boundaries.len(),
+                                "catia_singleton_direction_rows",
+                            )?;
+                            let mut valid = true;
+                            for boundary in ctx.admit_iter(
+                                &assignment.boundaries,
+                                "catia_singleton_direction_rows",
+                            )? {
+                                let Some(row) = singleton_mesh_boundary_directions(
+                                    ctx,
+                                    boundary,
+                                    edge_candidates,
+                                    edge_direction_evidence,
+                                )?
+                                else {
+                                    valid = false;
+                                    break;
+                                };
+                                directions.push(row);
+                            }
+                            Ok::<_, CodecError>((valid, directions))
+                        },
                     )?;
-                    let mut valid = true;
-                    for boundary in
-                        ctx.admit_iter(&assignment.boundaries, "catia_singleton_direction_rows")?
-                    {
-                        let Some(row) = singleton_mesh_boundary_directions(
-                            ctx,
-                            boundary,
-                            edge_candidates,
-                            edge_direction_evidence,
-                        )?
-                        else {
-                            valid = false;
-                            break;
-                        };
-                        directions.push(row);
-                    }
                     if !valid {
                         continue;
                     }
-                    let Some(signature) = canonical_singleton_coordinate_cycles(
-                        ctx,
-                        assignment,
-                        &directions,
-                        edge_candidates,
-                    )?
-                    else {
+                    let (signature, signature_storage) =
+                        ctx.with_scoped_storage("catia_singleton_signature_key_storage", || {
+                            canonical_singleton_coordinate_cycles(
+                                ctx,
+                                assignment,
+                                &directions,
+                                edge_candidates,
+                            )
+                        })?;
+                    let Some(signature) = signature else {
                         continue;
                     };
-                    if !ctx.insert_hash_set(&mut seen, signature, "catia_singleton_signatures")? {
+                    let unique = seen_storage.with_storage(|| -> Result<bool, CodecError> {
+                        match ctx.entry_hash_map(
+                            &mut seen,
+                            signature,
+                            "catia_singleton_signatures",
+                        )? {
+                            std::collections::hash_map::Entry::Occupied(_) => Ok(false),
+                            std::collections::hash_map::Entry::Vacant(entry) => {
+                                entry.insert(signature_storage);
+                                Ok(true)
+                            }
+                        }
+                    })?;
+                    if !unique {
                         continue;
                     }
                     if first.is_some() {
                         return Ok(None);
                     }
+                    direction_storage.commit()?;
                     first = Some((copy_mesh_assignment(ctx, assignment)?, directions));
                 }
                 let Some((assignment, directions)) = first else {
