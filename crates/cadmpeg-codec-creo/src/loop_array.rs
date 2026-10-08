@@ -187,17 +187,29 @@ fn row_prefix(data: &[u8], offset: usize, end: usize) -> Option<Prefix> {
     })
 }
 
-fn row_end(ctx: &DecodeContext<'_>, data: &[u8], body_start: usize, end: usize) -> Result<Option<usize>, CodecError> {
+fn row_end(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    body_start: usize,
+    end: usize,
+) -> Result<Option<usize>, CodecError> {
     let mut cursor = body_start;
     while cursor < end {
-        let Some(token) = psb::token_at(ctx, data, cursor)? else { return Ok(None); };
+        let Some(token) = psb::token_at(ctx, data, cursor)? else {
+            return Ok(None);
+        };
         if matches!(token.kind, psb::TokenKind::CompoundClose) {
             return Ok(Some(cursor));
         }
         // `token_at` answers only for an offset inside `data`, so every token
         // it states spans at least its own head byte. A zero-length token would
         // not advance the walk, and the mint refuses it instead of flooring it.
-        let Some(next) = std::num::NonZeroUsize::new(token.length).and_then(|length| cursor.checked_add(length.get())) else { return Ok(None); }; cursor = next;
+        let Some(next) = std::num::NonZeroUsize::new(token.length)
+            .and_then(|length| cursor.checked_add(length.get()))
+        else {
+            return Ok(None);
+        };
+        cursor = next;
     }
     Ok(None)
 }

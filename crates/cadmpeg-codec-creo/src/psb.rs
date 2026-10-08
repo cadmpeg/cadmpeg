@@ -86,28 +86,51 @@ pub(crate) enum TokenKind {
 ///
 /// Numeric forms that depend on a parent grammar remain compact or unknown
 /// tokens.
-pub(crate) fn tokens<'a>(ctx: &'a cadmpeg_core::decode::DecodeContext<'_>, data: &'a [u8]) -> impl Iterator<Item = Result<Token, cadmpeg_core::CodecError>> + 'a {
+pub(crate) fn tokens<'a>(
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'_>,
+    data: &'a [u8],
+) -> impl Iterator<Item = Result<Token, cadmpeg_core::CodecError>> + 'a {
     let mut offset = 0;
     std::iter::from_fn(move || {
-        if offset == data.len() { return None; }
+        if offset == data.len() {
+            return None;
+        }
         match token_at(ctx, data, offset) {
-            Ok(Some(token)) => { offset += token.length; Some(Ok(token)) }
-            Ok(None) => { offset = data.len(); None }
-            Err(error) => { offset = data.len(); Some(Err(error)) }
+            Ok(Some(token)) => {
+                offset += token.length;
+                Some(Ok(token))
+            }
+            Ok(None) => {
+                offset = data.len();
+                None
+            }
+            Err(error) => {
+                offset = data.len();
+                Some(Err(error))
+            }
         }
     })
 }
 
 /// Decode one byte-self-delimiting PSB token at `offset`.
-pub(crate) fn token_at(ctx: &cadmpeg_core::decode::DecodeContext<'_>, data: &[u8], offset: usize) -> Result<Option<Token>, cadmpeg_core::CodecError> {
-    let Some(tail) = data.get(offset..) else { return Ok(None); };
-    let Some(&head) = ctx.next_charged(&mut tail.iter(), "creo PSB token traversal")? else { return Ok(None); };
+pub(crate) fn token_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    offset: usize,
+) -> Result<Option<Token>, cadmpeg_core::CodecError> {
+    let Some(tail) = data.get(offset..) else {
+        return Ok(None);
+    };
+    let Some(&head) = ctx.next_charged(&mut tail.iter(), "creo PSB token traversal")? else {
+        return Ok(None);
+    };
     let (length, kind) = match head {
         token::NAMED_RECORD => match match data.get(offset + 2..) {
-            Some(rest) => ctx.position_by(rest, |&byte| Ok(byte == 0), "creo PSB record name scan")?,
+            Some(rest) => {
+                ctx.position_by(rest, |&byte| Ok(byte == 0), "creo PSB record name scan")?
+            }
             None => None,
-        }
-        {
+        } {
             Some(name_len) => (name_len + 3, TokenKind::NamedRecord),
             None => (data.len() - offset, TokenKind::Truncated(head)),
         },
@@ -351,10 +374,15 @@ mod tests {
     };
 
     fn token_at(data: &[u8], offset: usize) -> Option<Token> {
-        crate::decode::with_test_decode_ctx(|ctx| super::token_at(ctx, data, offset)).expect("token admission")
+        crate::decode::with_test_decode_ctx(|ctx| super::token_at(ctx, data, offset))
+            .expect("token admission")
     }
     fn tokens(data: &[u8]) -> std::vec::IntoIter<Token> {
-        crate::decode::with_test_decode_ctx(|ctx| super::tokens(ctx, data).collect::<Result<Vec<_>, _>>()).expect("token admission").into_iter()
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::tokens(ctx, data).collect::<Result<Vec<_>, _>>()
+        })
+        .expect("token admission")
+        .into_iter()
     }
 
     #[test]

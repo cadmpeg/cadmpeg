@@ -347,12 +347,21 @@ fn relation_argument_storage_is_scoped_and_released() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
-    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, Some("creo relation function arguments"), |cap| {
-        let mut trial = policy;
-        trial.limits.max_materialized_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
-        crate::curve::parse_relation_expression::<CurveExpressionValue>(&ctx, "itos(-1)", &BTreeMap::new(), RelationEvaluationContext::default())
-    });
+    policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+        ResourceDimension::MaterializedBytes,
+        Some("creo relation function arguments"),
+        |cap| {
+            let mut trial = policy;
+            trial.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &trial).expect("root");
+            crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                &ctx,
+                "itos(-1)",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error = crate::curve::parse_relation_expression::<CurveExpressionValue>(
         &ctx,

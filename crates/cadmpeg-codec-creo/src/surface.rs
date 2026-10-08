@@ -3916,7 +3916,10 @@ fn named_prototype_frames<'a>(
             ) {
                 value_end = value_offset + length;
             } else if let Some(compound_close) = psb::tokens(ctx, &payload[value_offset..value_end])
-                .find(|token| match token { Ok(token) => token.kind == psb::TokenKind::CompoundClose, Err(_) => true })
+                .find(|token| match token {
+                    Ok(token) => token.kind == psb::TokenKind::CompoundClose,
+                    Err(_) => true,
+                })
                 .transpose()?
             {
                 value_end = value_offset + compound_close.offset;
@@ -6339,9 +6342,16 @@ fn surface_body_compound_close(
     Ok(None)
 }
 
-fn first_compound_close(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize) -> Result<Option<usize>, CodecError> {
+fn first_compound_close(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<usize>, CodecError> {
     const OUTLINE_PAIR_SEPARATOR: &[u8] = &[0x00, 0x0c, 0x98];
-    let Some(body) = payload.get(start..end) else { return Ok(None); };
+    let Some(body) = payload.get(start..end) else {
+        return Ok(None);
+    };
     let separator_close = body
         .windows(OUTLINE_PAIR_SEPARATOR.len() + 1)
         .position(|window| {
@@ -6352,7 +6362,13 @@ fn first_compound_close(ctx: &DecodeContext<'_>, payload: &[u8], start: usize, e
     for token in psb::tokens(ctx, body) {
         let token = token?;
         match token.kind {
-            psb::TokenKind::CompoundClose => return Ok(Some(separator_close.map_or(start + token.offset, |separator| separator.min(start + token.offset)))),
+            psb::TokenKind::CompoundClose => {
+                return Ok(Some(
+                    separator_close.map_or(start + token.offset, |separator| {
+                        separator.min(start + token.offset)
+                    }),
+                ))
+            }
             psb::TokenKind::NamedRecord => return Ok(separator_close),
             _ => {}
         }
