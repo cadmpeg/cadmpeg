@@ -9,14 +9,14 @@ use cadmpeg_ir::topology::Color;
 
 use crate::container::InventorContainer;
 use crate::decode::rse_native_projection;
+use crate::decode::PreviewMediaType;
 use crate::decode::{
-    admit_kernel_annotation, admit_untransferred_carrier,
-    admitted_kernel_attribute, admitted_loss, decode_container, index_asm_face_keys, index_colors,
-    insert_source_attribute, project_preview_asset, project_property_set_issue,
-    project_protein_records, project_protein_state, project_root_product,
-    project_ufrx_embedded_reference, project_ufrx_external_reference, project_ufrx_model_state,
-    project_ufrx_occurrence, project_ufrx_representation, project_ufrx_state, property_set_name,
-    structural_issue,
+    admit_kernel_annotation, admit_untransferred_carrier, admitted_kernel_attribute, admitted_loss,
+    decode_container, index_asm_face_keys, index_colors, insert_source_attribute,
+    project_preview_asset, project_property_set_issue, project_protein_records,
+    project_protein_state, project_root_product, project_ufrx_embedded_reference,
+    project_ufrx_external_reference, project_ufrx_model_state, project_ufrx_occurrence,
+    project_ufrx_representation, project_ufrx_state, property_set_name, structural_issue,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence};
@@ -27,9 +27,7 @@ use crate::external_reference::{
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::ufrx::UfrxRecord;
-use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, StructuralIssueRecord,
-};
+use crate::native::{ActiveCarrierRecord, AssemblyOccurrenceRecord, StructuralIssueRecord};
 use crate::property_set::{Property, PropertySection, PropertyValue};
 use crate::protein::{ProteinInstanceRecords, ProteinState};
 use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentMetaState};
@@ -342,8 +340,6 @@ fn assembly_occurrence_native_record_refuses_before_id_creation() {
                 && limit.operation == "copy Inventor assembly related references"
     ));
 }
-
-
 
 #[test]
 fn decode_loss_refuses_before_message_and_code_creation() {
@@ -661,7 +657,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
         0,
         "inventor:property:value#1-0-17",
         b"image",
-        "image/png",
+        PreviewMediaType::Png,
     )
     .expect("projected preview");
     assert!(matches!(
@@ -681,7 +677,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
             0,
             "inventor:property:value#1-0-17",
             b"image",
-            "image/png",
+            PreviewMediaType::Png,
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
@@ -699,7 +695,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
             0,
             "inventor:property:value#1-0-17",
             b"image",
-            "image/png",
+            PreviewMediaType::Png,
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
@@ -715,7 +711,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
             0,
             "inventor:property:value#1-0-17",
             b"image",
-            "image/png",
+            PreviewMediaType::Png,
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
@@ -729,7 +725,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
         0,
         "inventor:property:value#1-0-17",
         b"image",
-        "image/png",
+        PreviewMediaType::Png,
     )
     .expect("admitted preview");
     assert_eq!(asset.id.as_str(), "inventor:document:asset#preview-0");
@@ -1450,21 +1446,15 @@ fn flat_color_index_stops_before_unvisited_tail_on_projection_refusal() {
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let projected = std::cell::Cell::new(0);
-    let error = match index_colors(
-        &ctx,
-        &entries,
-        operation,
-        |entry| {
-            projected.set(projected.get() + 1);
-            ctx.charge_entities(1, "project Inventor test color")?;
-            Ok(Some(*entry))
-        },
-    ) {
+    let error = match index_colors(&ctx, &entries, operation, |entry| {
+        projected.set(projected.get() + 1);
+        ctx.charge_entities(1, "project Inventor test color")?;
+        Ok(Some(*entry))
+    }) {
         Ok(_) => panic!("first projected entry exceeds the entity cap"),
         Err(error) => error,
     };
-    let CodecError::ResourceLimit(refusal) = error
-    else {
+    let CodecError::ResourceLimit(refusal) = error else {
         panic!("projection entity admission must refuse");
     };
     assert_eq!(refusal.dimension, ResourceDimension::Entities);
@@ -1675,16 +1665,6 @@ fn rejected_occurrence_does_not_fail_decode() {
     assert!(ufrx.occurrences().is_empty());
     assert_eq!(ufrx.external_references().len(), 1);
 }
-
-
-
-
-
-
-
-
-
-
 
 fn assert_ufrx_issue(ir: &cadmpeg_ir::document::CadIr, scope: &str, field: &str) {
     let namespace = ir.native.namespace("inventor").expect("native namespace");
