@@ -1788,7 +1788,7 @@ fn surface_rows(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| surface::rows(ctx, bytes),
-        |row, base| row.offset += base,
+        |row, base| { row.offset += base; Ok(()) },
         |row| row.offset,
     )
 }
@@ -1801,7 +1801,7 @@ fn cross_section_surface_rows(
         ctx,
         cross_sections(ctx, sections)?,
         |bytes| surface::cross_section_rows(ctx, bytes),
-        |record, base| record.offset += base,
+        |record, base| { record.offset += base; Ok(()) },
         |record| record.offset,
     )
 }
@@ -1829,10 +1829,11 @@ fn surface_prototype_records(
         |bytes| surface::named_prototype_records(ctx, bytes, refusals),
         |record, base| {
             record.offset += base;
-            for parameter in &mut record.parameters {
+            for parameter in ctx.admit_iter(&mut record.parameters, "creo record child relocation traversal")? {
                 parameter.offset += base;
                 parameter.value_offset += base;
             }
+            Ok(())
         },
         |record| record.offset,
     )
@@ -1849,6 +1850,7 @@ fn surface_parameters(
         |record, base| {
             record.offset += base;
             record.body_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -1865,6 +1867,7 @@ fn cross_section_surface_parameters(
         |record, base| {
             record.offset += base;
             record.body_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -1882,6 +1885,7 @@ fn surface_contours(
             record.offset += base;
             record.envelope_offset += base;
             record.surface_row_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -1899,6 +1903,7 @@ fn cross_section_surface_contours(
             record.offset += base;
             record.envelope_offset += base;
             record.surface_row_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -1918,7 +1923,7 @@ fn loop_array_scan(
             scan.frames.len(),
             "creo loop array aggregate frames",
         )?;
-        frames.extend(scan.frames.into_iter().map(|mut frame| {
+        frames.extend(ctx.admit_iter(scan.frames, "creo loop frame relocation traversal")?.map(|mut frame| {
             frame.offset += section.section.offset();
             frame.prototype_end += section.section.offset();
             frame.end += section.section.offset();
@@ -1929,7 +1934,7 @@ fn loop_array_scan(
             scan.records.len(),
             "creo loop array aggregate records",
         )?;
-        records.extend(scan.records.into_iter().map(|mut record| {
+        records.extend(ctx.admit_iter(scan.records, "creo loop record relocation traversal")?.map(|mut record| {
             record.frame_offset += section.section.offset();
             record.offset += section.section.offset();
             record.body_offset += section.section.offset();
@@ -1962,6 +1967,7 @@ fn tabulated_cylinder_curve_replays(
         |record, base| {
             record.offset += base;
             record.surface_row_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -1978,6 +1984,7 @@ fn plane_local_systems(
         |record, base| {
             record.offset += base;
             record.row_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -1994,6 +2001,7 @@ fn cross_section_plane_local_systems(
         |record, base| {
             record.offset += base;
             record.row_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -2010,6 +2018,7 @@ fn plane_envelopes(
         |record, base| {
             record.offset += base;
             record.row_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -2023,7 +2032,7 @@ fn cross_section_plane_envelopes(
         ctx,
         cross_sections(ctx, sections)?,
         |bytes| surface::cross_section_plane_envelopes(ctx, bytes),
-        |record, base| record.offset += base,
+        |record, base| { record.offset += base; Ok(()) },
         |record| record.offset,
     )
 }
@@ -2036,7 +2045,7 @@ fn curve_prototypes(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::prototypes(ctx, bytes),
-        |prototype, base| prototype.offset += base,
+        |prototype, base| { prototype.offset += base; Ok(()) },
         |prototype| prototype.offset,
     )
 }
@@ -2053,22 +2062,23 @@ fn curve_expressions(
         |record, base| {
             record.offset += base;
             record.expression_offset += base;
-            for line in &mut record.lines {
+            for line in ctx.admit_iter(&mut record.lines, "creo record child relocation traversal")? {
                 line.offset += base;
             }
-            for assignment in &mut record.assignments {
+            for assignment in ctx.admit_iter(&mut record.assignments, "creo record child relocation traversal")? {
                 assignment.offset += base;
             }
-            for block in &mut record.solve_blocks {
+            for block in ctx.admit_iter(&mut record.solve_blocks, "creo record child relocation traversal")? {
                 block.offset += base;
                 block.for_offset += base;
-                for equation in &mut block.equations {
+                for equation in ctx.admit_iter(&mut block.equations, "creo record child relocation traversal")? {
                     equation.offset += base;
                 }
-                for assignment in &mut block.assignments {
+                for assignment in ctx.admit_iter(&mut block.assignments, "creo record child relocation traversal")? {
                     assignment.offset += base;
                 }
             }
+            Ok(())
         },
         |record| record.offset,
     )
@@ -2087,6 +2097,7 @@ fn curve_parameters(
             record.offset += base;
             record.body_offset += base;
             record.suffix_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -2101,14 +2112,13 @@ fn two_chart_pcurves(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::two_chart_pcurve_samples(ctx, bytes, Some(face_ids)),
-        |record, base| record.offset += base,
+        |record, base| { record.offset += base; Ok(()) },
         |record| record.offset,
     )?;
-    let mut counts = BTreeMap::new();
-    for record in &records {
-        let count = ctx
-            .entry_btree_map(&mut counts, record.curve_id, "creo two-chart pcurve counts")?
-            .or_insert(0usize);
+    let mut count_storage = ctx.reserve_scoped(0, "creo two-chart pcurve count storage")?;
+    let mut counts = std::collections::HashMap::new();
+    for record in ctx.admit_iter(&records, "creo two-chart pcurve count traversal")? {
+        let count = count_storage.with_storage(|| ctx.entry_hash_map(&mut counts, record.curve_id, "creo two-chart pcurve counts"))?.or_insert(0usize);
         *count += 1;
     }
     ctx.retain_vec(
@@ -2127,7 +2137,7 @@ fn prototype_pcurves(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::prototype_pcurve_endpoints(ctx, bytes),
-        |record, base| record.offset += base,
+        |record, base| { record.offset += base; Ok(()) },
         |record| record.offset,
     )
 }
@@ -2140,7 +2150,7 @@ fn curve_prototype_topology(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::prototype_topology(ctx, bytes),
-        |record, base| record.offset += base,
+        |record, base| { record.offset += base; Ok(()) },
         |record| record.offset,
     )
 }
@@ -2154,7 +2164,7 @@ fn curve_topology_rows(
         ctx,
         ctx.admit_iter(sections, "creo section traversal")?.map(Ok),
         |bytes| curve::topology_rows_with_face_ids(ctx, bytes, Some(face_ids)),
-        |row, base| row.offset += base,
+        |row, base| { row.offset += base; Ok(()) },
         |row| row.offset,
     )
 }
@@ -2167,7 +2177,7 @@ fn cross_section_curve_rows(
         ctx,
         cross_sections(ctx, sections)?,
         |bytes| curve::depdb_cross_section_rows(ctx, bytes),
-        |record, base| record.offset += base,
+        |record, base| { record.offset += base; Ok(()) },
         |record| record.offset,
     )
 }
@@ -2180,7 +2190,7 @@ fn cross_section_curve_prototypes(
         ctx,
         cross_sections(ctx, sections)?,
         |bytes| curve::prototypes(ctx, bytes),
-        |record, base| record.offset += base,
+        |record, base| { record.offset += base; Ok(()) },
         |record| record.offset,
     )
 }
@@ -2202,7 +2212,7 @@ fn datum_planes(
             }
             Ok(planes)
         },
-        |plane, base| plane.offset_in_payload += base,
+        |plane, base| { plane.offset_in_payload += base; Ok(()) },
         |plane| plane.offset_in_payload,
     )
 }
@@ -2217,7 +2227,7 @@ fn datum_cylinders(
             .filter(|section| section.section.name() == "ActDatums")
             .map(Ok),
         |bytes| datum::cylinders(ctx, bytes),
-        |cylinder, base| cylinder.offset_in_payload += base,
+        |cylinder, base| { cylinder.offset_in_payload += base; Ok(()) },
         |cylinder| cylinder.offset_in_payload,
     )
 }
@@ -2474,10 +2484,11 @@ fn feature_entity_tables(
         |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
         |table, base| {
             table.offset += base;
-            for entry in &mut table.entries {
+            for entry in ctx.admit_iter(&mut table.entries, "creo record child relocation traversal")? {
                 entry.offset += base;
                 entry.end_offset += base;
             }
+            Ok(())
         },
         |table| table.offset,
     )
@@ -2529,47 +2540,49 @@ fn feature_entity_graph(
     let payload_start = section.section.offset() + header_length;
     let (mut entities, mut references) =
         feature::entity::entity_graph(ctx, &section_bytes[header_length..])?;
-    for entity in &mut entities {
+    for entity in ctx.admit_iter(&mut entities, "creo entity graph relocation traversal")? {
         entity.offset += payload_start;
     }
-    for reference in &mut references {
+    for reference in ctx.admit_iter(&mut references, "creo reference graph relocation traversal")? {
         reference.offset += payload_start;
     }
     Ok((entities, references))
 }
 
-fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset: usize) {
+fn offset_feature_definition(ctx: &DecodeContext<'_>, definition: &mut FeatureDefinition, section_offset: usize) -> Result<(), CodecError> {
     definition.offset += section_offset;
-    for frame in &mut definition.parameter_frames {
+    for frame in ctx.admit_iter(&mut definition.parameter_frames, "creo feature definition relocation traversal")? {
         frame.offset += section_offset;
     }
-    for outline in &mut definition.outlines {
+    for outline in ctx.admit_iter(&mut definition.outlines, "creo feature definition relocation traversal")? {
         outline.offset += section_offset;
     }
     if let Some(variables) = &mut definition.variables {
         variables.offset += section_offset;
-        for row in &mut variables.rows {
+        for row in ctx.admit_iter(&mut variables.rows, "creo feature definition relocation traversal")? {
             row.offset += section_offset;
         }
     }
     if let Some(segments) = &mut definition.segments {
         segments.offset += section_offset;
+        let _rows = ctx.admit_iter(segments.rows.as_slice(), "creo segment offset traversal")?;
         segments.rows.add_offset(section_offset);
     }
     if let Some(entities) = &mut definition.trim_entities {
         entities.offset += section_offset;
-        for row in &mut entities.rows {
+        for row in ctx.admit_iter(&mut entities.rows, "creo feature definition relocation traversal")? {
             row.offset += section_offset;
         }
     }
     if let Some(vertices) = &mut definition.trim_vertices {
         vertices.offset += section_offset;
-        for row in &mut vertices.rows {
+        for row in ctx.admit_iter(&mut vertices.rows, "creo feature definition relocation traversal")? {
             row.offset += section_offset;
         }
     }
     if let Some(order) = &mut definition.order_table {
         order.offset += section_offset;
+        let _rows = ctx.admit_iter(order.rows.as_slice(), "creo order offset traversal")?;
         order.rows.add_offset(section_offset);
     }
     if let Some(section_3d) = &mut definition.section_3d {
@@ -2577,11 +2590,11 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
     }
     if let Some(dimensions) = &mut definition.dimensions {
         dimensions.offset += section_offset;
-        for row in &mut dimensions.rows {
+        for row in ctx.admit_iter(&mut dimensions.rows, "creo feature definition relocation traversal")? {
             row.offset += section_offset;
             if let Some(references) = &mut row.references {
                 references.offset += section_offset;
-                for reference in &mut references.rows {
+                for reference in ctx.admit_iter(&mut references.rows, "creo feature definition relocation traversal")? {
                     reference.offset += section_offset;
                 }
             }
@@ -2589,19 +2602,21 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
     }
     if let Some(relations) = &mut definition.relations {
         relations.offset += section_offset;
-        for row in &mut relations.rows {
+        for row in ctx.admit_iter(&mut relations.rows, "creo feature definition relocation traversal")? {
             row.offset += section_offset;
         }
+        let _skamps = ctx.admit_iter(relations.skamps(), "creo solver subtable offset traversal")?;
         if let Some(table) = &mut relations.skamps {
             table.shift_offsets(section_offset);
         }
+        let _triples = ctx.admit_iter(relations.triples(), "creo solver subtable offset traversal")?;
         if let Some(table) = &mut relations.triples {
             table.shift_offsets(section_offset);
         }
     }
     if let Some(saved) = &mut definition.saved_section {
         saved.offset += section_offset;
-        for entity in &mut saved.entities {
+        for entity in ctx.admit_iter(&mut saved.entities, "creo feature definition relocation traversal")? {
             match entity {
                 feature::definitions::FeatureSavedEntity::Line(line) => {
                     line.offset += section_offset;
@@ -2622,6 +2637,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
             }
         }
     }
+    Ok(())
 }
 
 fn feature_definitions(
@@ -2640,29 +2656,23 @@ fn feature_definitions(
             feature::definitions::definitions(ctx, payload)?
         };
         ctx.reserve_vec(&mut definitions, decoded.len(), "creo feature definitions")?;
-        definitions.extend(decoded.into_iter().map(|mut definition| {
-            offset_feature_definition(&mut definition, section.section.offset());
-            definition
-        }));
+        for mut definition in ctx.admit_iter(decoded, "creo definition aggregate relocation traversal")? {
+            offset_feature_definition(ctx, &mut definition, section.section.offset())?;
+            definitions.push(definition);
+        }
         if section.section.name() == "DEPDB_DATA" {
-            let mut recipe_operations = feature::operations::operations(ctx, payload)?
-                .into_iter()
-                .filter(|operation| operation.recipe.resolved().is_some());
-            if let Some(operation) = recipe_operations
-                .next()
-                .filter(|_| recipe_operations.next().is_none())
-            {
+            let mut recipe_storage = ctx.reserve_scoped(0, "creo definition recipe operation storage")?;
+            let recipe_operations = recipe_storage.with_storage(|| feature::operations::operations(ctx, payload))?;
+            if let Some(operation) = crate::decode::uniqueness::exactly_one_by(ctx, &recipe_operations,
+                |operation| Ok(operation.recipe.resolved().is_some()), "creo definition recipe operation selection")? {
                 if let Some(mut definition) = feature::definitions::depdb_section_definition(
                     ctx,
                     payload,
                     Some(operation.feature_id),
                 )? {
-                    offset_feature_definition(&mut definition, section.section.offset());
-                    if let Some(existing) = definitions
-                        .iter_mut()
-                        .find(|existing| existing.offset == definition.offset)
-                    {
-                        *existing = definition;
+                    offset_feature_definition(ctx, &mut definition, section.section.offset())?;
+                    if let Some(position) = ctx.position_by(&definitions, |existing| Ok(existing.offset == definition.offset), "creo definition aggregate replacement search")? {
+                        definitions[position] = definition;
                     } else {
                         ctx.reserve_vec(&mut definitions, 1, "creo feature definitions")?;
                         definitions.push(definition);
@@ -2691,7 +2701,7 @@ fn feature_row_definitions(
         else {
             continue;
         };
-        offset_feature_definition(&mut definition, row.body_offset);
+        offset_feature_definition(ctx, &mut definition, row.body_offset)?;
         ctx.reserve_vec(&mut definitions, 1, "creo feature row definitions")?;
         definitions.push(definition);
     }
@@ -2710,8 +2720,7 @@ fn append_feature_definitions(
     additions: Vec<FeatureDefinition>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(definitions, additions.len(), operation)?;
-    definitions.extend(additions);
+    ctx.extend_vec(definitions, additions, operation)?;
     Ok(())
 }
 
@@ -2802,27 +2811,15 @@ fn section_owner_ranges(
     sections: &[ScannedSection<'_>],
     feature_rows: &[FeatureRow],
 ) -> Result<Vec<(usize, usize)>, CodecError> {
-    let count = ctx
-        .admit_iter(sections, "creo section owner count")?
-        .try_fold(0usize, |count, section| -> Result<usize, CodecError> {
-            if section.section.name() == "DEPDB_DATA" {
-                count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("creo section owner count", u64::MAX, u64::MAX)
-                })
-            } else {
-                Ok(count)
-            }
-        })?
-        .checked_add(feature_rows.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("creo section owner count", u64::MAX, u64::MAX))?;
     let mut ranges = Vec::new();
-    ctx.reserve_vec(&mut ranges, count, "creo section owner ranges")?;
-    for section in ctx.admit_iter(sections, "creo section traversal")? {
+    for section in ctx.admit_iter(sections, "creo section owner traversal")? {
         if section.section.name() == "DEPDB_DATA" {
+            ctx.reserve_vec(&mut ranges, 1, "creo section owner ranges")?;
             ranges.push((section.section.offset(), section.section.end()));
         }
     }
-    for row in feature_rows {
+    ctx.reserve_vec(&mut ranges, feature_rows.len(), "creo section owner ranges")?;
+    for row in ctx.admit_iter(feature_rows, "creo feature owner range traversal")? {
         let end = row
             .body_offset
             .checked_add(row.body.len())
@@ -2842,7 +2839,7 @@ fn positional_replay_definitions(
             .filter(|section| section.section.name() == "FeatDefs")
             .map(Ok),
         |bytes| feature::definitions::positional_replay_definitions(ctx, bytes),
-        offset_feature_definition,
+        |definition, base| offset_feature_definition(ctx, definition, base),
         |definition| definition.offset,
     )
 }
@@ -2860,6 +2857,7 @@ fn feature_operations(
         |record, base| {
             record.offset += base;
             record.state_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )?;
@@ -2900,7 +2898,7 @@ fn feature_reference_names(
         let section_bytes = section.region;
         let decoded = feature::operations::reference_names(ctx, section_bytes)?;
         ctx.reserve_vec(&mut records, decoded.len(), "creo feature reference names")?;
-        records.extend(decoded.into_iter().map(|mut record| {
+        records.extend(ctx.admit_iter(decoded, "creo reference name relocation traversal")?.map(|mut record| {
             record.offset += section.section.offset();
             record
         }));
@@ -2921,6 +2919,7 @@ fn feature_operation_states(
         |record, base| {
             record.offset += base;
             record.state_offset += base;
+            Ok(())
         },
         |record| record.offset,
     )
@@ -3789,7 +3788,7 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
     ctx: &DecodeContext<'_>,
     sections: impl Iterator<Item = Result<&'a ScannedSection<'data>, CodecError>>,
     mut decode: impl FnMut(&[u8]) -> Result<Vec<T>, CodecError>,
-    relocate: impl Fn(&mut T, usize),
+    relocate: impl Fn(&mut T, usize) -> Result<(), CodecError>,
     offset: impl Fn(&T) -> usize,
 ) -> Result<Vec<T>, CodecError> {
     let mut records = Vec::new();
@@ -3801,10 +3800,10 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
             decoded.len(),
             "creo section record aggregation",
         )?;
-        records.extend(decoded.into_iter().map(|mut record| {
-            relocate(&mut record, section.section.offset());
-            record
-        }));
+        for mut record in ctx.admit_iter(decoded, "creo section record relocation traversal")? {
+            relocate(&mut record, section.section.offset())?;
+            records.push(record);
+        }
     }
     ctx.stable_sort_by_key(
         records.as_mut_slice(),

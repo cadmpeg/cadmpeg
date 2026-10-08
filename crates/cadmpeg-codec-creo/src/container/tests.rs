@@ -700,7 +700,7 @@ fn section_result_collector_refuses_before_output_vec_growth() {
             &ctx,
             sections.iter().map(Ok),
             |_| Ok(vec![42u32]),
-            |_, _| {},
+            |_, _| Ok(()),
             |_| 0,
         )
     };
