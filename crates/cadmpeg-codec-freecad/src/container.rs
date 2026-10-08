@@ -3,7 +3,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
@@ -102,6 +102,10 @@ pub(crate) struct UnreadableEntry {
     pub(crate) name: String,
     pub(crate) data_start: u64,
     pub(crate) data_end: u64,
+    #[serde(
+        serialize_with = "crate::native::serialize_hex_bytes",
+        deserialize_with = "crate::native::deserialize_hex_bytes"
+    )]
     pub(crate) stored_data: Vec<u8>,
     pub(crate) error: String,
 }
@@ -247,6 +251,33 @@ pub(crate) fn entry_records(
             )
         })?;
     }
+    let (references, _reference_storage) =
+        ctx.with_scoped_storage("FCStd entry reference index", || {
+            let mut references = HashMap::<&str, Vec<usize>>::new();
+            for (index, property) in properties.iter().enumerate() {
+                ctx.charge_work(1, "FCStd entry reference index construction")?;
+                for name in property.side_entries() {
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(name.len()).max(1),
+                        "FCStd entry reference index construction",
+                    )?;
+                    if !references.contains_key(name.as_str()) {
+                        ctx.reserve_map(&mut references, 1, "FCStd entry reference index")?;
+                    }
+                    ctx.charge_work(
+                        cadmpeg_core::decode::u64_from_index(name.len()).max(1),
+                        "FCStd entry reference index construction",
+                    )?;
+                    let owners = references.entry(name.as_str()).or_default();
+                    // Repeated side-entry markers in one property yield one owner.
+                    if owners.last() != Some(&index) {
+                        ctx.reserve_vec(owners, 1, "FCStd entry reference index")?;
+                        owners.push(index);
+                    }
+                }
+            }
+            Ok::<_, CodecError>(references)
+        })?;
     for entry in &scan.entries {
         let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
             ctx.charge_work(
@@ -262,14 +293,20 @@ pub(crate) fn entry_records(
                 "FCStd missing entry error",
             )?));
         };
-        let mut referenced_by = Vec::new();
-        for property in properties
-            .iter()
-            .filter(|property| property.side_entries().contains(&entry.name))
-        {
-            ctx.reserve_vec(&mut referenced_by, 1, "FCStd entry referencing properties")?;
-            referenced_by
-                .push(ctx.copy_retained_text(&property.id, "FCStd entry referencing identity")?);
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entry.name.len()).max(1),
+            "FCStd entry reference index lookup",
+        )?;
+        let owners = references
+            .get(entry.name.as_str())
+            .map_or(&[][..], Vec::as_slice);
+        let mut referenced_by =
+            ctx.collection_vec(owners.len(), "FCStd entry referencing properties")?;
+        for &index in owners {
+            ctx.charge_work(1, "FCStd entry reference index lookup")?;
+            referenced_by.push(
+                ctx.copy_retained_text(&properties[index].id, "FCStd entry referencing identity")?,
+            );
         }
         records.push(EntryRecord::new(
             ctx,

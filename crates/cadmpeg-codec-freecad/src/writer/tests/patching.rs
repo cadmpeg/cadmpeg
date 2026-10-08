@@ -55,7 +55,7 @@ fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
         .expect_err("constructor refuses backslash");
         assert!(error.to_string().contains("unsafe ZIP entry path"));
     });
-    let wire = serde_json::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": [], "data": []});
+    let wire = serde_json::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": [], "data": ""});
     let error = serde_json::from_value::<crate::native::EntryRecord>(wire)
         .expect_err("native entry refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
@@ -354,13 +354,12 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
     let mut entries = namespace
         .arena_as::<serde_json::Value>("entries")
         .expect("entries");
-    entries
+    let entry = entries
         .iter_mut()
         .find(|entry| entry["name"] != "Document.xml")
-        .expect("side entry")["data"]
-        .as_array_mut()
-        .expect("entry bytes")
-        .push(serde_json::json!(0));
+        .expect("side entry");
+    let data = entry["data"].as_str().expect("entry hex bytes");
+    entry["data"] = serde_json::json!(format!("{data}00"));
     namespace
         .set_arena(
             &cadmpeg_test_support::service_decode_context(),

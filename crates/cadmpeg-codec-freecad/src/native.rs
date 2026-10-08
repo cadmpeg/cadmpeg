@@ -1066,19 +1066,90 @@ mod tests {
             "byte_len": 3,
             "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
             "referenced_by": ["fcstd:native:property#A:Shape"],
-            "data": [1, 2, 3]
+            "data": "010203"
         });
         let record = serde_json::from_value::<super::EntryRecord>(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert_eq!(
+            serde_json::from_str::<super::EntryRecord>(&json).unwrap(),
+            record
+        );
 
         let mut empty = wire;
         empty["byte_len"] = serde_json::json!(0);
         empty["sha256"] =
             serde_json::json!("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         empty["referenced_by"] = serde_json::json!([]);
-        empty["data"] = serde_json::json!([]);
+        empty["data"] = serde_json::json!("");
         let record = serde_json::from_value::<super::EntryRecord>(empty.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), empty);
+    }
+
+    #[test]
+    fn entry_hex_rejects_odd_nonhex_uppercase_and_array_payloads() {
+        let record = crate::test_support::entry_record(
+            "fcstd:native:entry#Payload.bin".into(),
+            "Payload.bin".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            vec![0xab],
+        );
+        let wire = serde_json::to_value(record).unwrap();
+        for data in [
+            serde_json::json!("a"),
+            serde_json::json!("ag"),
+            serde_json::json!("AB"),
+            serde_json::json!([171]),
+        ] {
+            let mut invalid = wire.clone();
+            invalid["data"] = data;
+            let json = serde_json::to_string(&invalid).unwrap();
+            assert!(serde_json::from_str::<super::EntryRecord>(&json).is_err());
+            assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
+        }
+        for field in ["byte_len", "sha256"] {
+            let mut invalid = wire.clone();
+            invalid[field] = if field == "byte_len" {
+                serde_json::json!(0)
+            } else {
+                serde_json::json!(cadmpeg_ir::hash::sha256_hex(&[]))
+            };
+            assert!(serde_json::from_value::<super::EntryRecord>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("entry byte_len/sha256 disagrees with data"));
+        }
+    }
+
+    #[test]
+    fn entry_hex_storage_uses_metadata_items_instead_of_payload_items() {
+        let bytes: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
+        let record = crate::test_support::entry_record(
+            "fcstd:native:entry#Payload.bin".into(),
+            "Payload.bin".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            bytes.clone(),
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 256;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace
+            .set_arena(&ctx, "entries", &[record])
+            .expect("metadata item budget admits payload");
+        let records = namespace.arena_as::<super::EntryRecord>("entries").unwrap();
+        assert_eq!(records[0].data(), bytes);
+        let wire = namespace.arena_as::<serde_json::Value>("entries").unwrap();
+        assert_eq!(wire[0]["data"].as_str().unwrap().len(), bytes.len() * 2);
+        assert!(wire[0]["data"]
+            .as_str()
+            .unwrap()
+            .starts_with("000102030405060708090a0b0c0d0e0f"));
     }
 
     #[test]
@@ -3653,6 +3724,56 @@ impl EntryRecord {
     }
 }
 
+pub(crate) fn serialize_hex_bytes<S: serde::Serializer>(
+    bytes: &[u8],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    cadmpeg_ir::hash::LowerHex(bytes).serialize(serializer)
+}
+
+pub(crate) fn deserialize_hex_bytes<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<u8>, D::Error> {
+    struct HexBytes;
+    impl serde::de::Visitor<'_> for HexBytes {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an even-length lowercase hexadecimal byte string")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, text: &str) -> Result<Vec<u8>, E> {
+            let mut owned = String::new();
+            owned.try_reserve_exact(text.len()).map_err(E::custom)?;
+            owned.push_str(text);
+            self.visit_string(owned)
+        }
+
+        fn visit_string<E: serde::de::Error>(self, text: String) -> Result<Vec<u8>, E> {
+            if !text.len().is_multiple_of(2) {
+                return Err(E::custom("entry data hex has odd length"));
+            }
+            let nibble = |byte| match byte {
+                b'0'..=b'9' => Ok(byte - b'0'),
+                b'a'..=b'f' => Ok(byte - b'a' + 10),
+                _ => Err(E::custom(
+                    "entry data hex requires lowercase hexadecimal digits",
+                )),
+            };
+            // Native typed conversion owns an admitted copy of this string. Reuse
+            // its allocation rather than allocate another payload-sized buffer.
+            let mut bytes = text.into_bytes();
+            let byte_len = bytes.len() / 2;
+            for index in 0..byte_len {
+                bytes[index] = (nibble(bytes[index * 2])? << 4) | nibble(bytes[index * 2 + 1])?;
+            }
+            bytes.truncate(byte_len);
+            Ok(bytes)
+        }
+    }
+    deserializer.deserialize_str(HexBytes)
+}
+
 #[derive(Deserialize)]
 struct EntryRecordWire {
     id: String,
@@ -3661,6 +3782,7 @@ struct EntryRecordWire {
     byte_len: u64,
     sha256: String,
     referenced_by: Vec<String>,
+    #[serde(deserialize_with = "deserialize_hex_bytes")]
     data: Vec<u8>,
 }
 
@@ -3672,7 +3794,7 @@ struct EntryRecordOut<'a> {
     byte_len: u64,
     sha256: &'a str,
     referenced_by: &'a [String],
-    data: &'a [u8],
+    data: cadmpeg_ir::hash::LowerHex<'a>,
 }
 
 impl Serialize for EntryRecord {
@@ -3684,7 +3806,7 @@ impl Serialize for EntryRecord {
             byte_len: self.byte_len(),
             sha256: self.sha256(),
             referenced_by: self.referenced_by(),
-            data: self.data(),
+            data: cadmpeg_ir::hash::LowerHex(self.data()),
         }
         .serialize(serializer)
     }

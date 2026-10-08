@@ -13,6 +13,45 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
 #[test]
+fn unreadable_entry_payload_uses_checked_hex_with_metadata_item_storage() {
+    let data: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
+    let record = super::UnreadableEntry {
+        id: "fcstd:native:unreadable_entry#Payload.bin".into(),
+        name: "Payload.bin".into(),
+        data_start: 0,
+        data_end: u64::try_from(data.len()).unwrap(),
+        stored_data: data.clone(),
+        error: "unsupported compression".into(),
+    };
+    collection_context(256, |ctx| {
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace
+            .set_arena(ctx, "unreadable_entries", &[record])
+            .unwrap();
+        let wire = namespace
+            .arena_as::<serde_json::Value>("unreadable_entries")
+            .unwrap();
+        assert_eq!(
+            wire[0]["stored_data"].as_str().unwrap().len(),
+            data.len() * 2
+        );
+        let typed = namespace
+            .arena_as::<super::UnreadableEntry>("unreadable_entries")
+            .unwrap();
+        assert_eq!(typed[0].stored_data, data);
+        for payload in [
+            serde_json::json!("a"),
+            serde_json::json!("gg"),
+            serde_json::json!([0]),
+        ] {
+            let mut invalid = wire[0].clone();
+            invalid["stored_data"] = payload;
+            assert!(serde_json::from_value::<super::UnreadableEntry>(invalid).is_err());
+        }
+    });
+}
+
+#[test]
 fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let bytes = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
@@ -198,9 +237,68 @@ fn entry_referencing_property_refuses_at_collection_limit() {
             |ctx| {
                 assert!(matches!(super::entry_records(ctx, scan, &[property]),
                 Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "FCStd entry referencing properties"));
+                    if limit.operation == "FCStd entry reference index"));
             },
         );
+    });
+}
+
+#[test]
+fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
+    with_scanned_document(|scan| {
+        let properties: Vec<_> = ["First", "Second"]
+            .into_iter()
+            .map(|name| crate::native::PropertyRecord {
+                id: format!("fcstd:native:property#{name}"),
+                owner: "fcstd:native:object#Owner".into(),
+                name: name.into(),
+                type_name: "App::PropertyFileIncluded".into(),
+                family: crate::native::PropertyFamily::File,
+                status: None,
+                body: crate::native::PropertyBody::Persisted {
+                    values: Vec::new(),
+                    links: Vec::new(),
+                    dynamic: None,
+                    side_entries: vec![
+                        scan.entries[0].name.clone(),
+                        "Missing.bin".into(),
+                        scan.entries[0].name.clone(),
+                    ],
+                },
+                order: 0,
+                xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
+            })
+            .collect();
+        let entries = super::entry_records(
+            &cadmpeg_test_support::service_decode_context(),
+            scan,
+            &properties,
+        )
+        .unwrap();
+        assert_eq!(
+            entries[0].referenced_by(),
+            [
+                "fcstd:native:property#First",
+                "fcstd:native:property#Second"
+            ]
+        );
+
+        for (properties, limit, operation) in [
+            (
+                properties.as_slice(),
+                1,
+                "FCStd entry reference index construction",
+            ),
+            (&[][..], 0, "FCStd entry reference index lookup"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(super::entry_records(&ctx, scan, properties),
+                Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                    if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == operation));
+        }
     });
 }
 
