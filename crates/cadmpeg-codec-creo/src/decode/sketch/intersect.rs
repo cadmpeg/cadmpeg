@@ -192,7 +192,9 @@ fn intersect_section_carriers(first: &SketchGeometry, second: &SketchGeometry) -
         .or_else(|| intersect_tangent_section_arcs(first, second))
 }
 
-pub(in crate::decode) fn intersect_incident_section_carriers<T: std::borrow::Borrow<SketchGeometry>>(
+pub(in crate::decode) fn intersect_incident_section_carriers<
+    T: std::borrow::Borrow<SketchGeometry>,
+>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     carriers: &[T],
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
@@ -203,10 +205,16 @@ pub(in crate::decode) fn intersect_incident_section_carriers<T: std::borrow::Bor
     let mut scale = 1.0_f64;
     let mut maximum_distance = 0.0_f64;
     let mut first_carriers = carriers.iter().enumerate();
-    while let Some((first_index, first)) = ctx.next_charged(&mut first_carriers, "creo incident section first carriers")? {
+    while let Some((first_index, first)) =
+        ctx.next_charged(&mut first_carriers, "creo incident section first carriers")?
+    {
         let mut second_carriers = carriers[first_index + 1..].iter();
-        while let Some(second) = ctx.next_charged(&mut second_carriers, "creo incident section second carriers")? {
-            let Some(coordinate) = intersect_section_carriers(first.borrow(), second.borrow()) else {
+        while let Some(second) = ctx.next_charged(
+            &mut second_carriers,
+            "creo incident section second carriers",
+        )? {
+            let Some(coordinate) = intersect_section_carriers(first.borrow(), second.borrow())
+            else {
                 return Ok(None);
             };
             scale = scale.max(coordinate[0].abs()).max(coordinate[1].abs());
@@ -237,10 +245,15 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
     let Some(segments) = &definition.segments else {
         return Ok(BTreeMap::new());
     };
-    let missing_line = scratch.with_storage(|| saved_section_missing_line_geometry(ctx, definition))?;
+    let missing_line =
+        scratch.with_storage(|| saved_section_missing_line_geometry(ctx, definition))?;
     let trim_ids = scratch.with_storage(|| trim_segment_ids(ctx, definition))?;
     let variable_points = match definition.variables.as_ref() {
-        Some(variables) => scratch.with_storage(|| variables.reconciled_points(ctx))?.points,
+        Some(variables) => {
+            scratch
+                .with_storage(|| variables.reconciled_points(ctx))?
+                .points
+        }
         None => BTreeMap::new(),
     };
     let mut seen_vertex_ids = BTreeSet::new();
@@ -257,27 +270,33 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 &vertex.vertex_id,
                 "creo sketch seen trim vertex lookup",
             )? {
-                scratch.with_storage(|| ctx.insert_btree_set(
-                    &mut duplicate_vertex_ids,
-                    vertex.vertex_id,
-                    "creo sketch duplicate trim vertex nodes",
-                ))?;
+                scratch.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut duplicate_vertex_ids,
+                        vertex.vertex_id,
+                        "creo sketch duplicate trim vertex nodes",
+                    )
+                })?;
             } else {
-                scratch.with_storage(|| ctx.insert_btree_set(
-                    &mut seen_vertex_ids,
-                    vertex.vertex_id,
-                    "creo sketch seen trim vertex nodes",
-                ))?;
+                scratch.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut seen_vertex_ids,
+                        vertex.vertex_id,
+                        "creo sketch seen trim vertex nodes",
+                    )
+                })?;
             }
             if let Some(point) = vertex
                 .section_coordinates
                 .map(cadmpeg_ir::units::FinitePoint2::get)
             {
-                scratch.with_storage(|| ctx.reserve_vec(
-                    &mut coordinate_candidates,
-                    1,
-                    "creo sketch trim coordinate candidates",
-                ))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(
+                        &mut coordinate_candidates,
+                        1,
+                        "creo sketch trim coordinate candidates",
+                    )
+                })?;
                 coordinate_candidates.push((vertex.vertex_id, [point.u, point.v]));
             }
         }
@@ -313,11 +332,13 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 {
                     continue;
                 }
-                scratch.with_storage(|| ctx.reserve_vec(
-                    &mut coordinate_candidates,
-                    1,
-                    "creo sketch trim coordinate candidates",
-                ))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(
+                        &mut coordinate_candidates,
+                        1,
+                        "creo sketch trim coordinate candidates",
+                    )
+                })?;
                 coordinate_candidates.push((vertex, candidate));
             }
         }
@@ -332,10 +353,18 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 continue;
             };
             for vertex in entity.vertices {
-                let entities = scratch.with_storage(|| ctx
-                    .entry_btree_map(&mut incident, vertex, "creo sketch incident vertex nodes"))?
+                let entities = scratch
+                    .with_storage(|| {
+                        ctx.entry_btree_map(
+                            &mut incident,
+                            vertex,
+                            "creo sketch incident vertex nodes",
+                        )
+                    })?
                     .or_default();
-                scratch.with_storage(|| ctx.reserve_vec(entities, 1, "creo sketch incident vertex entities"))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(entities, 1, "creo sketch incident vertex entities")
+                })?;
                 entities.push(external_id);
             }
         }
@@ -348,11 +377,13 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             .admit_iter(&trim_entities.rows, "creo explicit trim entity index")?
             .enumerate()
         {
-            match scratch.with_storage(|| ctx.entry_btree_map(
-                &mut trim_entities_by_id,
-                entity.external_id,
-                "creo explicit trim entity index nodes",
-            ))? {
+            match scratch.with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut trim_entities_by_id,
+                    entity.external_id,
+                    "creo explicit trim entity index nodes",
+                )
+            })? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(Some(index));
                 }
@@ -384,11 +415,13 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                             .map(|segment| segment.external_id),
                     };
                     if let Some(external_id) = external_id {
-                        vertex_storage.with_storage(|| ctx.reserve_vec(
-                            &mut resolved,
-                            1,
-                            "creo sketch explicit incident entities",
-                        ))?;
+                        vertex_storage.with_storage(|| {
+                            ctx.reserve_vec(
+                                &mut resolved,
+                                1,
+                                "creo sketch explicit incident entities",
+                            )
+                        })?;
                         resolved.push(external_id);
                     }
                 }
@@ -399,19 +432,25 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                     "creo sketch explicit incident entities sort",
                 )?;
                 if resolved.len() == vertex.entities.len() {
-                    let entities = scratch.with_storage(|| ctx
-                        .entry_btree_map(
-                            &mut result,
-                            vertex.vertex_id,
-                            "creo sketch explicit incident nodes",
-                        ))?
+                    let entities = scratch
+                        .with_storage(|| {
+                            ctx.entry_btree_map(
+                                &mut result,
+                                vertex.vertex_id,
+                                "creo sketch explicit incident nodes",
+                            )
+                        })?
                         .or_default();
-                    scratch.with_storage(|| ctx.reserve_vec(
-                        entities,
-                        resolved.len(),
-                        "creo sketch explicit incident entities",
-                    ))?;
-                    entities.extend(ctx.admit_iter(resolved, "creo sketch explicit incident entity moves")?);
+                    scratch.with_storage(|| {
+                        ctx.reserve_vec(
+                            entities,
+                            resolved.len(),
+                            "creo sketch explicit incident entities",
+                        )
+                    })?;
+                    entities.extend(
+                        ctx.admit_iter(resolved, "creo sketch explicit incident entity moves")?,
+                    );
                 }
             }
             Ok::<_, cadmpeg_core::CodecError>(result)
@@ -419,7 +458,8 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         .transpose()?;
     if let Some(explicit) = &explicit_incident {
         for (vertex, entities) in ctx.admit_iter(explicit, "creo explicit incident vertices")? {
-            let mut comparison_storage = ctx.reserve_scoped(0, "creo incident comparison scratch")?;
+            let mut comparison_storage =
+                ctx.reserve_scoped(0, "creo incident comparison scratch")?;
             if entities.len() < 2
                 || ctx.any_by(
                     entities.windows(2),
@@ -431,11 +471,13 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             }
             let mut derived =
                 match ctx.get_btree_map(&incident, vertex, "creo sketch incident vertex lookup")? {
-                    Some(rows) => comparison_storage.with_storage(|| ctx.collect_vec(
-                        ctx.admit_iter(rows, "creo sketch incident comparison source")?
-                            .copied(),
-                        "creo sketch incident comparison copy",
-                    ))?,
+                    Some(rows) => comparison_storage.with_storage(|| {
+                        ctx.collect_vec(
+                            ctx.admit_iter(rows, "creo sketch incident comparison source")?
+                                .copied(),
+                            "creo sketch incident comparison copy",
+                        )
+                    })?,
                     None => Vec::new(),
                 };
             ctx.sort_unstable_by(
@@ -448,26 +490,32 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             if !ctx.equal(&derived, entities, "creo incident derived entity agreement")? {
                 continue;
             }
-            let copied = scratch.with_storage(|| ctx.collect_vec(
-                entities.iter().copied(),
-                "creo sketch explicit incident copy",
-            ))?;
-            scratch.with_storage(|| ctx.insert_btree_map(
-                &mut incident,
-                *vertex,
-                copied,
-                "creo sketch explicit incident nodes",
-            ))?;
+            let copied = scratch.with_storage(|| {
+                ctx.collect_vec(
+                    entities.iter().copied(),
+                    "creo sketch explicit incident copy",
+                )
+            })?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut incident,
+                    *vertex,
+                    copied,
+                    "creo sketch explicit incident nodes",
+                )
+            })?;
         }
     }
     let mut unique_carrier_ids = BTreeSet::new();
     for (_, entity_ids) in ctx.admit_iter(&incident, "creo sketch incident vertices")? {
         for external_id in ctx.admit_iter(entity_ids, "creo sketch incident entity IDs")? {
-            scratch.with_storage(|| ctx.insert_btree_set(
-                &mut unique_carrier_ids,
-                *external_id,
-                "creo sketch intersection carrier ID nodes",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut unique_carrier_ids,
+                    *external_id,
+                    "creo sketch intersection carrier ID nodes",
+                )
+            })?;
         }
     }
     let mut intersection_carriers = BTreeMap::new();
@@ -475,24 +523,28 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         let Some(segment) = segments.unique_segment(external_id) else {
             continue;
         };
-        let Some(carrier) = scratch.with_storage(|| section_segment_intersection_carrier_with_missing_line(
-            ctx,
-            definition,
-            radii,
-            points,
-            segment,
-            missing_line.as_ref(),
-            &variable_points,
-        ))?
+        let Some(carrier) = scratch.with_storage(|| {
+            section_segment_intersection_carrier_with_missing_line(
+                ctx,
+                definition,
+                radii,
+                points,
+                segment,
+                missing_line.as_ref(),
+                &variable_points,
+            )
+        })?
         else {
             continue;
         };
-        scratch.with_storage(|| ctx.insert_btree_map(
-            &mut intersection_carriers,
-            external_id,
-            carrier,
-            "creo sketch intersection carrier nodes",
-        ))?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut intersection_carriers,
+                external_id,
+                carrier,
+                "creo sketch intersection carrier nodes",
+            )
+        })?;
     }
     for (vertex, mut entities) in ctx.admit_iter(incident, "creo sketch incident vertex rows")? {
         let mut carrier_storage = ctx.reserve_scoped(0, "creo incident carrier scratch")?;
@@ -557,11 +609,13 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             if let Some(coordinate) =
                 ctx.get_btree_map(points, &point_id, "creo sketch shared point lookup")?
             {
-                scratch.with_storage(|| ctx.reserve_vec(
-                    &mut coordinate_candidates,
-                    1,
-                    "creo sketch trim coordinate candidates",
-                ))?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(
+                        &mut coordinate_candidates,
+                        1,
+                        "creo sketch trim coordinate candidates",
+                    )
+                })?;
                 coordinate_candidates.push((vertex, *coordinate));
             }
         }
@@ -580,18 +634,22 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 complete = false;
                 break;
             };
-            carrier_storage.with_storage(|| ctx.reserve_vec(&mut carriers, 1, "creo sketch incident carriers"))?;
+            carrier_storage.with_storage(|| {
+                ctx.reserve_vec(&mut carriers, 1, "creo sketch incident carriers")
+            })?;
             carriers.push(carrier);
         }
         if !complete {
             continue;
         }
         if let Some(coordinate) = intersect_incident_section_carriers(ctx, &carriers)? {
-            scratch.with_storage(|| ctx.reserve_vec(
-                &mut coordinate_candidates,
-                1,
-                "creo sketch trim coordinate candidates",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut coordinate_candidates,
+                    1,
+                    "creo sketch trim coordinate candidates",
+                )
+            })?;
             coordinate_candidates.push((vertex, coordinate));
         }
     }
@@ -600,11 +658,13 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         ambiguous: mut ambiguous_vertices,
     } = reconciled_section_coordinates(ctx, &coordinate_candidates, &mut scratch)?;
     for &vertex in ctx.admit_iter(&duplicate_vertex_ids, "creo duplicate trim vertex IDs")? {
-        scratch.with_storage(|| ctx.insert_btree_set(
-            &mut ambiguous_vertices,
-            vertex,
-            "creo sketch ambiguous coordinate nodes",
-        ))?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut ambiguous_vertices,
+                vertex,
+                "creo sketch ambiguous coordinate nodes",
+            )
+        })?;
     }
     ctx.retain_btree_map(
         &mut coordinates,
@@ -682,7 +742,9 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 } else {
                     continue;
                 };
-                pass_storage.with_storage(|| ctx.reserve_vec(&mut additions, 1, "creo sketch propagated trim coordinates"))?;
+                pass_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut additions, 1, "creo sketch propagated trim coordinates")
+                })?;
                 additions.push((trim.vertices[missing_index], stored[1 - matched]));
             }
         }
@@ -690,13 +752,17 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         let crate::feature::definitions::ReconciledPoints {
             points: additions,
             ambiguous: conflicts,
-        } = pass_storage.with_storage(|| reconciled_section_coordinates(ctx, &additions, &mut conflict_storage))?;
+        } = pass_storage.with_storage(|| {
+            reconciled_section_coordinates(ctx, &additions, &mut conflict_storage)
+        })?;
         for &vertex in ctx.admit_iter(&conflicts, "creo conflicting trim vertex IDs")? {
-            scratch.with_storage(|| ctx.insert_btree_set(
-                &mut ambiguous_vertices,
-                vertex,
-                "creo sketch ambiguous coordinate nodes",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut ambiguous_vertices,
+                    vertex,
+                    "creo sketch ambiguous coordinate nodes",
+                )
+            })?;
         }
         let mut changed = false;
         for (&vertex, &coordinate) in
@@ -731,19 +797,33 @@ fn reconciled_section_coordinates(
     candidates: &[(u32, [f64; 2])],
     ambiguous_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<crate::feature::definitions::ReconciledPoints<[f64; 2]>, cadmpeg_core::CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "creo reconciled section coordinates scratch")?;
     struct CoordinateSamples {
         first: [f64; 2],
         scale: f64,
         maximum_distance: f64,
         invalid: bool,
     }
+    let mut scratch = ctx.reserve_scoped(0, "creo reconciled section coordinates scratch")?;
     let mut grouped = BTreeMap::<u32, CoordinateSamples>::new();
     for &(vertex, coordinate) in ctx.admit_iter(candidates, "creo sketch coordinate candidates")? {
-        let group = scratch.with_storage(|| ctx.entry_btree_map(&mut grouped, vertex, "creo sketch reconciliation group nodes"))?.or_insert(CoordinateSamples {
-            first: coordinate, scale: 1.0, maximum_distance: 0.0, invalid: false,
-        });
-        group.scale = group.scale.max(coordinate[0].abs()).max(coordinate[1].abs());
+        let group = scratch
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut grouped,
+                    vertex,
+                    "creo sketch reconciliation group nodes",
+                )
+            })?
+            .or_insert(CoordinateSamples {
+                first: coordinate,
+                scale: 1.0,
+                maximum_distance: 0.0,
+                invalid: false,
+            });
+        group.scale = group
+            .scale
+            .max(coordinate[0].abs())
+            .max(coordinate[1].abs());
         let distance = (coordinate[0] - group.first[0]).hypot(coordinate[1] - group.first[1]);
         group.invalid |= distance.is_nan();
         group.maximum_distance = group.maximum_distance.max(distance);
@@ -751,10 +831,23 @@ fn reconciled_section_coordinates(
     let mut coordinates = BTreeMap::new();
     let mut ambiguous = BTreeSet::new();
     for (&vertex, group) in ctx.admit_iter(&grouped, "creo sketch coordinate groups")? {
-        if !group.invalid && group.maximum_distance <= EPS_SKETCH_INTERSECTION_GEOMETRY * group.scale {
-            ctx.insert_btree_map(&mut coordinates, vertex, group.first, "creo sketch reconciled coordinate nodes")?;
+        if !group.invalid
+            && group.maximum_distance <= EPS_SKETCH_INTERSECTION_GEOMETRY * group.scale
+        {
+            ctx.insert_btree_map(
+                &mut coordinates,
+                vertex,
+                group.first,
+                "creo sketch reconciled coordinate nodes",
+            )?;
         } else {
-            ambiguous_storage.with_storage(|| ctx.insert_btree_set(&mut ambiguous, vertex, "creo sketch ambiguous coordinate nodes"))?;
+            ambiguous_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut ambiguous,
+                    vertex,
+                    "creo sketch ambiguous coordinate nodes",
+                )
+            })?;
         }
     }
     Ok(crate::feature::definitions::ReconciledPoints {
@@ -948,10 +1041,20 @@ mod tests {
         })
         .expect("line geometry");
         let carriers = [line.clone(), line];
-        for operation in ["creo incident section first carriers", "creo incident section second carriers"] {
-            let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits, operation, |ctx| super::intersect_incident_section_carriers(ctx, &carriers));
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::WorkUnits && resource.operation == operation));
+        for operation in [
+            "creo incident section first carriers",
+            "creo incident section second carriers",
+        ] {
+            let error = crate::test_support::last_refusal_at(
+                &[],
+                ResourceDimension::WorkUnits,
+                operation,
+                |ctx| super::intersect_incident_section_carriers(ctx, &carriers),
+            );
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::WorkUnits && resource.operation == operation)
+            );
         }
     }
 
@@ -976,12 +1079,18 @@ mod tests {
 
     #[test]
     fn sketch_coordinate_reconciliation_refuses_before_group_node() {
-        let error = crate::test_support::last_refusal_at(&[0], cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            "creo sketch reconciliation group nodes", |ctx| {
+        let error = crate::test_support::last_refusal_at(
+            &[0],
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "creo sketch reconciliation group nodes",
+            |ctx| {
                 let mut storage = ctx.reserve_scoped(0, "test coordinate ambiguity")?;
                 super::reconciled_section_coordinates(ctx, &[(7, [2.0, 3.0])], &mut storage)
-            });
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo sketch reconciliation group nodes"));
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo sketch reconciliation group nodes")
+        );
         let (coordinates, ambiguous) = crate::decode::with_test_decode_ctx(|ctx| {
             let mut storage = ctx.reserve_scoped(0, "test coordinate ambiguity")?;
             super::reconciled_section_coordinates(ctx, &[(7, [2.0, 3.0])], &mut storage)

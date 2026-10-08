@@ -57,29 +57,40 @@ fn collection_refusal_at<T>(
     operation: &'static str,
     run: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
 ) -> Result<T, cadmpeg_core::CodecError> {
-    Err(crate::test_support::last_refusal_at(&[0], ResourceDimension::CollectionItems, operation, run))
+    Err(crate::test_support::last_refusal_at(
+        &[0],
+        ResourceDimension::CollectionItems,
+        operation,
+        run,
+    ))
 }
 
 fn solve_matrix_with_limit(
     operation: &'static str,
-    coefficients: Vec<BTreeMap<usize, f64>>,
+    coefficients: &[BTreeMap<usize, f64>],
     variable_count: usize,
 ) -> Result<Option<Vec<(usize, f64)>>, cadmpeg_core::CodecError> {
     collection_refusal_at(operation, |ctx| {
-        let mut matrix = coefficients.iter().map(|coefficients| super::SectionLinearRow {
-            coefficients: coefficients.clone(), rhs: 1.0,
-        }).collect::<Vec<_>>();
+        let mut matrix = coefficients
+            .iter()
+            .map(|coefficients| super::SectionLinearRow {
+                coefficients: coefficients.clone(),
+                rhs: 1.0,
+            })
+            .collect::<Vec<_>>();
         super::uniquely_solved_linear_variables(ctx, &mut matrix, variable_count)
     })
 }
 
 #[test]
 fn coordinate_equation_refuses_before_first_term_node() {
-    assert!(matches!(collection_refusal_at("creo coordinate equation term nodes", |ctx| {
+    assert!(
+        matches!(collection_refusal_at("creo coordinate equation term nodes", |ctx| {
         super::SectionCoordinateEquation::point_value(ctx, 7, SectionAxis::U, 2.0)
     }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo coordinate equation term nodes"));
+            && limit.operation == "creo coordinate equation term nodes")
+    );
     assert_eq!(
         SectionEquationFixture::point_value(7, SectionAxis::U, 2.0)
             .terms
@@ -90,11 +101,13 @@ fn coordinate_equation_refuses_before_first_term_node() {
 
 #[test]
 fn coordinate_difference_refuses_before_second_term_node() {
-    assert!(matches!(collection_refusal_at("creo coordinate equation term nodes", |ctx| {
+    assert!(
+        matches!(collection_refusal_at("creo coordinate equation term nodes", |ctx| {
         super::SectionCoordinateEquation::point_difference(ctx, 7, 8, SectionAxis::V, 3.0)
     }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo coordinate equation term nodes"));
+            && limit.operation == "creo coordinate equation term nodes")
+    );
     assert_eq!(
         SectionEquationFixture::point_difference(7, 8, SectionAxis::V, 3.0)
             .terms
@@ -105,8 +118,9 @@ fn coordinate_difference_refuses_before_second_term_node() {
 
 #[test]
 fn section_elimination_coefficients_refuse_before_tree_insert() {
-    let error = solve_matrix_with_limit("creo section elimination coefficients",
-        vec![
+    let error = solve_matrix_with_limit(
+        "creo section elimination coefficients",
+        &[
             BTreeMap::from([(0, 2.0), (1, 1.0)]),
             BTreeMap::from([(0, 1.0)]),
         ],
@@ -122,8 +136,9 @@ fn section_elimination_coefficients_refuse_before_tree_insert() {
 
 #[test]
 fn section_pivot_rows_refuse_before_tree_insert() {
-    let error = solve_matrix_with_limit("creo section pivot rows", vec![BTreeMap::from([(0, 1.0)])], 1)
-        .expect_err("the first pivot needs one tree node");
+    let error =
+        solve_matrix_with_limit("creo section pivot rows", &[BTreeMap::from([(0, 1.0)])], 1)
+            .expect_err("the first pivot needs one tree node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -133,8 +148,12 @@ fn section_pivot_rows_refuse_before_tree_insert() {
 
 #[test]
 fn section_free_columns_refuse_before_vector_growth() {
-    let error = solve_matrix_with_limit("creo section free columns", vec![BTreeMap::from([(0, 1.0)])], 2)
-        .expect_err("the free column follows one admitted pivot");
+    let error = solve_matrix_with_limit(
+        "creo section free columns",
+        &[BTreeMap::from([(0, 1.0)])],
+        2,
+    )
+    .expect_err("the free column follows one admitted pivot");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -144,8 +163,12 @@ fn section_free_columns_refuse_before_vector_growth() {
 
 #[test]
 fn section_solved_columns_refuse_before_vector_growth() {
-    let error = solve_matrix_with_limit("creo section solved columns", vec![BTreeMap::from([(0, 1.0)])], 1)
-        .expect_err("the solved column follows one admitted pivot");
+    let error = solve_matrix_with_limit(
+        "creo section solved columns",
+        &[BTreeMap::from([(0, 1.0)])],
+        1,
+    )
+    .expect_err("the solved column follows one admitted pivot");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -358,7 +381,6 @@ fn unsigned_component_equation_rows_refuse_before_vector_growth() {
     );
 }
 
-
 fn unsigned_branch_with_collection_limit(operation: &'static str) -> cadmpeg_core::CodecError {
     let equations = [SectionEquationFixture::point_difference(
         1,
@@ -472,8 +494,6 @@ fn unsigned_value_fixture_preserves_the_unique_distance_solution() {
         .expect("service profile admits the distance solution");
     assert_eq!(solved, BTreeMap::from([((2, SectionAxis::U), 1.0)]));
 }
-
-
 
 #[test]
 fn unsigned_candidate_values_refuse_before_tree_insert() {
@@ -593,7 +613,13 @@ fn section_solved_coordinates_refuse_before_tree_insert() {
 fn section_stored_fallback_refuses_before_solved_node() {
     let error = collection_refusal_at("creo section solved coordinates", |ctx| {
         let mut solved = BTreeMap::new();
-        ctx.insert_btree_map(&mut solved, (1, SectionAxis::U), 2.0, "creo section solved coordinates").map(|_| ())
+        ctx.insert_btree_map(
+            &mut solved,
+            (1, SectionAxis::U),
+            2.0,
+            "creo section solved coordinates",
+        )
+        .map(|_| ())
     })
     .expect_err("a stored fallback value needs the same solved-map admission");
     assert!(
@@ -663,7 +689,6 @@ fn unsigned_dimension_adjacency_reports_collection_limit() {
     );
 }
 
-
 #[test]
 fn unsigned_dimension_adjacency_links_refuse_before_tree_insert() {
     let error = collection_refusal_at("creo section equation adjacency links", |ctx| {
@@ -681,7 +706,6 @@ fn unsigned_dimension_adjacency_links_refuse_before_tree_insert() {
                 && limit.operation == "creo section equation adjacency links")
     );
 }
-
 
 #[test]
 fn section_coordinate_adjacency_links_refuse_before_tree_insert() {
@@ -794,11 +818,13 @@ fn equal_length_candidate_node_refuses_before_insertion() {
         offset: 0,
         active: true,
     }];
-    assert!(matches!(collection_refusal_at("creo equal-length coordinate candidates", |ctx| {
+    assert!(
+        matches!(collection_refusal_at("creo equal-length coordinate candidates", |ctx| {
         super::section_equal_length_coordinate_values(ctx, &constraints, &coordinates)
     }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo equal-length coordinate candidates"));
+            && limit.operation == "creo equal-length coordinate candidates")
+    );
 }
 
 #[test]
@@ -848,12 +874,23 @@ fn indexed_disconnected_distance_components_preserve_each_unique_solution() {
     for group in 0..16 {
         let first = 2 * group + 1;
         let second = first + 1;
-        equations.push(SectionEquationFixture::point_value(first, SectionAxis::U, 0.0));
-        equations.push(SectionEquationFixture::point_value(second, SectionAxis::U, 1.0));
+        equations.push(SectionEquationFixture::point_value(
+            first,
+            SectionAxis::U,
+            0.0,
+        ));
+        equations.push(SectionEquationFixture::point_value(
+            second,
+            SectionAxis::U,
+            1.0,
+        ));
         stored.insert((first, SectionAxis::U), 0.0);
         distances.push((first, second, SectionAxis::U, 1.0));
         expected.insert((second, SectionAxis::U), 1.0);
     }
-    let solved = crate::decode::with_test_decode_ctx(|ctx| super::solve_unsigned_dimension_coordinates(ctx, &equations, &stored, &distances)).expect("disconnected component admission");
+    let solved = crate::decode::with_test_decode_ctx(|ctx| {
+        super::solve_unsigned_dimension_coordinates(ctx, &equations, &stored, &distances)
+    })
+    .expect("disconnected component admission");
     assert_eq!(solved, expected);
 }
