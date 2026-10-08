@@ -211,3 +211,22 @@ fn expression_candidate_search_preserves_work_refusal() {
 fn expression_record_split_preserves_work_refusal() {
     expression_search_refusal("NX expression declaration record split", true);
 }
+
+#[test]
+fn parameterized_expression_refuses_scoped_limit() {
+    let bytes = b"p1 + 2";
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let error = super::super::evaluate_parameterized_expression(ctx, "p1 + 2", |_| Ok(Some(3.0)))
+                .unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+            );
+        },
+    );
+}
