@@ -912,17 +912,44 @@ pub(super) fn classify_fbb_edge_layouts(
     rows: &mut [EdgeRow],
     trims: &[TrimRecord],
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
+    let mut cycles_storage = ctx.reserve_scoped(0, "catia_fbb_layout_face_cycles")?;
     let mut cycles = Vec::new();
-    for trim in ctx.admit_iter(trims, "catia_fbb_classification_trims")? {
-        let Some(face) = boundary_cycles(ctx, trim.packet.triangles(ctx)?)? else {
+    let mut trims = trims.iter();
+    while let Some(trim) = ctx.next_charged(&mut trims, "catia_fbb_classification_trims")? {
+        let triangles = trim.packet.triangles(ctx)?;
+        let Some(face) = cycles_storage.with_storage(|| boundary_cycles(ctx, triangles))? else {
             return Ok(None);
         };
-        ctx.push_vec(&mut cycles, face, "catia_fbb_layout_face_cycles")?;
+        ctx.push_scoped_vec(
+            &mut cycles_storage,
+            &mut cycles,
+            face,
+            "catia_fbb_layout_face_cycles",
+        )?;
     }
     let mut storage = ctx.reserve_scoped(0, "catia_fbb_cycle_handle_index")?;
     let mut indexed = Vec::new();
+    let mut cycles_by_handle = HashMap::<u32, Vec<usize>>::new();
     for face in ctx.admit_iter(&cycles, "catia_fbb_cycle_handle_index")? {
         for cycle in ctx.admit_iter(face, "catia_fbb_cycle_handle_index")? {
+            let cycle_index = indexed.len();
+            for &handle in ctx.admit_iter(cycle, "catia_fbb_cycle_handle_index")? {
+                if ctx
+                    .get_hash_map(&cycles_by_handle, &handle, "catia_fbb_cycle_handle_index")?
+                    .and_then(|values| values.last())
+                    != Some(&cycle_index)
+                {
+                    storage.with_storage(|| {
+                        ctx.push_hash_group(
+                            &mut cycles_by_handle,
+                            handle,
+                            cycle_index,
+                            "catia_fbb_cycle_handle_index",
+                            "catia_fbb_cycle_handle_index",
+                        )
+                    })?;
+                }
+            }
             let cycle = index_cycle(ctx, &mut storage, cycle)?;
             ctx.push_scoped_vec(
                 &mut storage,
@@ -932,16 +959,18 @@ pub(super) fn classify_fbb_edge_layouts(
             )?;
         }
     }
-    for row in ctx.admit_iter(rows, "catia_fbb_layout_rows")? {
-        let complete_matches = ctx.fold(
+    let mut rows = rows.iter_mut();
+    while let Some(row) = ctx.next_charged(&mut rows, "catia_fbb_layout_rows")? {
+        if pattern_cycle_matches(
+            ctx,
             &indexed,
-            0_usize,
-            |total, cycle| {
-                Ok(total.saturating_add(pattern_match_count(ctx, cycle, row.handles())?))
-            },
+            &cycles_by_handle,
+            row.handles(),
+            false,
             "catia_fbb_complete_pattern_matches",
-        )?;
-        if complete_matches != 0 {
+        )?
+        .0
+        {
             continue;
         }
         let Some(end) = row.handles().len().checked_sub(1) else {
@@ -950,21 +979,76 @@ pub(super) fn classify_fbb_edge_layouts(
         let Some(interior) = row.handles().get(1..end) else {
             continue;
         };
-        if interior.is_empty() {
-            continue;
-        }
-        let mut matched = false;
-        let mut unique_per_cycle = true;
-        for cycle in ctx.admit_iter(&indexed, "catia_fbb_interior_pattern_matches")? {
-            let count = pattern_match_count(ctx, cycle, interior)?;
-            matched |= count != 0;
-            unique_per_cycle &= count <= 1;
-        }
+        let (matched, unique_per_cycle) = pattern_cycle_matches(
+            ctx,
+            &indexed,
+            &cycles_by_handle,
+            interior,
+            true,
+            "catia_fbb_interior_pattern_matches",
+        )?;
         if matched && unique_per_cycle && !row.select_flanking_corners() {
             return Ok(None);
         }
     }
     Ok(Some(()))
+}
+
+/// Select cycles through their endpoint handles, then admit only the starts
+/// needed to establish existence or per-cycle uniqueness.
+fn pattern_cycle_matches(
+    ctx: &DecodeContext<'_>,
+    indexed: &[IndexedCycle<'_>],
+    cycles_by_handle: &HashMap<u32, Vec<usize>>,
+    pattern: &[u32],
+    require_unique: bool,
+    operation: &'static str,
+) -> Result<(bool, bool), CodecError> {
+    let (Some(&first), Some(&last)) = (pattern.first(), pattern.last()) else {
+        return Ok((false, true));
+    };
+    let starts = |handle| -> Result<&[usize], CodecError> {
+        Ok(ctx
+            .get_hash_map(cycles_by_handle, &handle, operation)?
+            .map_or(&[][..], Vec::as_slice))
+    };
+    let mut first_cycles = starts(first)?.iter();
+    let mut last_cycles = if first == last {
+        &[][..]
+    } else {
+        starts(last)?
+    }
+    .iter();
+    let mut left = ctx.next_charged(&mut first_cycles, operation)?.copied();
+    let mut right = ctx.next_charged(&mut last_cycles, operation)?.copied();
+    let mut matched = false;
+    while left.is_some() || right.is_some() {
+        let cycle = match (left, right) {
+            (Some(left), Some(right)) => left.min(right),
+            (Some(cycle), None) | (None, Some(cycle)) => cycle,
+            (None, None) => break,
+        };
+        let count = pattern_match_count(
+            ctx,
+            &indexed[cycle],
+            pattern,
+            if require_unique { 2 } else { 1 },
+        )?;
+        matched |= count != 0;
+        if count > 1 {
+            return Ok((true, false));
+        }
+        if matched && !require_unique {
+            return Ok((true, true));
+        }
+        if left == Some(cycle) {
+            left = ctx.next_charged(&mut first_cycles, operation)?.copied();
+        }
+        if right == Some(cycle) {
+            right = ctx.next_charged(&mut last_cycles, operation)?.copied();
+        }
+    }
+    Ok((matched, true))
 }
 
 /// A trim cycle with the positions of each handle, so a pattern is compared
@@ -1003,6 +1087,7 @@ fn pattern_match_count(
     ctx: &DecodeContext<'_>,
     cycle: &IndexedCycle<'_>,
     pattern: &[u32],
+    ceiling: usize,
 ) -> Result<usize, CodecError> {
     const OPERATION: &str = "catia_fbb_pattern_match";
     let (Some(&first), Some(&last)) = (pattern.first(), pattern.last()) else {
@@ -1033,19 +1118,22 @@ fn pattern_match_count(
     };
     // A start reads forward only where the first handle sits and backward
     // only where the last one does; with equal ends both share one list.
-    let mut matches = ctx.fold(
-        starts(first)?,
-        0_usize,
-        |count, &start| Ok(count + usize::from(reads(start, false)? || reads(start, true)?)),
-        OPERATION,
-    )?;
+    let mut matches = 0;
+    let mut first_starts = starts(first)?.iter();
+    while let Some(&start) = ctx.next_charged(&mut first_starts, OPERATION)? {
+        matches += usize::from(reads(start, false)? || reads(start, true)?);
+        if matches >= ceiling {
+            return Ok(matches);
+        }
+    }
     if first != last {
-        matches = ctx.fold(
-            starts(last)?,
-            matches,
-            |count, &start| Ok(count + usize::from(reads(start, true)?)),
-            OPERATION,
-        )?;
+        let mut last_starts = starts(last)?.iter();
+        while let Some(&start) = ctx.next_charged(&mut last_starts, OPERATION)? {
+            matches += usize::from(reads(start, true)?);
+            if matches >= ceiling {
+                return Ok(matches);
+            }
+        }
     }
     Ok(matches)
 }
@@ -3033,12 +3121,71 @@ mod tests {
     use super::{boundary_cycles, fbb_row, FbbFaceRun};
 
     #[test]
+    fn fbb_classification_selects_disconnected_cycles_and_stops_at_existence() {
+        use super::{EdgeBoundaryLayout, EdgeRow, TrimPacket, TrimRecord};
+        let mut rows = Vec::new();
+        let mut trims = Vec::new();
+        for item in 0u32..1024 {
+            let base = item * 3;
+            rows.push(
+                EdgeRow::new(
+                    1,
+                    vec![base, base + 1],
+                    EdgeBoundaryLayout::CompleteBoundaryRun,
+                )
+                .expect("row"),
+            );
+            let packet = TrimPacket::try_from(
+                &cadmpeg_test_support::service_decode_context(),
+                (1, Vec::new(), Vec::new(), vec![base, base + 1, base + 2]),
+            )
+            .expect("admission")
+            .expect("triangle");
+            packet
+                .triangles(&cadmpeg_test_support::service_decode_context())
+                .expect("expand fixture");
+            trims.push(TrimRecord {
+                packet,
+                kind: 0x41,
+                frame_vector: None,
+            });
+        }
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut classified = rows.clone();
+            assert_eq!(
+                super::classify_fbb_edge_layouts(ctx, &mut classified, &trims)?,
+                Some(())
+            );
+            assert_eq!(classified, rows);
+            Ok::<_, cadmpeg_core::CodecError>(())
+        };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            crate::test_support::with_work_refusal("catia_fbb_complete_pattern_matches", run)
+                .expect_err("first query")
+        else {
+            panic!("work refusal");
+        };
+        crate::test_support::with_work_limit(limit.used + 500_000, run)
+            .expect("indexed classification");
+        crate::test_support::with_retained_limit(0, run)
+            .expect("all classification storage is scratch");
+        crate::test_support::with_service_context(|ctx| {
+            let mut storage = ctx.reserve_scoped(0, "cycle fixture")?;
+            let cycle = super::index_cycle(ctx, &mut storage, &[1, 2, 1, 2])?;
+            assert_eq!(super::pattern_match_count(ctx, &cycle, &[2, 1], 1)?, 1);
+            assert_eq!(super::pattern_match_count(ctx, &cycle, &[2, 1], 2)?, 2);
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })
+        .expect("existence and ambiguity ceilings");
+    }
+
+    #[test]
     fn fbb_pattern_scans_preserve_both_directions_and_refuse_caller_work() {
         let count = |cycle: &[u32], pattern: &[u32]| {
             crate::test_support::with_service_context(|ctx| {
                 let mut storage = ctx.reserve_scoped(0, "test cycle index")?;
                 let cycle = super::index_cycle(ctx, &mut storage, cycle)?;
-                super::pattern_match_count(ctx, &cycle, pattern)
+                super::pattern_match_count(ctx, &cycle, pattern, usize::MAX)
             })
             .expect("service budget")
         };
@@ -3051,7 +3198,7 @@ mod tests {
             super::work_refusal_at(operation, |ctx| {
                 let mut storage = ctx.reserve_scoped(0, "test cycle index")?;
                 let cycle = super::index_cycle(ctx, &mut storage, &[1, 2, 3])?;
-                super::pattern_match_count(ctx, &cycle, &[1, 2]).map(drop)
+                super::pattern_match_count(ctx, &cycle, &[1, 2], usize::MAX).map(drop)
             });
         }
     }
