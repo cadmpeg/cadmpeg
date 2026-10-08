@@ -1653,12 +1653,14 @@ pub(crate) fn decode_bodies(
         .enumerate()
     {
         let body = header_body(payload, header)?;
-        let typed_face_offsets = index_storage.with_storage(|| {
-            selected_typed_face_offsets(ctx, stream_typed_facts, typed_bridge_attrs.as_ref())
-        })?;
-        index_storage.with_storage(|| carriers.merge_missing(ctx, scan_carriers(ctx, body)?))?;
-        let curve_attrs = index_storage.with_storage(|| carriers.curve_attrs(ctx))?;
-        let scanned_tables = index_storage.with_storage(|| {
+        let scanned_tables = {
+            let mut stream_storage = ctx.reserve_scoped(0, "hold Parasolid stream selectors")?;
+            let typed_face_offsets = stream_storage.with_storage(|| {
+                selected_typed_face_offsets(ctx, stream_typed_facts, typed_bridge_attrs.as_ref())
+            })?;
+            index_storage.with_storage(|| carriers.merge_missing(ctx, scan_carriers(ctx, body)?))?;
+            let curve_attrs = stream_storage.with_storage(|| carriers.curve_attrs(ctx))?;
+            index_storage.with_storage(|| {
             if is_deltas {
                 topology::scan_deltas_with_curve_attrs_excluding(
                     ctx,
@@ -1674,7 +1676,8 @@ pub(crate) fn decode_bodies(
                     &typed_face_offsets,
                 )
             }
-        })?;
+            })?
+        };
         let mut scanned_facts =
             index_storage.with_storage(|| entity::scan_metadata(ctx, body, is_deltas))?;
         for color in ctx.admit_iter(
@@ -3473,7 +3476,7 @@ fn decode_graph(
     }
     let mut bound_faces = BTreeSet::new();
     for atom in ctx.admit_iter(entity_facts.face_atoms, "bind Parasolid face atoms")? {
-        let Some(identity) = atom.identity else {
+        let Some(mut identity) = atom.identity else {
             continue;
         };
         if !ctx.contains_btree_set(
@@ -3490,6 +3493,10 @@ fn decode_graph(
                 "track bound Parasolid faces",
             )
         })? {
+            identity.trailing_fields = ctx.copy_slice(
+                &identity.trailing_fields,
+                "retain Parasolid face identity fields",
+            )?;
             ctx.push_vec(
                 &mut out.face_atoms,
                 attrib::FaceAtom {
@@ -6032,9 +6039,10 @@ fn nurbs_boundary_pcurve(
     )?;
     let same_curve = |candidate: &cadmpeg_ir::geometry::nurbs::NurbsCurve| -> Result<bool, cadmpeg_core::CodecError> {
         Ok(candidate.degree() == curve.degree()
-            && ctx.equal(candidate.knots().as_slice(), curve.knots().as_slice(), "compare Parasolid boundary curve knots")?
             && candidate.periodic() == curve.periodic()
             && candidate.pole_count() == curve.pole_count()
+            && candidate.knots().len() == curve.knots().len()
+            && ctx.equal(candidate.knots().as_slice(), curve.knots().as_slice(), "compare Parasolid boundary curve knots")?
             && ctx.all_by(0..curve.pole_count(), |index| {
                 let (Some(candidate), Some(actual)) = (
                     candidate.pole_rows().point_at(index),
@@ -6141,13 +6149,14 @@ fn nurbs_strict_isocurve_pcurve(
             ),
         };
         if curve.degree() != varying_degree
+            || curve.periodic() != varying_periodic
+            || curve.pole_count() != varying_count
+            || curve.knots().len() != varying_knots.len()
             || !ctx.equal(
                 curve.knots().as_slice(),
                 varying_knots.as_slice(),
                 "compare Parasolid ruled curve knots",
             )?
-            || curve.periodic() != varying_periodic
-            || curve.pole_count() != varying_count
         {
             return Ok(InverseResolution::NoMatch);
         }

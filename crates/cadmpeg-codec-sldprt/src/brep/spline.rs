@@ -2155,7 +2155,9 @@ mod knot_work_tests {
             });
         }
         let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
+        let mut policy = DecodePolicy::service();
+        // Two paired visits and four knot emissions.
+        policy.limits.max_work_units = 6;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         assert_eq!(
             super::expanded_knots(&ctx, &[0.0, 1.0], &[2, 2], 4).expect("scan and emission"),

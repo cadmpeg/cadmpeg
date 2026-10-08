@@ -1627,7 +1627,8 @@ impl ManifestActiveConfiguration {
                 if *previous_index != index
                     || matches!(
                         (previous_name.as_deref(), name.as_deref()),
-                        (Some(previous), Some(current)) if !ctx.equal(previous, current, "compare SLDPRT active configuration names")?
+                        (Some(previous), Some(current)) if previous.len() != current.len()
+                            || !ctx.equal(previous, current, "compare SLDPRT active configuration names")?
                     )
                 {
                     *self = Self::Ambiguous;
