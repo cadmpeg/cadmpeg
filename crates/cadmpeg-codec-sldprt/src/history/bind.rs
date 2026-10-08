@@ -93,9 +93,9 @@ pub(crate) fn bind_unique_sketch_feature(
         let Some(name) = feature.name.as_deref() else {
             continue;
         };
-        if !ctx
+        if ctx
             .get_hash_map(&features_by_name, name, BIND_OPERATION)?
-            .is_some_and(|group| group.len() == 1)
+            .is_none_or(|group| group.len() != 1)
         {
             continue;
         }
@@ -193,17 +193,11 @@ pub(crate) fn bind_unique_sketch_feature(
         let matches = |candidate: &usize| {
             sketch_alias_matches(ctx, &native_features, alias, &features[*candidate])
         };
-        let Some(first) =
-            ctx.position_by(candidates, |candidate| matches(candidate), BIND_OPERATION)?
-        else {
+        let Some(first) = ctx.position_by(candidates, matches, BIND_OPERATION)? else {
             continue;
         };
         if ctx
-            .position_by(
-                &candidates[first + 1..],
-                |candidate| matches(candidate),
-                BIND_OPERATION,
-            )?
+            .position_by(&candidates[first + 1..], matches, BIND_OPERATION)?
             .is_some()
         {
             continue;
@@ -255,11 +249,11 @@ pub(crate) fn bind_unique_sketch_feature(
     workspace.with_storage(|| ctx.append_vec(&mut bindings, &mut aliases, BIND_OPERATION))?;
     let index = BindingIndex::new(ctx, &mut workspace, &bindings)?;
     for feature in ctx.admit_iter(&mut *features, BIND_OPERATION)? {
-        let mut bound = Ok(Vec::new());
+        let mut bound = Ok((Vec::new(), ctx.reserve_scoped(0, BIND_OPERATION)?));
         feature.evaluation.edit(|definition, _| {
             bound = index.bind(ctx, definition);
         });
-        let mut bound = bound?;
+        let (mut bound, _bound_storage) = bound?;
         ctx.sort_unstable_by(&mut bound, |position| position, Ord::cmp, BIND_OPERATION)?;
         ctx.dedup_vec(&mut bound, BIND_OPERATION)?;
         for &position in ctx.admit_iter(&bound, BIND_OPERATION)? {
@@ -370,6 +364,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
         ctx: &DecodeContext<'_>,
         profile: &mut PlanarProfileRef,
         bound: &mut Vec<usize>,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<(), CodecError> {
         let position = match profile {
             PlanarProfileRef::Unresolved(native_ref) | PlanarProfileRef::Native(native_ref) => {
@@ -382,7 +377,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
         };
         if let Some(&position) = position {
             *profile = self.sketch(ctx, position)?.into();
-            ctx.push_vec(bound, position, BIND_OPERATION)?;
+            ctx.push_scoped_vec(storage, bound, position, BIND_OPERATION)?;
         }
         Ok(())
     }
@@ -392,9 +387,10 @@ impl<'b, 's> BindingIndex<'b, 's> {
         ctx: &DecodeContext<'_>,
         profile: &mut ProfileRef,
         bound: &mut Vec<usize>,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<(), CodecError> {
         match profile {
-            ProfileRef::Planar(profile) => self.bind_planar_profile(ctx, profile, bound),
+            ProfileRef::Planar(profile) => self.bind_planar_profile(ctx, profile, bound, storage),
             _ => Ok(()),
         }
     }
@@ -406,6 +402,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
         path: &mut PathRef,
         occurrence: usize,
         bound: &mut Vec<usize>,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<(), CodecError> {
         let PathRef::Native(native_ref) = path else {
             return Ok(());
@@ -417,43 +414,44 @@ impl<'b, 's> BindingIndex<'b, 's> {
             return Ok(());
         };
         *path = PathRef::Sketch(self.sketch(ctx, position)?);
-        ctx.push_vec(bound, position, BIND_OPERATION)
+        ctx.push_scoped_vec(storage, bound, position, BIND_OPERATION)
     }
 
     /// Resolve every reference of `definition` that a binding names, returning
     /// the positions of the bindings used.
-    fn bind(
+    fn bind<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         definition: &mut FeatureDefinition,
-    ) -> Result<Vec<usize>, CodecError> {
+    ) -> Result<(Vec<usize>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+        let mut storage = ctx.reserve_scoped(0, BIND_OPERATION)?;
         let mut bound = Vec::new();
         let FeatureDefinition::Operation(operation) = definition else {
-            return Ok(bound);
+            return Ok((bound, storage));
         };
         match operation {
             FeatureOperation::Extrude { profile, .. } => {
-                self.bind_profile(ctx, profile, &mut bound)?;
+                self.bind_profile(ctx, profile, &mut bound, &mut storage)?;
             }
             FeatureOperation::Wrap { profile, .. } => {
-                self.bind_planar_profile(ctx, profile, &mut bound)?;
+                self.bind_planar_profile(ctx, profile, &mut bound, &mut storage)?;
             }
             FeatureOperation::Rib { construction, .. } => {
                 if let Some(profile) = construction.profile.as_mut() {
-                    self.bind_planar_profile(ctx, profile, &mut bound)?;
+                    self.bind_planar_profile(ctx, profile, &mut bound, &mut storage)?;
                 }
             }
             FeatureOperation::Revolve { construction, .. } => {
                 if let Some(profile) = construction.profile_mut() {
-                    self.bind_planar_profile(ctx, profile, &mut bound)?;
+                    self.bind_planar_profile(ctx, profile, &mut bound, &mut storage)?;
                 }
             }
             FeatureOperation::Sweep { shape, path, .. } => {
                 if let Some(profile) = shape.referenced_profile_mut() {
-                    self.bind_planar_profile(ctx, profile, &mut bound)?;
+                    self.bind_planar_profile(ctx, profile, &mut bound, &mut storage)?;
                 }
                 if let Some(path) = path.as_mut() {
-                    self.bind_path(ctx, path, 0, &mut bound)?;
+                    self.bind_path(ctx, path, 0, &mut bound, &mut storage)?;
                 }
             }
             FeatureOperation::TrimSurface { tool, .. }
@@ -462,7 +460,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
                 ..
             }
             | FeatureOperation::ProjectedCurve { source: tool, .. } => {
-                self.bind_path(ctx, tool, 0, &mut bound)?;
+                self.bind_path(ctx, tool, 0, &mut bound, &mut storage)?;
             }
             FeatureOperation::CompositeCurve { segments, .. } => {
                 // Each binding resolves the first segment still naming it, so the
@@ -491,7 +489,7 @@ impl<'b, 's> BindingIndex<'b, 's> {
                         })?;
                         Ok::<_, CodecError>(occurrence)
                     })?;
-                    self.bind_path(ctx, segment, occurrence, &mut bound)?;
+                    self.bind_path(ctx, segment, occurrence, &mut bound, &mut storage)?;
                 }
             }
             FeatureOperation::Loft {
@@ -499,23 +497,23 @@ impl<'b, 's> BindingIndex<'b, 's> {
             } => {
                 for section in ctx.admit_iter(&mut sections[..], BIND_OPERATION)? {
                     if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
-                        self.bind_profile(ctx, profile, &mut bound)?;
+                        self.bind_profile(ctx, profile, &mut bound, &mut storage)?;
                     }
                 }
                 match guidance {
                     cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
                         for path in ctx.admit_iter(&mut guides[..], BIND_OPERATION)? {
-                            self.bind_path(ctx, path, 0, &mut bound)?;
+                            self.bind_path(ctx, path, 0, &mut bound, &mut storage)?;
                         }
                     }
                     cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
-                        self.bind_path(ctx, centerline, 0, &mut bound)?;
+                        self.bind_path(ctx, centerline, 0, &mut bound, &mut storage)?;
                     }
                 }
             }
             _ => {}
         }
-        Ok(bound)
+        Ok((bound, storage))
     }
 }
 
@@ -538,7 +536,7 @@ pub(super) fn bind_definition_sketch(
     }];
     let mut workspace = ctx.reserve_scoped(0, BIND_OPERATION)?;
     let index = BindingIndex::new(ctx, &mut workspace, &bindings)?;
-    Ok(!index.bind(ctx, definition)?.is_empty())
+    Ok(!index.bind(ctx, definition)?.0.is_empty())
 }
 
 /// Assign stable neutral regeneration ordinals with every structural parent and
@@ -557,7 +555,7 @@ pub(crate) fn order_features_for_regeneration(
 
 /// The structural parents a tree node names for each child: the first and
 /// the last tree node, in feature order, listing it.
-fn tree_parents<'f>(
+pub(super) fn tree_parents<'f>(
     ctx: &DecodeContext<'_>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     features: &'f [cadmpeg_ir::features::Feature],
@@ -618,6 +616,31 @@ fn regeneration_order<'ctx>(
             )
         })?;
     }
+    let mut configuration_predecessors = HashMap::new();
+    if let Some(model) = model {
+        const CONFIGURATIONS: &str = "index SLDPRT configuration feature dependencies";
+        for configuration in ctx.admit_iter(&model.configurations, CONFIGURATIONS)? {
+            for (feature_id, state) in
+                ctx.admit_iter(&configuration.feature_states, CONFIGURATIONS)?
+            {
+                if ctx
+                    .get_hash_map(&by_id, feature_id, CONFIGURATIONS)?
+                    .is_none()
+                {
+                    continue;
+                }
+                scratch.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut configuration_predecessors,
+                        feature_id,
+                        state.dependencies.as_slice(),
+                        CONFIGURATIONS,
+                        CONFIGURATIONS,
+                    )
+                })?;
+            }
+        }
+    }
     let mut predecessors = Vec::new();
     for (consumer, feature) in ctx
         .admit_iter(features, "scan SLDPRT regeneration_order values")?
@@ -634,7 +657,7 @@ fn regeneration_order<'ctx>(
             add(predecessor)?;
         }
         let tree_parent = ctx
-            .get_hash_map(&tree_parents, &feature.id, "look up SLDPRT hash key")?
+            .get_hash_map(&tree_parents, &feature.id, "scan SLDPRT feature parents")?
             .copied();
         if let Some((_, last)) = tree_parent {
             add(last)?;
@@ -642,10 +665,7 @@ fn regeneration_order<'ctx>(
         if let Some(model) = model {
             // The model's structural owner: the first tree node listing the
             // feature, or its regeneration predecessor when no tree owns it.
-            match ctx
-                .get_hash_map(&tree_parents, &feature.id, "scan SLDPRT feature parents")?
-                .copied()
-            {
+            match tree_parent {
                 Some((first, _)) => add(first)?,
                 None => {
                     if let Some(parent) = model.feature_regeneration_parent(&feature.id) {
@@ -653,19 +673,18 @@ fn regeneration_order<'ctx>(
                     }
                 }
             }
-            for configuration in ctx.admit_iter(
-                &model.configurations,
-                "scan SLDPRT configuration feature dependencies",
+            if let Some(dependencies) = ctx.get_hash_map(
+                &configuration_predecessors,
+                &feature.id,
+                "look up SLDPRT configuration feature dependencies",
             )? {
-                if let Some(state) = ctx.get_btree_map(
-                    &configuration.feature_states,
-                    &feature.id,
-                    "look up SLDPRT ordered key",
+                for group in ctx.admit_iter(
+                    dependencies,
+                    "scan SLDPRT configuration feature dependencies",
                 )? {
-                    for dependency in ctx.admit_iter(
-                        state.dependencies.as_slice(),
-                        "scan SLDPRT configuration feature dependencies",
-                    )? {
+                    for dependency in
+                        ctx.admit_iter(*group, "scan SLDPRT configuration feature dependencies")?
+                    {
                         add(dependency)?;
                     }
                 }
@@ -746,8 +765,7 @@ fn assign_regeneration_ordinals(
     order: Vec<usize>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (ordinal, index) in ctx
-        .admit_iter(&order, "scan SLDPRT regeneration ordinal order")?
-        .copied()
+        .admit_iter(order, "scan SLDPRT regeneration ordinal order")?
         .enumerate()
     {
         features[index].ordinal = u64::try_from(ordinal).map_err(|_| {
@@ -1123,6 +1141,53 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn regeneration_order_unites_configuration_dependency_indexes() {
+        use cadmpeg_ir::features::{ConfigurationEvaluation, ConfigurationFeatureState};
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut features = Vec::new();
+        for (ordinal, name) in ["consumer", "middle", "source"].into_iter().enumerate() {
+            let mut feature = ordering_feature();
+            feature.id = FeatureId::mint(format!("synthetic:test:id#{name}")).unwrap();
+            feature.ordinal = u64::try_from(ordinal).unwrap();
+            features.push(feature);
+        }
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.features = features;
+        for (ordinal, consumer, source) in [(0, 0, 1), (1, 1, 2), (2, 0, 1)] {
+            let mut configuration = crate::history::tests::design_configuration(
+                &format!("dependencies-{ordinal}"),
+                ordinal,
+                None,
+                None,
+            );
+            configuration.feature_states.insert(
+                ir.model.features[consumer].id.clone(),
+                ConfigurationFeatureState {
+                    definition: ir.model.features[consumer].evaluation.definition().clone(),
+                    dependencies: DistinctMembers::try_from(
+                        vec![ir.model.features[source].id.clone()],
+                        &ctx,
+                    )
+                    .unwrap(),
+                    evaluation: ConfigurationEvaluation::Active {
+                        outputs: DistinctMembers::default(),
+                    },
+                },
+            );
+            ir.model.configurations.push(configuration);
+        }
+        assert!(order_model_features_for_regeneration(&ctx, &mut ir).unwrap());
+        assert_eq!(
+            ir.model
+                .features
+                .iter()
+                .map(|feature| feature.ordinal)
+                .collect::<Vec<_>>(),
+            [2, 1, 0]
+        );
+    }
+
     fn feature_output_error(
         limits: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
     ) -> cadmpeg_core::CodecError {
@@ -1246,7 +1311,7 @@ mod tests {
                     ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
                     ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
                     ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap
+                        policy.limits.max_materialized_bytes = cap;
                     }
                     ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
                     _ => panic!("sketch binding dimension"),
@@ -1255,7 +1320,7 @@ mod tests {
                 let mut features = [neutral.clone()];
                 let result = bind_unique_sketch_feature(&ctx, &mut features, &sketches, &histories);
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                    assert_eq!(ctx.resource_refusal(), Some(*limit));
                 }
                 result
             },

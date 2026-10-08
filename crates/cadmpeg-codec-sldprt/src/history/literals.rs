@@ -12,7 +12,7 @@ use cadmpeg_ir::{
         FaceMotion, FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3,
         ParameterValue,
     },
-    scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength},
+    scalar::{Angle, InteriorAngle, Length, PositiveAngle, PositiveLength},
 };
 
 const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
@@ -20,11 +20,8 @@ const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
 const EPS_LITERALS_PARSE_LENGTH_MM_E7: f64 = 1.0e-7;
 const EPS_LITERALS_FORMAT_F64_LITERAL_E6: f64 = 1.0e-6;
 
-/// Admits a reading of `text` by the grammars in this module, one work unit per
-/// input byte. Each grammar reads every input byte a bounded number of times:
-/// trims, tests of fixed unit suffixes and display modifiers, and numeric
-/// parses. A caller that runs a fixed number of grammars over the same text
-/// admits it once.
+/// Charges one work unit per input byte for a shared literal-grammar call.
+/// A caller that runs a fixed number of grammars over the same text charges it once.
 pub(crate) fn admit_literal(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     text: &str,
@@ -154,10 +151,6 @@ pub(crate) fn format_angle_rad(value: Angle) -> String {
     format!("{}rad", finite_literal(value.get()))
 }
 
-pub(super) fn format_f64_literal(value: FiniteReal) -> String {
-    finite_literal(value.get())
-}
-
 /// The literal of a finite value. Every caller passes the value of a checked
 /// scalar.
 fn finite_literal(value: f64) -> String {
@@ -173,7 +166,7 @@ impl std::fmt::Display for LengthLiteral {
     }
 }
 
-struct FiniteLiteral(f64);
+pub(super) struct FiniteLiteral(pub(super) f64);
 
 impl std::fmt::Display for FiniteLiteral {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -388,13 +381,22 @@ pub(super) fn parse_neutral_parameter_literal(
 }
 
 pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
-    match value {
-        ParameterValue::Length(value) => format_length_mm(*value),
-        ParameterValue::Angle(value) => format_angle_rad(*value),
-        ParameterValue::Real(value) => format_f64_literal(*value),
-        ParameterValue::Integer(value) => value.to_string(),
-        ParameterValue::Boolean(value) => value.to_string(),
-        ParameterValue::String(value) => value.clone(),
+    ParameterLiteral(value).to_string()
+}
+
+/// The canonical literal of a parameter, written directly into the text sink.
+pub(super) struct ParameterLiteral<'a>(pub(super) &'a ParameterValue);
+
+impl std::fmt::Display for ParameterLiteral<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            ParameterValue::Length(value) => write!(formatter, "{}", LengthLiteral(*value)),
+            ParameterValue::Angle(value) => write!(formatter, "{}rad", FiniteLiteral(value.get())),
+            ParameterValue::Real(value) => write!(formatter, "{}", FiniteLiteral(value.get())),
+            ParameterValue::Integer(value) => write!(formatter, "{value}"),
+            ParameterValue::Boolean(value) => write!(formatter, "{value}"),
+            ParameterValue::String(value) => formatter.write_str(value),
+        }
     }
 }
 
