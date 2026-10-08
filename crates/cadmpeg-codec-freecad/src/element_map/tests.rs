@@ -23,19 +23,6 @@ fn in_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     f(&ctx)
 }
 
-fn with_collection_limit<T>(
-    bytes: &[u8],
-    limit: u64,
-    f: impl FnOnce(&DecodeContext<'_>) -> T,
-) -> T {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("input is within the root limit");
-    f(&ctx)
-}
-
 #[test]
 fn element_map_diagnostic_refuses_at_matching_retained_limit() {
     crate::test_support::assert_retained_refusal_at(&[], "FreeCAD element map diagnostic", |ctx| {
@@ -61,7 +48,7 @@ fn legacy_side_entry_name_refuses_at_matching_retained_limit() {
                 ctx,
                 xml.root_element(),
                 1,
-                &std::collections::HashMap::default(),
+                &std::collections::BTreeMap::default(),
             )
         },
     );
@@ -70,28 +57,31 @@ fn legacy_side_entry_name_refuses_at_matching_retained_limit() {
 #[test]
 fn string_table_capacity_refuses_on_collection_limit() {
     let bytes = b"1.c name\n";
-    let result = with_collection_limit(bytes, 0, |ctx| parse_string_table(ctx, bytes, 1, false));
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD string table entries"
-    ));
+    crate::test_support::assert_collection_refusal_at(
+        bytes,
+        "FreeCAD string table entries",
+        |ctx| parse_string_table(ctx, bytes, 1, false),
+    );
 }
 
 #[test]
 fn string_table_component_refuses_on_collection_limit() {
     let bytes = b"1.c.2 name\n";
-    let result = with_collection_limit(bytes, 1, |ctx| parse_string_table(ctx, bytes, 1, false));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD string table components"));
+    crate::test_support::assert_collection_refusal_at(
+        bytes,
+        "FreeCAD string table components",
+        |ctx| parse_string_table(ctx, bytes, 1, false),
+    );
 }
 
 #[test]
 fn string_table_value_word_refuses_on_collection_limit() {
     let bytes = b"1.8 prefix postfix\n";
-    let result = with_collection_limit(bytes, 1, |ctx| parse_string_table(ctx, bytes, 1, false));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD string table value words"));
+    crate::test_support::assert_collection_refusal_at(
+        bytes,
+        "FreeCAD string table value words",
+        |ctx| parse_string_table(ctx, bytes, 1, false),
+    );
 }
 
 #[test]
@@ -107,56 +97,49 @@ fn string_table_record_refuses_on_collection_limit() {
 #[test]
 fn element_map_group_capacity_refuses_on_collection_limit() {
     let bytes = b"1 PostfixCount 0 MapCount 1 ElementMap 1 1 1";
-    let result = with_collection_limit(bytes, 1, |ctx| parse_element_map(ctx, bytes, false));
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD element map groups"
-    ));
+    crate::test_support::assert_collection_refusal_at(bytes, "FreeCAD element map groups", |ctx| {
+        parse_element_map(ctx, bytes, false)
+    });
 }
 
 #[test]
 fn mapped_name_chain_refuses_on_collection_limit() {
     let bytes = b"7 PostfixCount 0 MapCount 1 ElementMap 1 7 1 Face ChildCount 0 NameCount 1 ;Generated.0.a 0 EndMap";
-    let result = with_collection_limit(bytes, 3, |ctx| parse_element_map(ctx, bytes, false));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD mapped name chain"));
+    crate::test_support::assert_collection_refusal_at(bytes, "FreeCAD mapped name chain", |ctx| {
+        parse_element_map(ctx, bytes, false)
+    });
 }
 
 #[test]
 fn element_map_postfixes_refuse_on_collection_limit() {
     let bytes = b"7 PostfixCount 1 :tag MapCount 0";
-    let result = with_collection_limit(bytes, 0, |ctx| parse_element_map(ctx, bytes, false));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD element map postfixes"));
+    crate::test_support::assert_collection_refusal_at(
+        bytes,
+        "FreeCAD element map postfixes",
+        |ctx| parse_element_map(ctx, bytes, false),
+    );
 }
 
 #[test]
 fn mapped_name_fields_refuse_on_collection_limit() {
-    let result = with_collection_limit(&[], 0, |ctx| parse_mapped_name(ctx, ";Generated.0.a", &[]));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD mapped name fields"));
+    crate::test_support::assert_collection_refusal_at(&[], "FreeCAD mapped name fields", |ctx| {
+        parse_mapped_name(ctx, ";Generated.0.a", &[])
+    });
 }
 
 #[test]
 fn legacy_string_ids_refuse_on_collection_limit() {
-    let result = with_collection_limit(&[], 0, |ctx| parse_legacy_string_ids(ctx, "12"));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD legacy string IDs"));
+    crate::test_support::assert_collection_refusal_at(&[], "FreeCAD legacy string IDs", |ctx| {
+        parse_legacy_string_ids(ctx, "12")
+    });
 }
 
 #[test]
 fn inline_element_text_refuses_on_materialized_limit() {
     let xml = roxmltree::Document::parse("<Table>abc</Table>").expect("valid inline XML");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within input policy");
-    assert!(
-        matches!(node_text_bytes(&ctx, xml.root_element()), Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD inline element text")
-    );
+    crate::test_support::materialized_refusal_at("FreeCAD inline element text", |ctx| {
+        node_text_bytes(ctx, xml.root_element()).map(|_| ())
+    });
 }
 
 fn test_parse(
@@ -262,7 +245,8 @@ fn accepts_document_and_direct_shape_string_hasher_roots() {
 </Document>"#,
     )
     .expect("framed string hashers");
-    validate_string_hasher_framing(xml.root_element()).expect("valid roots");
+    in_decode_context(|ctx| validate_string_hasher_framing(ctx, xml.root_element()))
+        .expect("valid roots");
 }
 
 #[test]
@@ -287,7 +271,9 @@ fn rejects_nested_string_hasher_carrier() {
 </Property></Document>"#,
     )
     .expect("nested string hasher");
-    assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    assert!(
+        in_decode_context(|ctx| validate_string_hasher_framing(ctx, xml.root_element())).is_err()
+    );
 }
 
 #[test]
@@ -298,14 +284,18 @@ fn rejects_duplicate_direct_string_hasher_carriers() {
 </Property></Document>"#,
     )
     .expect("duplicate string hashers");
-    assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    assert!(
+        in_decode_context(|ctx| validate_string_hasher_framing(ctx, xml.root_element())).is_err()
+    );
 }
 
 #[test]
 fn rejects_orphan_string_hasher2_carrier() {
     let xml = roxmltree::Document::parse("<Document><StringHasher2/></Document>")
         .expect("orphan string hasher successor");
-    assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    assert!(
+        in_decode_context(|ctx| validate_string_hasher_framing(ctx, xml.root_element())).is_err()
+    );
 }
 
 #[test]
@@ -314,7 +304,9 @@ fn rejects_non_successor_string_hasher2_carrier() {
         r#"<Document><StringHasher new="1"/><Wrapper/><StringHasher2/></Document>"#,
     )
     .expect("non-successor string hasher");
-    assert!(validate_string_hasher_framing(xml.root_element()).is_err());
+    assert!(
+        in_decode_context(|ctx| validate_string_hasher_framing(ctx, xml.root_element())).is_err()
+    );
 }
 
 #[test]
@@ -797,7 +789,11 @@ fn rejects_ambiguous_string_table_property_ownership() {
     second.xml = crate::native::RetainedXml::from_text(" ".repeat(1000), 0).unwrap();
 
     assert!(matches!(
-        in_decode_context(|ctx| owning_property(ctx, node, &[first, second])),
+        in_decode_context(|ctx| {
+            let properties = [first, second];
+            let owners = super::PropertyOwners::new(ctx, &properties)?;
+            owning_property(ctx, node, &owners)
+        }),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -859,4 +855,122 @@ fn parse_bytes(
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = ctx.parse_xml(text, "FreeCAD XML tree")?;
     parse(ctx, xml.document(), file_version, properties, entries)
+}
+
+#[test]
+fn property_ownership_index_uses_half_open_spans() {
+    let xml =
+        roxmltree::Document::parse("<Document><StringHasher count=\"0\"/></Document>").unwrap();
+    let node = xml.root_element().first_element_child().unwrap();
+    let start = node.range().start;
+    let mut before = test_property("App::PropertyString", "<Property/>");
+    before.xml = crate::native::RetainedXml::from_text(" ".repeat(start), 0).unwrap();
+    let mut enclosing = test_property("App::PropertyString", "<Property/>");
+    enclosing.id = "fcstd:test:property#Enclosing".into();
+    enclosing.xml = crate::native::RetainedXml::from_text(
+        " ".repeat(100),
+        cadmpeg_core::decode::u64_from_index(start),
+    )
+    .unwrap();
+    let properties = [before, enclosing];
+    let owner = in_decode_context(|ctx| {
+        let owners = super::PropertyOwners::new(ctx, &properties)?;
+        owning_property(ctx, node, &owners)
+    })
+    .unwrap();
+    assert_eq!(owner.as_deref(), Some(properties[1].id.as_str()));
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD property ownership lookup",
+        |ctx| {
+            let owners = super::PropertyOwners::new(ctx, &properties)?;
+            owning_property(ctx, node, &owners)
+        },
+    );
+}
+
+#[test]
+fn element_text_token_scans_and_numbers_have_separate_admission() {
+    let bytes = b"1.c name\n";
+    for operation in [
+        "FreeCAD element-map token scan",
+        "FreeCAD string-table flags",
+    ] {
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            bytes,
+            operation,
+            |ctx| parse_string_table(ctx, bytes, 1, false),
+        );
+    }
+    let xml =
+        roxmltree::Document::parse("<Document><StringHasher count=\"0\"/></Document>").unwrap();
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD string-hasher descendants",
+        |ctx| validate_string_hasher_framing(ctx, xml.root_element()),
+    );
+}
+
+#[test]
+fn legacy_group_index_nodes_use_scoped_storage() {
+    let bytes = b"1 Edge1 stable 0";
+    crate::test_support::materialized_refusal_at("FreeCAD legacy element groups", |ctx| {
+        super::parse_legacy_stream(ctx, bytes, None).map(|_| ())
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FreeCAD legacy element groups",
+        None,
+    );
+    let (count, groups) = super::parse_legacy_stream(&ctx, bytes, None).unwrap();
+    let output = super::legacy_map_payload(&ctx, groups, count, None).unwrap();
+    drop(probe);
+    let group = &output.parsed.maps.root().groups[0];
+    assert_eq!(group.indexed_name, "Edge");
+    assert!(group.names[0].is_empty());
+    assert_eq!(group.names[1][0].encoded, "stable");
+    assert_eq!(group.names[1][0].resolved.as_deref(), Some("stable"));
+}
+
+#[test]
+fn postfix_count_is_bounded_before_vector_allocation() {
+    let bytes = b"1 PostfixCount 10000000";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FreeCAD element map postfixes",
+        None,
+    );
+    assert!(matches!(
+        parse_element_map(&ctx, bytes, false),
+        Err(CodecError::Malformed(_))
+    ));
+}
+
+#[test]
+fn legacy_string_id_count_is_bounded_before_vector_allocation() {
+    let bytes = b"1 Edge1 stable 10000000";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FreeCAD legacy string IDs",
+        None,
+    );
+    assert!(matches!(
+        super::parse_legacy_stream(&ctx, bytes, None),
+        Err(CodecError::Malformed(_))
+    ));
 }
