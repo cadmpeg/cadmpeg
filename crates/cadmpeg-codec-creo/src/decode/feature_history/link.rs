@@ -76,10 +76,8 @@ fn unique_model_feature_index(
     feature_id: &IrFeatureId,
 ) -> Result<Option<usize>, CodecError> {
     let mut matching_index = None;
-    for (index, feature) in ctx
-        .admit_iter(&ir.model.features, "creo linked model feature lookup")?
-        .enumerate()
-    {
+    let mut items = (&ir.model.features).into_iter().enumerate();
+    while let Some((index, feature)) = ctx.next_charged(&mut items, "creo linked model feature lookup")? {
         if !ctx.equal(
             &feature.id,
             feature_id,
@@ -121,11 +119,13 @@ pub(in super::super) fn generated_surface_id_for_feature(
     source_entity_id: u32,
 ) -> Result<Option<u32>, CodecError> {
     let mut surface_id = None;
-    for table in ctx.admit_iter(tables, "creo generated surface feature tables")? {
+    let mut table_iter = (tables).into_iter();
+    while let Some(table) = ctx.next_charged(&mut table_iter, "creo generated surface feature tables")? {
         if table.feature_id != feature_id {
             continue;
         }
-        for entry in ctx.admit_iter(&table.entries, "creo generated surface feature entries")? {
+        let mut entry_iter = (&table.entries).into_iter();
+        while let Some(entry) = ctx.next_charged(&mut entry_iter, "creo generated surface feature entries")? {
             if entry.source_entity_id() != Some(source_entity_id)
                 || !table.contains_surface_id(entry.entity_id)
             {
@@ -260,7 +260,8 @@ pub(in super::super) fn section_entity_is_generated_profile(
         return Ok(false);
     }
     let mut found_cylinder = false;
-    for table in ctx.admit_iter(tables, "creo blind generated profile tables")? {
+    let mut table_iter = (tables).into_iter();
+    while let Some(table) = ctx.next_charged(&mut table_iter, "creo blind generated profile tables")? {
         if table.feature_id != feature_id {
             continue;
         }
@@ -313,10 +314,8 @@ fn generated_profile_table_shape(
     {
         return Ok(false);
     }
-    for (index, entry) in ctx
-        .admit_iter(&table.entries, "creo generated profile unique entry IDs")?
-        .enumerate()
-    {
+    let mut items = (&table.entries).into_iter().enumerate();
+    while let Some((index, entry)) = ctx.next_charged(&mut items, "creo generated profile unique entry IDs")? {
         if ctx.any_by(
             &table.entries[..index],
             |prior| Ok(prior.entity_id == entry.entity_id),
@@ -455,10 +454,12 @@ pub(in super::super) fn profile_segment_ids(
     profiles: &[Vec<SketchEntityUse>],
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut ids = BTreeSet::new();
-    for segment in ctx.admit_iter(segments, "creo profile segment rows")? {
+    let mut segment_iter = (segments).into_iter();
+    while let Some(segment) = ctx.next_charged(&mut segment_iter, "creo profile segment rows")? {
         let mut matches = false;
         'profiles: for profile in ctx.admit_iter(profiles, "creo sketch profiles")? {
-            for entity_use in ctx.admit_iter(profile, "creo sketch profile entities")? {
+            let mut entity_use_iter = (profile).into_iter();
+            while let Some(entity_use) = ctx.next_charged(&mut entity_use_iter, "creo sketch profile entities")? {
                 let Some(suffix) = entity_use
                     .entity
                     .as_str()

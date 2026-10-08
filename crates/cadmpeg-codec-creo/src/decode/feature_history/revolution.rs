@@ -106,10 +106,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    for transform in ctx.admit_iter(
-        &scan.features.section_transforms,
-        "creo revolution surface transforms",
-    )? {
+    for transform in ctx.admit_iter(&scan.features.section_transforms, "creo revolution surface transforms")? {
         if unique_feature_section_transform(
             ctx,
             &scan.features.section_transforms,
@@ -165,21 +162,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
-        let mut matching_sketch = None;
-        for sketch in ctx.admit_iter(&ir.model.sketches, "creo revolution model sketches")? {
-            if !ctx.equal(
+        let matching_sketch = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.sketches, |sketch| ctx.equal(
                 &sketch.id,
                 &sketch_id,
                 "creo revolution sketch identity comparison",
-            )? {
-                continue;
-            }
-            if matching_sketch.is_some() {
-                matching_sketch = None;
-                break;
-            }
-            matching_sketch = Some(sketch);
-        }
+            ), "creo revolution model sketches")?;
         if let Some(sketch) = matching_sketch {
             let segments = complete_section_segment_rows(ctx, definition)?;
             let profile_ids =
@@ -299,17 +286,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     "creo revolution surface identity",
                 )?
             };
-            let mut surface_exists = false;
-            for item in ctx.admit_iter(&ir.model.surfaces, "creo revolution surface lookup")? {
-                if ctx.equal(
+            let surface_exists = ctx.any_by(&ir.model.surfaces, |item| ctx.equal(
                     &item.id,
                     &surface_id,
                     "creo revolution surface identity comparison",
-                )? {
-                    surface_exists = true;
-                    break;
-                }
-            }
+                ), "creo revolution surface lookup")?;
             if surface_exists {
                 continue;
             }
@@ -391,19 +372,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     native_surface,
                     "creo revolution surface identity",
                 )?;
-                let mut surface_exists = false;
-                for item in
-                    ctx.admit_iter(&ir.model.surfaces, "creo saved revolution surface lookup")?
-                {
-                    if ctx.equal(
+                let surface_exists = ctx.any_by(&ir.model.surfaces, |item| ctx.equal(
                         &item.id,
                         &surface_id,
                         "creo saved revolution surface identity comparison",
-                    )? {
-                        surface_exists = true;
-                        break;
-                    }
-                }
+                    ), "creo saved revolution surface lookup")?;
                 if surface_exists {
                     return Ok(std::ops::ControlFlow::Continue(()));
                 }
@@ -465,23 +438,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 format_args!("{}:{suffix}", definition.identity.id()),
                 "creo revolved spline curve identity",
             )?;
-            let mut matching_curve = None;
-            for curve in
-                ctx.admit_iter(&ir.model.curves, "creo revolved spline directrix lookup")?
-            {
-                if !ctx.equal(
+            let matching_curve = crate::decode::uniqueness::exactly_one_by(ctx, &ir.model.curves, |curve| ctx.equal(
                     &curve.id,
                     &curve_id,
                     "creo revolved spline curve identity comparison",
-                )? {
-                    continue;
-                }
-                if matching_curve.is_some() {
-                    matching_curve = None;
-                    break;
-                }
-                matching_curve = Some(curve);
-            }
+                ), "creo revolved spline directrix lookup")?;
             let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
                 matching_curve.map(|curve| source_carriers.curve_geometry(curve))
             else {
@@ -547,17 +508,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 format_args!("{feature_id}:{suffix}"),
                 "creo revolution construction identity",
             )?;
-            let mut surface_exists = false;
-            for item in ctx.admit_iter(&ir.model.surfaces, "creo saved spline surface lookup")? {
-                if ctx.equal(
+            let surface_exists = ctx.any_by(&ir.model.surfaces, |item| ctx.equal(
                     &item.id,
                     &surface_id,
                     "creo saved spline surface identity comparison",
-                )? {
-                    surface_exists = true;
-                    break;
-                }
-            }
+                ), "creo saved spline surface lookup")?;
             if surface_exists {
                 return Ok(std::ops::ControlFlow::Continue(()));
             }
@@ -727,17 +682,11 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
     }
     let mut transferred = 0;
     for (id, geometry, offset, object_id) in pending {
-        let mut curve_exists = false;
-        for curve in ctx.admit_iter(&ir.model.curves, "creo revolution orbit curve lookup")? {
-            if ctx.equal(
+        let curve_exists = ctx.any_by(&ir.model.curves, |curve| ctx.equal(
                 &curve.id,
                 &id,
                 "creo revolution orbit curve identity comparison",
-            )? {
-                curve_exists = true;
-                break;
-            }
-        }
+            ), "creo revolution orbit curve lookup")?;
         if curve_exists {
             continue;
         }
@@ -844,17 +793,11 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
     }
     let mut transferred = 0;
     for (id, geometry, offset, object_id) in pending {
-        let mut curve_exists = false;
-        for curve in ctx.admit_iter(&ir.model.curves, "creo extrusion orbit curve lookup")? {
-            if ctx.equal(
+        let curve_exists = ctx.any_by(&ir.model.curves, |curve| ctx.equal(
                 &curve.id,
                 &id,
                 "creo extrusion orbit curve identity comparison",
-            )? {
-                curve_exists = true;
-                break;
-            }
-        }
+            ), "creo extrusion orbit curve lookup")?;
         if curve_exists {
             continue;
         }

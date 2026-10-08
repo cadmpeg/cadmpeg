@@ -139,18 +139,13 @@ pub(super) fn thicken_feature_definition(
             faces.push(face);
         }
         let mut all_faces_resolved = true;
-        for face in ctx.admit_iter(&faces, "creo thicken resolved face IDs")? {
-            let mut face_found = false;
-            for candidate in ctx.admit_iter(&ir.model.faces, "creo thicken model face lookup")? {
-                if ctx.equal(
+        let mut face_iter = (&faces).into_iter();
+        while let Some(face) = ctx.next_charged(&mut face_iter, "creo thicken resolved face IDs")? {
+            let face_found = ctx.any_by(&ir.model.faces, |candidate| ctx.equal(
                     &candidate.id,
                     face,
                     "creo thicken model face identity comparison",
-                )? {
-                    face_found = true;
-                    break;
-                }
-            }
+                ), "creo thicken model face lookup")?;
             if !face_found {
                 all_faces_resolved = false;
                 break;
@@ -213,17 +208,11 @@ fn hole_face_selection(
         format_args!("creo:visibgeom:face#{surface_id}"),
         "creo hole candidate face ID",
     )?;
-    let mut resolved = false;
-    for candidate in ctx.admit_iter(&ir.model.faces, "creo hole face lookup")? {
-        if ctx.equal(
+    let resolved = ctx.any_by(&ir.model.faces, |candidate| ctx.equal(
             candidate.id.as_str(),
             candidate_id.as_str(),
             "creo hole face identity comparison",
-        )? {
-            resolved = true;
-            break;
-        }
-    }
+        ), "creo hole face lookup")?;
     if resolved {
         let text = ctx.copy_retained_text(&candidate_id, "creo hole face IDs")?;
         ctx.charge_work(
@@ -395,19 +384,11 @@ pub(in super::super) fn schema_feature_definition(
         let sketch = match definition {
             Some(definition) => match model_sketch_id(ctx, scan, definition)? {
                 Some(sketch) => {
-                    let mut sketch_found = false;
-                    for candidate in
-                        ctx.admit_iter(&ir.model.sketches, "creo schema sketch model lookup")?
-                    {
-                        if ctx.equal(
+                    let sketch_found = ctx.any_by(&ir.model.sketches, |candidate| ctx.equal(
                             &candidate.id,
                             &sketch,
                             "creo schema sketch identity comparison",
-                        )? {
-                            sketch_found = true;
-                            break;
-                        }
-                    }
+                        ), "creo schema sketch model lookup")?;
                     sketch_found.then_some(sketch)
                 }
                 None => None,

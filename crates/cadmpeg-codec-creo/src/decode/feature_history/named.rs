@@ -370,16 +370,16 @@ fn surface_intersect_feature_definition(
         return Ok(None);
     }
     let mut eligible_table = None;
-    for table in ctx.admit_iter(&scan.features.entity_tables, "creo intersect entity tables")? {
+    let mut table_iter = (&scan.features.entity_tables).into_iter();
+    while let Some(table) = ctx.next_charged(&mut table_iter, "creo intersect entity tables")? {
         if table.feature_id != feature_id || table.table_class_id != 29 {
             continue;
         }
         let mut surface_count = 0usize;
         let mut all_surfaces_owned = true;
-        for entry in ctx
-            .admit_iter(&table.entries, "creo intersect table entries")?
-            .filter(|entry| table.contains_surface_id(entry.entity_id))
-        {
+        let mut entry_iter = (&table.entries).into_iter();
+        while let Some(entry) = ctx.next_charged(&mut entry_iter, "creo intersect table entries")? {
+            if !(table.contains_surface_id(entry.entity_id)) { continue; }
             surface_count = surface_count.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit("creo intersect surface count", u64::MAX, u64::MAX)
             })?;

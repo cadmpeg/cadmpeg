@@ -117,18 +117,13 @@ pub(in super::super) fn feature_edge_selection(
     }
     let all_model_edges_present = if unique {
         let mut all_present = true;
-        for edge in ctx.admit_iter(&edges, "creo feature selection edge references")? {
-            let mut found = false;
-            for candidate in ctx.admit_iter(&ir.model.edges, "creo model edge lookup")? {
-                if ctx.equal(
+        let mut edge_iter = (&edges).into_iter();
+        while let Some(edge) = ctx.next_charged(&mut edge_iter, "creo feature selection edge references")? {
+            let found = ctx.any_by(&ir.model.edges, |candidate| ctx.equal(
                     &candidate.id,
                     edge,
                     "creo selected model edge identity comparison",
-                )? {
-                    found = true;
-                    break;
-                }
-            }
+                ), "creo model edge lookup")?;
             if !found {
                 all_present = false;
                 break;
@@ -141,22 +136,11 @@ pub(in super::super) fn feature_edge_selection(
     if unique && all_model_edges_present {
         Ok(Some(EdgeSelection::Resolved { edges, native }))
     } else {
-        let mut any_model_edge_present = false;
-        for edge in ctx.admit_iter(&edges, "creo feature selection edge references")? {
-            for candidate in ctx.admit_iter(&ir.model.edges, "creo model edge lookup")? {
-                if ctx.equal(
-                    &candidate.id,
-                    edge,
-                    "creo selected model edge identity comparison",
-                )? {
-                    any_model_edge_present = true;
-                    break;
-                }
-            }
-            if any_model_edge_present {
-                break;
-            }
-        }
+        let any_model_edge_present = ctx.any_by(&edges, |edge| {
+            ctx.any_by(&ir.model.edges, |candidate| {
+                ctx.equal(&candidate.id, edge, "creo selected model edge identity comparison")
+            }, "creo model edge lookup")
+        }, "creo feature selection edge references")?;
         if any_model_edge_present {
             // A typed generated selection names one result namespace. A roster
             // that mixes current B-rep edges with absent edges has no neutral
@@ -192,7 +176,8 @@ pub(in super::super) fn generated_curve_edge_refs(
 ) -> Result<Option<Vec<GeneratedEdgeRef>>, CodecError> {
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut unique_curve_ids = BTreeSet::new();
-    for &curve_id in ctx.admit_iter(curve_ids, "creo selected curve IDs")? {
+    let mut curve_id_iter = (curve_ids).into_iter();
+    while let Some(&curve_id) = ctx.next_charged(&mut curve_id_iter, "creo selected curve IDs")? {
         if ctx.contains_btree_set(&unique_curve_ids, &curve_id, "creo selected curve identity lookup")? {
             return Ok(None);
         }
@@ -227,7 +212,8 @@ pub(in super::super) fn generated_curve_edge_refs(
         }
     }
     let mut generated = Vec::new();
-    for &curve_id in ctx.admit_iter(curve_ids, "creo selected curve IDs")? {
+    let mut curve_id_iter = (curve_ids).into_iter();
+    while let Some(&curve_id) = ctx.next_charged(&mut curve_id_iter, "creo selected curve IDs")? {
         let Some(row) = ctx.get_btree_map(&unique_rows, &curve_id, "creo unique curve row lookup")? else {
             return Ok(None);
         };
@@ -288,10 +274,9 @@ pub(in super::super) fn feature_result_edge_ids(
         })?;
     }
     let mut edge_ids = Vec::new();
-    for row in ctx
-        .admit_iter(rows, "creo curve topology rows")?
-        .filter(|row| row.feature_id == feature_id)
-    {
+    let mut row_iter = (rows).into_iter();
+    while let Some(row) = ctx.next_charged(&mut row_iter, "creo curve topology rows")? {
+        if !(row.feature_id == feature_id) { continue; }
         if ctx.get_btree_map(&counts, &row.id, "creo curve row count lookup")? != Some(&1) {
             return Ok(None);
         }
