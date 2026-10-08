@@ -929,8 +929,7 @@ fn append_definition_with_limit(
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("definition input is admitted");
     let mut definitions = Vec::new();
-    super::append_feature_definitions(
-        &ctx,
+    ctx.extend_vec(
         &mut definitions,
         vec![one_feature_definition()],
         operation,

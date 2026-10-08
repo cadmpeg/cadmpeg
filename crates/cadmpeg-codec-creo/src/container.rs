@@ -2269,18 +2269,19 @@ fn structural_feature_ids(
     Ok(ids)
 }
 
+/// Consume source IDs admitted by the caller before its adapters.
 fn topology_face_ids(
     ctx: &DecodeContext<'_>,
     ids: impl IntoIterator<Item = u32>,
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut faces = BTreeSet::new();
-    let mut ids = ids.into_iter();
-    while let Some(id) = ctx.next_charged(&mut ids, "creo feature ID source traversal")? {
+    for id in ids {
         ctx.insert_btree_set(&mut faces, id, "creo topology face ids")?;
     }
     Ok(faces)
 }
 
+/// Copy structural IDs and consume additions admitted by the caller.
 fn candidate_feature_ids(
     ctx: &DecodeContext<'_>,
     structural: &BTreeSet<u32>,
@@ -2290,20 +2291,19 @@ fn candidate_feature_ids(
     for id in ctx.admit_iter(structural, "creo structural feature ID traversal")? {
         ctx.insert_btree_set(&mut ids, *id, "creo candidate structural feature ids")?;
     }
-    let mut additions = additions.into_iter();
-    while let Some(id) = ctx.next_charged(&mut additions, "creo feature ID source traversal")? {
+    for id in additions {
         ctx.insert_btree_set(&mut ids, id, "creo candidate feature ids")?;
     }
     Ok(ids)
 }
 
+/// Consume admitted additions and retain the ordered output IDs.
 fn complete_feature_ids(
     ctx: &DecodeContext<'_>,
     mut structural: BTreeSet<u32>,
     additions: impl IntoIterator<Item = u32>,
 ) -> Result<Vec<u32>, CodecError> {
-    let mut additions = additions.into_iter();
-    while let Some(id) = ctx.next_charged(&mut additions, "creo feature ID source traversal")? {
+    for id in additions {
         ctx.insert_btree_set(&mut structural, id, "creo complete feature ids")?;
     }
     let mut ordered = Vec::new();
@@ -2702,8 +2702,7 @@ fn feature_definitions(
             definitions.push(definition);
         }
         if section.section.name() == "DEPDB_DATA" {
-            let mut recipe_storage = ctx.reserve_scoped(0, "creo definition recipe operation storage")?;
-            let recipe_operations = recipe_storage.with_storage(|| feature::operations::operations(ctx, payload))?;
+            let recipe_operations = feature::operations::operations(ctx, payload)?;
             if let Some(operation) = crate::decode::uniqueness::exactly_one_by(ctx, &recipe_operations,
                 |operation| Ok(operation.recipe.resolved().is_some()), "creo definition recipe operation selection")? {
                 if let Some(mut definition) = feature::definitions::depdb_section_definition(
@@ -2753,16 +2752,6 @@ fn feature_row_definitions(
         "creo feature row definitions definitions ordering",
     )?;
     Ok(definitions)
-}
-
-fn append_feature_definitions(
-    ctx: &DecodeContext<'_>,
-    definitions: &mut Vec<FeatureDefinition>,
-    additions: Vec<FeatureDefinition>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.extend_vec(definitions, additions, operation)?;
-    Ok(())
 }
 
 fn claimed_definition_owners(
@@ -2902,13 +2891,14 @@ fn feature_operations(
         |record| record.offset,
     )?;
     let mut by_feature = BTreeMap::new();
+    let mut node_storage = ctx.reserve_scoped(0, "creo current operation index storage")?;
     for record in ctx.admit_iter(records, "creo operation aggregate traversal")? {
-        ctx.insert_btree_map(
+        node_storage.with_storage(|| ctx.insert_btree_map(
             &mut by_feature,
             record.feature_id,
             record,
             "creo current feature operation nodes",
-        )?;
+        ))?;
     }
     let mut current = Vec::new();
     ctx.reserve_vec(
@@ -2917,6 +2907,7 @@ fn feature_operations(
         "creo current feature operation order",
     )?;
     current.extend(ctx.admit_iter(by_feature, "creo current operation traversal")?.map(|(_, record)| record));
+    drop(node_storage);
     ctx.stable_sort_by(
         current.as_mut_slice(),
         |value| &value.offset,
@@ -2975,8 +2966,7 @@ fn depdb_recipe_rows(
             continue;
         }
         let payload = section.region;
-        let mut recipe_storage = ctx.reserve_scoped(0, "Creo DEPDB recipe operation lookup")?;
-        let recipe_rows = recipe_storage.with_storage(|| feature::operations::operation_states(ctx, payload))?;
+        let recipe_rows = feature::operations::operation_states(ctx, payload)?;
         let recipe_operations = ctx.admit_iter(recipe_rows, "creo DEPDB recipe source traversal")?.filter_map(|operation| {
                 operation
                     .recipe
@@ -3153,6 +3143,7 @@ fn placement_outline_planes(
     Ok(result)
 }
 
+/// Append a source admitted by the caller before its adapters.
 fn append_topology_rows(
     ctx: &DecodeContext<'_>,
     rows: &mut Vec<curve::CurveTopologyRow>,
@@ -3185,7 +3176,7 @@ fn append_legacy_curve_witnesses(
     append_topology_rows(
         ctx,
         topology_rows,
-        legacy_topology_rows.iter().cloned(),
+        ctx.admit_iter(legacy_topology_rows, "creo topology row append traversal")?.cloned(),
         "creo legacy topology row aggregation",
     )?;
     ctx.reserve_vec(
@@ -3193,7 +3184,7 @@ fn append_legacy_curve_witnesses(
         legacy_pcurves.len(),
         "creo legacy pcurve aggregation",
     )?;
-    pcurves.extend(legacy_pcurves.iter().cloned());
+    pcurves.extend(ctx.admit_iter(legacy_pcurves, "creo legacy pcurve append traversal")?.cloned());
     ctx.stable_sort_by(
         pcurves.as_mut_slice(),
         |value| &value.offset,
@@ -3258,8 +3249,11 @@ pub(crate) fn scan_bytes<'a>(
         sections
     };
     if let Some(framing) = &mut legacy_ascii {
-        let scopes = legacy_scope_ranges(ctx, &data, framing, &sections)?;
-        framing.persistence = legacy::scan(ctx, &data, scopes)?;
+        let (scopes, _scope_storage) = ctx.with_scoped_storage(
+            "creo legacy scope range storage",
+            || legacy_scope_ranges(ctx, &data, framing, &sections),
+        )?;
+        framing.persistence = legacy::scan(ctx, &data, scopes.iter().cloned())?;
     }
     if model_name.is_none() {
         if let Some((name, offset)) = legacy_ascii
@@ -3331,7 +3325,7 @@ pub(crate) fn scan_bytes<'a>(
         legacy_geometry.nonvisible_rows.len(),
         "creo legacy nonvisible surface row aggregation",
     )?;
-    nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
+    nonvisible_surface_rows.extend(ctx.admit_iter(legacy_geometry.nonvisible_rows, "creo legacy nonvisible surface append traversal")?);
     ctx.stable_sort_by(
         nonvisible_surface_rows.as_mut_slice(),
         |value| &value.offset,
@@ -3344,7 +3338,7 @@ pub(crate) fn scan_bytes<'a>(
         legacy_geometry.rows.len(),
         "creo legacy surface row aggregation",
     )?;
-    surface_rows.extend(legacy_geometry.rows);
+    surface_rows.extend(ctx.admit_iter(legacy_geometry.rows, "creo legacy surface append traversal")?);
     ctx.stable_sort_by(
         surface_rows.as_mut_slice(),
         |value| &value.offset,
@@ -3391,8 +3385,10 @@ pub(crate) fn scan_bytes<'a>(
         surface::placed_outline_planes(ctx, &plane_envelopes, &plane_local_systems)?;
     let positional_frame_planes =
         surface::positional_frame_planes(ctx, &surface_parameters, &surface_rows)?;
-    let placement_outline_planes =
-        placement_outline_planes(ctx, &outline_planes, &positional_frame_planes)?;
+    let (placement_outline_planes, placement_outline_storage) = ctx.with_scoped_storage(
+        "creo placement outline plane storage",
+        || placement_outline_planes(ctx, &outline_planes, &positional_frame_planes),
+    )?;
     let cross_section_outline_planes = surface::placed_outline_planes(
         ctx,
         &cross_section_plane_envelopes,
@@ -3419,12 +3415,13 @@ pub(crate) fn scan_bytes<'a>(
             None => None,
         },
     )?;
-    let topology_face_ids = topology_face_ids(
+    let (topology_face_ids, topology_face_storage) = ctx.with_scoped_storage(
+        "creo topology face index storage", || topology_face_ids(
         ctx,
         ctx.admit_iter(&nonvisible_surface_rows[..], "creo nonvisible topology face traversal")?
             .chain(ctx.admit_iter(&surface_rows[..], "creo visible topology face traversal")?)
             .map(|row| row.id),
-    )?;
+    ))?;
     let nonvisible_curve_parameters =
         curve_parameters(ctx, &nonvisible_geometry_sections, &topology_face_ids)?;
     let curve_parameters = curve_parameters(ctx, &model_geometry_sections, &topology_face_ids)?;
@@ -3443,7 +3440,7 @@ pub(crate) fn scan_bytes<'a>(
     append_topology_rows(
         ctx,
         &mut curve_topology_rows,
-        prototype_topology_rows.into_iter(),
+        ctx.admit_iter(prototype_topology_rows, "creo topology row append traversal")?,
         "creo prototype topology row aggregation",
     )?;
     let cross_section_curve_rows = cross_section_curve_rows(ctx, &sections)?;
@@ -3475,7 +3472,8 @@ pub(crate) fn scan_bytes<'a>(
     let feature_reference_names = feature_reference_names(ctx, &sections)?;
     let structural_feature_ids =
         structural_feature_ids(ctx, &sections, &surface_rows, &curve_topology_rows)?;
-    let candidate_feature_ids = candidate_feature_ids(
+    let (candidate_feature_ids, candidate_feature_storage) = ctx.with_scoped_storage(
+        "creo candidate feature index storage", || candidate_feature_ids(
         ctx,
         &structural_feature_ids,
         ctx.admit_iter(&feature_operations, "creo operation identity source traversal")?
@@ -3484,8 +3482,9 @@ pub(crate) fn scan_bytes<'a>(
                 ctx.admit_iter(&feature_reference_names, "creo reference identity source traversal")?
                     .map(|reference| reference.feature_id),
             ),
-    )?;
+    ))?;
     let mut feature_rows = feature_rows(ctx, &sections, &candidate_feature_ids)?;
+    drop((candidate_feature_ids, candidate_feature_storage));
     let feature_identity_index = FeatureIdentityIndex::new(
         ctx, &feature_rows, &structural_feature_ids, &feature_operations, &feature_reference_names,
     )?;
@@ -3524,8 +3523,7 @@ pub(crate) fn scan_bytes<'a>(
         feature_definitions,
         &feature_entity_tables,
     )?;
-    append_feature_definitions(
-        ctx,
+    ctx.extend_vec(
         &mut feature_definitions,
         feature_row_definitions(ctx, &feature_rows)?,
         "creo feature row definition aggregation",
@@ -3536,15 +3534,18 @@ pub(crate) fn scan_bytes<'a>(
         Ord::cmp,
         "creo scan bytes feature definitions ordering",
     )?;
-    let claimed_definition_owners = claimed_definition_owners(ctx, &feature_definitions)?;
+    let (claimed_definition_owners, claimed_owner_storage) = ctx.with_scoped_storage(
+        "creo claimed definition owner storage",
+        || claimed_definition_owners(ctx, &feature_definitions),
+    )?;
     let replay_definitions = feature::definitions::bind_replay_definition_owners(
         ctx,
         positional_replay_definitions(ctx, &sections)?,
         &feature_entity_tables,
         &claimed_definition_owners,
     )?;
-    append_feature_definitions(
-        ctx,
+    drop((claimed_definition_owners, claimed_owner_storage));
+    ctx.extend_vec(
         &mut feature_definitions,
         replay_definitions,
         "creo replay definition aggregation",
@@ -3555,19 +3556,21 @@ pub(crate) fn scan_bytes<'a>(
         Ord::cmp,
         "creo scan bytes feature definitions ordering",
     )?;
-    let section_owner_ranges = section_owner_ranges(ctx, &sections, &feature_rows)?;
+    let (section_owner_ranges, section_owner_storage) = ctx.with_scoped_storage(
+        "creo section owner range storage",
+        || section_owner_ranges(ctx, &sections, &feature_rows),
+    )?;
     let feature_definitions = feature::definitions::bind_section_owners(
         ctx,
         feature_definitions,
         &feature_operations,
         &section_owner_ranges,
     )?;
+    drop((section_owner_ranges, section_owner_storage));
     let mut relation_dimension_symbols = ExternalRelationSymbols::default();
-    for dimension in feature_definitions
-        .iter()
-        .filter_map(|definition| definition.dimensions.as_ref())
-        .flat_map(|table| table.rows.iter())
-    {
+    for definition in ctx.admit_iter(&feature_definitions, "creo relation dimension definition traversal")? {
+        let Some(table) = &definition.dimensions else { continue; };
+        for dimension in ctx.admit_iter(&table.rows, "creo relation dimension row traversal")? {
         let value = dimension
             .value
             .resolved()
@@ -3588,6 +3591,7 @@ pub(crate) fn scan_bytes<'a>(
             "creo relation dimension symbol formatting",
         )?;
         relation_dimension_symbols.observe(ctx, name, value)?;
+        }
     }
     curve::reevaluate_expression_records(
         ctx,
@@ -3619,6 +3623,8 @@ pub(crate) fn scan_bytes<'a>(
         },
         &feature_entity_tables,
     )?;
+    drop((placement_outline_planes, placement_outline_storage));
+    drop((topology_face_ids, topology_face_storage));
     let (feature_entities, feature_entity_references) = feature_entity_graph(ctx, &sections)?;
     let declared_body_count = geomlists_value(ctx, &sections, b"n_bodies\0")?;
     let first_quilt_ptr = match geomlists_value(ctx, &sections, b"first_quilt_ptr\0")? {
@@ -3774,14 +3780,14 @@ fn scan_primitives(
                 arrays.len(),
                 "creo model primitive scalar arrays",
             )?;
-            primitive_scalar_arrays.extend(arrays);
+            primitive_scalar_arrays.extend(ctx.admit_iter(arrays, "creo primitive scalar append traversal")?);
             let scan = primdata::triangle_strips(ctx, &section.data)?;
             ctx.reserve_vec(
                 &mut primitive_triangle_strips,
                 scan.strips.len(),
                 "creo model triangle strips",
             )?;
-            primitive_triangle_strips.extend(scan.strips);
+            primitive_triangle_strips.extend(ctx.admit_iter(scan.strips, "creo primitive strip append traversal")?);
             conflicting_triangle_strip_representation_count +=
                 scan.conflicting_representation_count;
         }
@@ -3917,7 +3923,7 @@ pub(crate) fn summarize(
             ctx.format_retained(format_args!("{}", s.offset()), "creo summary offset")?,
             "creo summary attribute nodes",
         )?;
-        if s.raw_name != s.name() {
+        if s.name.start != 0 || s.name.end != s.raw_name.len() {
             ctx.insert_btree_map(
                 &mut attributes,
                 ctx.copy_retained_text("raw_name", "creo summary attribute key")?,
