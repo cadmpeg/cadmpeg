@@ -2515,14 +2515,17 @@ pub(in crate::decode) fn planar_curve_pcurve(
         (dot(relative, normal).abs() <= tolerance)
             .then_some(Point2::new(dot(relative, u_axis), dot(relative, v_axis)))
     };
+    let mut pole_storage = ctx.reserve_scoped(0, "creo planar projected NURBS poles")?;
     let poles = match nurbs.pole_rows() {
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
             let mut projected = Vec::new();
-            ctx.reserve_vec(
-                &mut projected,
-                points.len(),
-                "creo planar projected NURBS poles",
-            )?;
+            pole_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut projected,
+                    points.len(),
+                    "creo planar projected NURBS poles",
+                )
+            })?;
             let mut points = points.iter();
             while let Some(point) =
                 ctx.next_charged(&mut points, "creo planar polynomial NURBS poles")?
@@ -2532,14 +2535,10 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 };
                 let Some(projected_point) = cadmpeg_ir::units::FinitePoint2::new(projected_point)
                 else {
-                    let reason = ctx.copy_retained_text(
-                        "control_points contains a non-finite point",
-                        "creo planar projected NURBS refusal text",
-                    )?;
                     refusal.note_checked(
                         ctx,
                         format_args!("creo planar-curve pcurve record for {record}"),
-                        &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(reason),
+                        &"control_points contains a non-finite point",
                     );
                     return Ok(None);
                 };
@@ -2549,11 +2548,13 @@ pub(in crate::decode) fn planar_curve_pcurve(
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             let mut projected = Vec::new();
-            ctx.reserve_vec(
-                &mut projected,
-                points.len(),
-                "creo planar projected NURBS poles",
-            )?;
+            pole_storage.with_storage(|| {
+                ctx.reserve_vec(
+                    &mut projected,
+                    points.len(),
+                    "creo planar projected NURBS poles",
+                )
+            })?;
             let mut points = points.iter();
             while let Some(pole) =
                 ctx.next_charged(&mut points, "creo planar rational NURBS poles")?
@@ -2563,14 +2564,10 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 };
                 let Some(projected_point) = cadmpeg_ir::units::FinitePoint2::new(projected_point)
                 else {
-                    let reason = ctx.copy_retained_text(
-                        "control_points contains a non-finite point",
-                        "creo planar projected NURBS refusal text",
-                    )?;
                     refusal.note_checked(
                         ctx,
                         format_args!("creo planar-curve pcurve record for {record}"),
-                        &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(reason),
+                        &"control_points contains a non-finite point",
                     );
                     return Ok(None);
                 };
@@ -2582,11 +2579,21 @@ pub(in crate::decode) fn planar_curve_pcurve(
             cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points: projected }
         }
     };
-    let knots = nurbs
-        .knots()
-        .try_clone_for_decode(ctx, "creo planar projected NURBS knots")?;
-    match PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic())? {
-        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
+    let mut knot_storage = ctx.reserve_scoped(0, "creo planar projected NURBS knots")?;
+    let knots = knot_storage.with_storage(|| {
+        nurbs
+            .knots()
+            .try_clone_for_decode(ctx, "creo planar projected NURBS knots")
+    })?;
+    let mut validation_storage = ctx.reserve_scoped(0, "creo planar NURBS validation storage")?;
+    match validation_storage
+        .with_storage(|| PcurveNurbs::new(ctx, nurbs.degree(), knots, poles, nurbs.periodic()))?
+    {
+        Ok(nurbs) => {
+            pole_storage.commit()?;
+            knot_storage.commit()?;
+            Ok(Some(PcurveGeometry::Nurbs { nurbs }))
+        }
         Err(error) => {
             refusal.note_checked(
                 ctx,
