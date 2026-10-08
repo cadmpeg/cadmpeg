@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    equal_btree_sets, validate_active_carrier, validate_design, validate_sketches, NativeData,
+    equal_btree_sets, validate_active_carrier, validate_design, validate_presentation,
+    validate_sketches, NativeData,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -99,6 +100,61 @@ fn empty_native_data() -> NativeData {
     }
 }
 
+#[test]
+fn presentation_indexes_fit_the_sequential_hash_table_peak() {
+    // One item grows a hash table to the three-slot floor. Core accounts for
+    // four buckets, alignment padding, control bytes and trailing control.
+    let table_bytes_for = |entry_bytes: usize| 4 * entry_bytes + 15 + 4 + 16;
+    let uniqueness_bytes = table_bytes_for(std::mem::size_of::<(&str, u32)>());
+    let face_key_bytes = table_bytes_for(std::mem::size_of::<u64>());
+    let neutral_face_bytes = table_bytes_for(std::mem::size_of::<&str>());
+    let peak_bytes = uniqueness_bytes.max(face_key_bytes).max(neutral_face_bytes);
+    // The native key and neutral face are both used, so their lookup tables
+    // exist in sequence. Keeping both reservations live exceeds the cap.
+    assert!(face_key_bytes + neutral_face_bytes > peak_bytes);
+
+    let face_id = cadmpeg_ir::ids::FaceId::mint("inventor:test:face#0").expect("face id");
+    let mut data = empty_native_data();
+    data.face_native_keys
+        .push(cadmpeg_asm::brep::records::FaceNativeKey {
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                cadmpeg_asm::ids::IdFormat::from_literal("inventor").expect("format"),
+            ),
+            record_index: 0,
+            face: face_id.clone(),
+            asm_face_key: Some(7),
+        });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.faces.push(cadmpeg_ir::topology::Face {
+        id: face_id,
+        shell: cadmpeg_ir::ids::ShellId::mint("inventor:test:shell#0").expect("shell id"),
+        surface: cadmpeg_ir::ids::SurfaceId::mint("inventor:test:surface#0")
+            .expect("surface id"),
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(peak_bytes);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut findings = Vec::new();
+    validate_presentation(&ctx, &ir, &data, &mut findings)
+        .expect("face lookup indexes fit their sequential peak");
+    assert!(findings.is_empty());
+    drop(
+        ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(peak_bytes),
+            "probe released presentation indexes",
+        )
+        .expect("presentation scratch has been released"),
+    );
+    ctx.finish_session().expect("clean validation session");
+}
+
 fn carrier_record() -> super::RseRecordRecord {
     serde_json::from_value(serde_json::json!({
         "id": "record", "token": "t", "ordinal": 0, "selector": 0,
@@ -171,20 +227,41 @@ fn design_record_collector_charges_one_source_traversal() {
             assert!(matches!(ctx.charge_work(1, "probe"),
                 Err(CodecError::ResourceLimit(limit)) if limit.used == full_validation_need));
         } else if budget == collector_need - 1 {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "collect Inventor RSe design record index"
-                    && limit.used == collector_need - 1 && limit.additional == 1));
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("collector work must exceed the budget by one unit");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "collect Inventor RSe design record index");
+            assert_eq!(limit.used, collector_need - 1);
+            assert_eq!(limit.additional, 1);
+            assert!(matches!(
+                ctx.finish_session(),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit
+            ));
         } else if budget == collector_need {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "validate Inventor uniqueness source"
-                    && limit.used == collector_need && limit.additional == 1));
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("the next uniqueness-source step must exceed the budget");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "validate Inventor uniqueness source");
+            assert_eq!(limit.used, collector_need);
+            assert_eq!(limit.additional, 1);
+            assert!(matches!(
+                ctx.finish_session(),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit
+            ));
         } else {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "validate Inventor design record issues"
-                    && limit.used == full_validation_need - 1 && limit.additional == 1));
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("the design-issue end probe must exceed the budget");
+            };
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, "validate Inventor design record issues");
+            assert_eq!(limit.used, full_validation_need - 1);
+            assert_eq!(limit.additional, 1);
+            assert!(matches!(
+                ctx.finish_session(),
+                Err(CodecError::ResourceLimit(sticky)) if sticky == limit
+            ));
         }
     }
 }

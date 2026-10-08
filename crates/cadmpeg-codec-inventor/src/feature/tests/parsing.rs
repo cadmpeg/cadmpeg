@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn feature_inventory_empty_record_table_requires_its_terminal_visit() {
+    let bytes = primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (setup_ctx, source) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("envelope view");
+    let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
+    let segment = &mut container.rse.segments[0];
+    segment.kind = SegmentKind::PmDc;
+    let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
+        panic!("framed bulk fixture");
+    };
+    let RecordFrameState::Framed(table) = &mut bulk.records else {
+        panic!("framed record fixture");
+    };
+    table.records.clear();
+
+    let mut policy = DecodePolicy::service();
+    // The segment step and both fixed enum operands use three work units.
+    // The empty record slice still needs one terminal visit.
+    policy.limits.max_work_units = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("limited inventory context");
+    let Err(CodecError::ResourceLimit(limit)) = inventory(&ctx, &container.rse) else {
+        panic!("the empty record source must admit its terminal visit");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "visit Inventor feature items");
+    assert_eq!(limit.used, 3);
+    assert_eq!(limit.additional, 1);
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+}
+
+#[test]
 fn feature_terminator_refuses_collection_limit_before_push() {
     let mut payload = content(0);
     payload.extend_from_slice(&0u32.to_le_bytes());

@@ -447,7 +447,8 @@ pub(crate) fn inventory(
         entity_style_links: Vec::new(),
         issues: Vec::new(),
     };
-    for segment in ctx.admit_iter(&document.segments, "visit Inventor feature items")? {
+    let mut segments = document.segments.iter();
+    while let Some(segment) = ctx.next_charged(&mut segments, "visit Inventor feature items")? {
         if !ctx.equal(
             &segment.kind,
             &SegmentKind::PmDc,
@@ -467,7 +468,8 @@ pub(crate) fn inventory(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
-        for record in ctx.admit_iter(&table.records, "visit Inventor feature items")? {
+        let mut records = table.records.iter();
+        while let Some(record) = ctx.next_charged(&mut records, "visit Inventor feature items")? {
             let parsed = match record.type_id {
                 FEATURE_TYPE => parse_feature(ctx, record.payload, version).and_then(|feature| {
                     push_record(
@@ -1262,18 +1264,33 @@ pub(crate) fn project(
     )?;
     let (parameter_values, _parameter_values_storage) =
         ctx.with_scoped_storage("index Inventor feature parameter values", || {
-            ctx.collect_hash_map(
-                ctx.admit_iter(parameters, "index Inventor feature parameter values")?
-                    .filter_map(|parameter| {
-                        Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
-                    }),
-                "index Inventor feature parameter values",
-            )
+            let mut values = HashMap::new();
+            let mut source = parameters.iter();
+            while let Some(parameter) =
+                ctx.next_charged(&mut source, "index Inventor feature parameter values")?
+            {
+                let Some(native) = parameter.native_ref.as_deref() else {
+                    continue;
+                };
+                let Some(value) = parameter.value.as_ref() else {
+                    continue;
+                };
+                ctx.insert_hash_map(
+                    &mut values,
+                    native,
+                    value,
+                    "index Inventor feature parameter values",
+                )?;
+            }
+            Ok::<_, CodecError>(values)
         })?;
     let (sketch_ids, _sketch_ids_storage) =
         ctx.with_scoped_storage("index Inventor feature sketch ids", || {
             let mut ids = HashMap::new();
-            for sketch in ctx.admit_iter(sketches, "visit Inventor feature items")? {
+            let mut source = sketches.iter();
+            while let Some(sketch) =
+                ctx.next_charged(&mut source, "visit Inventor feature items")?
+            {
                 if let Some(native) = sketch.native_ref.as_deref() {
                     ctx.insert_hash_map(
                         &mut ids,
@@ -1288,10 +1305,10 @@ pub(crate) fn project(
     let (entity_style_links, _entity_style_links_storage) =
         ctx.with_scoped_storage("index Inventor entity style links", || {
             let mut links = HashSet::new();
-            for record in ctx.admit_iter(
-                &inventory.entity_style_links,
-                "visit Inventor feature items",
-            )? {
+            let mut source = inventory.entity_style_links.iter();
+            while let Some(record) =
+                ctx.next_charged(&mut source, "visit Inventor feature items")?
+            {
                 ctx.insert_hash_set(
                     &mut links,
                     (
@@ -1332,7 +1349,8 @@ pub(crate) fn project(
     )?;
     let mut projected = Vec::new();
     let mut projected_storage = ctx.reserve_scoped(0, "collect Inventor feature items")?;
-    for feature in ctx.admit_iter(&inventory.features, "visit Inventor feature items")? {
+    let mut source = inventory.features.iter();
+    while let Some(feature) = ctx.next_charged(&mut source, "visit Inventor feature items")? {
         let Some(label) = ctx
             .get_hash_map(
                 &labels,
@@ -1362,10 +1380,29 @@ pub(crate) fn project(
             })?;
         }
     }
+    // The feature loop is the last reader of both indexes. Release their maps
+    // and reservations before ordinal counting. Keep projected_storage live
+    // while the projected vector is counted, sorted, and consumed by unzip_vec.
+    drop((
+        index,
+        labels,
+        _properties_storage,
+        _parameters_storage,
+        _sketches_storage,
+        _directions_storage,
+        _transforms_storage,
+        _parameter_values_storage,
+        _sketch_ids_storage,
+        _entity_style_links_storage,
+        _labels_storage,
+    ));
     let (ordinal_counts, _ordinal_counts_storage) =
         ctx.with_scoped_storage("count Inventor feature ordinals", || {
             let mut counts = BTreeMap::<u64, usize>::new();
-            for (feature, _) in ctx.admit_iter(&projected, "count Inventor feature ordinals")? {
+            let mut source = projected.iter();
+            while let Some((feature, _)) =
+                ctx.next_charged(&mut source, "count Inventor feature ordinals")?
+            {
                 if let Some(count) = ctx.get_mut_btree_map(
                     &mut counts,
                     &feature.ordinal,

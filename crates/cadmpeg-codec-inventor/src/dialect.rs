@@ -111,7 +111,8 @@ fn join<T>(
     let mut storage = ctx.reserve_scoped(0, "collect Inventor dialect join parts")?;
     let mut parts = Vec::new();
     storage.with_storage(|| {
-        for value in ctx.admit_iter(values, visit_operation)? {
+        let mut value_steps = values.iter();
+        while let Some(value) = ctx.next_charged(&mut value_steps, visit_operation)? {
             if let Some(value) = render(value)? {
                 ctx.push_vec(&mut parts, value, "collect Inventor dialect join parts")?;
             }
@@ -173,9 +174,8 @@ impl DialectRecovery {
         container: &InventorContainer<'_>,
     ) -> Result<Self, CodecError> {
         let mut schemas = Vec::new();
-        for descriptor in
-            ctx.admit_iter(&container.rse.databases, "visit Inventor dialect items")?
-        {
+        let mut database_steps = container.rse.databases.iter();
+        while let Some(descriptor) = ctx.next_charged(&mut database_steps, "visit Inventor dialect items")? {
             if let Some(schema) = DatabaseDescriptor::declared_schema(descriptor) {
                 ctx.push_vec(&mut schemas, schema, "collect Inventor dialect schemas")?;
             }
@@ -188,9 +188,8 @@ impl DialectRecovery {
         )?;
         ctx.dedup_vec(&mut schemas, "deduplicate Inventor dialect declarations")?;
         let mut unframed_schemas = Vec::new();
-        for descriptor in
-            ctx.admit_iter(&container.rse.databases, "visit Inventor dialect items")?
-        {
+        let mut database_steps = container.rse.databases.iter();
+        while let Some(descriptor) = ctx.next_charged(&mut database_steps, "visit Inventor dialect items")? {
             if let DatabaseState::Unframed { schema, .. } = &descriptor.state {
                 ctx.push_vec(
                     &mut unframed_schemas,
@@ -210,7 +209,8 @@ impl DialectRecovery {
             "deduplicate Inventor dialect declarations",
         )?;
         let mut meta_streams = Vec::new();
-        for segment in ctx.admit_iter(&container.rse.segments, "visit Inventor dialect items")? {
+        let mut segment_steps = container.rse.segments.iter();
+        while let Some(segment) = ctx.next_charged(&mut segment_steps, "visit Inventor dialect items")? {
             if let Some(declaration) = segment.meta.declaration(ctx)? {
                 ctx.push_vec(
                     &mut meta_streams,
@@ -230,7 +230,8 @@ impl DialectRecovery {
             "deduplicate Inventor dialect declarations",
         )?;
         let mut unframed_meta_streams = Vec::new();
-        for segment in ctx.admit_iter(&container.rse.segments, "visit Inventor dialect items")? {
+        let mut segment_steps = container.rse.segments.iter();
+        while let Some(segment) = ctx.next_charged(&mut segment_steps, "visit Inventor dialect items")? {
             if let crate::rse::SegmentMetaState::Malformed {
                 declared: Some(declared),
                 ..
@@ -570,7 +571,6 @@ fn kernel_layer(
     family: KernelFamily,
     header: &cadmpeg_asm::kernel_header::BinaryHeader,
 ) -> Result<DialectMatch, CodecError> {
-    ctx.charge_work(1, "classify Inventor kernel dialect")?;
     if let Some(major) = header.metadata.save_format_major() {
         ctx.charge_collection_items(1, "collect Inventor kernel declaration")?;
         ctx.charge_formatted_retained(

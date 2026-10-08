@@ -10,6 +10,41 @@ use crate::test_support::test_fixtures::{fixture, primary_envelope_fixture_with_
 use crate::InventorCodec;
 
 #[test]
+fn summary_segment_walk_refuses_only_the_next_source_step() {
+    use crate::rse::{SegmentBulkState, SegmentDescriptor, SegmentKind, SegmentMetaState};
+    use crate::test_support::test_fixtures::{primary_envelope_fixture_with, EnvelopeDeclarations};
+    let bytes = primary_envelope_fixture_with(EnvelopeDeclarations::default());
+    for count in [1_usize, 512] {
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("summary fixture context");
+        let mut container = InventorContainer::open(&setup, root).expect("summary fixture");
+        let pair = container.rse.segments[0].pair.clone();
+        container.rse.segments = (0..count).map(|_| SegmentDescriptor {
+            pair: pair.clone(), registry: None, kind: SegmentKind::Unresolved,
+            identity_issues: Vec::new(),
+            meta: SegmentMetaState::Malformed { declared: None, detail: "metadata".into() },
+            bulk: SegmentBulkState::Malformed("bulk".into()),
+        }).collect();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("summary context");
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "visit Inventor summary segments", Some(1),
+        );
+        let error = container.summary(&ctx).expect_err("first segment step refuses");
+        assert!(matches!(&error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "visit Inventor summary segments"
+                && limit.additional == 1));
+        drop(probe);
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+    }
+}
+
+#[test]
 fn container_summary_attribute_refuses_before_insert() {
     let bytes = fixture(true);
     let arena = DecodeArena::new();
@@ -22,7 +57,7 @@ fn container_summary_attribute_refuses_before_insert() {
         })
         .expect("summary admission");
     let entry = entries.first_mut().expect("fixture entry");
-    insert_attribute(&setup, entry, "test", format_args!("value")).expect("service attribute");
+    insert_attribute(&setup, entry, b"test", format_args!("value")).expect("service attribute");
     assert_eq!(entry.attributes["test"], "value");
     // The retained key is four bytes; the five-byte value is admitted before the map node.
     for (collection_cap, retained_cap, dimension, operation) in [
@@ -51,7 +86,7 @@ fn container_summary_attribute_refuses_before_insert() {
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
-            insert_attribute(&limited, entry, "next", format_args!("value")),
+            insert_attribute(&limited, entry, b"next", format_args!("value")),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == dimension && limit.operation == operation
         ));
@@ -76,6 +111,64 @@ fn container_summary_note_refuses_before_text_creation() {
         summary_note(&ctx, 3, 1, 1).expect("admitted note"),
         "CFB v3 with 1 RSe segment pair(s) and 1 versioned database(s)"
     );
+}
+
+#[test]
+fn bounded_summary_note_admits_exact_storage_without_work() {
+    for (major, segments, databases, expected) in [
+        (0, 0, 0, "CFB v0 with 0 RSe segment pair(s) and 0 versioned database(s)"),
+        (3, 1, 1, "CFB v3 with 1 RSe segment pair(s) and 1 versioned database(s)"),
+        (u16::MAX, 10, 100, "CFB v65535 with 10 RSe segment pair(s) and 100 versioned database(s)"),
+    ] {
+        for exact in [false, true] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len())
+                - u64::from(!exact);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("bounded summary note context");
+            let result = summary_note(&ctx, major, segments, databases);
+            if exact {
+                assert_eq!(result.expect("exact summary note storage"), expected);
+                ctx.finish_session().expect("bounded note needs no work");
+            } else {
+                let error = result.expect_err("note storage refuses before format");
+                assert!(matches!(&error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "retain Inventor summary note"
+                        && limit.used == 0
+                        && limit.additional == cadmpeg_core::decode::u64_from_index(expected.len())));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+                    if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
+            }
+        }
+    }
+}
+
+#[test]
+fn summary_note_vector_refuses_before_its_output_slot() {
+    let bytes = fixture(true);
+    let arena = DecodeArena::new();
+    let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("summary fixture context");
+    let container = InventorContainer::open(&setup, root).expect("summary fixture");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("summary note vector context");
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::CollectionItems, "retain Inventor summary note entries", Some(1),
+    );
+    let error = container.summary(&ctx).expect_err("note vector slot refuses");
+    assert!(matches!(&error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "retain Inventor summary note entries"
+            && limit.additional == 1));
+    drop(probe);
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+        if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)));
 }
 
 #[test]

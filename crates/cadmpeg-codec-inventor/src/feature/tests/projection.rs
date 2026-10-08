@@ -50,6 +50,78 @@ fn feature_projection_without_labels_needs_no_collection_storage() {
 }
 
 #[test]
+fn feature_parameter_index_refuses_at_first_insert_before_source_tail() {
+    let inventory = FeatureInventory {
+        features: vec![test_feature(0, 0, &[])],
+        pattern_features: Vec::new(),
+        terminators: Vec::new(),
+        properties: vec![test_property(
+            0,
+            PmDcFeaturePropertyKind::Boolean {
+                name: String::new(),
+                name_value: 0,
+                value: false,
+            },
+        )],
+        labels: vec![test_label(0, 1, ClassId([0; 16]), &[])],
+        entity_style_links: Vec::new(),
+        issues: Vec::new(),
+    };
+    let design = crate::design::DesignInventory {
+        parameters: Vec::new(),
+        expressions: Vec::new(),
+        units: Vec::new(),
+        issues: Vec::new(),
+    };
+    let sketch = crate::sketch::SketchInventory {
+        sketches: Vec::new(),
+        entities: Vec::new(),
+        transforms: Vec::new(),
+        directions: Vec::new(),
+        constraints: Vec::new(),
+        issues: Vec::new(),
+    };
+    let first_raw = raw_parameter(1);
+    let second_raw = raw_parameter(2);
+    let parameters = [
+        neutral_parameter(
+            &first_raw,
+            ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::ZERO),
+        ),
+        neutral_parameter(
+            &second_raw,
+            ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::ZERO),
+        ),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The property index is built before the neutral parameter map and takes
+    // one slot. The first parameter entry needs a second slot, so it refuses
+    // before the source tail is visited.
+    policy.limits.max_collection_items = 1;
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("feature parameter index context");
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index Inventor feature parameter values",
+        Some(2),
+    );
+    let Err(CodecError::ResourceLimit(limit)) =
+        super::project(&ctx, &inventory, &design, &sketch, &parameters, &[])
+    else {
+        panic!("the first parameter map insertion must exceed the remaining slot");
+    };
+    drop(probe);
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "index Inventor feature parameter values");
+    assert_eq!(limit.used, 1);
+    assert_eq!(limit.additional, 1);
+    assert!(matches!(ctx.finish_session(),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+}
+
+#[test]
 fn boolean_property_literal_slots_need_no_work_admission() {
     let source = test_feature(0, 0, &[]);
     let index = test_projection_index(&[], &[], &[], &[], &[], &[], &[], &[]);
