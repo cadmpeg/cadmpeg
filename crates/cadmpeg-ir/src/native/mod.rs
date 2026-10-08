@@ -197,13 +197,35 @@ impl From<NativeConvertError> for cadmpeg_core::CodecError {
 }
 
 impl NativeConvertError {
-    fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
+    /// Returns the resource refusal carried by this error or one of its
+    /// contextual wrappers.
+    #[must_use]
+    pub fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
         match self {
             Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) => Some(*limit),
             Self::WriteRecord { source, .. } | Self::Arena { source, .. } => {
                 source.resource_limit()
             }
             _ => None,
+        }
+    }
+
+    /// Converts this error to a decode error without allocating its diagnostic
+    /// outside the caller's retained-storage budget.
+    pub fn into_codec_error_for_decode(
+        self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> cadmpeg_core::CodecError {
+        if let Some(limit) = ctx.resource_refusal() {
+            return cadmpeg_core::CodecError::ResourceLimit(limit);
+        }
+        if let Some(limit) = self.resource_limit() {
+            return cadmpeg_core::CodecError::ResourceLimit(limit);
+        }
+        match ctx.format_retained(format_args!("{self}"), operation) {
+            Ok(message) => cadmpeg_core::CodecError::Malformed(message),
+            Err(error) => error,
         }
     }
 }
