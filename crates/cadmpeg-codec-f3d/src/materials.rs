@@ -2132,9 +2132,10 @@ fn body_node_candidate(
         return Ok(None);
     };
     // Include the three strings before the marker and every string after it.
+    let candidate_start = marker - marker.min(3);
     let mut first = None;
     let conflict = ctx.any_by(
-        &strings[marker.saturating_sub(3)..visual_index],
+        &strings[candidate_start..visual_index],
         |(_, candidate)| {
             let mut folded_storage = ctx.reserve_scoped(0, "fold F3D browser node candidate")?;
             let entity = folded_storage.with_storage(|| {
