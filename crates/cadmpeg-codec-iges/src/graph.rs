@@ -234,7 +234,7 @@ struct Candidate {
 pub(crate) struct ParameterResolver<'directory, 'ctx, 'arena> {
     ctx: &'ctx DecodeContext<'arena>,
     directory: &'directory [DirectoryEntry],
-    edges: RefCell<BTreeMap<u32, Vec<ReferenceEdge>>>,
+    edges: RefCell<BTreeMap<u32, (Vec<ReferenceEdge>, ScopedReservation<'ctx>)>>,
     group_storage: RefCell<ScopedReservation<'ctx>>,
     storage: RefCell<ScopedReservation<'ctx>>,
 }
@@ -326,29 +326,28 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             resolution,
             expected,
         };
-        if let Some(edges) = self.ctx.get_mut_btree_map(
+        if let Some((edges, edge_storage)) = self.ctx.get_mut_btree_map(
             &mut graph,
             &source,
             "iges parameter resolver edge groups",
         )? {
             self.ctx.reserve_scoped_vec(
-                &mut self.storage.borrow_mut(),
+                edge_storage,
                 edges,
                 1,
                 "iges parameter resolver edges",
             )?;
             edges.push(edge);
         } else {
-            let mut edges = self
-                .storage
-                .borrow_mut()
-                .with_storage(|| self.ctx.collection_vec(1, "iges parameter resolver edges"))?;
+            let (mut edges, edge_storage) = self
+                .ctx
+                .temporary_vec(1, "iges parameter resolver edges")?;
             edges.push(edge);
             self.group_storage.borrow_mut().with_storage(|| {
                 self.ctx.insert_btree_map(
                     &mut graph,
                     source,
-                    edges,
+                    (edges, edge_storage),
                     "iges parameter resolver edge groups",
                 )
             })?;
@@ -473,7 +472,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         graph: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     ) -> Result<ScopedReservation<'ctx>, CodecError> {
         let mut storage = self.storage.into_inner();
-        for (source, mut edges) in self.ctx.admit_iter(
+        for (source, (mut edges, edge_storage)) in self.ctx.admit_iter(
             self.edges.into_inner(),
             "iges parameter resolver graph sources",
         )? {
@@ -484,6 +483,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             )? {
                 Some(target) if target.is_empty() => {
                     *target = edges;
+                    storage.with_storage(|| edge_storage.commit())?;
                 }
                 Some(target) => {
                     storage.with_storage(|| {
@@ -493,6 +493,8 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
                             "iges appended parameter reference edges",
                         )
                     })?;
+                    drop(edges);
+                    drop(edge_storage);
                 }
                 None => {
                     storage.with_storage(|| {
@@ -503,6 +505,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
                             "iges parameter resolver graph groups",
                         )
                     })?;
+                    storage.with_storage(|| edge_storage.commit())?;
                 }
             }
         }
