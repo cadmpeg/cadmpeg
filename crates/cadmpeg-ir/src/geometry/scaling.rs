@@ -131,7 +131,7 @@ impl SolvedCurveGeometry {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<(), ScalingError> {
-        ctx.charge_work(1, "IR geometry unit scaling work")?;
+        ctx.charge_work(0, "IR geometry unit scaling work")?;
         let scaled = match self {
             Self::Line(line) => Self::Line(LineCurve::new(
                 scaled_point(
@@ -243,7 +243,7 @@ impl SolvedSurfaceGeometry {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<(), ScalingError> {
-        ctx.charge_work(1, "IR geometry unit scaling work")?;
+        ctx.charge_work(0, "IR geometry unit scaling work")?;
         let scaled = match self {
             Self::Plane(plane) => Self::Plane(PlaneSurface::new(
                 scaled_point(plane.origin(), scale, "PlaneSurface.origin must be finite")?,
@@ -341,9 +341,9 @@ impl PlacedCurve {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<(), ScalingError> {
+        ctx.charge_work(1, "IR geometry unit scaling work")?;
         let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
         if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_mut() {
-            ctx.charge_work(1, "IR geometry unit scaling work")?;
             placed.scale_in_place(ctx, scale)?;
         } else {
             self.basis.scale_in_place(ctx, scale)?;
@@ -362,9 +362,9 @@ impl PlacedSurface {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: PositiveReal,
     ) -> Result<(), ScalingError> {
+        ctx.charge_work(1, "IR geometry unit scaling work")?;
         let _depth = ctx.enter_nested("IR geometry unit scaling nesting")?;
         if let SolvedSurfaceGeometry::Transformed(placed) = self.basis.as_mut() {
-            ctx.charge_work(1, "IR geometry unit scaling work")?;
             placed.scale_in_place(ctx, scale)?;
         } else {
             self.basis.scale_in_place(ctx, scale)?;

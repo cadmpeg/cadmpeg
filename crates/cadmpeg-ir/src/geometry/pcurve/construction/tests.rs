@@ -31,119 +31,98 @@ fn polar_poles() -> Vec<PolarNurbsPole> {
 #[test]
 fn pcurve_construction_preserves_original_refusals_for_pairing_conversion_and_knots() {
     for polar in [false, true] {
-        // Two yielded poles plus iterator exhaustion cost 3; four knot checks cost 4; three order comparisons cost 3.
-        for (cap, stage) in [
-            (0, "poles"),
-            (1, "poles"),
-            (2, "poles"),
-            (3, "finiteness"),
-            (6, "finiteness"),
-            (7, "order"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = if polar {
-                PolarPcurveNurbs::new(
-                    &ctx,
-                    1,
-                    knots(),
-                    PolarNurbsPoles::Polynomial {
-                        poles: polar_poles(),
-                    },
-                    false,
-                )
-                .map(|result| result.map(|_| ()))
+        for operation in [
+            if polar {
+                "IR polar admitted poles"
             } else {
-                PcurveNurbs::new(
-                    &ctx,
-                    1,
-                    knots(),
-                    PcurveNurbsPoles::Polynomial { points: points() },
-                    false,
-                )
-                .map(|result| result.map(|_| ()))
-            };
-            let Err(CodecError::ResourceLimit(limit)) = result else {
-                panic!("original outer work refusal");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(
-                limit.operation,
-                match (polar, stage) {
-                    (true, "poles") => "IR polar admitted poles",
-                    (false, "poles") => "IR pcurve admitted poles",
-                    (_, "finiteness") => "IR NURBS knot finiteness",
-                    (_, "order") => "IR NURBS knot order",
-                    _ => panic!("stage"),
-                }
-            );
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+                "IR pcurve admitted poles"
+            },
+            "IR NURBS knot finiteness",
+            "IR NURBS knot order",
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    crate::geometry::tests::budget::with_limit(
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        |ctx| {
+                            if polar {
+                                PolarPcurveNurbs::new(
+                                    ctx,
+                                    1,
+                                    knots(),
+                                    PolarNurbsPoles::Polynomial {
+                                        poles: polar_poles(),
+                                    },
+                                    false,
+                                )
+                                .map(|result| result.map(|_| ()))
+                            } else {
+                                PcurveNurbs::new(
+                                    ctx,
+                                    1,
+                                    knots(),
+                                    PcurveNurbsPoles::Polynomial { points: points() },
+                                    false,
+                                )
+                                .map(|result| result.map(|_| ()))
+                            }
+                        },
+                    )
+                },
             );
         }
-        for cap in [0, 1] {
-            for checked in [false, true] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let result = match (polar, checked) {
-                    (false, false) => {
-                        PcurveNurbsPoles::from_lanes(&ctx, points(), Some(vec![1.0; 2]))
-                            .map(|result| result.map(|_| ()))
-                    }
-                    (false, true) => PcurveNurbsPoles::from_checked_lanes(
-                        &ctx,
-                        points(),
-                        Some(vec![NonZeroReal::ONE; 2]),
+        for checked in [false, true] {
+            let operation = if polar {
+                "IR polar paired poles"
+            } else {
+                "IR pcurve paired poles"
+            };
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    crate::geometry::tests::budget::with_limit(
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        |ctx| match (polar, checked) {
+                            (false, false) => {
+                                PcurveNurbsPoles::from_lanes(ctx, points(), Some(vec![1.0; 2]))
+                                    .map(|result| result.map(|_| ()))
+                            }
+                            (false, true) => PcurveNurbsPoles::from_checked_lanes(
+                                ctx,
+                                points(),
+                                Some(vec![NonZeroReal::ONE; 2]),
+                            )
+                            .map(|result| result.map(|_| ())),
+                            (true, false) => {
+                                PolarNurbsPoles::from_lanes(ctx, polar_poles(), Some(vec![1.0; 2]))
+                                    .map(|result| result.map(|_| ()))
+                            }
+                            (true, true) => PolarNurbsPoles::from_checked_lanes(
+                                ctx,
+                                polar_poles(),
+                                Some(vec![NonZeroReal::ONE; 2]),
+                            )
+                            .map(|result| result.map(|_| ())),
+                        },
                     )
-                    .map(|result| result.map(|_| ())),
-                    (true, false) => {
-                        PolarNurbsPoles::from_lanes(&ctx, polar_poles(), Some(vec![1.0; 2]))
-                            .map(|result| result.map(|_| ()))
-                    }
-                    (true, true) => PolarNurbsPoles::from_checked_lanes(
-                        &ctx,
-                        polar_poles(),
-                        Some(vec![NonZeroReal::ONE; 2]),
-                    )
-                    .map(|result| result.map(|_| ())),
-                };
-                let Err(CodecError::ResourceLimit(limit)) = result else {
-                    panic!("pairing work refusal");
-                };
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(
-                    limit.operation,
-                    if polar {
-                        "IR polar paired poles"
-                    } else {
-                        "IR pcurve paired poles"
-                    }
-                );
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-                );
-            }
+                },
+            );
         }
     }
-    for cap in [0, 1] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) =
-            PcurveNurbsPoles::from_finite_lanes(&ctx, points(), Some(vec![FiniteReal::ONE; 2]))
-        else {
-            panic!("finite weight pairing admission");
-        };
-        assert_eq!(limit.operation, "IR pcurve paired poles");
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-    }
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "IR pcurve paired poles",
+        |cap| {
+            crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
+                PcurveNurbsPoles::from_finite_lanes(ctx, points(), Some(vec![FiniteReal::ONE; 2]))
+            })
+        },
+    );
 }
 
 #[test]
@@ -164,7 +143,7 @@ fn pcurve_construction_accounts_pair_storage_final_storage_and_scratch_lifetime(
         policy.limits.max_retained_bytes = u64::try_from(retained).expect("fixture");
         policy.limits.max_materialized_bytes = u64::try_from(temporary).expect("fixture");
         policy.limits.max_collection_items = 4;
-        policy.limits.max_work_units = 12;
+        policy.limits.max_work_units = 16;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         if polar {
             let result = PolarPcurveNurbs::from_checked_lanes(
@@ -282,34 +261,31 @@ fn pcurve_construction_moves_admitted_lanes_and_admits_finite_knot_conversion() 
     assert_eq!(points.as_ptr(), pole_address);
     assert_eq!(built.knots().as_ptr(), knot_address);
     ctx.finish_session().expect("no duplicate admission");
-    // Four yielded finite knots plus iterator exhaustion cost 5, then three order comparisons.
-    for (cap, operation) in [
-        (0, "IR finite knot values"),
-        (4, "IR finite knot values"),
-        (5, "IR NURBS knot order"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) = PcurveNurbs::from_finite_lanes(
-            &ctx,
-            1,
-            vec![
-                FiniteReal::ZERO,
-                FiniteReal::ZERO,
-                FiniteReal::ONE,
-                FiniteReal::ONE,
-            ],
-            vec![FinitePoint2::ZERO; 2],
-            None,
-            false,
-        ) else {
-            panic!("finite knot work refusal");
-        };
-        assert_eq!(limit.operation, operation);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    for operation in ["IR finite knot values", "IR NURBS knot order"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        PcurveNurbs::from_finite_lanes(
+                            ctx,
+                            1,
+                            vec![
+                                FiniteReal::ZERO,
+                                FiniteReal::ZERO,
+                                FiniteReal::ONE,
+                                FiniteReal::ONE,
+                            ],
+                            vec![FinitePoint2::ZERO; 2],
+                            None,
+                            false,
+                        )
+                    },
+                )
+            },
         );
     }
 }

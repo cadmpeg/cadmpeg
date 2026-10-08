@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scoped raw pcurve lanes for geometry evaluation.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit, ScopedReservation};
 
 use super::PcurveNurbsPoles;
 use crate::math::Point2;
@@ -30,20 +30,12 @@ impl<'ctx> PcurveEvaluatorLanes<'ctx> {
         let mut weights = None;
         match poles {
             PcurveNurbsPoles::Polynomial { points: source } => {
-                for point in source {
-                    ctx.charge_work_limit(
-                        u64_from_index(std::mem::size_of::<Point2>()),
-                        point_operation,
-                    )?;
+                for point in ctx.admit_iter(source, point_operation)? {
                     points.push(point.get());
                 }
             }
             PcurveNurbsPoles::Rational { points: source } => {
-                for pole in source {
-                    ctx.charge_work_limit(
-                        u64_from_index(std::mem::size_of::<Point2>()),
-                        point_operation,
-                    )?;
+                for pole in ctx.admit_iter(source, point_operation)? {
                     points.push(pole.point.get());
                 }
                 let mut copied = Vec::new();
@@ -53,11 +45,7 @@ impl<'ctx> PcurveEvaluatorLanes<'ctx> {
                     source.len(),
                     weight_operation,
                 )?;
-                for pole in source {
-                    ctx.charge_work_limit(
-                        u64_from_index(std::mem::size_of::<f64>()),
-                        weight_operation,
-                    )?;
+                for pole in ctx.admit_iter(source, weight_operation)? {
                     copied.push(pole.weight.get());
                 }
                 weights = Some(copied);

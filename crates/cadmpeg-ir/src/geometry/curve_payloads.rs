@@ -1323,11 +1323,11 @@ fn ordered(range: &[FiniteReal; 2]) -> bool {
     range[0] <= range[1]
 }
 
-#[cfg(test)]
-mod tests;
-
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_range, CurveOffsetRange, "range");
 cadmpeg_core::named_optional_field!(deserialize_cache, LegacyCache, "cache");
 
 mod identity_rewrite;
+
+#[cfg(test)]
+mod tests;

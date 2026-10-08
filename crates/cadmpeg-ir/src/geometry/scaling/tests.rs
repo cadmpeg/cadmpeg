@@ -209,7 +209,7 @@ fn a_scaled_curve_chain_fits_a_small_stack_and_keeps_resource_limits() {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_recursion_depth = depth;
-            policy.limits.max_work_units = 2 * (depth + 1);
+            policy.limits.max_work_units = 2 * depth;
             policy.limits.max_collection_items = depth;
             policy.limits.max_retained_bytes = depth
                 * u64::try_from(std::mem::size_of::<SolvedCurveGeometry>()).expect("carrier size");
@@ -223,8 +223,8 @@ fn a_scaled_curve_chain_fits_a_small_stack_and_keeps_resource_limits() {
             ctx.finish_session()
                 .expect("exact copy and scaling budgets");
             for (work, nesting, operation) in [
-                (depth, depth, "IR geometry unit scaling work"),
-                (depth + 1, depth - 1, "IR geometry unit scaling nesting"),
+                (depth - 1, depth, "IR geometry unit scaling work"),
+                (depth, depth - 1, "IR geometry unit scaling nesting"),
             ] {
                 let refused = with_scaling_limits(work, 0, nesting, |ctx| {
                     chain.clone().scaled_owned(ctx, scale(25.4))
@@ -234,11 +234,10 @@ fn a_scaled_curve_chain_fits_a_small_stack_and_keeps_resource_limits() {
                     if limit.operation == operation)
                 );
             }
-            let scaled = with_scaling_limits(depth + 1, 0, depth, |ctx| {
-                chain.scaled_owned(ctx, scale(25.4))
-            })
-            .expect("exact work and depth budgets")
-            .expect("finite scaled chain");
+            let scaled =
+                with_scaling_limits(depth, 0, depth, |ctx| chain.scaled_owned(ctx, scale(25.4)))
+                    .expect("exact work and depth budgets")
+                    .expect("finite scaled chain");
             assert_eq!(borrowed, scaled);
             assert_eq!(scaled.nesting_depth(), MAX_GEOMETRY_NESTING);
             let mut leaf = &scaled;
@@ -532,17 +531,19 @@ fn owned_nurbs_scaling_refuses_each_pole_work_and_reuses_lanes() {
                 .scaled(&cadmpeg_test_support::service_decode_context(), scale(2.0))
                 .expect("fixture scaling admission")
         );
-        for cap in 1..5 {
-            let result = with_scaling_limits(cap, u64::MAX, u64::MAX, |ctx| {
-                scaling_surface(1.0, rational).scaled_owned(ctx, scale(2.0))
-            });
-            assert!(
-                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                if resource.operation == "IR NURBS unit scaling work")
+        for operation in ["IR NURBS unit scaling rows", "IR NURBS unit scaling work"] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    with_scaling_limits(cap, u64::MAX, u64::MAX, |ctx| {
+                        scaling_surface(1.0, rational).scaled_owned(ctx, scale(2.0))
+                    })
+                },
             );
         }
         assert_eq!(
-            with_scaling_limits(5, 0, u64::MAX, |ctx| scaling_surface(1.0, rational)
+            with_scaling_limits(9, 0, u64::MAX, |ctx| scaling_surface(1.0, rational)
                 .scaled_owned(ctx, scale(2.0)))
             .expect("admitted"),
             scaling_surface(1.0, rational)
@@ -749,29 +750,6 @@ fn borrowed_scaling_preserves_caller_refusals_and_source_carriers() {
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
             );
         }
-    }
-    for cap in [0, 1] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let source = ellipse(2.0, 1.0);
-        let original = source.clone();
-        let Err(CodecError::ResourceLimit(limit)) = source.scaled(&ctx, scale(2.0)) else {
-            panic!("copy and scale each admit their own walk");
-        };
-        assert_eq!(
-            limit.operation,
-            if cap == 0 {
-                "IR scaled carrier copy"
-            } else {
-                "IR geometry unit scaling work"
-            }
-        );
-        assert_eq!(source, original);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
     }
 }
 
