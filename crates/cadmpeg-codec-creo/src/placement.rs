@@ -665,7 +665,8 @@ fn generated_cylinder_section_transform(
     let Some(variables) = definition.variables.as_ref() else {
         return Ok(None);
     };
-    let points = variables.reconciled_points(ctx)?;
+    let mut point_storage = ctx.reserve_scoped(0, "creo cylinder placement point storage")?;
+    let points = point_storage.with_storage(|| variables.reconciled_points(ctx))?;
     if !points.ambiguous.is_empty() {
         return Ok(None);
     }
@@ -865,10 +866,11 @@ fn generated_planar_section_transform(
     let Some(variables) = definition.variables.as_ref() else {
         return Ok(None);
     };
+    let mut point_storage = ctx.reserve_scoped(0, "creo planar placement point storage")?;
     let crate::feature::definitions::ReconciledPoints {
         points,
         ambiguous: conflicting_points,
-    } = variables.reconciled_points(ctx)?;
+    } = point_storage.with_storage(|| variables.reconciled_points(ctx))?;
     if !conflicting_points.is_empty() {
         return Ok(None);
     }
@@ -1430,8 +1432,9 @@ fn feature_generated_plane_equation(
     let Some(variables) = definition.variables.as_ref() else {
         return Ok(None);
     };
+    let mut point_storage = ctx.reserve_scoped(0, "creo generated plane point storage")?;
     let crate::feature::definitions::ReconciledPoints { points, .. } =
-        variables.reconciled_points(ctx)?;
+        point_storage.with_storage(|| variables.reconciled_points(ctx))?;
     let Some(start) = ctx
         .get_btree_map(
             &points,
