@@ -212,9 +212,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let side_surface: SurfaceId = circular_identity(ctx, feature_id, "surface:side")?;
         let sides = [("bottom", span.lower()), ("top", span.upper())];
         let mut face_ids = Vec::new();
-        let (mut cap_coedges, mut cap_coedge_storage) =
-            ctx.temporary_vec(0, "creo circular cap coedge IDs")?;
-        let mut side_coedges = Vec::new();
+        let mut coedge_rows = [None, None];
         for (side_index, (side, offset)) in sides.into_iter().enumerate() {
             let cap_surface: SurfaceId =
                 circular_identity(ctx, feature_id, format_args!("surface:{side}"))?;
@@ -427,15 +425,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             )?;
             ctx.reserve_vec(&mut face_ids, 1, "creo circular shell face IDs")?;
             face_ids.push(cap_face);
-            ctx.reserve_scoped_vec(
-                &mut cap_coedge_storage,
-                &mut cap_coedges,
-                1,
-                "creo circular cap coedge IDs",
-            )?;
-            cap_coedges.push(cap_coedge);
-            ctx.reserve_vec(&mut side_coedges, 1, "creo circular side coedge rows")?;
-            side_coedges.push((side_coedge, edge_id, side_pcurve));
+            coedge_rows[side_index] = Some((cap_coedge, side_coedge, edge_id, side_pcurve));
         }
         let side_face: FaceId = circular_identity(ctx, feature_id, "face:side")?;
         let mut side_loops = Vec::new();
@@ -450,8 +440,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 source_object: None,
             },
         )?;
-        for (side_index, ((side, _), (coedge, edge, pcurve))) in
-            sides.into_iter().zip(side_coedges).enumerate()
+        for (side_index, ((side, _), (cap_coedge, coedge, edge, pcurve))) in
+            sides.into_iter().zip(coedge_rows.into_iter().flatten()).enumerate()
         {
             let loop_id: LoopId =
                 circular_identity(ctx, feature_id, format_args!("loop:side:{side}"))?;
@@ -487,13 +477,11 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Coedge {
-                    id: coedge
-                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
+                    id: coedge,
                     owner_loop: loop_id
                         .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     edge,
-                    radial_next: cap_coedges[side_index]
-                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
+                    radial_next: cap_coedge,
                     sense: if side_index == 0 {
                         Sense::Forward
                     } else {
@@ -670,6 +658,8 @@ pub(in super::super) fn circular_section_profile_from_cylinder(
 
 #[cfg(test)]
 mod tests {
+    mod ownership;
+
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
