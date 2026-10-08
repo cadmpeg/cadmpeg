@@ -183,11 +183,11 @@ use crate::decode::records::{surface_contour_records, surface_prototype_records,
         scan.surfaces.prototype_records[0].family = SurfacePrototypeFamily::Other("unknown".into());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-      ResourceDimension::RetainedBytes, Some("creo native surface prototype family"), |cap| {
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+      ResourceDimension::MaterializedBytes, Some("creo native surface prototype family"), |cap| {
           let trial_arena = DecodeArena::new();
           let mut trial_policy = DecodePolicy::service();
-          trial_policy.limits.max_retained_bytes = cap;
+          trial_policy.limits.max_materialized_bytes = cap;
           let (trial_ctx, _) = DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
           surface_prototype_records(&trial_ctx, &scan, &scan.surfaces.prototype_records, "visibgeom").map(|_| ())
       });
@@ -201,7 +201,7 @@ use crate::decode::records::{surface_contour_records, surface_prototype_records,
         };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
+            if resource.dimension == ResourceDimension::MaterializedBytes
                 && resource.operation == "creo native surface prototype family"),
             "{error:?}"
         );
@@ -214,7 +214,7 @@ use crate::decode::records::{surface_contour_records, surface_prototype_records,
         let policy = DecodePolicy::service();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let records =
+        let (records, _records_storage) =
             surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom")
                 .expect("prototype is admitted");
         let values = records[0]

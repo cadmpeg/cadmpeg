@@ -242,8 +242,8 @@ use crate::decode::records::{
         let policy = DecodePolicy::service();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let fc = fc_curve_coordinate_records(&ctx, &scan).expect("record is admitted");
-        let plane = plane_envelope_records(
+        let (fc, _fc_storage) = fc_curve_coordinate_records(&ctx, &scan).expect("record is admitted");
+        let (plane, _plane_storage) = plane_envelope_records(
             &ctx,
             &scan,
             &scan.planes.envelopes,

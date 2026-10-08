@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed native record projections from `ContainerScan`.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -45,7 +45,7 @@ use super::sketch::coordinates::resolved_section_coordinates;
 use super::sketch::equations_scalar::resolved_section_scalar_values;
 use super::sketch::radii::resolved_section_radii;
 use super::sketch_ids::{
-    binary_flag_value, feature_definition_has_sketch_design, feature_definition_record_id,
+    binary_flag_value, feature_definition_has_sketch_design,
     sketch_table_headers,
 };
 
@@ -551,125 +551,133 @@ pub(super) struct CreoReferenceEllipseRecord {
     pub(super) offset: usize,
 }
 
-pub(super) fn reference_line_records(
-    ctx: &DecodeContext<'_>,
+pub(super) fn reference_line_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<CreoReferenceLineRecord>, CodecError> {
-    let family = |kind: &crate::reference::ReferenceLineKind| match kind {
-        crate::reference::ReferenceLineKind::Line => "line",
-        crate::reference::ReferenceLineKind::Line3d { .. } => "line3d",
-    };
-    let mut records = Vec::new();
-    for line in ctx.admit_iter(&scan.references.lines, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:mdl_ref_info:{}_record#{}",
-                family(line.kind()),
-                line.offset
-            ),
-            "creo native reference line IDs",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native reference line records")?;
-        records.push(CreoReferenceLineRecord {
-            id,
-            kind: line.kind().clone(),
-            start: line.start().get().into(),
-            end: line.end().get().into(),
-            offset: line.offset,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoReferenceLineRecord>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let family = |kind: &crate::reference::ReferenceLineKind| match kind {
+            crate::reference::ReferenceLineKind::Line => "line",
+            crate::reference::ReferenceLineKind::Line3d { .. } => "line3d",
+        };
+        let mut records = Vec::new();
+        for line in ctx.admit_iter(&scan.references.lines, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:mdl_ref_info:{}_record#{}",
+                    family(line.kind()),
+                    line.offset
+                ),
+                "creo native reference line IDs",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native reference line records")?;
+            records.push(CreoReferenceLineRecord {
+                id,
+                kind: line.kind().clone(),
+                start: line.start().get().into(),
+                end: line.end().get().into(),
+                offset: line.offset,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn reference_circle_records(
-    ctx: &DecodeContext<'_>,
+pub(super) fn reference_circle_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<CreoReferenceCircleRecord>, CodecError> {
-    let mut records = Vec::new();
-    for circle in ctx.admit_iter(&scan.references.circles, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
-            "creo native reference circle IDs",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native reference circle records")?;
-        records.push(CreoReferenceCircleRecord {
-            id,
-            entity_id: circle.entity_id,
-            center: circle.center().get().into(),
-            center_source: if circle.center_stored() {
-                "stored"
-            } else {
-                "endpoint_midpoint"
-            },
-            radius: circle.radius().get(),
-            axis: (*circle.axis().as_raw()).into(),
-            endpoints: [circle.start().get().into(), circle.end().get().into()],
-            offset: circle.offset,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoReferenceCircleRecord>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for circle in ctx.admit_iter(&scan.references.circles, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
+                "creo native reference circle IDs",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native reference circle records")?;
+            records.push(CreoReferenceCircleRecord {
+                id,
+                entity_id: circle.entity_id,
+                center: circle.center().get().into(),
+                center_source: if circle.center_stored() {
+                    "stored"
+                } else {
+                    "endpoint_midpoint"
+                },
+                radius: circle.radius().get(),
+                axis: (*circle.axis().as_raw()).into(),
+                endpoints: [circle.start().get().into(), circle.end().get().into()],
+                offset: circle.offset,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn reference_conic_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn reference_conic_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
-) -> Result<Vec<CreoReferenceConicRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for conic in ctx.admit_iter(&scan.references.conics, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:mdl_ref_info:conic_record#{}", conic.offset),
-            "creo native reference conic IDs",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native reference conic records")?;
-        records.push(CreoReferenceConicRecord {
-            id,
-            entity_id: conic.entity_id,
-            type_id: conic.type_id,
-            flip: conic.flip,
-            endpoints: [conic.start.get().into(), conic.end.get().into()],
-            parameter_interval: [
-                conic
-                    .parameter_start
-                    .map(cadmpeg_ir::scalar::FiniteReal::get),
-                conic.parameter_end.map(cadmpeg_ir::scalar::FiniteReal::get),
-            ],
-            coefficients: [conic.coefficient_1.get(), conic.coefficient_2.get()],
-            local_system: conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
-            body: &conic.body,
-            offset: conic.offset,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoReferenceConicRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for conic in ctx.admit_iter(&scan.references.conics, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:mdl_ref_info:conic_record#{}", conic.offset),
+                "creo native reference conic IDs",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native reference conic records")?;
+            records.push(CreoReferenceConicRecord {
+                id,
+                entity_id: conic.entity_id,
+                type_id: conic.type_id,
+                flip: conic.flip,
+                endpoints: [conic.start.get().into(), conic.end.get().into()],
+                parameter_interval: [
+                    conic
+                        .parameter_start
+                        .map(cadmpeg_ir::scalar::FiniteReal::get),
+                    conic.parameter_end.map(cadmpeg_ir::scalar::FiniteReal::get),
+                ],
+                coefficients: [conic.coefficient_1.get(), conic.coefficient_2.get()],
+                local_system: conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
+                body: &conic.body,
+                offset: conic.offset,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn reference_ellipse_records(
-    ctx: &DecodeContext<'_>,
+pub(super) fn reference_ellipse_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<CreoReferenceEllipseRecord>, CodecError> {
-    let mut records = Vec::new();
-    for ellipse in ctx.admit_iter(&scan.references.ellipses, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
-            "creo native reference ellipse IDs",
-        )?;
-        let source_conic_id = ctx.format_retained(
-            format_args!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
-            "creo native reference ellipse source IDs",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native reference ellipse records")?;
-        records.push(CreoReferenceEllipseRecord {
-            id,
-            source_conic_id,
-            source_entity_id: ellipse.source_entity_id,
-            center: ellipse.center().get().into(),
-            axis: (*ellipse.axis().as_raw()).into(),
-            major_direction: (*ellipse.major_direction().as_raw()).into(),
-            major_radius: ellipse.major_radius().get(),
-            minor_radius: ellipse.minor_radius().get(),
-            offset: ellipse.offset,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoReferenceEllipseRecord>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for ellipse in ctx.admit_iter(&scan.references.ellipses, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
+                "creo native reference ellipse IDs",
+            )?;
+            let source_conic_id = ctx.format_retained(
+                format_args!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
+                "creo native reference ellipse source IDs",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native reference ellipse records")?;
+            records.push(CreoReferenceEllipseRecord {
+                id,
+                source_conic_id,
+                source_entity_id: ellipse.source_entity_id,
+                center: ellipse.center().get().into(),
+                axis: (*ellipse.axis().as_raw()).into(),
+                major_direction: (*ellipse.major_direction().as_raw()).into(),
+                major_radius: ellipse.major_radius().get(),
+                minor_radius: ellipse.minor_radius().get(),
+                offset: ellipse.offset,
+            });
+        }
+        Ok(records)
+    })
 }
 
 struct HexDigest([u8; 32]);
@@ -687,36 +695,38 @@ impl std::fmt::Display for HexDigest {
     }
 }
 
-pub(super) fn expanded_section_records(
-    ctx: &DecodeContext<'_>,
+pub(super) fn expanded_section_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<CreoExpandedSectionRecord>, CodecError> {
-    let mut records = Vec::new();
-    for section in ctx.admit_iter(&scan.framing.expanded_sections, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:container:expanded_section#{}:{}",
-                section.name, section.source_offset
-            ),
-            "creo native expanded section IDs",
-        )?;
-        let name = ctx.copy_retained_text(&section.name, "creo native expanded section names")?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(section.data.len()), "creo expanded section digest")?;
-        let sha256 = ctx.format_retained(
-            format_args!("{}", HexDigest(sha256(&section.data))),
-            "creo native expanded section hashes",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native expanded section records")?;
-        records.push(CreoExpandedSectionRecord {
-            id,
-            name,
-            source_offset: section.source_offset,
-            compressed_length: section.compressed_length,
-            expanded_length: section.data.len(),
-            sha256,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoExpandedSectionRecord>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for section in ctx.admit_iter(&scan.framing.expanded_sections, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:container:expanded_section#{}:{}",
+                    section.name, section.source_offset
+                ),
+                "creo native expanded section IDs",
+            )?;
+            let name = ctx.copy_retained_text(&section.name, "creo native expanded section names")?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(section.data.len()), "creo expanded section digest")?;
+            let sha256 = ctx.format_retained(
+                format_args!("{}", HexDigest(sha256(&section.data))),
+                "creo native expanded section hashes",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native expanded section records")?;
+            records.push(CreoExpandedSectionRecord {
+                id,
+                name,
+                source_offset: section.source_offset,
+                compressed_length: section.compressed_length,
+                expanded_length: section.data.len(),
+                sha256,
+            });
+        }
+        Ok(records)
+    })
 }
 
 #[derive(Serialize)]
@@ -858,971 +868,1048 @@ pub(super) struct CreoFeaturePlacementInstructionRecord<'a> {
     source_section: &'a str,
 }
 
-pub(super) fn feature_entity_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn feature_entity_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureEntityRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for entity in ctx.admit_iter(&scan.features.entities, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:allfeatur:entity#{}", entity.entity_id),
-            "creo feature entity record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature entity records")?;
-        records.push(CreoFeatureEntityRecord {
-            id,
-            entity_id: entity.entity_id,
-            type_byte: entity.type_byte,
-            name: &entity.name,
-            offset: entity.offset,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn feature_entity_reference_records(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<CreoFeatureEntityReferenceRecord>, CodecError> {
-    let mut records = Vec::new();
-    for reference in ctx.admit_iter(&scan.features.entity_references, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:allfeatur:entity_reference#{}", reference.offset),
-            "creo feature entity reference record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature entity reference records")?;
-        records.push(CreoFeatureEntityReferenceRecord {
-            id,
-            source_entity_id: reference.source_entity_id,
-            target_entity_id: reference.target_entity_id,
-            target_resolved: cadmpeg_core::decode::index_from_u32(reference.target_entity_id)
-                < scan.features.entities.len(),
-            offset: reference.offset,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn feature_entity_table_records(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<CreoFeatureEntityTableRecord>, CodecError> {
-    let mut records = Vec::new();
-    for table in ctx.admit_iter(&scan.features.entity_tables, "creo native record traversal")? {
-        let mut entry_ids = Vec::new();
-        let mut entries = Vec::new();
-        let mut surface_ids = Vec::new();
-        let mut non_surface_entity_ids = Vec::new();
-        for entry in ctx.admit_iter(&table.entries, "creo native record traversal")? {
-            ctx.reserve_vec(
-                &mut entry_ids,
-                1,
-                "creo feature entity table record entry ids",
+) -> Result<(Vec<CreoFeatureEntityRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for entity in ctx.admit_iter(&scan.features.entities, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:allfeatur:entity#{}", entity.entity_id),
+                "creo feature entity record id",
             )?;
-            entry_ids.push(entry.entity_id);
-            ctx.reserve_vec(&mut entries, 1, "creo feature entity table record entries")?;
-            entries.push(CreoFeatureEntityTableEntryRecord {
-                entity_id: entry.entity_id,
-                class_id: entry.class_id(),
-                source_entity_id: entry.source_entity_id(),
-                related_entity_id: entry.related_entity_id(),
-                related_entity_state: entry.related_entity_state(),
-                prefixed: entry.prefixed,
+            ctx.reserve_vec(&mut records, 1, "creo feature entity records")?;
+            records.push(CreoFeatureEntityRecord {
+                id,
+                entity_id: entity.entity_id,
+                type_byte: entity.type_byte,
+                name: &entity.name,
+                offset: entity.offset,
+            });
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn feature_entity_reference_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<(Vec<CreoFeatureEntityReferenceRecord>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for reference in ctx.admit_iter(&scan.features.entity_references, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:allfeatur:entity_reference#{}", reference.offset),
+                "creo feature entity reference record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo feature entity reference records")?;
+            records.push(CreoFeatureEntityReferenceRecord {
+                id,
+                source_entity_id: reference.source_entity_id,
+                target_entity_id: reference.target_entity_id,
+                target_resolved: cadmpeg_core::decode::index_from_u32(reference.target_entity_id)
+                    < scan.features.entities.len(),
+                offset: reference.offset,
+            });
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn feature_entity_table_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<(Vec<CreoFeatureEntityTableRecord>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for table in ctx.admit_iter(&scan.features.entity_tables, "creo native record traversal")? {
+            let mut entry_ids = Vec::new();
+            let mut entries = Vec::new();
+            let mut surface_ids = Vec::new();
+            let mut non_surface_entity_ids = Vec::new();
+            for entry in ctx.admit_iter(&table.entries, "creo native record traversal")? {
+                ctx.reserve_vec(
+                    &mut entry_ids,
+                    1,
+                    "creo feature entity table record entry ids",
+                )?;
+                entry_ids.push(entry.entity_id);
+                ctx.reserve_vec(&mut entries, 1, "creo feature entity table record entries")?;
+                entries.push(CreoFeatureEntityTableEntryRecord {
+                    entity_id: entry.entity_id,
+                    class_id: entry.class_id(),
+                    source_entity_id: entry.source_entity_id(),
+                    related_entity_id: entry.related_entity_id(),
+                    related_entity_state: entry.related_entity_state(),
+                    prefixed: entry.prefixed,
+                    offset: entry.offset,
+                    end_offset: entry.end_offset,
+                });
+                if ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo entity table surface membership")? {
+                    ctx.reserve_vec(
+                        &mut surface_ids,
+                        1,
+                        "creo feature entity table record surface ids",
+                    )?;
+                    surface_ids.push(entry.entity_id);
+                } else {
+                    ctx.reserve_vec(
+                        &mut non_surface_entity_ids,
+                        1,
+                        "creo feature entity table record non surface ids",
+                    )?;
+                    non_surface_entity_ids.push(entry.entity_id);
+                }
+            }
+            let id = ctx.format_retained(
+                format_args!("creo:allfeatur:entity_table#{}", table.offset),
+                "creo feature entity table record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo feature entity table records")?;
+            records.push(CreoFeatureEntityTableRecord {
+                id,
+                owner_feature_id: table.feature_id,
+                table_class_id: table.table_class_id,
+                entry_ids,
+                entries,
+                surface_ids,
+                non_surface_entity_ids,
+                offset: table.offset,
+            });
+        }
+        Ok(records)
+    })
+}
+
+
+
+pub(super) fn feature_geometry_table_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoFeatureGeometryTableRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for table in ctx.admit_iter(&scan.features.geometry_tables, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:feature:geometry_table#{}", table.offset),
+                "creo feature geometry table record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo feature geometry table records")?;
+            records.push(CreoFeatureGeometryTableRecord {
+                id,
+                owner_feature_id: table.feature_id,
+                kind: &table.kind,
+                declared_count: table.count,
+                entity_class_id: table.entity_class,
+                offset: table.offset,
+                source_section: source_section_ref(ctx, scan, table.offset)?,
+            });
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn feature_loop_history_entry_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoFeatureLoopHistoryEntryRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for entry in ctx.admit_iter(&scan.features.loop_history_entries, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:feature:loop_history_entry#{}", entry.offset),
+                "creo feature loop history record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo feature loop history records")?;
+            records.push(CreoFeatureLoopHistoryEntryRecord {
+                id,
+                owner_feature_id: entry.feature_id,
+                ordinal: entry.ordinal,
+                loop_id: entry.loop_id,
+                field_bytes: entry,
+                boundary: &entry.boundary,
                 offset: entry.offset,
                 end_offset: entry.end_offset,
+                source_section: source_section_ref(ctx, scan, entry.offset)?,
             });
-            if ctx.contains_btree_set(table.unique_surface_ids(), &entry.entity_id, "creo entity table surface membership")? {
-                ctx.reserve_vec(
-                    &mut surface_ids,
-                    1,
-                    "creo feature entity table record surface ids",
-                )?;
-                surface_ids.push(entry.entity_id);
-            } else {
-                ctx.reserve_vec(
-                    &mut non_surface_entity_ids,
-                    1,
-                    "creo feature entity table record non surface ids",
-                )?;
-                non_surface_entity_ids.push(entry.entity_id);
-            }
         }
-        let id = ctx.format_retained(
-            format_args!("creo:allfeatur:entity_table#{}", table.offset),
-            "creo feature entity table record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature entity table records")?;
-        records.push(CreoFeatureEntityTableRecord {
-            id,
-            owner_feature_id: table.feature_id,
-            table_class_id: table.table_class_id,
-            entry_ids,
-            entries,
-            surface_ids,
-            non_surface_entity_ids,
-            offset: table.offset,
-        });
-    }
-    Ok(records)
+        Ok(records)
+    })
 }
 
-
-
-pub(super) fn feature_geometry_table_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn feature_affected_id_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureGeometryTableRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for table in ctx.admit_iter(&scan.features.geometry_tables, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:feature:geometry_table#{}", table.offset),
-            "creo feature geometry table record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature geometry table records")?;
-        records.push(CreoFeatureGeometryTableRecord {
-            id,
-            owner_feature_id: table.feature_id,
-            kind: &table.kind,
-            declared_count: table.count,
-            entity_class_id: table.entity_class,
-            offset: table.offset,
-            source_section: source_section_ref(ctx, scan, table.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoFeatureAffectedIdsRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.features.affected_ids, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:feature:affected_ids#{}", record.offset),
+                "creo feature affected ids record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo feature affected ids records")?;
+            records.push(CreoFeatureAffectedIdsRecord {
+                id,
+                owner_feature_id: record.feature_id,
+                kind: affected_kind(record.kind),
+                ids: &record.ids,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn feature_loop_history_entry_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn feature_replay_affected_id_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureLoopHistoryEntryRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for entry in ctx.admit_iter(&scan.features.loop_history_entries, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:feature:loop_history_entry#{}", entry.offset),
-            "creo feature loop history record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature loop history records")?;
-        records.push(CreoFeatureLoopHistoryEntryRecord {
-            id,
-            owner_feature_id: entry.feature_id,
-            ordinal: entry.ordinal,
-            loop_id: entry.loop_id,
-            field_bytes: entry,
-            boundary: &entry.boundary,
-            offset: entry.offset,
-            end_offset: entry.end_offset,
-            source_section: source_section_ref(ctx, scan, entry.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoFeatureReplayAffectedIdsRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.features.replay_affected_ids, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:feature:replay_affected_ids#{}", record.offset),
+                "creo feature replay affected ids record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo feature replay affected ids records")?;
+            records.push(CreoFeatureReplayAffectedIdsRecord {
+                id,
+                owner_feature_id: record.feature_id,
+                geometry_ids: &record.geometry_ids,
+                edge_ids: &record.edge_ids,
+                geometry_extent: extent_source(record.geometry_extent),
+                edge_extent: extent_source(record.edge_extent),
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn feature_affected_id_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn surface_merge_replay_affected_id_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureAffectedIdsRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.features.affected_ids, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:feature:affected_ids#{}", record.offset),
-            "creo feature affected ids record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature affected ids records")?;
-        records.push(CreoFeatureAffectedIdsRecord {
-            id,
-            owner_feature_id: record.feature_id,
-            kind: affected_kind(record.kind),
-            ids: &record.ids,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoSurfaceMergeReplayAffectedIdsRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.features.surface_merge_replay_affected_ids, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:feature:surface_merge_replay_affected_ids#{}",
+                    record.offset
+                ),
+                "creo surface merge replay affected ids record id",
+            )?;
+            ctx.reserve_vec(
+                &mut records,
+                1,
+                "creo surface merge replay affected ids records",
+            )?;
+            records.push(CreoSurfaceMergeReplayAffectedIdsRecord {
+                id,
+                owner_feature_id: record.feature_id,
+                geometry_ids: &record.geometry_ids,
+                edge_ids: &record.edge_ids,
+                quilt_ids: &record.quilt_ids,
+                geometry_extent: extent_source(record.geometry_extent),
+                edge_extent: extent_source(record.edge_extent),
+                quilt_extent: extent_source(record.quilt_extent),
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn feature_replay_affected_id_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn feature_loop_restore_direction_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureReplayAffectedIdsRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.features.replay_affected_ids, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:feature:replay_affected_ids#{}", record.offset),
-            "creo feature replay affected ids record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature replay affected ids records")?;
-        records.push(CreoFeatureReplayAffectedIdsRecord {
-            id,
-            owner_feature_id: record.feature_id,
-            geometry_ids: &record.geometry_ids,
-            edge_ids: &record.edge_ids,
-            geometry_extent: extent_source(record.geometry_extent),
-            edge_extent: extent_source(record.edge_extent),
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn surface_merge_replay_affected_id_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoSurfaceMergeReplayAffectedIdsRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.features.surface_merge_replay_affected_ids, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:feature:surface_merge_replay_affected_ids#{}",
-                record.offset
-            ),
-            "creo surface merge replay affected ids record id",
-        )?;
-        ctx.reserve_vec(
-            &mut records,
-            1,
-            "creo surface merge replay affected ids records",
-        )?;
-        records.push(CreoSurfaceMergeReplayAffectedIdsRecord {
-            id,
-            owner_feature_id: record.feature_id,
-            geometry_ids: &record.geometry_ids,
-            edge_ids: &record.edge_ids,
-            quilt_ids: &record.quilt_ids,
-            geometry_extent: extent_source(record.geometry_extent),
-            edge_extent: extent_source(record.edge_extent),
-            quilt_extent: extent_source(record.quilt_extent),
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn feature_loop_restore_direction_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureLoopRestoreDirectionRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.features.loop_restore_directions, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:feature:loop_restore_direction#{}", record.offset),
-            "creo feature loop restore direction record id",
-        )?;
-        ctx.reserve_vec(
-            &mut records,
-            1,
-            "creo feature loop restore direction records",
-        )?;
-        records.push(CreoFeatureLoopRestoreDirectionRecord {
-            id,
-            owner_feature_id: record.feature_id,
-            lane: match record.lane {
-                crate::feature::rows::LoopRestoreDirectionLane::Primary => "primary",
-                crate::feature::rows::LoopRestoreDirectionLane::Secondary => "secondary",
-            },
-            value: record.value,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn feature_revolution_extent_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureRevolutionExtentRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.features.revolution_extents, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:feature:revolution_extent#{}", record.offset),
-            "creo feature revolution extent record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature revolution extent records")?;
-        records.push(CreoFeatureRevolutionExtentRecord {
-            id,
-            owner_feature_id: record.feature_id,
-            kind: "full_turn",
-            angle_radians: std::f64::consts::TAU,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn feature_choice_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureChoiceRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for choice in ctx.admit_iter(&scan.features.choices, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:feature:choice#{}", choice.offset),
-            "creo feature choice record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature choice records")?;
-        records.push(CreoFeatureChoiceRecord {
-            id,
-            owner_feature_id: choice.feature_id,
-            label: &choice.label,
-            type_byte: choice.type_byte,
-            payload: &choice.payload,
-            payload_offset: choice.payload_offset,
-            offset: choice.offset,
-            source_section: source_section_ref(ctx, scan, choice.offset)?,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn feature_row_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureRowRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for row in ctx.admit_iter(&scan.features.rows, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:allfeatur:feature_row#{}", row.offset),
-            "creo feature row record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo feature row records")?;
-        records.push(CreoFeatureRowRecord {
-            id,
-            owner_feature_id: row.feature_id,
-            header: row.body.header(),
-            root_schema_class: row.root_schema_class.map(SchemaClass::code),
-            stream_offset: row.stream_offset,
-            body: &row.body,
-            body_offset: row.body_offset,
-            offset: row.offset,
-            source_section: source_section_ref(ctx, scan, row.offset)?,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn depdb_recipe_row_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureRowRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for row in ctx.admit_iter(&scan.features.depdb_recipe_rows, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:depdb:recipe_row#{}", row.offset),
-            "creo depdb recipe row record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo depdb recipe row records")?;
-        records.push(CreoFeatureRowRecord {
-            id,
-            owner_feature_id: row.feature_id,
-            header: [0; 2],
-            root_schema_class: row.root_schema_class.map(SchemaClass::code),
-            stream_offset: row.stream_offset,
-            body: &row.body,
-            body_offset: row.body_offset,
-            offset: row.offset,
-            source_section: source_section_ref(ctx, scan, row.offset)?,
-        });
-    }
-    Ok(records)
-}
-
-
-
-pub(super) fn feature_choice_field_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureChoiceFieldRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for field in ctx.admit_iter(&scan.features.choice_fields, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:feature:choice_field#{}", field.offset),
-            "creo native feature choice field record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native feature choice field records")?;
-        records.push(CreoFeatureChoiceFieldRecord {
-            id,
-            owner_feature_id: field.feature_id,
-            choice_label: &field.choice_label,
-            name: &field.name,
-            type_byte: field.type_byte,
-            value: match &field.value {
-                crate::feature::rows::FeatureFieldValue::Empty => CreoFeatureFieldValue::Empty,
-                crate::feature::rows::FeatureFieldValue::CompactInt(value) => {
-                    CreoFeatureFieldValue::CompactInt { value: *value }
-                }
-                crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => {
-                    CreoFeatureFieldValue::CompactIntArray { values }
-                }
-                crate::feature::rows::FeatureFieldValue::EntityReference {
-                    entity_id,
-                    terminated,
-                } => CreoFeatureFieldValue::EntityReference {
-                    entity_id: *entity_id,
-                    terminated: *terminated,
+) -> Result<(Vec<CreoFeatureLoopRestoreDirectionRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.features.loop_restore_directions, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:feature:loop_restore_direction#{}", record.offset),
+                "creo feature loop restore direction record id",
+            )?;
+            ctx.reserve_vec(
+                &mut records,
+                1,
+                "creo feature loop restore direction records",
+            )?;
+            records.push(CreoFeatureLoopRestoreDirectionRecord {
+                id,
+                owner_feature_id: record.feature_id,
+                lane: match record.lane {
+                    crate::feature::rows::LoopRestoreDirectionLane::Primary => "primary",
+                    crate::feature::rows::LoopRestoreDirectionLane::Secondary => "secondary",
                 },
-                crate::feature::rows::FeatureFieldValue::ScalarArray {
-                    dimensions,
-                    count,
-                    body,
-                    decoded_values,
-                } => CreoFeatureFieldValue::ScalarArray {
-                    dimensions: *dimensions,
-                    count: *count,
-                    body,
-                    decoded_values: decoded_values.as_deref(),
+                value: record.value,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn feature_revolution_extent_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoFeatureRevolutionExtentRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.features.revolution_extents, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:feature:revolution_extent#{}", record.offset),
+                "creo feature revolution extent record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo feature revolution extent records")?;
+            records.push(CreoFeatureRevolutionExtentRecord {
+                id,
+                owner_feature_id: record.feature_id,
+                kind: "full_turn",
+                angle_radians: std::f64::consts::TAU,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn feature_choice_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoFeatureChoiceRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for choice in ctx.admit_iter(&scan.features.choices, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:feature:choice#{}", choice.offset),
+                "creo feature choice record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo feature choice records")?;
+            records.push(CreoFeatureChoiceRecord {
+                id,
+                owner_feature_id: choice.feature_id,
+                label: &choice.label,
+                type_byte: choice.type_byte,
+                payload: &choice.payload,
+                payload_offset: choice.payload_offset,
+                offset: choice.offset,
+                source_section: source_section_ref(ctx, scan, choice.offset)?,
+            });
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn feature_row_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoFeatureRowRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for row in ctx.admit_iter(&scan.features.rows, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:allfeatur:feature_row#{}", row.offset),
+                "creo feature row record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo feature row records")?;
+            records.push(CreoFeatureRowRecord {
+                id,
+                owner_feature_id: row.feature_id,
+                header: row.body.header(),
+                root_schema_class: row.root_schema_class.map(SchemaClass::code),
+                stream_offset: row.stream_offset,
+                body: &row.body,
+                body_offset: row.body_offset,
+                offset: row.offset,
+                source_section: source_section_ref(ctx, scan, row.offset)?,
+            });
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn depdb_recipe_row_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoFeatureRowRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for row in ctx.admit_iter(&scan.features.depdb_recipe_rows, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:depdb:recipe_row#{}", row.offset),
+                "creo depdb recipe row record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo depdb recipe row records")?;
+            records.push(CreoFeatureRowRecord {
+                id,
+                owner_feature_id: row.feature_id,
+                header: [0; 2],
+                root_schema_class: row.root_schema_class.map(SchemaClass::code),
+                stream_offset: row.stream_offset,
+                body: &row.body,
+                body_offset: row.body_offset,
+                offset: row.offset,
+                source_section: source_section_ref(ctx, scan, row.offset)?,
+            });
+        }
+        Ok(records)
+    })
+}
+
+
+
+pub(super) fn feature_choice_field_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoFeatureChoiceFieldRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for field in ctx.admit_iter(&scan.features.choice_fields, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:feature:choice_field#{}", field.offset),
+                "creo native feature choice field record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native feature choice field records")?;
+            records.push(CreoFeatureChoiceFieldRecord {
+                id,
+                owner_feature_id: field.feature_id,
+                choice_label: &field.choice_label,
+                name: &field.name,
+                type_byte: field.type_byte,
+                value: match &field.value {
+                    crate::feature::rows::FeatureFieldValue::Empty => CreoFeatureFieldValue::Empty,
+                    crate::feature::rows::FeatureFieldValue::CompactInt(value) => {
+                        CreoFeatureFieldValue::CompactInt { value: *value }
+                    }
+                    crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => {
+                        CreoFeatureFieldValue::CompactIntArray { values }
+                    }
+                    crate::feature::rows::FeatureFieldValue::EntityReference {
+                        entity_id,
+                        terminated,
+                    } => CreoFeatureFieldValue::EntityReference {
+                        entity_id: *entity_id,
+                        terminated: *terminated,
+                    },
+                    crate::feature::rows::FeatureFieldValue::ScalarArray {
+                        dimensions,
+                        count,
+                        body,
+                        decoded_values,
+                    } => CreoFeatureFieldValue::ScalarArray {
+                        dimensions: *dimensions,
+                        count: *count,
+                        body,
+                        decoded_values: decoded_values.as_deref(),
+                    },
+                    crate::feature::rows::FeatureFieldValue::Raw(bytes) => {
+                        CreoFeatureFieldValue::Raw { bytes }
+                    }
                 },
-                crate::feature::rows::FeatureFieldValue::Raw(bytes) => {
-                    CreoFeatureFieldValue::Raw { bytes }
-                }
-            },
-            offset: field.offset,
-            source_section: source_section_ref(ctx, scan, field.offset)?,
-        });
-    }
-    Ok(records)
+                offset: field.offset,
+                source_section: source_section_ref(ctx, scan, field.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
 
 
-pub(super) fn half_edge_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn half_edge_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoHalfEdgeRecord<'a>>, CodecError> {
-    let mut topology_storage = ctx.reserve_scoped(0, "creo native topology row index storage")?;
-    let mut topology_rows = HashMap::new();
-    for row in ctx.admit_iter(&scan.curves.topology_rows, "creo native record traversal")? {
-        topology_storage.with_storage(|| ctx.insert_hash_map(
-            &mut topology_rows,
-            row.id,
-            row,
-            "creo native half edge topology row nodes",
-        ))?;
-    }
-    let mut records = Vec::new();
-    for edge in ctx.admit_iter(&scan.topology.half_edges, "creo native record traversal")? {
-        let Some(row) = topology_rows.get(&edge.id.curve_id) else {
-            continue;
-        };
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:topology:half_edge#{}:{}",
-                edge.id.curve_id, edge.id.side
-            ),
-            "creo native half edge record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native half edge records")?;
-        records.push(CreoHalfEdgeRecord {
-            id,
-            curve_id: edge.id.curve_id,
-            side: edge.id.side,
-            face_id: edge.face_id.map_or(0, std::num::NonZeroU32::get),
-            next: edge.next.map(half_edge_ref),
-            offset: row.offset,
-            source_section: source_section_ref(ctx, scan, row.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoHalfEdgeRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        if scan.topology.half_edges.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut topology_storage = ctx.reserve_scoped(0, "creo native topology row index storage")?;
+        let mut topology_rows = HashMap::new();
+        for row in ctx.admit_iter(&scan.curves.topology_rows, "creo native record traversal")? {
+            topology_storage.with_storage(|| ctx.insert_hash_map(
+                &mut topology_rows,
+                row.id,
+                row,
+                "creo native half edge topology row nodes",
+            ))?;
+        }
+        let mut records = Vec::new();
+        for edge in ctx.admit_iter(&scan.topology.half_edges, "creo native record traversal")? {
+            let Some(row) = topology_rows.get(&edge.id.curve_id) else {
+                continue;
+            };
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:topology:half_edge#{}:{}",
+                    edge.id.curve_id, edge.id.side
+                ),
+                "creo native half edge record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native half edge records")?;
+            records.push(CreoHalfEdgeRecord {
+                id,
+                curve_id: edge.id.curve_id,
+                side: edge.id.side,
+                face_id: edge.face_id.map_or(0, std::num::NonZeroU32::get),
+                next: edge.next.map(half_edge_ref),
+                offset: row.offset,
+                source_section: source_section_ref(ctx, scan, row.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn loop_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn loop_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoLoopRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for (index, record) in ctx.admit_iter(&scan.topology.loops, "creo native record traversal")?.enumerate() {
-        let id = ctx.format_retained(
-            format_args!("creo:topology:loop#{}", index + 1),
-            "creo native loop record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native loop records")?;
-        records.push(CreoLoopRecord {
-            id,
-            face_id: record.face_id().map_or(0, std::num::NonZeroU32::get),
-            half_edges: record.half_edges(),
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoLoopRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for (index, record) in ctx.admit_iter(&scan.topology.loops, "creo native record traversal")?.enumerate() {
+            let id = ctx.format_retained(
+                format_args!("creo:topology:loop#{}", index + 1),
+                "creo native loop record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native loop records")?;
+            records.push(CreoLoopRecord {
+                id,
+                face_id: record.face_id().map_or(0, std::num::NonZeroU32::get),
+                half_edges: record.half_edges(),
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn loop_array_frame_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn loop_array_frame_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoLoopArrayFrameRecord<'a>>, CodecError> {
-    let mut count_storage = ctx.reserve_scoped(0, "creo native loop frame count storage")?;
-    let mut counts = HashMap::<usize, usize>::new();
-    for record in ctx.admit_iter(&scan.loop_arrays.records, "creo native record traversal")? {
-        let count = count_storage.with_storage(|| ctx
-            .entry_hash_map(
-                &mut counts,
-                record.frame_offset,
-                "creo native loop array frame count nodes",
-            ))?.or_default();
-        *count = count.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("creo native loop array frame counts", u64::MAX, u64::MAX)
-        })?;
-    }
-    let mut records = Vec::new();
-    for frame in ctx.admit_iter(&scan.loop_arrays.frames, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:loop_array:frame#{}", frame.offset),
-            "creo native loop array frame record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native loop array frame records")?;
-        records.push(CreoLoopArrayFrameRecord {
-            id,
-            variant: frame.variant,
-            declared_count: frame.declared_count,
-            class_id: frame.class_id,
-            materialized_count: counts.get(&frame.offset).copied().unwrap_or_default(),
-            overfull: frame.overfull,
-            offset: frame.offset,
-            prototype_end: frame.prototype_end,
-            end: frame.end,
-            source_section: source_section_ref(ctx, scan, frame.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoLoopArrayFrameRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        if scan.loop_arrays.frames.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut count_storage = ctx.reserve_scoped(0, "creo native loop frame count storage")?;
+        let mut counts = HashMap::<usize, usize>::new();
+        for record in ctx.admit_iter(&scan.loop_arrays.records, "creo native record traversal")? {
+            let count = count_storage.with_storage(|| ctx
+                .entry_hash_map(
+                    &mut counts,
+                    record.frame_offset,
+                    "creo native loop array frame count nodes",
+                ))?.or_default();
+            *count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo native loop array frame counts", u64::MAX, u64::MAX)
+            })?;
+        }
+        let mut records = Vec::new();
+        for frame in ctx.admit_iter(&scan.loop_arrays.frames, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:loop_array:frame#{}", frame.offset),
+                "creo native loop array frame record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native loop array frame records")?;
+            records.push(CreoLoopArrayFrameRecord {
+                id,
+                variant: frame.variant,
+                declared_count: frame.declared_count,
+                class_id: frame.class_id,
+                materialized_count: counts.get(&frame.offset).copied().unwrap_or_default(),
+                overfull: frame.overfull,
+                offset: frame.offset,
+                prototype_end: frame.prototype_end,
+                end: frame.end,
+                source_section: source_section_ref(ctx, scan, frame.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn loop_array_record_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn loop_array_record_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoLoopArrayRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.loop_arrays.records, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:loop_array:record#{}", record.offset),
-            "creo native loop array record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native loop array records")?;
-        records.push(CreoLoopArrayRecord {
-            id,
-            frame_offset: record.frame_offset,
-            lo_id: record.lo_id,
-            lo_type: record.lo_type,
-            lo_subtype: record.lo_subtype,
-            feature_id: record.feature_id,
-            attributes: record.attributes,
-            direction: record.direction,
-            next_lo_ptr: record.next_lo_ptr,
-            body: &record.body,
-            offset: record.offset,
-            body_offset: record.body_offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoLoopArrayRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.loop_arrays.records, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:loop_array:record#{}", record.offset),
+                "creo native loop array record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native loop array records")?;
+            records.push(CreoLoopArrayRecord {
+                id,
+                frame_offset: record.frame_offset,
+                lo_id: record.lo_id,
+                lo_type: record.lo_type,
+                lo_subtype: record.lo_subtype,
+                feature_id: record.feature_id,
+                attributes: record.attributes,
+                direction: record.direction,
+                next_lo_ptr: record.next_lo_ptr,
+                body: &record.body,
+                offset: record.offset,
+                body_offset: record.body_offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn topological_vertex_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn topological_vertex_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoTopologicalVertexRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.topology.vertices, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:topology:vertex#{}", record.id),
-            "creo native topological vertex record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native topological vertex records")?;
-        records.push(CreoTopologicalVertexRecord {
-            id,
-            vertex_id: record.id.get(),
-            half_edges: record.half_edges(),
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoTopologicalVertexRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.topology.vertices, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:topology:vertex#{}", record.id),
+                "creo native topological vertex record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native topological vertex records")?;
+            records.push(CreoTopologicalVertexRecord {
+                id,
+                vertex_id: record.id.get(),
+                half_edges: record.half_edges(),
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn half_edge_vertex_incidence_records(
-    ctx: &DecodeContext<'_>,
+pub(super) fn half_edge_vertex_incidence_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<CreoHalfEdgeVertexIncidenceRecord>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.topology.half_edge_vertex_incidence, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:topology:half_edge_vertex_incidence#{}:{}",
-                record.half_edge.curve_id, record.half_edge.side
-            ),
-            "creo native half edge vertex incidence record id",
-        )?;
-        ctx.reserve_vec(
-            &mut records,
-            1,
-            "creo native half edge vertex incidence records",
-        )?;
-        records.push(CreoHalfEdgeVertexIncidenceRecord {
-            id,
-            half_edge: half_edge_ref(record.half_edge),
-            start_vertex_id: record.start_vertex_id.get(),
-            end_vertex_id: record.end_vertex_id.map(std::num::NonZeroU32::get),
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoHalfEdgeVertexIncidenceRecord>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.topology.half_edge_vertex_incidence, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:topology:half_edge_vertex_incidence#{}:{}",
+                    record.half_edge.curve_id, record.half_edge.side
+                ),
+                "creo native half edge vertex incidence record id",
+            )?;
+            ctx.reserve_vec(
+                &mut records,
+                1,
+                "creo native half edge vertex incidence records",
+            )?;
+            records.push(CreoHalfEdgeVertexIncidenceRecord {
+                id,
+                half_edge: half_edge_ref(record.half_edge),
+                start_vertex_id: record.start_vertex_id.get(),
+                end_vertex_id: record.end_vertex_id.map(std::num::NonZeroU32::get),
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn face_component_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn face_component_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoFaceComponentRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for (index, record) in ctx.admit_iter(&scan.topology.face_components, "creo native record traversal")?.enumerate() {
-        let id = ctx.format_retained(
-            format_args!("creo:topology:face_component#{}", index + 1),
-            "creo native face component record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native face component records")?;
-        records.push(CreoFaceComponentRecord {
-            id,
-            face_ids: record.face_ids(),
-            curve_ids: record.curve_ids(),
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoFaceComponentRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for (index, record) in ctx.admit_iter(&scan.topology.face_components, "creo native record traversal")?.enumerate() {
+            let id = ctx.format_retained(
+                format_args!("creo:topology:face_component#{}", index + 1),
+                "creo native face component record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native face component records")?;
+            records.push(CreoFaceComponentRecord {
+                id,
+                face_ids: record.face_ids(),
+                curve_ids: record.curve_ids(),
+            });
+        }
+        Ok(records)
+    })
 }
 
 
 
-pub(super) fn fc_curve_coordinate_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn fc_curve_coordinate_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoFcCurveCoordinateRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.curves.fc_coordinates, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:curve:fc_coordinates#{}", record.curve_id),
-            "creo native FC curve coordinate record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native FC curve coordinate records")?;
-        records.push(CreoFcCurveCoordinateRecord {
-            id,
-            curve_id: record.curve_id,
-            subtype: record.subtype,
-            body: &record.body,
-            values_mm: &record.values_mm,
-            tokens: &record.tokens,
-            opaque_spans: &record.opaque_spans,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoFcCurveCoordinateRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.curves.fc_coordinates, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:curve:fc_coordinates#{}", record.curve_id),
+                "creo native FC curve coordinate record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native FC curve coordinate records")?;
+            records.push(CreoFcCurveCoordinateRecord {
+                id,
+                curve_id: record.curve_id,
+                subtype: record.subtype,
+                body: &record.body,
+                values_mm: &record.values_mm,
+                tokens: &record.tokens,
+                opaque_spans: &record.opaque_spans,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn prototype_pcurve_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn prototype_pcurve_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoPrototypePcurveRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.curves.prototype_pcurves, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:curve:prototype_pcurve#{}", record.curve_id),
-            "creo native prototype pcurve record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native prototype pcurve records")?;
-        records.push(CreoPrototypePcurveRecord {
-            id,
-            curve_id: record.curve_id,
-            face_0_endpoints: record.face_0_endpoints,
-            face_1_endpoints: record.face_1_endpoints,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoPrototypePcurveRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.curves.prototype_pcurves, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:curve:prototype_pcurve#{}", record.curve_id),
+                "creo native prototype pcurve record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native prototype pcurve records")?;
+            records.push(CreoPrototypePcurveRecord {
+                id,
+                curve_id: record.curve_id,
+                face_0_endpoints: record.face_0_endpoints,
+                face_1_endpoints: record.face_1_endpoints,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn curve_prototype_topology_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn curve_prototype_topology_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoCurvePrototypeTopologyRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.curves.prototype_topology, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:curve:prototype_topology#{}", record.curve_id),
-            "creo native curve prototype topology record id",
-        )?;
-        ctx.reserve_vec(
-            &mut records,
-            1,
-            "creo native curve prototype topology records",
-        )?;
-        records.push(CreoCurvePrototypeTopologyRecord {
-            id,
-            curve_id: record.curve_id,
-            faces: record.stored_face_ids(),
-            next_edges: record.next_edges,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoCurvePrototypeTopologyRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.curves.prototype_topology, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:curve:prototype_topology#{}", record.curve_id),
+                "creo native curve prototype topology record id",
+            )?;
+            ctx.reserve_vec(
+                &mut records,
+                1,
+                "creo native curve prototype topology records",
+            )?;
+            records.push(CreoCurvePrototypeTopologyRecord {
+                id,
+                curve_id: record.curve_id,
+                faces: record.stored_face_ids(),
+                next_edges: record.next_edges,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn curve_prototype_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn curve_prototype_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     prototypes: &'a [crate::curve::CurvePrototype],
     id_prefix: &str,
-) -> Result<Vec<CreoCurvePrototypeRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(prototypes, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("{id_prefix}#{}:{}", record.offset, record.id),
-            "creo native curve prototype record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native curve prototype records")?;
-        records.push(CreoCurvePrototypeRecord {
-            id,
-            curve_id: record.id,
-            type_byte: record.type_byte,
-            generating_feature_id: record.feature_id,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoCurvePrototypeRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(prototypes, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("{id_prefix}#{}:{}", record.offset, record.id),
+                "creo native curve prototype record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native curve prototype records")?;
+            records.push(CreoCurvePrototypeRecord {
+                id,
+                curve_id: record.id,
+                type_byte: record.type_byte,
+                generating_feature_id: record.feature_id,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn plane_local_system_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn plane_local_system_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     systems: &'a [crate::surface::PlaneLocalSystem],
     id_prefix: &str,
-) -> Result<Vec<CreoPlaneLocalSystemRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(systems, "creo native record traversal")? {
-        let frame = record.frame();
-        let id = ctx.format_retained(
-            format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
-            "creo native plane local system record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native plane local system records")?;
-        records.push(CreoPlaneLocalSystemRecord {
-            id,
-            surface_id: record.surface_id,
-            body: &record.body,
-            slots: &record.slots,
-            origin: frame.origin,
-            u_axis: frame.u_axis(),
-            normal: frame.normal(),
-            classification: match record.classification {
-                crate::surface::LocalSystemClassification::Simple => "simple",
-                crate::surface::LocalSystemClassification::Unclassified => "unclassified",
-            },
-            row_offset: record.row_offset,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoPlaneLocalSystemRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(systems, "creo native record traversal")? {
+            let frame = record.frame();
+            let id = ctx.format_retained(
+                format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+                "creo native plane local system record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native plane local system records")?;
+            records.push(CreoPlaneLocalSystemRecord {
+                id,
+                surface_id: record.surface_id,
+                body: &record.body,
+                slots: &record.slots,
+                origin: frame.origin,
+                u_axis: frame.u_axis(),
+                normal: frame.normal(),
+                classification: match record.classification {
+                    crate::surface::LocalSystemClassification::Simple => "simple",
+                    crate::surface::LocalSystemClassification::Unclassified => "unclassified",
+                },
+                row_offset: record.row_offset,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn plane_envelope_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn plane_envelope_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     envelopes: &'a [crate::surface::PlaneEnvelopeRecord],
     id_prefix: &str,
-) -> Result<Vec<CreoPlaneEnvelopeRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(envelopes, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
-            "creo native plane envelope record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native plane envelope records")?;
-        records.push(CreoPlaneEnvelopeRecord {
-            id,
-            surface_id: record.surface_id,
-            body: &record.body,
-            envelope: match &record.envelope {
-                crate::surface::PlaneEnvelope::Standard {
-                    bounds_2d,
-                    corners_3d,
-                } => CreoPlaneEnvelope::Standard {
-                    bounds_2d: *bounds_2d,
-                    corners_3d: *corners_3d,
-                },
-                crate::surface::PlaneEnvelope::Compact { prefix, corners_3d } => {
-                    CreoPlaneEnvelope::Compact {
-                        prefix: *prefix,
+) -> Result<(Vec<CreoPlaneEnvelopeRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(envelopes, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+                "creo native plane envelope record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native plane envelope records")?;
+            records.push(CreoPlaneEnvelopeRecord {
+                id,
+                surface_id: record.surface_id,
+                body: &record.body,
+                envelope: match &record.envelope {
+                    crate::surface::PlaneEnvelope::Standard {
+                        bounds_2d,
+                        corners_3d,
+                    } => CreoPlaneEnvelope::Standard {
+                        bounds_2d: *bounds_2d,
                         corners_3d: *corners_3d,
+                    },
+                    crate::surface::PlaneEnvelope::Compact { prefix, corners_3d } => {
+                        CreoPlaneEnvelope::Compact {
+                            prefix: *prefix,
+                            corners_3d: *corners_3d,
+                        }
                     }
-                }
-            },
-            corner_coordinate_equal: record.corner_coordinate_equal,
-            scalar_tokens: &record.scalar_tokens,
-            row_offset: record.row_offset,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+                },
+                corner_coordinate_equal: record.corner_coordinate_equal,
+                scalar_tokens: &record.scalar_tokens,
+                row_offset: record.row_offset,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn outline_plane_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn outline_plane_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     planes: &'a [crate::surface::OutlinePlane],
     id_prefix: &str,
-) -> Result<Vec<CreoOutlinePlaneRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(planes, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
-            "creo native outline plane record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native outline plane records")?;
-        records.push(CreoOutlinePlaneRecord {
-            id,
-            surface_id: record.surface_id,
-            origin: record.origin,
-            normal: record.normal(),
-            u_axis: record.u_axis(),
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn datum_plane_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoDatumPlaneRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.planes.datums, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:datum:plane#{}:{}",
-                record.offset_in_payload, record.id
-            ),
-            "creo native datum plane record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native datum plane records")?;
-        records.push(CreoDatumPlaneRecord {
-            id,
-            datum_id: record.id,
-            owner_feature_id: record.feature_id,
-            normal: record.plane().normal(),
-            plane_offset: record.plane().offset(),
-            corners: record.corners(),
-            offset: record.offset_in_payload,
-            source_section: source_section_ref(ctx, scan, record.offset_in_payload)?,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn datum_cylinder_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoDatumCylinderRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.planes.datum_cylinders, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:datum:cylinder#{}:{}",
-                record.offset_in_payload, record.id
-            ),
-            "creo native datum cylinder record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native datum cylinder records")?;
-        records.push(CreoDatumCylinderRecord {
-            id,
-            datum_id: record.id,
-            owner_feature_id: record.feature_id,
-            reversed: record.reversed,
-            origin: record.frame.frame().origin(),
-            axis: record.frame.frame().axis(),
-            ref_direction: record.frame.frame().ref_direction(),
-            radius: record.frame.radius().get(),
-            length: record
-                .frame
-                .length()
-                .map(cadmpeg_ir::scalar::PositiveLength::get),
-            offset: record.offset_in_payload,
-            source_section: source_section_ref(ctx, scan, record.offset_in_payload)?,
-        });
-    }
-    Ok(records)
-}
-
-pub(super) fn feature_section_transform_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureSectionTransformRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.features.section_transforms, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:feature:section_transform#{}:{}",
-                record.definition_id, record.offset
-            ),
-            "creo native section transform record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native section transform records")?;
-        records.push(CreoFeatureSectionTransformRecord {
-            id,
-            definition_id: record.definition_id,
-            owner_feature_id: record.feature_id,
-            origin: record.origin(),
-            u_axis: record.u_axis(),
-            v_axis: record.v_axis(),
-            normal: record.normal(),
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    ctx.stable_sort_by(
-        records.as_mut_slice(),
-        |value| &value.id,
-        Ord::cmp,
-        "creo feature section transform records records ordering",
-    )?;
-    ctx.dedup_by(&mut records, |left, right| ctx.equal(left.id.as_str(), right.id.as_str(), "creo section transform record identity equality"), "creo section transform record deduplication")?;
-    Ok(records)
-}
-
-pub(super) fn feature_placement_instruction_records<'a>(
-    ctx: &DecodeContext<'_>,
-    scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeaturePlacementInstructionRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for definition in ctx.admit_iter(&scan.features.definitions, "creo native record traversal")? {
-        for instruction in crate::feature::definitions::placement_instructions(ctx, definition)? {
+) -> Result<(Vec<CreoOutlinePlaneRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(planes, "creo native record traversal")? {
             let id = ctx.format_retained(
-                format_args!(
-                    "creo:featdefs:placement_instruction#{}:{}",
-                    definition.identity.id(),
-                    instruction.offset
-                ),
-                "creo native placement instruction record id",
+                format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+                "creo native outline plane record id",
             )?;
-            ctx.reserve_vec(&mut records, 1, "creo native placement instruction records")?;
-            records.push(CreoFeaturePlacementInstructionRecord {
+            ctx.reserve_vec(&mut records, 1, "creo native outline plane records")?;
+            records.push(CreoOutlinePlaneRecord {
                 id,
-                definition_id: definition.identity.id(),
-                owner_feature_id: definition.identity.owner_feature_id(),
-                instruction_type: instruction.kind,
-                zero_offset: instruction.zero_offset,
-                dimension_id: instruction.dimension_id,
-                reference_id: instruction.reference_id,
-                geometry1_id: instruction.geometry1_id,
-                geometry2_id: instruction.geometry2_id,
-                member1: instruction.member1,
-                member2: instruction.member2,
-                offset: instruction.offset,
-                source_section: source_section_ref(ctx, scan, instruction.offset)?,
+                surface_id: record.surface_id,
+                origin: record.origin,
+                normal: record.normal(),
+                u_axis: record.u_axis(),
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
             });
         }
-    }
-    Ok(records)
+        Ok(records)
+    })
+}
+
+pub(super) fn datum_plane_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoDatumPlaneRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.planes.datums, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:datum:plane#{}:{}",
+                    record.offset_in_payload, record.id
+                ),
+                "creo native datum plane record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native datum plane records")?;
+            records.push(CreoDatumPlaneRecord {
+                id,
+                datum_id: record.id,
+                owner_feature_id: record.feature_id,
+                normal: record.plane().normal(),
+                plane_offset: record.plane().offset(),
+                corners: record.corners(),
+                offset: record.offset_in_payload,
+                source_section: source_section_ref(ctx, scan, record.offset_in_payload)?,
+            });
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn datum_cylinder_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoDatumCylinderRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.planes.datum_cylinders, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:datum:cylinder#{}:{}",
+                    record.offset_in_payload, record.id
+                ),
+                "creo native datum cylinder record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native datum cylinder records")?;
+            records.push(CreoDatumCylinderRecord {
+                id,
+                datum_id: record.id,
+                owner_feature_id: record.feature_id,
+                reversed: record.reversed,
+                origin: record.frame.frame().origin(),
+                axis: record.frame.frame().axis(),
+                ref_direction: record.frame.frame().ref_direction(),
+                radius: record.frame.radius().get(),
+                length: record
+                    .frame
+                    .length()
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
+                offset: record.offset_in_payload,
+                source_section: source_section_ref(ctx, scan, record.offset_in_payload)?,
+            });
+        }
+        Ok(records)
+    })
+}
+
+pub(super) fn feature_section_transform_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoFeatureSectionTransformRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut identity_storage = ctx.reserve_scoped(0, "creo section transform identity storage")?;
+        let mut identities = HashSet::new();
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.features.section_transforms, "creo native record traversal")? {
+            if !identity_storage.with_storage(|| ctx.insert_hash_set(
+                &mut identities, (record.definition_id, record.offset),
+                "creo section transform identities",
+            ))? {
+                continue;
+            }
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:feature:section_transform#{}:{}",
+                    record.definition_id, record.offset
+                ),
+                "creo native section transform record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native section transform records")?;
+            records.push(CreoFeatureSectionTransformRecord {
+                id,
+                definition_id: record.definition_id,
+                owner_feature_id: record.feature_id,
+                origin: record.origin(),
+                u_axis: record.u_axis(),
+                v_axis: record.v_axis(),
+                normal: record.normal(),
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        ctx.stable_sort_by(
+            records.as_mut_slice(),
+            |value| &value.id,
+            Ord::cmp,
+            "creo feature section transform records records ordering",
+        )?;
+        Ok(records)
+    })
+}
+
+pub(super) fn feature_placement_instruction_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<(Vec<CreoFeaturePlacementInstructionRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for definition in ctx.admit_iter(&scan.features.definitions, "creo native record traversal")? {
+            for instruction in crate::feature::definitions::placement_instructions(ctx, definition)? {
+                let id = ctx.format_retained(
+                    format_args!(
+                        "creo:featdefs:placement_instruction#{}:{}",
+                        definition.identity.id(),
+                        instruction.offset
+                    ),
+                    "creo native placement instruction record id",
+                )?;
+                ctx.reserve_vec(&mut records, 1, "creo native placement instruction records")?;
+                records.push(CreoFeaturePlacementInstructionRecord {
+                    id,
+                    definition_id: definition.identity.id(),
+                    owner_feature_id: definition.identity.owner_feature_id(),
+                    instruction_type: instruction.kind,
+                    zero_offset: instruction.zero_offset,
+                    dimension_id: instruction.dimension_id,
+                    reference_id: instruction.reference_id,
+                    geometry1_id: instruction.geometry1_id,
+                    geometry2_id: instruction.geometry2_id,
+                    member1: instruction.member1,
+                    member2: instruction.member2,
+                    offset: instruction.offset,
+                    source_section: source_section_ref(ctx, scan, instruction.offset)?,
+                });
+            }
+        }
+        Ok(records)
+    })
 }
 
 
@@ -2209,122 +2296,128 @@ fn serialize_curve_opaque_spans<S: serde::Serializer>(
     serializer.collect_seq(spans.iter().map(CurveOpaqueSpan))
 }
 
-pub(super) fn surface_row_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn surface_row_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     rows: &'a [crate::surface::SurfaceRow],
     namespace: &str,
-) -> Result<Vec<CreoSurfaceRowRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for row in ctx.admit_iter(rows, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:{namespace}:surface_row#{}", row.id),
-            "creo native surface row record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native surface row records")?;
-        records.push(CreoSurfaceRowRecord {
-            id,
-            surface_id: row.id,
-            type_byte: row.kind.canonical_type_byte(),
-            surface_family: surface_family(row.kind),
-            surface_variant: surface_variant(row.kind),
-            feature_id: row.feature_id,
-            reversed: row.reversed,
-            boundary_type: row.boundary_type.code(),
-            next_surface: row.next_surface,
-            offset: row.offset,
-            source_section: source_section_ref(ctx, scan, row.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoSurfaceRowRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for row in ctx.admit_iter(rows, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:{namespace}:surface_row#{}", row.id),
+                "creo native surface row record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native surface row records")?;
+            records.push(CreoSurfaceRowRecord {
+                id,
+                surface_id: row.id,
+                type_byte: row.kind.canonical_type_byte(),
+                surface_family: surface_family(row.kind),
+                surface_variant: surface_variant(row.kind),
+                feature_id: row.feature_id,
+                reversed: row.reversed,
+                boundary_type: row.boundary_type.code(),
+                next_surface: row.next_surface,
+                offset: row.offset,
+                source_section: source_section_ref(ctx, scan, row.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn surface_prototype_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn surface_prototype_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     prototypes: &'a [crate::surface::SurfacePrototypeRecord],
     id_namespace: &str,
-) -> Result<Vec<CreoSurfacePrototypeRecord<'a>>, CodecError> {
-    use crate::surface::SurfacePrototypeFamily;
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(prototypes, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:{id_namespace}:surface_prototype#{}", record.offset),
-            "creo native surface prototype record id",
-        )?;
-        let family = match &record.family {
-            SurfacePrototypeFamily::Plane => std::borrow::Cow::Borrowed("plane"),
-            SurfacePrototypeFamily::Cylinder => std::borrow::Cow::Borrowed("cylinder"),
-            SurfacePrototypeFamily::Cone => std::borrow::Cow::Borrowed("cone"),
-            SurfacePrototypeFamily::Torus(_) => std::borrow::Cow::Borrowed("torus_or_sphere"),
-            SurfacePrototypeFamily::Spline(_) => std::borrow::Cow::Borrowed("spline"),
-            SurfacePrototypeFamily::Fillet(_) => std::borrow::Cow::Borrowed("fillet"),
-            SurfacePrototypeFamily::Extrusion(_) => std::borrow::Cow::Borrowed("extrusion"),
-            SurfacePrototypeFamily::Other(name) => std::borrow::Cow::Owned(ctx.format_retained(
-                format_args!("other:{name}"),
-                "creo native surface prototype family",
-            )?),
-        };
-        let mut parameters = Vec::new();
-        for parameter in ctx.admit_iter(&record.parameters, "creo native record traversal")? {
-            ctx.reserve_vec(
-                &mut parameters,
-                1,
-                "creo native surface prototype parameters",
+) -> Result<(Vec<CreoSurfacePrototypeRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        use crate::surface::SurfacePrototypeFamily;
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(prototypes, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:{id_namespace}:surface_prototype#{}", record.offset),
+                "creo native surface prototype record id",
             )?;
-            parameters.push(CreoSurfaceNamedParameterRecord {
-                name: &parameter.name,
-                value: &parameter.value,
-                body: &parameter.body,
-                offset: parameter.offset,
-                value_offset: parameter.value_offset,
+            let family = match &record.family {
+                SurfacePrototypeFamily::Plane => std::borrow::Cow::Borrowed("plane"),
+                SurfacePrototypeFamily::Cylinder => std::borrow::Cow::Borrowed("cylinder"),
+                SurfacePrototypeFamily::Cone => std::borrow::Cow::Borrowed("cone"),
+                SurfacePrototypeFamily::Torus(_) => std::borrow::Cow::Borrowed("torus_or_sphere"),
+                SurfacePrototypeFamily::Spline(_) => std::borrow::Cow::Borrowed("spline"),
+                SurfacePrototypeFamily::Fillet(_) => std::borrow::Cow::Borrowed("fillet"),
+                SurfacePrototypeFamily::Extrusion(_) => std::borrow::Cow::Borrowed("extrusion"),
+                SurfacePrototypeFamily::Other(name) => std::borrow::Cow::Owned(ctx.format_retained(
+                    format_args!("other:{name}"),
+                    "creo native surface prototype family",
+                )?),
+            };
+            let mut parameters = Vec::new();
+            for parameter in ctx.admit_iter(&record.parameters, "creo native record traversal")? {
+                ctx.reserve_vec(
+                    &mut parameters,
+                    1,
+                    "creo native surface prototype parameters",
+                )?;
+                parameters.push(CreoSurfaceNamedParameterRecord {
+                    name: &parameter.name,
+                    value: &parameter.value,
+                    body: &parameter.body,
+                    offset: parameter.offset,
+                    value_offset: parameter.value_offset,
+                });
+            }
+            ctx.reserve_vec(&mut records, 1, "creo native surface prototype records")?;
+            records.push(CreoSurfacePrototypeRecord {
+                id,
+                declared_family: record.family.name(),
+                family,
+                parameters,
+                offset: record.offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
             });
         }
-        ctx.reserve_vec(&mut records, 1, "creo native surface prototype records")?;
-        records.push(CreoSurfacePrototypeRecord {
-            id,
-            declared_family: record.family.name(),
-            family,
-            parameters,
-            offset: record.offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+        Ok(records)
+    })
 }
 
-pub(super) fn surface_contour_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn surface_contour_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     contours: &'a [crate::surface::SurfaceContourRecord],
     namespace: &str,
-) -> Result<Vec<CreoSurfaceContourRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(contours, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:{namespace}:surface_contour#{}-{}",
-                record.surface_id, record.offset
-            ),
-            "creo native surface contour record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native surface contour records")?;
-        records.push(CreoSurfaceContourRecord {
-            id,
-            surface_id: record.surface_id,
-            chain_index: record.chain_index,
-            curve_header_id: record.curve_header_id,
-            trv: record.trv,
-            parameter_envelope: record.parameter_envelope,
-            separator_reference: record.separator_reference,
-            body: &record.body,
-            offset: record.offset,
-            envelope_offset: record.envelope_offset,
-            surface_row_offset: record.surface_row_offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoSurfaceContourRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(contours, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:{namespace}:surface_contour#{}-{}",
+                    record.surface_id, record.offset
+                ),
+                "creo native surface contour record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native surface contour records")?;
+            records.push(CreoSurfaceContourRecord {
+                id,
+                surface_id: record.surface_id,
+                chain_index: record.chain_index,
+                curve_header_id: record.curve_header_id,
+                trv: record.trv,
+                parameter_envelope: record.parameter_envelope,
+                separator_reference: record.separator_reference,
+                body: &record.body,
+                offset: record.offset,
+                envelope_offset: record.envelope_offset,
+                surface_row_offset: record.surface_row_offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
 
@@ -2352,412 +2445,428 @@ fn curve_id_counts<'ctx>(
 ) -> Result<(HashMap<u32, usize>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
     let mut storage = ctx.reserve_scoped(0, operation)?;
     let mut counts = HashMap::<u32, usize>::new();
-    let mut ids = ids.into_iter();
-    while let Some(id) = ctx.next_charged(&mut ids, operation)? {
+    for id in ids {
         let count = storage.with_storage(|| ctx.entry_hash_map(&mut counts, id, operation))?.or_default();
         *count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     }
     Ok((counts, storage))
 }
 
-pub(super) fn curve_parameter_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn curve_parameter_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     parameters: &'a [crate::curve::CurveParameterRecord],
     id_namespace: &str,
-) -> Result<Vec<CreoCurveParameterRecord<'a>>, CodecError> {
-    let (counts, _count_storage) = curve_id_counts(
-        ctx,
-        ctx.admit_iter(parameters, "creo curve parameter count traversal")?.map(|record| record.curve_id),
-        "creo native curve parameter count nodes",
-    )?;
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(parameters, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:{id_namespace}:curve_parameter#{}",
-                CurveOccurrenceIdentity {
-                    curve_id: record.curve_id,
-                    offset: record.offset,
-                    occurrence_count: counts[&record.curve_id],
-                }
-            ),
-            "creo native curve parameter record id",
+) -> Result<(Vec<CreoCurveParameterRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let (counts, _count_storage) = curve_id_counts(
+            ctx,
+            ctx.admit_iter(parameters, "creo curve parameter count traversal")?.map(|record| record.curve_id),
+            "creo native curve parameter count nodes",
         )?;
-        ctx.reserve_vec(&mut records, 1, "creo native curve parameter records")?;
-        records.push(CreoCurveParameterRecord {
-            id,
-            curve_id: record.curve_id,
-            type_byte: record.type_byte,
-            body: &record.body,
-            scalar_values: &record.scalar_tokens,
-            scalar_tokens: &record.scalar_tokens,
-            skipped_references: &record.references,
-            references: &record.references,
-            opaque_spans: &record.opaque_spans,
-            reference_geometry: record.reference_geometry,
-            suffix: "unique",
-            suffix_candidate_count: None,
-            offset: record.offset,
-            body_offset: record.body_offset,
-            suffix_offset: record.suffix_offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(parameters, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:{id_namespace}:curve_parameter#{}",
+                    CurveOccurrenceIdentity {
+                        curve_id: record.curve_id,
+                        offset: record.offset,
+                        occurrence_count: counts[&record.curve_id],
+                    }
+                ),
+                "creo native curve parameter record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native curve parameter records")?;
+            records.push(CreoCurveParameterRecord {
+                id,
+                curve_id: record.curve_id,
+                type_byte: record.type_byte,
+                body: &record.body,
+                scalar_values: &record.scalar_tokens,
+                scalar_tokens: &record.scalar_tokens,
+                skipped_references: &record.references,
+                references: &record.references,
+                opaque_spans: &record.opaque_spans,
+                reference_geometry: record.reference_geometry,
+                suffix: "unique",
+                suffix_candidate_count: None,
+                offset: record.offset,
+                body_offset: record.body_offset,
+                suffix_offset: record.suffix_offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn cross_section_curve_row_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn cross_section_curve_row_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoCrossSectionCurveRowRecord<'a>>, CodecError> {
-    let (counts, _count_storage) = curve_id_counts(
-        ctx,
-        ctx.admit_iter(&scan.curves.cross_section_rows, "creo cross section curve count traversal")?.map(|row| row.id),
-        "creo native cross section curve count nodes",
-    )?;
-    let mut records = Vec::new();
-    for row in ctx.admit_iter(&scan.curves.cross_section_rows, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:cross_section_geometry:curve_row#{}",
-                CurveOccurrenceIdentity {
-                    curve_id: row.id,
-                    offset: row.offset,
-                    occurrence_count: counts[&row.id],
-                }
-            ),
-            "creo native cross section curve record id",
+) -> Result<(Vec<CreoCrossSectionCurveRowRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let (counts, _count_storage) = curve_id_counts(
+            ctx,
+            ctx.admit_iter(&scan.curves.cross_section_rows, "creo cross section curve count traversal")?.map(|row| row.id),
+            "creo native cross section curve count nodes",
         )?;
-        ctx.reserve_vec(&mut records, 1, "creo native cross section curve records")?;
-        records.push(CreoCrossSectionCurveRowRecord {
-            id,
-            curve_id: row.id,
-            type_byte: row.type_byte,
-            feature_id: row.feature_id,
-            directions: row.directions,
-            suffix: row.suffix,
-            body: &row.body,
-            scalar_values: &row.scalar_tokens,
-            scalar_tokens: &row.scalar_tokens,
-            references: &row.references,
-            opaque_spans: &row.opaque_spans,
-            offset: row.offset,
-            source_section: source_section_ref(ctx, scan, row.offset)?,
-        });
-    }
-    Ok(records)
+        let mut records = Vec::new();
+        for row in ctx.admit_iter(&scan.curves.cross_section_rows, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:cross_section_geometry:curve_row#{}",
+                    CurveOccurrenceIdentity {
+                        curve_id: row.id,
+                        offset: row.offset,
+                        occurrence_count: counts[&row.id],
+                    }
+                ),
+                "creo native cross section curve record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native cross section curve records")?;
+            records.push(CreoCrossSectionCurveRowRecord {
+                id,
+                curve_id: row.id,
+                type_byte: row.type_byte,
+                feature_id: row.feature_id,
+                directions: row.directions,
+                suffix: row.suffix,
+                body: &row.body,
+                scalar_values: &row.scalar_tokens,
+                scalar_tokens: &row.scalar_tokens,
+                references: &row.references,
+                opaque_spans: &row.opaque_spans,
+                offset: row.offset,
+                source_section: source_section_ref(ctx, scan, row.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn curve_topology_row_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn curve_topology_row_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     rows: &'a [crate::curve::CurveTopologyRow],
     id_namespace: &str,
-) -> Result<Vec<CreoCurveTopologyRowRecord<'a>>, CodecError> {
-    let (counts, _count_storage) = curve_id_counts(
-        ctx,
-        ctx.admit_iter(rows, "creo curve topology count traversal")?.map(|row| row.id),
-        "creo native curve topology count nodes",
-    )?;
-    let mut records = Vec::new();
-    for row in ctx.admit_iter(rows, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:{id_namespace}:curve_topology#{}",
-                CurveOccurrenceIdentity {
-                    curve_id: row.id,
-                    offset: row.offset,
-                    occurrence_count: counts[&row.id],
-                }
-            ),
-            "creo native curve topology record id",
+) -> Result<(Vec<CreoCurveTopologyRowRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let (counts, _count_storage) = curve_id_counts(
+            ctx,
+            ctx.admit_iter(rows, "creo curve topology count traversal")?.map(|row| row.id),
+            "creo native curve topology count nodes",
         )?;
-        ctx.reserve_vec(&mut records, 1, "creo native curve topology records")?;
-        records.push(CreoCurveTopologyRowRecord {
-            id,
-            curve_id: row.id,
-            type_byte: row.type_byte,
-            feature_id: row.feature_id,
-            directions: row.directions,
-            faces: row.stored_face_ids(),
-            next_edges: row.next_edges,
-            offset: row.offset,
-            source_section: source_section_ref(ctx, scan, row.offset)?,
-        });
-    }
-    Ok(records)
+        let mut records = Vec::new();
+        for row in ctx.admit_iter(rows, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:{id_namespace}:curve_topology#{}",
+                    CurveOccurrenceIdentity {
+                        curve_id: row.id,
+                        offset: row.offset,
+                        occurrence_count: counts[&row.id],
+                    }
+                ),
+                "creo native curve topology record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native curve topology records")?;
+            records.push(CreoCurveTopologyRowRecord {
+                id,
+                curve_id: row.id,
+                type_byte: row.type_byte,
+                feature_id: row.feature_id,
+                directions: row.directions,
+                faces: row.stored_face_ids(),
+                next_edges: row.next_edges,
+                offset: row.offset,
+                source_section: source_section_ref(ctx, scan, row.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn tabulated_cylinder_curve_replay_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn tabulated_cylinder_curve_replay_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoTabulatedCylinderCurveReplayRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.curves.tabulated_cylinder_replays, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:visibgeom:tabulated_cylinder_curve_replay#{}",
-                record.surface_id
-            ),
-            "creo native tabulated cylinder replay record id",
-        )?;
-        ctx.reserve_vec(
-            &mut records,
-            1,
-            "creo native tabulated cylinder replay records",
-        )?;
-        records.push(CreoTabulatedCylinderCurveReplayRecord {
-            id,
-            body: &record.body,
-            surface_id: record.surface_id,
-            curve_id: record.curve_id,
-            curve_type: record.curve_type,
-            flip: record.flip,
-            tangent_condition: record.tangent_condition,
-            degree: record.degree,
-            parameter_body: &record.parameter_body,
-            control_point_ids: record.control_point_ids,
-            successor_reference: record.successor_reference,
-            control_point_bodies: &record.control_point_bodies,
-            control_points: record.control_points,
-            terminal_reference: record.terminal_reference,
-            offset: record.offset,
-            surface_row_offset: record.surface_row_offset,
-            source_section: source_section_ref(ctx, scan, record.offset)?,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoTabulatedCylinderCurveReplayRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.curves.tabulated_cylinder_replays, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:visibgeom:tabulated_cylinder_curve_replay#{}",
+                    record.surface_id
+                ),
+                "creo native tabulated cylinder replay record id",
+            )?;
+            ctx.reserve_vec(
+                &mut records,
+                1,
+                "creo native tabulated cylinder replay records",
+            )?;
+            records.push(CreoTabulatedCylinderCurveReplayRecord {
+                id,
+                body: &record.body,
+                surface_id: record.surface_id,
+                curve_id: record.curve_id,
+                curve_type: record.curve_type,
+                flip: record.flip,
+                tangent_condition: record.tangent_condition,
+                degree: record.degree,
+                parameter_body: &record.parameter_body,
+                control_point_ids: record.control_point_ids,
+                successor_reference: record.successor_reference,
+                control_point_bodies: &record.control_point_bodies,
+                control_points: record.control_points,
+                terminal_reference: record.terminal_reference,
+                offset: record.offset,
+                surface_row_offset: record.surface_row_offset,
+                source_section: source_section_ref(ctx, scan, record.offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
 
 
-pub(super) fn surface_parameter_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn surface_parameter_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
     rows: &'a crate::surface::SurfaceRows,
     parameters: &'a [crate::surface::SurfaceParameterRecord],
     namespace: &str,
-) -> Result<Vec<CreoSurfaceParameterRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(parameters, "creo native record traversal")? {
-        let Some(row) = rows.unique(record.surface_id) else {
-            continue;
-        };
-        let surface_family = surface_family(row.kind);
-        let boundary = match record.boundary {
-            crate::surface::SurfaceBodyBoundary::CompoundClose => "compound_close",
-            crate::surface::SurfaceBodyBoundary::NextRow => "next_row",
-            crate::surface::SurfaceBodyBoundary::NamedRecord => "named_record",
-            crate::surface::SurfaceBodyBoundary::SectionEnd => "section_end",
-        };
-        let id = ctx.format_retained(
-            format_args!("creo:{namespace}:surface_parameter#{}", record.surface_id),
-            "creo native surface parameter record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native surface parameter records")?;
-        records.push(CreoSurfaceParameterRecord {
-            id,
-            surface_id: record.surface_id,
-            surface_type_byte: row.kind.canonical_type_byte(),
-            surface_family,
-            boundary,
-            body: &record.body,
-            slots: &record.scalar_tokens,
-            opaque_spans: &record.opaque_spans,
-            scalar_frames: &record.scalar_frames,
-            terminal_scalar_frame: record.terminal_scalar_frame(),
-            tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
-                CreoTabulatedCylinderFrame {
-                    values: frame.values().get(),
-                    prefixes: frame.prefixes(),
-                }
-            }),
-            positional_cylinder_frame: record.positional_cylinder_frame().map(|frame| {
-                CreoPositionalCylinderFrame {
-                    origin: frame.frame().origin(),
-                    axis: frame.frame().axis(),
-                    ref_direction: frame.frame().ref_direction(),
-                    radius: frame.radius().get(),
-                    length: frame.length().map(cadmpeg_ir::scalar::PositiveLength::get),
-                }
-            }),
-            split_cylinder_outline_bounds: record.split_cylinder_outline_bounds(),
-            positional_cone_frame: record.positional_cone_frame().map(|frame| {
-                CreoPositionalConeFrame {
-                    apex: frame.frame().origin(),
-                    axis: frame.frame().axis(),
-                    ref_direction: frame.frame().ref_direction(),
-                    half_angle: frame.half_angle().get().get(),
-                }
-            }),
-            positional_torus_frame: record.positional_torus_frame().map(|frame| {
-                CreoPositionalTorusFrame {
-                    center: frame.frame().origin(),
-                    axis: frame.frame().axis(),
-                    ref_direction: frame.frame().ref_direction(),
-                    major_radius: frame.major_radius().get(),
-                    minor_radius: frame.minor_radius().get(),
-                }
-            }),
-            torus_outline_frame: record
-                .torus_outline_frame()
-                .map(|frame| CreoTorusOutlineFrame {
-                    values: frame.values,
-                    selector: frame.selector,
-                    offset: frame.offset,
+) -> Result<(Vec<CreoSurfaceParameterRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(parameters, "creo native record traversal")? {
+            let Some(row) = rows.unique(record.surface_id) else {
+                continue;
+            };
+            let surface_family = surface_family(row.kind);
+            let boundary = match record.boundary {
+                crate::surface::SurfaceBodyBoundary::CompoundClose => "compound_close",
+                crate::surface::SurfaceBodyBoundary::NextRow => "next_row",
+                crate::surface::SurfaceBodyBoundary::NamedRecord => "named_record",
+                crate::surface::SurfaceBodyBoundary::SectionEnd => "section_end",
+            };
+            let id = ctx.format_retained(
+                format_args!("creo:{namespace}:surface_parameter#{}", record.surface_id),
+                "creo native surface parameter record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native surface parameter records")?;
+            records.push(CreoSurfaceParameterRecord {
+                id,
+                surface_id: record.surface_id,
+                surface_type_byte: row.kind.canonical_type_byte(),
+                surface_family,
+                boundary,
+                body: &record.body,
+                slots: &record.scalar_tokens,
+                opaque_spans: &record.opaque_spans,
+                scalar_frames: &record.scalar_frames,
+                terminal_scalar_frame: record.terminal_scalar_frame(),
+                tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
+                    CreoTabulatedCylinderFrame {
+                        values: frame.values().get(),
+                        prefixes: frame.prefixes(),
+                    }
                 }),
-            type26_five_coordinate_envelope: record.type26_five_coordinate_envelope().map(
-                |envelope| CreoType26FiveCoordinateEnvelope {
-                    values: envelope.values,
-                    offset: envelope.offset,
-                },
-            ),
-            type26_split_coordinate_envelope: record.type26_split_coordinate_envelope().map(
-                |envelope| CreoType26SplitCoordinateEnvelope {
-                    values: envelope.values,
-                    offset: envelope.offset,
-                },
-            ),
-            torus_radius_overrides: record.torus_radius_overrides().map(|overrides| {
-                CreoTorusRadiusOverrides {
-                    radius1: overrides.radius1,
-                    radius2: overrides.radius2,
-                    radius2_encoding: match overrides.radius2_encoding {
-                        crate::surface::TorusRadius2Encoding::Direct => "direct",
-                        crate::surface::TorusRadius2Encoding::OuterRingDifference => {
-                            "outer_ring_difference"
-                        }
+                positional_cylinder_frame: record.positional_cylinder_frame().map(|frame| {
+                    CreoPositionalCylinderFrame {
+                        origin: frame.frame().origin(),
+                        axis: frame.frame().axis(),
+                        ref_direction: frame.frame().ref_direction(),
+                        radius: frame.radius().get(),
+                        length: frame.length().map(cadmpeg_ir::scalar::PositiveLength::get),
+                    }
+                }),
+                split_cylinder_outline_bounds: record.split_cylinder_outline_bounds(),
+                positional_cone_frame: record.positional_cone_frame().map(|frame| {
+                    CreoPositionalConeFrame {
+                        apex: frame.frame().origin(),
+                        axis: frame.frame().axis(),
+                        ref_direction: frame.frame().ref_direction(),
+                        half_angle: frame.half_angle().get().get(),
+                    }
+                }),
+                positional_torus_frame: record.positional_torus_frame().map(|frame| {
+                    CreoPositionalTorusFrame {
+                        center: frame.frame().origin(),
+                        axis: frame.frame().axis(),
+                        ref_direction: frame.frame().ref_direction(),
+                        major_radius: frame.major_radius().get(),
+                        minor_radius: frame.minor_radius().get(),
+                    }
+                }),
+                torus_outline_frame: record
+                    .torus_outline_frame()
+                    .map(|frame| CreoTorusOutlineFrame {
+                        values: frame.values,
+                        selector: frame.selector,
+                        offset: frame.offset,
+                    }),
+                type26_five_coordinate_envelope: record.type26_five_coordinate_envelope().map(
+                    |envelope| CreoType26FiveCoordinateEnvelope {
+                        values: envelope.values,
+                        offset: envelope.offset,
                     },
-                    offset: overrides.offset,
-                }
-            }),
-            replayed_torus_minor_radius: replayed_torus_minor_radius(ctx, scan, row, record)?,
-            cone_half_angle_override: record.cone_half_angle_override().map(|half_angle| {
-                CreoConeHalfAngleOverride {
-                    radians: half_angle.radians.get().get(),
-                    offset: half_angle.offset,
-                }
-            }),
-            extrusion_direction: record.extrusion_direction(),
-            row_offset: record.offset,
-            body_offset: record.body_offset,
-            source_section: source_section_ref(ctx, scan, record.body_offset)?,
-        });
-    }
-    Ok(records)
+                ),
+                type26_split_coordinate_envelope: record.type26_split_coordinate_envelope().map(
+                    |envelope| CreoType26SplitCoordinateEnvelope {
+                        values: envelope.values,
+                        offset: envelope.offset,
+                    },
+                ),
+                torus_radius_overrides: record.torus_radius_overrides().map(|overrides| {
+                    CreoTorusRadiusOverrides {
+                        radius1: overrides.radius1,
+                        radius2: overrides.radius2,
+                        radius2_encoding: match overrides.radius2_encoding {
+                            crate::surface::TorusRadius2Encoding::Direct => "direct",
+                            crate::surface::TorusRadius2Encoding::OuterRingDifference => {
+                                "outer_ring_difference"
+                            }
+                        },
+                        offset: overrides.offset,
+                    }
+                }),
+                replayed_torus_minor_radius: replayed_torus_minor_radius(ctx, scan, row, record)?,
+                cone_half_angle_override: record.cone_half_angle_override().map(|half_angle| {
+                    CreoConeHalfAngleOverride {
+                        radians: half_angle.radians.get().get(),
+                        offset: half_angle.offset,
+                    }
+                }),
+                extrusion_direction: record.extrusion_direction(),
+                row_offset: record.offset,
+                body_offset: record.body_offset,
+                source_section: source_section_ref(ctx, scan, record.body_offset)?,
+            });
+        }
+        Ok(records)
+    })
 }
 
 
 
-pub(super) fn feature_operation_state_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn feature_operation_state_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
-) -> Result<Vec<CreoFeatureOperationState<'a>>, CodecError> {
-    let mut state_storage = ctx.reserve_scoped(0, "Creo operation state lookup storage")?;
-    let mut current_offsets = HashMap::new();
-    for state in ctx.admit_iter(&scan.features.operations, "creo native record traversal")? {
-        state_storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut current_offsets,
-                state.feature_id,
-                state.offset,
-                "creo native feature current-offset nodes",
-            )
-        })?;
-    }
-    let mut ordinals = HashMap::<u32, usize>::new();
-    let mut records = Vec::new();
-    for state in ctx.admit_iter(&scan.features.operation_states, "creo native record traversal")? {
-        let state_ordinal = ordinals.get(&state.feature_id).copied().unwrap_or_default();
-        let next_ordinal = state_ordinal.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("creo native feature state ordinal", u64::MAX, u64::MAX)
-        })?;
-        state_storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut ordinals,
-                state.feature_id,
-                next_ordinal,
-                "creo native feature ordinal nodes",
-            )
-        })?;
-        let name = CreoOperationNameRecord {
-            display_name_stored: state.name.display_name_stored(),
-            stored_name: state
-                .name
-                .stored_name_bytes()
-                .map(|bytes| ctx.copy_retained_lossy_utf8(bytes, "creo native feature state name"))
-                .transpose()?,
-            stored_name_bytes: state.name.stored_name_bytes(),
-            identifier_keyword: state.name.identifier_keyword(),
-            stored_name_prefix: state
-                .name
-                .stored_name_prefix()
-                .map(|prefix| {
-                    ctx.format_retained(
-                        format_args!("{}", char::from(prefix)),
-                        "creo native feature state prefix",
-                    )
-                })
-                .transpose()?,
-        };
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:mdlstatus:feature_state#{}:{state_ordinal}",
-                state.feature_id
-            ),
-            "creo native feature state IDs",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native feature state records")?;
-        records.push(CreoFeatureOperationState {
-            id,
-            feature_id: state.feature_id,
-            state_ordinal,
-            current: !state.display_state_conflict
-                && current_offsets.get(&state.feature_id) == Some(&state.offset),
-            family: state.kind.as_str(),
-            name,
-            recipe: state
-                .recipe
-                .candidate()
-                .map(crate::feature::operations::FeatureRecipe::name),
-            recipe_conflict: state.recipe.is_conflicting().then_some(true),
-            display_state_conflict: state.display_state_conflict.then_some(true),
-            root_schema_class: state.root_schema_class().map(SchemaClass::code),
-            parent_feature_id: state.parent_feature_id(),
-            offset: state.offset,
-            state_offset: state.state_offset,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoFeatureOperationState<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        if scan.features.operation_states.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut state_storage = ctx.reserve_scoped(0, "Creo operation state lookup storage")?;
+        let mut current_offsets = HashMap::new();
+        for state in ctx.admit_iter(&scan.features.operations, "creo native record traversal")? {
+            state_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut current_offsets,
+                    state.feature_id,
+                    state.offset,
+                    "creo native feature current-offset nodes",
+                )
+            })?;
+        }
+        let mut ordinals = HashMap::<u32, usize>::new();
+        let mut records = Vec::new();
+        for state in ctx.admit_iter(&scan.features.operation_states, "creo native record traversal")? {
+            let state_ordinal = ordinals.get(&state.feature_id).copied().unwrap_or_default();
+            let next_ordinal = state_ordinal.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("creo native feature state ordinal", u64::MAX, u64::MAX)
+            })?;
+            state_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut ordinals,
+                    state.feature_id,
+                    next_ordinal,
+                    "creo native feature ordinal nodes",
+                )
+            })?;
+            let name = CreoOperationNameRecord {
+                display_name_stored: state.name.display_name_stored(),
+                stored_name: state
+                    .name
+                    .stored_name_bytes()
+                    .map(|bytes| ctx.copy_retained_lossy_utf8(bytes, "creo native feature state name"))
+                    .transpose()?,
+                stored_name_bytes: state.name.stored_name_bytes(),
+                identifier_keyword: state.name.identifier_keyword(),
+                stored_name_prefix: state
+                    .name
+                    .stored_name_prefix()
+                    .map(|prefix| {
+                        ctx.format_retained(
+                            format_args!("{}", char::from(prefix)),
+                            "creo native feature state prefix",
+                        )
+                    })
+                    .transpose()?,
+            };
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:mdlstatus:feature_state#{}:{state_ordinal}",
+                    state.feature_id
+                ),
+                "creo native feature state IDs",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native feature state records")?;
+            records.push(CreoFeatureOperationState {
+                id,
+                feature_id: state.feature_id,
+                state_ordinal,
+                current: !state.display_state_conflict
+                    && current_offsets.get(&state.feature_id) == Some(&state.offset),
+                family: state.kind.as_str(),
+                name,
+                recipe: state
+                    .recipe
+                    .candidate()
+                    .map(crate::feature::operations::FeatureRecipe::name),
+                recipe_conflict: state.recipe.is_conflicting().then_some(true),
+                display_state_conflict: state.display_state_conflict.then_some(true),
+                root_schema_class: state.root_schema_class().map(SchemaClass::code),
+                parent_feature_id: state.parent_feature_id(),
+                offset: state.offset,
+                state_offset: state.state_offset,
+            });
+        }
+        Ok(records)
+    })
 }
 
-pub(super) fn feature_reference_name_records(
-    ctx: &DecodeContext<'_>,
+pub(super) fn feature_reference_name_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<CreoFeatureReferenceNameRecord>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.features.reference_names, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:mdlrefinfo:feature_name#{}", record.offset),
-            "creo native feature reference IDs",
-        )?;
-        let name =
-            ctx.copy_retained_lossy_utf8(&record.name_bytes, "creo native feature reference text")?;
-        let name_bytes =
-            ctx.copy_retained(&record.name_bytes, "creo native feature reference bytes")?;
-        ctx.reserve_vec(&mut records, 1, "creo native feature reference records")?;
-        records.push(CreoFeatureReferenceNameRecord {
-            id,
-            owner_feature_id: record.feature_id,
-            name,
-            name_bytes,
-            own_reference_id: record.own_reference_id,
-            reference_type: record.reference_type,
-            offset: record.offset,
-        });
-    }
-    Ok(records)
+) -> Result<(Vec<CreoFeatureReferenceNameRecord>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.features.reference_names, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:mdlrefinfo:feature_name#{}", record.offset),
+                "creo native feature reference IDs",
+            )?;
+            let name =
+                ctx.copy_retained_lossy_utf8(&record.name_bytes, "creo native feature reference text")?;
+            let name_bytes =
+                ctx.copy_retained(&record.name_bytes, "creo native feature reference bytes")?;
+            ctx.reserve_vec(&mut records, 1, "creo native feature reference records")?;
+            records.push(CreoFeatureReferenceNameRecord {
+                id,
+                owner_feature_id: record.feature_id,
+                name,
+                name_bytes,
+                own_reference_id: record.own_reference_id,
+                reference_type: record.reference_type,
+                offset: record.offset,
+            });
+        }
+        Ok(records)
+    })
 }
 
 #[derive(Serialize)]
@@ -2770,57 +2879,59 @@ pub(super) struct CreoPcurveEndpointRecord {
     source_form: &'static str,
 }
 
-pub(super) fn pcurve_endpoint_records(
-    ctx: &DecodeContext<'_>,
+pub(super) fn pcurve_endpoint_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<(CreoPcurveEndpointRecord, usize)>, CodecError> {
-    let mut records = Vec::new();
-    for pcurve in ctx.admit_iter(&scan.curves.pcurves, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!("creo:visibgeom:pcurve_endpoints#{}", pcurve.curve_id),
-            "creo native pcurve endpoint record id",
+) -> Result<(Vec<(CreoPcurveEndpointRecord, usize)>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for pcurve in ctx.admit_iter(&scan.curves.pcurves, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!("creo:visibgeom:pcurve_endpoints#{}", pcurve.curve_id),
+                "creo native pcurve endpoint record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native pcurve endpoint records")?;
+            records.push((
+                CreoPcurveEndpointRecord {
+                    id,
+                    curve_id: pcurve.curve_id,
+                    faces: pcurve.stored_face_ids(),
+                    face_0_endpoints: pcurve.face_0_endpoints,
+                    face_1_endpoints: pcurve.face_1_endpoints,
+                    source_form: "positional",
+                },
+                pcurve.offset,
+            ));
+        }
+        for pcurve in ctx.admit_iter(&scan.curves.bound_prototype_pcurves, "creo native record traversal")? {
+            let id = ctx.format_retained(
+                format_args!(
+                    "creo:visibgeom:prototype_pcurve_endpoints#{}",
+                    pcurve.curve_id
+                ),
+                "creo native prototype pcurve endpoint record id",
+            )?;
+            ctx.reserve_vec(&mut records, 1, "creo native pcurve endpoint records")?;
+            records.push((
+                CreoPcurveEndpointRecord {
+                    id,
+                    curve_id: pcurve.curve_id,
+                    faces: pcurve.stored_face_ids(),
+                    face_0_endpoints: pcurve.face_0_endpoints,
+                    face_1_endpoints: pcurve.face_1_endpoints,
+                    source_form: "prototype",
+                },
+                pcurve.offset,
+            ));
+        }
+        ctx.stable_sort_by(
+            records.as_mut_slice(),
+            |value| &value.1,
+            Ord::cmp,
+            "creo pcurve endpoint records records ordering",
         )?;
-        ctx.reserve_vec(&mut records, 1, "creo native pcurve endpoint records")?;
-        records.push((
-            CreoPcurveEndpointRecord {
-                id,
-                curve_id: pcurve.curve_id,
-                faces: pcurve.stored_face_ids(),
-                face_0_endpoints: pcurve.face_0_endpoints,
-                face_1_endpoints: pcurve.face_1_endpoints,
-                source_form: "positional",
-            },
-            pcurve.offset,
-        ));
-    }
-    for pcurve in ctx.admit_iter(&scan.curves.bound_prototype_pcurves, "creo native record traversal")? {
-        let id = ctx.format_retained(
-            format_args!(
-                "creo:visibgeom:prototype_pcurve_endpoints#{}",
-                pcurve.curve_id
-            ),
-            "creo native prototype pcurve endpoint record id",
-        )?;
-        ctx.reserve_vec(&mut records, 1, "creo native pcurve endpoint records")?;
-        records.push((
-            CreoPcurveEndpointRecord {
-                id,
-                curve_id: pcurve.curve_id,
-                faces: pcurve.stored_face_ids(),
-                face_0_endpoints: pcurve.face_0_endpoints,
-                face_1_endpoints: pcurve.face_1_endpoints,
-                source_form: "prototype",
-            },
-            pcurve.offset,
-        ));
-    }
-    ctx.stable_sort_by(
-        records.as_mut_slice(),
-        |value| &value.1,
-        Ord::cmp,
-        "creo pcurve endpoint records records ordering",
-    )?;
-    Ok(records)
+        Ok(records)
+    })
 }
 
 
@@ -2838,89 +2949,91 @@ fn curve_expression_assignment_projection(
     }
 }
 
-pub(super) fn curve_expression_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn curve_expression_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoCurveExpressionRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for record in ctx.admit_iter(&scan.curves.expressions, "creo native record traversal")? {
-        let id = curve_expression_record_id(ctx, record)?;
-        let mut lines = Vec::new();
-        for line in ctx.admit_iter(&record.lines, "creo native record traversal")? {
-            ctx.reserve_vec(&mut lines, 1, "creo native curve expression lines")?;
-            lines.push(CreoCurveExpressionLine {
-                text: &line.text,
-                offset: line.offset,
-            });
-        }
-        let mut assignments = Vec::new();
-        for assignment in ctx.admit_iter(&record.assignments, "creo native record traversal")? {
-            ctx.reserve_vec(
-                &mut assignments,
-                1,
-                "creo native curve expression assignments",
-            )?;
-            assignments.push(curve_expression_assignment_projection(assignment));
-        }
-        let mut solve_blocks = Vec::new();
-        for block in ctx.admit_iter(&record.solve_blocks, "creo native record traversal")? {
-            let mut equations = Vec::new();
-            for equation in ctx.admit_iter(&block.equations, "creo native record traversal")? {
-                ctx.reserve_vec(&mut equations, 1, "creo native curve expression equations")?;
-                equations.push(CreoCurveExpressionEquation {
-                    left: &equation.left,
-                    right: &equation.right,
-                    dependencies: &equation.dependencies,
-                    offset: equation.offset,
+) -> Result<(Vec<CreoCurveExpressionRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        let mut records = Vec::new();
+        for record in ctx.admit_iter(&scan.curves.expressions, "creo native record traversal")? {
+            let id = curve_expression_record_id(ctx, record)?;
+            let mut lines = Vec::new();
+            for line in ctx.admit_iter(&record.lines, "creo native record traversal")? {
+                ctx.reserve_vec(&mut lines, 1, "creo native curve expression lines")?;
+                lines.push(CreoCurveExpressionLine {
+                    text: &line.text,
+                    offset: line.offset,
                 });
             }
-            let mut block_assignments = Vec::new();
-            for assignment in ctx.admit_iter(&block.assignments, "creo native record traversal")? {
+            let mut assignments = Vec::new();
+            for assignment in ctx.admit_iter(&record.assignments, "creo native record traversal")? {
                 ctx.reserve_vec(
-                    &mut block_assignments,
+                    &mut assignments,
                     1,
-                    "creo native curve expression block assignments",
+                    "creo native curve expression assignments",
                 )?;
-                block_assignments.push(curve_expression_assignment_projection(assignment));
+                assignments.push(curve_expression_assignment_projection(assignment));
             }
-            ctx.reserve_vec(
-                &mut solve_blocks,
-                1,
-                "creo native curve expression solve blocks",
-            )?;
-            solve_blocks.push(CreoCurveExpressionSolveBlock {
-                equations,
-                assignments: block_assignments,
-                variables: &block.unknowns,
-                solutions: &block.unknowns,
-                offset: block.offset,
-                for_offset: block.for_offset,
+            let mut solve_blocks = Vec::new();
+            for block in ctx.admit_iter(&record.solve_blocks, "creo native record traversal")? {
+                let mut equations = Vec::new();
+                for equation in ctx.admit_iter(&block.equations, "creo native record traversal")? {
+                    ctx.reserve_vec(&mut equations, 1, "creo native curve expression equations")?;
+                    equations.push(CreoCurveExpressionEquation {
+                        left: &equation.left,
+                        right: &equation.right,
+                        dependencies: &equation.dependencies,
+                        offset: equation.offset,
+                    });
+                }
+                let mut block_assignments = Vec::new();
+                for assignment in ctx.admit_iter(&block.assignments, "creo native record traversal")? {
+                    ctx.reserve_vec(
+                        &mut block_assignments,
+                        1,
+                        "creo native curve expression block assignments",
+                    )?;
+                    block_assignments.push(curve_expression_assignment_projection(assignment));
+                }
+                ctx.reserve_vec(
+                    &mut solve_blocks,
+                    1,
+                    "creo native curve expression solve blocks",
+                )?;
+                solve_blocks.push(CreoCurveExpressionSolveBlock {
+                    equations,
+                    assignments: block_assignments,
+                    variables: &block.unknowns,
+                    solutions: &block.unknowns,
+                    offset: block.offset,
+                    for_offset: block.for_offset,
+                });
+            }
+            ctx.reserve_vec(&mut records, 1, "creo native curve expression records")?;
+            records.push(CreoCurveExpressionRecord {
+                id,
+                entity_id: record.entity_id,
+                backup: record.backup,
+                local_system: record.local_system.as_ref().map(|frame| {
+                    CreoCurveExpressionLocalSystem {
+                        dimensions: frame.dimensions,
+                        count: frame.count,
+                        body: &frame.body,
+                        explicit_slots: frame
+                            .explicit_slots
+                            .map(cadmpeg_ir::units::FiniteVector::get),
+                        offset: frame.offset,
+                    }
+                }),
+                lines,
+                assignments,
+                solve_blocks,
+                unresolved_solve_control: record.unresolved_solve_control,
+                prohibited_constructs: &record.prohibited_constructs,
             });
         }
-        ctx.reserve_vec(&mut records, 1, "creo native curve expression records")?;
-        records.push(CreoCurveExpressionRecord {
-            id,
-            entity_id: record.entity_id,
-            backup: record.backup,
-            local_system: record.local_system.as_ref().map(|frame| {
-                CreoCurveExpressionLocalSystem {
-                    dimensions: frame.dimensions,
-                    count: frame.count,
-                    body: &frame.body,
-                    explicit_slots: frame
-                        .explicit_slots
-                        .map(cadmpeg_ir::units::FiniteVector::get),
-                    offset: frame.offset,
-                }
-            }),
-            lines,
-            assignments,
-            solve_blocks,
-            unresolved_solve_control: record.unresolved_solve_control,
-            prohibited_constructs: &record.prohibited_constructs,
-        });
-    }
-    Ok(records)
+        Ok(records)
+    })
 }
 
 
@@ -3453,63 +3566,87 @@ pub(super) fn sketch_section_point_records(
     )
 }
 
-pub(super) fn feature_definition_records<'a>(
-    ctx: &DecodeContext<'_>,
+pub(super) fn feature_definition_records<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'a ContainerScan,
-) -> Result<Vec<CreoFeatureDefinitionRecord<'a>>, CodecError> {
-    let mut records = Vec::new();
-    for definition in ctx.admit_iter(&scan.features.definitions, "creo native record traversal")? {
-        let id = feature_definition_record_id(ctx, scan, definition)?;
-        let mut parameter_frames = Vec::new();
-        for frame in ctx.admit_iter(&definition.parameter_frames, "creo native record traversal")? {
-            ctx.reserve_vec(
-                &mut parameter_frames,
-                1,
-                "creo native feature parameter frames",
-            )?;
-            parameter_frames.push(CreoFeatureParameterFrame {
-                kind: match frame.kind {
-                    crate::feature::definitions::FeatureParameterFrameKind::LocalSystem => {
-                        "local_system"
-                    }
-                    crate::feature::definitions::FeatureParameterFrameKind::Transform => {
-                        "transform"
-                    }
-                },
-                body: &frame.body,
-                decoded_values: frame
-                    .decoded_values
-                    .map(cadmpeg_ir::units::FiniteVector::get),
-                offset: frame.offset,
+) -> Result<(Vec<CreoFeatureDefinitionRecord<'a>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("creo native projection storage", || {
+        if scan.features.definitions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (counts, _count_storage) = curve_id_counts(
+            ctx,
+            ctx.admit_iter(&scan.features.definitions, "creo feature definition identity count")?
+                .map(|definition| definition.identity.id()),
+            "creo native feature definition identity nodes",
+        )?;
+        let mut records = Vec::new();
+        for definition in ctx.admit_iter(&scan.features.definitions, "creo native record traversal")? {
+            let id = if counts.get(&definition.identity.id()) != Some(&1)
+                || (definition.identity.schema_id().is_none()
+                    && definition.identity.owner_feature_id().is_none())
+            {
+                ctx.format_retained(
+                    format_args!("creo:featdefs:feature_definition#offset:{}", definition.offset),
+                    "creo feature definition record id",
+                )?
+            } else {
+                ctx.format_retained(
+                    format_args!("creo:featdefs:feature_definition#{}", definition.identity.id()),
+                    "creo feature definition record id",
+                )?
+            };
+            let mut parameter_frames = Vec::new();
+            for frame in ctx.admit_iter(&definition.parameter_frames, "creo native record traversal")? {
+                ctx.reserve_vec(
+                    &mut parameter_frames,
+                    1,
+                    "creo native feature parameter frames",
+                )?;
+                parameter_frames.push(CreoFeatureParameterFrame {
+                    kind: match frame.kind {
+                        crate::feature::definitions::FeatureParameterFrameKind::LocalSystem => {
+                            "local_system"
+                        }
+                        crate::feature::definitions::FeatureParameterFrameKind::Transform => {
+                            "transform"
+                        }
+                    },
+                    body: &frame.body,
+                    decoded_values: frame
+                        .decoded_values
+                        .map(cadmpeg_ir::units::FiniteVector::get),
+                    offset: frame.offset,
+                });
+            }
+            let mut outlines = Vec::new();
+            for outline in ctx.admit_iter(&definition.outlines, "creo native record traversal")? {
+                ctx.reserve_vec(&mut outlines, 1, "creo native feature outlines")?;
+                outlines.push(CreoFeatureOutline {
+                    phase: match outline.phase {
+                        crate::feature::definitions::OutlinePhase::PreRollback => "pre_rollback",
+                        crate::feature::definitions::OutlinePhase::PostRollback => "post_rollback",
+                        crate::feature::definitions::OutlinePhase::PostRegen => "post_regen",
+                    },
+                    local_values: &outline.local_scalars,
+                    local_value_bodies: &outline.local_scalars,
+                    offset: outline.offset,
+                });
+            }
+            ctx.reserve_vec(&mut records, 1, "creo native feature definition records")?;
+            records.push(CreoFeatureDefinitionRecord {
+                id,
+                definition_id: definition.identity.id(),
+                owner_feature_id: definition.identity.owner_feature_id(),
+                source_section: source_section_ref(ctx, scan, definition.offset)?,
+                body: &definition.body,
+                parameter_frames,
+                outlines,
+                offset: definition.offset,
             });
         }
-        let mut outlines = Vec::new();
-        for outline in ctx.admit_iter(&definition.outlines, "creo native record traversal")? {
-            ctx.reserve_vec(&mut outlines, 1, "creo native feature outlines")?;
-            outlines.push(CreoFeatureOutline {
-                phase: match outline.phase {
-                    crate::feature::definitions::OutlinePhase::PreRollback => "pre_rollback",
-                    crate::feature::definitions::OutlinePhase::PostRollback => "post_rollback",
-                    crate::feature::definitions::OutlinePhase::PostRegen => "post_regen",
-                },
-                local_values: &outline.local_scalars,
-                local_value_bodies: &outline.local_scalars,
-                offset: outline.offset,
-            });
-        }
-        ctx.reserve_vec(&mut records, 1, "creo native feature definition records")?;
-        records.push(CreoFeatureDefinitionRecord {
-            id,
-            definition_id: definition.identity.id(),
-            owner_feature_id: definition.identity.owner_feature_id(),
-            source_section: source_section_ref(ctx, scan, definition.offset)?,
-            body: &definition.body,
-            parameter_frames,
-            outlines,
-            offset: definition.offset,
-        });
-    }
-    Ok(records)
+        Ok(records)
+    })
 }
 
 

@@ -72,16 +72,16 @@ use crate::decode::records::feature_entity_table_records;
         let scan = scan_with_table();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-            ResourceDimension::RetainedBytes,
+        policy.limits.max_materialized_bytes = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
             Some("creo feature entity table record id"),
             |cap| {
                 let trial_arena = DecodeArena::new();
                 let mut trial_policy = policy;
-                trial_policy.limits.max_retained_bytes = cap;
+                trial_policy.limits.max_materialized_bytes = cap;
                 let (trial_ctx, _) =
                     DecodeContext::from_root_bytes(&[], &trial_arena, &trial_policy).expect("root");
-                feature_entity_table_records(&trial_ctx, &scan)
+                feature_entity_table_records(&trial_ctx, &scan).map(|_| ())
             },
         );
         let (ctx, _) =
@@ -91,7 +91,7 @@ use crate::decode::records::feature_entity_table_records;
         };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
+            if resource.dimension == ResourceDimension::MaterializedBytes
                 && resource.operation == "creo feature entity table record id"),
             "{error:?}"
         );
@@ -101,7 +101,7 @@ use crate::decode::records::feature_entity_table_records;
     fn entity_table_record_preserves_source_order_and_partition() {
         let scan = scan_with_table();
         crate::decode::with_test_decode_ctx(|ctx| {
-            let records = feature_entity_table_records(ctx, &scan)?;
+            let (records, _records_storage) = feature_entity_table_records(ctx, &scan)?;
             assert_eq!(records.len(), 1);
             let record = &records[0];
             assert_eq!(record.id, "creo:allfeatur:entity_table#12");

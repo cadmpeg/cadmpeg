@@ -197,8 +197,8 @@ use crate::decode::records::{
         let policy = DecodePolicy::service();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-        let geometry = feature_geometry_table_records(&ctx, &scan).expect("record is admitted");
-        let history = feature_loop_history_entry_records(&ctx, &scan).expect("record is admitted");
+        let (geometry, _geometry_storage) = feature_geometry_table_records(&ctx, &scan).expect("record is admitted");
+        let (history, _history_storage) = feature_loop_history_entry_records(&ctx, &scan).expect("record is admitted");
         let geometry = serde_json::to_value(&geometry[0]).expect("record serializes");
         let history = serde_json::to_value(&history[0]).expect("record serializes");
         assert_eq!(geometry["entry_ids"], serde_json::json!([4, 5]));
