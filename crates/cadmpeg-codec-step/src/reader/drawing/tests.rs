@@ -521,3 +521,20 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
     };
     assert_eq!(resolved.local_target(), Some("step:data:surface#1"));
 }
+
+#[test]
+fn typed_omitted_descent_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let value = crate::parse::Value::Typed("WRAP".into(), Box::new(crate::parse::Value::Omitted));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP typed drawing reference descent",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+                super::visit_drawing_references(&value, ctx, &mut |_| Ok(())).map(|_| ())
+            })
+        },
+    );
+}

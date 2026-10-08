@@ -1264,3 +1264,20 @@ mod scoped_storage;
 mod stage_storage;
 
 mod resource_limits;
+
+#[test]
+fn typed_omitted_descent_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let value = crate::parse::Value::Typed("WRAP".into(), Box::new(crate::parse::Value::Omitted));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP typed reference descent",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+                super::collect_references(&value, &mut std::collections::BTreeSet::new(), ctx).map(|_| ())
+            })
+        },
+    );
+}

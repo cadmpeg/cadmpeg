@@ -1667,7 +1667,10 @@ fn collect_references(
                 collect_references(value, output, ctx)?;
             }
         }
-        Value::Typed(_, value) => collect_references(value, output, ctx)?,
+        Value::Typed(_, value) => {
+            ctx.charge_work(1, "STEP typed reference descent")?;
+            collect_references(value, output, ctx)?;
+        }
         _ => {}
     }
     Ok(())

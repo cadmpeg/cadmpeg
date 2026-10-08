@@ -1747,3 +1747,20 @@ fn nonfinite_pmi_placement_refuses_real_overflow() {
 mod target_indices;
 
 mod measure_index;
+
+#[test]
+fn typed_omitted_descent_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let value = crate::parse::Value::Typed("WRAP".into(), Box::new(crate::parse::Value::Omitted));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "STEP typed modifier descent",
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+                super::modifier_values(&value, &mut Vec::new(), ctx).map(|_| ())
+            })
+        },
+    );
+}

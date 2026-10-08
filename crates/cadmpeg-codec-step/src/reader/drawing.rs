@@ -140,7 +140,10 @@ fn visit_drawing_references(
                 visit_drawing_references(value, ctx, visitor)?;
             }
         }
-        Value::Typed(_, value) => visit_drawing_references(value, ctx, visitor)?,
+        Value::Typed(_, value) => {
+            ctx.charge_work(1, "STEP typed drawing reference descent")?;
+            visit_drawing_references(value, ctx, visitor)?;
+        }
         _ => {}
     }
     Ok(())
