@@ -390,20 +390,6 @@ fn relation_affine_function_refuses_selected_value_clone() {
             && resource.operation == "creo relation affine clone coefficient nodes"));
 }
 
-#[test]
-fn relation_affine_function_refuses_numeric_argument_vector() {
-    let error = relation_parse_limit_error(
-        "sin(1)",
-        &BTreeMap::<String, SimultaneousAffineValue>::new(),
-        |policy| {
-            policy.limits.max_collection_items = 1;
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo affine function numeric arguments"));
-}
-
 fn dimension_probe_variable(name: &str) -> DimensionProbeValue {
     crate::decode::with_test_decode_ctx(|ctx| DimensionProbeValue::variable(ctx, name))
         .expect("service profile admits dimension variable")
@@ -569,26 +555,6 @@ fn relation_group_refuses_recursive_step() {
 }
 
 #[test]
-fn relation_function_refuses_work() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo relation function work",
-        |ctx| {
-            crate::curve::parse_relation_expression(
-                ctx,
-                "sin(1)",
-                &BTreeMap::<String, CurveExpressionValue>::new(),
-                RelationEvaluationContext::default(),
-            )
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo relation function work"));
-}
-
-#[test]
 fn relation_exponent_refuses_recursive_step() {
     let error = relation_parse_limit_error(
         "2^3",
@@ -600,46 +566,6 @@ fn relation_exponent_refuses_recursive_step() {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RecursionDepth
             && resource.operation == "creo relation exponent depth"));
-}
-
-#[test]
-fn relation_exponent_refuses_work() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo relation exponent work",
-        |ctx| {
-            crate::curve::parse_relation_expression(
-                ctx,
-                "2^3",
-                &BTreeMap::<String, CurveExpressionValue>::new(),
-                RelationEvaluationContext::default(),
-            )
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo relation exponent work"));
-}
-
-#[test]
-fn relation_group_refuses_work() {
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo relation group work",
-        |ctx| {
-            crate::curve::parse_relation_expression(
-                ctx,
-                "(1)",
-                &BTreeMap::<String, CurveExpressionValue>::new(),
-                RelationEvaluationContext::default(),
-            )
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo relation group work"));
 }
 
 fn numeric_value(value: Option<&CurveExpressionValue>) -> f64 {

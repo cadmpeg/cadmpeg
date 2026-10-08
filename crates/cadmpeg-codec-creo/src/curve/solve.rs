@@ -44,12 +44,12 @@ pub(super) fn solve_nonlinear_expression_block(
     if !nonlinear_equations_are_smooth(ctx, block)? {
         return Ok(None);
     }
+    let mut scratch = ctx.reserve_scoped(0, "creo nonlinear solve scratch")?;
     let Some(variable_dimensions) =
-        infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context)?
+        scratch.with_storage(|| infer_solve_variable_dimensions(ctx, block, values, known_dimensions, context))?
     else {
         return Ok(None);
     };
-    let mut scratch = ctx.reserve_scoped(0, "creo nonlinear solve scratch")?;
     let Some(seeds) = scratch.with_storage(|| nonlinear_initial_guesses(ctx, initial_values, &variable_dimensions))? else {
         return Ok(None);
     };
@@ -57,20 +57,20 @@ pub(super) fn solve_nonlinear_expression_block(
     let Some(initial_seed) = seeds.next() else {
         return Ok(None);
     };
-    let Some(solution) = refine_nonlinear_solution(
+    let Some(solution) = scratch.with_storage(|| refine_nonlinear_solution(
         ctx,
         block,
         values,
         &variable_dimensions,
         &initial_seed,
         context,
-    )?
+    ))?
     else {
         return Ok(None);
     };
     for seed in seeds {
         let Some(candidate) =
-            refine_nonlinear_solution(ctx, block, values, &variable_dimensions, &seed, context)?
+            scratch.with_storage(|| refine_nonlinear_solution(ctx, block, values, &variable_dimensions, &seed, context))?
         else {
             continue;
         };
@@ -96,9 +96,7 @@ pub(super) fn nonlinear_equations_are_smooth(
     ctx.all_by(
         &block.equations,
         |equation| {
-            Ok({
-                nonlinear_expression_is_smooth(ctx, &equation.left)? && nonlinear_expression_is_smooth(ctx, &equation.right)?
-            })
+            Ok(nonlinear_expression_is_smooth(ctx, &equation.left)? && nonlinear_expression_is_smooth(ctx, &equation.right)?)
         },
         "creo relation comparison traversal",
     )
@@ -140,16 +138,10 @@ pub(super) fn nonlinear_expression_is_smooth(
             following += ctx.position_by(tail, |byte| Ok(!byte.is_ascii_whitespace()), "creo nonlinear following whitespace scan")?.unwrap_or(tail.len());
             if bytes.get(following) == Some(&b'(') {
                 let name = &expression[start..end];
-                let smooth = ctx.any_by(
-                    &[
-                        "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh",
-                        "tanh", "log", "ln", "exp", "pow", "sqrt",
-                    ],
-                    |candidate| {
-                        ctx.eq_ignore_ascii_case(name, candidate, "creo relation text comparison")
-                    },
-                    "creo relation comparison traversal",
-                )?;
+                let mut smooth = false;
+                for candidate in ["sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh", "log", "ln", "exp", "pow", "sqrt"] {
+                    if ctx.eq_ignore_ascii_case(name, candidate, "creo relation text comparison")? { smooth = true; break; }
+                }
                 if !smooth {
                     return Ok(false);
                 }
@@ -167,6 +159,7 @@ pub(super) fn nonlinear_initial_guesses(
     variable_dimensions: &[RelationDimension],
 ) -> Result<Option<Vec<Vec<f64>>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
+    if variable_count == 0 || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES { return Ok(None); }
     let mut seeds = Vec::new();
     let mut add_seed = |seed: Vec<f64>| -> Result<(), cadmpeg_core::CodecError> {
         if seed.iter().all(|value| value.is_finite()) && !seeds.iter().any(|known| known == &seed) {
@@ -220,16 +213,18 @@ pub(super) fn refine_nonlinear_solution(
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
-    let mut point = ctx.alloc_filled(seed.len(), 0.0, "creo nonlinear initial point")?;
-    point.copy_from_slice(seed);
-    let Some(mut residuals) =
-        evaluate_nonlinear_residuals(ctx, block, values, variable_dimensions, &point, context)?
-    else {
-        return Ok(None);
-    };
+    if variable_count == 0 || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES { return Ok(None); }
+    if seed.len() != variable_count { return Ok(None); }
+    let (initial, mut _current_storage) = ctx.with_scoped_storage("creo nonlinear current point scratch", || -> Result<_, cadmpeg_core::CodecError> {
+        let mut point = ctx.alloc_filled(seed.len(), 0.0, "creo nonlinear initial point")?;
+        point.copy_from_slice(seed);
+        Ok(evaluate_nonlinear_residuals(ctx, block, values, variable_dimensions, &point, context)?.map(|residuals| (point, residuals)))
+    })?;
+    let Some((mut point, mut residuals)) = initial else { return Ok(None); };
     for _ in 0..MAX_NONLINEAR_SOLVE_ITERATIONS {
+        let mut iteration_storage = ctx.reserve_scoped(0, "creo nonlinear iteration scratch")?;
         if nonlinear_residuals_converged(ctx, &residuals)? {
-            let Some(mut rank_rows) = nonlinear_jacobian_rows(
+    let Some(mut rank_rows) = iteration_storage.with_storage(|| nonlinear_jacobian_rows(
                 ctx,
                 block,
                 values,
@@ -237,16 +232,18 @@ pub(super) fn refine_nonlinear_solution(
                 &point,
                 &residuals,
                 context,
-            )?
+            ))?
             else {
                 return Ok(None);
             };
-            if solve_unique_affine_system(ctx, &mut rank_rows, variable_count)?.is_none() {
+            if iteration_storage.with_storage(|| solve_unique_affine_system(ctx, &mut rank_rows, variable_count))?.is_none() {
                 return Ok(None);
             }
-            return Ok(Some(point));
+            let mut solved = ctx.alloc_filled(point.len(), 0.0, "creo nonlinear solution point")?;
+            solved.copy_from_slice(&point);
+            return Ok(Some(solved));
         }
-        let Some(mut rows) = nonlinear_jacobian_rows(
+        let Some(mut rows) = iteration_storage.with_storage(|| nonlinear_jacobian_rows(
             ctx,
             block,
             values,
@@ -254,14 +251,14 @@ pub(super) fn refine_nonlinear_solution(
             &point,
             &residuals,
             context,
-        )?
+        ))?
         else {
             return Ok(None);
         };
-        for (row, residual) in rows.iter_mut().zip(&residuals) {
+        for (row, residual) in ctx.admit_iter(&mut rows, "creo nonlinear rhs traversal")?.zip(&residuals) {
             row.rhs = -residual.value;
         }
-        let Some(delta) = solve_unique_affine_system(ctx, &mut rows, variable_count)? else {
+        let Some(delta) = iteration_storage.with_storage(|| solve_unique_affine_system(ctx, &mut rows, variable_count))? else {
             return Ok(None);
         };
         let maximum_delta = delta.iter().map(|value| value.abs()).fold(0.0, f64::max);
@@ -274,34 +271,23 @@ pub(super) fn refine_nonlinear_solution(
         let mut valid_candidate = false;
         let mut scale = 1.0;
         for _ in 0..MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS {
-            ctx.charge_work(1, "creo nonlinear line-search work")?;
-            let mut candidate =
-                ctx.alloc_filled(point.len(), 0.0, "creo nonlinear line-search point")?;
-            for ((slot, value), change) in candidate.iter_mut().zip(&point).zip(&delta) {
-                *slot = value + scale * change;
-            }
-            if candidate.iter().all(|value| value.is_finite()) {
-                if let Some(candidate_residuals) = evaluate_nonlinear_residuals(
-                    ctx,
-                    block,
-                    values,
-                    variable_dimensions,
-                    &candidate,
-                    context,
-                )? {
-                    valid_candidate = true;
-                    let candidate_norm = nonlinear_residual_norm(ctx, &candidate_residuals, &residuals)?;
-                    if nonlinear_residuals_converged(ctx, &candidate_residuals)?
-                        || candidate_norm < base_norm
-                    {
-                        accepted = Some((candidate, candidate_residuals));
-                        break;
-                    }
+            let (trial, trial_storage) = ctx.with_scoped_storage("creo nonlinear trial scratch", || -> Result<_, cadmpeg_core::CodecError> {
+                let mut candidate = ctx.alloc_filled(point.len(), 0.0, "creo nonlinear line-search point")?;
+                for ((slot, value), change) in candidate.iter_mut().zip(&point).zip(&delta) { *slot = value + scale * change; }
+                if !candidate.iter().all(|value| value.is_finite()) { return Ok(None); }
+                Ok(evaluate_nonlinear_residuals(ctx, block, values, variable_dimensions, &candidate, context)?.map(|residuals| (candidate, residuals)))
+            })?;
+            if let Some((candidate, candidate_residuals)) = trial {
+                valid_candidate = true;
+                let candidate_norm = nonlinear_residual_norm(ctx, &candidate_residuals, &residuals)?;
+                if nonlinear_residuals_converged(ctx, &candidate_residuals)? || candidate_norm < base_norm {
+                    accepted = Some((candidate, candidate_residuals, trial_storage));
+                    break;
                 }
             }
             scale *= 0.5;
         }
-        let Some((candidate, candidate_residuals)) = accepted else {
+        let Some((candidate, candidate_residuals, candidate_storage)) = accepted else {
             if !valid_candidate {
                 return Ok(None);
             }
@@ -313,6 +299,7 @@ pub(super) fn refine_nonlinear_solution(
         };
         point = candidate;
         residuals = candidate_residuals;
+        _current_storage = candidate_storage;
         if maximum_delta * scale <= NONLINEAR_SOLVE_STEP_TOLERANCE * point_scale
             && !nonlinear_residuals_converged(ctx, &residuals)?
         {
@@ -326,7 +313,8 @@ pub(super) fn refine_nonlinear_solution(
             cadmpeg_core::decode::u64_from_index(MAX_NONLINEAR_SOLVE_ITERATIONS) + 1,
         ));
     }
-    let Some(mut rank_rows) = nonlinear_jacobian_rows(
+    let mut iteration_storage = ctx.reserve_scoped(0, "creo nonlinear final rank scratch")?;
+    let Some(mut rank_rows) = iteration_storage.with_storage(|| nonlinear_jacobian_rows(
         ctx,
         block,
         values,
@@ -334,14 +322,16 @@ pub(super) fn refine_nonlinear_solution(
         &point,
         &residuals,
         context,
-    )?
+    ))?
     else {
         return Ok(None);
     };
-    if solve_unique_affine_system(ctx, &mut rank_rows, variable_count)?.is_none() {
+    if iteration_storage.with_storage(|| solve_unique_affine_system(ctx, &mut rank_rows, variable_count))?.is_none() {
         return Ok(None);
     }
-    Ok(Some(point))
+    let mut solved = ctx.alloc_filled(point.len(), 0.0, "creo nonlinear solution point")?;
+    solved.copy_from_slice(&point);
+    Ok(Some(solved))
 }
 
 pub(super) fn nonlinear_jacobian_rows(
@@ -354,7 +344,8 @@ pub(super) fn nonlinear_jacobian_rows(
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<AffineEquationRow>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
-    if variable_count > MAX_NONLINEAR_SOLVE_VARIABLES || point.len() != variable_count { return Ok(None); }
+    if variable_count == 0 || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES { return Ok(None); }
+    if point.len() != variable_count { return Ok(None); }
     let mut rows = Vec::new();
     for _ in ctx.admit_iter(residuals, "creo nonlinear Jacobian row initialization")? {
         let coefficients = ctx.alloc_filled(variable_count, 0.0, "creo nonlinear Jacobian coefficients")?;
@@ -392,6 +383,8 @@ pub(super) fn evaluate_nonlinear_residuals(
     point: &[f64],
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<SolveResidual>>, cadmpeg_core::CodecError> {
+    let variable_count = variable_dimensions.len();
+    if variable_count == 0 || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES { return Ok(None); }
     if variable_dimensions.len() != block.unknowns.len() || point.len() != variable_dimensions.len()
     {
         return Ok(None);

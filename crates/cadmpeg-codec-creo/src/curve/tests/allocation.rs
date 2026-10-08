@@ -50,13 +50,8 @@ fn resource_error<T>(result: Result<T, CodecError>) -> CodecError {
     }
 }
 
-fn target_limit_error(source: &str, collection_limit: u64, retained_limit: u64) -> CodecError {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    resource_error(with_expression_policy(policy, |ctx| {
-        super::super::expression_assignment_target(ctx, source)
-    }))
+fn target_limit_error(source: &str, dimension: ResourceDimension, operation: &'static str) -> CodecError {
+    crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| super::super::expression_assignment_target(ctx, source))
 }
 
 fn assert_target_limit(error: &CodecError, dimension: ResourceDimension, operation: &'static str) {
@@ -67,7 +62,7 @@ fn assert_target_limit(error: &CodecError, dimension: ResourceDimension, operati
 #[test]
 fn expression_parsed_arguments_refuse_before_growth() {
     assert_target_limit(
-        &target_limit_error("foo(x,y)", 0, u64::MAX),
+        &target_limit_error("foo(x,y)", ResourceDimension::CollectionItems, "creo expression parsed arguments"),
         ResourceDimension::CollectionItems,
         "creo expression parsed arguments",
     );
@@ -76,7 +71,7 @@ fn expression_parsed_arguments_refuse_before_growth() {
 #[test]
 fn expression_target_arguments_refuse_before_growth() {
     assert_target_limit(
-        &target_limit_error("foo(x,y)", 2, u64::MAX),
+        &target_limit_error("foo(x,y)", ResourceDimension::CollectionItems, "creo expression target arguments"),
         ResourceDimension::CollectionItems,
         "creo expression target arguments",
     );
@@ -85,11 +80,7 @@ fn expression_target_arguments_refuse_before_growth() {
 #[test]
 fn expression_target_argument_text_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error(
-            "foo(x)",
-            u64::MAX,
-            cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>()),
-        ),
+        &target_limit_error("foo(x)", ResourceDimension::RetainedBytes, "creo expression target argument text"),
         ResourceDimension::RetainedBytes,
         "creo expression target argument text",
     );
@@ -98,7 +89,7 @@ fn expression_target_argument_text_refuses_before_copy() {
 #[test]
 fn expression_function_target_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error("foo()", u64::MAX, 0),
+        &target_limit_error("foo()", ResourceDimension::RetainedBytes, "creo expression function target"),
         ResourceDimension::RetainedBytes,
         "creo expression function target",
     );
@@ -107,7 +98,7 @@ fn expression_function_target_refuses_before_copy() {
 #[test]
 fn expression_table_column_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error("value(p,r,c)", u64::MAX, 0),
+        &target_limit_error("value(p,r,c)", ResourceDimension::RetainedBytes, "creo expression table column"),
         ResourceDimension::RetainedBytes,
         "creo expression table column",
     );
@@ -116,7 +107,7 @@ fn expression_table_column_refuses_before_copy() {
 #[test]
 fn expression_table_parameter_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error("value(p,r,c)", u64::MAX, 1),
+        &target_limit_error("value(p,r,c)", ResourceDimension::RetainedBytes, "creo expression table parameter"),
         ResourceDimension::RetainedBytes,
         "creo expression table parameter",
     );
@@ -125,7 +116,7 @@ fn expression_table_parameter_refuses_before_copy() {
 #[test]
 fn expression_table_row_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error("value(p,r,c)", u64::MAX, 2),
+        &target_limit_error("value(p,r,c)", ResourceDimension::RetainedBytes, "creo expression table row"),
         ResourceDimension::RetainedBytes,
         "creo expression table row",
     );
@@ -134,7 +125,7 @@ fn expression_table_row_refuses_before_copy() {
 #[test]
 fn expression_scoped_target_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error("a:b", u64::MAX, 0),
+        &target_limit_error("a:b", ResourceDimension::RetainedBytes, "creo expression scoped target"),
         ResourceDimension::RetainedBytes,
         "creo expression scoped target",
     );
@@ -143,7 +134,7 @@ fn expression_scoped_target_refuses_before_copy() {
 #[test]
 fn expression_system_target_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error("D1", u64::MAX, 0),
+        &target_limit_error("D1", ResourceDimension::RetainedBytes, "creo expression system target"),
         ResourceDimension::RetainedBytes,
         "creo expression system target",
     );
@@ -152,7 +143,7 @@ fn expression_system_target_refuses_before_copy() {
 #[test]
 fn expression_declared_unit_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error("a[mm]", u64::MAX, 0),
+        &target_limit_error("a[mm]", ResourceDimension::RetainedBytes, "creo expression declared unit"),
         ResourceDimension::RetainedBytes,
         "creo expression declared unit",
     );
@@ -161,7 +152,7 @@ fn expression_declared_unit_refuses_before_copy() {
 #[test]
 fn expression_parameter_target_refuses_before_copy() {
     assert_target_limit(
-        &target_limit_error("a", u64::MAX, 0),
+        &target_limit_error("a", ResourceDimension::RetainedBytes, "creo expression parameter target"),
         ResourceDimension::RetainedBytes,
         "creo expression parameter target",
     );
@@ -175,12 +166,7 @@ fn expression_dependency_items_refuse_before_growth() {
     })
     .expect("service profile")
     .is_some());
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = with_expression_policy(policy, |ctx| {
-        super::super::expression_assignment(ctx, &line[0])
-    })
-    .expect_err("dependency vector exceeds collection limit");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo expression dependency names", |ctx| super::super::expression_assignment(ctx, &line[0]));
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo expression dependency names"));
@@ -227,14 +213,10 @@ fn expression_assignment_text_refuses_before_copy() {
 #[test]
 fn solve_line_index_nodes_refuse_before_insert() {
     let lines = expression_lines(&["SOLVE"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve line index nodes", |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
-    }));
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo solve line index nodes"));
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve line index nodes"));
 }
 
 #[test]
@@ -268,27 +250,19 @@ fn solve_keyword_comparison_refuses_work() {
 #[test]
 fn pending_solve_statements_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo pending solve statements", |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
-    }));
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo pending solve statements"));
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo pending solve statements"));
 }
 
 #[test]
 fn solve_equations_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "FOR x"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 6;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve equations", |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
-    }));
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo solve equations"));
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve equations"));
 }
 
 #[test]
@@ -303,53 +277,37 @@ fn solve_blocks_refuse_before_growth() {
         .len(),
         1
     );
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 7;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve blocks", |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
-    }));
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo solve blocks"));
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve blocks"));
 }
 
 #[test]
 fn solve_assignment_indices_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 10;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve assignment indices", |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
-    }));
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo solve assignment indices"));
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve assignment indices"));
 }
 
 #[test]
 fn solve_assignments_refuse_before_growth() {
     let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 11;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve assignments", |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
-    }));
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo solve assignments"));
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo solve assignments"));
 }
 
 #[test]
 fn executable_solve_line_nodes_refuse_before_insert() {
     let lines = expression_lines(&["SOLVE", "x=1", "y=2", "FOR x"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 12;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo executable solve line index nodes", |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
-    }));
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo executable solve line index nodes"));
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo executable solve line index nodes"));
     let program = with_expression_policy(DecodePolicy::service(), |ctx| {
         super::super::curve_expression_solve_program(ctx, &lines)
     })
@@ -394,48 +352,37 @@ fn solve_equation_right_refuses_retained_limit() {
 #[test]
 fn conditional_expression_assignments_refuse_before_growth() {
     let lines = expression_lines(&["else", "a=1"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
-        super::super::evaluate_expression_program_details(
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo conditional expression assignments", |ctx| {
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(
             ctx,
             &lines,
             None,
-            &super::super::ExternalRelationSymbols::default(),
-        )
-    }));
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo conditional expression assignments"));
+            &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo conditional expression assignments"));
 }
 
 #[test]
 fn parsed_expression_assignment_slots_refuse_before_allocation() {
     let lines = expression_lines(&["a=1"]);
     let evaluation = with_expression_policy(DecodePolicy::service(), |ctx| {
-        super::super::evaluate_expression_program_details(
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(
             ctx,
             &lines,
             None,
-            &super::super::ExternalRelationSymbols::default(),
-        )
+            &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
     })
     .expect("service profile");
     assert_eq!(evaluation.assignments.len(), 1);
 
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = resource_error(with_expression_policy(policy, |ctx| {
-        super::super::evaluate_expression_program_details(
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo parsed expression assignment slots", |ctx| {
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(
             ctx,
             &lines,
             None,
-            &super::super::ExternalRelationSymbols::default(),
-        )
-    }));
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo parsed expression assignment slots"));
+            &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "creo parsed expression assignment slots"));
 }
 
 fn evaluation_limit_reaches(
@@ -446,12 +393,12 @@ fn evaluation_limit_reaches(
 ) {
     let lines = expression_lines(source);
     with_expression_policy(DecodePolicy::service(), |ctx| {
-        super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols)
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols, &mut solution_storage) }
     })
     .expect("service profile evaluates expression");
 
     let error = crate::test_support::last_refusal_at(&[], dimension, operation, |ctx| {
-        super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols)
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols, &mut solution_storage) }
     });
     assert!(matches!(error, CodecError::ResourceLimit(refusal)
         if refusal.dimension == dimension && refusal.operation == operation));
@@ -486,16 +433,83 @@ macro_rules! evaluation_collection_test {
     };
 }
 
-macro_rules! evaluation_retained_test {
+
+macro_rules! evaluation_materialized_test {
     ($name:ident, $source:expr, $external:expr, $operation:literal) => {
         #[test]
         fn $name() {
             evaluation_limit_reaches(
                 $source,
                 &$external,
-                ResourceDimension::RetainedBytes,
+                ResourceDimension::MaterializedBytes,
                 $operation,
             );
+        }
+    };
+    ($name:ident, $source:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            evaluation_limit_reaches(
+                $source,
+                &super::super::ExternalRelationSymbols::default(),
+                ResourceDimension::MaterializedBytes,
+                $operation,
+            );
+        }
+    };
+}
+
+fn solve_phase_inputs(
+    source: &[&str],
+    external_symbols: &super::super::ExternalRelationSymbols,
+) -> (super::super::CurveExpressionSolveBlock, BTreeMap<String, super::super::CurveExpressionValue>, super::super::CurveExpressionEvaluation) {
+    let lines = expression_lines(source);
+    let evaluation = with_expression_policy(DecodePolicy::service(), |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "creo expression solution scratch")?;
+        super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols, &mut storage)
+    }).expect("service profile evaluates the original expression");
+    let block = with_expression_policy(DecodePolicy::service(), |ctx| super::super::curve_expression_solve_program(ctx, &lines)).expect("solve program").blocks.pop().expect("one solve block");
+    let preceding: Vec<_> = lines.iter().take_while(|line| line.offset < block.offset).cloned().collect();
+    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "creo expression solution scratch")?;
+        super::super::evaluate_expression_program_details(ctx, &preceding, None, external_symbols, &mut storage)
+    }).expect("preceding assignments");
+    let mut values = BTreeMap::new();
+    for (name, value) in &external_symbols.values { if let Some(value) = value { values.insert(name.clone(), value.clone()); } }
+    for assignment in preceding.assignments {
+        if let (Some((name, _)), Some(value)) = (assignment.scalar_target(), assignment.value.as_ref()) { values.insert(name.to_ascii_lowercase(), value.clone()); }
+    }
+    (block, values, evaluation)
+}
+
+fn affine_materialized_limit_reaches(source: &[&str], external_symbols: &super::super::ExternalRelationSymbols, operation: &'static str) {
+    let (block, values, _) = solve_phase_inputs(source, external_symbols);
+    let known: Vec<_> = block.unknowns.iter().map(|unknown| values.get(&unknown.name.to_ascii_lowercase()).and_then(super::super::quantity_parts_ref).map(|(_, dimension)| dimension)).collect();
+    let dimensions = with_expression_policy(DecodePolicy::service(), |ctx| super::super::infer_solve_variable_dimensions(ctx, &block, &values, &known, super::super::RelationEvaluationContext::default())).expect("dimension inference").expect("valid dimensions");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::MaterializedBytes, operation, |ctx| super::super::solve_affine_expression_block(ctx, &block, &values, &dimensions, super::super::RelationEvaluationContext::default()));
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == operation));
+}
+
+macro_rules! affine_materialized_test {
+    ($name:ident, $source:expr, $external:expr, $operation:literal) => {
+        #[test]
+        fn $name() { affine_materialized_limit_reaches($source, &$external, $operation); }
+    };
+}
+
+macro_rules! installed_solution_materialized_test {
+    ($name:ident, $source:expr, $external:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let (block, values, evaluation) = solve_phase_inputs($source, &$external);
+            let solution = evaluation.solve_solutions.get(&block.offset).expect("solved original block");
+            let mut indices = std::collections::HashMap::<String, Vec<usize>>::new();
+            for (index, assignment) in evaluation.assignments.iter().enumerate() { if let Some((name, _)) = assignment.scalar_target() { indices.entry(name.to_ascii_lowercase()).or_default().push(index); } }
+            let error = crate::test_support::last_refusal_at(&[], ResourceDimension::MaterializedBytes, $operation, |ctx| {
+                let mut scratch = ctx.reserve_scoped(0, "creo relation evaluation scratch")?;
+                super::super::install_solve_solution(ctx, &block, solution, &mut evaluation.assignments.clone(), &indices, &mut values.clone(), &mut scratch)
+            });
+            assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == $operation));
         }
     };
 }
@@ -506,7 +520,7 @@ evaluation_collection_test!(
     external_symbol(None),
     "creo existing external symbol nodes"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     existing_external_symbol_names_refuse,
     &[],
     external_symbol(None),
@@ -518,7 +532,7 @@ evaluation_collection_test!(
     super::super::ExternalRelationSymbols::default(),
     "creo existing assignment symbol nodes"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     existing_assignment_symbol_names_refuse,
     &["a=1"],
     super::super::ExternalRelationSymbols::default(),
@@ -530,7 +544,7 @@ evaluation_collection_test!(
     external_symbol(None),
     "creo defined external symbol nodes"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     defined_external_symbol_names_refuse,
     &[],
     external_symbol(None),
@@ -544,7 +558,7 @@ evaluation_collection_test!(
     ))),
     "creo external value nodes"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     external_value_names_refuse,
     &[],
     external_symbol(Some(super::super::CurveExpressionValue::Number(
@@ -552,7 +566,7 @@ evaluation_retained_test!(
     ))),
     "creo external value names"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     external_string_values_refuse,
     &[],
     external_symbol(Some(super::super::CurveExpressionValue::String(
@@ -566,7 +580,7 @@ evaluation_collection_test!(
     super::super::ExternalRelationSymbols::default(),
     "creo defined assignment symbol nodes"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     defined_assignment_symbol_names_refuse,
     &["a=1"],
     super::super::ExternalRelationSymbols::default(),
@@ -578,7 +592,7 @@ evaluation_collection_test!(
     super::super::ExternalRelationSymbols::default(),
     "creo evaluated value nodes"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     evaluated_symbol_names_refuse,
     &["a=1"],
     super::super::ExternalRelationSymbols::default(),
@@ -626,7 +640,7 @@ evaluation_collection_test!(
     super::super::ExternalRelationSymbols::default(),
     "creo existing solve symbol nodes"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     existing_solve_symbol_names_refuse,
     &["SOLVE", "x=1", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
@@ -638,7 +652,7 @@ evaluation_collection_test!(
     super::super::ExternalRelationSymbols::default(),
     "creo defined solve symbol nodes"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     defined_solve_symbol_names_refuse,
     &["SOLVE", "x=1", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
@@ -650,7 +664,7 @@ evaluation_collection_test!(
     super::super::ExternalRelationSymbols::default(),
     "creo solved value nodes"
 );
-evaluation_retained_test!(
+installed_solution_materialized_test!(
     solved_value_names_refuse,
     &["SOLVE", "x=1", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
@@ -662,13 +676,13 @@ evaluation_collection_test!(
     super::super::ExternalRelationSymbols::default(),
     "creo evaluated assignments"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     evaluated_string_values_refuse,
     &["a=\"text\""],
     super::super::ExternalRelationSymbols::default(),
     "creo evaluated string values"
 );
-evaluation_retained_test!(
+evaluation_materialized_test!(
     solve_initial_string_values_refuse,
     &["SOLVE", "x=1", "FOR x"],
     named_external_symbol(
@@ -678,30 +692,6 @@ evaluation_retained_test!(
     "creo solve initial string values"
 );
 
-macro_rules! evaluation_materialized_test {
-    ($name:ident, $source:expr, $external:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            evaluation_limit_reaches(
-                $source,
-                &$external,
-                ResourceDimension::MaterializedBytes,
-                $operation,
-            );
-        }
-    };
-    ($name:ident, $source:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            evaluation_limit_reaches(
-                $source,
-                &super::super::ExternalRelationSymbols::default(),
-                ResourceDimension::MaterializedBytes,
-                $operation,
-            );
-        }
-    };
-}
 
 evaluation_materialized_test!(
     solve_snapshot_lookup_refuses_temporary_bytes,
@@ -734,11 +724,11 @@ macro_rules! affine_helix_collection_test {
     };
 }
 
-macro_rules! affine_helix_retained_test {
+macro_rules! affine_helix_materialized_test {
     ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            affine_helix_limit_reaches(ResourceDimension::RetainedBytes, $operation);
+            affine_helix_limit_reaches(ResourceDimension::MaterializedBytes, $operation);
         }
     };
 }
@@ -747,7 +737,7 @@ affine_helix_collection_test!(
     affine_time_value_node_refuses,
     "creo affine time value node"
 );
-affine_helix_retained_test!(
+affine_helix_materialized_test!(
     affine_time_value_name_refuses,
     "creo affine time value name"
 );
@@ -755,11 +745,11 @@ affine_helix_collection_test!(
     affine_defined_time_node_refuses,
     "creo affine defined time node"
 );
-affine_helix_retained_test!(
+affine_helix_materialized_test!(
     affine_defined_time_name_refuses,
     "creo affine defined time name"
 );
-affine_helix_retained_test!(
+affine_helix_materialized_test!(
     affine_assignment_names_refuse,
     "creo affine assignment names"
 );
@@ -767,7 +757,7 @@ affine_helix_collection_test!(
     affine_defined_symbol_nodes_refuse,
     "creo affine defined symbol nodes"
 );
-affine_helix_retained_test!(
+affine_helix_materialized_test!(
     affine_defined_symbol_names_refuse,
     "creo affine defined symbol names"
 );
@@ -776,33 +766,17 @@ affine_helix_collection_test!(affine_value_nodes_refuse, "creo affine value node
 fn solve_storage_limit_reaches(source: &[&str], operation: &'static str) {
     let lines = expression_lines(source);
     with_expression_policy(DecodePolicy::service(), |ctx| {
-        super::super::evaluate_expression_program_details(
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(
             ctx,
             &lines,
             None,
-            &super::super::ExternalRelationSymbols::default(),
-        )
+            &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
     })
     .expect("service profile solves expression");
-    for limit in 0..8192 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let result = with_expression_policy(policy, |ctx| {
-            super::super::evaluate_expression_program_details(
-                ctx,
-                &lines,
-                None,
-                &super::super::ExternalRelationSymbols::default(),
-            )
-        });
-        if matches!(result, Err(CodecError::ResourceLimit(ref refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == operation)
-        {
-            return;
-        }
-    }
-    panic!("no limit reaches {operation}");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, operation, |ctx| {
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &lines, None, &super::super::ExternalRelationSymbols::default(), &mut solution_storage) }
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == operation));
 }
 
 macro_rules! solve_storage_test {
@@ -869,25 +843,25 @@ solve_storage_test!(
     &["x=2", "SOLVE", "x*x*x=8", "FOR x"],
     "creo nonlinear solved values"
 );
-evaluation_retained_test!(
+affine_materialized_test!(
     affine_variable_names_refuse,
     &["SOLVE", "x=1", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
     "creo affine variable names"
 );
-evaluation_retained_test!(
+affine_materialized_test!(
     affine_known_value_names_refuse,
     &["y=2", "SOLVE", "x+y=3", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
     "creo affine known value names"
 );
-evaluation_retained_test!(
+affine_materialized_test!(
     affine_coefficient_names_refuse,
     &["SOLVE", "x=1", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
     "creo affine coefficient names"
 );
-evaluation_retained_test!(
+affine_materialized_test!(
     affine_unknown_value_names_refuse,
     &["SOLVE", "x=1", "FOR x"],
     super::super::ExternalRelationSymbols::default(),
@@ -931,11 +905,11 @@ solve_storage_test!(
 fn nonlinear_materialized_limit_reaches(source: &[&str], external_symbols: &super::super::ExternalRelationSymbols, operation: &'static str) {
     let lines = expression_lines(source);
     with_expression_policy(DecodePolicy::service(), |ctx| {
-        super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols)
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &lines, None, external_symbols, &mut solution_storage) }
     }).expect("service profile solves the original expression");
     let block = with_expression_policy(DecodePolicy::service(), |ctx| super::super::curve_expression_solve_program(ctx, &lines)).expect("solve program").blocks.pop().expect("one solve block");
     let preceding: Vec<_> = lines.iter().take_while(|line| line.offset < block.offset).cloned().collect();
-    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| super::super::evaluate_expression_program_details(ctx, &preceding, None, external_symbols)).expect("preceding assignments");
+    let preceding = with_expression_policy(DecodePolicy::service(), |ctx| { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; super::super::evaluate_expression_program_details(ctx, &preceding, None, external_symbols, &mut solution_storage) }).expect("preceding assignments");
     let mut values = std::collections::BTreeMap::new();
     for assignment in preceding.assignments {
         if let (Some((name, _)), Some(value)) = (assignment.scalar_target(), assignment.value.as_ref()) { values.insert(name.to_ascii_lowercase(), value.clone()); }
@@ -994,12 +968,7 @@ fn solve_unknowns_refuse_before_vector_growth() {
     .expect("service profile")
     .is_none());
 
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = with_expression_policy(policy, |ctx| {
-        super::super::curve_expression_solve_unknowns(ctx, "x")
-    })
-    .expect_err("one unknown exceeds collection limit");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo solve unknowns", |ctx| super::super::curve_expression_solve_unknowns(ctx, "x"));
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo solve unknowns"));

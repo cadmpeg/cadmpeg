@@ -20,7 +20,7 @@ fn evaluate_expression_program(
     external_symbols: &ExternalRelationSymbols,
 ) -> Vec<CurveExpressionAssignment> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        evaluate_expression_program_details(ctx, lines, model_name, external_symbols)
+        { let mut solution_storage = ctx.reserve_scoped(0, "creo expression solution scratch")?; evaluate_expression_program_details(ctx, lines, model_name, external_symbols, &mut solution_storage) }
     })
     .expect("test curve expression evaluation")
     .assignments

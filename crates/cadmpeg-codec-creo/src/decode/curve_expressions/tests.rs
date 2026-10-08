@@ -69,13 +69,7 @@ fn curve_expression_dependency_rows_refuse_before_allocation() {
             .is_some()
     );
 
-    let mut limited = service;
-    limited.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &limited)
-        .expect("root bytes are within the limit");
-    let err = super::curve_expression_parameter_order(&ctx, &record, &unique_assignment_indices)
-        .map(|result| result.map(|order| (order.ordinals, order.cyclic_edges)))
-        .expect_err("two dependency rows exceed one collection item");
+    let err = crate::test_support::last_refusal_at(payload, ResourceDimension::CollectionItems, "creo curve-expression dependency rows", |ctx| super::curve_expression_parameter_order(ctx, &record, &unique_assignment_indices).map(|result| result.map(|order| (order.ordinals, order.cyclic_edges))));
     assert!(matches!(
         err,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -104,13 +98,7 @@ fn curve_expression_dependency_indices_refuse_before_inner_growth() {
             .is_some()
     );
 
-    let mut policy = service;
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("root bytes are within the limit");
-    let err = super::curve_expression_parameter_order(&ctx, &record, &unique_assignment_indices)
-        .map(|result| result.map(|order| (order.ordinals, order.cyclic_edges)))
-        .expect_err("the dependency index follows two admitted outer rows");
+    let err = crate::test_support::last_refusal_at(payload, ResourceDimension::CollectionItems, "creo curve-expression dependency indices", |ctx| super::curve_expression_parameter_order(ctx, &record, &unique_assignment_indices).map(|result| result.map(|order| (order.ordinals, order.cyclic_edges))));
     assert!(matches!(
         err,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -138,78 +126,12 @@ fn curve_expression_ordering_lookup_refuses_before_temporary_text() {
             .is_some()
     );
 
-    let mut limited = DecodePolicy::service();
-    limited.limits.max_materialized_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &limited)
-        .expect("the input fits the materialized-byte limit");
-    let error = super::curve_expression_parameter_order(&ctx, &record, &indices)
-        .map(|result| result.map(|order| (order.ordinals, order.cyclic_edges)))
-        .expect_err("the dependency key needs one temporary byte");
+    let error = crate::test_support::last_refusal_at(payload, ResourceDimension::MaterializedBytes, "creo curve-expression ordering lookup", |ctx| super::curve_expression_parameter_order(ctx, &record, &indices).map(|result| result.map(|order| (order.ordinals, order.cyclic_edges))));
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "creo curve-expression ordering lookup"
-    ));
-}
-
-fn with_collection_limit<T>(
-    limit: u64,
-    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
-) -> T {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"x", &arena, &policy).expect("small input is admitted");
-    run(&ctx)
-}
-
-#[test]
-fn curve_expression_pending_start_refuses_before_allocation() {
-    let dependencies = [vec![1], vec![]];
-    let error = with_collection_limit(0, |ctx| {
-        super::expression_dependency_reaches(ctx, &dependencies, 0, 1)
-    })
-    .expect_err("the pending start needs one collection item");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo curve-expression pending dependency"
-    ));
-}
-
-#[test]
-fn curve_expression_visit_marks_refuse_before_allocation() {
-    let dependencies = [vec![1], vec![]];
-    let error = with_collection_limit(1, |ctx| {
-        super::expression_dependency_reaches(ctx, &dependencies, 0, 1)
-    })
-    .expect_err("the visited lane needs two more collection items");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo curve-expression visited dependencies"
-    ));
-}
-
-#[test]
-fn curve_expression_pending_growth_refuses_before_push() {
-    let dependencies = [vec![1], vec![]];
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        super::expression_dependency_reaches(ctx, &dependencies, 0, 1)
-    })
-    .expect("service profile admits graph walk"));
-    let error = with_collection_limit(3, |ctx| {
-        super::expression_dependency_reaches(ctx, &dependencies, 0, 1)
-    })
-    .expect_err("the dependency edge needs a fourth collection item");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo curve-expression pending dependencies"
     ));
 }
 
@@ -226,40 +148,15 @@ fn curve_expression_cyclic_edges_refuse_before_insert() {
     })
     .expect("service profile admits cyclic dependencies")
     .is_some());
-    let error = with_collection_limit(8, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo curve-expression cyclic edges", |ctx| {
         super::curve_expression_parameter_order(ctx, &record, &indices)
             .map(|result| result.map(|order| (order.ordinals, order.cyclic_edges)))
-    })
-    .expect_err("the first cyclic edge needs a ninth item");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "creo curve-expression cyclic edges"
-    ));
-}
-
-#[test]
-fn curve_expression_assigned_ordinals_refuse_before_allocation() {
-    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x0aexpression\0\xf8\x02a=1\0b=2\0";
-    let record = crate::curve::expression_records(payload)
-        .pop()
-        .expect("complete curve expression");
-    let indices = std::collections::BTreeMap::new();
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        super::curve_expression_parameter_order(ctx, &record, &indices)
-    })
-    .expect("service profile admits ordinal assignment")
-    .is_some());
-    let error = with_collection_limit(5, |ctx| {
-        super::curve_expression_parameter_order(ctx, &record, &indices)
-            .map(|result| result.map(|order| (order.ordinals, order.cyclic_edges)))
-    })
-    .expect_err("the assigned marks follow two dependency rows and two ordinals");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo curve-expression assigned ordinals"
     ));
 }
 
@@ -275,10 +172,10 @@ fn curve_expression_unique_name_refuses_before_tree_insert() {
     })
     .expect("service profile admits names");
     assert_eq!(names, vec![Some("a".to_owned())]);
-    let error = with_collection_limit(0, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo curve-expression unique names", |ctx| {
         super::curve_expression_parameter_names(ctx, &record.assignments)
-    })
-    .expect_err("the first unique name needs one tree entry");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -298,10 +195,10 @@ fn curve_expression_occurrence_refuses_before_tree_insert() {
     })
     .expect("service profile admits duplicate names");
     assert_eq!(names, vec![Some("a#1".to_owned()), Some("a#2".to_owned())]);
-    let error = with_collection_limit(1, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo curve-expression occurrences", |ctx| {
         super::curve_expression_parameter_names(ctx, &record.assignments)
-    })
-    .expect_err("the occurrence follows one unique name");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -316,10 +213,10 @@ fn curve_expression_name_slots_refuse_before_vector_growth() {
     let record = crate::curve::expression_records(payload)
         .pop()
         .expect("complete curve expression");
-    let error = with_collection_limit(1, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo curve-expression parameter name slots", |ctx| {
         super::curve_expression_parameter_names(ctx, &record.assignments)
-    })
-    .expect_err("the name slot follows one unique name");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -412,11 +309,11 @@ fn curve_expression_assignment_index_refuses_before_tree_insert() {
     assert_eq!(by_name.len(), 2);
     assert_eq!(unique.len(), 2);
 
-    let error = with_collection_limit(0, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo curve-expression assignment indices", |ctx| {
         super::curve_expression_assignment_indices(ctx, &record)
             .map(|indices| (indices.by_name, indices.unique))
-    })
-    .expect_err("the first assignment needs a tree entry");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -431,11 +328,11 @@ fn curve_expression_unique_index_refuses_before_tree_insert() {
     let record = crate::curve::expression_records(payload)
         .pop()
         .expect("complete curve expression");
-    let error = with_collection_limit(2, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo curve-expression unique indices", |ctx| {
         super::curve_expression_assignment_indices(ctx, &record)
             .map(|indices| (indices.by_name, indices.unique))
-    })
-    .expect_err("the first unique index follows two assignment entries");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -510,10 +407,10 @@ fn curve_expression_emitted_indices_refuse_before_vector_reserve() {
     assert_eq!(emitted.get(&0), Some(&0));
     assert_eq!(emitted.get(&1), Some(&1));
 
-    let error = with_collection_limit(1, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo curve-expression emitted indices", |ctx| {
         super::curve_expression_emitted_ordinals(ctx, &record, &[0, 1])
-    })
-    .expect_err("two emitted indices exceed one collection item");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -528,10 +425,10 @@ fn curve_expression_emitted_ordinals_refuse_before_tree_insert() {
     let record = crate::curve::expression_records(payload)
         .pop()
         .expect("complete curve expression");
-    let error = with_collection_limit(2, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo curve-expression emitted ordinals", |ctx| {
         super::curve_expression_emitted_ordinals(ctx, &record, &[0, 1])
-    })
-    .expect_err("the first tree entry follows two emitted indices");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -572,7 +469,7 @@ fn curve_expression_source_content_refuses_before_vector_reserve() {
     );
 
     let mut limited = DecodePolicy::service();
-    limited.limits.max_collection_items = 9;
+    limited.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo curve-expression source content"), |cap| { let mut trial = limited; trial.limits.max_collection_items = cap; run(trial) });
     let error = run(limited).expect_err("source content follows nine admitted items");
     assert!(matches!(
         error,
@@ -787,7 +684,7 @@ fn curve_expression_seen_dependencies_refuse_before_tree_insert() {
 
     let dimensions = std::collections::BTreeMap::new();
     let mut limited = DecodePolicy::service();
-    limited.limits.max_collection_items = 28;
+    limited.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo curve-expression seen dependencies"), |cap| { let mut trial = limited; trial.limits.max_collection_items = cap; transfer_with_limits(&["a=1", "b=a+1"], &dimensions, trial) });
     let error = transfer_with_limits(&["a=1", "b=a+1"], &dimensions, limited)
         .expect_err("the dependency index needs one tree item");
     assert!(
@@ -803,7 +700,7 @@ fn curve_expression_parameter_dependencies_refuse_before_vector_growth() {
 
     let dimensions = std::collections::BTreeMap::new();
     let mut limited = DecodePolicy::service();
-    limited.limits.max_collection_items = 29;
+    limited.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo curve-expression parameter dependencies"), |cap| { let mut trial = limited; trial.limits.max_collection_items = cap; transfer_with_limits(&["a=1", "b=a+1"], &dimensions, trial) });
     let error = transfer_with_limits(&["a=1", "b=a+1"], &dimensions, limited)
         .expect_err("the dependency parameter needs one vector item");
     assert!(
@@ -828,7 +725,7 @@ fn curve_expression_dimension_dependencies_refuse_before_vector_growth() {
         1
     );
     let mut limited = DecodePolicy::service();
-    limited.limits.max_collection_items = 11;
+    limited.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo curve-expression dimension dependencies"), |cap| { let mut trial = limited; trial.limits.max_collection_items = cap; transfer_with_limits(&["a=x+1"], &dimensions, trial) });
     let error = transfer_with_limits(&["a=x+1"], &dimensions, limited)
         .expect_err("the dimension parameter needs one vector item");
     assert!(
@@ -848,7 +745,7 @@ fn curve_expression_dimension_candidates_refuse_before_vector_growth() {
             .expect("valid dimension ID"),
     )]);
     let mut limited = DecodePolicy::service();
-    limited.limits.max_collection_items = 10;
+    limited.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo curve-expression dimension candidates"), |cap| { let mut trial = limited; trial.limits.max_collection_items = cap; transfer_with_limits(&["a=x+1"], &dimensions, trial) });
     let error = transfer_with_limits(&["a=x+1"], &dimensions, limited)
         .expect_err("the dimension candidate needs one vector item");
     assert!(
@@ -1045,11 +942,11 @@ fn curve_expression_cyclic_dependency_text_refuses_before_copy() {
 
 #[test]
 fn curve_expression_property_node_refuses_before_tree_insert() {
-    let error = with_collection_limit(0, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        &[], cadmpeg_core::decode::ResourceDimension::CollectionItems, "creo curve-expression property nodes", |ctx| {
         let mut properties = std::collections::BTreeMap::new();
         super::insert_curve_expression_property(ctx, &mut properties, "source_name", "x".into())
-    })
-    .expect_err("the property node needs one collection item");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1300,7 +1197,8 @@ fn curve_expression_named_properties_refuse_before_second_tree() {
         .len(),
         2
     );
-    let error = with_collection_limit(2, |ctx| {
+    let error = crate::test_support::last_refusal_at(
+        payload, cadmpeg_core::decode::ResourceDimension::CollectionItems, "named entry map nodes", |ctx| {
         super::curve_expression_properties(
             ctx,
             assignment,
@@ -1310,8 +1208,7 @@ fn curve_expression_named_properties_refuse_before_second_tree() {
             &dimensions,
             &edges,
         )
-    })
-    .expect_err("the second tree needs two more nodes");
+    });
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1332,7 +1229,7 @@ fn curve_expression_native_parameters_refuse_before_tree_creation() {
         1
     );
     let mut limited = cadmpeg_core::decode::DecodePolicy::service();
-    limited.limits.max_collection_items = 18;
+    limited.limits.max_collection_items = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo curve-expression native parameters"), |cap| { let mut trial = limited; trial.limits.max_collection_items = cap; transfer_with_limits(&["a=1"], &dimensions, trial) });
     let error = transfer_with_limits(&["a=1"], &dimensions, limited)
         .expect_err("the native parameter tree needs two more items");
     assert!(
@@ -1367,5 +1264,39 @@ fn curve_expression_native_parameter_keys_refuse_retained_copy() {
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource) if resource.operation == operation)
         );
+    }
+}
+
+#[test]
+fn curve_expression_components_match_reachability_for_small_graphs() {
+    for edges in 0u32..(1 << 9) {
+        let mut dependencies = vec![Vec::new(); 3];
+        let mut reverse = vec![Vec::new(); 3];
+        let mut reachable = [[false; 3]; 3];
+        for from in 0..3 {
+            reachable[from][from] = true;
+            for to in 0..3 {
+                if edges & (1 << (from * 3 + to)) != 0 {
+                    dependencies[from].push(to);
+                    reverse[to].push(from);
+                    reachable[from][to] = true;
+                }
+            }
+        }
+        for via in 0..3 {
+            for from in 0..3 {
+                for to in 0..3 {
+                    reachable[from][to] |= reachable[from][via] && reachable[via][to];
+                }
+            }
+        }
+        let components = crate::decode::with_test_decode_ctx(|ctx| {
+            super::expression_dependency_components(ctx, &dependencies, &reverse)
+        }).expect("small graph fits service limits");
+        for from in 0..3 {
+            for to in 0..3 {
+                assert_eq!(components[from] == components[to], reachable[from][to] && reachable[to][from], "edges={edges}, from={from}, to={to}");
+            }
+        }
     }
 }

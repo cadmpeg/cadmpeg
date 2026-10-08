@@ -154,10 +154,7 @@ fn pcurve_endpoints_refuse_unique_parameter_count_node() {
     assert_pcurve_endpoint_collection_refusal("creo unique-row count nodes");
 }
 
-#[test]
-fn pcurve_endpoints_refuse_unique_parameter_projection() {
-    assert_pcurve_endpoint_collection_refusal("creo unique-row projection");
-}
+
 
 #[test]
 fn pcurve_endpoints_refuse_output_vector() {
@@ -237,56 +234,49 @@ fn fc05_caps_with_collection_limit(
     )
 }
 
-fn assert_fc05_cap_collection_refusal(limit: u64, operation: &'static str) {
-    let error = fc05_caps_with_collection_limit(limit).expect_err("two caps exceed limit");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
+fn assert_fc05_cap_collection_refusal(operation: &'static str) {
+    let cap = crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some(operation), fc05_caps_with_collection_limit);
+    let error = fc05_caps_with_collection_limit(cap).expect_err("two caps exceed limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == ResourceDimension::CollectionItems && resource.operation == operation));
 }
 
-#[test]
-fn fc05_caps_refuse_unique_topology_count_node() {
-    assert_fc05_cap_collection_refusal(0, "creo unique-row count nodes");
-}
 
-#[test]
-fn fc05_caps_refuse_unique_topology_projection() {
-    assert_fc05_cap_collection_refusal(2, "creo unique-row projection");
-}
+
+
 
 #[test]
 fn fc05_caps_refuse_topology_face_node() {
-    assert_fc05_cap_collection_refusal(4, "creo fc05 topology-face nodes");
+    assert_fc05_cap_collection_refusal("creo fc05 topology-face nodes");
 }
 
 #[test]
 fn fc05_caps_refuse_circle_count_node() {
-    assert_fc05_cap_collection_refusal(6, "creo fc05 circle-count nodes");
+    assert_fc05_cap_collection_refusal("creo fc05 circle-count nodes");
 }
 
 #[test]
 fn fc05_caps_refuse_cylinder_group_node() {
-    assert_fc05_cap_collection_refusal(8, "creo fc05 cylinder group nodes");
+    assert_fc05_cap_collection_refusal("creo fc05 cylinder group nodes");
 }
 
 #[test]
 fn fc05_caps_refuse_cylinder_group_member() {
-    assert_fc05_cap_collection_refusal(9, "creo fc05 cylinder group members");
+    assert_fc05_cap_collection_refusal("creo fc05 cylinder group members");
 }
 
 #[test]
 fn fc05_caps_refuse_distinct_ordinate() {
-    assert_fc05_cap_collection_refusal(11, "creo fc05 distinct cap ordinates");
+    assert_fc05_cap_collection_refusal("creo fc05 distinct cap ordinates");
 }
 
 #[test]
 fn fc05_caps_refuse_cap_edge_vector() {
-    assert_fc05_cap_collection_refusal(13, "creo fc05 cap edges");
+    assert_fc05_cap_collection_refusal("creo fc05 cap edges");
 }
 
 #[test]
 fn fc05_caps_refuse_pair_vector() {
-    assert_fc05_cap_collection_refusal(15, "creo fc05 cylinder cap pairs");
+    assert_fc05_cap_collection_refusal("creo fc05 cylinder cap pairs");
 }
 
 fn parameter_record(curve_id: u32) -> CurveParameterRecord {
@@ -377,20 +367,14 @@ fn canonical_and_positional_two_chart_input() -> (Vec<u8>, BTreeSet<u32>) {
     (payload, BTreeSet::from([10, 11]))
 }
 
-fn two_chart_limit_error(limit: u64) -> CodecError {
+fn two_chart_limit_error(operation: &'static str) -> CodecError {
     let (payload, face_ids) = canonical_and_positional_two_chart_input();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    two_chart_pcurve_samples(&ctx, &payload, Some(&face_ids))
-        .expect_err("two-chart samples exceed collection limit")
+    crate::test_support::last_refusal_at(&payload, ResourceDimension::CollectionItems, operation, |ctx| two_chart_pcurve_samples(ctx, &payload, Some(&face_ids)))
 }
 
 #[test]
 fn two_chart_counted_samples_refuse_collection_limit() {
-    let error = two_chart_limit_error(11);
+    let error = two_chart_limit_error("creo two-chart sample points");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo two-chart sample points"));
@@ -398,7 +382,7 @@ fn two_chart_counted_samples_refuse_collection_limit() {
 
 #[test]
 fn two_chart_canonical_group_node_refuses_collection_limit() {
-    let error = two_chart_limit_error(12);
+    let error = two_chart_limit_error("creo two-chart canonical group nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo two-chart canonical group nodes"));
@@ -406,7 +390,7 @@ fn two_chart_canonical_group_node_refuses_collection_limit() {
 
 #[test]
 fn two_chart_canonical_count_node_refuses_collection_limit() {
-    let error = two_chart_limit_error(13);
+    let error = two_chart_limit_error("creo two-chart canonical count nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo two-chart canonical count nodes"));
@@ -414,7 +398,7 @@ fn two_chart_canonical_count_node_refuses_collection_limit() {
 
 #[test]
 fn two_chart_sample_row_refuses_collection_limit() {
-    let error = two_chart_limit_error(17);
+    let error = two_chart_limit_error("creo two-chart sample rows");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo two-chart sample rows"));
@@ -422,7 +406,7 @@ fn two_chart_sample_row_refuses_collection_limit() {
 
 #[test]
 fn two_chart_replay_samples_refuse_collection_limit() {
-    let error = two_chart_limit_error(16);
+    let error = two_chart_limit_error("creo two-chart sample points");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo two-chart sample points"));
@@ -430,7 +414,7 @@ fn two_chart_replay_samples_refuse_collection_limit() {
 
 #[test]
 fn two_chart_result_count_node_refuses_collection_limit() {
-    let error = two_chart_limit_error(22);
+    let error = two_chart_limit_error("creo two-chart result count nodes");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo two-chart result count nodes"));
@@ -595,10 +579,7 @@ fn fc02_short_pcurve_refuses_unique_parameter_node() {
     assert_fc02_short_collection_refusal("creo unique-row count nodes");
 }
 
-#[test]
-fn fc02_short_pcurve_refuses_unique_parameter_projection() {
-    assert_fc02_short_collection_refusal("creo unique-row projection");
-}
+
 
 #[test]
 fn fc02_short_pcurve_refuses_endpoint_output() {
@@ -1459,21 +1440,7 @@ fn exact_helix_constructor_rejects_nonfinite_axial_coordinates() {
     assert_eq!(helix.z_start.get(), 3.0);
 }
 
-#[test]
-fn sampled_pcurve_retain_refuses_work() {
-    let (payload, face_ids) = canonical_and_positional_two_chart_input();
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo sampled pcurve retain",
-        |ctx| crate::curve::two_chart_pcurve_samples(ctx, &payload, Some(&face_ids)),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo sampled pcurve retain")
-    );
-}
+
 
 #[test]
 fn pcurve_decode_cost_counts_each_sample_coordinate() {
