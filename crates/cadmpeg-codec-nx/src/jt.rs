@@ -1445,8 +1445,6 @@ impl CodeBits<'_> {
 
 /// Upper bound on values a single arithmetic-coded lane may declare.
 const MAX_ARITHMETIC_VALUES: usize = 1_000_000;
-/// Upper bound on arithmetic decoder table lookups for one lane.
-const MAX_ARITHMETIC_WORK: usize = 64_000_000;
 
 fn decode_arithmetic<'a>(
     ctx: &'a DecodeContext<'_>,
@@ -1460,16 +1458,6 @@ fn decode_arithmetic<'a>(
     // the per-value decode work instead.
     if value_count > MAX_ARITHMETIC_VALUES {
         return Ok(None);
-    }
-    let Some(work) = entries.len().checked_mul(value_count) else {
-        return Err(ctx.refuse_codec_limit("decode JT arithmetic symbols", u64::MAX - 1, u64::MAX));
-    };
-    if work > MAX_ARITHMETIC_WORK {
-        return Err(ctx.refuse_codec_limit(
-            "decode JT arithmetic symbols",
-            cadmpeg_core::decode::u64_from_index(MAX_ARITHMETIC_WORK),
-            cadmpeg_core::decode::u64_from_index(work),
-        ));
     }
     let mut total = 0u32;
     let mut entries_to_sum = entries.iter();
@@ -1552,7 +1540,6 @@ fn decode_arithmetic<'a>(
         };
         low = next_low;
         loop {
-            ctx.charge_work(1, "normalize JT arithmetic code")?;
             if ((high ^ low) & 0x8000) == 0 {
             } else if low & 0x4000 != 0 && high & 0x4000 == 0 {
                 code ^= 0x4000;
