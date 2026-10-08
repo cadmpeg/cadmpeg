@@ -1006,6 +1006,35 @@ mod tests {
     }
 
     #[test]
+    fn malformed_schema_xml_outer_wrapper_refuses_after_parser_detail() {
+        // The pinned XML grammar reports an opened, unclosed root after
+        // consuming <Schema>. Its fixed diagnostic fits before the wrapper.
+        const PARSER_DETAIL: &str = "the root node was opened but never closed";
+        let name = "schema".repeat(256);
+        let xml = b"<Schema>";
+        let expected = format!("Protein schema {name} is malformed XML: {PARSER_DETAIL}");
+        with_service_context(xml, |ctx| {
+            let error = super::parse_schema_document(ctx, &mut scratch(ctx), &name, xml, &mut HashMap::new())
+                .expect_err("unclosed root");
+            assert!(matches!(error, CodecError::Malformed(detail) if detail == expected));
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(PARSER_DETAIL.len());
+        let (ctx, _) = DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML input");
+        let error = super::parse_schema_document(&ctx, &mut scratch(&ctx), &name, xml, &mut HashMap::new())
+            .expect_err("the entry-name wrapper cannot fit");
+        let CodecError::ResourceLimit(limit) = error else { panic!("wrapper refusal"); };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "Protein malformed detail");
+        assert_eq!(limit.limit, policy.limits.max_retained_bytes);
+        assert_eq!(limit.additional, cadmpeg_core::decode::u64_from_index(expected.len()));
+        assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+        assert!(matches!(ctx.charge_work(0, "after XML wrapper refusal"),
+            Err(CodecError::ResourceLimit(original)) if original == limit));
+    }
+
+    #[test]
     fn duplicate_property_diagnostic_admits_schema_and_property_ids() {
         let uid = "uid".repeat(256);
         let id = "id".repeat(256);
