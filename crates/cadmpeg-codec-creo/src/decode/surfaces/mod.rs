@@ -8,6 +8,7 @@ pub(super) mod intersection_resolve;
 pub(super) mod intersections;
 pub(super) mod nurbs_boundaries;
 mod model_ids;
+mod native_ids;
 pub(super) mod positional;
 pub(super) mod prototypes;
 pub(super) mod transfer_curves;
@@ -184,7 +185,7 @@ mod tests {
 
     #[test]
     fn part_product_refuses_before_model_vector_growth() {
-        let error = limited_product(&named_scan(), 6, u64::MAX, false)
+        let error = limited_product(&named_scan(),crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo model product definitions"), |cap| limited_product(&named_scan(),cap, u64::MAX, false)), u64::MAX, false)
             .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -219,7 +220,7 @@ mod tests {
 
     #[test]
     fn part_product_identities_refuse_before_allocation() {
-        let error = limited_product(&named_scan(), u64::MAX, 0, false)
+        let error = limited_product(&named_scan(), u64::MAX,crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo occurrence identity"), |cap| limited_product(&named_scan(), u64::MAX,cap, false)), false)
             .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -249,7 +250,7 @@ mod tests {
 
     #[test]
     fn part_product_refuses_before_body_reference_rows_and_ids() {
-        let error = limited_product(&named_scan(), 6, u64::MAX, true)
+        let error = limited_product(&named_scan(),crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo product body references"), |cap| limited_product(&named_scan(),cap, u64::MAX, true)), u64::MAX, true)
             .expect_err("product exceeds the configured resource limit");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -575,18 +576,16 @@ pub(super) fn fc05_cap_pair_model_frame(
     scan: &ContainerScan,
     pair: &crate::curve::Fc05CylinderCapPair,
 ) -> Result<Option<Fc05CapPairFrame>, cadmpeg_core::CodecError> {
-    let mut placed_caps = ctx
-        .admit_iter(&pair.cap_edges, "creo cap pair placed edge traversal")?
-        .map(|edge| {
-            crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
-                .map(|plane| (plane, edge.cap_ordinate_row_frame))
-        });
-    let Some(Some((first_cap, first_ordinate))) = placed_caps.next() else {
-        return Ok(None);
-    };
-    let Some(Some((mut last_cap, mut last_ordinate))) = placed_caps.next() else {
-        return Ok(None);
-    };
+    if pair.cap_edges.len() < 2 { return Ok(None); }
+    let outlines = native_ids::UniqueRows::new(ctx, &scan.planes.outlines,
+        |plane| Some(plane.surface_id), "creo cap pair outline index")?;
+    let mut placed_caps = pair.cap_edges.iter();
+    let Some(first) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")? else { return Ok(None); };
+    let Some(first_cap) = outlines.unique(first.cap_plane_id) else { return Ok(None); };
+    let first_ordinate = first.cap_ordinate_row_frame;
+    let Some(last) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")? else { return Ok(None); };
+    let Some(mut last_cap) = outlines.unique(last.cap_plane_id) else { return Ok(None); };
+    let mut last_ordinate = last.cap_ordinate_row_frame;
     let Some(axis_index) = Axis::ALL
         .into_iter()
         .find(|axis| first_cap.normal()[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)
@@ -596,15 +595,20 @@ pub(super) fn fc05_cap_pair_model_frame(
     if last_cap.normal != first_cap.normal {
         return Ok(None);
     }
-    for placed_cap in placed_caps {
-        let Some((plane, ordinate)) = placed_cap else {
-            return Ok(None);
-        };
-        if plane.normal != first_cap.normal {
-            return Ok(None);
-        }
+    let offsets = |plane: &crate::surface::OutlinePlane, ordinate: f64| {
+        let origin = first_cap.origin[axis_index.index()];
+        let current = plane.origin[axis_index.index()];
+        [(current - ordinate - (origin - first_ordinate)).abs(),
+            (current + ordinate - (origin + first_ordinate)).abs()]
+    };
+    let mut disagreement = offsets(last_cap, last_ordinate);
+    while let Some(edge) = ctx.next_charged(&mut placed_caps, "creo cap pair placed edge traversal")? {
+        let Some(plane) = outlines.unique(edge.cap_plane_id) else { return Ok(None); };
+        if plane.normal != first_cap.normal { return Ok(None); }
         last_cap = plane;
-        last_ordinate = ordinate;
+        last_ordinate = edge.cap_ordinate_row_frame;
+        let current = offsets(plane, last_ordinate);
+        disagreement = std::array::from_fn(|index| disagreement[index].max(current[index]));
     }
     let row_span = last_ordinate - first_ordinate;
     let model_span = last_cap.origin[axis_index.index()] - first_cap.origin[axis_index.index()];
@@ -622,22 +626,8 @@ pub(super) fn fc05_cap_pair_model_frame(
         Sign::Positive
     };
     let axis_origin = first_cap.origin[axis_index.index()] - axis_sign.scale() * first_ordinate;
-    if ctx.any_by(
-        &pair.cap_edges,
-        |edge| {
-            let Some(plane) =
-                crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
-            else {
-                return Ok(true);
-            };
-            Ok((plane.origin[axis_index.index()]
-                - axis_sign.scale() * edge.cap_ordinate_row_frame
-                - axis_origin)
-                .abs()
-                > EPS_FC05_CAP_FRAME)
-        },
-        "creo cap pair edge agreement traversal",
-    )? {
+    let disagreement = match axis_sign { Sign::Positive => disagreement[0], Sign::Negative => disagreement[1] };
+    if disagreement > EPS_FC05_CAP_FRAME {
         // A cap pair whose row-frame and model-space spans do not agree does
         // not establish a unit parameter-axis transform. Retain the circles
         // for their independent carrier evidence, but do not invent a chart.
@@ -667,23 +657,21 @@ pub(super) fn transfer_fc05_cap_circles(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut curves_index = model_ids::ModelIdentityIndex::new(ctx)?;
     let mut surfaces_index = model_ids::ModelIdentityIndex::new(ctx)?;
+    if scan.curves.fc05_circles.is_empty() { return Ok(()); }
+    let topologies = native_ids::UniqueRows::new(ctx, &scan.curves.topology_rows,
+        |row| Some(row.id), "creo cap circle topology index")?;
+    let outlines = native_ids::UniqueRows::new(ctx, &scan.planes.outlines,
+        |plane| Some(plane.surface_id), "creo cap circle outline index")?;
     for circle in ctx.admit_iter(
         &scan.curves.fc05_circles,
         "creo transfer fc05 cap circles fc05 circles traversal",
     )? {
-        let Some(topology) = crate::decode::uniqueness::exactly_one(
-            scan.curves
-                .topology_rows
-                .iter()
-                .filter(|row| row.id == circle.curve_id),
-        ) else {
-            continue;
-        };
+        let Some(topology) = topologies.unique(circle.curve_id) else { continue; };
         let cap_plane = crate::decode::uniqueness::exactly_one(
             topology.bounded_face_ids().filter_map(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, face)
                     .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)?;
-                crate::surface::unique_outline_plane(&scan.planes.outlines, face)
+                outlines.unique(face)
             }),
         );
         let cylinder =

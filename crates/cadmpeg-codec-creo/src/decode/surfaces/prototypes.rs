@@ -33,16 +33,42 @@ fn push_prototype_loss(
     Ok(())
 }
 
+pub(super) fn prototype_field<'a>(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &'a crate::surface::SurfacePrototypeRecord, name: &str,
+) -> Result<Option<&'a crate::surface::SurfaceNamedParameter>, cadmpeg_core::CodecError> {
+    crate::decode::uniqueness::exactly_one_by(ctx, &record.parameters,
+        |field| ctx.equal(field.name.as_str(), name, "creo prototype field name comparison"),
+        "creo prototype field search")
+}
+
 pub(in super::super) fn prototype_scalar(
-    record: &crate::surface::SurfacePrototypeRecord,
-    name: &str,
-) -> Option<f64> {
-    match &record.field(name)?.value {
-        crate::surface::SurfaceNamedValue::ScalarSequence(values) if values.len() == 1 => {
-            Some(values[0])
-        }
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &crate::surface::SurfacePrototypeRecord, name: &str,
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+    let Some(field) = prototype_field(ctx, record, name)? else { return Ok(None); };
+    Ok(match &field.value {
+        crate::surface::SurfaceNamedValue::ScalarSequence(values) if values.len() == 1 => Some(values[0]),
         _ => None,
+    })
+}
+
+pub(super) fn prototype_tabulated_chart_origin(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    record: &crate::surface::SurfacePrototypeRecord,
+) -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
+    if record.family != crate::surface::SurfacePrototypeFamily::Extrusion(crate::surface::ExtrusionLabel::TabulatedCylinder) {
+        return Ok(None);
     }
+    let Some(field) = prototype_field(ctx, record, "local_sys")? else { return Ok(None); };
+    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &field.value else { return Ok(None); };
+    if array.dimensions() != 4 || array.count() != 3 { return Ok(None); }
+    let Ok(values) = <&[Option<f64>; 12]>::try_from(array.values()) else { return Ok(None); };
+    if values.iter().all(|value| value.is_some_and(f64::is_finite)) {
+        return Ok(values[9].zip(values[10]).zip(values[11]).map(|((x, y), z)| [x, y, z]));
+    }
+    let compact_chart = values[..7].iter().all(|value| value.is_some_and(|value| value == 0.0))
+        && values[7..10].iter().all(|value| value.is_some_and(f64::is_finite))
+        && values[10..12].iter().all(Option::is_none);
+    Ok(if compact_chart { values[7].zip(values[8]).zip(values[9]).map(|((x, y), z)| [x, y, z]) } else { None })
 }
 
 fn prototype_vector_array(
@@ -50,7 +76,7 @@ fn prototype_vector_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Result<Option<Vec<[f64; 3]>>, cadmpeg_core::CodecError> {
-    let Some(field) = record.field(name) else {
+    let Some(field) = prototype_field(ctx, record, name)? else {
         return Ok(None);
     };
     let crate::surface::SurfaceNamedValue::ScalarArray(array) = &field.value else {
@@ -60,13 +86,9 @@ fn prototype_vector_array(
         return Ok(None);
     }
     let mut triples = Vec::new();
-    for coordinates in
-        ctx.admit_iter(array.values(), "creo prototype vector array traversal")?
-            .chunks(std::num::NonZeroUsize::new(3).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("zero prototype vector width")
-            })?)
-            .filter(|coordinates| coordinates.len() == 3)
-    {
+    let mut coordinates = array.values().chunks(3);
+    while let Some(coordinates) = ctx.next_charged(&mut coordinates, "creo prototype vector array traversal")? {
+        if coordinates.len() != 3 { continue; }
         let [Some(x), Some(y), Some(z)] = coordinates else {
             return Ok(None);
         };
@@ -81,14 +103,15 @@ fn prototype_parameter_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    let Some(field) = record.field(name) else {
+    let Some(field) = prototype_field(ctx, record, name)? else {
         return Ok(None);
     };
     let crate::surface::SurfaceNamedValue::CountedScalarArray(array) = &field.value else {
         return Ok(None);
     };
     let mut parameters = Vec::new();
-    for value in ctx.admit_iter(array.values(), "creo prototype parameter array traversal")? {
+    let mut values = array.values().iter();
+    while let Some(value) = ctx.next_charged(&mut values, "creo prototype parameter array traversal")? {
         let Some(value) = value else {
             return Ok(None);
         };
@@ -103,6 +126,8 @@ fn prototype_spline_nurbs(
     record: &crate::surface::SurfacePrototypeRecord,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
+    let mut grid_storage = ctx.reserve_scoped(0, "creo prototype grid workspace")?;
+    let Some(grid) = grid_storage.with_storage(|| {
     let Some(points) = prototype_vector_array(ctx, record, "i_points")? else {
         return Ok(None);
     };
@@ -124,7 +149,7 @@ fn prototype_spline_nurbs(
     let Ok(mixed_derivatives) = <[[f64; 3]; 4]>::try_from(mixed) else {
         return Ok(None);
     };
-    let Some(grid) = crate::interpolation_grid::InterpolationGrid::try_new(
+    crate::interpolation_grid::InterpolationGrid::try_new(
         ctx,
         points,
         u_parameters,
@@ -132,10 +157,8 @@ fn prototype_spline_nurbs(
         u_derivatives,
         v_derivatives,
         mixed_derivatives,
-    )?
-    else {
-        return Ok(None);
-    };
+    )
+    })? else { return Ok(None); };
     interpolation_spline_surface(
         ctx,
         &grid,
@@ -147,10 +170,17 @@ fn prototype_spline_nurbs(
     )
 }
 
-fn prototype_local_frame(
+fn prototype_local_frame(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &crate::surface::SurfacePrototypeRecord,
+) -> Result<Option<([f64; 3], [f64; 3], [f64; 3])>, cadmpeg_core::CodecError> {
+    let Some(field) = prototype_field(ctx, record, "local_sys")? else { return Ok(None); };
+    Ok(local_frame_from_field(&record.family, &field.value))
+}
+
+fn local_frame_from_field(family: &crate::surface::SurfacePrototypeFamily,
+    value: &crate::surface::SurfaceNamedValue,
 ) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
-    let crate::surface::SurfaceNamedValue::ScalarArray(array) = &record.field("local_sys")?.value
+    let crate::surface::SurfaceNamedValue::ScalarArray(array) = value
     else {
         return None;
     };
@@ -165,7 +195,7 @@ fn prototype_local_frame(
     let first_norm = dot(first, first).sqrt();
     let reference = normalize(first)?;
     let torus = matches!(
-        record.family,
+        family,
         crate::surface::SurfacePrototypeFamily::Torus(_)
     );
     let mut second_candidates =
@@ -190,28 +220,72 @@ fn prototype_local_frame(
     Some((origin, axis, reference))
 }
 
-fn first_instance_surface_row<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    rows: &'a [crate::surface::SurfaceRow],
-    frame_start: usize,
-    frame_end: usize,
-    prototype_offset: usize,
-    row_kind: crate::surface::SurfaceKind,
-) -> Result<Option<&'a crate::surface::SurfaceRow>, cadmpeg_core::CodecError> {
-    let previous = ctx
-        .admit_iter(rows, "creo preceding prototype row selection")?
-        .filter(|row| {
-            row.offset >= frame_start && row.offset < frame_end && row.offset < prototype_offset
-        })
-        .max_by_key(|row| row.offset);
-    if previous.is_some_and(|row| row.kind == row_kind) {
-        return Ok(previous);
+struct PrototypeRows<'rows, 'ctx> {
+    ordered: Vec<&'rows crate::surface::SurfaceRow>,
+    families: [Vec<&'rows crate::surface::SurfaceRow>; 5],
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn prototype_family_slot(kind: crate::surface::SurfaceKind) -> Option<usize> {
+    match kind {
+        crate::surface::SurfaceKind::Plane => Some(0),
+        crate::surface::SurfaceKind::Cylinder => Some(1),
+        crate::surface::SurfaceKind::Cone => Some(2),
+        crate::surface::SurfaceKind::TorusOrSphere => Some(3),
+        crate::surface::SurfaceKind::Spline => Some(4),
+        _ => None,
     }
-    Ok(ctx
-        .admit_iter(rows, "creo following prototype row selection")?
-        .filter(|row| row.offset >= frame_start && row.offset < frame_end)
-        .filter(|row| row.offset > prototype_offset && row.kind == row_kind)
-        .min_by_key(|row| row.offset))
+}
+
+impl<'rows, 'ctx> PrototypeRows<'rows, 'ctx> {
+    fn new(ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>, rows: &'rows [crate::surface::SurfaceRow]) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "creo prototype row workspace")?;
+        let mut ordered = Vec::new();
+        let mut families: [Vec<_>; 5] = std::array::from_fn(|_| Vec::new());
+        storage.with_storage(|| {
+            for row in ctx.admit_iter(rows, "creo prototype row index")? {
+                ctx.push_vec(&mut ordered, row, "creo prototype ordered row refs")?;
+                if let Some(slot) = prototype_family_slot(row.kind) {
+                    ctx.push_vec(&mut families[slot], row, "creo prototype family row refs")?;
+                }
+            }
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })?;
+        ctx.stable_sort_by_key(&mut ordered, |row| row.offset, usize::cmp, "creo prototype row ordering")?;
+        for family in &mut families {
+            ctx.stable_sort_by_key(family, |row| row.offset, usize::cmp, "creo prototype family row ordering")?;
+        }
+        Ok(Self { ordered, families, _storage: storage })
+    }
+}
+
+fn first_instance_surface_row<'rows>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    rows: &PrototypeRows<'rows, '_>,
+    frame_start: usize, frame_end: usize,
+    prototype_offset: usize, row_kind: crate::surface::SurfaceKind,
+) -> Result<Option<&'rows crate::surface::SurfaceRow>, cadmpeg_core::CodecError> {
+    let position = ctx.partition_point(&rows.ordered, |row| Ok(row.offset < prototype_offset.min(frame_end)), "creo prototype row selection")?;
+    if let Some(previous) = position.checked_sub(1).and_then(|index| rows.ordered.get(index)).copied() {
+        if previous.offset >= frame_start && previous.offset < frame_end && previous.kind == row_kind {
+            return Ok(Some(previous));
+        }
+    }
+    let Some(slot) = prototype_family_slot(row_kind) else { return Ok(None); };
+    let family = &rows.families[slot];
+    let position = ctx.partition_point(family, |row| Ok(row.offset < frame_start || row.offset <= prototype_offset), "creo prototype following row selection")?;
+    Ok(family.get(position).copied().filter(|row| row.offset < frame_end))
+}
+
+pub(super) struct PrototypeFrames<'ctx> {
+    bounds: std::collections::HashMap<(usize, usize), Vec<(usize, usize)>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'ctx> PrototypeFrames<'ctx> {
+    pub(super) fn new(ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self { bounds: std::collections::HashMap::new(), storage: ctx.reserve_scoped(0, "creo prototype frame workspace")? })
+    }
 }
 
 /// Bounds of the complete surface array that holds one prototype record.
@@ -224,6 +298,7 @@ pub(super) fn surface_prototype_frame_bounds(
     scan: &ContainerScan<'_>,
     section: &crate::container::Section,
     prototype_offset: usize,
+    frames: &mut PrototypeFrames<'_>,
 ) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
     let section_end = section.end();
     if scan.framing.data.is_empty() {
@@ -244,16 +319,18 @@ pub(super) fn surface_prototype_frame_bounds(
     let Some(relative_prototype_offset) = prototype_offset.checked_sub(section.offset()) else {
         return Ok(None);
     };
-    let complete_bounds = crate::surface::complete_surface_array_bounds(ctx, payload)?;
-    let mut matches = complete_bounds.into_iter().filter(|(start, end)| {
-        relative_prototype_offset >= *start && relative_prototype_offset < *end
-    });
-    let Some((start, end)) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Ok(None);
+    let key = (section.offset(), section.end());
+    if !frames.bounds.contains_key(&key) {
+        frames.storage.with_storage(|| {
+            let bounds = crate::surface::complete_surface_array_bounds(ctx, payload)?;
+            ctx.insert_hash_map(&mut frames.bounds, key, bounds, "creo prototype section frame nodes")?;
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })?;
     }
+    let Some(complete_bounds) = frames.bounds.get(&key) else { return Ok(None); };
+    let Some(&(start, end)) = crate::decode::uniqueness::exactly_one_by(ctx, complete_bounds,
+        |(start, end)| Ok(relative_prototype_offset >= *start && relative_prototype_offset < *end),
+        "creo prototype complete frame search")? else { return Ok(None); };
     Ok(Some((
         frame_bound(ctx, section, start)?,
         frame_bound(ctx, section, end)?,
@@ -316,6 +393,9 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
     )>,
     cadmpeg_core::CodecError,
 > {
+    if scan.surfaces.prototype_records.is_empty() { return Ok(Vec::new()); }
+    let mut frames = PrototypeFrames::new(ctx)?;
+    let rows = PrototypeRows::new(ctx, &scan.surfaces.rows)?;
     let mut associations = Vec::new();
     for record in ctx.admit_iter(
         &scan.surfaces.prototype_records,
@@ -353,13 +433,13 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             continue;
         };
         let Some((adjacent_start, adjacent_end)) =
-            surface_prototype_frame_bounds(ctx, scan, section, record.offset)?
+            surface_prototype_frame_bounds(ctx, scan, section, record.offset, &mut frames)?
         else {
             continue;
         };
         let Some(row) = first_instance_surface_row(
             ctx,
-            &scan.surfaces.rows,
+            &rows,
             adjacent_start,
             adjacent_end,
             record.offset,
@@ -376,11 +456,13 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         ctx.reserve_vec(&mut associations, 1, "creo surface prototype associations")?;
         associations.push((prototype, row, section));
     }
+    let mut count_storage = ctx.reserve_scoped(0, "creo prototype association count workspace")?;
     let mut association_counts = BTreeMap::<usize, usize>::new();
     for (_, row, _) in ctx.admit_iter(
         &associations,
         "creo unique surface prototype associations associations traversal",
     )? {
+        count_storage.with_storage(|| {
         let count = ctx
             .entry_btree_map(
                 &mut association_counts,
@@ -389,6 +471,8 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             )?
             .or_default();
         *count += 1;
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })?;
     }
     ctx.retain_vec(
         &mut associations,
@@ -416,7 +500,8 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         return Ok(0);
     }
     let mut transferred = 0;
-    let associations = unique_surface_prototype_associations(ctx, scan)?;
+    let mut association_storage = ctx.reserve_scoped(0, "creo prototype association workspace")?;
+    let associations = association_storage.with_storage(|| unique_surface_prototype_associations(ctx, scan))?;
     for (prototype, row, section) in ctx
         .admit_iter(&associations, "creo prototype association traversal")?
         .copied()
@@ -424,7 +509,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         let record = prototype.record();
         let geometry = match prototype {
             SupportedPrototype::Plane(_) => {
-                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                let Some((origin, axis, reference)) = prototype_local_frame(ctx, record)? else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -439,10 +524,10 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Cylinder(_) => {
-                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                let Some((origin, axis, reference)) = prototype_local_frame(ctx, record)? else {
                     continue;
                 };
-                let Some(radius) = prototype_scalar(record, "radius")
+                let Some(radius) = prototype_scalar(ctx, record, "radius")?
                     .filter(|radius| radius.is_finite() && *radius > 0.0)
                 else {
                     continue;
@@ -460,16 +545,16 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Torus(_) => {
-                let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+                let Some((origin, axis, reference)) = prototype_local_frame(ctx, record)? else {
                     continue;
                 };
                 let point = Point3::from(origin);
                 let axis = Vector3::from(axis);
                 let reference = Vector3::from(reference);
                 let prototype_radii = match (
-                    prototype_scalar(record, "radius1")
+                    prototype_scalar(ctx, record, "radius1")?
                         .filter(|radius| radius.is_finite() && *radius >= 0.0),
-                    prototype_scalar(record, "radius2")
+                    prototype_scalar(ctx, record, "radius2")?
                         .filter(|radius| radius.is_finite() && *radius > 0.0),
                 ) {
                     (Some(radius1), Some(radius2)) => Some([radius1, radius2]),
@@ -639,17 +724,8 @@ pub(in super::super) fn transfer_positional_spline_replays(
         if row.kind != crate::surface::SurfaceKind::Spline || row.offset != parameter.offset {
             continue;
         }
-        let mut sections = scan
-            .framing
-            .sections
-            .iter()
-            .filter(|section| section.contains(row.offset));
-        let Some(section) = sections.next() else {
-            continue;
-        };
-        if sections.next().is_some() {
-            continue;
-        }
+        let Some(section) = crate::decode::uniqueness::exactly_one_by(ctx, &scan.framing.sections,
+            |section| Ok(section.contains(row.offset)), "creo positional replay section search")? else { continue; };
         let Some(payload) = crate::container::section_region(&scan.framing.data, section) else {
             continue;
         };
@@ -661,23 +737,24 @@ pub(in super::super) fn transfer_positional_spline_replays(
             row.offset = relative_row_offset;
             row
         };
-        let relative_rows = relative_surface_rows(ctx, &scan.surfaces.rows, section)?;
-        let Some(prototype) = crate::surface::positional_spline_replay_prototype(
+        let mut replay_storage = ctx.reserve_scoped(0, "creo positional spline replay workspace")?;
+        let relative_rows = replay_storage.with_storage(|| relative_surface_rows(ctx, &scan.surfaces.rows, section))?;
+        let Some(prototype) = replay_storage.with_storage(|| crate::surface::positional_spline_replay_prototype(
             ctx,
             payload,
             &relative_rows,
             &relative_row,
-        )?
+        ))?
         else {
             continue;
         };
-        let cache = crate::scalar::ScalarCache::from_section_checked(ctx, payload)?;
-        let Some(replay) = crate::surface::decode_positional_spline_replay(
+        let cache = replay_storage.with_storage(|| crate::scalar::ScalarCache::from_section_checked(ctx, payload))?;
+        let Some(replay) = replay_storage.with_storage(|| crate::surface::decode_positional_spline_replay(
             ctx,
             &parameter.body,
             &prototype,
             &cache,
-        )?
+        ))?
         else {
             continue;
         };

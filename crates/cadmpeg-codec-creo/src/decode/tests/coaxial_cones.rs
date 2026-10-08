@@ -37,10 +37,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         )
         .expect("valid test cone"),
     );
-    let candidates = crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cones_section_candidates(ctx, first, second)
-    })
-    .expect("admitted coaxial cone candidates");
+    let candidates = coaxial_cones_section_candidates(first, second);
     assert_eq!(candidates.len(), 2);
     assert!(
         matches!(select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cones_circle"))
@@ -74,10 +71,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         )
         .expect("valid test cone"),
     );
-    let reversed_candidates = crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cones_section_candidates(ctx, first, reversed)
-    })
-    .expect("admitted coaxial cone candidates");
+    let reversed_candidates = coaxial_cones_section_candidates(first, reversed);
     assert_eq!(reversed_candidates.len(), 2);
     assert!(reversed_candidates
         .iter()
@@ -87,10 +81,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
                     let radius = circle_curve.radius().get();
                     (center.z - 4.0 / 3.0).abs() < EPS_FILLET_CIRCLE && (radius - 10.0 / 3.0).abs() < EPS_FILLET_CIRCLE
                 })));
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cones_section_candidates(ctx, first, first)
-    })
-    .expect("admitted coaxial cone candidates")
+    assert!(coaxial_cones_section_candidates(first, first)
     .is_empty());
     let shifted = CarrierEquation::Cone(
         ConeEquation::new(
@@ -103,10 +94,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         )
         .expect("valid test cone"),
     );
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cones_section_candidates(ctx, first, shifted)
-    })
-    .expect("admitted coaxial cone candidates")
+    assert!(coaxial_cones_section_candidates(first, shifted)
     .is_empty());
 
     let CarrierEquation::Cone(mut elliptical_first_equation) = first else {
@@ -135,10 +123,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     )
     .expect("valid test cone");
     let elliptical_second = CarrierEquation::Cone(elliptical_second_equation);
-    let candidates = crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cones_section_candidates(ctx, elliptical_first, elliptical_second)
-    })
-    .expect("admitted coaxial cone candidates");
+    let candidates = coaxial_cones_section_candidates(elliptical_first, elliptical_second);
     assert_eq!(candidates.len(), 2);
     let selected = select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 3.0, 4.0]])
         .expect("selected coaxial elliptical-cone section");
@@ -174,10 +159,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     )
     .expect("valid test cone");
     let incompatible_frame = CarrierEquation::Cone(elliptical_second_equation);
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cones_section_candidates(ctx, elliptical_first, incompatible_frame)
-    })
-    .expect("admitted coaxial cone candidates")
+    assert!(coaxial_cones_section_candidates(elliptical_first, incompatible_frame)
     .is_empty());
 
     elliptical_second_equation = ConeEquation::new(
@@ -190,10 +172,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     )
     .expect("valid test cone");
     let reciprocal_swapped = CarrierEquation::Cone(elliptical_second_equation);
-    let candidates = crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cones_section_candidates(ctx, elliptical_first, reciprocal_swapped)
-    })
-    .expect("admitted coaxial cone candidates");
+    let candidates = coaxial_cones_section_candidates(elliptical_first, reciprocal_swapped);
     assert_eq!(candidates.len(), 2);
     let selected = select_unique_curve_candidate(candidates, [[14.0, 0.0, 12.0], [0.0, 7.0, 12.0]])
         .expect("selected reciprocal-frame cone section");

@@ -1782,16 +1782,10 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         major_radius: 3.0,
         minor_radius: 2.0,
     });
-    let candidates = crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cone_torus_circle_candidates(ctx, cone, secant_torus)
-    })
-    .expect("admitted cone torus candidates");
+    let candidates = coaxial_cone_torus_circle_candidates(cone, secant_torus);
     assert_eq!(candidates.len(), 2);
     assert!(resolve_curve_candidates(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            coaxial_cone_torus_circle_candidates(ctx, cone, secant_torus)
-        })
-        .expect("admitted cone torus candidates"),
+        coaxial_cone_torus_circle_candidates(cone, secant_torus),
         None,
     )
     .is_none());
@@ -1830,10 +1824,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         major_radius: 5.0,
         minor_radius: 3.0 / 2.0_f64.sqrt(),
     });
-    let tangent_candidates = crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cone_torus_circle_candidates(ctx, cone, tangent_torus)
-    })
-    .expect("admitted cone torus candidates");
+    let tangent_candidates = coaxial_cone_torus_circle_candidates(cone, tangent_torus);
     assert!(
         matches!(tangent_candidates.as_slice(), [(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle")]
                 if {
@@ -1851,10 +1842,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
                 })
     );
     assert!(resolve_curve_candidates(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            coaxial_cone_torus_circle_candidates(ctx, cone, tangent_torus)
-        })
-        .expect("admitted cone torus candidates"),
+        coaxial_cone_torus_circle_candidates(cone, tangent_torus),
         Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
     )
     .is_none());
@@ -1865,10 +1853,7 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         major_radius: 3.0,
         minor_radius: 2.0,
     });
-    assert!(crate::decode::with_test_decode_ctx(|ctx| {
-        coaxial_cone_torus_circle_candidates(ctx, cone, shifted_torus)
-    })
-    .expect("admitted cone torus candidates")
+    assert!(coaxial_cone_torus_circle_candidates(cone, shifted_torus)
     .is_empty());
 }
 

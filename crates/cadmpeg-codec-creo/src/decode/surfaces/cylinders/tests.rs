@@ -19,19 +19,14 @@ fn circular_sweep_feature_id_nodes_refuse_collection_limit() {
         body_offset: 0,
         offset: 0,
     });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = super::transfer_circular_sweep_cylinders(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo circular sweep feature ID nodes", |ctx| super::transfer_circular_sweep_cylinders(
+        ctx,
         &scan,
         &mut cadmpeg_ir::document::CadIr::empty(),
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("feature ID node exceeds limit");
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -51,36 +46,28 @@ fn hole_cylinder_feature_id_nodes_refuse_collection_limit() {
         offset: 0,
     };
     scan.features.rows.extend([row.clone(), row]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = super::transfer_hole_cylinders(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo hole cylinder feature ID nodes", |ctx| super::transfer_hole_cylinders(
+        ctx,
         &scan,
         &mut cadmpeg_ir::document::CadIr::empty(),
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("feature ID node exceeds limit");
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
             && resource.operation == "creo hole cylinder feature ID nodes")
     );
 
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    assert_eq!(
-        super::transfer_hole_cylinders(
-            &ctx,
-            &scan,
-            &mut cadmpeg_ir::document::CadIr::empty(),
-            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
+    let run = |cap| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::transfer_hole_cylinders(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty(), &mut cadmpeg_ir::annotations::AnnotationBuilder::new(), &mut crate::decode::source_carriers::SourceUnitCarriers::default())
+    };
+    assert_eq!(run(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, None, run))
         .expect("duplicate ID reuses its node"),
         0
     );
@@ -187,7 +174,7 @@ fn support_tangent_frame_requires_a_matching_axis_aligned_support() {
     .is_none());
 }
 
-fn support_tangent_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+fn support_tangent_limit_error(operation: &'static str) -> cadmpeg_core::CodecError {
     let stored = crate::surface::PositionalCylinderFrame::new(
         [-29.8, 5.25, 6.76],
         [1.0, 0.0, 0.0],
@@ -200,18 +187,16 @@ fn support_tangent_limit_error(limit: u64) -> cadmpeg_core::CodecError {
         origin: [0.0, -5.5, 0.0],
         normal: [0.0, 1.0, 0.0],
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    unique_support_tangent_cylinder_frame(&ctx, stored, &[tangent])
-        .expect_err("tangent search exceeds collection limit")
+    crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation, |ctx| {
+
+    unique_support_tangent_cylinder_frame(ctx, stored, &[tangent])
+        })
 }
 
 #[test]
 fn support_tangent_initial_origin_refuses_collection_limit() {
-    let error = support_tangent_limit_error(0);
+    let error = support_tangent_limit_error("creo support tangent initial origins");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -221,7 +206,7 @@ fn support_tangent_initial_origin_refuses_collection_limit() {
 
 #[test]
 fn support_tangent_witness_plane_refuses_collection_limit() {
-    let error = support_tangent_limit_error(1);
+    let error = support_tangent_limit_error("creo support tangent witness planes");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -231,7 +216,7 @@ fn support_tangent_witness_plane_refuses_collection_limit() {
 
 #[test]
 fn support_tangent_next_origin_refuses_collection_limit() {
-    let error = support_tangent_limit_error(2);
+    let error = support_tangent_limit_error("creo support tangent next origins");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -647,19 +632,14 @@ fn constant_round_radius_nodes_refuse_collection_limit() {
             edge_ids: None,
             offset: 0,
         });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = super::transfer_positional_cylinders(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo constant round radius nodes", |ctx| super::transfer_positional_cylinders(
+        ctx,
         &scan,
         &mut cadmpeg_ir::document::CadIr::empty(),
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("constant round radius node exceeds limit");
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -843,21 +823,15 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
 
 #[test]
 fn constrained_slot_fillet_propagates_midplane_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = slot_fillet_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 25;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::transfer_constrained_slot_fillet_cylinders(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo slot fillet midplanes", |ctx| super::transfer_constrained_slot_fillet_cylinders(
+        ctx,
         &scan,
         &mut cadmpeg_ir::document::CadIr::empty(),
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("slot midplane exceeds the collection limit");
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo slot fillet midplanes"),
@@ -867,21 +841,15 @@ fn constrained_slot_fillet_propagates_midplane_collection_limit() {
 
 #[test]
 fn constrained_slot_fillet_plane_rows_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = slot_fillet_scan();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 19;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::transfer_constrained_slot_fillet_cylinders(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo constrained slot plane rows", |ctx| super::transfer_constrained_slot_fillet_cylinders(
+        ctx,
         &scan,
         &mut cadmpeg_ir::document::CadIr::empty(),
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
         &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
-    )
-    .expect_err("constrained slot plane row exceeds the collection limit");
+    ));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo constrained slot plane rows")
