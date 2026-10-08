@@ -33,6 +33,7 @@ mod lexical;
 mod macros;
 mod presentation_forms;
 mod presentation_string_forms;
+mod queries;
 mod solid_entity_boundaries;
 mod type_fem;
 

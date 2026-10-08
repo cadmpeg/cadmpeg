@@ -153,7 +153,8 @@ fn parameter_numeric_real_shape_refuses_work_before_scan() {
     let error = with_work_limit(b"1E2", 0, |ctx| {
         super::super::decimal_shape(b"1E2", ctx).unwrap_err()
     });
-    assert_work_limit(&error, "iges numeric real shape", 3);
+    // Each visited byte is admitted before the read. The first byte needs one unit.
+    assert_work_limit_at(&error, "iges numeric real shape", 0, 1);
 }
 
 #[test]
