@@ -276,21 +276,15 @@ pub(crate) enum ObjectPayload {
 
 impl ObjectPayload {
     /// Whether an array has exactly its declared extent product of elements.
-    pub(crate) fn is_complete(&self) -> bool {
-        let Self::Array {
-            dimensions,
-            elements,
-        } = self
-        else {
-            return false;
-        };
-        dimensions
-            .iter()
-            .try_fold(1u64, |count, dimension| {
-                count.checked_mul(u64::from(*dimension))
-            })
-            .and_then(|count| usize::try_from(count).ok())
-            .is_some_and(|count| count == elements.len())
+    pub(crate) fn is_complete(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        let Self::Array { dimensions, elements } = self else { return Ok(false); };
+        let mut count = 1u64;
+        let mut dimensions = dimensions.iter();
+        while let Some(dimension) = ctx.next_charged(&mut dimensions, "creo object array extent traversal")? {
+            let Some(product) = count.checked_mul(u64::from(*dimension)) else { return Ok(false); };
+            count = product;
+        }
+        Ok(usize::try_from(count).ok() == Some(elements.len()))
     }
 }
 
@@ -321,7 +315,7 @@ impl Serialize for ObjectPayload {
             } => {
                 wire.serialize_field("dimensions", dimensions)?;
                 wire.serialize_field("elements", elements)?;
-                wire.serialize_field("complete", &self.is_complete())?;
+                wire.serialize_field("complete", &dimensions.iter().try_fold(1u64, |count, dimension| count.checked_mul(u64::from(*dimension))).and_then(|count| usize::try_from(count).ok()).is_some_and(|count| count == elements.len()))?;
             }
             Self::Opaque { bytes } => wire.serialize_field("bytes", bytes)?,
             _ => {}
@@ -408,41 +402,34 @@ impl Serialize for StringPayload {
                 wire.serialize_field("value", value)?;
             }
             Self::Array {
-                dimensions, values, ..
+                dimensions, values, continuation
             } => {
                 wire.serialize_field("form", "array")?;
                 wire.serialize_field("dimensions", dimensions)?;
-                wire.serialize_field(
-                    "values",
-                    &values
-                        .iter()
-                        .filter_map(|value| value.as_ref().ok())
-                        .collect::<Vec<_>>(),
-                )?;
-                wire.serialize_field("complete", &self.is_complete())?;
+                wire.serialize_field("values", &StringValues(values))?;
+                wire.serialize_field("complete", &(continuation.is_none() && dimensions.first().and_then(|dimension| usize::try_from(*dimension).ok()).is_some_and(|count| count == values.len()) && values.iter().all(Result::is_ok)))?;
             }
         }
         wire.end()
     }
 }
 
+/// Borrowed supported values; each value is emitted without a projection vector.
+struct StringValues<'a>(&'a [Result<StringValue, Continuation>]);
+
+impl Serialize for StringValues<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().filter_map(|value| value.as_ref().ok()))
+    }
+}
+
 impl StringPayload {
     /// Whether every declared string row has a supported, complete value.
-    fn is_complete(&self) -> bool {
-        let Self::Array {
-            dimensions,
-            values,
-            continuation,
-        } = self
-        else {
-            return false;
-        };
-        continuation.is_none()
-            && dimensions
-                .first()
-                .and_then(|dimension| usize::try_from(*dimension).ok())
-                .is_some_and(|count| count == values.len())
-            && values.iter().all(Result::is_ok)
+    fn is_complete(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        let Self::Array { dimensions, values, continuation } = self else { return Ok(false); };
+        Ok(continuation.is_none()
+            && dimensions.first().and_then(|dimension| usize::try_from(*dimension).ok()).is_some_and(|count| count == values.len())
+            && ctx.all_by(values, |value| Ok(value.is_ok()), "creo string array completeness traversal")?)
     }
 
     /// Number of logical string elements represented by this payload.
@@ -785,14 +772,7 @@ impl Persistence {
     ) -> Result<Option<PrincipalUnitSystem>, CodecError> {
         let Some(array) = crate::decode::uniqueness::exactly_one_by(ctx, &self.objects, |object| {
             if object.name != "unit_arr" { return Ok(false); }
-            let ObjectPayload::Array { dimensions, elements } = &object.payload else { return Ok(false); };
-            let mut count = 1u64;
-            let mut dimensions = dimensions.iter();
-            while let Some(dimension) = ctx.next_charged(&mut dimensions, "creo legacy unit dimensions")? {
-                let Some(product) = count.checked_mul(u64::from(*dimension)) else { return Ok(false); };
-                count = product;
-            }
-            Ok(usize::try_from(count).ok() == Some(elements.len()))
+            object.payload.is_complete(ctx)
         }, "creo legacy unit array selection")? else { return Ok(None); };
         let ObjectPayload::Array { elements, .. } = &array.payload else { return Ok(None); };
         if elements.is_empty() {
@@ -1219,7 +1199,7 @@ fn object_records(
                     dimensions,
                     elements,
                 };
-                incomplete_arrays += usize::from(!payload.is_complete());
+                incomplete_arrays += usize::from(!payload.is_complete(ctx)?);
                 payload
             } else {
                 unresolved += 1;
@@ -1412,7 +1392,7 @@ fn string_records(
                     values,
                     continuation: value.continuation.clone(),
                 };
-                incomplete_arrays += usize::from(!payload.is_complete());
+                incomplete_arrays += usize::from(!payload.is_complete(ctx)?);
                 payload
             } else {
                 if value.continuation.is_some() {

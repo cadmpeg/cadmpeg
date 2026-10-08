@@ -311,7 +311,7 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
             continuation: None,
         }
     );
-    assert!(persistence.string_values[4].payload.is_complete());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[4].payload.is_complete(ctx)).expect("complete array admission"));
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[4]
             .payload
@@ -335,7 +335,7 @@ fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
 
     assert_eq!(persistence.string_values.len(), 1);
     assert_eq!(persistence.incomplete_string_array_count, 1);
-    assert!(!persistence.string_values[0].payload.is_complete());
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| persistence.string_values[0].payload.is_complete(ctx)).expect("complete array admission"));
     assert_eq!(persistence.unresolved_string_value_count, 1);
     assert_eq!(
         persistence.string_values[0].payload,
@@ -405,7 +405,7 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
 
     assert_eq!(persistence.objects.len(), 4);
     assert_eq!(persistence.incomplete_object_array_count, 0);
-    assert!(persistence.objects[1].payload.is_complete());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| persistence.objects[1].payload.is_complete(ctx)).expect("complete array admission"));
     assert_eq!(persistence.unresolved_object_value_count, 0);
     assert_eq!(persistence.objects[1].parent, Some(root_offset));
     assert_eq!(
@@ -436,7 +436,7 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
 
     assert_eq!(persistence.objects.len(), 2);
     assert_eq!(persistence.incomplete_object_array_count, 1);
-    assert!(!persistence.objects[0].payload.is_complete());
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| persistence.objects[0].payload.is_complete(ctx)).expect("complete array admission"));
     assert_eq!(persistence.unresolved_object_value_count, 1);
     assert!(matches!(
         persistence.objects[0].payload,
