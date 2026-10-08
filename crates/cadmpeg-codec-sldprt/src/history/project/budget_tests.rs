@@ -12,7 +12,7 @@ use cadmpeg_ir::features::{
 };
 use std::collections::{BTreeMap, HashMap};
 
-fn limited<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+pub(super) fn limited<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 10_000;
@@ -45,7 +45,7 @@ fn retained_refusal_at<T>(
     );
 }
 
-fn property(feature: &mut Feature, key: &'static str, value: String) {
+pub(super) fn property(feature: &mut Feature, key: &'static str, value: String) {
     feature.properties.insert(
         cadmpeg_core::text::NonBlankString::try_from(key).unwrap(),
         value,
@@ -151,8 +151,8 @@ fn invalid_extrusion_direction_does_not_retain_face_selection() {
     property(&mut source, "Face", "face-a".into());
     property(&mut source, "Direction", "0,0,0".into());
     assert!(without_retained_storage(|ctx| {
-        let sources = super::solid::SourceFeatures::new(ctx, &[])?;
-        super::solid::project_extrude(ctx, &source, &HashMap::new(), &sources)
+        let mut sources = super::solid::SourceFeatures::new(ctx, &[])?;
+        super::solid::project_extrude(ctx, &source, &HashMap::new(), &mut sources)
     })
     .unwrap()
     .is_none());
@@ -205,8 +205,8 @@ fn ambiguous_extrusion_children_need_only_the_next_nonblank_character() {
         format!(" , first ,\u{2003},x{}", "x".repeat(100_000)),
     );
     let definition = limited(|ctx| {
-        let index = super::solid::SourceFeatures::new(ctx, &[])?;
-        super::solid::project_extrude(ctx, &source, &HashMap::new(), &index)
+        let mut index = super::solid::SourceFeatures::new(ctx, &[])?;
+        super::solid::project_extrude(ctx, &source, &HashMap::new(), &mut index)
     })
     .unwrap();
     assert!(matches!(
@@ -225,8 +225,8 @@ fn authoritative_cut_class_does_not_read_the_kind_token() {
     source.kind = "x".repeat(100_000);
     property(&mut source, "EndCondition", "ThroughAll".into());
     let definition = limited(|ctx| {
-        let index = super::solid::SourceFeatures::new(ctx, &[])?;
-        super::solid::project_extrude(ctx, &source, &HashMap::new(), &index)
+        let mut index = super::solid::SourceFeatures::new(ctx, &[])?;
+        super::solid::project_extrude(ctx, &source, &HashMap::new(), &mut index)
     })
     .unwrap();
     assert!(matches!(
@@ -458,4 +458,126 @@ fn accepted_equation_curve_refuses_expression_retention_limit() {
     retained_refusal_at("retain SLDPRT equation curve", |ctx| {
         super::datum::project_equation_curve(ctx, &source)
     });
+}
+
+fn projected_plane(ordinal: u64, operation: FeatureOperation) -> cadmpeg_ir::features::Feature {
+    cadmpeg_ir::features::Feature {
+        id: FeatureId::mint(format!("synthetic:test:feature#plane-{ordinal}")).unwrap(),
+        ordinal,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(operation),
+        ),
+        native_ref: Some(format!("synthetic:history:plane-{ordinal}")),
+    }
+}
+
+#[test]
+fn offset_candidate_index_is_not_built_without_a_search() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    use cadmpeg_ir::{
+        features::{DatumPlaneReference, PrincipalPlane},
+        scalar::Length,
+    };
+    let base = projected_plane(
+        0,
+        FeatureOperation::DatumPrincipalPlane {
+            plane: PrincipalPlane::Top,
+        },
+    );
+    for offsets in [
+        Vec::new(),
+        vec![projected_plane(
+            1,
+            FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature {
+                    feature: base.id.clone(),
+                }),
+                distance: Length::new(1.0).unwrap(),
+            },
+        )],
+        vec![projected_plane(
+            1,
+            FeatureOperation::DatumOffsetPlane {
+                reference: None,
+                distance: Length::new(1.0).unwrap(),
+            },
+        )],
+    ] {
+        let mut features = vec![base.clone()];
+        features.extend(offsets);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "index SLDPRT offset plane candidates",
+            None,
+        );
+        super::bind_offset_plane_references(&ctx, &mut features).unwrap();
+        assert!(ctx.resource_refusal().is_none());
+        assert!(matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                plane: PrincipalPlane::Top
+            })
+        ));
+        if let Some(offset) = features.get(1) {
+            assert!(matches!(
+                offset.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
+            ));
+        }
+    }
+}
+
+#[test]
+fn offset_candidate_index_refuses_at_first_search_and_binds_same_plane() {
+    use cadmpeg_ir::{
+        features::{DatumPlaneReference, PrincipalPlane},
+        scalar::Length,
+    };
+    let base = projected_plane(
+        0,
+        FeatureOperation::DatumPrincipalPlane {
+            plane: PrincipalPlane::Top,
+        },
+    );
+    let mut offset = projected_plane(
+        1,
+        FeatureOperation::DatumOffsetPlane {
+            reference: None,
+            distance: Length::new(1.0).unwrap(),
+        },
+    );
+    for (name, value) in [
+        ("Origin", "0mm,0mm,1mm"),
+        ("Normal", "0,0,1"),
+        ("UAxis", "1,0,0"),
+    ] {
+        offset
+            .source_properties
+            .insert(name.try_into().unwrap(), value.into());
+    }
+    crate::test_support::work_refusal_at("index SLDPRT offset plane candidates", |ctx| {
+        let mut features = [base.clone(), offset.clone()];
+        super::bind_offset_plane_references(ctx, &mut features)
+    });
+    let mut features = [base.clone(), offset];
+    super::bind_offset_plane_references(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut features,
+    )
+    .unwrap();
+    assert!(
+        matches!(features[1].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference: Some(DatumPlaneReference::Feature { feature }), distance }) if feature == &base.id && distance.get() == 1.0)
+    );
+    assert_eq!(features[1].dependencies.as_slice(), [base.id]);
 }
