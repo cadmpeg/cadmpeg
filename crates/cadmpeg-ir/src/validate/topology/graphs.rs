@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Radial-ring, wire ownership and shell connectivity checks.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
@@ -382,24 +382,37 @@ pub(in crate::validate) fn check_shell_connectivity(
             }
         }
     }
-    let mut neighbors = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    // Store each incidence once. A shell walks each group at most once,
+    // regardless of how many of its faces share the edge or vertex.
+    let mut incidence_storage = ctx.reserve_scoped(0, "shell incidence slots")?;
+    let mut groups = Vec::new();
+    let mut groups_by_face = BorrowedIdentities::build(ctx, |_| Ok(()))?;
     for incident_faces in faces_by_edge
         .values("shell incidence group scan")?
         .chain(faces_by_vertex.values("shell incidence group scan")?)
     {
+        let group_index = groups.len();
+        incidence_storage.with_storage(|| {
+            ctx.push_vec(&mut groups, incident_faces, "shell incidence group slots")
+        })?;
         for face in incident_faces.identities("shell incidence face scan")? {
-            for other in incident_faces.identities("shell neighbor face scan")? {
-                ctx.charge_work(
-                    u64_from_index(face.len()),
-                    "shell neighbor identity comparison",
-                )?;
-                if other != face {
-                    insert_incident(ctx, &mut neighbors, face, other)?;
-                }
+            if let Some(face_groups) = groups_by_face.get_mut(ctx, face)? {
+                incidence_storage.with_storage(|| {
+                    ctx.push_vec(face_groups, group_index, "shell face incidence slots")
+                })?;
+            } else {
+                let mut face_groups = Vec::new();
+                incidence_storage.with_storage(|| {
+                    ctx.push_vec(&mut face_groups, group_index, "shell face incidence slots")
+                })?;
+                groups_by_face.insert(face, face_groups)?;
             }
         }
     }
-    for shell in &ir.model.shells {
+    let mut visited_groups = incidence_storage.with_storage(|| {
+        ctx.alloc_filled(groups.len(), None, "shell incidence visited slots")
+    })?;
+    for (shell_index, shell) in ir.model.shells.iter().enumerate() {
         ctx.charge_work(1, "shell connectivity owner scan")?;
         if shell.faces().len() < 2 {
             continue;
@@ -432,12 +445,18 @@ pub(in crate::validate) fn check_shell_connectivity(
             let Some(face) = pending.pop() else {
                 break;
             };
-            if let Some(group) = neighbors.get(ctx, face)? {
-                for neighbor in group.identities("shell connectivity neighbor scan")? {
-                    if owned.contains(ctx, neighbor)? && reached.insert_unique(neighbor, ())? {
-                        pending_storage.with_storage(|| {
-                            ctx.push_vec(&mut pending, neighbor, "shell pending slots")
-                        })?;
+            if let Some(face_groups) = groups_by_face.get(ctx, face)? {
+                for &group_index in ctx.admit_iter(face_groups, "shell connectivity incidence scan")? {
+                    if visited_groups[group_index] == Some(shell_index) {
+                        continue;
+                    }
+                    visited_groups[group_index] = Some(shell_index);
+                    for neighbor in groups[group_index].identities("shell connectivity neighbor scan")? {
+                        if owned.contains(ctx, neighbor)? && reached.insert_unique(neighbor, ())? {
+                            pending_storage.with_storage(|| {
+                                ctx.push_vec(&mut pending, neighbor, "shell pending slots")
+                            })?;
+                        }
                     }
                 }
             }
