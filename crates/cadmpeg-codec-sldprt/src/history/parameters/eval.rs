@@ -29,21 +29,27 @@ impl From<CodecError> for ExpressionFailure {
     }
 }
 
-pub(super) struct ParameterExpressionParser<'a, 'ctx, 'arena> {
+pub(super) struct ParameterExpressionParser<'a, 'aliases, 'ctx, 'arena> {
     ctx: &'ctx DecodeContext<'arena>,
     input: &'a str,
     offset: usize,
-    aliases: ParameterAliasMap<'a>,
-    values: ParameterValues<'a>,
-    blocked: Option<&'a ParameterId>,
+    aliases: ParameterAliasMap<'aliases, 'a>,
+    values: ParameterValues<'a, 'ctx>,
+    blocked: Option<&'aliases ParameterId>,
 }
 
 /// Borrowed validation layers or positions in the model being evaluated.
-pub(super) enum ParameterValues<'a> {
+pub(super) enum ParameterValues<'a, 'ctx> {
     #[cfg(test)]
     Stored(&'a HashMap<ParameterId, ParameterValue>),
     Validation {
         values: &'a super::ParameterValueIndex<'a>,
+        configuration: Option<&'a cadmpeg_ir::features::DesignConfiguration>,
+        excluded: &'a ParameterId,
+    },
+    LazyValidation {
+        parameters: &'a [DesignParameter],
+        values: &'a super::ParameterValueCache<'a, 'ctx>,
         configuration: Option<&'a cadmpeg_ir::features::DesignConfiguration>,
         excluded: &'a ParameterId,
     },
@@ -53,24 +59,24 @@ pub(super) enum ParameterValues<'a> {
     },
 }
 
-pub(super) enum ParameterEvaluation {
+pub(super) enum ParameterEvaluation<'aliases> {
     Value(ParameterValue),
-    Blocked(ParameterId),
+    Blocked(&'aliases ParameterId),
     Invalid,
 }
 
-enum ParameterAliasMap<'a> {
-    Layered(ParameterAliasView<'a>),
+enum ParameterAliasMap<'aliases, 'owner> {
+    Layered(ParameterAliasView<'aliases, 'owner>),
     #[cfg(test)]
-    Flat(&'a HashMap<String, Option<ParameterId>>),
+    Flat(&'aliases HashMap<String, Option<ParameterId>>),
 }
 
-impl<'a> ParameterAliasMap<'a> {
+impl<'aliases> ParameterAliasMap<'aliases, '_> {
     fn get(
         &self,
         ctx: &DecodeContext<'_>,
         alias: &str,
-    ) -> Result<Option<&'a Option<ParameterId>>, CodecError> {
+    ) -> Result<Option<&'aliases Option<ParameterId>>, CodecError> {
         match self {
             Self::Layered(aliases) => aliases.get(ctx, alias),
             #[cfg(test)]
@@ -79,12 +85,12 @@ impl<'a> ParameterAliasMap<'a> {
     }
 }
 
-impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
+impl<'a, 'aliases, 'ctx, 'arena> ParameterExpressionParser<'a, 'aliases, 'ctx, 'arena> {
     pub(super) fn new(
         ctx: &'ctx DecodeContext<'arena>,
         input: &'a str,
-        aliases: ParameterAliasView<'a>,
-        values: ParameterValues<'a>,
+        aliases: ParameterAliasView<'aliases, 'a>,
+        values: ParameterValues<'a, 'ctx>,
     ) -> Self {
         Self {
             ctx,
@@ -100,7 +106,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     pub(in crate::history) fn new_flat(
         ctx: &'ctx DecodeContext<'arena>,
         input: &'a str,
-        aliases: &'a HashMap<String, Option<ParameterId>>,
+        aliases: &'aliases HashMap<String, Option<ParameterId>>,
         values: &'a HashMap<ParameterId, ParameterValue>,
     ) -> Self {
         Self {
@@ -129,22 +135,11 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     }
 
     /// Evaluate once and name the first absent value that prevented evaluation.
-    pub(super) fn evaluate(
-        mut self,
-        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    ) -> Result<ParameterEvaluation, CodecError> {
+    pub(super) fn evaluate(mut self) -> Result<ParameterEvaluation<'aliases>, CodecError> {
         match self.parse_value() {
             Ok(value) => Ok(ParameterEvaluation::Value(self.retain_value(value)?)),
             Err(ExpressionFailure::NoValue) => match self.blocked {
-                Some(id) => {
-                    let id = storage.with_storage(|| {
-                        id.try_clone_for_decode(
-                            self.ctx,
-                            "index SLDPRT blocked parameter evaluations",
-                        )
-                    })?;
-                    Ok(ParameterEvaluation::Blocked(id))
-                }
+                Some(id) => Ok(ParameterEvaluation::Blocked(id)),
                 None => Ok(ParameterEvaluation::Invalid),
             },
             Err(ExpressionFailure::Resource(error)) => Err(error),
@@ -332,6 +327,43 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                         super::configuration_parameter_value(self.ctx, values, *configuration, id)?
                     }
                 }
+                ParameterValues::LazyValidation {
+                    parameters,
+                    values,
+                    configuration,
+                    excluded,
+                } => {
+                    if self
+                        .ctx
+                        .equal(id, *excluded, "check SLDPRT parameter evaluation")?
+                    {
+                        None
+                    } else {
+                        let configured = match configuration {
+                            Some(configuration) => self.ctx.get_btree_map(
+                                &configuration.parameter_values,
+                                id,
+                                "check SLDPRT parameter evaluation",
+                            )?,
+                            None => None,
+                        };
+                        if let Some(value) = configured {
+                            Some(value)
+                        } else {
+                            let mut values = values.borrow_mut();
+                            if values.is_none() {
+                                *values = Some(super::parameter_value_index(self.ctx, parameters)?);
+                            }
+                            values
+                                .as_ref()
+                                .map(|(values, _storage)| {
+                                    super::configuration_parameter_value(self.ctx, values, None, id)
+                                })
+                                .transpose()?
+                                .flatten()
+                        }
+                    }
+                }
                 ParameterValues::Indexed {
                     parameters,
                     positions,
@@ -390,6 +422,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let start = self.offset;
             let mut end = start;
             let mut closed = false;
+            let mut escaped = false;
             let mut characters = self.input[start..].char_indices();
             while let Some((at, character)) = self
                 .ctx
@@ -398,6 +431,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 end = start + at;
                 if character == '"' {
                     if self.input[end + 1..].starts_with('"') {
+                        escaped = true;
                         self.ctx
                             .next_charged(&mut characters, "scan SLDPRT quoted parameter token")?;
                         end += 2;
@@ -414,9 +448,14 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 return Err(ExpressionFailure::NoValue);
             }
             self.offset = end + 1;
-            let identifier =
-                super::ExpressionIdentifier::quoted(self.ctx, self.input, start - 1, self.offset)?
-                    .ok_or(ExpressionFailure::NoValue)?;
+            let identifier = super::ExpressionIdentifier::quoted(
+                self.ctx,
+                self.input,
+                start - 1,
+                self.offset,
+                escaped,
+            )?
+            .ok_or(ExpressionFailure::NoValue)?;
             return Ok(Token::Quoted(identifier.value));
         }
         let start = self.offset;
