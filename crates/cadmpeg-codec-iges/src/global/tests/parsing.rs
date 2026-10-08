@@ -81,6 +81,17 @@ fn global_layout_field_scan_refuses_work_before_field() {
 }
 
 #[test]
+fn global_layout_counts_leading_padding_once_when_fitting_hollerith_header() {
+    let bytes = [b",,".as_slice(), &[b' '; 50], b"1Ha;"].concat();
+    with_work_limit(&bytes, u64::MAX, |ctx| {
+        let cards = crate::global::layout_global_cards(&bytes, ctx)
+            .expect("the field and its Hollerith header fit in one card");
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0], bytes);
+    });
+}
+
+#[test]
 fn global_layout_field_bytes_refuse_work_before_byte() {
     let bytes = b",,1;";
     let error = cadmpeg_test_support::refusal::resource_limit_at(
