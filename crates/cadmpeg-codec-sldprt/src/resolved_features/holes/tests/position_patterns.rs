@@ -88,7 +88,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
 
     let placements = marker_pattern_bore_axes(
         &ctx,
-        &HoleMarkers::new(&ctx, &lane).unwrap(),
+        &HoleMarkers::new(&ctx, &lane, true).unwrap(),
         "position",
         2.1,
         &surfaces,
@@ -139,7 +139,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     assert_eq!(
         marker_pattern_bore_axes(
             &ctx,
-            &HoleMarkers::new(&ctx, &lane).unwrap(),
+            &HoleMarkers::new(&ctx, &lane, true).unwrap(),
             "position",
             2.1,
             &surfaces,
@@ -167,7 +167,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     surfaces.extend([opposite_side(3, -9.0), opposite_side(4, 13.0)]);
     assert!(marker_pattern_bore_axes(
         &ctx,
-        &HoleMarkers::new(&ctx, &lane).unwrap(),
+        &HoleMarkers::new(&ctx, &lane, true).unwrap(),
         "position",
         2.1,
         &surfaces,
@@ -178,7 +178,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     assert_eq!(
         marker_pattern_bore_axes(
             &ctx,
-            &HoleMarkers::new(&ctx, &lane).unwrap(),
+            &HoleMarkers::new(&ctx, &lane, true).unwrap(),
             "position",
             2.1,
             &surfaces,
@@ -212,7 +212,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     assert_eq!(
         marker_pattern_bore_axes(
             &ctx,
-            &HoleMarkers::new(&ctx, &lane).unwrap(),
+            &HoleMarkers::new(&ctx, &lane, true).unwrap(),
             "position",
             2.1,
             &surfaces,
@@ -276,7 +276,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
     assert_eq!(
         marker_pattern_bore_axes(
             &ctx,
-            &HoleMarkers::new(&ctx, &lane).unwrap(),
+            &HoleMarkers::new(&ctx, &lane, true).unwrap(),
             "position",
             3.0,
             &surfaces,
@@ -375,7 +375,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         ),
     ];
 
-    let markers = HoleMarkers::new(&ctx, &lane).unwrap();
+    let markers = HoleMarkers::new(&ctx, &lane, true).unwrap();
     let paired = ctx
         .get_hash_map(&markers.paired, "position", "test paired roster")
         .unwrap()
@@ -388,7 +388,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     let mut surfaces = vec![cylinder(0, -9.0), cylinder(1, 13.0), cylinder(2, 100.0)];
     let placements = marker_pattern_bore_axes(
         &ctx,
-        &HoleMarkers::new(&ctx, &lane).unwrap(),
+        &HoleMarkers::new(&ctx, &lane, true).unwrap(),
         "position",
         2.0,
         &surfaces,
@@ -431,7 +431,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     assert_eq!(
         marker_pattern_bore_axes(
             &ctx,
-            &HoleMarkers::new(&ctx, &lane).unwrap(),
+            &HoleMarkers::new(&ctx, &lane, true).unwrap(),
             "position",
             2.0,
             &surfaces,
@@ -459,7 +459,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     assert_eq!(
         marker_pattern_bore_axes(
             &ctx,
-            &HoleMarkers::new(&ctx, &lane).unwrap(),
+            &HoleMarkers::new(&ctx, &lane, true).unwrap(),
             "position",
             2.0,
             &surfaces,
@@ -470,4 +470,27 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         .len(),
         3
     );
+}
+
+#[test]
+fn spatial_markers_skip_planar_pair_scan() {
+    let mut lane = lane();
+    let mut object = SketchInputEntity::new("object", "lane", 0, 0, SketchInputKind::Point)
+        .with_test_identity(Some(7), None);
+    object.feature_ref = Some("position".into());
+    object.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 2.0]);
+    let mut anchor = SketchInputEntity::new("anchor", "lane", 1, 1, SketchInputKind::Point);
+    anchor.feature_ref = Some("position".into());
+    anchor.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
+    lane.sketch_entities = vec![object, anchor];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let spatial = HoleMarkers::new(&ctx, &lane, false).unwrap();
+    let planar = HoleMarkers::new(&ctx, &lane, true).unwrap();
+    assert!(spatial.paired.is_empty());
+    assert_eq!(planar.paired.get("position").unwrap().len(), 1);
+    assert_eq!(spatial.by_feature.get("position").unwrap().len(), 2);
+    assert_eq!(planar.by_feature.get("position").unwrap().len(), 2);
+    crate::test_support::work_refusal_at("index SLDPRT hole position markers", |ctx| {
+        HoleMarkers::new(ctx, &lane, false).map(|_| ())
+    });
 }

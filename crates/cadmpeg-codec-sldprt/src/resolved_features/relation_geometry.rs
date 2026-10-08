@@ -1254,7 +1254,10 @@ pub(crate) fn project_relation_point_geometry(
                 };
             let linked_curve_handle = curve_is_operand
                 && !self_linked
-                && (linked_coordinate_line_endpoints(ctx, marker, &markers_by_id)?.is_some()
+                && (linked_coordinate_line_endpoints(ctx, marker, |id, operation| {
+                    Ok(ctx.get_hash_map(&markers_by_id, id, operation)?.copied())
+                })?
+                .is_some()
                     || coordinate_line_endpoints_with_linked_point(ctx, marker, &markers_by_id)?
                         .is_some());
             if !ctx.contains_hash_set(
@@ -1318,7 +1321,9 @@ pub(crate) fn project_relation_point_geometry(
                 })?;
             if endpoints.len() != 2 && linked_curve_handle {
                 let linked_endpoints =
-                    match linked_coordinate_line_endpoints(ctx, marker, &markers_by_id)? {
+                    match linked_coordinate_line_endpoints(ctx, marker, |id, operation| {
+                        Ok(ctx.get_hash_map(&markers_by_id, id, operation)?.copied())
+                    })? {
                         Some(endpoints) => Some(endpoints),
                         None => coordinate_line_endpoints_with_linked_point(
                             ctx,

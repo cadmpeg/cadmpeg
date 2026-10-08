@@ -359,9 +359,11 @@ pub(crate) fn enrich_history_reference_planes(
                     })?;
                 }
             }
-            if let Some((relative_offset, components)) =
-                component_face_reference_in_record(ctx, bytes)?
-            {
+            let (component_reference, component_storage) = ctx
+                .with_scoped_storage("SLDPRT component face path workspace", || {
+                    component_face_reference_in_record(ctx, bytes)
+                })?;
+            if let Some((relative_offset, components)) = component_reference {
                 let mut native = temporary_storage.with_storage(|| {
                     ctx.format_retained(
                         format_args!(
@@ -421,6 +423,7 @@ pub(crate) fn enrich_history_reference_planes(
                     )
                 })?;
             }
+            drop(component_storage);
             let offset_frames = crate::history::literals::named_literal(
                 ctx,
                 &feature.parameters,
@@ -3502,10 +3505,7 @@ fn offset_plane_reference_source(
         }
     }
     if let Some(source) = compact_offset_plane_source(ctx, payload)? {
-        if Some(source) != self_source
-            && ctx.contains_hash_set(known_sources, &source, "find SLDPRT known plane source")?
-            && !observe(source)?
-        {
+        if !observe(source)? {
             return Ok(None);
         }
     }

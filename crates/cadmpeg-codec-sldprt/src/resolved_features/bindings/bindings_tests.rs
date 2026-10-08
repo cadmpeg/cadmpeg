@@ -168,6 +168,10 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
     )
     .unwrap();
 
+    crate::test_support::work_refusal_at("sort SLDPRT scalar offsets", |ctx| {
+        bind_scalar_operands(ctx, std::slice::from_ref(&history), &mut [lane.clone()])
+    });
+
     assert!(lane.scalars[..3]
         .iter()
         .all(|scalar| scalar.feature_ref.as_deref() == Some("extrusion")));
@@ -1083,4 +1087,85 @@ fn duplicate_binding_votes_release_candidate_identity_storage() {
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[&0].len(), 1);
     assert_eq!(groups[&0][0].0, id);
+}
+
+#[test]
+fn scalar_binding_skips_dissected_offset_sort_without_feature_pair() {
+    let feature = NativeFeature {
+        id: "owner".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(7),
+        ordinal: 0,
+        name: "Owner".into(),
+        kind: "Feature".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    };
+    let mut lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "owner-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(7),
+            value: "Owner".into(),
+        }],
+        scalars: (0..32)
+            .map(|ordinal| FeatureInputScalar {
+                id: format!("scalar-{ordinal}"),
+                parent: "lane".into(),
+                feature_ref: None,
+                ordinal,
+                offset: u64::from(ordinal) + 1,
+                object_id: ordinal,
+                name: "absent".into(),
+                value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+                role: FeatureInputScalarRole::Native,
+                operands: Vec::new(),
+            })
+            .collect(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "sort SLDPRT scalar offsets",
+        None,
+    );
+    bind_scalar_operands(&ctx, &[history], std::slice::from_mut(&mut lane)).unwrap();
+    drop(probe);
+    assert!(lane
+        .scalars
+        .iter()
+        .all(|scalar| scalar.feature_ref.as_deref() == Some("owner")));
 }
