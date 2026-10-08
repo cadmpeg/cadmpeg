@@ -208,14 +208,14 @@ fn paired_hole_replay_surfaces_by_source(
     };
     let mut run_storage = ctx.reserve_scoped(0, "creo paired-hole scratch runs")?;
     let mut runs = Vec::<BTreeMap<u32, Option<crate::surface::SurfaceKind>>>::new();
-    let mut framed_class_200_count = 0;
     let mut source_zero_count = 0;
     let mut indices = 0..table.entries.len();
     while let Some(mut index) = ctx.next_charged(&mut indices, "creo paired-hole entry scan")? {
+        let class_204 = &table.entries[index];
+        if class_204.class_id() == 200 { return Ok(None); }
         let Some(class_203) = table.entries.get(index + 1) else {
             break;
         };
-        let class_204 = &table.entries[index];
         if class_204.class_id() != 204 || class_203.class_id() != 203 {
             continue;
         }
@@ -230,7 +230,6 @@ fn paired_hole_replay_surfaces_by_source(
             index = next;
             let entry = &table.entries[index];
             if entry.class_id() != 200 { indices = index..table.entries.len(); break; }
-            framed_class_200_count += 1;
             let Some(kind) = entry_kind(entry)? else {
                 return Ok(None);
             };
@@ -259,15 +258,7 @@ fn paired_hole_replay_surfaces_by_source(
         run_storage.with_storage(|| ctx.reserve_vec(&mut runs, 1, "creo paired-hole runs"))?;
         runs.push(run);
     }
-    if !(source_zero_count <= 1
-        && framed_class_200_count
-            == ctx
-                .admit_iter(&table.entries, "creo paired-hole class count")?
-                .filter(|entry| entry.class_id() == 200)
-                .count())
-    {
-        return Ok(None);
-    }
+    if source_zero_count > 1 { return Ok(None); }
     let mut materialized = [None, None];
     let mut count = 0;
     let mut run_rows = runs.iter();
@@ -898,35 +889,21 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
         if !signature_matches {
             continue;
         }
-        let Some(candidate) =
-            (|| {
-                let value = |external_id, dimension_type| {
-                    let row = exactly_one(table.rows.iter().filter(|row| {
-                        row.external_id == external_id && row.dimension_type == dimension_type
-                    }))?;
-                    row.value.resolved().filter(|value| value.is_finite())
-                };
-                let bore_radius = value(0, 2)?;
-                let signed_depth = value(depth_external_id, 2)?;
-                let bore_diameter = 2.0 * bore_radius;
-                (bore_diameter.is_finite() && bore_diameter > 0.0 && signed_depth != 0.0)
-                    .then_some(())?;
-                let blind_depth = signed_depth.abs();
-                if observed_envelope_spans.is_some_and(|spans| {
-                    !dimension_pair_matches_envelope_spans(bore_diameter, blind_depth, spans)
-                }) {
-                    return Some(None);
-                }
-                let drill_point_angle = value(1, 10)?;
-                (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI)
-                    .then_some(Some((bore_diameter, drill_point_angle, blind_depth)))
-            })()
-        else {
-            return Ok(None);
+        let value = |external_id, dimension_type| {
+            let row = exactly_one(table.rows.iter().filter(|row| {
+                row.external_id == external_id && row.dimension_type == dimension_type
+            }))?;
+            row.value.resolved().filter(|value| value.is_finite())
         };
-        let Some(candidate) = candidate else {
-            continue;
-        };
+        let Some(bore_radius) = value(0, 2) else { return Ok(None); };
+        let Some(signed_depth) = value(depth_external_id, 2) else { return Ok(None); };
+        let bore_diameter = 2.0 * bore_radius;
+        if !bore_diameter.is_finite() || bore_diameter <= 0.0 || signed_depth == 0.0 { return Ok(None); }
+        let blind_depth = signed_depth.abs();
+        if observed_envelope_spans.is_some_and(|spans| !dimension_pair_matches_envelope_spans(bore_diameter, blind_depth, spans)) { continue; }
+        let Some(drill_point_angle) = value(1, 10) else { return Ok(None); };
+        if drill_point_angle <= 0.0 || drill_point_angle >= std::f64::consts::PI { return Ok(None); }
+        let candidate = (bore_diameter, drill_point_angle, blind_depth);
         if let Some(first_value) = first {
             let agrees = [candidate.0, candidate.1, candidate.2]
                 .into_iter()

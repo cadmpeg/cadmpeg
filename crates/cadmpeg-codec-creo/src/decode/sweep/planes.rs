@@ -9,7 +9,7 @@ use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled
 use crate::surface::SurfaceParameterRecord;
 use crate::vecmath::dot;
 use crate::vecmath::unit_length;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
@@ -35,13 +35,15 @@ const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
 const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
 
-pub(in super::super) fn feature_plane_equations(
-    ctx: &DecodeContext<'_>,
+type ScopedPlanes<'ctx, T> = (Vec<T>, ScopedReservation<'ctx>);
+
+pub(in super::super) fn feature_plane_equations<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Result<Option<Vec<crate::decode::analytic::equations::PlaneEquation>>, CodecError> {
+) -> Result<Option<ScopedPlanes<'ctx, PlaneEquation>>, CodecError> {
     let mut plane_storage = ctx.reserve_scoped(0, "creo feature plane scratch")?;
     let mut ids = BTreeSet::new();
     for row in ctx.admit_iter(&*scan.surfaces.rows, "creo feature plane row scan")?.filter(|row| {
@@ -65,6 +67,7 @@ pub(in super::super) fn feature_plane_equations(
             Err(()) => return Ok(None),
         }
     }
+    let mut equation_storage = ctx.reserve_scoped(0, "creo feature plane equation scratch")?;
     let mut equations = Vec::new();
     let mut plane_ids = ids.into_iter();
     while let Some(id) = ctx.next_charged(&mut plane_ids, "creo feature plane equation ID scan")? {
@@ -72,10 +75,10 @@ pub(in super::super) fn feature_plane_equations(
         else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut equations, 1, "creo feature plane equations")?;
+        ctx.reserve_scoped_vec(&mut equation_storage, &mut equations, 1, "creo feature plane equations")?;
         equations.push(plane);
     }
-    Ok(Some(equations))
+    Ok(Some((equations, equation_storage)))
 }
 
 pub(in super::super) type FeatureOutlinePlane = (u32, [f64; 3], [f64; 3]);
@@ -127,22 +130,22 @@ pub(in super::super) fn feature_outline_plane(
 /// Collect every same-feature plane row only when all rows have complete,
 /// unambiguous placed equations. Partial collections cannot establish ordered
 /// caps.
-pub(in super::super) fn feature_outline_planes(
-    ctx: &DecodeContext<'_>,
+pub(in super::super) fn feature_outline_planes<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Result<Option<Vec<FeatureOutlinePlane>>, CodecError> {
-    let mut planes = Vec::new();
+) -> Result<Option<ScopedPlanes<'ctx, FeatureOutlinePlane>>, CodecError> {
+    let (mut planes, mut storage) = ctx.temporary_vec(0, "creo feature outline planes")?;
     let mut rows = scan.surfaces.rows.iter();
     while let Some(row) = ctx.next_charged(&mut rows, "creo feature outline row scan")? {
         if row.feature_id != feature_id || row.kind != crate::surface::SurfaceKind::Plane { continue; }
         let Some(plane) = feature_outline_plane(ctx, scan, feature_id, row.id)? else {
             return Ok(None);
         };
-        ctx.reserve_vec(&mut planes, 1, "creo feature outline planes")?;
+        ctx.reserve_scoped_vec(&mut storage, &mut planes, 1, "creo feature outline planes")?;
         planes.push(plane);
     }
-    Ok(Some(planes))
+    Ok(Some((planes, storage)))
 }
 
 pub(in super::super) fn generated_arc_cylinder_extent(

@@ -360,18 +360,16 @@ pub(in crate::decode) fn counterbore_patch_geometries<'a>(
     scan: &'a ContainerScan<'_>,
     ir: &CadIr,
     feature_id: u32,
-) -> Result<Option<Vec<(&'a crate::surface::SurfaceRow, CylinderSurface)>>, CodecError> {
+) -> Result<Option<[(&'a crate::surface::SurfaceRow, CylinderSurface); 4]>, CodecError> {
     let resolve_rows = |geometries: Vec<(u32, CylinderSurface)>| -> Result<_, CodecError> {
-        let mut rows = Vec::new();
-        let mut geometries = geometries.into_iter();
-        while let Some((id, geometry)) = ctx.next_charged(&mut geometries, "creo counterbore patch row scan")? {
-            let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, id) else {
-                return Ok(None);
-            };
-            ctx.reserve_vec(&mut rows, 1, "creo counterbore patch rows")?;
-            rows.push((row, geometry));
-        }
-        Ok(Some(rows))
+        let Ok(geometries) = <[(u32, CylinderSurface); 4]>::try_from(geometries) else {
+            return Ok(None);
+        };
+        let rows = geometries.map(|(id, geometry)| scan.surfaces.rows.unique(id).map(|row| (row, geometry)));
+        let [Some(first), Some(second), Some(third), Some(fourth)] = rows else {
+            return Ok(None);
+        };
+        Ok(Some([first, second, third, fourth]))
     };
     let Some((bore_diameter, counterbore_diameter, counterbore_depth)) =
         counterbore_dimensions(ctx, scan, ir, feature_id)?
@@ -922,12 +920,14 @@ fn counterbore_source_boundary_circle(
         &scan.curves.topology_rows,
         |row| row.id,
     ))?;
-    let boundary_for = |cylinder_id: u32| -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
+    let mut curves = None;
+    let mut curve_storage = ctx.reserve_scoped(0, "creo boundary curve index scratch")?;
+    let mut boundary_for = |cylinder_id: u32| -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
         let Some(cylinder) = std::num::NonZeroU32::new(cylinder_id) else { return Ok(None); };
         let mut boundary = None;
         let mut edges = unique_edges.iter();
         while let Some(edge) = ctx.next_charged(&mut edges, "creo numbered identity candidate scan")? {
-            let candidate = | | -> Result<Option<_>, CodecError> {
+            let mut candidate = | | -> Result<Option<_>, CodecError> {
                 if edge.feature_id != feature_id || edge.type_byte != 0 { return Ok(None); }
                 let other = match edge.faces {
                     [Some(left), Some(right)] if left == cylinder => right.get(),
@@ -936,9 +936,22 @@ fn counterbore_source_boundary_circle(
                 };
                 let Some(plane) = scan.surfaces.rows.unique(other) else { return Ok(None); };
                 if plane.kind != crate::surface::SurfaceKind::Plane { return Ok(None); }
-                let Some(curve) = super::super::uniqueness::exactly_one_by(ctx, &ir.model.curves,
-                    |curve| Ok(crate::identity::matches_numbered_identity(curve.id.as_str(), "creo:visibgeom:curve#", edge.id)),
-                    "creo numbered identity candidate scan")? else { return Ok(None); };
+                if curves.is_none() {
+                    const PREFIX: &str = "creo:visibgeom:curve#";
+                    let mut index = std::collections::HashMap::new();
+                    for curve in ctx.admit_iter(&ir.model.curves, "creo boundary curve index scan")? {
+                        let Some(suffix) = curve.id.as_str().strip_prefix(PREFIX) else { continue; };
+                        if suffix.len() > 10 { continue; }
+                        let Ok(id) = suffix.parse::<u32>() else { continue; };
+                        if !crate::identity::matches_numbered_identity(curve.id.as_str(), PREFIX, id) { continue; }
+                        curve_storage.with_storage(|| ctx.entry_hash_map(&mut index, id, "creo boundary curve index"))?
+                            .and_modify(|curve| *curve = None)
+                            .or_insert(Some(curve));
+                    }
+                    curves = Some(index);
+                }
+                let Some(index) = &curves else { return Ok(None); };
+                let Some(Some(curve)) = index.get(&edge.id) else { return Ok(None); };
                 let Some(SolvedCurveGeometry::Circle(circle_curve)) =
                     source_carriers.curve_geometry(curve).solved()
                 else {

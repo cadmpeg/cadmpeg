@@ -310,6 +310,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     assert_eq!(
         sweep
             .cylinder_rows
+            .as_slice()
             .iter()
             .map(|row| row.id)
             .collect::<Vec<_>>(),

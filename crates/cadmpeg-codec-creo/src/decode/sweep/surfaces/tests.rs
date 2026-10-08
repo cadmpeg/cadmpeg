@@ -13,36 +13,21 @@ use cadmpeg_ir::AnnotationBuilder;
 #[test]
 fn saved_spline_loss_refuses_text_and_slot_below_limits() {
     let records = ["first".to_owned(), "second".to_owned()];
-    for (retained_limit, item_limit, dimension, operation) in [
-        (
-            0,
-            u64::MAX,
-            ResourceDimension::RetainedBytes,
-            "creo saved spline loss text",
-        ),
-        (
-            u64::MAX,
-            0,
-            ResourceDimension::CollectionItems,
-            "creo saved spline losses",
-        ),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = retained_limit;
-        policy.limits.max_collection_items = item_limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = push_saved_spline_loss(
-            &ctx,
-            &mut Vec::new(),
-            format_args!(
-                "Saved section spline at offset 7 cannot form a NURBS curve: {}",
-                JoinedLaneRecords(&records)
-            ),
-        )
-        .expect_err("below-need limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == dimension && resource.operation == operation));
+    for (dimension, operation) in [(ResourceDimension::RetainedBytes, "creo saved spline loss text"), (ResourceDimension::CollectionItems, "creo saved spline losses")] {
+        let run = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if dimension == ResourceDimension::RetainedBytes {
+                policy.limits.max_retained_bytes = cap;
+            } else {
+                policy.limits.max_collection_items = cap;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            push_saved_spline_loss(&ctx, &mut Vec::new(), format_args!("Saved section spline at offset 7 cannot form a NURBS curve: {}", JoinedLaneRecords(&records)))
+        };
+        let cap = crate::test_support::allocation_limit_at(dimension, Some(operation), &run);
+        let error = run(cap).expect_err("below-need limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.dimension == dimension && resource.operation == operation));
     }
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();

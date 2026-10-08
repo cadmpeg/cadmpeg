@@ -293,7 +293,8 @@ pub(in super::super) fn transfer_saved_spline_curves(
             })
         {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let Some(nurbs) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
+            let (nurbs, _nurbs_storage) = ctx.with_scoped_storage("creo saved spline source curve", || saved_spline_nurbs(ctx, spline, &mut refusal))?;
+            let Some(nurbs) = nurbs else {
                 let records = refusal.take_records_checked()?;
                 if records.is_empty() {
                     push_saved_spline_loss(
@@ -412,6 +413,7 @@ pub(in super::super) fn revolved_nurbs_surface(
         diagonal_weight,
         1.0,
     ];
+    let mut lane_storage = ctx.reserve_scoped(0, "creo revolved raw NURBS lanes")?;
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
     let mut poles = 0..directrix.pole_count();
@@ -438,16 +440,18 @@ pub(in super::super) fn revolved_nurbs_surface(
             .pole_rows()
             .weight_at(index)
             .map_or(1.0, |weight| weight);
-        ctx.reserve_vec(&mut control_points, 1, "creo revolved NURBS pole rows")?;
-        ctx.reserve_vec(&mut weights, 1, "creo revolved NURBS weight rows")?;
+        ctx.reserve_scoped_vec(&mut lane_storage, &mut control_points, 1, "creo revolved NURBS pole rows")?;
+        ctx.reserve_scoped_vec(&mut lane_storage, &mut weights, 1, "creo revolved NURBS weight rows")?;
         let mut point_row = Vec::new();
         let mut weight_row = Vec::new();
-        ctx.reserve_vec(
+        ctx.reserve_scoped_vec(
+            &mut lane_storage,
             &mut point_row,
             angular_poles.len(),
             "creo revolved NURBS poles",
         )?;
-        ctx.reserve_vec(
+        ctx.reserve_scoped_vec(
+            &mut lane_storage,
             &mut weight_row,
             angular_weights.len(),
             "creo revolved NURBS weights",
@@ -790,7 +794,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             }
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
+            let (section_curve, _section_storage) = ctx.with_scoped_storage("creo saved extrusion section curve", || saved_spline_nurbs(ctx, spline, &mut refusal))?;
+            let Some(section_curve) = section_curve else {
                 let records = refusal.take_records_checked()?;
                 if records.is_empty() {
                     push_saved_spline_loss(
@@ -814,7 +819,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 }
                 continue;
             };
-            let Some(placed) = placed_section_nurbs(ctx, transform, &section_curve)? else {
+            let (placed, _placed_storage) = ctx.with_scoped_storage("creo saved extrusion placed curve", || placed_section_nurbs(ctx, transform, &section_curve))?;
+            let Some(placed) = placed else {
                 continue;
             };
             let Some(directrix) = translated_nurbs_curve(ctx, &placed, lower_translation)? else {

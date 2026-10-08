@@ -621,7 +621,6 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{
@@ -633,7 +632,13 @@ mod tests {
     fn circular_extrusion_identity_refuses_below_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, Some("creo circular extrusion identity"), |limit| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::circular_identity::<BodyId>(&ctx, 7, "body")
+    });
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let error =
             super::circular_identity::<BodyId>(&ctx, 7, "body").expect_err("identity refused");
@@ -668,22 +673,13 @@ mod tests {
         )
         .expect("service resources")
         .expect("cap pcurve");
-        let PcurveGeometry::Nurbs { nurbs } = &geometry else {
-            panic!("circular cap is NURBS")
-        };
-        for (limit, operation) in [
-            (0, "creo circular cap pcurve knot copy"),
-            (nurbs.knots().len(), "creo circular cap pcurve pole copy"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(limit);
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let error = super::copy_circular_pcurve(&ctx, &geometry).expect_err("copy refused");
-            assert!(matches!(error, CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation));
-        }
+    crate::test_support::assert_refusal_order(cadmpeg_core::decode::ResourceDimension::CollectionItems, &["creo circular cap pcurve knot copy", "creo circular cap pcurve pole copy"], |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        super::copy_circular_pcurve(&ctx, &geometry)
+    });
         assert_eq!(
             super::copy_circular_pcurve(&ctx, &geometry).expect("copy"),
             geometry

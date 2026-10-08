@@ -567,7 +567,7 @@ pub(in super::super) fn transfer_hole_cylinders(
             };
         if let Some(hole) = &simple {
             for row in ctx.admit_iter(
-                &hole.cylinder_rows,
+                hole.cylinder_rows.as_slice(),
                 "creo simple hole cylinder rows traversal",
             )? {
                 transfer_hole_cylinder(row, hole.geometry)?;
@@ -1958,7 +1958,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             continue;
         };
         for row in ctx.admit_iter(
-            &sweep.cylinder_rows,
+            sweep.cylinder_rows.as_slice(),
             "creo transfer circular sweep cylinders cylinder rows traversal",
         )? {
             let cylinder_id = row.id;
