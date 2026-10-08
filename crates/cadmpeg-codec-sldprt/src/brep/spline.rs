@@ -936,7 +936,6 @@ fn append_homogeneous_pole(
     if factor.abs() <= f64::EPSILON {
         return Ok(None);
     }
-    ctx.charge_work(4, "form Parasolid homogeneous patch pole")?;
     let homogeneous = [point.x, point.y, point.z].map(|value| value * scale * factor);
     if !homogeneous.iter().all(|value| value.is_finite()) {
         return Ok(None);
@@ -958,24 +957,41 @@ fn homogeneous_poles(
     poles: &NurbsPoles3<FinitePoint3>,
     scale: f64,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "collect Parasolid homogeneous patch poles")?;
     let mut out = Vec::new();
     match poles {
         NurbsPoles3::Polynomial { points } => {
-            for point in points {
-                if append_homogeneous_pole(ctx, &mut out, *point, None, scale)?.is_none() {
+            let mut points = points.iter();
+            while !points.as_slice().is_empty() {
+                let Some(point) = ctx.next_charged(
+                    &mut points,
+                    "form Parasolid homogeneous patch pole",
+                )? else {
+                    break;
+                };
+                if storage.with_storage(|| {
+                    append_homogeneous_pole(ctx, &mut out, *point, None, scale)
+                })?.is_none() {
                     return Ok(None);
                 }
             }
         }
         NurbsPoles3::Rational { points } => {
-            for pole in points {
-                if append_homogeneous_pole(
+            let mut points = points.iter();
+            while !points.as_slice().is_empty() {
+                let Some(pole) = ctx.next_charged(
+                    &mut points,
+                    "form Parasolid homogeneous patch pole",
+                )? else {
+                    break;
+                };
+                if storage.with_storage(|| append_homogeneous_pole(
                     ctx,
                     &mut out,
                     pole.point,
                     Some(pole.weight.get()),
                     scale,
-                )?
+                ))?
                 .is_none()
                 {
                     return Ok(None);
@@ -983,6 +999,7 @@ fn homogeneous_poles(
             }
         }
     }
+    storage.commit()?;
     Ok(Some(out))
 }
 
@@ -991,31 +1008,67 @@ fn homogeneous_grid_poles(
     poles: &NurbsPoleGrid<FinitePoint3>,
     scale: f64,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "collect Parasolid homogeneous patch poles")?;
     let mut out = Vec::new();
     match poles {
         NurbsPoleGrid::Polynomial { rows } => {
-            for point in rows.iter().flatten() {
-                if append_homogeneous_pole(ctx, &mut out, *point, None, scale)?.is_none() {
-                    return Ok(None);
+            let mut rows = rows.iter();
+            while !rows.as_slice().is_empty() {
+                let Some(row) = ctx.next_charged(
+                    &mut rows,
+                    "visit Parasolid homogeneous patch row",
+                )? else {
+                    break;
+                };
+                let mut points = row.iter();
+                while !points.as_slice().is_empty() {
+                    let Some(point) = ctx.next_charged(
+                        &mut points,
+                        "form Parasolid homogeneous patch pole",
+                    )? else {
+                        break;
+                    };
+                    if storage.with_storage(|| {
+                        append_homogeneous_pole(ctx, &mut out, *point, None, scale)
+                    })?.is_none() {
+                        return Ok(None);
+                    }
                 }
             }
         }
         NurbsPoleGrid::Rational { rows } => {
-            for pole in rows.iter().flatten() {
-                if append_homogeneous_pole(
-                    ctx,
-                    &mut out,
-                    pole.point,
-                    Some(pole.weight.get()),
-                    scale,
-                )?
-                .is_none()
-                {
-                    return Ok(None);
+            let mut rows = rows.iter();
+            while !rows.as_slice().is_empty() {
+                let Some(row) = ctx.next_charged(
+                    &mut rows,
+                    "visit Parasolid homogeneous patch row",
+                )? else {
+                    break;
+                };
+                let mut points = row.iter();
+                while !points.as_slice().is_empty() {
+                    let Some(pole) = ctx.next_charged(
+                        &mut points,
+                        "form Parasolid homogeneous patch pole",
+                    )? else {
+                        break;
+                    };
+                    if storage.with_storage(|| append_homogeneous_pole(
+                        ctx,
+                        &mut out,
+                        pole.point,
+                        Some(pole.weight.get()),
+                        scale,
+                    ))?
+                    .is_none()
+                    {
+                        return Ok(None);
+                    }
                 }
             }
         }
     }
+    storage.commit()?;
     Ok(Some(out))
 }
 
